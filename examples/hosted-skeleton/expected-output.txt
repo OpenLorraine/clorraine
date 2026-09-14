@@ -1,0 +1,8 @@
+phase0: single happy      ok
+phase0: single alloc-fail ok
+phase0: single open-fail  ok
+phase0: scoped happy      ok
+phase0: scoped alloc-fail ok
+phase0: scoped open-fail  ok
+phase0: acquisitions=12 releases=12
+phase0: all scenarios ok

@@ -9,6 +9,7 @@
 # Host build outputs
 /build/
 /target/
+/examples/hosted-skeleton/build/
 
 # Local SDK configuration (host paths, ROM/ADF folder)
 /docker/.env
