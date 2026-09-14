@@ -1,0 +1,16 @@
+# Amiga build outputs
+*.o
+*.a
+*.prg
+*.hunk
+*.lha
+*.elf
+
+# Host build outputs
+/build/
+/target/
+
+# Editor and OS files
+.DS_Store
+*.swp
+*~
