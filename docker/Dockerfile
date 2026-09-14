@@ -102,6 +102,8 @@ RUN apt-get update \
       cmake \
       curl \
       file \
+      fs-uae \
+      gdb \
       git \
       libgmp10 \
       libmpfr6 \
@@ -112,6 +114,9 @@ RUN apt-get update \
       python3-dev \
       python3-pip \
       python3-venv \
+      xauth \
+      x11-utils \
+      xvfb \
       zlib1g \
  && rm -rf /var/lib/apt/lists/*
 
@@ -134,6 +139,12 @@ ENV CARGO_HOME=/opt/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
       | sh -s -- -y --no-modify-path --profile minimal --default-toolchain stable
 ENV PATH=/opt/cargo/bin:$PATH
+
+# Login shells (docker exec/run with -l) re-read /etc/profile, which would
+# otherwise drop the SDK tool paths. Keep them visible for interactive use.
+RUN printf '%s\n' \
+      'export PATH=/opt/amiga/bin:/opt/amitools/bin:/opt/cargo/bin:$PATH' \
+      > /etc/profile.d/cnext-path.sh
 
 # Unprivileged user matching typical host UID/GID (1000) for bind mounts.
 RUN useradd --create-home --uid 1000 --shell /bin/bash dev \

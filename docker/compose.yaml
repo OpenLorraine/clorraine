@@ -1,0 +1,68 @@
+# c-next development environment (runtime configuration).
+#
+# The toolchain image is built from pinned sources by `make image`
+# (see versions.env and Dockerfile). This file only describes how to run it.
+#
+# Local additions (extra mounts, ports, devices) belong in
+# compose.override.yaml, which is gitignored; see compose.override.yaml.example.
+#
+# All settings come from docker/.env, created by `make init`.
+
+x-common: &common
+  image: ${IMAGE:-cnext-sdk:dev}
+  working_dir: /work
+  init: true
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  volumes:
+    - ..:/work
+    - ${AMIGA_DATA:?run 'make init' to create docker/.env}:/amiga:ro
+
+x-gui: &gui
+  image: ${IMAGE:-cnext-sdk:dev}
+  working_dir: /work
+  init: true
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment:
+    DISPLAY: ${DISPLAY:?run 'make init' to create docker/.env}
+    XAUTHORITY: /tmp/.Xauthority
+  volumes:
+    - ..:/work
+    - ${AMIGA_DATA:?run 'make init' to create docker/.env}:/amiga:ro
+    - /tmp/.X11-unix:/tmp/.X11-unix
+    - ${XAUTHORITY:?run 'make init' to create docker/.env}:/tmp/.Xauthority:ro
+
+services:
+  # Long-running container for `make up` / `make down`; attach with
+  # `docker compose exec dev bash`.
+  dev:
+    <<: *common
+    command: sleep infinity
+
+  # One-shot interactive shell: `make shell`.
+  shell:
+    <<: *common
+    command: /bin/bash
+
+  # Shell with X11 access: `make gui`.
+  gui:
+    <<: *gui
+    command: /bin/bash
+
+  # FS-UAE with the configured ROM/model/args: `make emulator`.
+  emulator:
+    <<: *gui
+    command: fs-uae ${FS_UAE_ARGS:-}
+
+  # Toolchain smoke test: `make smoke`.
+  smoke:
+    image: ${IMAGE:-cnext-sdk:dev}
+    working_dir: /work
+    init: true
+    command: cnext-smoke
+
+  # Print the pinned build revisions: `make provenance`.
+  provenance:
+    image: ${IMAGE:-cnext-sdk:dev}
+    command: cat /opt/amiga/BUILD-PROVENANCE.txt

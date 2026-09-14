@@ -10,6 +10,10 @@
 /build/
 /target/
 
+# Local SDK configuration (host paths, ROM/ADF folder)
+/docker/.env
+/docker/compose.override.yaml
+
 # Editor and OS files
 .DS_Store
 *.swp

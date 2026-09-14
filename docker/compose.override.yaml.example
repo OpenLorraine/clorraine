@@ -1,0 +1,25 @@
+# Copy this file to compose.override.yaml (gitignored) to extend the SDK for
+# your machine without changing tracked files. Compose merges it over
+# compose.yaml.
+#
+# Example: extra host mounts, published ports for future debug adapters,
+# hardware devices, and audio.
+
+services:
+  dev:
+    volumes:
+      # Extra read-only mount; the repo is already at /work.
+      - /home/you/reference-sources:/reference:ro
+    ports:
+      # Useful later for debug adapters or gdb servers.
+      - "4711:4711"
+
+  emulator:
+    # GPU access (optional; software rendering works without it).
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      # PulseAudio socket (optional; adjust the uid path).
+      - /run/user/1000/pulse/native:/run/user/1000/pulse/native
+    environment:
+      PULSE_SERVER: unix:/run/user/1000/pulse/native
