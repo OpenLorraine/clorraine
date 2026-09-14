@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# c-next Amiga SDK
+# Clorraine Amiga SDK
 # ================
 # Builds the complete Amiga cross toolchain from pinned upstream sources and
 # packages it into a distributable development image.
@@ -67,7 +67,7 @@ RUN git clone "${AMIGA_GCC_REPO}" amiga-gcc \
 RUN cd amiga-gcc \
  && make ${TOOLCHAIN_TARGETS} PREFIX=/opt/amiga -j"${BUILD_JOBS}" \
  && { \
-      echo "# c-next Amiga SDK build provenance"; \
+      echo "# Clorraine Amiga SDK build provenance"; \
       echo "# Generated at image build time."; \
       echo "amiga-gcc repo:   ${AMIGA_GCC_REPO}"; \
       echo "amiga-gcc commit: $(cat /src/.amiga-gcc-commit)"; \
@@ -133,7 +133,7 @@ RUN python3 -m venv /opt/amitools \
       "amitools[vamos] @ git+https://github.com/AmigaPorts/amitools.git"
 ENV PATH=/opt/amitools/bin:$PATH
 
-# Rust is the implementation language for the c-next compiler itself.
+# Rust is the implementation language for the Clorraine compiler itself.
 ENV RUSTUP_HOME=/opt/rustup
 ENV CARGO_HOME=/opt/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
@@ -144,14 +144,14 @@ ENV PATH=/opt/cargo/bin:$PATH
 # otherwise drop the SDK tool paths. Keep them visible for interactive use.
 RUN printf '%s\n' \
       'export PATH=/opt/amiga/bin:/opt/amitools/bin:/opt/cargo/bin:$PATH' \
-      > /etc/profile.d/cnext-path.sh
+      > /etc/profile.d/clorraine-path.sh
 
 # Unprivileged user matching typical host UID/GID (1000) for bind mounts.
 RUN useradd --create-home --uid 1000 --shell /bin/bash dev \
  && chown -R dev:dev /opt/cargo /opt/rustup
 
-COPY scripts/smoke-test.sh /usr/local/bin/cnext-smoke
-RUN chmod +x /usr/local/bin/cnext-smoke
+COPY scripts/smoke-test.sh /usr/local/bin/clorraine-smoke
+RUN chmod +x /usr/local/bin/clorraine-smoke
 
 WORKDIR /work
 USER dev

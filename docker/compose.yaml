@@ -1,4 +1,4 @@
-# c-next development environment (runtime configuration).
+# Clorraine development environment (runtime configuration).
 #
 # The toolchain image is built from pinned sources by `make image`
 # (see versions.env and Dockerfile). This file only describes how to run it.
@@ -9,7 +9,7 @@
 # All settings come from docker/.env, created by `make init`.
 
 x-common: &common
-  image: ${IMAGE:-cnext-sdk:dev}
+  image: ${IMAGE:-clorraine-sdk:dev}
   working_dir: /work
   init: true
   extra_hosts:
@@ -19,7 +19,7 @@ x-common: &common
     - ${AMIGA_DATA:?run 'make init' to create docker/.env}:/amiga:ro
 
 x-gui: &gui
-  image: ${IMAGE:-cnext-sdk:dev}
+  image: ${IMAGE:-clorraine-sdk:dev}
   working_dir: /work
   init: true
   extra_hosts:
@@ -57,12 +57,12 @@ services:
 
   # Toolchain smoke test: `make smoke`.
   smoke:
-    image: ${IMAGE:-cnext-sdk:dev}
+    image: ${IMAGE:-clorraine-sdk:dev}
     working_dir: /work
     init: true
-    command: cnext-smoke
+    command: clorraine-smoke
 
   # Print the pinned build revisions: `make provenance`.
   provenance:
-    image: ${IMAGE:-cnext-sdk:dev}
+    image: ${IMAGE:-clorraine-sdk:dev}
     command: cat /opt/amiga/BUILD-PROVENANCE.txt

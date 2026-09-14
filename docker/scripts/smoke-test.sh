@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke test for the c-next Amiga SDK image.
+# Smoke test for the Clorraine Amiga SDK image.
 #
 # Verifies, inside the image:
 #   1. GCC builds and runs a C program under vamos (no ROM required).
@@ -24,7 +24,7 @@ cat > hello.c <<'EOF'
 #include <stdio.h>
 
 int main(void) {
-    printf("hello from c-next\n");
+    printf("hello from Clorraine\n");
     return 0;
 }
 EOF
@@ -33,7 +33,7 @@ cat > hello.cpp <<'EOF'
 #include <cstdio>
 
 int main() {
-    std::printf("hello from c-next (c++)\n");
+    std::printf("hello from Clorraine (c++)\n");
     return 0;
 }
 EOF

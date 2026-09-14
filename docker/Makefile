@@ -1,4 +1,4 @@
-# c-next Amiga SDK - convenience wrapper around the compose environment.
+# Clorraine Amiga SDK - convenience wrapper around the compose environment.
 #
 # Build (once, slow; from pinned sources):
 #   make image
@@ -24,9 +24,9 @@ SHELL := /bin/bash
 
 include versions.env
 
-IMAGE ?= cnext-sdk:dev
+IMAGE ?= clorraine-sdk:dev
 DOCKER ?= docker
-COMPOSE = $(DOCKER) compose -p cnext --env-file .env -f compose.yaml
+COMPOSE = $(DOCKER) compose -p clorraine --env-file .env -f compose.yaml
 COMPOSE_RUN = $(COMPOSE) run --rm
 
 BUILD_ARGS = \

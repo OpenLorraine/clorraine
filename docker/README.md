@@ -1,8 +1,8 @@
-# c-next Amiga SDK (Docker)
+# Clorraine SDK (Docker)
 
 A self-contained, reproducibly built Amiga development environment. One image
 provides the cross toolchain, the emulator, and the host tooling needed to
-develop the c-next language and Amiga programs.
+develop the Clorraine language, LorraineOS, and Amiga programs.
 
 | Component | Purpose |
 |---|---|
@@ -14,7 +14,7 @@ develop the c-next language and Amiga programs.
 | NDK 3.2 headers + inlines | AmigaOS API development |
 | vbcc + vasm + vlink | Release compiler for the smallest/fastest 68k code |
 | sfdc, fd2sfd, fd2pragma | NDK header/inline generation tools |
-| Rust (stable) | Implementation language of the c-next compiler |
+| Rust (stable) | Implementation language of the Clorraine compiler |
 | amitools / `vamos` | Runs AmigaOS CLI binaries on the host without a ROM |
 | FS-UAE + xvfb | Runs programs with graphics/audio; headless mode for CI |
 | host gcc/clang/gdb + cmake | Host-target builds and debugging of generated C |
@@ -68,7 +68,7 @@ Boot media for `make run` is controlled by `RUNNER` in `.env`:
   deterministic and suited to automation.
 
 Program output is visible in the emulator window by default (with a short
-"c-next runner" banner around it). For automation, set `RUN_CAPTURE=1` to
+"Clorraine runner" banner around it). For automation, set `RUN_CAPTURE=1` to
 redirect output to `build/run/out.txt` on the host instead.
 
 ## Host data folder
@@ -114,7 +114,7 @@ Anything machine-specific (extra mounts, ports, devices, audio) goes in
 Every service accepts arbitrary commands, for example:
 
 ```sh
-docker compose -p cnext --env-file .env -f compose.yaml run --rm dev bash -lc 'm68k-amigaos-gcc --version'
+docker compose -p clorraine --env-file .env -f compose.yaml run --rm dev bash -lc 'm68k-amigaos-gcc --version'
 ```
 
 ## Updating the toolchain
@@ -126,6 +126,6 @@ docker compose -p cnext --env-file .env -f compose.yaml run --rm dev bash -lc 'm
 ## Roadmap
 
 * `make run-ci`: headless emulator runs (xvfb) with output capture for CI.
-* Source-level debugging of c-next programs (`#line` source maps + debug
+* Source-level debugging of Clorraine programs (`#line` source maps + debug
   adapter) built on the existing gdb/emulator paths.
 * Evaluate `vscode-amiga-debug` for interactive 68k debugging.

@@ -30,5 +30,5 @@ fi
 
 cd "${docker_dir}"
 # shellcheck disable=SC2086
-exec docker compose -p cnext --env-file .env -f compose.yaml run --rm emulator \
+exec docker compose -p clorraine --env-file .env -f compose.yaml run --rm emulator \
     fs-uae ${FS_UAE_ARGS:-} "$@"
