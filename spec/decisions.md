@@ -1,0 +1,252 @@
+# Clorraine — Decision Ledger
+
+> **Status:** accepted (Phase A complete) — supersedes any conflicting text in the draft chapters
+> **Scope:** every language-surface and semantics decision made before the grammar freeze
+
+This file is the source of truth for Phase A decisions. Chapters are rewritten
+against it in Phase C; where a chapter disagrees with this ledger, the ledger
+wins until the chapter is updated. The grammar harvest (Phase B) encodes the
+surface decisions listed here.
+
+## 0. How to read this ledger
+
+* Decisions are grouped by area. Each table row is one locked decision.
+* "D" numbers are lineage deviations; "E" numbers are error-handling
+  decisions; other identifiers are local to this document.
+* Superseded draft assumptions are listed in [section 17](#17-superseded-draft-assumptions)
+  so nothing from the old draft survives silently.
+
+## 1. Semantics base (Rust lineage)
+
+| Ref | Decision |
+|---|---|
+| A1 | Rust is the **normative semantic reference**: ownership, moves, borrows (many readers XOR one writer), drop scopes and drop order, and lifetime-elision rules |
+| A1-pin | Pinned sources: Rust Reference ("Destructors", "Lifetime elision"), Rust Book ch. 4 and 10, NLL RFC 2094. The exact revision is recorded in `lineage.md` when that file is created |
+| D1 | Deleter comes from a **type declaration** (`freedBy`), not a `Drop` trait |
+| D2 | No lifetime annotation syntax; Rust's elision rules apply, and cases that would need annotations are errors |
+| D4 | No unwinding; `panic` aborts |
+| D5 | Temporaries drop at statement end (simplified from Rust's temporary-scope table) |
+| D6 | No interior mutability (`Cell`/`RefCell`/locks in the language) |
+| D7 | No `Rc`/`Arc`/`Send`/`Sync`; the language is single-threaded |
+| D8 | Surface spellings differ from Rust (`func`; `const`/`borrow`/`take`; no `fn`/`&`/`&mut`) |
+| D9 | A read-only borrow of a duplicable type is **not** an error — it is a warning (needless borrow). Generic code needs `borrow T` to compile for `T = u8` |
+| Local rule IDs | The draft `OW-*`/`BR-*` rule IDs become an index for diagnostics and tests, not the source of truth |
+
+## 2. Concurrency and asynchronous work
+
+| Ref | Decision |
+|---|---|
+| C1 | The language is single-threaded. Concurrency is the OS task model, exposed through FFI wrappers (`CreateTask`, message ports, semaphores) |
+| C2 | v2 adds `transfers` contracts for ownership crossing task/message boundaries; shared mutable state across tasks stays `raw`/`unsafe` |
+| C3 | **No async/await.** Asynchronous work is expressed with signals, message ports, and IO requests; the appendix documents the event-loop pattern |
+| C4 | A library-level async runtime is possible later; it is not a language feature |
+
+## 3. Error handling
+
+| Ref | Decision |
+|---|---|
+| E1 | Three tiers: bugs/invariants/OOM → `panic` (abort); recoverable failure without detail → `T?`; recoverable with detail → status structs or `borrow` out-params |
+| E2 | **No exceptions ever** — deterministic release and no unwinding make value-based errors the only model |
+| E3 | v1 uses nullable values + explicit checks + `lastError()` in FFI wrappers |
+| E4 | `panic(msg)` and `assert(cond, msg)` exist in v1; they abort without running the cleanup ladder |
+| E5 | **No propagation sugar** (`?`, `else`, `try`). Explicit checks are the design, permanently; sugar can be added later if ever needed |
+| E6 | Failure with detail uses plain structs (`struct ParseResult { ok: bool; value: i32; error: u32; }`) or `borrow` out-params. There is no `Maybe`/`Result` language concept |
+
+Error paths are leak-free by construction: drops run on every `return` path
+through the cleanup ladder.
+
+## 4. Values, variables, and vocabulary
+
+| Ref | Decision |
+|---|---|
+| V1 | `let` declares a **mutable** binding; `const` declares an **immutable** binding. There is no `var` |
+| V2 | A `const` with a constant initializer is a compile-time value (usable for sizes/embed/case labels); a local `const` may have a runtime initializer. Module-level `const` must be compile-time |
+| V3 | `const` bindings may be read, copied (if duplicable), and lent read-only; assignment, moving out, and writable lends are errors |
+| V4 | Markers on copy types that have no effect (for example `const n: i32`) are warnings, not errors |
+| V5 | Parameter conventions: **unmarked or `const`** = read-only lend; **`borrow`** = writable lend (exclusive); **`take`** = ownership transfer. Scalars are copied |
+| V6 | Call-site markers (`const x`, `borrow x`, `take x`) are **optional assertions**. If written they must match the declaration; the declaration is always authoritative; markers are never required |
+| V7 | A future `--require-explicit-markers` strict mode may enforce markers; it is a compiler feature, not a language rule |
+| V8 | Duplicability is **derived from fields**: scalars and structs whose fields are all duplicable are duplicable; handles and structs with resource fields are move-only. There is no `copy` keyword |
+| V9 | Generic bodies record **copy obligations**; they are discharged at instantiation (errors name the instantiation site). There are no bounds except the callable bound (section 8) |
+| V10 | Retired words: `own`, `borrow mut`, `move`, `out`. `?` is reserved for nullability |
+| V11 | Writable lends of owned temporaries are allowed; writable lends of `const` bindings are errors |
+
+## 5. Ownership semantics
+
+| Ref | Decision |
+|---|---|
+| O1 | Moves invalidate the source; drop of a moved value is a no-op; null-safe drops run exactly once |
+| O2 | Drop order: locals in reverse declaration order; struct fields in declaration order; array elements first-to-last; parameters after body locals |
+| O3 | Assignment drops the old value of the target; re-initializing a moved binding is allowed |
+| O4 | **Partial moves** are allowed, restricted to top-level fields of owned values (locals, `take` parameters). Nested paths and element moves are deferred |
+| O5 | After a partial move: whole-value use/move/lend is an error; remaining fields stay usable; field reassignment re-initializes the struct |
+| O6 | Move state is flow-sensitive; at control-flow joins a field moved on any path counts as moved (conservative) |
+| O7 | **Zero = empty**: the zero bit pattern is a valid "nothing to drop" state for every droppable type. Drop functions check empty before releasing. The zeroed field is the drop flag (no Rust-style drop flags) |
+| O8 | **Field borrows are allowed** and tracked conservatively as whole-struct loans (read-only field lend = shared loan; `borrow` field lend = exclusive loan). Nested reads and lends are allowed; nested moves are deferred |
+| O9 | **No local view expressions.** Bindings hold values; views arrive from parameters and view-typed returns (`let part = head(buf, 8);`) |
+| O10 | Globals must be duplicable (`copy`) or `const`; `own` globals are banned (no exit drops). Mutable global state is allowed with constant or runtime initializers (section 13) |
+| O11 | Borrow rules: many readers XOR one writer; borrows never outlive owners; borrows escape only when parameter-derived; v1 is lexical, non-lexical checking comes later |
+
+## 6. Types
+
+| Ref | Decision |
+|---|---|
+| T1 | Scalars: `i8 i16 i32 u8 u16 u32 bool void usize isize`; no floating point in v1 |
+| T2 | Strings: **`String`** owned handle (`handle String freedBy FreeVec`; one block `[len][cap][bytes][NUL]`; move-only; mutable through `borrow`), **`str`** immutable view (pointer + length, copies freely, byte-oriented), **`cstring`** raw zero-terminated pointer for FFI |
+| T3 | String literals have **static origin**; they are returnable, storable in `static str` fields, and usable as `const`. `static str` widens to `str` implicitly |
+| T4 | Struct fields may hold `String`, `cstring`, and `static str`; plain `str` fields are banned in v1 (view-field ban) |
+| T5 | String conversions are explicit (`text`, `bytes`, `clone`/`stringOf`, `toCString`); no hidden allocation; `String` keeps a trailing NUL for FFI convenience |
+| T6 | `raw T` is an unchecked copy pointer (nullable as `raw T?`). Dereference, indexing, pointer arithmetic, pointer casts, and address-of require `unsafe`. Declaring/passing/storing/comparing is allowed outside `unsafe`. Integer → `raw` is a value cast allowed outside `unsafe`. The escape block is a greppable audit marker, not a provenanced scope |
+| T7 | `volatile`: six intrinsics (`readVolatile8/16/32`, `writeVolatile8/16/32`) plus a **field-level qualifier** for memory-mapped overlay structs. Overlay types cannot be locals, copied, dropped, borrowed, or passed by value; access is only through `raw` pointers inside `unsafe`. Emission uses C `volatile` with no folding/caching/reordering. New keywords: `volatile`, `intrinsic` |
+| T8 | Nullability: `T?` for pointer-like types (handles, `raw`, `cstring`, views). `T` widens into `T?`; narrowing requires `== null` / `!= null` checks; use before the check is an error. Nullable returns are allowed for user functions; nullable parameters are not in v1. No `?.` or `??` |
+| T9 | Views: slices `T[]` and `str` are view types; view returns derive from lends or static storage; view fields are banned except `static str` |
+| T10 | **No tagged unions and no `match`.** Data modeling uses C-style tagged structs (all fields present, zero-safe) with C-exact `switch`. Error detail uses status structs. FFI C unions stay in `raw`/`unsafe` wrappers |
+| T11 | A struct containing any `volatile` field is an overlay type (see T7). Raw fields are allowed in structs; using them for pointer operations still requires `unsafe` |
+
+## 7. Functions, returns, locals, and statements
+
+| Ref | Decision |
+|---|---|
+| F1 | Locals infer type and mode from the initializer; explicit annotations are always allowed. Globals, signatures, and fields stay explicit |
+| F2 | Returns are **by value** (copy for duplicable types, ownership transfer for move-only) or by **view type** (slices, `str`). There is no `const`/`borrow`/`ref` return marker; aggregate view returns are deferred |
+| F3 | Function values are exact-signature C function pointers (`func(T): R`). No variadics, default arguments, named arguments, tuples, or multiple returns in v1 |
+| F4 | Struct literals: `Point { x: 1, y: 2 }` — fields by name, order-independent, duplicates and missing fields are errors; `Point {}` is the explicit zero value; trailing commas allowed; update syntax deferred |
+| F5 | `defer { ... }` runs at scope exit and joins the cleanup ladder (drops and defers run in reverse registration order). It is code motion, not a closure: the block is checked at the exit context; it runs on `return`/`break`/`continue`, not on `panic` |
+| F6 | Control flow and operators are **C-exact** (section 14) |
+
+## 8. Generics
+
+| Ref | Decision |
+|---|---|
+| G1 | Generics are **in v1**: TypeScript-like surface (`<T>` on functions and structs), explicit type arguments allowed |
+| G2 | Inference is **arguments-only**; constructors without arguments need explicit type arguments (`vecNew<i32>()`) |
+| G3 | Lowering is **monomorphization** with mangled symbols; identical instantiations are deduped by canonical type key; whole-program compilation |
+| G4 | `export` on a generic declaration is an error; write a concrete exported wrapper |
+| G5 | Instantiation recursion cap (error) and an opt-in instantiation size/count report |
+| G6 | No bounds except **`F: func(T, ...): R`** for callable parameters. Copy requirements are obligations (V9), not bounds |
+| G7 | Values of `func(...)`-bound type parameters are **callable-only**: call or pass, never store or return. Generic aggregates cannot be instantiated with ephemeral type arguments |
+| G8 | Out of scope: const generics, variadic type parameters, parameter defaults, generic aliases, generic methods, variance annotations, type-level programming |
+
+## 9. Lambdas
+
+| Ref | Decision |
+|---|---|
+| L1 | Full lambda **syntax is frozen now**: `(params) => expr`, `(params) => { ... }` with typed parameters, optional capture list `[borrow x, ...]` (parse `take` but reject it) |
+| L2 | Captures: duplicable types copy; non-duplicable types are read-only borrowed; parent mutation requires an explicit `[borrow x]` capture. No `take` captures in v1 |
+| L3 | Closures are **ephemeral**: they cannot be returned, stored in fields/globals/arrays, or captured by another closure; they can be called and passed. No heap environments |
+| L4 | Semantics are staged (syntax + AST from day one): stage 1 capture-less, stage 2 copy/borrow captures, stage 3 `[borrow]`, stage 4 `F: func(...)` generics; stage 5 C-hook trampolines (v1.1) |
+| L5 | C boundary: `func(...)` is a plain C function pointer; only capture-less lambdas match it. Capturing closures cross only through synchronous C hooks via generated trampolines (contract `borrows`), never through `stores` APIs |
+
+## 10. Strings and templates
+
+| Ref | Decision |
+|---|---|
+| S1 | Interpolation is in v1: `$"Hi, {name}!"` with `{{`/`}}` escapes |
+| S2 | Formattable types: `str`, `String`, integer types, `bool`. Other types are compile errors with a conversion hint |
+| S3 | No format specs in v1 (`{x:04x}`); use conversion functions (`toHex`, `toDecimal`). A future spec syntax must avoid the `:` ambiguity with the conditional operator |
+| S4 | No nested templates in v1; struct literals inside placeholders are allowed (balanced braces) |
+| S5 | A template with placeholders is an owned `String` (one allocation); placeholder-free templates are plain `str` literals |
+| S6 | Future (additive): more formattable types, nested templates, raw/multi-line strings, codepoint iteration, small-string optimization |
+
+## 11. FFI and contracts
+
+| Ref | Decision |
+|---|---|
+| X1 | Opaque resources: `handle T freedBy F;` declared once, in the library. `F` must be an FFI-declared function taking `take T` and returning `void`; one deleter per type |
+| X2 | Native structs do not use `freedBy`; they drop structurally (fields in declaration order) |
+| X3 | FFI declarations use ordinary signatures and the ordinary vocabulary. The draft clause words `consumes`, `value`, `borrows`, `borrows mut`, and `nullable` are removed; nullability lives in the type (`File?`) |
+| X4 | Uncontracted extern calls may only appear inside `unsafe`; passing owned/borrowed values to them is an error (FFI-1) |
+| X5 | `stores` and `transfers` stay deferred (v2) and live in audited `raw` wrappers |
+| X6 | Application code never writes `ffi` blocks; the stdlib wraps them |
+
+## 12. Modules and initialization
+
+| Ref | Decision |
+|---|---|
+| M1 | `module A.B;` — one per file, first statement, dotted name |
+| M2 | Declaration merging: several files may declare the same module; duplicate declarations are errors |
+| M3 | `export` marks public declarations; default is module-private |
+| M4 | Imports: `import { X, Y as Z } from A.B;` — named lists only, no wildcards. Qualified access (`A.B.f()`) is always available |
+| M5 | **No global constructors, no C ctor attributes.** The compiler collects module-level initializers into generated `cl_init_<module>` functions and runs them before `main` in dependency order (imports plus modules referenced by initializers) |
+| M6 | A dependency cycle that involves runtime-initialized globals is a compile error; cycles of `const`-only modules are fine |
+| M7 | Globals stay duplicable; initializer expressions must be non-nullable; failures belong in explicit `init()` functions called from `main` |
+| M8 | Entry: exactly one `main()` for executables; signature `main(): i32`. Library builds export a generated init entry that the host calls |
+| M9 | `ffi` blocks are module-scoped and not exported; share wrappers through exported functions |
+| M10 | Circular imports are allowed; declarations resolve globally |
+
+## 13. Control flow, operators, and comments
+
+| Ref | Decision |
+|---|---|
+| B1 | Parentheses are C-style: `if (cond)`, `while (cond)`, `switch (x)`, `for ( ... )`; braces are mandatory |
+| B2 | `for (;;)` is the infinite loop (no `loop` keyword). C-style `for (init; cond; step)` and element loops `for (x in xs)` |
+| B3 | `do { ... } while (cond);` is included |
+| B4 | No range syntax; indices use the C-style `for` |
+| B5 | `switch` is C-exact: fallthrough by default, `break` to exit, no `fallthrough` keyword, no exhaustiveness requirement. A `// fallthrough`-silenced warning is optional later |
+| B6 | `break`/`continue` per C. No labels and no `goto` |
+| B7 | Operators are the C set with **defined semantics** (no UB): arithmetic wraps, shifts mask counts to the width, division by zero is a runtime fault. Includes compound assignment, `++`/`--` (prefix and postfix), and the conditional operator. The comma operator is excluded |
+| B8 | Casts use exactly one form: `T(expr)`. No C-style casts |
+| B9 | Comments: `//` and `/* */` (non-nesting) only. There are no doc-comment forms |
+
+## 14. Diagnostics
+
+| Ref | Decision |
+|---|---|
+| N1 | 5-digit codes in area blocks: `E100xx` ownership/borrows/null use, `E101xx` FFI, `E102xx` types, `E103xx` generics, `E104xx` lambdas, `E105xx` strings/templates, `E106xx` unsafe/raw/volatile, `E107xx`–`E110xx` reserved, `E111xx` modules/init, `E112xx` profiles, `E20xxx` lexical/syntax, `E90xxx` staged "not yet supported" features, `W100xx` warnings |
+| N2 | Codes are stable forever; removed codes stay reserved; new codes append |
+| N3 | `spec/14-diagnostics.md` is the normative registry: message template, trigger, example, chapter reference for every code |
+| N4 | Message format: the first line is always `error CODE: message` or `warning CODE: message`; compile-fail tests assert exactly that |
+| N5 | The compiler reports all recoverable errors (not fail-fast) and exits nonzero |
+| N6 | Warnings are deniable by default and escalable with `--deny-warnings`; warning codes are stable |
+| N7 | `check.sh` cross-validates codes used in chapters against the registry |
+
+## 15. Codegen contract
+
+| Ref | Decision |
+|---|---|
+| P1 | C99 common subset accepted by both GCC 16.2.0b (`m68k-amigaos-gcc`) and vbcc 0.9h; no extensions, no VLAs, no compiler-specific tricks |
+| P2 | Cleanup ladder: single-exit, one label per scope, reverse order, null-safe drops; `defer` entries join the same ladder |
+| P3 | Moves lower to copy + zero; partial moves zero the field |
+| P4 | Zero = empty layout guarantee (O7) |
+| P5 | `freedBy` drops emit `Deleter(value)` calls, null-safe, in the ladder |
+| P6 | `String` layout: one AllocVec block `[len][cap][bytes][NUL]`; `FreeVec` deleter. `str` is a value struct (pointer + length) |
+| P7 | Lambdas: lifted `static` functions; capture-less = plain function pointers; capturing = two-word callable (function + stack env). Trampolines for C hooks arrive in v1.1 |
+| P8 | Interpolation desugars to string-builder/`toText` calls |
+| P9 | Module init: generated `cl_init_<module>` functions in dependency order; a generated entry stub runs them before the user's `main` |
+| P10 | Single translation unit in v1; internal symbols `static`, external only for `export` and the entry |
+| P11 | Mangling: `cl_<module>_<name>`; instantiations `cl_<name>__<typekey>` with hash dedupe |
+| P12 | Defined arithmetic: wrapping via emitter strategy (`-fwrapv` for GCC; verify vbcc or emit unsigned-based arithmetic), masked shifts, division by zero faults |
+| P13 | `#line` mapping for every user statement location; deterministic output ordering |
+| P14 | Build matrix stays: `-lamiga`, `-mcrt=nix20`, `-m68000` (opt-in `-m68020`); verified on vamos (GCC/vbcc) and FS-UAE (dir drive and ADF) |
+
+## 16. Process decisions
+
+| Ref | Decision |
+|---|---|
+| R1 | Syntax is frozen in the grammar before semantics are staged; later features are additive and must not reopen the front of the compiler chain |
+| R2 | Every artifact references the ledger; chapters are rewritten in Phase C against the grammar and this ledger |
+| R3 | `preflight` reviews the specification before the compiler MVP starts |
+
+## 17. Superseded draft assumptions
+
+| Draft said | Now |
+|---|---|
+| Generics deferred to v2 | Generics in v1 (monomorphized) |
+| No closures | Staged lambdas in v1 (captures included by stage 4) |
+| Placeholder keywords `own`, `borrow`, `borrow mut`, `move` | `const`/`borrow`/`take`; `let`/`const` for bindings |
+| `copy struct` marker | Duplicability derived from fields |
+| FFI clauses `owns`/`consumes`/`value`/`borrows`/`nullable` | `handle T freedBy F` + ordinary signatures + `T?` |
+| `-> const T` / `-> borrow T` view returns | Dropped; views come from view types; aggregate views deferred |
+| `loop {}` and range loops | C-exact `for` forms; no range syntax |
+| `switch` auto-break and `fallthrough` | C-exact fallthrough |
+| Doc comments `///` | None; C comments only |
+| Module init: dependency schedule (Blend65) | Generated dependency-ordered init functions (portable C) |
+| Module init: explicit-only (early Phase A proposal) | Superseded by the generated init decision above |
+| Tagged unions + `match` | Cancelled; C-style tagged structs + `switch` |
+| Owning text = `Buffer` | `String` / `str` / `cstring` |
+| `var` for mutable locals | `let` is mutable; `const` immutable |
+| Read-only borrow of copy types banned | Warning (needless borrow) |
+| `out` parameters | Rejected |
+| Local view expressions | None |
+| `nullable` keyword in contracts | `T?` type suffix |
+| `if cond` without parentheses | C-style `if (cond)` |
