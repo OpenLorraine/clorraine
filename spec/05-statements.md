@@ -8,12 +8,13 @@
 * Blocks with mandatory braces; no dangling-else.
 * Conditions must be `bool`; no truthiness.
 * `if`/`else`, `while`, `do`/`while`, C-style `for`, `switch`.
-* `switch` is auto-break with an explicit `fallthrough` statement (Blend65
-  decision); `switch` on tagged unions is exhaustive (Ch 09).
+* `switch` is C-exact: fallthrough by default, `break` to exit; no
+  `fallthrough` keyword; an implicit-fallthrough warning is planned (B5).
 * `break`/`continue` may leave scopes; the drop ladder (Ch 17 §4) guarantees
   releases on every exit edge.
 * `goto` exists only in emitted C; the language has no source-level `goto`.
-* `return` moves owned values; `return borrow` follows OW-17.
+* `return` moves owned values or view types (F2); no `const`/`borrow` return
+  markers.
 * Escape blocks for raw operations (placeholder `unsafe`); blocks are greppable
   and may not contain `return` of a borrow created inside.
 
@@ -21,6 +22,6 @@
 
 | Question | Recommendation |
 |---|---|
-| `defer`-style statement | Not in v1; the drop model covers it |
+| `defer`-style statement | Adopted in v1 (F5); joins the drop ladder |
 | Labeled break | Deferred (Blend65 future item) |
 | `comptime` blocks | Later phase; `comptime function` planned (Ch 13 context) |

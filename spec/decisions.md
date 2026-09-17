@@ -1,6 +1,6 @@
 # Clorraine — Decision Ledger
 
-> **Status:** accepted (Phase A complete) — supersedes any conflicting text in the draft chapters
+> **Status:** accepted (Phase A complete; amended by the pre-Phase-B ergonomics review) — supersedes any conflicting text in the draft chapters
 > **Scope:** every language-surface and semantics decision made before the grammar freeze
 
 This file is the source of truth for Phase A decisions. Chapters are rewritten
@@ -30,6 +30,7 @@ surface decisions listed here.
 | D7 | No `Rc`/`Arc`/`Send`/`Sync`; the language is single-threaded |
 | D8 | Surface spellings differ from Rust (`func`; `const`/`borrow`/`take`; no `fn`/`&`/`&mut`) |
 | D9 | A read-only borrow of a duplicable type is **not** an error — it is a warning (needless borrow). Generic code needs `borrow T` to compile for `T = u8` |
+| A1-safety | Safety wording: memory safety is strong **above the hardware boundary**; below it (MMIO, interrupts, raw memory) access is audited `unsafe`. Standard-library wrappers shrink that surface over time |
 | Local rule IDs | The draft `OW-*`/`BR-*` rule IDs become an index for diagnostics and tests, not the source of truth |
 
 ## 2. Concurrency and asynchronous work
@@ -86,22 +87,24 @@ through the cleanup ladder.
 | O9 | **No local view expressions.** Bindings hold values; views arrive from parameters and view-typed returns (`let part = head(buf, 8);`) |
 | O10 | Globals must be duplicable (`copy`) or `const`; `own` globals are banned (no exit drops). Mutable global state is allowed with constant or runtime initializers (section 13) |
 | O11 | Borrow rules: many readers XOR one writer; borrows never outlive owners; borrows escape only when parameter-derived; v1 is lexical, non-lexical checking comes later |
+| O12 | **Reborrowing views**: a read-only view derived from a borrow is a shared reborrow; a writable view derived from a writable borrow is an exclusive reborrow limited to the expression. This makes `borrow bufferBytes(buf)` valid when `buf` is itself a parameter |
 
 ## 6. Types
 
 | Ref | Decision |
 |---|---|
-| T1 | Scalars: `i8 i16 i32 u8 u16 u32 bool void usize isize`; no floating point in v1 |
+| T1 | Scalars: `i8 i16 i32 u8 u16 u32 bool void usize isize` plus `f32`/`f64`. Floating point covers arithmetic, comparison, casts, and template formatting in v1; math functions are stdlib. `'x'` is a `u8` byte literal. Decimal literals like `1.5` are `f64`; mixed `f32`/`f64` promotes to `f64`; integer↔float conversions are explicit. Out-of-range float→int conversion is a runtime fault; floating-point division by zero follows IEEE (Inf/NaN), a deliberate difference from the integer rule (B7) |
 | T2 | Strings: **`String`** owned handle (`handle String freedBy FreeVec`; one block `[len][cap][bytes][NUL]`; move-only; mutable through `borrow`), **`str`** immutable view (pointer + length, copies freely, byte-oriented), **`cstring`** raw zero-terminated pointer for FFI |
 | T3 | String literals have **static origin**; they are returnable, storable in `static str` fields, and usable as `const`. `static str` widens to `str` implicitly |
 | T4 | Struct fields may hold `String`, `cstring`, and `static str`; plain `str` fields are banned in v1 (view-field ban) |
 | T5 | String conversions are explicit (`text`, `bytes`, `clone`/`stringOf`, `toCString`); no hidden allocation; `String` keeps a trailing NUL for FFI convenience |
 | T6 | `raw T` is an unchecked copy pointer (nullable as `raw T?`). Dereference, indexing, pointer arithmetic, pointer casts, and address-of require `unsafe`. Declaring/passing/storing/comparing is allowed outside `unsafe`. Integer → `raw` is a value cast allowed outside `unsafe`. The escape block is a greppable audit marker, not a provenanced scope |
-| T7 | `volatile`: six intrinsics (`readVolatile8/16/32`, `writeVolatile8/16/32`) plus a **field-level qualifier** for memory-mapped overlay structs. Overlay types cannot be locals, copied, dropped, borrowed, or passed by value; access is only through `raw` pointers inside `unsafe`. Emission uses C `volatile` with no folding/caching/reordering. New keywords: `volatile`, `intrinsic` |
-| T8 | Nullability: `T?` for pointer-like types (handles, `raw`, `cstring`, views). `T` widens into `T?`; narrowing requires `== null` / `!= null` checks; use before the check is an error. Nullable returns are allowed for user functions; nullable parameters are not in v1. No `?.` or `??` |
+| T7 | `volatile`: six intrinsics (`readVolatile8/16/32`, `writeVolatile8/16/32`), a **field-level qualifier** for memory-mapped overlay structs, and a `volatile` qualifier on module-level globals shared with interrupt handlers. Overlay types cannot be locals, copied, dropped, borrowed, or passed by value; access is only through `raw` pointers inside `unsafe`. Emission uses C `volatile` with no folding/caching/reordering. Module-level `const raw Regs = <address>` base constants are allowed so functions do not re-derive register bases. New keywords: `volatile`, `intrinsic` |
+| T8 | Nullability: `T?` for pointer-like types (handles, `raw`, `cstring`, views). `T` widens into `T?`; narrowing requires `== null` / `!= null` checks; use before the check is an error. Nullable returns and nullable parameters are allowed; parameters follow the ordinary conventions (unmarked/`const` read-only lend, `borrow` writable lend, `take` transfer). `null` is the only empty state: `let f: File? = null; openInto(path, borrow f);` is the out-parameter pattern; there are no zero literals for handles. No `?.` or `??` |
 | T9 | Views: slices `T[]` and `str` are view types; view returns derive from lends or static storage; view fields are banned except `static str` |
 | T10 | **No tagged unions and no `match`.** Data modeling uses C-style tagged structs (all fields present, zero-safe) with C-exact `switch`. Error detail uses status structs. FFI C unions stay in `raw`/`unsafe` wrappers |
 | T11 | A struct containing any `volatile` field is an overlay type (see T7). Raw fields are allowed in structs; using them for pointer operations still requires `unsafe` |
+| T12 | **Indexing is always checked** on `T[]`, `str`, and arrays; out-of-range access traps. The only unchecked access is explicit raw/`unsafe` or stdlib `unchecked` accessors; no profile disables safety checks. Interrupt-context code uses the unsafe accessors |
 
 ## 7. Functions, returns, locals, and statements
 
@@ -113,6 +116,9 @@ through the cleanup ladder.
 | F4 | Struct literals: `Point { x: 1, y: 2 }` — fields by name, order-independent, duplicates and missing fields are errors; `Point {}` is the explicit zero value; trailing commas allowed; update syntax deferred |
 | F5 | `defer { ... }` runs at scope exit and joins the cleanup ladder (drops and defers run in reverse registration order). It is code motion, not a closure: the block is checked at the exit context; it runs on `return`/`break`/`continue`, not on `panic` |
 | F6 | Control flow and operators are **C-exact** (section 14) |
+| F7 | **Recursion is unrestricted**: direct, indirect, mutual, and generic recursion are allowed (the C activation stack replaces Blend65's SFA model; Blend65 codes `E10180`/`E10181` are not adopted). Stack depth is a runtime concern with documented guidance |
+| F8 | **Dot-call** is part of the surface: `x.f(y)` resolves to the free function `f(x, y)` (field first, then functions; static resolution, no receiver semantics, no vtables). Standard-library APIs are written dot-call style |
+| F9 | **Definite assignment**: reading a local before it is assigned on every path is a compile error (no zero-fill, no unspecified values). `borrow T?` out-parameters are exempt |
 
 ## 8. Generics
 
@@ -142,7 +148,7 @@ through the cleanup ladder.
 | Ref | Decision |
 |---|---|
 | S1 | Interpolation is in v1: `$"Hi, {name}!"` with `{{`/`}}` escapes |
-| S2 | Formattable types: `str`, `String`, integer types, `bool`. Other types are compile errors with a conversion hint |
+| S2 | Formattable types: `str`, `String`, integer types, `f32`/`f64`, `bool`. Float output uses a documented fixed precision in v1 (precision control later). Other types are compile errors with a conversion hint |
 | S3 | No format specs in v1 (`{x:04x}`); use conversion functions (`toHex`, `toDecimal`). A future spec syntax must avoid the `:` ambiguity with the conditional operator |
 | S4 | No nested templates in v1; struct literals inside placeholders are allowed (balanced braces) |
 | S5 | A template with placeholders is an owned `String` (one allocation); placeholder-free templates are plain `str` literals |
@@ -152,7 +158,7 @@ through the cleanup ladder.
 
 | Ref | Decision |
 |---|---|
-| X1 | Opaque resources: `handle T freedBy F;` declared once, in the library. `F` must be an FFI-declared function taking `take T` and returning `void`; one deleter per type |
+| X1 | Opaque resources: `handle T freedBy F;` declared once, in the library. `F` must be an FFI-declared function taking `take T` and returning `void`; one deleter per type. v1.1 design item (F4): allow ordinary Clorraine functions as `freedBy` deleters, enabling a built-in `Box<T>` with generated drop glue |
 | X2 | Native structs do not use `freedBy`; they drop structurally (fields in declaration order) |
 | X3 | FFI declarations use ordinary signatures and the ordinary vocabulary. The draft clause words `consumes`, `value`, `borrows`, `borrows mut`, and `nullable` are removed; nullability lives in the type (`File?`) |
 | X4 | Uncontracted extern calls may only appear inside `unsafe`; passing owned/borrowed values to them is an error (FFI-1) |
@@ -184,9 +190,9 @@ through the cleanup ladder.
 | B4 | No range syntax; indices use the C-style `for` |
 | B5 | `switch` is C-exact: fallthrough by default, `break` to exit, no `fallthrough` keyword, no exhaustiveness requirement. A `// fallthrough`-silenced warning is optional later |
 | B6 | `break`/`continue` per C. No labels and no `goto` |
-| B7 | Operators are the C set with **defined semantics** (no UB): arithmetic wraps, shifts mask counts to the width, division by zero is a runtime fault. Includes compound assignment, `++`/`--` (prefix and postfix), and the conditional operator. The comma operator is excluded |
+| B7 | Operators are the C set with **defined semantics** (no UB): arithmetic wraps, shifts mask counts to the width, integer division by zero is a runtime fault (floating point follows IEEE Inf/NaN instead, see T1). Includes compound assignment, `++`/`--` (prefix and postfix), and the conditional operator. The comma operator is excluded |
 | B8 | Casts use exactly one form: `T(expr)`. No C-style casts |
-| B9 | Comments: `//` and `/* */` (non-nesting) only. There are no doc-comment forms |
+| B9 | Comments: `//` and `/* */` (non-nesting). `///` is recognized as **documentation** attached to the next declaration; v1 emits nothing and a future `--doc` tool reads it |
 
 ## 14. Diagnostics
 
@@ -199,6 +205,7 @@ through the cleanup ladder.
 | N5 | The compiler reports all recoverable errors (not fail-fast) and exits nonzero |
 | N6 | Warnings are deniable by default and escalable with `--deny-warnings`; warning codes are stable |
 | N7 | `check.sh` cross-validates codes used in chapters against the registry |
+| N8 | New codes to assign in Phase C: definite assignment (F9), float conversion rules (T1), and the indexing trap (T12) |
 
 ## 15. Codegen contract
 
@@ -218,6 +225,7 @@ through the cleanup ladder.
 | P12 | Defined arithmetic: wrapping via emitter strategy (`-fwrapv` for GCC; verify vbcc or emit unsigned-based arithmetic), masked shifts, division by zero faults |
 | P13 | `#line` mapping for every user statement location; deterministic output ordering |
 | P14 | Build matrix stays: `-lamiga`, `-mcrt=nix20`, `-m68000` (opt-in `-m68020`); verified on vamos (GCC/vbcc) and FS-UAE (dir drive and ADF) |
+| P15 | Floats lower to C `float`/`double`. The SDK verifies GCC and vbcc soft-float ABIs (argument passing and returns) as a new matrix leg, plus an opt-in FPU (`-m68881`) build leg |
 
 ## 16. Process decisions
 
@@ -239,7 +247,7 @@ through the cleanup ladder.
 | `-> const T` / `-> borrow T` view returns | Dropped; views come from view types; aggregate views deferred |
 | `loop {}` and range loops | C-exact `for` forms; no range syntax |
 | `switch` auto-break and `fallthrough` | C-exact fallthrough |
-| Doc comments `///` | None; C comments only |
+| Doc comments `///` | `///` frozen as documentation comments; `--doc` tooling later |
 | Module init: dependency schedule (Blend65) | Generated dependency-ordered init functions (portable C) |
 | Module init: explicit-only (early Phase A proposal) | Superseded by the generated init decision above |
 | Tagged unions + `match` | Cancelled; C-style tagged structs + `switch` |
@@ -250,3 +258,25 @@ through the cleanup ladder.
 | Local view expressions | None |
 | `nullable` keyword in contracts | `T?` type suffix |
 | `if cond` without parentheses | C-style `if (cond)` |
+| No floating point in v1 | `f32`/`f64` added (arithmetic, comparison, casts, formatting) |
+| Blend65 no-recursion (SFA/6502) | Recursion unrestricted (C activation stack) |
+| `T{}` zero literals for handles (review draft) | Rejected; `null` is the only empty state |
+| `for (e in xs)` binding unspecified (draft) | Copy by default; `for (borrow e in xs)` writes through with per-element loans |
+
+## 18. Standard library scope (v1)
+
+The library is where most ergonomics live. v1 ships, in priority order:
+
+| Item | Purpose |
+|---|---|
+| `Buffer` (owned bytes) | Bulk IO, bitmaps, samples; safe slices into owned storage |
+| `Array<T>` (growable) | Default dynamic container; most workloads need no other structure |
+| One error/status carrier | Detail-carrying failures; `T?` stays detail-free; partial-IO conventions |
+| Format helpers | `toHex32`, padding, and float formatting used by templates |
+| Per-chip MMIO wrappers | Safe accessors over the volatile intrinsics; `const raw` register bases |
+| Interrupt/hook dispatcher | C-side qualified handler plus token add/remove; handlers are allocation-free, drop-free, panic-free |
+| `Span` | Offset-based parsing helper (view fields stay banned) |
+
+Standard-library APIs are written dot-call style (F8). v1.1 candidate:
+built-in `Box<T>` with compiler-generated drop glue, which needs the X1
+amendment to allow ordinary Clorraine `freedBy` functions.

@@ -6,18 +6,19 @@
 
 ## Scope (planned)
 
-* Primitive types: `i8`, `i16`, `i32`, `u8`, `u16`, `u32`, `bool`, `void`;
-  pointer-sized `usize`/`isize` for profile portability (m68k 32-bit today,
-  ARM64 64-bit later).
+* Primitive types: `i8`, `i16`, `i32`, `u8`, `u16`, `u32`, `f32`, `f64`,
+  `bool`, `void`; pointer-sized `usize`/`isize` for profile portability
+  (m68k 32-bit today, ARM64 64-bit later); `'x'` is a `u8` byte literal.
 * No implicit mixed-sign or narrowing conversions; explicit casts only
   (`T(expr)` syntax kept from Blend65; no C-style casts).
-* Typed references: `borrow T`, `borrow mut T`, `raw T`; no pointer
-  arithmetic outside the raw escape hatch.
+* Parameter modes: unmarked/`const` read-only lend, `borrow` writable lend,
+  `take` ownership transfer; `raw T` unchecked escape hatch; no pointer
+  arithmetic outside `unsafe`.
 * Handles: opaque owned types produced by contracts (`handle File`); their
   representation is profile-defined; release comes from the contract.
-* Aggregates: structs (Ch 07), arrays and slices (Ch 08), tagged unions
-  (Ch 09).
-* `copy` type property and move-only types (Ch 03).
+* Aggregates: structs (Ch 07), arrays and slices (Ch 08), C-style tagged
+  structs (Ch 09); no tagged unions.
+* Duplicability derived from fields; move-only types (Ch 03).
 * Volatile access for hardware registers: a type qualifier (`volatile`) that
   lowers to C `volatile`; required by the Amiga appendix and later by
   LorraineOS drivers.
