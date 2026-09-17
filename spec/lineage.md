@@ -142,3 +142,34 @@ When a language question is not answered by the ledger, this chapter, or the
 normative chapter for its area, resolve it by the pinned Rust behavior unless
 one of the deviations above applies. Record the resolution as a ledger
 amendment so the specification stays derivable rather than remembered.
+
+## 10. Memory-model alternatives considered
+
+A1 was chosen against the alternatives below; the list is kept so the decision
+stays reviewable. None of them dominates it under the Amiga constraints:
+deterministic release, no runtime support in the emitted C, interrupt and MMIO
+safety, 512K-2MB machines, and a future ARM64 profile.
+
+| Family | Release | Lowers to C as | Deciding weakness |
+|---|---|---|---|
+| Rust-lineage affine ownership + borrows | static, statically known point | explicit release calls, no runtime | chosen (A1) |
+| Linear or uniqueness types | static, exactly-once | explicit consume calls | no borrows; every read consumes or clones |
+| Affine only (own + clone, no checker) | static, at-most-once | explicit frees | views and C-like patterns become painful |
+| Region inference (MLKit, Cyclone) | static, bulk at region exit | region handle + one free | inference is hard; poor fit for OS handles and long-lived values |
+| Ownership/capability types (Pony, Spec#) | static, alias-controlled | varies | high conceptual cost, no m68k precedent |
+| Reference counting (Swift ARC, `shared_ptr`) | runtime, cycles leak | inc/dec helpers per assignment | per-assignment cost and a runtime; rejected in D7 |
+| Precise RC (Koka, Perceus) | runtime, compiler-inserted free | RC and free ops | sophisticated analysis; still runtime cost |
+| Tracing GC (Boehm, precise mark/sweep) | runtime, nondeterministic | GC runtime and root discovery | pauses and RAM tax; rejected by A2 |
+| Hybrid GC + RAII (D, C#, Java `using`) | mixed | both runtimes | still a heap runtime and pauses |
+| Manual C-style (`AllocMem`/`FreeMem`, pools) | programmer | direct C | no safety; kept only as the audited `raw`/`unsafe`/FFI edge |
+| Lint-enforced C (GSL, `lifetimebound`) | best-effort tooling | nothing new | unsound; tooling is weak on Amiga |
+| C++ lowering (RAII, smart pointers) | static, destructors | C++ toolchain | vbcc is C-only; GCC C++ is heavier |
+| Direct 68k backend (no C) | static | native code | loses C interop, debuggers, and both existing backends |
+
+Known v1 seams, to be validated before the checker is built: the conservative
+pre-NLL approximation (section 6), the copy-on-lend rule for duplicable values
+(D9, V9), and view elision without annotations (section 4). Validation is a
+small, hand-checked corpus: a file copier, an interrupt-driven counter, a
+string/parser workload, and a buffer/container workload. Repeated V9 or
+pre-NLL rejections in those programs are grounds to amend the rule, not to
+reopen the model.

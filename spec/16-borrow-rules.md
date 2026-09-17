@@ -93,7 +93,10 @@ func demo(): i32 {
 A lend of a duplicable value binds a copy (V9, V5), so a write through a
 `borrow` parameter of a duplicable type affects that copy only. W10001 marks
 the needless lend; it is a warning, not an error (D9). The warning keeps
-generic code that spells `borrow T` valid for `T = u8`.
+generic code that spells `borrow T` valid for `T = u8`. A view lend is not a
+value lend: the view itself copies, but the storage it points into is shared,
+so a `borrow` view parameter and an element view (`for (borrow e in xs)`) write
+through to the owner.
 
 An out-parameter is an **in-out ownership slot**: the caller must initialize
 the slot before the call (passing an uninitialized slot is E10021), the callee

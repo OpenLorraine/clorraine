@@ -132,6 +132,10 @@ The element form of `for` walks a fixed array or a slice
 | LOOP-2 | `for (borrow e in xs)` binds an exclusive element view | - |
 | LOOP-3 | Non-duplicable elements require the `borrow` form | E10040 |
 
+An element view aliases the element: writes through `for (borrow e in xs)`
+reach the array even when the element type is duplicable, because only the
+view (an index or a pointer) is ever copied, not the element (V9).
+
 ```clorraine
 func doubleAll(borrow xs: u32[]): void {
     for (borrow e in xs) {

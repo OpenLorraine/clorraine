@@ -65,8 +65,13 @@ and moving out of it or taking a writable lend of it is an error (V3).
 Assigning through a read-only parameter is E10024; declare the parameter
 `borrow` to write through it. A lend of a duplicable value binds a copy (V9);
 a needless lend warns as W10001 instead of erroring (D9), and a `const` marker
-on a copy type has no effect and is likewise a warning (V4). Writable lends of owned temporaries are
-allowed; writable lends of `const` bindings are errors (V11).
+on a copy type has no effect and is likewise a warning (V4). The copy rule
+covers value lends: a view lend (`T[]`, `str`, `cstring`) copies only the view
+(pointer and length), and the storage it points into is shared, so writes
+through a writable view reach the owner. The same holds for the per-element
+views of `for (borrow e in xs)` ([Ch 08](08-arrays-strings.md) section 5).
+Writable lends of owned temporaries are allowed; writable lends of `const`
+bindings are errors (V11).
 
 ## 3. Moves
 

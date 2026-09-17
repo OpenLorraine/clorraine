@@ -141,10 +141,12 @@ when the element type is not duplicable (E10040). This is the form for
 mutating a slice (GF9, F1).
 
 ```clorraine
-func total(xs: Entity[]): i32 {
-    let sum = 0;
-    for (e in xs) {         // copy of each duplicable Entity
-        sum = sum + e.x;
+struct Stat { hits: u32; misses: u32; }   // all fields scalar: duplicable
+
+func total(stats: Stat[]): u32 {
+    let sum: u32 = 0;
+    for (s in stats) {      // a copy of each duplicable element
+        sum = sum + s.hits;
     }
     return sum;
 }
