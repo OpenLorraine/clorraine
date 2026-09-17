@@ -260,13 +260,14 @@ The `hosted-amiga` toolchain facts from [Ch 15](15-profiles.md) section 3:
 | Opt-in CPU | `-m68020` | per project |
 | C runtime | `-mcrt=nix20` | libnix |
 | Libraries | `-lamiga` | the stub archive opens only the libraries in use |
-| Float ABI | soft-float | GCC and vbcc ABIs verified as a matrix leg (P15) |
-| FPU | opt-in `-m68881` | the fast floating-point leg (P15) |
+| Float ABI | soft-float | GCC and vbcc ABIs planned; not yet verified (P15) |
+| FPU | opt-in `-m68881` | the fast floating-point leg, planned; not yet verified (P15) |
 
 The exact compiler commands are normative in [Ch 17](17-codegen.md)
-section 10. The validated matrix (GCC and vbcc on `vamos`, FS-UAE directory
-drive, and FS-UAE ADF) is recorded in
-[the Phase 0 findings](../docs/findings-phase0.md).
+section 13. The validated matrix - GCC 68000 on `vamos` and both FS-UAE media,
+GCC 68020 build-only, and vbcc on `vamos` - is recorded in
+[the Phase 0 findings](../docs/findings-phase0.md). No float code was exercised,
+so the float ABI legs remain unverified.
 
 ## 9. Diagnostics in this appendix
 

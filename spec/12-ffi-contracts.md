@@ -38,7 +38,7 @@ including the ordinary parameter modes. An owned resource is declared once,
 where it lives, with `handle T freedBy F;`.
 
 ```ebnf
-ffi_block   = "ffi" , identifier , "{" , { ffi_decl } , "}" ;
+ffi_block   = [ "export" ] , "ffi" , identifier , "{" , { ffi_decl } , "}" ;
 ffi_decl    = "func" , identifier , "(" , [ param_list ] , ")" , ":" , return_type , ";" ;
 handle_decl = [ "export" ] , "handle" , identifier , "freedBy" , qualified_name , ";" ;
 ```

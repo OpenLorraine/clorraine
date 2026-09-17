@@ -216,7 +216,7 @@ through the cleanup ladder.
 | P3 | Moves lower to copy + zero; partial moves zero the field |
 | P4 | Zero = empty layout guarantee (O7) |
 | P5 | `freedBy` drops emit `Deleter(value)` calls, null-safe, in the ladder |
-| P6 | `String` layout: one AllocVec block `[len][cap][bytes][NUL]`; `FreeVec` deleter. `str` is a value struct (pointer + length) |
+| P6 | `String` layout: one AllocVec block `[len][cap][bytes][NUL]`; `FreeString` deleter. `str` is a value struct (pointer + length) |
 | P7 | Lambdas: lifted `static` functions; capture-less = plain function pointers; capturing = two-word callable (function + stack env). Trampolines for C hooks arrive in v1.1 |
 | P8 | Interpolation desugars to string-builder/`toText` calls |
 | P9 | Module init: generated `cl_init_<module>` functions in dependency order; a generated entry stub runs them before the user's `main` |

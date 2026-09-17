@@ -58,7 +58,7 @@
 | E10030 | Loan outlives the owner's scope | `borrow of '{name}' does not live long enough` | finish the use before the owner's scope ends |
 | E10031 | Mutation while a shared loan is live | `cannot modify '{name}' while it is shared-borrowed` | end the shared borrow first |
 | E10032 | Conflicting loans at one point (second loan, or exclusive vs any) | `'{name}' is already borrowed` | end the first borrow first |
-| E10033 | Loan leaves its origin (stored in a field or global, returned from a local) | `borrow of '{name}' escapes its scope` | derive the view from a parameter or take ownership |
+| E10033 | Loan stored in a field or global | `borrow of '{name}' escapes its scope` | derive the view from a parameter or take ownership |
 | E10034 | Borrowed parameter released or stored by the callee | `cannot release or store borrowed parameter '{name}'` | declare the parameter `take` or by value |
 | E10035 | View returned from a local owner | `cannot return a view of local '{name}'` | return an owned value or a view of a parameter |
 | E10036 | View return does not derive from exactly one lend parameter | `view return does not derive from exactly one parameter` | make exactly one parameter a view or handle lend |
@@ -82,7 +82,7 @@
 
 | Code | Trigger | First line (after the code) | Help |
 |---|---|---|---|
-| E10200 | Implicit conversion that the language does not allow | `cannot convert '{from}' to '{to}' implicitly` | use an explicit cast `T(expr)` |
+| E10200 | Implicit conversion the language does not allow (including a nullable module initializer) | `cannot convert '{from}' to '{to}' implicitly` | use an explicit cast `T(expr)` |
 | E10201 | Cast that is not allowed (view, pointer, or aggregate mismatch) | `cannot cast '{from}' to '{to}'` | convert through a supported value or `raw` in `unsafe` |
 | E10202 | Literal does not fit the context type | `literal does not fit '{type}'` | use a wider type or a hex/binary form |
 | E10203 | Struct literal field problems (missing, unknown, or duplicate) | `struct literal for '{type}' does not match its fields` | list every field exactly once, by name |
@@ -150,7 +150,7 @@
 
 | Code | Trigger | First line (after the code) | Help |
 |---|---|---|---|
-| E11100 | Initializer dependency cycle | `initializer cycle between modules: {modules}` | break the cycle with `const` values or an explicit `init()` |
+| E11100 | Initializer dependency cycle (between modules or same-module globals) | `initializer cycle between modules: {modules}` | break the cycle with `const` values or an explicit `init()` |
 | E11101 | Duplicate declaration in a merged module | `duplicate declaration of '{name}' in module '{module}'` | remove one declaration; declaration merging forbids duplicates |
 | E11102 | Import name not found or not exported | `'{name}' is not exported from module '{module}'` | check the name or add `export` |
 | E11103 | Import name bound twice | `duplicate import of '{name}'` | use `as` to bind a new name |
@@ -221,7 +221,7 @@ semantic stage reports the code.
 * Codes are stable forever (N2). Retiring a code leaves the number reserved;
   templates may be refined while a chapter is `draft`, and the first line
   format (`error CODE: message` / `warning CODE: message`) is fixed (N4).
-* Golden compile-fail tests (Ch 16 section 6) assert the code and the first
+* Golden compile-fail tests (Ch 16 section 9) assert the code and the first
   line; positive tests assert the absence of diagnostics.
 * `check.sh` cross-validates codes referenced in chapters and in tests
   against this registry (N7).

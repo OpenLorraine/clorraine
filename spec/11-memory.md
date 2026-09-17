@@ -53,7 +53,10 @@ export handle MsgPort freedBy DeleteMsgPort;
 
 // Core handles get their own FFI deleters; C-facing types keep the C
 // symbols `Memory`/`FreeVec` (T2a).
-func FreeString(take s: String): void;
+ffi stdmem {
+    func FreeString(take s: String): void;
+    func FreeBuffer(take b: Buffer): void;
+}
 ```
 
 `freedBy F` names an `ffi`-declared function that takes `take T` and returns
@@ -119,7 +122,7 @@ func scratch(): void {
 ```
 
 The threshold is a profile fact with a v1 default (W10004a), verified across
-the build matrix (P14; [Ch 17](17-codegen.md) section 10).
+the build matrix (P14; [Ch 17](17-codegen.md) section 13).
 
 ## 4. Failure handling
 
@@ -140,7 +143,7 @@ A pool or arena releases many allocations at once. That is useful, but a bulk
 release invalidates every outstanding view into the pool, and v1 has no region
 model to check those uses. Pools and arenas are therefore deferred to v2
 (E90004), and a later region model must reject a use that outlives its pool.
-[Ch 12](12-ffi-contracts.md) section 7 records the deferral.
+[Ch 12](12-ffi-contracts.md) section 8 records the deferral.
 
 ## 6. Standard-library scope
 
@@ -188,7 +191,7 @@ target ABI supplies the rest. `sizeof` and `offsetof` return `usize`
 The runtime is deliberately small and profile-specific: acquire and drop
 helpers, allocator hooks, and `panic`. It contains no ownership logic; it only
 names the release function and the failure sentinel for each handle type. The
-shim is described in [Ch 17](17-codegen.md) section 6.
+shim is described in [Ch 17](17-codegen.md) section 12.
 
 ## 9. Diagnostics
 
@@ -197,7 +200,7 @@ shim is described in [Ch 17](17-codegen.md) section 6.
 | E10010 | a nullable allocation result is used before a null check |
 | E10021 | a local is read before it is assigned on every path |
 | E10037 | a global is not duplicable |
-| E11100 | an initializer dependency cycle between modules |
+| E11100 | an initializer dependency cycle (between modules or same-module globals) |
 | E11106 | a module-level `let` uses a non-duplicable initializer |
 | E11210 | runtime fault: integer division by zero (shared abort path) |
 | E11211 | runtime fault: index out of range |

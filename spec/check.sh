@@ -11,7 +11,8 @@ cd "$(dirname "$0")"
 errors=0
 files=0
 
-for f in *.md; do
+for f in *.md tests/compile-fail/*.md; do
+    [ -e "${f}" ] || continue
     files=$((files + 1))
 
     first="$(head -1 "$f")"
@@ -23,18 +24,24 @@ for f in *.md; do
             ;;
     esac
 
-    if ! grep -q '^> \*\*Status:\*\*' "$f"; then
-        echo "ERROR: ${f}: missing '> **Status:**' declaration"
-        errors=$((errors + 1))
-    fi
+    case "${f}" in
+        tests/compile-fail/*) ;;   # suite notes are not chapters, so no Status line
+        *)
+            if ! grep -q '^> \*\*Status:\*\*' "$f"; then
+                echo "ERROR: ${f}: missing '> **Status:**' declaration"
+                errors=$((errors + 1))
+            fi
+            ;;
+    esac
 
+    fdir="$(dirname "${f}")"
     while IFS= read -r target; do
         case "${target}" in
             http://*|https://*|mailto:*|"") continue ;;
         esac
         target="${target%%#*}"
         [ -z "${target}" ] && continue
-        if [ ! -e "${target}" ]; then
+        if [ ! -e "${fdir}/${target}" ]; then
             echo "ERROR: ${f}: broken relative link '${target}'"
             errors=$((errors + 1))
         fi

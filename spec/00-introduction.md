@@ -52,7 +52,7 @@ Every input either compiles to a defined result or is a compile-time error.
 Arithmetic wraps, shifts are defined and masked, division by zero is a
 deterministic fault, and the code generator never relies on C undefined
 behavior (no signed overflow, no strict-aliasing violations, no unaligned
-access). [Ch 17](17-codegen.md) section 9 lists the commitments.
+access). [Ch 17](17-codegen.md) section 14 lists the commitments.
 
 ### A4 - Explicit over implicit
 

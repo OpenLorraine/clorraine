@@ -30,7 +30,7 @@ No language construct may depend on a compiler extension. The compile matrix
 ## 2. Typed control-flow IR
 
 The checker and the emitter share one typed control-flow IR. It is also the
-surface the borrow checker consumes ([Ch 16](16-borrow-rules.md) section 3), so
+surface the borrow checker consumes ([Ch 16](16-borrow-rules.md) section 6), so
 the two passes cannot disagree about ownership. The statements are:
 
 | Statement | Meaning |
@@ -314,17 +314,19 @@ Exact command lines (the input object is the generated single `.c` file):
 | GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -O2 -o demo demo.c -lamiga` |
 | vbcc release | `vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga` |
 
-Float legs (P15), added to the matrix:
+Float legs (P15) are **planned but not yet verified**: Phase 0 exercised no
+float code, so the soft-float ABIs and the FPU leg remain unproven.
 
-| Leg | Setting | Verifies |
+| Leg | Setting | Status |
 |---|---|---|
-| GCC soft-float 68000 | the GCC lines above (no FPU option) | `float`/`double` argument passing and returns |
-| vbcc soft-float 68000 | the vbcc line above | the same soft-float ABI as GCC |
-| GCC 68881 FPU (opt-in) | add `-m68881` | the FPU leg matches the soft-float legs bit-for-bit for the tested operations |
+| GCC soft-float 68000 | the GCC lines above (no FPU option) | planned; not yet verified |
+| vbcc soft-float 68000 | the vbcc line above | planned; not yet verified |
+| GCC 68881 FPU (opt-in) | add `-m68881` | planned; not yet verified |
 
 `-lamiga` is the stub archive, not `-ldos`; vbcc needs the NDK include path.
 `-m68020` and `-m68881` are opt-in; `-m68000` stays the default. Phase 0 verified
-the GCC 68000/68020 and vbcc legs on `vamos` and both FS-UAE media
+the hosted matrix precisely: GCC 68000 on `vamos` and both FS-UAE media; GCC
+68020 build-only; and vbcc on `vamos` only
 ([../docs/findings-phase0.md](../docs/findings-phase0.md)).
 
 ## 14. No-undefined-behavior commitments

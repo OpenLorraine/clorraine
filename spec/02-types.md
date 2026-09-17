@@ -286,6 +286,10 @@ Rules:
 | TY-14 | A cast the language does not support is an error | E10201 |
 | TY-15 | A literal must fit its context type | E10202 |
 
+A `raw` pointer converts to an integer only through an explicit value cast
+(`usize(p)`), which is allowed outside `unsafe` and reads the address as a
+number without dereferencing (T6a).
+
 ```clorraine
 let a: u8 = 200;
 let b: u16 = a;        // implicit widening, same signedness

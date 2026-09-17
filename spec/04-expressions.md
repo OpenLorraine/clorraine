@@ -254,7 +254,7 @@ let braces = $"literal {{ and }}";         // str: no placeholders
 Float placeholders print with a fixed precision of six significant digits in
 v1 (S2a); precision control is deferred (S6). A template
 with placeholders allocates one `String`; a placeholder-free template is a
-static `str` and allocates nothing (S5).
+`str` and allocates nothing (S5).
 
 ## 13. Literal typing
 
@@ -283,6 +283,7 @@ Casts use exactly one form, `T(expr)` (B8). There are no C-style casts.
 | Scalar cast | `u32(x)`, `i16(y)`, `f64(n)` | Numeric conversion; integer-to-float and float-to-integer are always explicit |
 | Float-to-integer | `i32(f)` | Out-of-range value is the runtime fault E11212 |
 | `raw` value cast | `raw T(expr)` | Integer-to-`raw` is allowed outside `unsafe` |
+| `raw`-to-integer value cast | `usize(p)` | Reads the address as a number; allowed outside `unsafe` (T6a) |
 | `raw` pointer cast | `raw T(p)` | Pointer-to-pointer; requires `unsafe`, E10603 |
 | Enum cast | `Direction(1)` | Parses as a call, resolved semantically into an enum cast |
 | Handle cast | `File(0)` | Parses as a call, resolved semantically into a handle cast |

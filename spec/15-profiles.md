@@ -61,7 +61,7 @@ value:
 
 | Profile fact | `hosted-amiga` | `host` | `freestanding` |
 |---|---|---|---|
-| Float ABI | soft-float; the GCC and vbcc ABIs are a verified matrix leg (P15) | native IEEE `float`/`double` | profile-defined |
+| Float ABI | soft-float; the GCC and vbcc ABIs are a planned matrix leg, not yet verified (P15) | native IEEE `float`/`double` | profile-defined |
 | FPU build leg | opt-in `-m68881` | not applicable | profile-defined |
 | Stack-frame warning (W10004) | 1024 bytes (v1 default, W10004a) | 16384 bytes (v1 default, W10004a) | profile-defined |
 
@@ -73,7 +73,7 @@ threshold is a warning, not an error, so a large frame is a deliberate choice.
 ## 3. Build matrix
 
 P14 fixes the build matrix. The exact commands are normative in
-[Ch 17](17-codegen.md) section 10; the table below is the map.
+[Ch 17](17-codegen.md) section 13; the table below is the map.
 
 | Element | Value |
 |---|---|
@@ -83,9 +83,10 @@ P14 fixes the build matrix. The exact commands are normative in
 | FPU | opt-in `-m68881` (P15) |
 | Runners | `vamos` with GCC and vbcc; FS-UAE directory drive and ADF |
 
-Phase 0 verified the hosted legs with identical behavior
-([findings](../docs/findings-phase0.md)): GCC 68000, GCC 68020 (build only),
-vbcc, FS-UAE directory drive, and FS-UAE ADF.
+Phase 0 verified the hosted matrix
+([findings](../docs/findings-phase0.md)): GCC 68000 on `vamos` and both FS-UAE
+media, GCC 68020 build-only, and vbcc on `vamos` only. No float code was
+exercised, so the float ABI legs remain planned and unverified (P15).
 
 ## 4. Cross-profile testing
 

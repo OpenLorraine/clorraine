@@ -1,7 +1,7 @@
 # Compile-Fail Suite
 
 One `.clor` source per diagnostic code registered in
-[Ch 14](../14-diagnostics.md). The compiler does not exist yet; these files
+[Ch 14](../../14-diagnostics.md). The compiler does not exist yet; these files
 are the golden expectations for the first semantic stages of the Phase 2
 compiler.
 
@@ -25,9 +25,9 @@ compiler.
 
 ## Coverage
 
-[`check.sh`](../check.sh) enforces:
+[`check.sh`](../../check.sh) enforces:
 
-* every annotation code exists in the [registry](../14-diagnostics.md);
+* every annotation code exists in the [registry](../../14-diagnostics.md);
 * every registered compile-time code has at least one test.
 
 Excluded from the per-code rule: `E11210`-`E11213` (runtime faults, which are

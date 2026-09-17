@@ -68,9 +68,12 @@ guarantees lost with their substitutes.
 ## Validation
 
 ```sh
-./check.sh        # headers, status lines, relative links
+./check.sh        # headers, status lines, links, diagnostics, compile-fail coverage
 ```
 
 The specification is a non-code artifact; the validation command above is its
-test. Phase 1 review happens through the `preflight` workflow before the
-first compiler milestone.
+test. Besides headers, status lines, and relative links, it cross-validates
+every diagnostic code used in a chapter or test against the registry (N7) and
+enforces compile-fail coverage for every registered compile-time code. The
+Phase E preflight gate runs the `preflight` workflow before the first compiler
+milestone.
