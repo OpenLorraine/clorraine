@@ -16,7 +16,8 @@ Rules for reading the sketches:
 
 * The code is best-effort against the decision ledger. Forms the ledger does
   not fix yet are marked with `// gap:` in the sketch and collected in the
-  grammar freeze checklist in the findings document.
+  grammar freeze checklist, now resolved in
+  [`../spec/grammar-deltas.md`](../spec/grammar-deltas.md) section 8.
 * Every friction entry cites the ledger section it comes from, so the review
   can trace a pain point back to a decision.
 * Severity: **Blocker** (the workload cannot be written reasonably),

@@ -1,8 +1,9 @@
 # The Clorraine Language Specification
 
-> **Status:** working draft (v0.2 — Phase A decisions locked)
+> **Status:** working draft (v0.3 — Phase B anchors: the grammar freeze)
 > **Scope:** hosted AmigaOS profile first; freestanding (LorraineOS) designed-for, implemented later
 > **Decision ledger:** [decisions.md](decisions.md) — accepted decisions; where a chapter disagrees, the ledger wins until the chapter is rewritten
+> **Grammar freeze:** [grammar.ebnf.md](grammar.ebnf.md) — the master EBNF; every delta from Blend65 is in [grammar-deltas.md](grammar-deltas.md); the Rust semantics pin is [lineage.md](lineage.md)
 
 Clorraine is the systems language of [LorraineOS](../README.md): a safe, C-like
 language with ownership and borrow checking that compiles to plain C. It is
@@ -33,11 +34,18 @@ of the 6502 target:
 | Proto-borrow/provenance model | Replaced by typed owned/shared/exclusive modes with a real borrow checker |
 | 6502 codegen tables | Replaced by a C99 codegen contract |
 
+The full accounting is [grammar-deltas.md](grammar-deltas.md): removed
+constructs, restrictions lifted by the C backend, carried constructs, and the
+guarantees lost with their substitutes.
+
 ## Chapter index
 
 | Ch | Title | Status |
 |---|---|---|
 | — | [Decision ledger (Phase A)](decisions.md) | accepted |
+| — | [Semantic lineage (Rust pin)](lineage.md) | draft |
+| — | [Master EBNF grammar (freeze)](grammar.ebnf.md) | draft |
+| — | [Grammar deltas from Blend65](grammar-deltas.md) | draft |
 | 00 | [Introduction and axioms](00-introduction.md) | draft |
 | 01 | [Lexical structure](01-lexical.md) | planned |
 | 02 | [Type system](02-types.md) | planned |

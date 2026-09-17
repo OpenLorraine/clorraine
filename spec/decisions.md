@@ -1,6 +1,6 @@
 # Clorraine — Decision Ledger
 
-> **Status:** accepted (Phase A complete; amended by the pre-Phase-B ergonomics review) — supersedes any conflicting text in the draft chapters
+> **Status:** accepted (Phase A complete; amended by the pre-Phase-B ergonomics review and the Phase B grammar freezes) — supersedes any conflicting text in the draft chapters
 > **Scope:** every language-surface and semantics decision made before the grammar freeze
 
 This file is the source of truth for Phase A decisions. Chapters are rewritten
@@ -262,6 +262,7 @@ through the cleanup ladder.
 | Blend65 no-recursion (SFA/6502) | Recursion unrestricted (C activation stack) |
 | `T{}` zero literals for handles (review draft) | Rejected; `null` is the only empty state |
 | `for (e in xs)` binding unspecified (draft) | Copy by default; `for (borrow e in xs)` writes through with per-element loans |
+| Ch 04 draft: assignment is a statement, not an expression | C expression grammar with a `void` result (GF2) |
 
 ## 18. Standard library scope (v1)
 
@@ -280,3 +281,16 @@ The library is where most ergonomics live. v1 ships, in priority order:
 Standard-library APIs are written dot-call style (F8). v1.1 candidate:
 built-in `Box<T>` with compiler-generated drop glue, which needs the X1
 amendment to allow ordinary Clorraine `freedBy` functions.
+
+## 19. Phase B grammar freezes
+
+The grammar harvest ([grammar.ebnf.md](grammar.ebnf.md)) froze four surface
+questions the ledger left open. The complete freeze resolution table lives in
+[grammar-deltas.md](grammar-deltas.md) section 8.
+
+| Ref | Decision |
+|---|---|
+| GF1 | Generic explicit type arguments use angle brackets in type and expression positions; expression position uses a bounded speculative parse: `<` is comparison unless a type list closes immediately before `(` or `{` |
+| GF2 | Assignment keeps the C expression grammar, but its result is `void`; chaining and value use are compile errors |
+| GF3 | No integer literal suffixes; literals are context-typed (default `i32`; hex and binary may use the full unsigned width) |
+| GF4 | `unsafe` is a prefix expression operator (`unsafe p.next`) and a statement block (`unsafe { ... }`); there is no block-expression value |

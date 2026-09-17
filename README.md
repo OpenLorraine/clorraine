@@ -22,7 +22,7 @@ specification and compiler come next.
 | Amiga SDK image (GCC 16.2, binutils 2.46, gdb, libnix, NDK 3.2, vbcc/vasm/vlink) | Ready |
 | FS-UAE + `vamos` run/debug loop (`make run`, `make run-vamos`, ADF fallback) | Ready |
 | Phase 0 hosted skeleton (ownership contracts, cleanup shapes, run matrix) | Complete |
-| Language specification v0.2 — Phase A decisions locked ([ledger](spec/decisions.md)); grammar harvest next | In progress |
+| Language specification v0.3 — Phase A decisions locked ([ledger](spec/decisions.md)) and the Phase B grammar freeze ([grammar](spec/grammar.ebnf.md), [deltas](spec/grammar-deltas.md)); chapters next | In progress |
 | Compiler MVP (C-like → C with ownership checks) | After the spec |
 | LorraineOS bring-up (freestanding profile, m68k) | With/after the MVP |
 | ARM64 port | Later |
@@ -31,6 +31,8 @@ specification and compiler come next.
 
 ```
 docker/    The Clorraine SDK: pinned, from-source Amiga toolchain in Docker
+spec/      The language specification: decision ledger, grammar freeze, chapters
+docs/      Findings and review records (Phase 0 toolchain, pre-Phase-B ergonomics)
 ```
 
 ## Quick start
