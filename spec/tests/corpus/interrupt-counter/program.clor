@@ -1,0 +1,38 @@
+// Registers a VBlank handler that counts ticks, waits for a bounded number of
+// them, and reports the result. The shared counter is a module-level volatile
+// value; the handler is a capture-less function that stays allocation-free.
+module tests.corpus.InterruptCounter;
+
+import { HandlerToken, addHandler, removeHandler } from std.amiga.interrupt;
+import { delayTicks } from std.amiga.dos;
+import { println } from std.io;
+
+volatile let ticks: u32 = 0;
+
+func onTick(): void {
+    ticks = ticks + 1;
+}
+
+func main(): i32 {
+    let token: HandlerToken = addHandler(onTick);
+    println("interrupt-counter: registered");
+
+    let i: u32 = 0;
+    while (ticks < 50 && i < 1000) {
+        delayTicks(1);
+        i = i + 1;
+    }
+
+    let rc: i32 = 0;
+    if (ticks >= 50) {
+        println("interrupt-counter: ticks>=50 ok");
+    } else {
+        println("interrupt-counter: ticks>=50 failed");
+        rc = 1;
+    }
+
+    removeHandler(token);
+    println("interrupt-counter: removed");
+    println("interrupt-counter: ok");
+    return rc;
+}

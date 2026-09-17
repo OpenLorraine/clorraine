@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 00:19
-> **Progress**: 1/84 tasks (1%)
+> **Last Updated**: 2026-09-18 00:20
+> **Progress**: 2/84 tasks (2%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -70,7 +70,7 @@ bounded by the task-size criteria in the quality checklist)
 any compiler code exists.
 
 - [x] 0.1.1 Write `spec/tests/corpus/file-copier/program.clor` and `expected-output.txt` per 03-01 §1 ✅ (completed: 2026-09-18 00:19)
-- [ ] 0.1.2 Write `spec/tests/corpus/interrupt-counter/program.clor` and `expected-output.txt` per 03-01 §2
+- [x] 0.1.2 Write `spec/tests/corpus/interrupt-counter/program.clor` and `expected-output.txt` per 03-01 §2 ✅ (completed: 2026-09-18 00:20)
 - [ ] 0.1.3 Write `spec/tests/corpus/string-parser/program.clor` and `expected-output.txt` per 03-01 §3
 - [ ] 0.1.4 Write `spec/tests/corpus/buffer-container/program.clor` and `expected-output.txt` per 03-01 §4
 - [ ] 0.1.5 Write the four `README.md` rule-coverage, warning-audit, and deliberate-avoidance records per 03-01

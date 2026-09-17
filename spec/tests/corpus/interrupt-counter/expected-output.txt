@@ -1,0 +1,4 @@
+interrupt-counter: registered
+interrupt-counter: ticks>=50 ok
+interrupt-counter: removed
+interrupt-counter: ok
