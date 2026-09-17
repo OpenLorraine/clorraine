@@ -1,0 +1,135 @@
+# Ambiguity Register: Clorraine Compiler MVP
+
+> **Status**: ✅ GATE PASSED — all 53 items resolved (AR-1..AR-53)
+> **Last Updated**: 2026-09-18 00:14
+> **CodeOps Artifact Schema**: 1
+
+Scope of this gate: the implementation plan for the Clorraine compiler MVP
+(`plans/clorraine-compiler-mvp/`). Planning target: a Rust compiler that turns
+the corpus subset of the frozen specification (`spec/`, v0.4, Phase E passed)
+into the single translation unit defined by Ch 17, plus its validation corpus,
+its Phase 2 verification spikes, and its test suites.
+
+## Resolution key
+
+- Reference docs: `decisions.md` = `spec/decisions.md`, `Ch NN` = `spec/NN-*.md`,
+  `preflight` = `spec/preflight-report.md`, `findings1` = `docs/findings-phase1.md`,
+  `findings0` = `docs/findings-phase0.md`.
+- "User accepted recommendation" means the recommendation as written in this
+  register was accepted in bulk; the decision text below is the accepted option.
+
+## Batch 1 — planning parameters (user answers, 2026-09-17)
+
+| # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
+|---|----------|-----------------|-------------------|---------------|--------|
+| AR-1 | Scope | When to execute this plan | Plan now / plan+execute | Plan now; execution later via `exec-plan clorraine-compiler-mvp --auto-commit` | ✅ Resolved — user chose plan-only |
+| AR-2 | Scope | MVP acceptance baseline | Corpus subset / corpus+full compile-fail / full v1 | Corpus-driven subset: 4 programs + 6 run faults + spikes; other features answer E90000 | ✅ Resolved — user chose corpus-driven subset |
+| AR-3 | Scope | Corpus role | Executable golden / design-only / +FS-UAE all | Executable golden programs, hand-checked now, compiled and diffed under host and hosted-amiga | ✅ Resolved — user chose executable golden |
+| AR-4 | Behavioral | Interrupt-counter execution | FS-UAE run + build fallback / run everywhere / compile-only | FS-UAE run; build-only fallback where interrupts are unsupported | ✅ Resolved — user chose FS-UAE run with fallback |
+| AR-5 | Technical | Profiles implemented by the MVP | host+hosted-amiga / hosted-amiga only / host only | Both `host` (fast tests) and `hosted-amiga` (GCC, vbcc, vamos) | ✅ Resolved — user chose both profiles |
+| AR-6 | Naming | Compiler location, binary, CLI role | `compiler/` crate, `clorc`, emits C / driver / other name | `compiler/` crate, binary `clorc`, emits C only; scripts drive GCC/vbcc | ✅ Resolved — user chose crate + clorc |
+| AR-7 | Technical | Verify command | Layered make targets / separate commands / other | Layered: fast `cargo` tests in the container; full `make verify` umbrella whose targets the plan defines | ✅ Resolved — user chose layered make targets |
+| AR-8 | Naming | Spike code and findings location | `spikes/` + `docs/findings-phase2.md` / scratch / examples | Committed `spikes/` sources; findings in `docs/findings-phase2.md` | ✅ Resolved — user chose spikes/ + findings doc |
+| AR-9 | Scope | Roadmap creation | Yes / no | Create `plans/00-roadmap.md` | ✅ Resolved — user chose to create the roadmap |
+
+## Batch 2 — feature scope and architecture (user accepted recommendations, 2026-09-18)
+
+| # | Category | Ambiguity / Gap | Accepted resolution | Status |
+|---|----------|-----------------|---------------------|--------|
+| AR-10 | Scope | Features deliberately staged out of the MVP and their skipped golden tests | Stage out data inclusion (`embed`), lambda semantics, callable bounds, `stores`/`transfers`, pools, user contract tables, `freestanding`, `comptime`, nested templates. The harness skips `tests/staged/*`, every `// stage:` file (E10306, E10401-E10404, E90002), and E10213/E10214, E10303, E10304 by explicit exclusion list; skipped tests are reported by name and reason | ✅ Resolved — user accepted recommendation |
+| AR-11 | Scope | Float surface for the two accepted E11212 run cases | `f32`/`f64` types, literals, arithmetic, comparisons, int↔float casts with the E11212 guard, and `text(f)` at six significant digits (S2a) | ✅ Resolved — user accepted recommendation |
+| AR-12 | Scope | Intrinsic set | `sizeof`, `offsetof`, `len`, `panic`, `assert`, the six volatile intrinsics in; `embed` out (E90000) | ✅ Resolved — user accepted recommendation |
+| AR-13 | Scope | Generics subset needed by `Array<T>` | Type parameters on functions and structs, monomorphization with dedupe, explicit arguments plus arguments-only inference, export ban, recursion cap (E10300/E10301/E10302/E10305); no callable bounds | ✅ Resolved — user accepted recommendation |
+| AR-14 | Behavioral | Lambda reporting (frozen syntax, staged semantics; L4) | Parse the full lambda syntax; a lambda literal reports E90000 `'lambda' is not yet supported`; a capture list reports E90002; stage-annotated tests are skipped | ✅ Resolved — user accepted recommendation |
+| AR-15 | Scope | Standard-library slice shipped by the MVP | `std.mem` (Buffer, Array<T>, Span, alloc), `std.text`/`std.mem` String helpers, `std.fmt` (text, toHex, toDecimal, padLeft, padRight), `std.io` (print, println), `std.amiga.interrupt` (dispatcher), `Status` — expanded by AR-47 | ✅ Resolved — user accepted recommendation |
+| AR-16 | Interface | `std.io` output signatures (appendix marks output as planned) | `print(s: str): void`, `println(s: str): void` | ✅ Resolved — user accepted recommendation |
+| AR-17 | Scope | Per-chip MMIO wrappers (`std.amiga.custom`) | Excluded from the MVP; no corpus program needs them | ✅ Resolved — user accepted recommendation |
+| AR-18 | Scope | `defer`, enums, `static str` fields, `///` doc comments | All included; `///` is parsed and ignored | ✅ Resolved — user accepted recommendation |
+| AR-19 | Technical | Runtime shim and stdlib architecture | Stdlib in Clorraine under top-level `stdlib/`, embedded in the binary and compiled with each program; per-profile C shim (`runtime/host.c`, `runtime/hosted-amiga.c`) embedded and prepended to the single TU, exposing the profile C API the stdlib binds through `ffi` | ✅ Resolved — user accepted recommendation |
+| AR-20 | Technical | Rust project shape and dependency policy | Root `Cargo.toml` workspace + `compiler/` crate (lib + `clorc` bin), edition 2021, std-only, zero external crates | ✅ Resolved — user accepted recommendation |
+| AR-21 | Interface | `clorc` CLI surface | `clorc --profile <host\|hosted-amiga> [--deny-warnings] [--max-errors=N] -o OUT.c FILE...`; profile required; exit 1 on any error; `--version` | ✅ Resolved — user accepted recommendation |
+| AR-22 | UX | Diagnostic rendering | stderr; first line exactly `error CODE: message` / `warning CODE: message` (N4); following lines `  --> file:line:col` and optional `  help: ...` | ✅ Resolved — user accepted recommendation |
+| AR-23 | Technical | Compile-fail message assertion | Assert the code and wildcard-match the registered Ch 14 template (`{...}` matches any text); fall back to code-only for unparseable rows | ✅ Resolved — user accepted recommendation |
+| AR-24 | Technical (complexity escalation) | Test-harness support surface | Use the smaller solution: std-only Rust integration tests in `compiler/tests/` spawning the built `clorc` binary (`CARGO_BIN_EXE_clorc`), golden files read from `spec/tests/`; cross-toolchain legs are thin Make targets delegating to `docker/Makefile`; no separate harness crate. Direct user choice after the visible packet; independent challenger verdict: Unnecessary for the larger harness crate | ✅ Resolved — user chose the smaller solution A |
+| AR-25 | Technical | Module loading and source discovery (MOD-2) | User files given on the CLI; imports resolve against the loaded set plus the embedded stdlib table; module identity comes from `module` declarations; no directory scanning | ✅ Resolved — user accepted recommendation |
+| AR-26 | Naming | Rust test-file naming vs `[feature].spec.test.[ext]` | `compiler/tests/<feature>_spec_test.rs` and `<feature>_impl_test.rs`, documented in AGENTS.md as the Rust spelling of the standard | ✅ Resolved — user accepted recommendation |
+| AR-27 | Technical | Profile facts storage | Compiled-in Rust profile tables for `host` and `hosted-amiga` (Ch 15 §6 first position) | ✅ Resolved — user accepted recommendation |
+| AR-28 | Naming | Corpus location, layout, program names | `spec/tests/corpus/{file-copier,interrupt-counter,string-parser,buffer-container}/` each with `program.clor`, `expected-output.txt`, `README.md` | ✅ Resolved — user accepted recommendation |
+| AR-29 | Behavioral | Corpus program behavior contract | Deterministic stdout, no CLI arguments (M8), relative file paths only, self-contained fixtures | ✅ Resolved — user accepted recommendation |
+| AR-30 | Behavioral | Interrupt-counter mechanism and profile behavior | VBlank handler through `std.amiga.interrupt`; `volatile let ticks: u32`; deterministic output shape; `--profile host` reports E11200 | ✅ Resolved — user accepted recommendation |
+| AR-31 | Process | Corpus and spike hand-check gate | User reviews each corpus program's rule-coverage table and the spike findings before Phase 2 starts; spec friction pauses the run and needs an explicit user ruling (lineage §10: amend the rule, not the model) | ✅ Resolved — user accepted recommendation |
+| AR-32 | Behavioral | Run-fault execution legs | All six cases compile and execute under `host` in `cargo test`; the same cases also execute under `hosted-amiga` via vamos in `make verify` | ✅ Resolved — user accepted recommendation |
+| AR-33 | Behavioral | Compile-fail execution profile and annotations | Default `host`; honor `// profile:` and `// cli:`; warnings assert the `warning CODE:` first line | ✅ Resolved — user accepted recommendation |
+| AR-34 | Behavioral | Warning escalation case (PF-020) | Add `spec/tests/compile-fail/W10000_deny_warnings.clor` with `// cli: --deny-warnings`, asserting a nonzero exit and the `warning W10000:` first line; document the semantics in the suite README | ✅ Resolved — user accepted recommendation |
+| AR-35 | Behavioral | Output determinism proof (P13) | A spec test compiles the same input twice and requires byte-identical C; `#line` carries the logical CLI path | ✅ Resolved — user accepted recommendation |
+| AR-36 | Technical | Runtime-fault and panic output streams | Host profile prints the fault first line to stderr then `abort()`; hosted-amiga prints to stdout then exits (Ch 17 §12); `panic` prints `panic: <msg>` | ✅ Resolved — user accepted recommendation |
+| AR-37 | Technical | Host-profile C compile command | `cc -std=c99 -O0 -g -Wall -Wextra -Werror` | ✅ Resolved — user accepted recommendation |
+| AR-38 | Process | AGENTS.md | Create after the plan via the `analyze-project` skill: verify commands, layout, Rust naming map | ✅ Resolved — user accepted recommendation |
+| AR-39 | Naming | Plan folder and identifier | `plans/clorraine-compiler-mvp/` (flat layout; no RD upstream) | ✅ Resolved — user accepted recommendation |
+| AR-40 | Process | Roadmap row semantics | Seed one plan row (`clorraine-compiler-mvp`, stage `Plan Created`); no RD rows | ✅ Resolved — user accepted recommendation |
+| AR-41 | Scope | Spike acceptance evidence | Source/fixtures under `spikes/<name>/` plus a findings entry with the exact command, observed result, and the codegen rule confirmed or changed; spec changes need AR-31 approval | ✅ Resolved — user accepted recommendation |
+| AR-42 | Scope | Standard-library warning purity | The stdlib slice compiles with zero diagnostics under both profiles; a spec test enforces it | ✅ Resolved — user accepted recommendation |
+| AR-43 | Scope | Corpus compiles with zero diagnostics | Yes; the corpus harness fails on any diagnostic | ✅ Resolved — user accepted recommendation |
+| AR-44 | Technical | Compiler-internal spec-test granularity | Primary spec tests are the golden suites; per-stage unit ST cases only where a stage behavior is not covered by a golden case | ✅ Resolved — user accepted recommendation |
+| AR-45 | Process | Post-plan session hygiene | Author the document set, hand off a summary; execution stays a separate `exec-plan` run | ✅ Resolved — user accepted recommendation |
+| AR-46 | Technical | How the stdlib materializes views from owned storage (GF16/GF23) | Stdlib declares compiler-known `intrinsic func` helpers (`rawSlice<T>(p: raw T, n: usize): T[]`, `rawStr(p: raw u8, n: usize): str`) lowered by codegen to the view structs; used by Buffer/String/Span helpers | ✅ Resolved — user accepted recommendation |
+| AR-47 | Interface | Stdlib additions required by the corpus | Expand the AR-15 slice: `std.io` gains `File`, `openFile`, `createFile`, `readFile`, `writeBytes`, `MODE_OLDFILE`, `MODE_NEWFILE`; `std.amiga.dos` gains `delayTicks(ticks: u32): void` (hosted-amiga only, E11200 under host) | ✅ Resolved — user accepted recommendation |
+| AR-48 | Behavioral | Corpus temporary-file cleanup | The corpus runner deletes `corpus-in.txt`/`corpus-out.txt` after each leg; no `deleteFile` API | ✅ Resolved — user accepted recommendation |
+
+## Batch 3 — authoring-time items (user answers, 2026-09-18)
+
+Surfaced while authoring 03-05/03-07; resolved before the dependent documents
+were written (surface-during-authoring rule).
+
+| # | Category | Ambiguity / Gap | Accepted resolution | Status |
+|---|----------|-----------------|---------------------|--------|
+| AR-49 | Behavioral | `Array<T>` element drops: appendix §3 says elements drop first-to-last, but v1 has no drop glue (X2) | `Array<T>` accepts duplicable element types only; a non-duplicable instantiation is E90000. Owning-element drop glue is deferred with the v1.1 Box work | ✅ Resolved — user accepted recommendation |
+| AR-50 | Technical | `xs.len()` on `Array<T>` (appendix §3 names the `len` intrinsic, which cannot know stdlib layouts) | The compiler-known `len` intrinsic lowers on `Array<T>` to its documented `count: usize` field; views/fixed arrays keep their specified behavior | ✅ Resolved — user accepted recommendation |
+| AR-51 | Behavioral | How `slice` reports out-of-range bounds (appendix §8/IX-1 say E11211) | `slice` is a compiler-known `intrinsic func`; codegen emits the E11211 guard. `rawSlice`/`rawStr` remain unsafe unchecked primitives (AR-46) | ✅ Resolved — user accepted recommendation |
+| AR-52 | Naming | The appendix uses both `module Std.Mem;` and `import ... from std.mem;`; identifiers are case-sensitive | Stdlib modules declare lowercase dotted names (`module std.mem;`), matching every import example. The appendix's `Std.Mem` line is a known editorial defect; correcting the spec text needs a separate ruling (AR-31) | ✅ Resolved — user accepted recommendation |
+| AR-53 | Interface | Appendix §1 says allocation returns `T?`; appendix §5/§9 list builders as returning plain `String` | Low-level allocators return nullable (`bufferNew: Buffer?`, `bufferFrom: Buffer?`); convenience builders (`text`, `toHex`, `toDecimal`, `padLeft`, `padRight`, `stringOf`, `clone`) return `String` and panic on OOM (E1). Template builders panic on OOM inside the shim | ✅ Resolved — user accepted recommendation |
+
+## Complexity Escalation packet (AR-24)
+
+```text
+Original goal: run the four golden test suites (compile-fail, run-fault, corpus,
+  cross-toolchain) for the compiler MVP on every verify, reproducibly and offline.
+Extra system or support code: a dedicated harness/xtask crate or binary with
+  subcommands, golden management, configurability, and CI-driven orchestration.
+Why it may be needed: centralized orchestration and reporting for four suites across two
+  profiles and three runners (host cc, vamos, FS-UAE) could be more maintainable.
+Evidence: no CI and no Rust test infrastructure exist yet; the repo precedent is
+  spec/check.sh (bash) plus Makefiles; every golden file declares its expectation on line 1.
+Smallest solution that still works: std-only Rust integration tests in compiler/tests/
+  spawning the built clorc binary, discovering golden files from ../spec/tests/, with thin
+  Make targets delegating cross-toolchain legs to docker/Makefile and docker/scripts/run.sh.
+Extra cost: a second build/orchestration surface, duplicated orchestration, and
+  configuration no current requirement uses.
+Independent verdict: Unnecessary (challenger), with the refinement that suite tests must
+  spawn the CLI, not call the library in-process, so the spec-defined CLI output stays the
+  oracle.
+Direct user decision: chose the smaller solution A (2026-09-18).
+```
+
+## Resolution notes
+
+- AR-1..AR-9: resolved by the user's answers on 2026-09-17.
+- AR-10..AR-23, AR-25..AR-45: bulk-accepted by the user on 2026-09-18.
+- AR-24: direct user choice on the visible complexity packet (smaller solution).
+- AR-46..AR-48: resolved by the user's answers on 2026-09-18 (authoring-time
+  items, surfaced before any plan document was written).
+- AR-49..AR-53: resolved by the user's answers on 2026-09-18 (authoring-time
+  items, surfaced while writing 03-05/03-07, before the dependent text).
+- AR-20 clarification (2026-09-18, post-gate user scope statement): the
+  compiler is host-only; a compiler running on AmigaOS/LorraineOS and a
+  self-hosted compiler are explicitly out of scope. Rust remains the
+  implementation language; the clarification closes the only caveat raised in
+  the language review. No new unresolved item.
+- Grounding highlights: corpus defined in `spec/lineage.md:169-175`; spikes in
+  `spec/preflight-report.md:121-126` and `decisions.md:330,336,370`; Rust is the
+  already-pinned implementation language (`docker/Dockerfile:136-141`,
+  `docker/README.md`); run-fault cases in `spec/tests/run/`; compile-fail
+  conventions in `spec/tests/compile-fail/README.md`; stage annotations in
+  E10306, E10401-E10404, E90002; view construction and intrinsic declarations in
+  `grammar-deltas.md:156,163` and `08-arrays-strings.md:92-96`; codegen contract
+  in Ch 17; profile facts in Ch 15.
