@@ -1,0 +1,21 @@
+// expect-error E10039
+// trigger: a call-site marker contradicts the declared parameter mode
+module tests.compile_fail.E10039;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func nudge(borrow p: Point): void {
+    p.x = p.x + 1;
+}
+
+func demo(): void {
+    let p = Point { x: 1, y: 2 };
+    nudge(take p);          // E10039: declaration says 'borrow'
+}
+
+func main(): i32 {
+    return 0;
+}

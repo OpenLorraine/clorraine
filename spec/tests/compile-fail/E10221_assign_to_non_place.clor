@@ -1,0 +1,13 @@
+// expect-error E10221
+// trigger: assignment target is a literal, not a place
+module tests.compile_fail.E10221;
+
+func demo(): i32 {
+    let x: i32 = 0;
+    1 = x;   // E10221: left side of an assignment must be a place
+    return x;
+}
+
+func main(): i32 {
+    return 0;
+}

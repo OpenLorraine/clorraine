@@ -1,0 +1,15 @@
+// expect-error E10104
+// trigger: native struct declared with freedBy
+module tests.compile_fail.E10104;
+
+struct Widget freedBy DestroyWidget {
+    id: u32;
+}
+
+ffi lib {
+    func DestroyWidget(take w: Widget): void;
+}
+
+func main(): i32 {
+    return 0;
+}

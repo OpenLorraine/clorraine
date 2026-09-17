@@ -1,0 +1,11 @@
+// expect-error E10602
+// trigger: raw pointer arithmetic outside unsafe
+module tests.compile_fail.E10602;
+
+func next(p: raw u32): raw u32 {
+    return p + 4;   // E10602: pointer arithmetic requires unsafe
+}
+
+func main(): i32 {
+    return 0;
+}

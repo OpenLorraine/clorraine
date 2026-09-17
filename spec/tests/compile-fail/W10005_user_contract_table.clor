@@ -1,0 +1,9 @@
+// expect-warning W10005
+// trigger: a user-provided contract table is in use
+// requires: user contract table
+// cli: --contracts=user.ffi
+module tests.compile_fail.W10005;
+
+func main(): i32 {
+    return 0;
+}

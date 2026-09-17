@@ -1,0 +1,11 @@
+// expect-error E10304
+// trigger: returning a value of a callable-only type parameter
+module tests.compile_fail.E10304;
+
+func keep<T, F: func(T): T>(x: T, f: F): F {
+    return f;   // E10304: callable-only value cannot be returned
+}
+
+func main(): i32 {
+    return 0;
+}

@@ -1,0 +1,16 @@
+// expect-error E10210
+// trigger: function type signature mismatch
+module tests.compile_fail.E10210;
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func demo(): i32 {
+    let f: func(i32, i32): i32 = addOne;   // E10210: wrong signature
+    return f(1, 2);
+}
+
+func main(): i32 {
+    return 0;
+}

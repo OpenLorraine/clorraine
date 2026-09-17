@@ -1,0 +1,15 @@
+// expect-error E11101
+// trigger: the same function name declared twice in one module
+module tests.compile_fail.E11101;
+
+func helper(): i32 {
+    return 1;
+}
+
+func helper(): i32 {   // E11101: duplicate declaration
+    return 2;
+}
+
+func main(): i32 {
+    return helper();
+}

@@ -1,0 +1,23 @@
+// expect-error E10030
+// trigger: a view is used after its owner's scope has ended
+module tests.compile_fail.E10030;
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func observe(s: str): void {
+}
+
+func demo(): void {
+    let held: str;
+    {
+        let s: String = $"x{1}";
+        held = viewOf(s);   // a loan of the inner local s
+    }
+    observe(held);          // E10030: loan outlives its owner
+}
+
+func main(): i32 {
+    return 0;
+}

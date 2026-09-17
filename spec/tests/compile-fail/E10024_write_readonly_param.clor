@@ -1,0 +1,12 @@
+// expect-error E10024
+// trigger: write through a read-only (unmarked) parameter
+module tests.compile_fail.E10024;
+
+func bump(n: i32): i32 {
+    n = n + 1;              // E10024: n is a read-only parameter
+    return n;
+}
+
+func main(): i32 {
+    return bump(0);
+}

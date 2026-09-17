@@ -1,0 +1,10 @@
+// expect-error E10206
+// trigger: struct declared with no fields
+module tests.compile_fail.E10206;
+
+struct Empty {
+}
+
+func main(): i32 {
+    return 0;
+}

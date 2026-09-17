@@ -1,0 +1,12 @@
+// expect-error E10300
+// trigger: too many type arguments for a generic function
+module tests.compile_fail.E10300;
+
+func identity<T>(x: T): T {
+    return x;
+}
+
+func main(): i32 {
+    identity<i32, u8>(5);   // E10300: expected 1, found 2
+    return 0;
+}

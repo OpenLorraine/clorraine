@@ -1,0 +1,12 @@
+// expect-error E90003
+// trigger: an ffi parameter carrying the deferred 'stores' lifetime contract
+// requires: a 'stores'/'transfers' contract clause, deferred to v2 with no frozen syntax; this file shows the closest best-effort form
+module tests.compile_fail.E90003;
+
+ffi hooks {
+    func SetHandler(hooks: raw u8, stores callback: raw u8): void;
+}
+
+func main(): i32 {
+    return 0;
+}

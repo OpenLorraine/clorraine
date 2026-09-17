@@ -1,0 +1,11 @@
+// expect-error E90001
+// trigger: a comptime func declaration used before comptime semantics land
+module tests.compile_fail.E90001;
+
+comptime func tableSize(n: i32): i32 {
+    return n * 4;
+}
+
+func main(): i32 {
+    return tableSize(2);
+}

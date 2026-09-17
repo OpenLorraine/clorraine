@@ -1,0 +1,12 @@
+// expect-error E10211
+// trigger: enum backing type is not an integer type
+module tests.compile_fail.E10211;
+
+enum Color : f32 {
+    RED,
+    GREEN,
+}
+
+func main(): i32 {
+    return 0;
+}

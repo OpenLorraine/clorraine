@@ -1,0 +1,21 @@
+// expect-error E10031
+// trigger: mutating an owner while a shared loan of it is live
+module tests.compile_fail.E10031;
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func observe(s: str): void {
+}
+
+func demo(): void {
+    let s: String = $"x{1}";
+    let v: str = viewOf(s); // shared loan live
+    s = $"y{2}";            // E10031: cannot modify s while shared-borrowed
+    observe(v);
+}
+
+func main(): i32 {
+    return 0;
+}

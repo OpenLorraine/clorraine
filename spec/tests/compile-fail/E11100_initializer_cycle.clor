@@ -1,0 +1,10 @@
+// expect-error E11100
+// trigger: two module-level let initializers reference each other
+module tests.compile_fail.E11100;
+
+let a: i32 = b + 1;   // E11100: initializer cycle with b
+let b: i32 = a + 1;
+
+func main(): i32 {
+    return 0;
+}

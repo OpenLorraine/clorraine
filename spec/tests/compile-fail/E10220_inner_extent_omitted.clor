@@ -1,0 +1,11 @@
+// expect-error E10220
+// trigger: inner extent omitted in a multi-dimensional type
+module tests.compile_fail.E10220;
+
+func rows(grid: u8[2][]): usize {   // E10220: only the outermost extent may be omitted
+    return 0;
+}
+
+func main(): i32 {
+    return 0;
+}

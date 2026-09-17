@@ -1,0 +1,12 @@
+// expect-error E10202
+// trigger: integer literal does not fit the context type
+module tests.compile_fail.E10202;
+
+func demo(): u8 {
+    let x: u8 = 300;        // E10202: literal does not fit 'u8'
+    return x;
+}
+
+func main(): i32 {
+    return 0;
+}

@@ -1,0 +1,18 @@
+// expect-error E10040
+// trigger: element loop over non-duplicable elements without borrow
+module tests.compile_fail.E10040;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func CloseFile(take f: File): void;
+}
+
+func drain(files: File[2]): void {
+    for (f in files) {      // E10040: element loop requires 'borrow'
+    }
+}
+
+func main(): i32 {
+    return 0;
+}

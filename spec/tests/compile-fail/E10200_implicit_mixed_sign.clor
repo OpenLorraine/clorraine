@@ -1,0 +1,13 @@
+// expect-error E10200
+// trigger: implicit mixed-sign conversion from u32 to i32
+module tests.compile_fail.E10200;
+
+func demo(): i32 {
+    let a: u32 = 1;
+    let b: i32 = a;         // E10200: cannot convert 'u32' to 'i32' implicitly
+    return b;
+}
+
+func main(): i32 {
+    return 0;
+}

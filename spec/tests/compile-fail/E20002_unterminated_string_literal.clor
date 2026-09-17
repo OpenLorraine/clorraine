@@ -1,0 +1,8 @@
+// expect-error E20002
+// trigger: a string literal that is never closed on its line
+module tests.compile_fail.E20002;
+
+func main(): i32 {
+    let s: static str = "unterminated;
+    return 0;
+}

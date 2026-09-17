@@ -1,0 +1,9 @@
+// expect-error E20008
+// trigger: a C preprocessor directive, which is not Clorraine syntax
+module tests.compile_fail.E20008;
+
+#define MAX_SIZE 10
+
+func main(): i32 {
+    return 0;
+}

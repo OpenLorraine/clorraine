@@ -1,0 +1,9 @@
+// expect-error E11102
+// trigger: import of a name the target module does not export
+module tests.compile_fail.E11102;
+
+import { clamp } from Demo.MinMax;
+
+func main(): i32 {
+    return clamp(0);
+}

@@ -1,0 +1,10 @@
+// expect-error E11103
+// trigger: the same imported name bound twice
+module tests.compile_fail.E11103;
+
+import { clamp } from Demo.MinMax;
+import { clamp } from Demo.More;
+
+func main(): i32 {
+    return clamp(0);
+}

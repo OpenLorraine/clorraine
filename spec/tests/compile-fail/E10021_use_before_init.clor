@@ -1,0 +1,15 @@
+// expect-error E10021
+// trigger: read of a local that is not assigned on every path
+module tests.compile_fail.E10021;
+
+func pick(flag: bool): i32 {
+    let x: i32;
+    if (flag) {
+        x = 1;
+    }
+    return x;               // E10021: x may be used before it is initialized
+}
+
+func main(): i32 {
+    return 0;
+}

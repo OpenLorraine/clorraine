@@ -1,0 +1,9 @@
+// expect-warning W10006
+// trigger: an imported name that is never used
+module tests.compile_fail.W10006;
+
+import { Buffer } from std.mem;
+
+func main(): i32 {
+    return 0;
+}

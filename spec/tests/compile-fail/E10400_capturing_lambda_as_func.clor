@@ -1,0 +1,12 @@
+// expect-error E10400
+// trigger: capturing lambda used where a plain func(...) is required
+module tests.compile_fail.E10400;
+
+func apply(x: i32, f: func(i32): i32): i32 {
+    return f(x);
+}
+
+func main(): i32 {
+    let base: i32 = 10;
+    return apply(1, [base] (x: i32) => x + base);   // E10400: capturing lambda
+}

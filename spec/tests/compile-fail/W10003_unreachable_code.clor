@@ -1,0 +1,14 @@
+// expect-warning W10003
+// trigger: a statement after an unconditional return
+module tests.compile_fail.W10003;
+
+func tail(): void { }
+
+func f(): i32 {
+    return 1;
+    tail();
+}
+
+func main(): i32 {
+    return f();
+}

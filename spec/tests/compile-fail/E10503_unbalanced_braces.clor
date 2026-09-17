@@ -1,0 +1,12 @@
+// expect-error E10503
+// trigger: template with a placeholder that is never closed
+module tests.compile_fail.E10503;
+
+func demo(): String {
+    let n: u32 = 1;
+    return $"n={n";   // E10503: unbalanced braces in template
+}
+
+func main(): i32 {
+    return 0;
+}

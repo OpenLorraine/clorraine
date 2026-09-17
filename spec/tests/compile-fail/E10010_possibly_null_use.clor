@@ -1,0 +1,22 @@
+// expect-error E10010
+// trigger: a possibly-null handle is passed where a non-null value is required
+module tests.compile_fail.E10010;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func OpenFile(): File?;
+    func CloseFile(take f: File): void;
+}
+
+func use(f: File): void {
+}
+
+func demo(): void {
+    let f: File? = OpenFile();
+    use(f);                 // E10010: f may be null here
+}
+
+func main(): i32 {
+    return 0;
+}

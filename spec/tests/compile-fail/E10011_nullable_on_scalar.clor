@@ -1,0 +1,12 @@
+// expect-error E10011
+// trigger: nullable suffix '?' applied to a scalar type
+module tests.compile_fail.E10011;
+
+func demo(): void {
+    let x: u32? = 1;        // E10011: '?' is not allowed on 'u32'
+    x = 2;
+}
+
+func main(): i32 {
+    return 0;
+}

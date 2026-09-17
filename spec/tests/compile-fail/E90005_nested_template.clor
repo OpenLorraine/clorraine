@@ -1,0 +1,9 @@
+// expect-error E90005
+// trigger: a template string nested inside a placeholder of another template
+module tests.compile_fail.E90005;
+
+func main(): i32 {
+    let name = "world";
+    let msg = $"outer { $"inner {name}" } end";
+    return 0;
+}

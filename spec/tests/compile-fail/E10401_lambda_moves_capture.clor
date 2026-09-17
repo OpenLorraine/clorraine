@@ -1,0 +1,13 @@
+// expect-error E10401
+// trigger: lambda moves a captured binding
+// stage: 2
+module tests.compile_fail.E10401;
+
+func consume(take s: String): void {
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    ([s] () => consume(s))();   // E10401: moves captured 's'
+    return 0;
+}

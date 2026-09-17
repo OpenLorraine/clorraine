@@ -1,0 +1,12 @@
+// expect-error E10303
+// trigger: type argument does not satisfy a callable bound
+module tests.compile_fail.E10303;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    apply<i32, i32>(5, 3);   // E10303: 'i32' is not 'func(i32): i32'
+    return 0;
+}

@@ -1,0 +1,22 @@
+// expect-error E10101
+// trigger: owned or borrowed value passed to an uncontracted extern
+// requires: an ffi declaration is treated as uncontracted when it carries no ownership contract
+module tests.compile_fail.E10101;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func RawStat(f: File): i32;    // uncontracted extern
+    func CloseFile(take f: File): void;
+}
+
+func demo(f: File): void {
+    unsafe {
+        let n = RawStat(f);        // E10101: no contract for parameter 'f'
+        n = n + 1;
+    }
+}
+
+func main(): i32 {
+    return 0;
+}

@@ -1,0 +1,12 @@
+// expect-error E10222
+// trigger: '%' is not defined for float operands
+module tests.compile_fail.E10222;
+
+func demo(): f64 {
+    let r: f64 = 5.0 % 2.0;   // E10222: '%' is not defined for 'f64'
+    return r;
+}
+
+func main(): i32 {
+    return 0;
+}

@@ -1,0 +1,8 @@
+// expect-warning W10000
+// trigger: a local that is declared and never used
+module tests.compile_fail.W10000;
+
+func main(): i32 {
+    let unused = 42;
+    return 0;
+}

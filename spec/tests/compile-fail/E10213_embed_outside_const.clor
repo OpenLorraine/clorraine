@@ -1,0 +1,12 @@
+// expect-error E10213
+// trigger: embed used in a local let initializer, outside a constant context
+module tests.compile_fail.E10213;
+
+func checksum(): u32 {
+    let data: u8[16] = embed("assets/logo.bin");   // E10213: not a constant context
+    return u32(len(data));
+}
+
+func main(): i32 {
+    return 0;
+}

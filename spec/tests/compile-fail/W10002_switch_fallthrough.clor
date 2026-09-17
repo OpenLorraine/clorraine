@@ -1,0 +1,21 @@
+// expect-warning W10002
+// trigger: a switch case body that falls through to the next label
+module tests.compile_fail.W10002;
+
+func start(): void { }
+
+func run(): void { }
+
+func main(): i32 {
+    let state = 0;
+    switch (state) {
+        case 0:
+            start();
+        case 1:
+            run();
+            break;
+        default:
+            break;
+    }
+    return 0;
+}

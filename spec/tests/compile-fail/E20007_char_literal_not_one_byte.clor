@@ -1,0 +1,8 @@
+// expect-error E20007
+// trigger: a character literal that encodes more than one byte
+module tests.compile_fail.E20007;
+
+func main(): i32 {
+    let c: u8 = 'ab';
+    return 0;
+}

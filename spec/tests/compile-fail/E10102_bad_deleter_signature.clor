@@ -1,0 +1,13 @@
+// expect-error E10102
+// trigger: freedBy deleter has the wrong signature
+module tests.compile_fail.E10102;
+
+handle File freedBy BadDeleter;
+
+ffi lib {
+    func BadDeleter(f: File): i32;  // E10102: needs 'take File' and 'void'
+}
+
+func main(): i32 {
+    return 0;
+}

@@ -1,0 +1,9 @@
+// expect-error E11106
+// trigger: module-level let initialized with a non-duplicable value
+module tests.compile_fail.E11106;
+
+let name: String = stringOf("x");   // E11106: module-level let must be duplicable
+
+func main(): i32 {
+    return 0;
+}

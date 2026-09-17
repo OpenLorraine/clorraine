@@ -1,0 +1,11 @@
+// expect-error E20006
+// trigger: a reserved built-in name redeclared as a func name
+module tests.compile_fail.E20006;
+
+func sizeof(x: i32): i32 {
+    return x;
+}
+
+func main(): i32 {
+    return 0;
+}

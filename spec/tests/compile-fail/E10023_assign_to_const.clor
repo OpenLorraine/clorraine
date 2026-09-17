@@ -1,0 +1,12 @@
+// expect-error E10023
+// trigger: assignment to a const binding
+module tests.compile_fail.E10023;
+
+func demo(): void {
+    const limit: i32 = 10;
+    limit = 20;             // E10023: cannot assign to immutable 'limit'
+}
+
+func main(): i32 {
+    return 0;
+}

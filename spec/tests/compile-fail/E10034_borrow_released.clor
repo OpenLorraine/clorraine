@@ -1,0 +1,14 @@
+// expect-error E10034
+// trigger: a borrowed parameter is released by moving it into a take parameter
+module tests.compile_fail.E10034;
+
+func consume(take s: String): void {
+}
+
+func leak(borrow s: String): void {
+    consume(s);             // E10034: cannot release borrowed parameter 's'
+}
+
+func main(): i32 {
+    return 0;
+}

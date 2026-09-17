@@ -1,0 +1,12 @@
+// expect-error E10601
+// trigger: address-of outside unsafe
+module tests.compile_fail.E10601;
+
+func addressOf(): raw u32 {
+    let x: u32 = 1;
+    return &x;   // E10601: address-of requires unsafe
+}
+
+func main(): i32 {
+    return 0;
+}

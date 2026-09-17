@@ -1,0 +1,12 @@
+// expect-error E10301
+// trigger: constructor-style generic call with no arguments and no explicit type arguments
+module tests.compile_fail.E10301;
+
+func makeVec<T>(): T {
+    panic("makeVec needs explicit type arguments");
+}
+
+func main(): i32 {
+    makeVec();   // E10301: cannot infer T
+    return 0;
+}

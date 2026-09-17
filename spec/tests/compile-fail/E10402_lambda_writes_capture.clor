@@ -1,0 +1,10 @@
+// expect-error E10402
+// trigger: lambda writes a captured binding without a [borrow] capture
+// stage: 3
+module tests.compile_fail.E10402;
+
+func main(): i32 {
+    let counter: i32 = 0;
+    ([counter] () => { counter = counter + 1; })();   // E10402: needs [borrow counter]
+    return counter;
+}

@@ -1,0 +1,22 @@
+// expect-error E10025
+// trigger: whole-value use of a partially moved struct
+module tests.compile_fail.E10025;
+
+struct Pair {
+    left: String;
+    right: String;
+}
+
+func observe(s: String): void {
+}
+
+func demo(): void {
+    let p = Pair { left: $"a{1}", right: $"b{2}" };
+    let l: String = p.left; // partial move of a top-level field
+    observe(p);             // E10025: p is partially moved
+    observe(l);
+}
+
+func main(): i32 {
+    return 0;
+}

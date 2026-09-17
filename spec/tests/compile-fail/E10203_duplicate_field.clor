@@ -1,0 +1,17 @@
+// expect-error E10203
+// trigger: struct literal repeats a field
+module tests.compile_fail.E10203;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func demo(): i32 {
+    let p = Point { x: 1, y: 2, x: 3 };   // E10203: duplicate field 'x'
+    return p.x;
+}
+
+func main(): i32 {
+    return 0;
+}

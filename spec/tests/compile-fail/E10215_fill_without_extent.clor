@@ -1,0 +1,12 @@
+// expect-error E10215
+// trigger: array fill literal with no fixed extent in context
+module tests.compile_fail.E10215;
+
+func demo(): usize {
+    let bad = [; 0];   // E10215: no fixed extent in context
+    return len(bad);
+}
+
+func main(): i32 {
+    return 0;
+}

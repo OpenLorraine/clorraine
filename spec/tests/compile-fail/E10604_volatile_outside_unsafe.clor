@@ -1,0 +1,11 @@
+// expect-error E10604
+// trigger: volatile intrinsic outside unsafe
+module tests.compile_fail.E10604;
+
+func readReg(addr: raw u32): u32 {
+    return readVolatile32(addr);   // E10604: volatile access requires unsafe
+}
+
+func main(): i32 {
+    return 0;
+}

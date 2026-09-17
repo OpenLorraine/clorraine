@@ -1,0 +1,16 @@
+// expect-error E10305
+// trigger: generic instantiation recurses with a new type argument each time
+module tests.compile_fail.E10305;
+
+struct Wrapper<T> {
+    inner: T;
+}
+
+func nest<T>(x: T): void {
+    nest(Wrapper<T> { inner: x });   // E10305: instantiates nest<Wrapper<T>> and repeats
+}
+
+func main(): i32 {
+    nest(0);
+    return 0;
+}

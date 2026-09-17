@@ -1,0 +1,17 @@
+// expect-error E10212
+// trigger: unknown enum member
+module tests.compile_fail.E10212;
+
+enum Direction : u8 {
+    UP,
+    DOWN,
+}
+
+func demo(): u8 {
+    let d = Direction.SIDEWAYS;   // E10212: not a member of 'Direction'
+    return u8(d);
+}
+
+func main(): i32 {
+    return 0;
+}

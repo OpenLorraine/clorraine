@@ -1,0 +1,13 @@
+// expect-error E10103
+// trigger: an ffi block marked export
+module tests.compile_fail.E10103;
+
+handle File freedBy CloseFile;
+
+export ffi lib {
+    func CloseFile(take f: File): void;
+}
+
+func main(): i32 {
+    return 0;
+}

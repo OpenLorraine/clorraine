@@ -1,0 +1,12 @@
+// expect-error E10216
+// trigger: constant index past the extent of a fixed array
+module tests.compile_fail.E10216;
+
+func demo(): u32 {
+    let primes: u32[4] = [2, 3, 5, 7];
+    return primes[9];   // E10216: 9 is out of range for u32[4]
+}
+
+func main(): i32 {
+    return 0;
+}

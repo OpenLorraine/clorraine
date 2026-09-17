@@ -1,0 +1,13 @@
+// expect-error E10600
+// trigger: raw dereference outside unsafe
+module tests.compile_fail.E10600;
+
+func demo(): u32 {
+    let p: raw u32 = raw u32(0x1000);
+    let v: u32 = *p;   // E10600: dereference of a raw pointer requires unsafe
+    return v;
+}
+
+func main(): i32 {
+    return 0;
+}

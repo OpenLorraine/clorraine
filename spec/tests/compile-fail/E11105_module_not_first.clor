@@ -1,0 +1,11 @@
+// expect-error E11105
+// trigger: the module declaration is not the first declaration
+func helper(): i32 {
+    return 1;
+}
+
+module tests.compile_fail.E11105;
+
+func main(): i32 {
+    return 0;
+}

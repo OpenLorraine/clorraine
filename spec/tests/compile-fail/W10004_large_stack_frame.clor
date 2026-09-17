@@ -1,0 +1,14 @@
+// expect-warning W10004
+// trigger: a stack frame above the hosted-amiga profile threshold
+// profile: hosted-amiga
+module tests.compile_fail.W10004;
+
+func scratch(): void {
+    let page: u8[4096] = [; 0];
+    page[0] = 1;
+}
+
+func main(): i32 {
+    scratch();
+    return 0;
+}

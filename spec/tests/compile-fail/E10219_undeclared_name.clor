@@ -1,0 +1,12 @@
+// expect-error E10219
+// trigger: reference to a name that is not declared
+module tests.compile_fail.E10219;
+
+func demo(): i32 {
+    let x: i32 = missingName;   // E10219: not declared
+    return x;
+}
+
+func main(): i32 {
+    return 0;
+}

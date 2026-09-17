@@ -1,0 +1,17 @@
+// expect-warning W10001
+// trigger: a lend of a duplicable struct where a copy would do
+module tests.compile_fail.W10001;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func show(p: Point): i32 {
+    return p.x;
+}
+
+func main(): i32 {
+    let p = Point { x: 1, y: 2 };
+    return show(p);
+}

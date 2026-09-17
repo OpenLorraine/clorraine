@@ -1,0 +1,14 @@
+// expect-error E10041
+// trigger: writable view requested from a read-only borrow
+module tests.compile_fail.E10041;
+
+func zero(borrow xs: u8[]): void {
+}
+
+func bad(buf: u8[]): void {
+    zero(buf);              // E10041: writable view of a read-only borrow
+}
+
+func main(): i32 {
+    return 0;
+}

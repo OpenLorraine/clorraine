@@ -1,0 +1,12 @@
+// expect-error E10012
+// trigger: 'null' used where a non-nullable scalar is required
+module tests.compile_fail.E10012;
+
+func demo(): i32 {
+    let n: i32 = null;      // E10012: null is not allowed here
+    return n;
+}
+
+func main(): i32 {
+    return 0;
+}

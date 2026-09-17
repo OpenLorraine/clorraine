@@ -1,0 +1,18 @@
+// expect-error E10033
+// trigger: a loan of a local is stored in a global
+module tests.compile_fail.E10033;
+
+let text: str = "start";
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func demo(): void {
+    let s: String = $"x{1}";
+    text = viewOf(s);       // E10033: the loan escapes its scope
+}
+
+func main(): i32 {
+    return 0;
+}

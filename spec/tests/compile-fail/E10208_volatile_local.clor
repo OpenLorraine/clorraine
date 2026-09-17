@@ -1,0 +1,12 @@
+// expect-error E10208
+// trigger: 'volatile' on a local declaration
+module tests.compile_fail.E10208;
+
+func demo(): void {
+    volatile let x: u32 = 0;    // E10208: 'volatile' is not allowed here
+    x = x + 1;
+}
+
+func main(): i32 {
+    return 0;
+}

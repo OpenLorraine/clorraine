@@ -1,0 +1,14 @@
+// expect-error E10218
+// trigger: if condition is an integer, not bool
+module tests.compile_fail.E10218;
+
+func demo(): i32 {
+    if (1) {   // E10218: condition must be bool
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return 0;
+}

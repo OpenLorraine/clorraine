@@ -1,0 +1,17 @@
+// expect-error E10201
+// trigger: cast the language does not allow (struct cast)
+module tests.compile_fail.E10201;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func demo(): i32 {
+    let p = Point(0);       // E10201: cannot cast to 'Point'
+    return p.x;
+}
+
+func main(): i32 {
+    return 0;
+}

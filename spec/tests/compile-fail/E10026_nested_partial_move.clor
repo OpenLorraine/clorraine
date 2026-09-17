@@ -1,0 +1,24 @@
+// expect-error E10026
+// trigger: nested-path partial move in v1
+module tests.compile_fail.E10026;
+
+struct Inner {
+    s: String;
+}
+
+struct Outer {
+    inner: Inner;
+}
+
+func observe(s: String): void {
+}
+
+func demo(): void {
+    let o = Outer { inner: Inner { s: $"x{1}" } };
+    let s: String = o.inner.s;  // E10026: nested-path move
+    observe(s);
+}
+
+func main(): i32 {
+    return 0;
+}

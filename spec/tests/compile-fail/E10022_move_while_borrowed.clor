@@ -1,0 +1,24 @@
+// expect-error E10022
+// trigger: moving a String while a view of it is live
+module tests.compile_fail.E10022;
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func observe(s: str): void {
+}
+
+func consume(take s: String): void {
+}
+
+func demo(): void {
+    let s: String = $"x{1}";
+    let v: str = viewOf(s); // a live loan of s
+    consume(s);             // E10022: cannot move s while it is borrowed
+    observe(v);
+}
+
+func main(): i32 {
+    return 0;
+}

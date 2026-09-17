@@ -1,0 +1,16 @@
+// expect-error E10035
+// trigger: returning a view of a local owner
+module tests.compile_fail.E10035;
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func bad(): str {
+    let s: String = $"x{1}";
+    return viewOf(s);       // E10035: cannot return a view of local 's'
+}
+
+func main(): i32 {
+    return 0;
+}

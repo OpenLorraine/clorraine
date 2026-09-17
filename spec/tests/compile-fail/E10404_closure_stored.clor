@@ -1,0 +1,10 @@
+// expect-error E10404
+// trigger: capturing closure stored in a local binding
+// stage: 2
+module tests.compile_fail.E10404;
+
+func main(): i32 {
+    let base: i32 = 10;
+    let f = [base] (x: i32) => x + base;   // E10404: closures are ephemeral
+    return f(1);
+}

@@ -1,0 +1,11 @@
+// expect-error E10205
+// trigger: plain str struct field (view-typed field)
+module tests.compile_fail.E10205;
+
+struct Entry {
+    text: str;              // E10205: view-typed field is not allowed
+}
+
+func main(): i32 {
+    return 0;
+}

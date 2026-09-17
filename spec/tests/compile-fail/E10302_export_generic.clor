@@ -1,0 +1,11 @@
+// expect-error E10302
+// trigger: export on a generic declaration
+module tests.compile_fail.E10302;
+
+export func identity<T>(x: T): T {   // E10302: generics cannot be exported
+    return x;
+}
+
+func main(): i32 {
+    return 0;
+}

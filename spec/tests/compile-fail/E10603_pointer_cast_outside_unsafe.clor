@@ -1,0 +1,11 @@
+// expect-error E10603
+// trigger: raw pointer-to-pointer cast outside unsafe
+module tests.compile_fail.E10603;
+
+func widen(p: raw u8): raw u32 {
+    return raw u32(p);   // E10603: raw pointer cast requires unsafe
+}
+
+func main(): i32 {
+    return 0;
+}

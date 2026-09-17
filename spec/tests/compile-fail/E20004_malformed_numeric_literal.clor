@@ -1,0 +1,8 @@
+// expect-error E20004
+// trigger: a hexadecimal prefix with no digits after it
+module tests.compile_fail.E20004;
+
+func main(): i32 {
+    let n = 0x;
+    return 0;
+}

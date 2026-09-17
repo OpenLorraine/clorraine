@@ -1,0 +1,10 @@
+// expect-error E90004
+// trigger: a call to a pool allocator, which is deferred to v2
+// requires: stdlib pool API (v2), for example allocPooled(pool, size)
+module tests.compile_fail.E90004;
+
+func main(): i32 {
+    let pool = createPool(4096);
+    allocPooled(pool, 64);
+    return 0;
+}

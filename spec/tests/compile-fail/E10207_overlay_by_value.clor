@@ -1,0 +1,15 @@
+// expect-error E10207
+// trigger: overlay (volatile) type used by value
+module tests.compile_fail.E10207;
+
+struct Registers {
+    ctrl: volatile u16;
+}
+
+func demo(): void {
+    let regs = Registers { ctrl: 0 };   // E10207: overlay type cannot be used by value
+}
+
+func main(): i32 {
+    return 0;
+}

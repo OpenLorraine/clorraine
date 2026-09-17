@@ -1,0 +1,8 @@
+// expect-error E11201
+// trigger: an unknown profile name on the command line
+// cli: --profile=amigaos9
+module tests.compile_fail.E11201;
+
+func main(): i32 {
+    return 0;
+}

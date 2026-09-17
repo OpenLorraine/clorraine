@@ -1,0 +1,12 @@
+// expect-error E10501
+// trigger: format specifier inside a template placeholder
+module tests.compile_fail.E10501;
+
+func demo(): String {
+    let x: i32 = 5;
+    return $"{x:04x}";   // E10501: format specifiers are not supported in v1
+}
+
+func main(): i32 {
+    return 0;
+}

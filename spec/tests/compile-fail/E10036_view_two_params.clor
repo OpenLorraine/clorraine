@@ -1,0 +1,11 @@
+// expect-error E10036
+// trigger: view return with two view-like lend parameters
+module tests.compile_fail.E10036;
+
+func pick(a: u8[], b: u8[]): u8[] {
+    return a;               // E10036: two candidates, no way to choose
+}
+
+func main(): i32 {
+    return 0;
+}

@@ -1,0 +1,21 @@
+// expect-error E10500
+// trigger: struct value used in a template placeholder
+module tests.compile_fail.E10500;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func sink(s: String): void {
+}
+
+func demo(): void {
+    let p = Point { x: 1, y: 2 };
+    let s: String = $"at {p}";   // E10500: 'Point' is not formattable
+    sink(s);
+}
+
+func main(): i32 {
+    return 0;
+}

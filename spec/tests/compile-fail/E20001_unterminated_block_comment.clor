@@ -1,0 +1,8 @@
+// expect-error E20001
+// trigger: a block comment that is never closed before end of file
+module tests.compile_fail.E20001;
+
+/* This block comment never closes.
+func main(): i32 {
+    return 0;
+}

@@ -1,0 +1,9 @@
+// expect-error E10214
+// trigger: embed names a file that does not exist at build time
+module tests.compile_fail.E10214;
+
+const DATA: u8[16] = embed("data/does_not_exist.bin");   // E10214: unreadable file
+
+func main(): i32 {
+    return 0;
+}

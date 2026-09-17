@@ -1,0 +1,6 @@
+// expect-error E11104
+// trigger: main has the wrong return type
+module tests.compile_fail.E11104;
+
+func main(): void {   // E11104: executable needs 'func main(): i32'
+}

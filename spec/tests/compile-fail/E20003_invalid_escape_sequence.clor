@@ -1,0 +1,8 @@
+// expect-error E20003
+// trigger: an unknown escape sequence in a string literal
+module tests.compile_fail.E20003;
+
+func main(): i32 {
+    let s: static str = "bad \q escape";
+    return 0;
+}

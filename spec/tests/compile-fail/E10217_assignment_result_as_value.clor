@@ -1,0 +1,13 @@
+// expect-error E10217
+// trigger: assignment result used as a value
+module tests.compile_fail.E10217;
+
+func demo(): i32 {
+    let a: i32 = 0;
+    let b: i32 = (a = 1);   // E10217: assignment result is void
+    return a + b;
+}
+
+func main(): i32 {
+    return 0;
+}

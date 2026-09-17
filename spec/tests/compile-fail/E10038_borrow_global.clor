@@ -1,0 +1,22 @@
+// expect-error E10038
+// trigger: borrowing a global binding
+module tests.compile_fail.E10038;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+let origin: Point = Point { x: 0, y: 0 };
+
+func show(p: Point): i32 {
+    return p.x;
+}
+
+func demo(): i32 {
+    return show(origin);    // E10038: cannot borrow global 'origin'
+}
+
+func main(): i32 {
+    return 0;
+}
