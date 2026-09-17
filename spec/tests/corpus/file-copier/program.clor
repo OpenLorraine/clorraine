@@ -1,0 +1,121 @@
+// Copies a small payload through the standard-library file and buffer wrappers,
+// then reopens the copy and verifies it byte for byte. The program exercises
+// partial IO, nullable acquisitions, the cleanup ladder on nested failure
+// paths, and a writable view lend of a buffer.
+module tests.corpus.FileCopier;
+
+import { File, openFile, createFile, readFile, writeBytes, println, MODE_OLDFILE } from std.io;
+import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
+import { String, stringOf, bytes, toCString } from std.text;
+
+const PAYLOAD: static str = "Clorraine corpus: file-copier\n";
+const IN_PATH: static str = "corpus-in.txt";
+const OUT_PATH: static str = "corpus-out.txt";
+
+// Writes every byte of src to a newly created file. The write loop handles
+// partial writes: each call transfers at most what the file system accepted.
+func writePayload(path: str, src: u8[]): bool {
+    let file: File? = createFile(toCString(stringOf(path)));
+    if (file == null) {
+        return false;
+    }
+    let total: usize = len(src);
+    let offset: usize = 0;
+    while (offset < total) {
+        let written: i32 = writeBytes(file, slice(src, offset, total));
+        if (written <= 0) {
+            return false;
+        }
+        offset = offset + usize(written);
+    }
+    return true;
+}
+
+// Copies one file to another through a 4096-byte buffer. Reading and writing
+// both loop: a transfer may complete partially, and 0 or less means EOF or an
+// error. The three handles drop in reverse declaration order on every exit.
+func copyFile(inPath: str, outPath: str): bool {
+    let input: File? = openFile(toCString(stringOf(inPath)), MODE_OLDFILE);
+    if (input == null) {
+        return false;
+    }
+    let buf: Buffer? = bufferNew(4096);
+    if (buf == null) {
+        return false;
+    }
+    let output: File? = createFile(toCString(stringOf(outPath)));
+    if (output == null) {
+        return false;
+    }
+
+    let got: i32 = readFile(input, borrow bufferBytes(buf));
+    while (got > 0) {
+        let count: usize = usize(got);
+        let done: usize = 0;
+        while (done < count) {
+            let written: i32 = writeBytes(output, slice(bufferBytes(buf), done, count));
+            if (written <= 0) {
+                return false;
+            }
+            done = done + usize(written);
+        }
+        got = readFile(input, borrow bufferBytes(buf));
+    }
+    return true;
+}
+
+// Reopens the copy and compares every byte with expected. A shorter read or a
+// length difference is a failure.
+func verifyCopy(outPath: str, expected: u8[]): bool {
+    let file: File? = openFile(toCString(stringOf(outPath)), MODE_OLDFILE);
+    if (file == null) {
+        return false;
+    }
+    let buf: Buffer? = bufferNew(4096);
+    if (buf == null) {
+        return false;
+    }
+    let got: i32 = readFile(file, borrow bufferBytes(buf));
+    if (got <= 0) {
+        return false;
+    }
+    let count: usize = usize(got);
+    if (count != len(expected)) {
+        return false;
+    }
+    let copy: u8[] = bufferBytes(buf);
+    let i: usize = 0;
+    while (i < count) {
+        if (copy[i] != expected[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+func main(): i32 {
+    let payloadString: String = stringOf(PAYLOAD);
+    let payload: u8[] = bytes(payloadString);
+
+    if (!writePayload(IN_PATH, payload)) {
+        println("file-copier: FAILED");
+        return 1;
+    }
+    println($"file-copier: wrote {len(payload)} bytes");
+
+    if (!copyFile(IN_PATH, OUT_PATH)) {
+        println("file-copier: FAILED");
+        return 1;
+    }
+    println($"file-copier: copied {len(payload)} bytes");
+
+    if (!verifyCopy(OUT_PATH, payload)) {
+        println("file-copier: FAILED");
+        return 1;
+    }
+    println("file-copier: content matches");
+
+    println("file-copier: ok");
+    return 0;
+}

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 00:14
-> **Progress**: 0/84 tasks (0%)
+> **Last Updated**: 2026-09-18 00:19
+> **Progress**: 1/84 tasks (1%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -59,7 +59,9 @@ bounded by the task-size criteria in the quality checklist)
 
 ## Phase 0: Validation Corpus (Task 0)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: a798591ac32201831a1e4c1c13708e567a98ccfe
+> **Expected modification set**: `spec/tests/corpus/**`, `plans/clorraine-compiler-mvp/99-execution-plan.md`
+> **Scope mode**: strict
 
 ### Step 0.1: Author the four golden programs
 
@@ -67,7 +69,7 @@ bounded by the task-size criteria in the quality checklist)
 **Objective**: create the acceptance target and positive golden suite before
 any compiler code exists.
 
-- [ ] 0.1.1 Write `spec/tests/corpus/file-copier/program.clor` and `expected-output.txt` per 03-01 §1
+- [x] 0.1.1 Write `spec/tests/corpus/file-copier/program.clor` and `expected-output.txt` per 03-01 §1 ✅ (completed: 2026-09-18 00:19)
 - [ ] 0.1.2 Write `spec/tests/corpus/interrupt-counter/program.clor` and `expected-output.txt` per 03-01 §2
 - [ ] 0.1.3 Write `spec/tests/corpus/string-parser/program.clor` and `expected-output.txt` per 03-01 §3
 - [ ] 0.1.4 Write `spec/tests/corpus/buffer-container/program.clor` and `expected-output.txt` per 03-01 §4

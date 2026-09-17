@@ -1,0 +1,4 @@
+file-copier: wrote 30 bytes
+file-copier: copied 30 bytes
+file-copier: content matches
+file-copier: ok
