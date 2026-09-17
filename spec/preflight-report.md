@@ -27,6 +27,11 @@ iterations 2 and 3. The working tree validates with
 
 ## Findings
 
+The **Status** column records the first scan. Every OPEN finding was resolved
+by the accepted rulings (R-01..R-37) and the iteration 2-3 passes; see the
+iteration section below for the resolution path and the two accepted Phase 2
+verification items.
+
 | PF | Sev | Cluster refs | Location | Finding | Recommendation | Status |
 |---|---|---|---|---|---|---|
 | PF-001 | 🔴 | S1, R2 | `03-ownership.md`, `06-functions.md`, `12-ffi-contracts.md` | `borrow T?` out-params contradict O3 (assignment drops the old value) and E10034 (callee must not release a borrowed parameter); the callee can drop an uninitialized caller slot | Rule: writes through `borrow T?` do not drop a previous value; callers pass an owned value or `null`; exempt out-param assignment from E10034. Add a test | OPEN |
