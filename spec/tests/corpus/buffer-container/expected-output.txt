@@ -1,0 +1,5 @@
+buffer-container: len=8
+buffer-container: sum=36
+buffer-container: evens=4
+buffer-container: bytes=16
+buffer-container: ok

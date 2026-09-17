@@ -1,0 +1,66 @@
+// Exercises a monomorphized generic sequence and a byte buffer: push eight
+// integers, sum them and count the even ones through one-element views, then
+// fill a 16-byte buffer through its byte view.
+module tests.corpus.BufferContainer;
+
+import { Array, arrayNew, Buffer, bufferNew, bufferBytes, bufferLen } from std.mem;
+import { println } from std.io;
+
+// Sums every element by indexing the one-element view returned by get.
+func sumOf(borrow xs: Array<i32>): i32 {
+    let total: i32 = 0;
+    let i: usize = 0;
+    while (i < xs.len()) {
+        total = total + xs.get(i)[0];
+        i = i + 1;
+    }
+    return total;
+}
+
+// Counts the even elements with the same one-element-view walk.
+func countEvens(borrow xs: Array<i32>): u32 {
+    let count: u32 = 0;
+    let i: usize = 0;
+    while (i < xs.len()) {
+        if (xs.get(i)[0] % 2 == 0) {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+}
+
+// Writes an increasing byte pattern through the buffer's byte view. Every
+// write is bounds-checked by the index operator.
+func fillPattern(borrow buf: Buffer): void {
+    let bytes: u8[] = bufferBytes(buf);
+    let i: usize = 0;
+    while (i < len(bytes)) {
+        bytes[i] = u8(i);
+        i = i + 1;
+    }
+}
+
+func main(): i32 {
+    let xs: Array<i32> = arrayNew<i32>();
+    let v: i32 = 1;
+    while (v <= 8) {
+        xs.push(v);
+        v = v + 1;
+    }
+
+    println($"buffer-container: len={xs.len()}");
+    println($"buffer-container: sum={sumOf(xs)}");
+    println($"buffer-container: evens={countEvens(xs)}");
+
+    let buf: Buffer? = bufferNew(16);
+    if (buf == null) {
+        println("buffer-container: FAILED");
+        return 1;
+    }
+    fillPattern(buf);
+    println($"buffer-container: bytes={bufferLen(buf)}");
+
+    println("buffer-container: ok");
+    return 0;
+}
