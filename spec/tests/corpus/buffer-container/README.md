@@ -20,7 +20,7 @@ generics, dot-calls, view arithmetic, and structural drop order.
 | `let xs: Array<i32> = arrayNew<i32>();` explicit type argument | G2 (Ch 06 §8); appendix §3 |
 | Dot-calls `xs.push(v)`, `xs.len()`, `xs.get(i)` | F8 (Ch 04 §8); appendix §3 |
 | `push` takes `T`; `i32` elements | V5 mode `take`; V8 duplicability (Ch 02 §8) |
-| `get(i)` one-element view indexed immediately | appendix §3; O11/O12 (Ch 16 §3); E10022/E10031 guard |
+| `get(i)` one-element view indexed immediately | appendix §3; O12 reborrow (Ch 16 §3); E10022/E10031 guard |
 | `while` loops over `xs.len()` and `len(bytes)` | B3 (Ch 05 §7); SL-2 (Ch 08 §3) |
 | `%` and `==` in the even test | Ch 04 §5 precedence and integer semantics |
 | `borrow xs: Array<i32>` helper parameters | V5 (Ch 03 §2); get requires a writable lend, so reads borrow too |
@@ -68,3 +68,10 @@ pre-instantiated `Array<i32>` surface.
 4. **`u8(i)` pattern cast.** The fill uses an explicit narrowing cast from the
    index; this is inside the allowed cast set but is the kind of place a
    reviewer may ask for a documented pattern instead of an index truncation.
+
+## Hand-check record
+
+Line-by-line review against the frozen specification completed on 2026-09-18.
+Every line maps to a rule in the coverage table; the read-only `get` gap and
+the unused required `slice` are open for the phase checkpoint ruling. No
+program text changed during the pass.

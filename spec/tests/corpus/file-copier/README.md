@@ -77,3 +77,10 @@ ambiguous; the full list is reviewed at the phase checkpoint.
 4. **`bufferBytes` loan wording.** Ch 16 §3 calls the buffer view a writable
    reborrow, while the corpus hand-check notes call it a shared loan; the
    program relies on the writable reading (fill, then `readFile` into it).
+
+## Hand-check record
+
+Line-by-line review against the frozen specification completed on 2026-09-18.
+Every line maps to a rule in the coverage table; the four friction items above
+are open for the phase checkpoint ruling. No authorization was found missing
+and no program text changed during the pass.

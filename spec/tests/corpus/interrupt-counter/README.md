@@ -20,7 +20,7 @@ interrupt dispatcher boundary and shared interrupt state.
 | `module tests.corpus.InterruptCounter;` first | MOD-1, MOD-2 (Ch 10 §2) |
 | Imports from `std.amiga.interrupt`, `std.amiga.dos`, `std.io` | MOD-9, MOD-11, MOD-12, MOD-17 (Ch 10 §4) |
 | `volatile let ticks: u32 = 0;` at module level | grammar §3.5; T7 (module-level volatile, Ch 05 §3 / Ch 11) |
-| Capture-less handler `func onTick(): void` | F3, FN-1 (Ch 06 §1, §6); L3/L5 capture-free function value |
+| Capture-less handler `func onTick(): void` | F3, FN-1 (Ch 06 §1); exact-signature function pointers (Ch 06 §6) |
 | Handler writes shared state only | IH-2 handler rules (appendix §7): allocation-free, drop-free, panic-free |
 | `addHandler(onTick)` bare identifier | F3, GF13 (Ch 04 §10); appendix §7 |
 | `HandlerToken` returned and handed back | EN/struct duplicability (Ch 02 §8); appendix §7 |
@@ -66,3 +66,11 @@ is deliberately minimal: no allocation, no drop, no panic, no loan.
 3. **Execution leg.** The accepted run leg is FS-UAE with `RUN_CAPTURE=1`; if
    the handler cannot execute there, the documented fallback is a build-only
    leg plus a recorded finding.
+
+## Hand-check record
+
+Line-by-line review against the frozen specification completed on 2026-09-18.
+Every line maps to a rule in the coverage table. The W10001 item is the open
+question for this program's zero-diagnostic claim and needs a phase checkpoint
+ruling; the handler itself is clean (no allocation, no drop, no panic, no
+loan). No program text changed during the pass.

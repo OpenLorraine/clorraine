@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 00:22
-> **Progress**: 5/84 tasks (6%)
+> **Last Updated**: 2026-09-18 00:23
+> **Progress**: 6/84 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -90,7 +90,7 @@ diagnostics are expected from the eventual compiler (AR-43).
 **Objective**: prove the corpus is valid against the frozen specification and
 get the user's explicit acceptance before front-end work.
 
-- [ ] 0.2.1 Run the full line-by-line hand-check; complete every coverage record and list all friction in the four READMEs
+- [x] 0.2.1 Run the full line-by-line hand-check; complete every coverage record and list all friction in the four READMEs ✅ (completed: 2026-09-18 00:23)
 - [ ] 0.2.2 Present the corpus and friction list to the user; record the ruling (accept / revise). Any specification amendment requested by the friction pauses the phase
 
 **Deliverables**:

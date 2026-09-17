@@ -57,12 +57,19 @@ templates, or library builds. The program uses `str` indexing rather than
 
 1. **No `str` slicing.** The tokenizer knows each token's bounds but cannot
    materialize a `str` token view: the appendix §9 `slice` table says "view ->
-   same view type", while the plan-local `slice<T>(v: T[], lo, hi)` accepts only
-   `T[]`. The program sidesteps this by passing `(start, end)` indices to the
-   classifier and parser. A `slice` form for `str` would make the natural
+   same view type", while the MVP signature `slice<T>(v: T[], lo, hi)` accepts
+   only `T[]`. The program sidesteps this by passing `(start, end)` indices to
+   the classifier and parser. A `slice` form for `str` would make the natural
    tokenizer possible.
 2. **Unused required APIs.** The corpus contract lists `text` and `toDecimal`
    among the required helpers, but the behavior is fully covered by templates
    and `toHex`; importing them would trip W10006. They are not imported.
 3. **Enum ordering.** Classification uses only `switch` and equality-compatible
    labels; ordering an enum is outside the program (E10222, EN-6).
+
+## Hand-check record
+
+Line-by-line review against the frozen specification completed on 2026-09-18.
+Every line maps to a rule in the coverage table; the missing `str` slice and
+the unused required helpers are open for the phase checkpoint ruling. No
+program text changed during the pass.
