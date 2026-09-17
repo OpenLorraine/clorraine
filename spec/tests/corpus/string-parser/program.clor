@@ -1,0 +1,85 @@
+// Classifies every space-separated token of a fixed input line as a number or
+// a word, sums the numbers without library help, and formats the result.
+module tests.corpus.StringParser;
+
+import { toHex, padLeft } from std.fmt;
+import { String } from std.text;
+import { println } from std.io;
+
+enum TokenKind : u8 {
+    Word,
+    Number,
+}
+
+const INPUT: static str = "MOV 12 34 ADD 5 7";
+
+// Classifies the bytes from start up to (not including) end: all digits means
+// a number, anything else is a word.
+func classify(input: str, start: usize, end: usize): TokenKind {
+    let allDigits: bool = true;
+    let j: usize = start;
+    while (j < end) {
+        if (input[j] < '0' || input[j] > '9') {
+            allDigits = false;
+        }
+        j = j + 1;
+    }
+    if (allDigits) {
+        return TokenKind.Number;
+    }
+    return TokenKind.Word;
+}
+
+// Converts the digit bytes from start up to (not including) end to their
+// integer value. The caller has already classified them as digits.
+func parseNumber(input: str, start: usize, end: usize): i32 {
+    let value: i32 = 0;
+    let j: usize = start;
+    while (j < end) {
+        value = value * 10 + i32(input[j] - '0');
+        j = j + 1;
+    }
+    return value;
+}
+
+func main(): i32 {
+    let input: str = INPUT;
+    let total: usize = len(input);
+    let tokens: u32 = 0;
+    let numbers: u32 = 0;
+    let words: u32 = 0;
+    let sum: i32 = 0;
+
+    let i: usize = 0;
+    while (i < total) {
+        while (i < total && input[i] == ' ') {
+            i = i + 1;
+        }
+        let start: usize = i;
+        while (i < total && input[i] != ' ') {
+            i = i + 1;
+        }
+        if (i > start) {
+            let kind: TokenKind = classify(input, start, i);
+            tokens = tokens + 1;
+            switch (kind) {
+                case TokenKind.Number:
+                    numbers = numbers + 1;
+                    sum = sum + parseNumber(input, start, i);
+                    break;
+                case TokenKind.Word:
+                    words = words + 1;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    println($"string-parser: tokens={tokens} numbers={numbers} words={words}");
+    println($"string-parser: sum={sum}");
+    let hex: String = padLeft(toHex(u32(sum)), 8, '0');
+    println($"string-parser: hex={hex}");
+    println("string-parser: ok");
+    return 0;
+}
