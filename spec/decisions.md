@@ -294,3 +294,25 @@ questions the ledger left open. The complete freeze resolution table lives in
 | GF2 | Assignment keeps the C expression grammar, but its result is `void`; chaining and value use are compile errors |
 | GF3 | No integer literal suffixes; literals are context-typed (default `i32`; hex and binary may use the full unsigned width) |
 | GF4 | `unsafe` is a prefix expression operator (`unsafe p.next`) and a statement block (`unsafe { ... }`); there is no block-expression value |
+
+## 20. Phase C clarifications
+
+The chapter rewrites surfaced gaps that the ledger did not cover. These
+clarifications close them without changing any accepted decision; chapters and
+the diagnostics registry follow them.
+
+| Ref | Clarification |
+|---|---|
+| T1a | Same-signedness integer widening is implicit: `u8`→`u16`/`u32`, `u16`→`u32`, `i8`→`i16`/`i32`, `i16`→`i32`. Mixed-sign and narrowing integer conversions, `usize`/`isize` conversions, and integer↔float conversions are explicit. `f32`→`f64` is implicit. |
+| B7a | `>>` on a signed integer is sign-replicating (arithmetic); on an unsigned integer it is zero-filling. Shift counts are masked to the operand width in both cases. |
+| T6a | An explicit `raw`→integer value cast (for example `usize(p)`) is allowed outside `unsafe`; it reads the address as a number and performs no dereference. |
+| T2a | Core handle types declare their own FFI deleters instead of reusing the deleter of a differently-typed handle: `handle String freedBy FreeString;` with `func FreeString(take s: String): void;`, and `handle Buffer freedBy FreeBuffer;`. C-facing types keep the C symbols (`Memory`/`FreeVec`, `Library`/`CloseLibrary`, `File`/`Close`, `MsgPort`/`DeleteMsgPort`). This makes T2's shorthand type-correct under X1. |
+| T10a | Enums compare with `==` and `!=` only; ordering an enum is E10222. Members without an explicit value number sequentially from 0. |
+| V9a | A lend parameter instantiated with a duplicable type binds a copy (V5). Writes through a `borrow` parameter of a duplicable type affect that copy only, and W10001 marks the needless lend. Generic copy obligations are recorded and discharged at instantiation. |
+| X1a | The `freedBy` name is a qualified name resolved like any other declaration; the deleter is an FFI function taking `take T` and returning `void`. |
+| E112xx | Runtime fault codes live in the E112xx block next to the profile limits (`E11210` division by zero, `E11211` index out of range, `E11212` float-to-integer range, `E11213` assertion failure). They print the standard `error CODE: message` first line and abort (N8). |
+| N8a | New compile-time codes assigned in Phase C: definite assignment `E10021`, the index checks `E10216`/`E11211`, the float rules `E11212`, and the completeness codes `E10218`-`E10222`. `E10605` is retired before release; misplaced `volatile` is `E10208`. |
+| S2a | Template float placeholders use a fixed v1 precision of six significant digits; precision control is deferred (S6). The public conversion is `text` (T5); `toText` in P8 names the internal desugaring helper. |
+| P8a | Templates desugar to string-builder and `text` conversion calls; the exact helper names are codegen-internal. |
+| M7a | A module-level initializer expression that is nullable is a type error (E10200): globals are non-nullable values. |
+| W10004a | Stack-frame warning thresholds are profile facts with v1 defaults: `hosted-amiga` 1024 bytes, `host` 16384 bytes, `freestanding` profile-defined. |

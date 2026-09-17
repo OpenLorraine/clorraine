@@ -22,7 +22,7 @@ specification and compiler come next.
 | Amiga SDK image (GCC 16.2, binutils 2.46, gdb, libnix, NDK 3.2, vbcc/vasm/vlink) | Ready |
 | FS-UAE + `vamos` run/debug loop (`make run`, `make run-vamos`, ADF fallback) | Ready |
 | Phase 0 hosted skeleton (ownership contracts, cleanup shapes, run matrix) | Complete |
-| Language specification v0.3 — Phase A decisions locked ([ledger](spec/decisions.md)) and the Phase B grammar freeze ([grammar](spec/grammar.ebnf.md), [deltas](spec/grammar-deltas.md)); chapters next | In progress |
+| Language specification v0.4 — Phase A decisions, Phase B grammar freeze, Phase C chapter rewrites, Phase D compile-fail suite ([spec](spec/README.md)) | In progress (preflight gate next) |
 | Compiler MVP (C-like → C with ownership checks) | After the spec |
 | LorraineOS bring-up (freestanding profile, m68k) | With/after the MVP |
 | ARM64 port | Later |

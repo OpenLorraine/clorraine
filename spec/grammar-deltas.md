@@ -121,7 +121,7 @@ substitute.
 
 | Lost guarantee | Substitute |
 |---|---|
-| Static RAM and frame budget per function | Profile size warnings (W10020 pattern); codegen report planned |
+| Static RAM and frame budget per function | Profile size warnings (the W10004 size-warning pattern); codegen report planned |
 | Static stack-peak proof | Documented stack-depth guidance (F7); debug instrumentation in the emulator |
 | Zero-page budget proof | No zero page; A4/A5 usage is codegen territory |
 | Interrupt overlap proof (compiler-generated save/restore) | Dispatcher contract: handlers are allocation-free, drop-free, panic-free (F7) |

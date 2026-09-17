@@ -1,8 +1,8 @@
 # The Clorraine Language Specification
 
-> **Status:** working draft (v0.3 — Phase B anchors: the grammar freeze)
+> **Status:** working draft (v0.4 — Phase C: chapters rewritten against the ledger and the grammar)
 > **Scope:** hosted AmigaOS profile first; freestanding (LorraineOS) designed-for, implemented later
-> **Decision ledger:** [decisions.md](decisions.md) — accepted decisions; where a chapter disagrees, the ledger wins until the chapter is rewritten
+> **Decision ledger:** [decisions.md](decisions.md) — accepted decisions; the ledger wins on any conflict
 > **Grammar freeze:** [grammar.ebnf.md](grammar.ebnf.md) — the master EBNF; every delta from Blend65 is in [grammar-deltas.md](grammar-deltas.md); the Rust semantics pin is [lineage.md](lineage.md)
 
 Clorraine is the systems language of [LorraineOS](../README.md): a safe, C-like
@@ -14,12 +14,11 @@ developed in the open under
 
 * Chapters are numbered and referenced as `Ch NN`.
 * Every chapter states a **Status**: `planned`, `draft`, `reviewed`, `stable`.
-* Rules carry IDs (for example `OW-3`) and diagnostics carry `E1xxxx`/`W1xxxx`
-  codes from [Ch 14](14-diagnostics.md).
-* Ownership keywords were decided in Phase A and are listed in the
-  [decision ledger](decisions.md). Chapters written before that lock may still
-  show the old placeholders (`own`, `borrow mut`, `move`); those chapters are
-  rewritten against the ledger and the grammar in Phase C.
+* Rules carry IDs (for example `OW-3`) and diagnostics carry five-digit
+  `Exxxxx`/`Wxxxxx` codes registered in [Ch 14](14-diagnostics.md).
+* The [decision ledger](decisions.md) is authoritative: Phase A decisions,
+  Phase B grammar freezes (section 19), and the Phase C clarifications
+  (section 20) all live there.
 
 ## Derivation from Blend65
 
@@ -46,25 +45,25 @@ guarantees lost with their substitutes.
 | — | [Semantic lineage (Rust pin)](lineage.md) | draft |
 | — | [Master EBNF grammar (freeze)](grammar.ebnf.md) | draft |
 | — | [Grammar deltas from Blend65](grammar-deltas.md) | draft |
-| 00 | [Introduction and axioms](00-introduction.md) | draft |
-| 01 | [Lexical structure](01-lexical.md) | planned |
-| 02 | [Type system](02-types.md) | planned |
-| 03 | [Ownership, moves, and destructors](03-ownership.md) | draft |
-| 04 | [Expressions and operators](04-expressions.md) | planned |
-| 05 | [Statements and control flow](05-statements.md) | planned |
-| 06 | [Functions and parameters](06-functions.md) | planned |
-| 07 | [Structs](07-structs.md) | planned |
-| 08 | [Arrays, slices, and strings](08-arrays-strings.md) | planned |
-| 09 | [Enums and tagged unions](09-enums-unions.md) | planned |
-| 10 | [Modules](10-modules.md) | planned |
-| 11 | [Memory and resources](11-memory.md) | planned |
-| 12 | [FFI and ownership contracts](12-ffi-contracts.md) | draft |
-| 13 | [Data inclusion](13-data-inclusion.md) | planned |
-| 14 | [Diagnostics registry](14-diagnostics.md) | draft |
-| 15 | [Platform profiles](15-profiles.md) | planned |
-| 16 | [Borrow-checker rules](16-borrow-rules.md) | draft |
-| 17 | [C codegen contract](17-codegen.md) | draft |
-| A | [Amiga appendix](appendix-amiga.md) | planned |
+| 00 | [Introduction and axioms](00-introduction.md) | draft (Phase C) |
+| 01 | [Lexical structure](01-lexical.md) | draft (Phase C) |
+| 02 | [Type system](02-types.md) | draft (Phase C) |
+| 03 | [Ownership, moves, and destructors](03-ownership.md) | draft (Phase C) |
+| 04 | [Expressions and operators](04-expressions.md) | draft (Phase C) |
+| 05 | [Statements and control flow](05-statements.md) | draft (Phase C) |
+| 06 | [Functions and parameters](06-functions.md) | draft (Phase C) |
+| 07 | [Structs](07-structs.md) | draft (Phase C) |
+| 08 | [Arrays, slices, and strings](08-arrays-strings.md) | draft (Phase C) |
+| 09 | [Enums and tagged data](09-enums-unions.md) | draft (Phase C) |
+| 10 | [Modules](10-modules.md) | draft (Phase C) |
+| 11 | [Memory and resources](11-memory.md) | draft (Phase C) |
+| 12 | [FFI and ownership contracts](12-ffi-contracts.md) | draft (Phase C) |
+| 13 | [Data inclusion](13-data-inclusion.md) | draft (Phase C) |
+| 14 | [Diagnostics registry](14-diagnostics.md) | draft (Phase C) |
+| 15 | [Platform profiles](15-profiles.md) | draft (Phase C) |
+| 16 | [Borrow-checker rules](16-borrow-rules.md) | draft (Phase C) |
+| 17 | [C codegen contract](17-codegen.md) | draft (Phase C) |
+| A | [Amiga appendix](appendix-amiga.md) | draft (Phase C) |
 
 ## Validation
 

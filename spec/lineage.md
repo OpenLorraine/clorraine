@@ -70,10 +70,10 @@ there are no methods):
 Examples:
 
 ```clorraine
-func head(buf: borrow u8[], n: usize): u8[] { return slice(buf, 0, n); }
+func head(borrow buf: u8[], n: usize): u8[] { return slice(buf, 0, n); }
 // elides to buf: the single view-like lend
 
-func pair(a: u8[], b: u8[]): u8[] { ... }
+func pair(a: u8[], b: u8[]): u8[] { return a; }
 // error (two candidates): no annotation syntax can choose
 
 func greeting(): static str { return "hello"; }

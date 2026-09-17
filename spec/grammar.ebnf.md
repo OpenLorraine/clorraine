@@ -99,27 +99,31 @@ through the standard-library dispatcher (F7).
 
 ```ebnf
 struct_decl     = [ "export" ] , "struct" , identifier , [ type_params ]
-                , "{" , struct_field , { struct_field } , "}" ;
+                , [ "freedBy" , qualified_name ]
+                , "{" , { struct_field } , "}" ;
 
 struct_field    = identifier , ":" , [ "volatile" ] , value_type , ";" ;
 ```
 
-At least one field: C99 has no empty structs (P1). A `volatile` field makes
-the struct an overlay type (T7, T11). Fields are semicolon-terminated and
-declared in C-layout order (no reordering).
+At least one field is required by the semantic pass (E10206): C99 has no empty
+structs (P1). A `volatile` field makes the struct an overlay type (T7, T11).
+Fields are semicolon-terminated and declared in C-layout order (no reordering).
+A struct-level `freedBy` clause parses but is rejected (E10104): only handles
+name a deleter (X2).
 
 ### 3.3 Enums
 
 ```ebnf
-enum_decl       = [ "export" ] , "enum" , identifier , ":" , integer_type
+enum_decl       = [ "export" ] , "enum" , identifier , ":" , scalar_type
                 , "{" , enum_member , { "," , enum_member } , [ "," ] , "}" ;
 
 enum_member     = identifier , [ "=" , const_expression ] ;
 ```
 
-The backing integer type is required; members are scoped (`Direction.UP`) and
-convert only through explicit casts. There is no `union` declaration: tagged
-data is modeled with structs plus `switch` (T10).
+The backing integer type is required (a non-integer backing type is E10211);
+members are scoped (`Direction.UP`) and convert only through explicit casts.
+There is no `union` declaration: tagged data is modeled with structs plus
+`switch` (T10).
 
 ### 3.4 Handles
 
@@ -148,7 +152,7 @@ Globals must be duplicable or `const` (O10). `volatile` is allowed only on
 ### 3.6 FFI and intrinsic declarations
 
 ```ebnf
-ffi_block       = "ffi" , identifier , "{" , { ffi_decl } , "}" ;
+ffi_block       = [ "export" ] , "ffi" , identifier , "{" , { ffi_decl } , "}" ;
 ffi_decl        = "func" , identifier , "(" , [ param_list ] , ")" , ":" , return_type , ";" ;
 
 intrinsic_decl  = "intrinsic" , "func" , identifier , "(" , [ param_list ] , ")" , ":" , return_type , ";" ;
@@ -156,9 +160,10 @@ intrinsic_decl  = "intrinsic" , "func" , identifier , "(" , [ param_list ] , ")"
 
 FFI signatures use the ordinary vocabulary, including modes; nullability lives
 in the type (`File?`), not in clauses (X3). FFI blocks are module-scoped and
-never exported (M9); application code calls libraries through wrappers (X6).
-`intrinsic` declarations are restricted to compiler-known names (deltas
-section 8); they carry no body.
+never exported (M9); an `export` marker parses and is rejected (E10103).
+Application code calls libraries through wrappers (X6). `intrinsic`
+declarations are restricted to compiler-known names (deltas section 8); they
+carry no body.
 
 ## 4. Types
 
@@ -670,6 +675,7 @@ position and the conditional operator in expression position.
 | `unsafe` block vs prefix operator | `unsafe {` is the statement block; `unsafe <expr>` is the prefix operator wrapping one unary expression |
 | `identifier(...)` call vs cast | Parsed uniformly as call; the semantic pass resolves functions, enum casts, and handle casts |
 | Statement start | LL(1): leading keyword or `{`; other starts are expressions |
+| Diagnostic-only starts | `union` at declaration start and `volatile` in statement position are not productions; the parser recognizes them only to report E10204 and E10208 with targeted help. `match`, `class`, and similar foreign keywords are ordinary identifiers and end in E20000 |
 
 ## 12. Production index
 

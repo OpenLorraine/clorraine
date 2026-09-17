@@ -1,210 +1,278 @@
 # Chapter 03 - Ownership, Moves, and Destructors
 
-> **Status:** draft
-> **Depends on:** Ch 00 (axioms), Ch 12 (FFI contracts), Ch 16 (borrow rules), Ch 17 (codegen)
-> **Note:** example keywords (`own`, `borrow`, `borrow mut`, `move`, `raw`) are placeholders; the semantic modes are normative.
+> **Status:** draft (Phase C - rewritten against the ledger and the grammar)
+> **Depends on:** Ch 02 (types), Ch 12 (FFI and contracts), Ch 16 (borrow rules), Ch 17 (codegen)
+> **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1 (params), 3.4 (handles), 3.5 (module values), 4 (types), 5 (statements), 6.3-6.4 (unsafe and postfix expressions)
+> **Ledger:** [decisions.md](decisions.md) sections 1, 4, 5; plus 6 (T6, T8), 11 (X1, X2), 15 (P2-P5)
+
+This chapter defines what owns a value, when a value moves, and when it is
+released. It is the source-level contract; [Ch 16](16-borrow-rules.md) specifies
+how the checker proves the borrow rules, and [Ch 17](17-codegen.md) shows the
+generated cleanup ladder.
 
 ## 1. Values and resources
 
-A **value** is a scalar, an aggregate (struct, array, tagged union), or a
-**handle**. A handle names a resource with a release function: heap memory,
-a library base, a file, a message port.
+A **value** is a scalar, an aggregate, a view, or a handle.
 
-| Kind | Examples | Release function |
+| Kind | Examples | Duplicability |
 |---|---|---|
-| Heap memory | `AllocVec` buffer | `FreeVec` |
-| Library | `OpenLibrary` base | `CloseLibrary` |
-| File | `Open` handle | `Close` |
-| Port / IO request | `CreateMsgPort`, `CreateIORequest` | `DeleteMsgPort`, `DeleteIORequest` |
+| Scalar | `i32`, `u32`, `f64`, `bool` | duplicable; a copy is a new value |
+| Aggregate | struct, fixed array | duplicable when every field or element is duplicable (V8) |
+| View | `str`, `T[]`, `cstring` | duplicable; a copy is a cheap pointer-and-length view |
+| Handle | `File`, `Buffer`, `String` | move-only; released by its `freedBy` deleter |
 
-The release function comes from the FFI contract of the acquiring function
-(Ch 12). The language itself knows nothing about AmigaOS specifics.
+A **handle** names a resource: heap memory, a library base, a file, a message
+port. The library that owns the resource declares it once with
+`handle T freedBy F;` (X1). `F` is an `ffi`-declared func that takes `take T`
+and returns `void`; there is exactly one deleter per type. Native structs never
+use `freedBy`; they release their fields structurally (X2). Application code
+never writes `ffi` blocks (X6); [Ch 12](12-ffi-contracts.md) owns the boundary.
 
-## 2. Ownership modes
+Bindings hold values. A view arrives from a parameter or a view-typed return,
+never from a local view expression (O9). The retired placeholder keywords of
+the draft are not part of the surface.
 
-| Mode | Meaning | May be copied | May be dropped |
+## 2. Ownership model
+
+**One owner per owned value.** The owner is the local binding, `take`
+parameter, field of an owned value, array element of an owned array, or
+returned value that is responsible for the release. A **lend** is a temporary
+borrow passed to a callee; it carries access, not responsibility, so it never
+releases.
+
+**Duplicability is derived from fields** (V8). Scalars are duplicable. A struct
+is duplicable when all its fields are duplicable; handles and structs with
+resource fields are move-only. There is no `copy` keyword. A duplicable value
+copies; a move-only value transfers by move.
+
+**Parameter modes** decide how the callee receives each argument. The mode is
+written before the name (V5):
+
+| Mode | Meaning | May write | Ownership |
 |---|---|---|---|
-| `copy` | Plain data; duplication is safe | yes | no (nothing to release) |
-| `own` | Exclusive responsibility for release | no (moved) | yes, exactly once |
-| `borrow` | Shared read-only access | yes (reborrow) | no |
-| `borrow mut` | Exclusive access, no other live borrow | no (reborrow only) | no |
-| `raw` | Unchecked pointer; no ownership | yes | no |
+| unmarked `x: T` | read-only lend | no | caller keeps |
+| `const x: T` | read-only lend | no | caller keeps |
+| `borrow x: T` | writable lend (exclusive) | yes | caller keeps |
+| `take x: T` | ownership transfer | yes | callee owns; the caller's binding is invalidated |
 
-*OW-1* Every binding, parameter, and field has exactly one mode.
-*OW-2* `copy` is a property of the type: scalars and aggregates whose fields
-are all `copy` (marker: `copy struct`). Everything else is move-only.
-*OW-3* `borrow` and `borrow mut` are temporary views; they never release.
+Scalars are copied in every mode. Call-site markers (`take f`, `borrow f`,
+`const f`) are optional assertions; if written they must agree with the
+declaration, otherwise E10039, and the declaration is always authoritative (V6).
+
+Bindings: `let` is mutable and `const` is immutable (V1). A `const` binding may
+be read, copied when duplicable, and lent read-only; assigning to it is E10023,
+and moving out of it or taking a writable lend of it is an error (V3).
+Assigning through a read-only parameter is E10024; declare the parameter
+`borrow` to write through it. A lend of a duplicable value binds a copy (V9);
+a needless lend warns as W10001 instead of erroring (D9), and a `const` marker
+on a copy type has no effect and is likewise a warning (V4). Writable lends of owned temporaries are
+allowed; writable lends of `const` bindings are errors (V11).
 
 ## 3. Moves
 
-A **move** transfers ownership. The source becomes unusable; any later read,
-borrow, or drop of it is a compile-time error.
+A **move** transfers ownership. It happens in these situations:
 
-Moves happen at:
-
-| Operation | Moved? |
+| Situation | Moves? |
 |---|---|
-| `let b = a;` where `a` is `own` or move-only aggregate | yes |
-| Passing an `own` argument | yes |
-| `return` of an `own` value | yes |
-| Assignment to a field of a move-only type | yes |
-| Copy of a `copy` value | no |
+| `let b = a;` where `a` is move-only | yes |
+| Passing a value to a `take` parameter | yes |
+| Returning an owned value | yes |
+| Assignment of a move-only value | yes |
+| A top-level field out of an owned local or `take` parameter | yes; partial (section 4) |
+| Binding or copying a duplicable value | no; it copies |
+| Binding a view | no; the view copies |
 
-*OW-4* Moving a value while it is borrowed is an error (E10022).
-*OW-5* Using a moved value is an error (E10020).
-*OW-6* Aggregate moves are lowered as "copy then zero the source" so that
-inserted drops are null-safe and cannot double-release (Ch 17 §4).
+* After a move the source is invalid: a later read, borrow, move, or drop of it
+  is E10020 (O1). The compiler omits the drop of a moved value, and zero = empty
+  (O7) makes any remaining exit-path drop a no-op, so a drop never runs twice.
+* Re-initializing a moved binding is allowed (O3). After
+  `a = openFile("RAM:b");` the binding is live again.
+* Assignment drops the live old value of the target first, then stores the new
+  value (O3).
+* Move state is flow-sensitive. At a control-flow join, a value moved on any
+  path counts as moved (O6, conservative).
+* **Zero = empty** (O7): the all-zero bit pattern is the valid "nothing to
+  release" state for every droppable type. The release routine checks this
+  state before releasing, and the zeroed value is the drop flag.
 
 ```clorraine
-let a: own Buffer = Buffer.alloc(64);
-let b: own Buffer = move a;      /* a is now invalid */
-b.write(...);
-/* b released at scope end; a has nothing left to release */
+import { File, openFile } from std.io;
+
+func consume(take f: File): void {
+}
+
+func demo(): void {
+    let f: File = openFile("RAM:a");
+    consume(take f);        // ownership moves into consume; f is invalid after this
+}
 ```
 
-## 4. Borrows
+Element loops follow the same rule: `for (e in xs)` copies duplicable elements,
+and non-duplicable elements require `for (borrow e in xs)`, otherwise E10040
+(grammar 5.2, GF9). Moving an element out of an array is an element move, which
+v1 limits (section 4).
 
-Borrows grant access without ownership. Their lifetime is, in v1, the
-**lexical scope** in which they are created; a later version adds non-lexical
-regions (Ch 16).
+## 4. Partial moves
 
-| Rule | Statement | Diagnostic |
-|---|---|---|
-| OW-7 | A borrow may not outlive the value it borrows | E10030 |
-| OW-8 | While a shared borrow is live, the owner may not be moved or exclusively borrowed | E10031 |
-| OW-9 | While an exclusive borrow is live, no other borrow may be live and the owner may not be moved | E10032 |
-| OW-10 | A borrow may not escape: not returned unless derived from a parameter, not stored in a struct field, not stored in a global | E10033 |
+A partial move takes one top-level field out of an owned local or a `take`
+parameter (O4). Nested paths and element moves are E10026 in v1.
 
-The `borrow mut` view is unique: creating it invalidates every other borrow of
-the same owner until its last use in the scope.
+| Rule | Diagnostic |
+|---|---|
+| Partial moves are limited to top-level fields of owned locals and `take` parameters | E10026 |
+| After a partial move, whole-value use (read, move, or lend) is an error | E10025 |
+| The remaining fields stay usable | - |
+| Reassigning the moved field re-initializes the struct | - |
+| A field moved on any path counts as moved at a control-flow join | - (O6) |
 
 ```clorraine
-let buf: own Buffer = Buffer.alloc(64);
-let view: borrow Buffer = buf;       /* shared */
-inspect(view);
-/* view's last use is above; scope rules keep it live until here in v1 */
-let edit: borrow mut Buffer = buf;   /* allowed in v2 non-lexical model;
-                                        E10032 in the v1 lexical model */
+import { String, stringOf } from std.text;
+
+struct Job {
+    name: String;
+    status: u32;
+}
+
+func consume(take s: String): void {
+}
+
+func demo(): void {
+    let job: Job = Job { name: stringOf("build"), status: 0 };
+    let name: String = job.name;   // partial move of the top-level field
+    job.status = 1;                // remaining fields stay usable
+    // let whole: Job = job;       // E10025: the whole value is partially moved
+    job.name = stringOf("run");    // reassignment re-initializes the struct
+    consume(take name);
+}
 ```
 
-The v1 lexical rule is intentionally conservative: it rejects some correct
-programs rather than accepting wrong ones. Phase 3's non-lexical checker (Ch
-16) replaces it without changing the source-level contract.
+## 5. Drops and destructors
 
-## 5. Destructors and drops
+An owned value is **dropped** (released) when its owner's scope ends. Drop
+order is fixed (O2):
 
-*OW-11* Every `own` binding that is still live at scope exit is dropped, in
-reverse declaration order.
-*OW-12* Drops are null-safe and exactly once: generated drop calls guard
-against null, and moves zero the source.
-*OW-13* Temporaries are dropped at the end of the statement that created them,
-in reverse creation order.
-*OW-14* There are no drops at process exit. Globals may therefore not be
-`own` (Ch 03 §8); resources held for the whole program are released by the
-program before returning.
+| Scope | Order |
+|---|---|
+| Locals | reverse declaration order |
+| Struct fields | declaration order |
+| Array elements | first to last |
+| Parameters | after the body's locals |
+
+Temporaries drop at the end of the statement that created them (D5).
+`defer { ... }` joins the same cleanup ladder: drops and defers run in reverse
+registration order, and the block is checked at its exit context (F5). Drops run
+on every `return`, `break`, and `continue` that leaves a scope (P2), and the
+null-safe check (O7) makes them run exactly once (O1).
+
+There are no drops at process exit. `panic` aborts without running the ladder
+(D4, E4). A global must therefore be duplicable or `const`: a non-duplicable
+global is E10037 (O10).
 
 ```clorraine
-function copyFile(): void {
-    let src: own File = File.open("RAM:a");   /* drop at scope end */
-    let dst: own File = File.open("RAM:b");   /* dropped first (reverse order) */
-    let buf: own Buffer = Buffer.alloc(4096);
-    memset(buf.borrow_mut());
-    loop {
-        let n: u32 = src.read(buf.borrow_mut());
-        if n == 0 { break; }
-        dst.write(buf.borrow());
+let tracing: bool = false;
+
+func process(): void {
+    tracing = true;
+    defer {
+        tracing = false;    // runs on return, break, or continue; not on panic
     }
-    /* drop buf, then dst, then src */
+    // ... work ...
 }
 ```
 
-Failures use ordinary C-like control flow: an acquisition that can fail
-returns a nullable owned handle, and the compiler's control-flow check
-rejects use of a possibly-null value (E10010). There are no exceptions and no
-unwind: drops run on every `return`, `break`, and `continue` that leaves a
-scope, but not on `exit` (documented; the runtime or OS reclaims).
+## 6. Nullability in ownership
 
-## 6. Functions and parameters
+`T?` applies to handles, `raw`, `cstring`, and views (T8). On any other type it
+is E10011. `T` widens into `T?`, and narrowing requires an `== null` or
+`!= null` check; using the value before the check is E10010. Using `null` where
+a non-nullable type is required is E10012.
 
-| Position | Default mode | Explicit alternatives |
-|---|---|---|
-| Scalar parameter | `copy` (by value) | - |
-| Aggregate parameter | `borrow` (read-only) | `borrow mut`, `own` |
-| Return value | `own`, `copy`, or a parameter-derived `borrow` | - |
-
-*OW-15* An `own` parameter means ownership is transferred into the callee; the
-caller's binding is invalidated.
-*OW-16* A `borrow`/`borrow mut` parameter must not be released by the callee
-and must not be stored beyond the call (E10034).
-*OW-17* Returning a borrow is allowed only when it is derived from a
-parameter; the result borrows that parameter's owner (single elided lifetime,
-shortest of all parameters). Returning a borrow of a local is E10035.
+A nullable owned value drops null-safely (O7): when it is `null` there is
+nothing to release, so the drop is skipped. The **out-parameter pattern**
+writes a handle through a `borrow T?` parameter (T8):
 
 ```clorraine
-function firstByte(data: borrow Buffer): borrow u8 {
-    return data.at(0);          /* borrow of a parameter: allowed */
-}
+import { File, openInto } from std.io;
 
-function bad(): borrow u8 {
-    let local: Buffer = Buffer.alloc(4);
-    return local.at(0);         /* E10035: borrows a local */
+func dump(path: str): void {
+    let f: File? = null;
+    openInto(path, borrow f);   // the callee writes a handle or leaves it null
+    if (f == null) {
+        return;                 // nothing to release
+    }
+    // f is narrowed to File here; it drops null-safely at scope end
 }
 ```
 
-## 7. Aggregates
+Definite assignment (F9) applies to locals: reading one before it is assigned on
+every path is E10021. A `borrow T?` out-parameter is exempt, so a callee may
+fill it in without the caller having assigned it first.
 
-* Structs are move-only unless marked `copy`.
-* `copy struct` requires every field to be `copy`.
-* v1 structs may not contain `borrow` fields (E10036; OW-18); borrow-typed
-  fields and struct lifetime parameters are a later extension.
-* Arrays of move-only elements are move-only and are dropped element by
-  element in index order.
+## 7. Borrows of owned values
 
-```clorraine
-copy struct Point { x: i32; y: i32; }        /* freely copyable */
-struct Owning { name: own string; n: u32; }  /* move-only; drop releases name */
-```
+This section summarizes the borrow contract for owners. The checker and its v1
+lexical model are specified in [Ch 16](16-borrow-rules.md); borrows never
+release a value and never change ownership.
 
-## 8. Globals
+| Rule | Diagnostic |
+|---|---|
+| A lend may not outlive its owner | E10030 |
+| No move of an owner while a loan of it is live | E10022 |
+| No mutation of an owner while a shared lend is live | E10031 |
+| A writable lend is unique; a second conflicting loan is an error | E10032 |
+| Lends do not escape their origin (a field, a global, or a local's return) | E10033 |
+| A borrowed parameter is call-scoped; the callee may not release or store it | E10034 |
+| A view returned from a local is an error | E10035 |
+| A view return must derive from exactly one view-like lend parameter | E10036 |
+| A global may not be borrowed | E10038 |
+| A writable view may not derive from a read-only borrow | E10041 |
+| A needless lend of a duplicable value is a warning, not an error | W10001 |
 
-* Globals must be `copy` or `const`; `own` globals are rejected (E10037;
-  OW-19) because there are no exit-time drops.
-* A global borrow is rejected (E10038; OW-19).
-* Mutable global state is allowed but any resource it references must be
-  released by explicit code before the program returns.
+The shape is many readers XOR one writer. Field borrows are allowed and tracked
+conservatively as whole-struct loans (O8). **Reborrowing views** (O12): a
+read-only view derived from a lend is a shared reborrow, and a writable view
+derived from a writable lend is an exclusive reborrow limited to the
+expression. This is what makes `borrow bufferBytes(buf)` valid when `buf` is
+itself a parameter. Returned views obey lifetime elision (EL-1..EL-6); a view
+of a local is rejected because it would outlive its owner.
 
-## 9. The raw escape hatch
+## 8. The raw escape hatch
 
-`raw` pointers exist for hardware registers, FFI boundaries, and code the
-checker must not reason about.
+`raw T` is an unchecked copy pointer, nullable as `raw T?` (T6). Dereference,
+indexing, pointer arithmetic, pointer casts, and address-of require `unsafe`,
+written as a block `unsafe { ... }` or a prefix operator `unsafe p.next` (T6,
+GF4). Declaring, passing, storing, and comparing raw pointers, and
+integer-to-`raw` value casts, are allowed outside `unsafe` (T6).
 
-* Raw operations (dereference, offset, cast to `raw`) require an explicit
-  escape block (`unsafe` is the placeholder keyword) so their use is
-  greppable and reviewable.
-* Ownership never flows through `raw` pointers automatically; converting
-  between `own` and `raw` is explicit and audited (Ch 12).
-* `raw` may not be used to launder a borrow out of its scope.
+Ownership never flows through `raw` automatically. Converting an owned handle to
+or from `raw` is an explicit, audited step. An uncontracted extern call requires
+`unsafe` and may not receive owned or borrowed values (T6, X4). A `raw` pointer
+may not launder a lend out of its scope (T6); [Ch 12](12-ffi-contracts.md) keeps
+the boundary in reviewed wrappers.
 
-## 10. Rules summary (normative list)
+## 9. Rule index
+
+The draft rule identifiers become an index for diagnostics and tests (ledger
+section 1). They are restated here in the current vocabulary.
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| OW-1 | One mode per binding, parameter, field | - |
-| OW-2 | `copy` is a type property | - |
-| OW-3 | Borrows never release | - |
-| OW-4 | No move while borrowed | E10022 |
-| OW-5 | No use after move | E10020 |
-| OW-6 | Aggregate move = copy + zero source | - (codegen) |
-| OW-7 | Borrow may not outlive owner | E10030 |
-| OW-8 | No move/exclusive borrow while shared borrow live | E10031 |
-| OW-9 | Exclusive borrow is unique | E10032 |
-| OW-10 | No escaping borrows | E10033 |
-| OW-11 | Drop at scope exit, reverse order | - (codegen) |
-| OW-12 | Drops null-safe, exactly once | - (codegen) |
-| OW-13 | Temporaries dropped at statement end | - (codegen) |
-| OW-14 | No drops at process exit | - |
-| OW-15 | `own` parameter transfers ownership | - |
-| OW-16 | Borrow parameters are call-scoped | E10034 |
-| OW-17 | Returned borrows derive from parameters | E10035 |
-| OW-18 | No borrow fields in v1 aggregates | E10036 |
-| OW-19 | No `own` globals, no global borrows | E10037/E10038 |
+| OW-1 | Every owned value has one owner; every binding, parameter, and field has a mode | - |
+| OW-2 | Duplicability is derived from fields; there is no `copy` marker | - |
+| OW-3 | Lends and views carry access, never release | - |
+| OW-4 | No move of an owner while a loan of it is live | E10022 |
+| OW-5 | No read, borrow, move, or drop of a moved value | E10020 |
+| OW-6 | A move copies then zeroes the source; joins are conservative | - (codegen) |
+| OW-7 | A lend may not outlive its owner | E10030 |
+| OW-8 | No move or writable lend while a shared lend is live | E10031 |
+| OW-9 | A writable lend is unique | E10032 |
+| OW-10 | Lends do not escape their origin | E10033 |
+| OW-11 | Drops run at scope exit, locals in reverse declaration order | - (codegen) |
+| OW-12 | Drops are null-safe and run exactly once | - (codegen) |
+| OW-13 | Temporaries drop at the statement end | - (codegen) |
+| OW-14 | No drops at process exit; globals may not be move-only owners | E10037 |
+| OW-15 | A `take` parameter transfers ownership into the callee | - |
+| OW-16 | A borrowed parameter is call-scoped; the callee must not release or store it | E10034 |
+| OW-17 | A returned view derives from a parameter (elision) | E10035 / E10036 |
+| OW-18 | v1 aggregates carry no view-typed fields except `static str` | - (Ch 02) |
+| OW-19 | A global must be duplicable or `const`; a global may not be borrowed | E10037 / E10038 |
