@@ -9,16 +9,18 @@ Status: complete. Feed the Phase 2 compiler MVP.
 * **Phase D**: cross-validate diagnostics, add the golden compile-fail suite,
   extend `check.sh`, and record this report.
 
-Artifacts: [`spec/`](../spec/README.md), [`spec/tests/compile-fail/`](../spec/tests/compile-fail/README.md).
+Artifacts: [`spec/`](../spec/README.md), [`spec/tests/compile-fail/`](../spec/tests/compile-fail/README.md), [`spec/tests/run/`](../spec/tests/run/README.md), [`spec/tests/staged/`](../spec/tests/staged/README.md).
 
 ## Results
 
 | Check | Method | Result |
 |---|---|---|
-| Headers, status lines, relative links | `spec/check.sh` | OK (24 files) |
+| Headers, status lines, relative links | `spec/check.sh` | OK (27 files) |
 | Grammar productions defined vs indexed | extraction script | 137 productions, 0 mismatches |
 | Chapter diagnostics vs registry (N7) | `spec/check.sh` | 0 unregistered codes |
-| Compile-fail coverage | `spec/check.sh` | 100 tests; runtime faults and `E90000` excluded by design |
+| Compile-fail coverage | `spec/check.sh` | 101 tests; runtime faults and `E90000` excluded by design |
+| Run suite created | `spec/tests/run/` | 6 runtime-fault cases (`E11210`-`E11213`, including MIN/-1 and NaN) |
+| Staged suite created | `spec/tests/staged/` | 4 staged files (`E90000`, `E90003`, `E90004`, `W10005`) |
 | Stale vocabulary | grep across chapters | none live; historic Blend65 codes appear only in negative statements |
 | Independent consistency review | adversarial reviewer pass | 26 findings, all fixed or clarified |
 
@@ -26,7 +28,7 @@ Verification command:
 
 ```sh
 cd spec && ./check.sh
-# spec check: OK (24 files, 100 compile-fail tests)
+# spec check: OK (27 files, 101 compile-fail tests)
 ```
 
 ## Grammar corrections found during Phase C
@@ -62,8 +64,10 @@ cd spec && ./check.sh
   `// expect-error CODE` or `// expect-warning CODE`.
 * The suite is **not executable yet**: no compiler exists, so `check.sh`
   validates structure and coverage, not behavior.
-* `E11210`-`E11213` are runtime faults and belong to Phase 2 run tests.
-  `E90000` is the generic staged fallback and has no unique trigger.
+* `E11210`-`E11213` are runtime faults; their cases live in `tests/run/`
+  (6 files, including MIN/-1 and NaN). `E90000` is the generic staged fallback
+  and has no unique trigger; it, `E90003`, `E90004`, and `W10005` are documented
+  under `tests/staged/`.
 * `E10100`/`E10101` depend on a harness convention for "uncontracted extern";
   the tests document the intent that an `ffi` declaration without ownership
   annotations is uncontracted.
@@ -82,5 +86,7 @@ cd spec && ./check.sh
 |---|---|
 | Implement the semantic stages behind the staged diagnostics | Compiler MVP |
 | Turn the compile-fail suite into a harness that compares the first diagnostic line | Compiler MVP |
-| Add run tests for the four runtime faults and the positive corpus | Compiler MVP |
+| Run the generated-C FFI spike: compile emitted prototypes against the NDK headers and confirm the ABI mapping (Ch 17 section 3) | Compiler MVP |
+| Extend the run suite with the positive corpus (the six runtime-fault cases now exist) | Compiler MVP |
+| Promote the staged tests to `tests/compile-fail/` as their features or harness support lands | Compiler MVP |
 | Re-run `preflight` on the specification before the first compiler milestone | Phase E gate |

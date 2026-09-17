@@ -20,6 +20,25 @@ developed in the open under
   Phase B grammar freezes (section 19), and the Phase C clarifications
   (section 20) all live there.
 
+### Reading order
+
+Read `00` first for the axioms, then the numbered chapters, then the
+appendices (A, B) alongside the chapters they support. The `Depends on` lines
+in the chapter headers are informational, not a topological order: the
+dependency graph is cyclic on purpose, so it orders understanding, not work.
+
+### Phase 2 stages
+
+The compiler is built in this order; each stage lands with its tests.
+
+1. Front end: lexer and parser.
+2. Name resolution.
+3. Types and constant evaluation.
+4. Ownership, definite assignment, and borrow checking.
+5. C codegen with the cleanup ladder.
+6. Runtime shim and the standard-library slice.
+7. The compile-fail and run suites.
+
 ## Derivation from Blend65
 
 Clorraine reuses the structure and process of the Blend65 specification
@@ -64,6 +83,7 @@ guarantees lost with their substitutes.
 | 16 | [Borrow-checker rules](16-borrow-rules.md) | draft (Phase C) |
 | 17 | [C codegen contract](17-codegen.md) | draft (Phase C) |
 | A | [Amiga appendix](appendix-amiga.md) | draft (Phase C) |
+| B | [Standard library (v1)](appendix-stdlib.md) | draft (Phase C) |
 
 ## Validation
 

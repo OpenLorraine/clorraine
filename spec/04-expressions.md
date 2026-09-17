@@ -61,9 +61,17 @@ implementation-defined order.
 | Conditional `?:` | Condition, then exactly one branch |
 | Assignment | Target location, then right-hand side; the old value is dropped before the store (O3) |
 | `&&`, `||` | Left operand first; the right operand only when the result is not yet fixed |
+| Struct literal | Fields evaluate in source order (the names are order-independent) |
+| Array literal | Elements evaluate in source order |
+| Array fill form | The fill expression evaluates once; the value is copied to every element |
 
 Arguments are also where view reborrows happen; passing a view is a reborrow
 limited to the call (O12) [03-ownership.md](03-ownership.md).
+
+Temporaries created anywhere in a statement — including inside nested calls and
+aggregate literals — live until the end of that statement and drop there in
+reverse creation order. The cleanup ladder is specified in
+[Ch 05](05-statements.md) section 15 and [Ch 17](17-codegen.md).
 
 ## 4. Assignment and compound assignment
 
@@ -87,14 +95,14 @@ Every operator is defined; there is no undefined behavior (B7).
 
 | Operator | Operands | Result | Semantics / diagnostic |
 |---|---|---|---|
-| `+`, `-`, `*` | integers | same integer type | Wrapping two's-complement arithmetic (B7, P12) |
-| `+`, `-`, `*`, `/` | `f32`/`f64` | `f32` or `f64` | IEEE 754; mixed `f32`/`f64` promotes to `f64` |
-| `/`, `%` | integers | same integer type | Truncates toward zero; a zero divisor is the runtime fault E11210 |
+| `+`, `-`, `*` | integers | the unified integer type | Wrapping two's-complement arithmetic (B7, P12) |
+| `+`, `-`, `*`, `/` | `f32`/`f64` | `f32` or `f64` | IEEE 754; mixed `f32`/`f64` unifies to `f64` |
+| `/`, `%` | integers | the unified integer type | Truncates toward zero; a zero divisor, or the minimum signed value divided/modulo `-1`, is the runtime fault E11210 |
 | `/` | `f32`/`f64` | float | IEEE 754; a zero divisor gives Inf or NaN |
 | `<<`, `>>` | integers | left operand's type | Count masked to the operand width; `<<` fills with zero, `>>` is logical for unsigned and arithmetic for signed |
 | `<`, `<=`, `>`, `>=` | integers, floats | `bool` | Ordering |
 | `==`, `!=` | scalars, enums, `raw`, handles | `bool` | Handles compare by identity; enums compare with `==`/`!=` only (T10a); ordering handles or enums is E10222 |
-| `&`, `|`, `^`, `~` | integers | same integer type | Bitwise, fixed width |
+| `&`, `|`, `^`, `~` | integers | the unified integer type | Bitwise, fixed width |
 | `!` | `bool` | `bool` | Logical negation |
 | `&&`, `||` | `bool` | `bool` | Short-circuit evaluation |
 | `?:` | `bool` condition; same-typed branches | branch type | Right-associative; only the chosen branch evaluates |
@@ -103,9 +111,18 @@ Every operator is defined; there is no undefined behavior (B7).
 | unary `&` | a place | `raw T` | Address-of; requires `unsafe`, E10601 |
 | unary `*` | `raw T` | place of type `T` | Raw dereference; requires `unsafe`, E10600 |
 
-No operator accepts `bool` as an integer, and no operands are converted except
-the documented cases: integer literal context typing (section 13) and
-`f32`/`f64` promotion. Any other implicit conversion is E10200.
+No operator accepts `bool` as an integer. Binary arithmetic, bitwise, and
+relational operators unify their operands: when the operand types are already
+equal, the unified type is that type; otherwise the compiler applies the T1a
+implicit widenings and widens one operand when only one direction applies. Only
+a mixed-sign pair, or a non-equal pair that is a widening in neither direction,
+is E10200 and needs an explicit cast. The result has the unified type, except
+relational operators, which yield `bool`. A literal operand takes the other
+operand's type when its value fits, otherwise E10202. `f32` and `f64` unify to
+`f64`. The allowed widenings are listed in [Ch 02](02-types.md) section 9; any
+other implicit conversion is E10200.
+
+Unary `+` is not adopted; write the operand directly (`x`, not `+x`).
 
 ## 6. `bool` and conditions
 
@@ -164,10 +181,19 @@ One dot serves every member-like access (GF5, GF11).
 | `p.field` | member access through `raw`; the dereference is implied and requires `unsafe` |
 | `x.f(args)` | dot-call: resolves to the free function `f(x, args)` |
 
-Dot-call resolution is static and decided at compile time. The name is looked
-up as a field or member first, then as a free function. There are no methods,
-no receivers, and no vtables (F8). Standard-library APIs are written dot-call
-style, so `xs.len()` means `len(xs)`.
+Dot-call resolution is static and decided at compile time. The candidate set
+is the receiver's fields first, then free functions visible through the current
+module scope (module declarations plus imported names). A field of the receiver
+always wins, so a field and a function of the same name never collide. A
+candidate function must accept the receiver as its first parameter and match
+the argument list under the usual implicit widenings (section 5,
+[Ch 02](02-types.md) section 9); no other conversions apply. Resolution is
+unambiguous by construction: duplicate declarations and duplicate import binds
+are already E11101 and E11103, so at most one function candidate remains. Zero
+matches is an ordinary name or member error (E10212 for an unknown member,
+E10219 for an undeclared name). There are no methods, no receivers, and no
+vtables (F8). Standard-library APIs are written dot-call style, so `xs.len()`
+means `len(xs)`.
 
 ```clorraine
 let n = xs.len();                 // len(xs)
@@ -251,6 +277,10 @@ let braces = $"literal {{ and }}";         // str: no placeholders
 | Braces must balance | E10503 |
 | Placeholders present: the result is an owned `String`; absent: a plain `str` | - (S5) |
 
+A `:` directly inside a placeholder is a format specifier (E10501). It is
+recognized by the parser, which reports E10501 before semantic analysis, in the
+same way the parser reports E10204 and E10208.
+
 Float placeholders print with a fixed precision of six significant digits in
 v1 (S2a); precision control is deferred (S6). A template
 with placeholders allocates one `String`; a placeholder-free template is a
@@ -288,6 +318,9 @@ Casts use exactly one form, `T(expr)` (B8). There are no C-style casts.
 | Enum cast | `Direction(1)` | Parses as a call, resolved semantically into an enum cast |
 | Handle cast | `File(0)` | Parses as a call, resolved semantically into a handle cast |
 
+The float-to-integer runtime check is `!(f >= lo && f <= hi)`, so a NaN value
+faults E11212, as does a value outside the target range.
+
 An implicit conversion the language does not allow is E10200. A cast it does
 not allow is E10201.
 
@@ -298,7 +331,40 @@ explicit zero value (F4) [07-structs.md](07-structs.md). Array literals are
 `[]`, `[1, 2, 3]`, and the fill forms `[1, 2; 0]` and `[; 0]`; a fill without
 a fixed extent in context is E10215 [08-arrays-strings.md](08-arrays-strings.md).
 
-## 16. Rule summary
+## 16. Constant expressions
+
+A **constant expression** is an expression the compiler can evaluate at
+compile time. It may use:
+
+* literals;
+* `const` bindings whose initializers are constant;
+* enum members;
+* `sizeof`, `offsetof`, and `len` of fixed things;
+* arithmetic, comparison, and bitwise operators whose operands are constant;
+* scalar casts and integer-to-`raw` casts (`raw T(addr)`, GF6);
+* `embed` results.
+
+```clorraine
+const WIDTH: usize = 4;
+const BYTES: usize = WIDTH * 2;            // 8
+const MASK: u32 = (u32(1) << 8) - 1;       // 0xFF
+```
+
+Folding uses the runtime semantics of section 5: integer arithmetic wraps and
+shift counts are masked. A constant expression that divides by zero, or that
+overflows the minimum signed value divided or taken modulo `-1`, is E10223. A
+constant float-to-integer conversion that overflows is E10202, not E10223. A
+form in a constant context that cannot be folded is E10224. A constant value
+that does not fit its context type is E10202.
+
+Constant contexts are array extents, enum member values, `case` labels,
+module-level `const` initializers, and `embed` arguments. A local `const` may
+also have a runtime initializer (V2), and a module-level `let` initializer is
+runtime too; neither is a constant context. Only the module-level `const`
+initializer must be constant. The syntax is in
+[grammar.ebnf.md](grammar.ebnf.md) section 6.8.
+
+## 17. Rule summary
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
@@ -306,8 +372,8 @@ a fixed extent in context is E10215 [08-arrays-strings.md](08-arrays-strings.md)
 | EX-2 | The assignment result is `void` | E10217 |
 | EX-3 | Left-to-right evaluation; `&&`/`||` short-circuit | - |
 | EX-4 | Integer arithmetic wraps; shifts mask the count | - |
-| EX-5 | Integer `/` or `%` by zero faults | E11210 |
-| EX-6 | A float-to-integer conversion out of range faults | E11212 |
+| EX-5 | Integer `/` or `%` by zero, or the minimum signed value over `-1`, faults | E11210 |
+| EX-6 | A float-to-integer conversion out of range or of NaN faults | E11212 |
 | EX-7 | `bool` is not an integer and has no truthiness; a non-`bool` condition is E10218 | E10218 |
 | EX-8 | Casts are only `T(expr)` | E10200/E10201 |
 | EX-9 | Raw operations require `unsafe` | E10600-E10603 |
@@ -317,3 +383,4 @@ a fixed extent in context is E10215 [08-arrays-strings.md](08-arrays-strings.md)
 | EX-13 | No format specs and no nested templates | E10501/E90005 |
 | EX-14 | An assignment target must be a place | E10221 |
 | EX-15 | A false `assert` aborts with a runtime fault | E11213 |
+| EX-16 | Constant expressions fold with runtime semantics; a division by zero or MIN/-1 overflow is E10223, a non-constant form is E10224, and a float-to-int overflow is E10202 | E10223/E10224/E10202 |

@@ -1,0 +1,10 @@
+// expect-fault E11210
+// trigger: integer division by -1 at the minimum signed value (MIN / -1)
+module tests.run.E11210;
+
+func main(): i32 {
+    let min: i32 = i32(u32(0x80000000));
+    let d: i32 = -1;
+    let q: i32 = min / d;   // E11210: MIN / -1 overflows
+    return q;
+}

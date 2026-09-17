@@ -20,13 +20,19 @@ embed_expr = "embed" , "(" , string_literal , [ "," , string_literal ] , ")" ;
 | DI-2 | `embed("path", "key")` carries a caller-chosen key with the same bytes | - |
 | DI-3 | The file is read at build time; there is no runtime loader | - |
 | DI-4 | `embed` is allowed only in a constant context | E10213 |
-| DI-5 | The file must be readable at build time | E10214 |
+| DI-5 | The path is relative to the source file and inside the project root (an absolute path or `..` escape is rejected), and the file must be readable at build time | E10214 |
 | DI-6 | One call embeds one file; directories are not accepted | - |
 
 The optional second string is a caller-chosen label; the grammar accepts it,
 and the ledger assigns it no further semantics. The Blend65 `loadable const`
 form is gone ([grammar-deltas.md](grammar-deltas.md) section 3); a module
 `const` covers the use case.
+
+An embedded path is resolved relative to the source file that contains the
+`embed` call and must stay inside the project root. The **project root** is the
+directory of the root module — the build's source root. An absolute host path
+or a `..` escape is E10214; the restriction keeps the build deterministic and
+portable across machines (P13).
 
 A module-level `const` writes an explicit type (V2); a local `const` infers its
 type from the embedded array:
@@ -114,7 +120,7 @@ profile feature may place data in specific regions (the Amiga appendix).
 | Code | Trigger |
 |---|---|
 | E10213 | `embed` outside a constant context |
-| E10214 | embedded file cannot be read at build time |
+| E10214 | an embedded path is absolute or escapes the project root, or the file cannot be read at build time |
 | E10215 | array fill literal without a fixed extent (never raised by `embed`; see Ch 08) |
 | E90001 | `comptime` semantics are staged |
 

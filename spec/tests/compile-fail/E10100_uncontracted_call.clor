@@ -1,17 +1,18 @@
 // expect-error E10100
 // trigger: call to an uncontracted extern outside unsafe
-// requires: an ffi declaration is treated as uncontracted when it carries no ownership contract
+// requires: an ffi declaration is uncontracted when a handle parameter has no mode
 module tests.compile_fail.E10100;
 
 handle File freedBy CloseFile;
 
 ffi lib {
-    func RawPing(): i32;        // uncontracted extern: plain signature, no ownership contract
+    func RawRead(f: File?, n: i32): i32;   // no mode on 'f': uncontracted
     func CloseFile(take f: File): void;
 }
 
 func demo(): i32 {
-    return RawPing();           // E10100: uncontracted call requires 'unsafe'
+    let f: File? = null;
+    return RawRead(f, 0);                  // E10100: uncontracted call requires 'unsafe'
 }
 
 func main(): i32 {

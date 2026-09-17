@@ -1,0 +1,9 @@
+// expect-fault E11212
+// trigger: converting an out-of-range float to an integer at run time
+module tests.run.E11212;
+
+func main(): i32 {
+    let f: f64 = 1.0e30;
+    let n: i32 = i32(f);   // E11212: float-to-integer conversion out of range
+    return n;
+}

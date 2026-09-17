@@ -211,7 +211,7 @@ through the cleanup ladder.
 
 | Ref | Decision |
 |---|---|
-| P1 | C99 common subset accepted by both GCC 16.2.0b (`m68k-amigaos-gcc`) and vbcc 0.9h; no extensions, no VLAs, no compiler-specific tricks |
+| P1 | C99 common subset accepted by both GCC 16.2 (`m68k-amigaos-gcc`) and vbcc 0.9 as reported by the built SDK binaries; exact source pins live in `docker/versions.env`; no extensions, no VLAs, no compiler-specific tricks |
 | P2 | Cleanup ladder: single-exit, one label per scope, reverse order, null-safe drops; `defer` entries join the same ladder |
 | P3 | Moves lower to copy + zero; partial moves zero the field |
 | P4 | Zero = empty layout guarantee (O7) |
@@ -313,6 +313,65 @@ the diagnostics registry follow them.
 | E112xx | Runtime fault codes live in the E112xx block next to the profile limits (`E11210` division by zero, `E11211` index out of range, `E11212` float-to-integer range, `E11213` assertion failure). They print the standard `error CODE: message` first line and abort (N8). |
 | N8a | New compile-time codes assigned in Phase C: definite assignment `E10021`, the index checks `E10216`/`E11211`, the float rules `E11212`, and the completeness codes `E10218`-`E10222`. `E10605` is retired before release; misplaced `volatile` is `E10208`. |
 | S2a | Template float placeholders use a fixed v1 precision of six significant digits; precision control is deferred (S6). The public conversion is `text` (T5); `toText` in P8 names the internal desugaring helper. |
+| S3a | The public format helpers are `toHex` and `toDecimal` (S3). Fixed-width variants such as `toHex32` are library-internal, not surface API. |
 | P8a | Templates desugar to string-builder and `text` conversion calls; the exact helper names are codegen-internal. |
 | M7a | A module-level initializer expression that is nullable is a type error (E10200): globals are non-nullable values. |
 | W10004a | Stack-frame warning thresholds are profile facts with v1 defaults: `hosted-amiga` 1024 bytes, `host` 16384 bytes, `freestanding` profile-defined. |
+
+## 21. Preflight rulings
+
+The Phase E preflight gate ([preflight-report.md](preflight-report.md)) raised
+49 findings. Every ruling below was accepted and applied; the chapters, the
+grammar, and the diagnostics registry follow it. Status is `applied` for all.
+
+| PF | Ruling | Status |
+|---|---|---|
+| PF-001 | `borrow T?` out-parameters are in-out ownership slots; E10034 does not apply | applied |
+| PF-002 | FFI declarations lower with an explicit ABI table; modes are semantic only | applied |
+| PF-003 | `borrow` and `take` are reserved keywords (50 total) | applied |
+| PF-004 | Name resolution: scopes, declaration-before-use, shadowing, imports, merged modules | applied |
+| PF-005 | Usual arithmetic unification with T1a widenings; mixed-sign is E10200 | applied |
+| PF-006 | Integer `/` and `%` fault E11210 on a zero divisor and on MIN/-1 | applied |
+| PF-007 | Float-to-integer range check using `!(f >= lo && f <= hi)`, so NaN faults E11212 | applied |
+| PF-008 | `-fwrapv` for GCC; vbcc uses unsigned arithmetic converted back | applied |
+| PF-009 | Module init order is a topological order with lexicographic tie-break | applied |
+| PF-010 | Struct-literal fields and array-literal elements evaluate in source order | applied |
+| PF-011 | Rule-ID renames: `LOOP-*`, `STMT-*`, `STR-*`, `ERR-*` | applied |
+| PF-012 | Only `intrinsic func` declarations bind reserved built-in names | applied |
+| PF-013 | `take` parameters are not elision candidates; view return is E10036 | applied |
+| PF-014 | Standard-library appendix with normative signatures and ownership | applied |
+| PF-015 | Constant-expression forms, folding semantics, and diagnostics | applied |
+| PF-016 | Dot-call candidate set and deterministic ambiguity rule (E10225) | applied |
+| PF-017 | E10037 retired into E11106 | applied |
+| PF-018 | Uncontracted externs require `unsafe` (E10100) and accept scalars/`raw`/`cstring` | applied |
+| PF-019 | Staged tests moved to an excluded directory | applied |
+| PF-020 | Run-test suite for E11210-E11213; warning escalation documented | applied |
+| PF-021 | Any zero extent is E10226 | applied |
+| PF-022 | Implicit `String` -> `str` widening creates a shared loan | applied |
+| PF-023 | Interrupt-handler constraints are an audited convention in v1 | applied |
+| PF-024 | Chapter headers split into Ledger / Grammar freeze / Ergonomics | applied |
+| PF-025 | Appendix API lists aligned with Ch 12; `Message` resolved | applied |
+| PF-026 | Float matrix reworded to planned/not yet verified | applied |
+| PF-027 | Build-matrix claim restated precisely | applied |
+| PF-028 | P6 deleter corrected to `FreeString` | applied |
+| PF-029 | Broken links fixed; `check.sh` validates nested markdown | applied |
+| PF-030 | Six cross-references repointed | applied |
+| PF-031 | `:`-inside-placeholder is a parser detection for E10501 | applied |
+| PF-032 | E11100 trigger widened to same-module cycles | applied |
+| PF-033 | README validation description refreshed | applied |
+| PF-034 | T6a raw-to-integer cast rows added | applied |
+| PF-035 | Placeholder-free `$"..."` unified to `str` | applied |
+| PF-036 | E10033 and E10200 triggers corrected | applied |
+| PF-037 | Bare `func ...;` declarations moved into `ffi` blocks | applied |
+| PF-038 | P1 quotes the versions the SDK binaries report; pins live in `versions.env` | applied |
+| PF-039 | NDK result types documented for contract declarations | applied |
+| PF-040 | Nested temporaries drop at statement end in reverse creation order | applied |
+| PF-041 | Reading order and Phase 2 stage list added; `Depends on` is informational | applied |
+| PF-042 | Phase 2 `#line` spike under vbcc named | applied |
+| PF-043 | Embed paths are relative and inside the project root (E10214) | applied |
+| PF-044 | Raw laundering reworded as an audited convention | applied |
+| PF-045 | Stack-depth guidance published; freestanding owns its policy | applied |
+| PF-046 | Missing `Depends on` chapters added and marked informational | applied |
+| PF-047 | Emitted-type naming: `Cl<Name>` for handles/views, `Cl<Module>_<Type>` for aggregates | applied |
+| PF-048 | Unary `+` not adopted; write the operand directly | applied |
+| PF-049 | `-std=c99` added to the GCC flags | applied |

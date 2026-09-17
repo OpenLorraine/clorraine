@@ -31,5 +31,13 @@ compiler.
 * every registered compile-time code has at least one test.
 
 Excluded from the per-code rule: `E11210`-`E11213` (runtime faults, which are
-run-test cases) and `E90000` (the generic staged-feature fallback with no
-unique trigger). See `docs/findings-phase1.md` for the Phase D report.
+run-test cases under [`tests/run/`](../run/README.md)), `E90000` (the generic
+staged-feature fallback with no unique trigger), and `E90003`, `E90004`, and
+`W10005` (staged under [`tests/staged/`](../staged/README.md) until their
+feature or harness exists). See `docs/findings-phase1.md` for the Phase D
+report.
+
+> **Note:** a `// expect-warning` test asserts the warning is reported in the
+> default build. Under `--deny-warnings` every warning becomes fatal, so the
+> same file then exits nonzero. Warning tests and their escalation are covered
+> by the warning-escalation case planned for the run suite.

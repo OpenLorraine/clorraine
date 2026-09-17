@@ -1,0 +1,11 @@
+// expect-error E10224
+// trigger: a non-constant expression in a constant context
+module tests.compile_fail.E10224;
+
+let limit: usize = 4;      // a runtime-initialized global, not a constant
+
+const WIDTH: usize = limit;   // E10224: 'limit' is not a constant expression
+
+func main(): i32 {
+    return 0;
+}

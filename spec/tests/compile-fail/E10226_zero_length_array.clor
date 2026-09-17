@@ -1,0 +1,11 @@
+// expect-error E10226
+// trigger: a fixed array declared with a zero extent
+module tests.compile_fail.E10226;
+
+func demo(): void {
+    let empty: u8[0] = [];   // E10226: zero-length array extent
+}
+
+func main(): i32 {
+    return 0;
+}

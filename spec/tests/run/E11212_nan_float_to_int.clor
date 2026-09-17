@@ -1,0 +1,10 @@
+// expect-fault E11212
+// trigger: converting NaN to an integer at run time
+module tests.run.E11212;
+
+func main(): i32 {
+    let zero: f64 = 0.0;
+    let nan: f64 = zero / zero;   // IEEE division by zero yields NaN
+    let n: i32 = i32(nan);        // E11212: NaN fails the range check
+    return n;
+}

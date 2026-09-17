@@ -14,7 +14,7 @@ DK   := $(REPO)/docker
 COMPOSE := docker compose -p clorraine --env-file $(DK)/.env -f $(DK)/compose.yaml
 DEV := $(COMPOSE) run --rm -T dev
 
-GCC_CFLAGS  := -mcrt=nix20 -O2 -Wall -Wextra -Werror
+GCC_CFLAGS  := -std=c99 -mcrt=nix20 -O2 -Wall -Wextra -Werror
 # vbcc needs the NDK include tree on its search path; the system header
 # warning 53 comes from devices/timer.h and is not ours to fix.
 VBCC_CFLAGS := -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include

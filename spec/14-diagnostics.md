@@ -49,7 +49,7 @@
 | E10011 | `T?` applied to a type that cannot be empty | `nullable type is not allowed on '{type}'` | `?` applies to handles, `raw`, `cstring`, and views |
 | E10012 | `null` used where a non-nullable type is required | `'null' is not allowed here` | declare the type `T?` or avoid the empty state |
 | E10020 | Read, move, borrow, or drop of a moved value | `'{name}' was moved and cannot be used` | re-initialize the binding or use a view |
-| E10021 | Read before the binding is assigned on every path | `'{name}' may be used before it is initialized` | initialize on every path; `borrow T?` out-parameters are exempt |
+| E10021 | Read before the binding is assigned on every path | `'{name}' may be used before it is initialized` | initialize the binding on every path; out-parameter slots are not exempt |
 | E10022 | Move of an owner while a loan of it is live | `cannot move '{name}' while it is borrowed` | end the borrow first |
 | E10023 | Assignment to a `const` binding or module `const` | `cannot assign to immutable '{name}'` | declare it with `let` (mutable) |
 | E10024 | Write through a read-only parameter | `cannot write through read-only parameter '{name}'` | declare the parameter `borrow` |
@@ -59,10 +59,9 @@
 | E10031 | Mutation while a shared loan is live | `cannot modify '{name}' while it is shared-borrowed` | end the shared borrow first |
 | E10032 | Conflicting loans at one point (second loan, or exclusive vs any) | `'{name}' is already borrowed` | end the first borrow first |
 | E10033 | Loan stored in a field or global | `borrow of '{name}' escapes its scope` | derive the view from a parameter or take ownership |
-| E10034 | Borrowed parameter released or stored by the callee | `cannot release or store borrowed parameter '{name}'` | declare the parameter `take` or by value |
+| E10034 | Borrowed parameter released or stored by the callee | `cannot release or store borrowed parameter '{name}'` | declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt |
 | E10035 | View returned from a local owner | `cannot return a view of local '{name}'` | return an owned value or a view of a parameter |
 | E10036 | View return does not derive from exactly one lend parameter | `view return does not derive from exactly one parameter` | make exactly one parameter a view or handle lend |
-| E10037 | Global is not duplicable (or would need an exit drop) | `global '{name}' is not duplicable` | use `const` or make the value duplicable |
 | E10038 | Borrow of a global binding | `cannot borrow global '{name}'` | borrow from a local owner |
 | E10039 | Call-site marker that contradicts the declaration | `call-site marker does not match the declaration of '{fn}'` | remove the marker or correct it |
 | E10040 | Element loop over non-duplicable elements without `borrow` | `element loop requires 'borrow' for non-duplicable '{type}'` | write `for (borrow e in xs)` |
@@ -96,7 +95,7 @@
 | E10211 | Enum backing type is not an integer type | `enum backing type must be an integer type` | use `i8`-`u32`, `usize`, or `isize` |
 | E10212 | Unknown member of a struct, enum, or module | `'{name}' is not a member of '{type}'` | check the declaration or the spelling |
 | E10213 | `embed` outside a constant context | `'embed' is only allowed in a constant context` | use it in `const` or a module-level initializer |
-| E10214 | Embedded file cannot be read at build time | `cannot read embedded file '{path}'` | fix the path or the build permissions |
+| E10214 | Embedded file cannot be read at build time, or the path is absolute or escapes the project root | `cannot read embedded file '{path}'` | use a relative path inside the project root, and fix the build permissions |
 | E10215 | Array fill literal without a fixed extent in context | `array fill requires a fixed extent` | annotate the array type |
 | E10216 | Constant index into a fixed array is out of range | `index {index} is out of range for '{type}[{extent}]'` | fix the index or the extent |
 | E10217 | Assignment result used as a value | `assignment result is 'void' and cannot be used as a value` | split the statement; do not chain assignments |
@@ -105,6 +104,9 @@
 | E10220 | Inner extent omitted in a multi-dimensional type | `only the outermost extent may be omitted` | write every inner extent |
 | E10221 | Assignment to something that is not a place | `left side of an assignment must be a place` | assign to a variable, field, or element |
 | E10222 | Operator not defined for the operand type | `operator '{op}' is not defined for '{type}'` | convert explicitly or use a supported operator |
+| E10223 | Constant expression division by zero or constant MIN/-1 overflow | `constant expression divides by zero` | remove the zero divisor or the MIN/-1 operation, or use a non-constant operand |
+| E10224 | Expression used where a constant expression is required | `expression is not constant` | use literals, `const` bindings, enum members, and supported operators |
+| E10226 | Zero-length array extent | `array extent must be greater than zero` | use a positive extent |
 
 ## 6. Generics (`E103xx`)
 
@@ -133,7 +135,7 @@
 | Code | Trigger | First line (after the code) | Help |
 |---|---|---|---|
 | E10500 | Non-formattable type in a template placeholder | `type '{type}' is not formattable` | convert with `text`, `toHex`, or `toDecimal` |
-| E10501 | Format specifier inside a placeholder | `format specifiers are not supported in v1` | use a conversion function |
+| E10501 | Format specifier (`:`) inside a template placeholder (parser detection) | `format specifiers are not supported in v1` | use a conversion function |
 | E10503 | Unbalanced braces in a template | `unbalanced braces in template` | escape literal braces as `{{` and `}}` |
 
 ## 9. Unsafe, raw, volatile (`E106xx`)
@@ -164,9 +166,9 @@
 |---|---|---|---|
 | E11200 | Construct not lowerable on the selected profile | `'{feature}' is not available on profile '{profile}'` | switch profiles or avoid the feature |
 | E11201 | Unknown or unsupported profile name | `unknown profile '{profile}'` | use `hosted-amiga`, `host`, or `freestanding` |
-| E11210 | Runtime fault: integer division or modulo by zero | `integer division by zero` | check the divisor before dividing |
+| E11210 | Runtime fault: integer division or modulo by zero, or by `-1` at the minimum signed value | `integer division by zero` | check the divisor before dividing |
 | E11211 | Runtime fault: index out of range | `index out of range` | check the index against `len` |
-| E11212 | Runtime fault: float-to-integer conversion out of range | `float-to-integer conversion out of range` | range-check the float before the cast |
+| E11212 | Runtime fault: float-to-integer conversion out of range (including NaN) | `float-to-integer conversion out of range` | range-check the float before the cast |
 | E11213 | Runtime fault: assertion failed | `assertion failed` | fix the invariant or the input |
 
 Runtime faults are not compile errors. The inserted checks print
@@ -225,3 +227,15 @@ semantic stage reports the code.
   line; positive tests assert the absence of diagnostics.
 * `check.sh` cross-validates codes referenced in chapters and in tests
   against this registry (N7).
+
+### 15.1 Retired and reserved codes
+
+A retired code is never reused (N2); it stays reserved and is listed here
+instead of in the live tables above. The code column carries a backticked
+value so a script that extracts the live registry with `^\| [EW][0-9]{5} \|`
+does not treat these rows as active registrations.
+
+| Retired code | Replacement |
+|---|---|
+| `E10037` retired | merged into E11106 |
+| `E10225` retired | no reachable trigger |

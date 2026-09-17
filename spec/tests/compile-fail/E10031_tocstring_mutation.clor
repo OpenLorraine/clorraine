@@ -1,0 +1,17 @@
+// expect-error E10031
+// trigger: mutating a String while a cstring view of it from toCString is live
+module tests.compile_fail.E10031;
+
+func sink(c: cstring): void {
+}
+
+func demo(): void {
+    let s: String = stringOf("hello");
+    let c: cstring = toCString(s);   // toCString creates a shared loan of s
+    s = stringOf("world");           // E10031: cannot modify s while the cstring loan is live
+    sink(c);
+}
+
+func main(): i32 {
+    return 0;
+}

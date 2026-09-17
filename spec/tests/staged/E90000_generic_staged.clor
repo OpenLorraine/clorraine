@@ -1,0 +1,12 @@
+// expect-error E90000
+// trigger: a parsed construct whose semantics are not implemented and that has no dedicated E90xxx code
+// requires: E90000 is the generic staged fallback; it has no unique trigger, so this file records intent only
+module tests.compile_fail.E90000;
+
+// No frozen v1 construct currently reaches E90000: every staged feature in the
+// v1 grammar has its own code (E90001 comptime, E90002 captures, E90003
+// stores/transfers, E90004 pools, E90005 nested templates). E90000 stays
+// reserved as the fallback for a future staged construct.
+func main(): i32 {
+    return 0;
+}

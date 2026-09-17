@@ -267,12 +267,13 @@ E11211, E11212, E11213) abort, so they do not run the ladder (E4).
 
 Reading a local before it is assigned on every path is E10021. There is no
 zero-fill and no unspecified value, so a `let x: T;` must be assigned before
-any read. `borrow T?` out-parameters are exempt, because passing the binding
-is how it is filled (F9).
+any read. The caller's `borrow T?` out-parameter slot is a local too: it must
+be initialized on every path before the call, so passing an uninitialized slot
+is E10021 (F9).
 
 ```clorraine
-let f: File?;
-openInto(path, borrow f);   // exempt: the out-parameter fills f
+let f: File? = null;        // initialize the slot before the call
+openInto(path, borrow f);   // the callee owns the incoming value and fills the slot
 if (f != null) {
     read(f);                // the narrowing check makes the read safe
 }
@@ -282,20 +283,20 @@ if (f != null) {
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| ST-1 | Braces are mandatory; no dangling `else` | - |
-| ST-2 | Conditions must be `bool`; no truthiness | - |
-| ST-3 | `let` is mutable, `const` is immutable | E10023 |
-| ST-4 | A read-only parameter cannot be written | E10024 |
-| ST-5 | No read before definite assignment | E10021 |
-| ST-6 | The assignment result is `void` | E10217 |
-| ST-7 | `for (;;)` is the infinite loop; no range syntax | - |
-| ST-8 | Element loops copy; `borrow` gives exclusive views | E10040 |
-| ST-9 | `switch` falls through | W10002 |
-| ST-10 | No `goto` and no labels | - |
-| ST-11 | `defer` runs at scope exit, not on `panic` | - |
-| ST-12 | The cleanup ladder runs on every normal exit edge | - |
-| ST-13 | Raw operations require `unsafe` | E10600-E10604 |
-| ST-14 | Call-site markers must match the declaration | E10039 |
-| ST-15 | Indexing is always checked | E11211 |
-| ST-16 | A local declared and never used warns | W10000 |
-| ST-17 | A statement that cannot be reached warns | W10003 |
+| STMT-1 | Braces are mandatory; no dangling `else` | - |
+| STMT-2 | Conditions must be `bool`; no truthiness | - |
+| STMT-3 | `let` is mutable, `const` is immutable | E10023 |
+| STMT-4 | A read-only parameter cannot be written | E10024 |
+| STMT-5 | No read before definite assignment | E10021 |
+| STMT-6 | The assignment result is `void` | E10217 |
+| STMT-7 | `for (;;)` is the infinite loop; no range syntax | - |
+| STMT-8 | Element loops copy; `borrow` gives exclusive views | E10040 |
+| STMT-9 | `switch` falls through | W10002 |
+| STMT-10 | No `goto` and no labels | - |
+| STMT-11 | `defer` runs at scope exit, not on `panic` | - |
+| STMT-12 | The cleanup ladder runs on every normal exit edge | - |
+| STMT-13 | Raw operations require `unsafe` | E10600-E10604 |
+| STMT-14 | Call-site markers must match the declaration | E10039 |
+| STMT-15 | Indexing is always checked | E11211 |
+| STMT-16 | A local declared and never used warns | W10000 |
+| STMT-17 | A statement that cannot be reached warns | W10003 |

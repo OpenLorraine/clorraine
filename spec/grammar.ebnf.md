@@ -543,14 +543,14 @@ digit           = "0"…"9" ;
 
 Keywords and reserved built-in names are rejected in declaration positions.
 
-### 10.2 Keywords (48)
+### 10.2 Keywords (50)
 
 ```ebnf
 keyword         = "module" | "import" | "export" | "from"
                 | "func" | "comptime" | "return"
                 | "struct" | "enum" | "handle" | "freedBy"
                 | "ffi" | "intrinsic" | "unsafe" | "volatile" | "raw"
-                | "let" | "const" | "defer"
+                | "let" | "const" | "borrow" | "take" | "defer"
                 | "if" | "else" | "while" | "do" | "for" | "in"
                 | "switch" | "case" | "default" | "break" | "continue"
                 | "i8" | "i16" | "i32" | "u8" | "u16" | "u32"
@@ -675,7 +675,7 @@ position and the conditional operator in expression position.
 | `unsafe` block vs prefix operator | `unsafe {` is the statement block; `unsafe <expr>` is the prefix operator wrapping one unary expression |
 | `identifier(...)` call vs cast | Parsed uniformly as call; the semantic pass resolves functions, enum casts, and handle casts |
 | Statement start | LL(1): leading keyword or `{`; other starts are expressions |
-| Diagnostic-only starts | `union` at declaration start and `volatile` in statement position are not productions; the parser recognizes them only to report E10204 and E10208 with targeted help. `match`, `class`, and similar foreign keywords are ordinary identifiers and end in E20000 |
+| Diagnostic-only starts | `union` at declaration start and `volatile` in statement position are not productions; the parser recognizes them only to report E10204 and E10208 with targeted help. A `:` directly inside a template placeholder is likewise recognized by the parser to report E10501. `match`, `class`, and similar foreign keywords are ordinary identifiers and end in E20000 |
 
 ## 12. Production index
 

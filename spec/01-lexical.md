@@ -59,14 +59,14 @@ Reserved built-in names are spelled camelCase too (section 4).
 
 ## 3. Keywords
 
-The grammar fixes exactly 48 keywords. They are reserved: a keyword used as a
+The grammar fixes exactly 50 keywords. They are reserved: a keyword used as a
 declared name is E20005.
 
 | Group | Keywords |
 |---|---|
 | Module and imports | `module`, `import`, `export`, `from` |
 | Declarations | `func`, `comptime`, `struct`, `enum`, `handle`, `freedBy`, `ffi`, `intrinsic` |
-| Bindings and safety | `let`, `const`, `defer`, `unsafe`, `volatile`, `raw`, `return` |
+| Bindings and safety | `let`, `const`, `borrow`, `take`, `defer`, `unsafe`, `volatile`, `raw`, `return` |
 | Control flow | `if`, `else`, `while`, `do`, `for`, `in`, `switch`, `case`, `default`, `break`, `continue` |
 | Type names | `i8`, `i16`, `i32`, `u8`, `u16`, `u32`, `f32`, `f64`, `bool`, `void`, `usize`, `isize`, `str`, `cstring`, `static` |
 | Literals | `true`, `false`, `null` |
@@ -101,16 +101,19 @@ reserved_builtin = "sizeof" | "offsetof" | "len" | "embed"
 | Rule | Statement | Diagnostic |
 |---|---|---|
 | LEX-8 | In primary position, a reserved spelling followed by `(` is an intrinsic call | - |
-| LEX-9 | A reserved built-in name may not be declared | E20006 |
+| LEX-9 | Reserved built-in names may be bound only by an `intrinsic func` declaration; an ordinary declaration of one is E20006 | E20006 |
 
 ```clorraine
 let n = len(xs);                 // intrinsic call
 let m = xs.len();                // dot-call resolves to len(xs) (Ch 04)
-func sizeof(x: i32): void { }    // E20006: reserved built-in name
+intrinsic func readVolatile16(addr: raw u16): u16;   // allowed: binds a reserved name
+func sizeof(x: i32): void { }    // E20006: an ordinary declaration of a reserved name
 ```
 
 This rule keeps the tokenizer context-free: no symbol table is needed to decide
-whether a name is an intrinsic. The intrinsics are documented in
+whether a name is an intrinsic. Only an `intrinsic func` declaration may bind a
+reserved built-in name; an ordinary declaration of it is E20006
+([Ch 06](06-functions.md)). The intrinsics are documented in
 [Ch 04](04-expressions.md) and [grammar.ebnf.md](grammar.ebnf.md) section 7.
 
 ## 5. Comments
@@ -294,7 +297,7 @@ macros ([Ch 12](12-ffi-contracts.md)).
 | E20003 | an invalid escape sequence |
 | E20004 | a malformed or out-of-range numeric literal |
 | E20005 | a keyword used as a declared name |
-| E20006 | a reserved built-in name redeclared |
+| E20006 | an ordinary declaration of a reserved built-in name |
 | E20007 | a character literal that is not exactly one byte |
 | E20008 | syntax copied from another language |
 | E10202 | a literal that does not fit the context type |
@@ -308,7 +311,7 @@ All message text lives in [Ch 14](14-diagnostics.md).
 | LEX-1 | Source is UTF-8; identifiers are ASCII and case-sensitive | - |
 | LEX-4 | A character literal is exactly one encoded byte | E20007 |
 | LEX-8 | A reserved built-in name in primary position is an intrinsic call | - |
-| LEX-9 | Reserved built-in names cannot be declared | E20006 |
+| LEX-9 | Reserved built-in names are bound only by `intrinsic func` | E20006 |
 | LEX-13 | No integer or float literal suffixes | E20004 |
 | LEX-15 | A literal must fit its context type | E10202 |
 | LEX-20 | `'x'` is a `u8` byte literal | - |

@@ -52,7 +52,9 @@ or a double release.
 
 ## 3. Mapping
 
-The table below is the whole surface mapping.
+The table below is the whole surface mapping for Clorraine declarations. An
+`ffi` declaration does not use the parameter rows; it lowers through the ABI
+mapping below, where the declared type alone fixes the C parameter type.
 
 | Clorraine | Emitted C |
 |---|---|
@@ -75,7 +77,7 @@ The table below is the whole surface mapping.
 | field access `p.x` | `.` on a value |
 | member access through `raw` (`unsafe p.x`) | `p->x` (the dereference is implied) |
 | dot-call `x.f(y)` | `f(x, y)`; field first, then a free func; no methods, no vtables (F8) |
-| temporary | compiler-named `__cl_tmp<N>`, dropped at statement end (D5) |
+| temporary created anywhere in a statement, including inside nested calls and literals | compiler-named `__cl_tmp<N>`, dropped at statement end in reverse creation order (D5, O2) |
 | `return e` | move/drop epilogue, then `return e;` |
 | `defer { ... }` | the block is copied into the scope's ladder entry (section 4) |
 | `f32` / `f64` | C `float` / `double` (P15) |
@@ -87,10 +89,39 @@ struct with `volatile` members, reached only through `raw`, so the C compiler
 emits every access and preserves order.
 
 Module initialization (P9): the compiler collects the module-level initializers
-into generated `static void cl_init_<module>(void)` functions, emitted in
-dependency order, and a generated entry stub that calls them before the user's
-`main`. A dependency cycle that involves a runtime-initialized global is E11100
-(M6). `main(): i32` is emitted as `int main(void)` in the stub (M8).
+into generated `static void cl_init_<module>(void)` functions, emitted in the
+topological order of init dependencies (imports plus modules named by
+initializer expressions, transitively), and a generated entry stub that calls
+them before the user's `main`. Ties between independent modules break on the
+fully qualified module name, compared byte-wise (lexicographic); a reference
+inside a called function body does not create an edge, so the order is
+deterministic. A dependency cycle that involves a runtime-initialized global is
+E11100 (M6). `main(): i32` is emitted as `int main(void)` in the stub (M8).
+
+### FFI ABI mapping
+
+An `ffi` declaration is typed by the target ABI, not by the Clorraine surface
+types. The table maps each declared type to its C ABI type (m68k Amiga):
+
+| Clorraine | C ABI (m68k Amiga) |
+|---|---|
+| i8/i16/i32/u8/u16/u32 | fixed-width typedefs (BYTE/WORD/ULONG family) |
+| usize/isize | ULONG/LONG |
+| bool | BOOL (32-bit) |
+| f32/f64 | float/double (P15) |
+| cstring | STRPTR (char *) |
+| raw T | APTR / T * |
+| handle T | the handle's C typedef from the contract table (for example File -> BPTR) |
+| view (`T[]`, `str`) in an FFI signature | APTR (pointer only); the length is a separate parameter |
+| `T?` | the same C type as `T`; `null` maps to zero/`NULL` |
+| native struct by value | the C struct type by value |
+
+Modes (`take`, `borrow`, `const`, unmarked) are semantic only: they never change
+the C parameter type. This is why the Phase 0 prototypes are exact `BPTR`,
+`APTR`, and `LONG` types rather than the Clorraine surface types. A view
+parameter crossing the FFI boundary carries its pointer only: the length and the
+`const` qualifier are wrapper concerns and do not change the ABI. A nullable
+type `T?` lowers to the same C type as `T`, with `null` mapping to zero/`NULL`.
 
 ## 4. Cleanup ladder (normative) - P2
 
@@ -177,8 +208,9 @@ if (value) { F(value); }
 ```
 
 A native struct drops structurally: its fields in declaration order, array
-elements first to last (O2). Parameters drop after the body's locals; temporaries
-drop at the end of their statement (D5).
+elements first to last (O2). Parameters drop after the body's locals. All
+temporaries created anywhere in a statement — including inside nested calls and
+literals — drop at the end of that statement in reverse creation order (D5, O2).
 
 `String` is a handle with a fixed layout (P6):
 
@@ -212,7 +244,8 @@ linker never sees a name the program did not export.
 | Generated helper | `cl_` prefix (`cl_zero`, `cl_acquire_*`, `cl_text_*`) |
 | Temporary | `__cl_tmp<N>`, a stable counter |
 | Cleanup label | `__cl_c<N>` |
-| Type | `Cl<Module>_<Type>` to avoid C tag clashes |
+| Handle typedef, built-in view struct | `Cl<Name>` (`ClFile`, `ClStr`, `ClSlice_u8`) |
+| User aggregate type | `Cl<Module>_<Type>`, to avoid C tag clashes |
 | Entry | `int main(void)` in the generated stub |
 
 `<module>` is the dotted module path with dots replaced by underscores, so
@@ -259,19 +292,25 @@ E10500. The builder is shim code, so the allocation strategy stays in one place.
 
 | Hazard | Emitted guarantee | Diagnostic |
 |---|---|---|
-| Signed overflow | wrapping, via unsigned-based forms or GCC `-fwrapv` (P12) | - |
+| Signed overflow of `+`, `-`, `*`, unary `-` | wrapping, via unsigned-based forms or GCC `-fwrapv` (P12); the target is two's-complement | - |
 | Shift count at or beyond the width, or negative | masked to the operand width: `a << (b & 31)`, `& 15`, or `& 7` (B7) | - |
 | Signed shift into the sign bit | emitted through unsigned operands so both compilers agree | - |
-| Integer `/` or `%` by zero | a runtime check before the operation | E11210 |
+| Integer `/` or `%` by zero, or `MIN / -1` | the guard `d == 0 \|\| (a == MIN && d == -1)` before the operation; signed `/` and `%` emit directly behind the guard | E11210 |
 | Index out of range | a runtime check before every index | E11211 |
-| Float-to-integer conversion out of range | a runtime check before the cast | E11212 |
+| Float-to-integer conversion out of range or NaN | the guard `!(f >= lo && f <= hi)` before the cast | E11212 |
 | Float `/` by zero | IEEE 754 Inf or NaN; no check (T1) | - |
 
-Signed wrapping uses unsigned-based arithmetic, portable to both compilers; GCC
-may use `-fwrapv` once the vbcc behavior is verified. Shifts are **masked, never
-rejected**. Division by zero, failed bounds, and an out-of-range float-to-integer
-conversion abort without the ladder, like `panic` (E4); no profile disables these
-checks (T12). Codes: [Ch 14](14-diagnostics.md).
+The target is two's-complement. Signed wrapping of `+`, `-`, `*`, and unary `-`
+is emitted so it is defined on both compilers: GCC takes the normative
+`-fwrapv` flag, and vbcc (which has no such flag) receives those operations on
+the unsigned counterpart, converted back to the signed type. The unsigned idiom
+is the portable fallback and is also valid under GCC. Signed `/` and `%` have no
+unsigned counterpart: they emit directly behind their guard, and on a
+two's-complement target `MIN / -1` is the only overflow case. Shifts are
+**masked, never rejected**. A zero divisor, the `MIN / -1` overflow, failed
+bounds, and an out-of-range or NaN float-to-integer conversion abort without the
+ladder, like `panic` (E4); no profile disables these checks (T12). Codes:
+[Ch 14](14-diagnostics.md).
 
 ## 11. Source mapping and determinism - P13
 
@@ -310,9 +349,14 @@ Exact command lines (the input object is the generated single `.c` file):
 
 | Target | Command |
 |---|---|
-| GCC debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga` |
-| GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -O2 -o demo demo.c -lamiga` |
+| GCC debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga` |
+| GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -o demo demo.c -lamiga` |
 | vbcc release | `vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga` |
+
+`-fwrapv` makes signed overflow wrap in the GCC legs; vbcc has no equivalent
+flag and relies on the unsigned-idiom emission in section 10. A Phase 2
+arithmetic verification spike compiles a signed-overflow and shift stress corpus
+with both compilers and confirms the wrapping results match this chapter.
 
 Float legs (P15) are **planned but not yet verified**: Phase 0 exercised no
 float code, so the soft-float ABIs and the FPU leg remain unproven.
@@ -333,15 +377,15 @@ the hosted matrix precisely: GCC 68000 on `vamos` and both FS-UAE media; GCC
 
 | C hazard | Emitted guarantee | Diagnostic |
 |---|---|---|
-| Signed overflow | wrapped through unsigned-based forms or `-fwrapv` | - |
+| Signed overflow of `+`, `-`, `*`, unary `-` | wrapped through unsigned-based forms or `-fwrapv` (two's-complement target) | - |
 | Shift by width or a negative count | count masked to the operand width; never rejected | - |
 | Unaligned access | `-m68000` baseline assumes none; no packed structs, fields keep natural alignment | - |
 | Strict aliasing | no type-punning casts; the only aliasing surface is `raw` inside `unsafe` | - |
 | Uninitialized reads | definite assignment rejects them at compile time | E10021 |
 | Null dereference of an owned handle | use before a `== null` / `!= null` check is rejected; drops are null-safe | E10010 |
 | Bounds | every indexed access is checked, always on | E11211 |
-| Integer division or modulo by zero | runtime check | E11210 |
-| Out-of-range float-to-integer conversion | runtime check | E11212 |
+| Integer division or modulo by zero, or `MIN / -1` | runtime guard `d == 0 \|\| (a == MIN && d == -1)` | E11210 |
+| Out-of-range or NaN float-to-integer conversion | runtime guard `!(f >= lo && f <= hi)` | E11212 |
 
 The front end rejects at compile time what it can prove; the inserted runtime
 checks cover the rest. Memory safety is strong above the hardware boundary; below

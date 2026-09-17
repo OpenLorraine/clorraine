@@ -1,0 +1,9 @@
+// expect-fault E11213
+// trigger: a false assertion at run time
+module tests.run.E11213;
+
+func main(): i32 {
+    let ok: bool = false;
+    assert(ok, "expected true");   // E11213: assertion failed
+    return 0;
+}

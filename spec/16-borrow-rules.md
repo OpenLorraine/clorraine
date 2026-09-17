@@ -1,7 +1,7 @@
 # Chapter 16 - Borrow-Checker Rules
 
 > **Status:** draft (Phase C - rewritten against the ledger and the grammar)
-> **Depends on:** Ch 03 (ownership), Ch 06 (functions and parameters), Ch 14 (diagnostics), Ch 17 (codegen)
+> **Depends on:** Ch 03 (ownership), Ch 06 (functions and parameters), Ch 07 (structs), Ch 14 (diagnostics), Ch 17 (codegen) *(informational)*
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.1 (parameter modes), 4 (types), 6.4 (call-site markers)
 > **Ledger:** O2, O8-O12, F2, F9, T6, T9, T12; [lineage.md](lineage.md) sections 4 (lifetime elision) and 6 (borrow checking)
 
@@ -48,6 +48,21 @@ View types (`T[]`, `str`, `cstring`, `raw T`) carry reads. Passing a view is a
 shared loan of whatever storage the view names. Passing a view where the callee
 must write is a reborrow (section 3).
 
+**Implicit `String` -> `str` widening is a loan.** Turning a `String` into a
+`str` implicitly — for example when passing it to a `str` parameter, returning
+it from a `str`-returning helper, or binding a local `str` view — creates a
+shared loan of that `String`. The loan is live until the end of the derived
+view's origin. Mutating, moving, or reallocating the `String` while the view is
+live is E10031 (mutation while a shared loan is live) or E10022 (move while a
+loan is live).
+
+**Helpers that return a view or `cstring` over owned storage are loans.** A
+standard-library helper such as `bytes`, `toCString`, `slice`, or `bufferBytes`
+returns a view or `cstring` into storage the owner still owns, so the call
+creates a shared loan of that owner for the result's origin. The same E10031
+and E10022 consequences apply while the result is live
+([appendix-stdlib.md](appendix-stdlib.md) section 9).
+
 **There are no local view expressions** (O9). A binding holds a value; a view
 value exists only because it arrived from a view-typed parameter, a view-typed
 return, or a standard-library helper such as `slice`, `bytes`, or
@@ -79,6 +94,14 @@ A lend of a duplicable value binds a copy (V9, V5), so a write through a
 `borrow` parameter of a duplicable type affects that copy only. W10001 marks
 the needless lend; it is a warning, not an error (D9). The warning keeps
 generic code that spells `borrow T` valid for `T = u8`.
+
+An out-parameter is an **in-out ownership slot**: the caller must initialize
+the slot before the call (passing an uninitialized slot is E10021), the callee
+owns the incoming value on entry and may release it, and the write leaves the
+slot owning the new handle. Writes through the out-parameter drop the
+callee-owned previous value (the O3 carve-out in
+[Ch 03](03-ownership.md)), and E10034 does not apply to out-parameter writes
+([Ch 06](06-functions.md) section 4 states the full rule).
 
 ## 3. Reborrowing (O12)
 
@@ -126,6 +149,10 @@ view lifetime. The rules, restated from [lineage.md](lineage.md) section 4:
 | EL-5 | A view parameter passed on to another call is a reborrow (O12), limited to the call expression |
 | EL-6 | Nullable views add `null` as a value; the lifetime rule is unchanged |
 
+A `take` parameter is **not** an elision candidate: it creates no loan
+(section 2), so it cannot be the source of a returned view. A view return whose
+only view-like lend candidate is a `take` parameter is E10036.
+
 | Situation | Diagnostic |
 |---|---|
 | Zero or two-or-more lend candidates for a view return | E10036 |
@@ -157,11 +184,11 @@ ownership and borrow codes of [Ch 14](14-diagnostics.md) section 3.
 | BR-2 | A live shared loan permits only reads and shared reborrows at the borrowed place | E10031 |
 | BR-3 | A live exclusive loan permits no other access to the borrowed place | E10032 |
 | BR-4 | A move of the owner requires that no loan of it is live | E10022 |
-| BR-5 | A lend parameter is call-scoped; the callee may not release or store it | E10034 |
+| BR-5 | A lend parameter is call-scoped; the callee may not release or store it, except the value in a `borrow T?` out-parameter slot, which the callee owns on entry and may release | E10034 |
 | BR-6 | A returned view must derive from a parameter, not from a local | E10035 |
 | BR-7 | A view return must derive from exactly one view-like lend parameter | E10036 |
 | BR-8 | A loan must not escape its origin: no storage in a field or a global | E10033 |
-| BR-9 | A global may not be borrowed, and a global that would need an exit drop is rejected | E10038 / E10037 |
+| BR-9 | A global may not be borrowed, and a global that would need an exit drop is rejected | E10038 / E11106 |
 | BR-10 | A reborrow is a loan derived from a loan: a read-only view derived from a loan is a shared reborrow, and a writable view derived from a writable loan is an exclusive reborrow limited to the expression (O12). A writable view derived from a read-only loan is an error | E10041 |
 
 Related access rules live in [Ch 03](03-ownership.md) and
@@ -175,6 +202,7 @@ Related access rules live in [Ch 03](03-ownership.md) and
 | A partial move outside a top-level field of an owned local or `take` parameter | E10026 |
 | A call-site marker that contradicts the declaration | E10039 |
 | An element loop over non-duplicable elements without `borrow` | E10040 |
+| Mutation, move, or reallocation of a `String` while a derived `str` view is live | E10031 / E10022 |
 | A lend of a duplicable value (needless lend) | W10001 (warning) |
 
 ## 6. Checker pipeline

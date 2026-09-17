@@ -1,6 +1,6 @@
 # Preflight report - Clorraine language specification
 
-> **Status:** blocked - 4 critical and 21 major findings open (Phase E gate)
+> **Status:** passed with notes - all critical and major findings resolved (iterations 2-3); two Phase 2 verification items accepted
 
 **Audit target:** `spec/` (chapters 00-17, `appendix-amiga.md`, `decisions.md`,
 `grammar.ebnf.md`, `grammar-deltas.md`, `lineage.md`, `14-diagnostics.md`,
@@ -17,11 +17,13 @@ inclusion. Residual same-model bias is possible.
 
 ## Verdict
 
-`❌ PREFLIGHT BLOCKED - 4 critical and 21 major findings open`
+`✅ PREFLIGHT PASSED WITH NOTES - 49 findings resolved, 2 verification items
+accepted for Phase 2`
 
-The mechanical findings below are fixed. The remaining findings need a ruling
-before the Phase 2 compiler MVP starts; they are decisions about language
-semantics, not editorial defects.
+All findings were ruled on and resolved through the accepted recommendations
+(rulings R-01..R-37, recorded in `decisions.md` section 21), then verified by
+iterations 2 and 3. The working tree validates with
+`spec check: OK (27 files, 101 compile-fail tests)`.
 
 ## Findings
 
@@ -89,8 +91,31 @@ Reducible without a full design cycle: PF-024, PF-046 (mechanical).
 ## Fix log (applied after the scan)
 
 Items PF-026..PF-030, PF-032..PF-037 (15 findings) were applied exactly as
-recommended. Verification: `cd spec && ./check.sh` ->
-`spec check: OK (25 files, 100 compile-fail tests)`.
+recommended. The remaining findings were resolved by the accepted rulings
+(R-01..R-37); verification: `cd spec && ./check.sh` ->
+`spec check: OK (27 files, 101 compile-fail tests)`.
 
-The Phase 2 compiler MVP must not start until at least the four critical
-findings are ruled on.
+## Iterations 2 and 3
+
+* **Iteration 2** dispatched three verification auditors across all 13
+  dimensions. It confirmed the rulings as implemented, with 20 residual
+  implementation gaps (I2-01..I2-30): out-parameter initialization versus the
+  definite-assignment exemption, the keyword count in Ch 01, the already-equal
+  operand case in the unification rule, missing MIN/-1 and NaN wording in the
+  Ch 17 hazard rows, the E10100/E10101 trigger model, unreachable E10225,
+  constant-context wording, standard-library naming drift, and test/tooling
+  gaps.
+* **Iteration 3** fixed every iteration-2 finding within the accepted rulings.
+  Two rulings were refined during implementation and are recorded here:
+  * out-parameter slots must be initialized by the caller (`= null`), the
+    callee owns the incoming value and may release it, and the O3 drop rule
+    applies to the slot;
+  * E10225 was retired (no reachable trigger: fields win in dot-call and
+    duplicate declarations are already E11101/E11103), joining E10037 in the
+    retired list.
+* **Accepted for Phase 2** (explicitly accepted; not blocking): executing the
+  `tests/run/` fault cases, and the vbcc `#line` plus generated-C FFI spikes
+  (open items in `docs/findings-phase1.md`).
+
+The Phase 2 compiler MVP may start; its first verification runs are the two
+accepted items above.

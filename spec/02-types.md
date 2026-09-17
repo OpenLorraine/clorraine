@@ -1,7 +1,7 @@
 # Chapter 02 - Type System
 
 > **Status:** draft (Phase C - rewritten against the ledger and the grammar)
-> **Depends on:** Ch 03 (ownership), Ch 04 (expressions), Ch 06 (functions), Ch 07 (structs), Ch 08 (arrays and strings), Ch 09 (enums), Ch 12 (FFI contracts), Ch 14 (diagnostics)
+> **Depends on (informational):** Ch 01 (lexical), Ch 03 (ownership), Ch 04 (expressions), Ch 05 (statements), Ch 06 (functions), Ch 07 (structs), Ch 08 (arrays and strings), Ch 09 (enums), Ch 12 (FFI contracts), Ch 14 (diagnostics), Ch 16 (borrow rules)
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) section 4
 > **Ledger:** T1-T12, V5, V8, B7, B8, GF3 ([decisions.md](decisions.md))
 
@@ -276,6 +276,17 @@ These implicit widenings are allowed and no others:
 | `i16` | `i32` | same-signedness integer widening |
 | `f32` | `f64` | float widening |
 
+These widenings are also how binary operators type their operands. A binary
+arithmetic, bitwise, or relational operator unifies its operands to a common
+type: when the operand types are already equal, the unified type is that type;
+otherwise the compiler applies the T1a widenings above, widening one operand
+when only one direction is a widening. Only a mixed-sign pair, or a non-equal
+pair that is a widening in neither direction, is E10200 and needs an explicit
+cast. The result has the unified type, except relational operators, which yield
+`bool`. A literal operand takes the other operand's type when its value fits,
+otherwise E10202. `f32` and `f64` unify to `f64`.
+[Ch 04](04-expressions.md) owns the operator tables.
+
 Rules:
 
 | Rule | Statement | Diagnostic |
@@ -324,14 +335,16 @@ Every arithmetic and shift operation is defined; there is no undefined behavior
 | Shift `<<`, `>>` | count masked to the operand width | - |
 | Signed `>>` | sign-replicating (arithmetic) | - |
 | Unsigned `>>` | zero-filling (logical) | - |
-| Integer `/`, `%` | truncate toward zero; a zero divisor is a runtime fault | E11210 |
+| Integer `/`, `%` | truncate toward zero; a zero divisor or the minimum signed value divided/modulo `-1` is a runtime fault | E11210 |
 | Float arithmetic | IEEE 754; division by zero gives Inf or NaN | - |
 | Float-to-integer cast | explicit; an out-of-range value is a runtime fault | E11212 |
 
 For example, `250 + 10` in `u8` is `4` (wrapping, not an overflow trap), and a
 shift count is masked to the operand width, so `u32(1) << 32` is `1`. Floats
 follow IEEE 754: `1.0 / 0.0` is `Inf` and `0.0 / 0.0` is `NaN`, unlike
-the integer rule. This difference is deliberate (T1, B7).
+the integer rule. This difference is deliberate (T1, B7). Integer `/` and `%`
+also fault with E11210 when the minimum signed value is divided or taken modulo
+`-1`, because the quotient is not representable.
 
 ## 11. Diagnostics
 
@@ -348,7 +361,7 @@ the integer rule. This difference is deliberate (T1, B7).
 | E10208 | `volatile` on something that is neither a field nor a module-level `let` |
 | E10210 | a function type mismatch |
 | E10211 | an enum backing type that is not an integer type |
-| E11210 | runtime fault: integer division or modulo by zero |
+| E11210 | runtime fault: integer division or modulo by zero, or the minimum signed value divided/modulo `-1` |
 | E11212 | runtime fault: float-to-integer conversion out of range |
 
 All message text lives in [Ch 14](14-diagnostics.md).

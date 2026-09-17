@@ -1,7 +1,7 @@
 # Chapter 08 - Arrays, Slices, and Strings
 
 > **Status:** draft (Phase C - rewritten against the ledger and the grammar)
-> **Depends on:** Ch 02 (types), Ch 03 (ownership), Ch 07 (structs), Ch 11 (memory), Ch 16 (borrow rules)
+> **Depends on:** Ch 02 (types), Ch 03 (ownership), Ch 07 (structs), Ch 11 (memory), Ch 14 (diagnostics), Ch 16 (borrow rules) *(informational)*
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 4, 6.7, 7
 > **Ledger:** T2-T5, T9, T12, O2, F1, GF9, GF16, S1-S5, F8, section 18
 
@@ -23,10 +23,14 @@ let row: u8[WIDTH] = [; 0];
 | AR-2 | A fixed array does not decay to a pointer | - |
 | AR-3 | Extents may repeat (`T[N][M]`); only the outermost may be omitted | - |
 | AR-4 | There are no dynamic-length arrays and no jagged forms | - |
+| AR-5 | An extent that is not greater than zero (`T[0]`) is rejected | E10226 |
 
 `T[][M]` is a slice whose elements are `T[M]` arrays. An omitted inner extent
-has no meaning and is rejected with E10220. A growable sequence is the standard-library
-`Array<T>` (section 9), not a language form.
+has no meaning and is rejected with E10220. Every extent must be greater than
+zero: an extent that is not, such as `u8[0]`, is E10226, because C99 has no
+zero-length array. A
+growable sequence is the standard-library `Array<T>` (section 9), not a
+language form.
 
 ## 2. Array literals
 
@@ -43,7 +47,7 @@ typed by the expected type, not by the literal alone.
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| AL-1 | The fill forms need a fixed extent in context | E10215 |
+| AL-1 | The fill forms need a fixed extent in context, and a literal prefix longer than the extent is rejected | E10215 |
 | AL-2 | Elements are typed by the expected type | - |
 | AL-3 | `[]` is the empty literal | - |
 
@@ -54,6 +58,7 @@ let c: u8[8]  = [; 0];       // all zero
 let d: u8[3][2] = [[1, 2], [3, 4], [5, 6]];
 
 let bad = [; 0];             // E10215: no fixed extent in context
+let over: u8[2] = [1, 2, 3]; // E10215: three elements do not fit u8[2]
 ```
 
 ## 3. Slices
@@ -123,9 +128,9 @@ The element form of `for` walks a fixed array or a slice
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| EL-1 | `for (x in xs)` copies each duplicable element | - |
-| EL-2 | `for (borrow e in xs)` binds an exclusive element view | - |
-| EL-3 | Non-duplicable elements require the `borrow` form | E10040 |
+| LOOP-1 | `for (x in xs)` copies each duplicable element | - |
+| LOOP-2 | `for (borrow e in xs)` binds an exclusive element view | - |
+| LOOP-3 | Non-duplicable elements require the `borrow` form | E10040 |
 
 ```clorraine
 func doubleAll(borrow xs: u32[]): void {
@@ -173,8 +178,16 @@ Clorraine has four string-related types, each with one job.
 | `static str` | static value | copies freely | literal with static origin; widens to `str` |
 
 Two widenings are implicit: `static str` widens to `str`, and `String` widens
-to `str` (a view of the owned bytes). Every other conversion is an explicit,
-named call, and no conversion allocates silently (T5).
+to `str` (a view of the owned bytes). Widening a `String` to `str` creates a
+shared loan of that `String`, live until the end of the derived view's origin;
+mutating, moving, or reallocating the `String` while such a view is live is
+E10031 / E10022. Every other conversion is an explicit, named call, and no
+conversion allocates silently (T5).
+
+The helpers that return a view or `cstring` over owned storage — `bytes`,
+`toCString`, `slice`, and `bufferBytes` — likewise create a shared loan of that
+owner for the result's origin, so the same E10031 / E10022 rules apply while
+the result is live ([Ch 16](16-borrow-rules.md) section 2).
 
 | Conversion | Direction | Allocation |
 |---|---|---|
@@ -252,8 +265,10 @@ let literal: str = $"hello";        // no placeholders: plain str
 
 `Buffer` (owned bytes) and `Array<T>` (growable) are standard-library types,
 not language types (ledger section 18). See [Ch 11](11-memory.md) for their
-scope. Standard-library APIs are written dot-call style: `x.f(y)` resolves to
-the free function `f(x, y)` with static resolution and no methods (F8).
+scope; the v1 library signatures are in
+[appendix-stdlib.md](appendix-stdlib.md). Standard-library APIs are written
+dot-call style: `x.f(y)` resolves to the free function `f(x, y)` with static
+resolution and no methods (F8).
 
 ```clorraine
 import { Array, arrayNew } from std.mem;   // names illustrative
@@ -269,9 +284,10 @@ let n = xs.len();                            // dot-call resolves to len(xs)
 | E10040 | element loop over non-duplicable elements without `borrow` |
 | E10205 | view-typed struct field other than `static str` |
 | E10209 | indexing a type that is not indexable |
-| E10215 | array fill literal without a fixed extent in context |
+| E10215 | array fill literal without a fixed extent in context, or a literal prefix longer than the extent |
 | E10216 | constant index into a fixed array is out of range |
 | E10220 | inner extent omitted in a multi-dimensional type |
+| E10226 | an extent that is not greater than zero (`u8[0]`) |
 | E10500 | non-formattable type in a template placeholder |
 | E10501 | format specifier inside a placeholder |
 | E10503 | unbalanced braces in a template |

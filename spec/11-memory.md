@@ -1,7 +1,7 @@
 # Chapter 11 - Memory and Resources
 
 > **Status:** draft (Phase C - rewritten against the ledger and the grammar)
-> **Depends on:** Ch 00 (axioms), Ch 03 (ownership), Ch 07 (structs), Ch 08 (arrays and strings), Ch 12 (FFI and contracts), Ch 15 (profiles), Ch 17 (codegen)
+> **Depends on:** Ch 00 (axioms), Ch 03 (ownership), Ch 07 (structs), Ch 08 (arrays and strings), Ch 12 (FFI and contracts), Ch 14 (diagnostics), Ch 15 (profiles), Ch 17 (codegen) *(informational)*
 > **Grammar:** [grammar.ebnf.md](grammar.ebnf.md) sections 3.4 (handles), 3.5 (module-level values), 4 (types), 7 (intrinsics)
 > **Ledger:** [decisions.md](decisions.md) section 18 (standard-library scope); Ch 00 axioms A2 and A7; X1, T2, T8, F7, F9; P2-P6, P14
 
@@ -32,7 +32,7 @@ The **static** class holds module-level values. A module-level `let` must be
 duplicable or `const`, and a module-level `const` must be a compile-time value
 (V2, O10). Because there are no exit drops, a global can never own a resource
 ([Ch 03](03-ownership.md) section 5); a non-duplicable module-level `let` is
-E11106, and the underlying ownership rule is E10037. Runtime-initialized
+E11106. Runtime-initialized
 globals become generated `cl_init_<module>` functions run in dependency order
 before `main` (M5, P9); a cycle that involves them is E11100.
 
@@ -81,10 +81,10 @@ handle is a null-safe call to its deleter (P5). An allocation reports failure
 as `null`:
 
 ```clorraine
-import { Buffer, allocVec } from std.mem;
+import { Buffer, bufferNew } from std.mem;
 
 func makeBuffer(size: usize): Buffer? {
-    let buf: Buffer? = allocVec(size);
+    let buf: Buffer? = bufferNew(size);
     if (buf == null) {
         return null;              // failure: the caller sees a plain null
     }
@@ -124,6 +124,14 @@ func scratch(): void {
 The threshold is a profile fact with a v1 default (W10004a), verified across
 the build matrix (P14; [Ch 17](17-codegen.md) section 13).
 
+### Stack-depth guidance
+
+Recursion depth is the program's responsibility. Keep recursion bounded, and
+never recurse deeply in interrupt context, where the stack is small and shared
+with the interrupted code. The hosted profiles publish concrete stack sizes in
+the SDK documentation; a freestanding build owns its stack policy. A compiler
+stack-usage report is a follow-up.
+
 ## 4. Failure handling
 
 Recoverable allocation failure is reported as a nullable result. An allocation
@@ -154,7 +162,7 @@ The library is where memory ergonomics live. In priority order, v1 ships:
 | `Buffer` (owned bytes) | Bulk IO, bitmaps, samples; safe slices into owned storage |
 | `Array<T>` (growable) | Default dynamic container; most workloads need no other structure |
 | One error/status carrier | Detail-carrying failures; `T?` stays detail-free; partial-IO conventions |
-| Format helpers | `toHex32`, padding, and float formatting used by templates |
+| Format helpers | `toHex` / `toDecimal`, padding, and float formatting used by templates |
 | Per-chip MMIO wrappers | Safe accessors over the volatile intrinsics; `const raw` register bases |
 | Interrupt/hook dispatcher | C-side qualified handler plus token add/remove; handlers are allocation-free, drop-free, panic-free |
 | `Span` | Offset-based parsing helper (the view-field ban still applies) |
@@ -162,7 +170,8 @@ The library is where memory ergonomics live. In priority order, v1 ships:
 The MMIO wrappers cover the volatile intrinsics (T7), and register bases are
 `const raw` values ([grammar.ebnf.md](grammar.ebnf.md) section 6.8). Library
 APIs are written dot-call style (F8): `x.f(y)` resolves to the free function
-`f(x, y)`.
+`f(x, y)`. The v1 signatures for these library items are in
+[appendix-stdlib.md](appendix-stdlib.md).
 
 ```clorraine
 import { Array, arrayNew } from std.mem;   // names illustrative
@@ -199,7 +208,6 @@ shim is described in [Ch 17](17-codegen.md) section 12.
 |---|---|
 | E10010 | a nullable allocation result is used before a null check |
 | E10021 | a local is read before it is assigned on every path |
-| E10037 | a global is not duplicable |
 | E11100 | an initializer dependency cycle (between modules or same-module globals) |
 | E11106 | a module-level `let` uses a non-duplicable initializer |
 | E11210 | runtime fault: integer division by zero (shared abort path) |

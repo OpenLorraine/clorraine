@@ -1,0 +1,9 @@
+// expect-fault E11210
+// trigger: integer division by a zero divisor at run time
+module tests.run.E11210;
+
+func main(): i32 {
+    let zero: i32 = 0;
+    let n: i32 = 10 / zero;   // E11210: integer division by zero
+    return n;
+}

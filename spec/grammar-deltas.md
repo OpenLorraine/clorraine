@@ -33,6 +33,7 @@ decision behind it. Classes:
 | `case 1, 2:` | `case 1:` / `case 2:` | C-exact labels (B5) |
 | `... fallthrough;` | (implicit) | C-exact fallthrough (B5) |
 | `$FF` hex | `0xFF` only | `$` introduces templates; C-like surface |
+| unary `+` (sign prefix) | (not adopted) | Write the operand directly; the C-ish prefix is redundant |
 | `let name: T;` at module level | initializer required | No uninitialized globals (M7, freeze GF20) |
 | `type` (reserved keyword) | ordinary identifier | Blend65 reserved it without a production; dropped |
 
@@ -174,7 +175,7 @@ those are corrections for Phase C chapters, not grammar gaps.
 | E2 file load | `File?`, `null` narrowing, moves, `borrow bufferBytes(buf)`, owned return, drops | 3.1, 4, 5.1, 6.4 | `borrow <call>` is a marked argument plus reborrow (GF7, O12) |
 | E3 text dump | templates, interpolation, `'0'`, imports, inferred locals | 7, 6.5, 10.6, 2.3 | `'0'` types as `u8` (GF8) |
 | E4 records | read-only lend default, `borrow` mutation, copies, element loop, view return, `slice`, `len` | 3.1, 5.2, 6.4, 6.5 | `moveAll` uses `for (borrow e in xs)` (GF9); `half` elides to `buf` (EL-2) |
-| E5 timer | volatile global, function value, nullable parameter, `!= null` narrowing | 3.5, 6.5, 4, 5.1 | `ticks` gains `volatile` (GF12); `addTimer(onTick)` is a bare function value (GF13) |
+| E5 timer | volatile global, function value, nullable parameter, `!= null` narrowing | 3.5, 6.5, 4, 5.1 | `ticks` gains `volatile` (GF12); `addHandler(onTick)` is a bare function value (GF13) |
 | E6 list | `raw Node?` field, `sizeof`, `raw` cast, raw member access, out-parameter, `null` narrowing | 3.2, 4, 6.3, 6.4, 7 | raw reads use `unsafe` (block or prefix, GF4); `sizeof` needs no import (GF14) |
 
 The Phase 0 hosted skeleton is C, not Clorraine, so it validates the codegen

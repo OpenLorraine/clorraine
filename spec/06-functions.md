@@ -115,6 +115,10 @@ from its parameters. The elision rules are:
 | EL-5 | A view parameter passed to another call is a reborrow limited to that call expression |
 | EL-6 | Nullable views add `null` as a value; the lifetime rule is unchanged |
 
+A `take` parameter is **not** an elision candidate: it creates no loan, so it
+cannot be the source of a returned view. A view return whose only view-like lend
+candidate is a `take` parameter is E10036.
+
 The full rules and the checker live in [Ch 16](16-borrow-rules.md).
 
 ```clorraine
@@ -130,9 +134,19 @@ func greeting(): static str {
 ## 4. Out-parameters
 
 A callee that must report detail writes it through a `borrow` out-parameter,
-usually a nullable handle (E1). A `borrow T?` parameter is exempt from
-definite assignment (F9): the callee supplies the value, so the caller's
-binding does not need an initializer before the call.
+usually a nullable handle (E1). The caller must initialize the slot on every
+path before the call (`let f: File? = null;`); passing an uninitialized slot is
+E10021, the ordinary definite-assignment rule (F9).
+
+**Out-parameter ownership.** A `borrow T?` parameter is an in-out ownership
+slot. The callee owns the incoming value on entry: normally `null`, and a
+non-null incoming value must be an initialized owned handle. The callee may
+release that incoming value, so E10034 does not apply to the slot. The callee
+is not required to write on every path; afterwards the slot owns the resulting
+handle, or stays `null`. Assigning through the slot drops the callee-owned
+previous value first, then stores the new one (the O3 carve-out). Callers
+normally pass `null`; passing a non-null owned value transfers it into the
+slot.
 
 ```clorraine
 func openInto(path: str, borrow f: File?): void {
@@ -140,15 +154,14 @@ func openInto(path: str, borrow f: File?): void {
 }
 
 func load(path: str): File? {
-    let f: File?;                // a borrow T? out-parameter is exempt
+    let f: File? = null;         // the caller initializes the slot first
     openInto(path, borrow f);
-    return f;                    // assigned by the callee
+    return f;                    // the callee may have filled the slot
 }
 ```
 
-Initializing the binding to `null` first is also valid and is the common
-style (T8). `null` is the only empty state; narrowing needs an `== null` or
-`!= null` check (use before the check is E10010).
+`null` is the only empty state; narrowing needs an `== null` or `!= null` check
+(use before the check is E10010).
 
 ```clorraine
 let f: File? = null;
@@ -164,7 +177,7 @@ Recursion is unrestricted (F7): direct, indirect, mutual, and generic
 recursion all work. There is no static frame allocation and there is no
 recursion diagnostic. The C activation stack supplies the frames, so stack
 depth is a runtime concern with documented guidance; see
-[Ch 17](17-codegen.md).
+[Ch 11](11-memory.md).
 
 ```clorraine
 func countDown(n: i32): void {
@@ -304,7 +317,10 @@ ffi libc {
 ```
 
 An `intrinsic func` declaration is a compiler-provided signature. It has no
-body and is restricted to compiler-known names (GF23; grammar section 3.6).
+body and is restricted to compiler-known names (GF23; grammar section 3.6). It
+is the only declaration form that may bind a reserved built-in name
+([Ch 01](01-lexical.md), LEX-9); an ordinary `func` that uses a reserved name is
+E20006.
 
 ```clorraine
 intrinsic func readVolatile16(addr: raw u16): u16;
@@ -324,6 +340,7 @@ intrinsic func readVolatile16(addr: raw u16): u16;
 | E10300-E10306 | Generic function diagnostics |
 | E10400-E10404 | Lambda diagnostics |
 | E11104 | Entry-point problems |
+| E20006 | An ordinary declaration of a reserved built-in name |
 | E90001 | `comptime` semantics are staged |
 | E90002 | Lambda captures are staged |
 | W10001 | Needless read-only borrow of a duplicable value |

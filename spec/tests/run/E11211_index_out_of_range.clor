@@ -1,0 +1,9 @@
+// expect-fault E11211
+// trigger: indexing a fixed array past its extent at run time
+module tests.run.E11211;
+
+func main(): i32 {
+    let xs: u32[2] = [1, 2];
+    let i: usize = 5;
+    return i32(xs[i]);   // E11211: index out of range
+}

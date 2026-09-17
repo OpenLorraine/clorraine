@@ -18,10 +18,10 @@ export struct Point {
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| ST-1 | `struct Name { field: T; ... }`, optionally `export struct` | - |
-| ST-2 | Fields are semicolon-terminated and declared in C-layout order; the compiler never reorders them | - |
-| ST-3 | At least one field is required; C99 has no empty structs | E10206 |
-| ST-4 | `volatile` is the only field qualifier; any other qualifier is a syntax error | E20000 |
+| STR-1 | `struct Name { field: T; ... }`, optionally `export struct` | - |
+| STR-2 | Fields are semicolon-terminated and declared in C-layout order; the compiler never reorders them | - |
+| STR-3 | At least one field is required; C99 has no empty structs | E10206 |
+| STR-4 | `volatile` is the only field qualifier; any other qualifier is a syntax error | E20000 |
 
 `export` makes the struct visible to other modules; the default is
 module-private (M3). Structs are nominal: two structs with identical fields
@@ -39,11 +39,11 @@ let q = Point { y: 2, x: 1, };   // order-independent; trailing comma allowed
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| ST-5 | Fields are named and order-independent | - |
-| ST-6 | A missing, unknown, or duplicate field is an error | E10203 |
-| ST-7 | `Point {}` is the explicit zero value (O7) | - |
-| ST-8 | Trailing commas are allowed | - |
-| ST-9 | There is no update syntax in v1 | - |
+| STR-5 | Fields are named and order-independent | - |
+| STR-6 | A missing, unknown, or duplicate field is an error | E10203 |
+| STR-7 | `Point {}` is the explicit zero value (O7) | - |
+| STR-8 | Trailing commas are allowed | - |
+| STR-9 | There is no update syntax in v1 | - |
 
 ```clorraine
 let a = Point { x: 1 };              // E10203: y is missing
@@ -102,11 +102,11 @@ func takeLeft(take p: Pair): String {
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| ST-10 | Whole-value use, move, or lend of a partially moved struct is an error | E10025 |
-| ST-11 | Partial moves are limited to top-level fields of owned locals and `take` parameters | E10026 |
-| ST-12 | Nested-path and element moves are deferred to a later version | E10026 |
-| ST-13 | Remaining fields stay usable; reassigning a field re-initializes the struct | - |
-| ST-14 | At a control-flow join, a field moved on any path counts as moved (conservative) | - |
+| STR-10 | Whole-value use, move, or lend of a partially moved struct is an error | E10025 |
+| STR-11 | Partial moves are limited to top-level fields of owned locals and `take` parameters | E10026 |
+| STR-12 | Nested-path and element moves are deferred to a later version | E10026 |
+| STR-13 | Remaining fields stay usable; reassigning a field re-initializes the struct | - |
+| STR-14 | At a control-flow join, a field moved on any path counts as moved (conservative) | - |
 
 ```clorraine
 struct Inner { s: String; }
@@ -171,10 +171,10 @@ struct CustomRegs {
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| ST-15 | A `volatile` field makes the struct an overlay type | - |
-| ST-16 | An overlay value cannot be a local, copied, dropped, borrowed, or passed by value | E10207 |
-| ST-17 | Overlay access goes through a `raw` pointer inside `unsafe` | E10207 |
-| ST-18 | `volatile` outside a struct field or a module-level `let` | E10208 |
+| STR-15 | A `volatile` field makes the struct an overlay type | - |
+| STR-16 | An overlay value cannot be a local, copied, dropped, borrowed, or passed by value | E10207 |
+| STR-17 | Overlay access goes through a `raw` pointer inside `unsafe` | E10207 |
+| STR-18 | `volatile` outside a struct field or a module-level `let` | E10208 |
 
 An overlay type has no drop and no copy, so it can never be reached as a
 value. Access it through a `raw` pointer inside `unsafe`:
@@ -237,13 +237,13 @@ hash-deduped symbol. See [Ch 17](17-codegen.md).
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| ST-19 | The wrong number of type arguments | E10300 |
-| ST-20 | Type arguments that cannot be inferred; write them explicitly | E10301 |
-| ST-21 | `export` on a generic struct | E10302 |
-| ST-22 | A type argument that violates a declared callable bound | E10303 |
-| ST-23 | A callable-only type parameter stored in a field | E10304 |
-| ST-24 | Instantiation recursion beyond the cap | E10305 |
-| ST-25 | A generic aggregate instantiated with an ephemeral type argument | E10306 |
+| STR-19 | The wrong number of type arguments | E10300 |
+| STR-20 | Type arguments that cannot be inferred; write them explicitly | E10301 |
+| STR-21 | `export` on a generic struct | E10302 |
+| STR-22 | A type argument that violates a declared callable bound | E10303 |
+| STR-23 | A callable-only type parameter stored in a field | E10304 |
+| STR-24 | Instantiation recursion beyond the cap | E10305 |
+| STR-25 | A generic aggregate instantiated with an ephemeral type argument | E10306 |
 
 ## 10. Self-referential structs
 

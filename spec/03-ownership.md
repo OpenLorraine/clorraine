@@ -88,7 +88,9 @@ A **move** transfers ownership. It happens in these situations:
 * Re-initializing a moved binding is allowed (O3). After
   `a = openFile("RAM:b");` the binding is live again.
 * Assignment drops the live old value of the target first, then stores the new
-  value (O3).
+  value (O3). This includes assignment through a `borrow T?` out-parameter: the
+  callee owns the incoming slot value, so releasing it is allowed (the E10034
+  carve-out in section 6).
 * Move state is flow-sensitive. At a control-flow join, a value moved on any
   path counts as moved (O6, conservative).
 * **Zero = empty** (O7): the all-zero bit pattern is the valid "nothing to
@@ -166,7 +168,7 @@ null-safe check (O7) makes them run exactly once (O1).
 
 There are no drops at process exit. `panic` aborts without running the ladder
 (D4, E4). A global must therefore be duplicable or `const`: a non-duplicable
-global is E10037 (O10).
+global is E11106 (O10).
 
 ```clorraine
 let tracing: bool = false;
@@ -195,7 +197,7 @@ writes a handle through a `borrow T?` parameter (T8):
 import { File, openInto } from std.io;
 
 func dump(path: str): void {
-    let f: File? = null;
+    let f: File? = null;        // the caller initializes the slot; uninitialized is E10021
     openInto(path, borrow f);   // the callee writes a handle or leaves it null
     if (f == null) {
         return;                 // nothing to release
@@ -204,9 +206,16 @@ func dump(path: str): void {
 }
 ```
 
-Definite assignment (F9) applies to locals: reading one before it is assigned on
-every path is E10021. A `borrow T?` out-parameter is exempt, so a callee may
-fill it in without the caller having assigned it first.
+A `borrow T?` out-parameter is an **in-out ownership slot**: the callee owns the
+incoming value on entry and may release it, so E10034 does not apply to the
+slot. The callee is not required to write on every path; afterwards the slot
+owns the resulting handle (or stays `null`). Assignment through the slot drops
+the callee-owned previous value first, then stores the new one (the O3
+carve-out). [Ch 06](06-functions.md) section 4 states the full rule.
+
+Definite assignment (F9) applies to the caller's slot too: the caller must
+assign it on every path before the call, so write `let f: File? = null;` first.
+Passing an uninitialized slot to a `borrow T?` out-parameter is E10021.
 
 ## 7. Borrows of owned values
 
@@ -221,7 +230,7 @@ release a value and never change ownership.
 | No mutation of an owner while a shared lend is live | E10031 |
 | A writable lend is unique; a second conflicting loan is an error | E10032 |
 | Lends do not escape their origin (a field, a global, or a local's return) | E10033 |
-| A borrowed parameter is call-scoped; the callee may not release or store it | E10034 |
+| A borrowed parameter is call-scoped; the callee may not release or store it (except a `borrow T?` out-parameter, which the callee owns) | E10034 |
 | A view returned from a local is an error | E10035 |
 | A view return must derive from exactly one view-like lend parameter | E10036 |
 | A global may not be borrowed | E10038 |
@@ -246,9 +255,11 @@ integer-to-`raw` value casts, are allowed outside `unsafe` (T6).
 
 Ownership never flows through `raw` automatically. Converting an owned handle to
 or from `raw` is an explicit, audited step. An uncontracted extern call requires
-`unsafe` and may not receive owned or borrowed values (T6, X4). A `raw` pointer
-may not launder a lend out of its scope (T6); [Ch 12](12-ffi-contracts.md) keeps
-the boundary in reviewed wrappers.
+`unsafe` and may not receive owned or borrowed values (T6, X4). `unsafe` is a
+greppable audit marker, not a provenance guarantee (T6): the rule that a `raw`
+pointer may not launder a lend out of its scope is an audited convention and an
+explicit review requirement, not a compiler check. It is not enforced by the
+compiler; [Ch 12](12-ffi-contracts.md) keeps the boundary in reviewed wrappers.
 
 ## 9. Rule index
 
@@ -270,9 +281,9 @@ section 1). They are restated here in the current vocabulary.
 | OW-11 | Drops run at scope exit, locals in reverse declaration order | - (codegen) |
 | OW-12 | Drops are null-safe and run exactly once | - (codegen) |
 | OW-13 | Temporaries drop at the statement end | - (codegen) |
-| OW-14 | No drops at process exit; globals may not be move-only owners | E10037 |
+| OW-14 | No drops at process exit; globals may not be move-only owners | E11106 |
 | OW-15 | A `take` parameter transfers ownership into the callee | - |
-| OW-16 | A borrowed parameter is call-scoped; the callee must not release or store it | E10034 |
+| OW-16 | A borrowed parameter is call-scoped; the callee must not release or store it, except the `borrow T?` out-param slot, which the callee owns | E10034 |
 | OW-17 | A returned view derives from a parameter (elision) | E10035 / E10036 |
 | OW-18 | v1 aggregates carry no view-typed fields except `static str` | - (Ch 02) |
-| OW-19 | A global must be duplicable or `const`; a global may not be borrowed | E10037 / E10038 |
+| OW-19 | A global must be duplicable or `const`; a global may not be borrowed | E11106 / E10038 |

@@ -1,7 +1,7 @@
 # Appendix A - Amiga Platform Notes
 
 > **Status:** draft (Phase C - rewritten against the ledger and the grammar)
-> **Depends on:** Ch 12 (contracts), Ch 15 (profiles), Ch 17 (codegen)
+> **Depends on:** Ch 12 (contracts), Ch 14 (diagnostics), Ch 15 (profiles), Ch 17 (codegen) *(informational)*
 > **Grammar:** none; the surface is the frozen [grammar.ebnf.md](grammar.ebnf.md)
 > **Ledger:** [decisions.md](decisions.md): C1-C4, F7, T6, T7, X1-X6, L5, P14, P15; validated by [findings](../docs/findings-phase0.md)
 
@@ -23,9 +23,9 @@ holds the FFI declaration.
 | `exec.library` | libraries | open and close (`OpenLibrary`/`CloseLibrary`) | `handle Library` |
 | `exec.library` | ports | create and delete message ports | `handle MsgPort` |
 | `exec.library` | signals | wait for and set signals (`Wait`/`SetSignal`) | event loop (§6) |
-| `dos.library` | files | open, close, read, write, seek | `handle File` |
-| `dos.library` | locks | lock and unlock a path | `handle Lock` |
-| `dos.library` | output | write to standard output | `println` |
+| `dos.library` | files | open, close, read, and write; `Seek` planned, not yet wrapped | `handle File` |
+| `dos.library` | locks | lock and unlock a path (planned; not yet wrapped) | `handle Lock` (planned) |
+| `dos.library` | output | write to standard output (planned; print helpers not yet wrapped) | `println` (planned) |
 | `intuition` / `graphics` | windows, drawing | later | same contract discipline |
 
 The library is written in copy, not in the surface. Application code imports
@@ -49,8 +49,9 @@ spellings appear.
 Inside the library, the wrappers declare the handles and the raw calls once:
 
 ```clorraine
-// Inside std.amiga.dos (library code; application code never writes this).
-handle File freedBy Close;
+// Inside the standard library (application code never writes this).
+handle File    freedBy Close;
+handle Message freedBy ReplyMsg;   // a fetched message is owned until replied
 
 ffi dos {
     func Open(name: cstring, mode: i32): File?;   // a BPTR of 0 becomes null
@@ -58,12 +59,18 @@ ffi dos {
     func Write(borrow f: File, buf: u8[], len: i32): i32;
     func IoErr(): u32;
 }
+
+ffi exec {
+    func GetMsg(port: MsgPort): Message?;
+    func ReplyMsg(take msg: Message): void;
+}
 ```
 
 `take File` transfers ownership to `Close`; the caller's binding is
 invalidated. `File?` says the open may fail, and the caller must check for
-`null` before use (E10010). There are no contract clause words; the mode and
-the `?` carry the meaning (X3).
+`null` before use (E10010). `take Message` returns a fetched message to its
+sender; the handle's `freedBy` deleter is `ReplyMsg`. There are no contract
+clause words; the mode and the `?` carry the meaning (X3).
 
 ## 3. Error reporting
 
@@ -162,8 +169,8 @@ calls (L5).
 
 | Rule | Statement |
 |---|---|
-| IH-1 | Register and unregister a handler with the wrapper (`addTimer`, `removeTimer`); the wrapper returns a token |
-| IH-2 | A handler is allocation-free, drop-free, and panic-free; it must not `panic` (E4) |
+| IH-1 | Register and unregister a handler with the dispatcher (`addHandler`, `removeHandler`); the wrapper returns a `HandlerToken` |
+| IH-2 | A handler is allocation-free, drop-free, and panic-free; it must not `panic` (E4). This is an audited convention in v1; effect-marker enforcement is a named Phase 2 follow-up |
 | IH-3 | State shared with a handler is a `volatile` module-level `let` (T7); a polling loop would otherwise read a stale value |
 | IH-4 | `stores` and `transfers` contracts are deferred to v2 (E90003) |
 | IH-5 | C-hook trampolines for capturing lambdas arrive in v1.1 (L5); a capture-less lambda already matches `func(...)` |
@@ -171,7 +178,8 @@ calls (L5).
 ```clorraine
 module Demo.Timer;
 
-import { addTimer, removeTimer, TimerStart } from std.amiga.interrupt;
+import { addHandler, removeHandler, HandlerToken } from std.amiga.interrupt;
+import { Status } from std.mem;
 
 volatile let ticks: u32 = 0;
 
@@ -179,13 +187,13 @@ func onTick(): void {
     ticks = ticks + 1;      // shared with the interrupt handler
 }
 
-export func start(): bool {
-    let r: TimerStart = addTimer(onTick);   // a bare func value; no capture, no allocation
-    return r.ok;
+export func start(): Status {
+    let t: HandlerToken = addHandler(onTick);   // a bare func value; no capture, no allocation
+    return Status { ok: true, code: 0 };        // the wrapper reports failure in the status struct
 }
 
-export func stop(id: u32): void {
-    removeTimer(id);
+export func stop(t: HandlerToken): void {
+    removeHandler(t);
 }
 ```
 

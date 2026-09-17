@@ -1,7 +1,7 @@
 # Chapter 15 - Platform Profiles
 
 > **Status:** draft (Phase C - rewritten against the ledger and the grammar)
-> **Depends on:** Ch 00 (axioms), Ch 12 (contracts), Ch 17 (codegen)
+> **Depends on:** Ch 00 (axioms), Ch 12 (contracts), Ch 14 (diagnostics), Ch 17 (codegen) *(informational)*
 > **Grammar:** none; profiles carry target facts, not surface syntax (see [grammar.ebnf.md](grammar.ebnf.md))
 > **Ledger:** [decisions.md](decisions.md): A5, X3, P14, P15, R2 (C3 is an appendix topic); diagnostics N1-N3, W10004
 

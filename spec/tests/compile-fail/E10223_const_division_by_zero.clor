@@ -1,0 +1,9 @@
+// expect-error E10223
+// trigger: a constant expression divides by zero
+module tests.compile_fail.E10223;
+
+const BAD: i32 = 10 / 0;   // E10223: constant expression division by zero
+
+func main(): i32 {
+    return 0;
+}
