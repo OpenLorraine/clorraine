@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 12:02
-> **Progress**: 10/84 tasks (12%)
+> **Last Updated**: 2026-09-18 11:53
+> **Progress**: 11/84 tasks (13%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -113,8 +113,8 @@ get the user's explicit acceptance before front-end work.
 **Objective**: measure how far vbcc honors `#line` before the emitter relies on it.
 
 - [x] 1.1.1 Create `spikes/01-vbcc-line/demo.c` and its Makefile per S1 ✅ (completed: 2026-09-18 11:48)
-- [x] 1.1.2 Run the vbcc compile, the decoded-line-table inspection, and the `-DERR` diagnostic check; capture raw output ✅ (completed: 2026-09-18 11:55)
-- [x] 1.1.3 Write the S1 decision note: the confirmed or refuted `#line` behavior and any required spec ruling request ✅ (completed: 2026-09-18 12:02)
+- [x] 1.1.2 Run the vbcc compile, the decoded-line-table inspection, and the `-DERR` diagnostic check; capture raw output ✅ (completed: 2026-09-18 11:50)
+- [x] 1.1.3 Write the S1 decision note: the confirmed or refuted `#line` behavior and any required spec ruling request ✅ (completed: 2026-09-18 11:51)
 
 **Deliverables**:
 - S1 fixture and raw results
@@ -129,7 +129,7 @@ get the user's explicit acceptance before front-end work.
 **Reference**: 03-02 §S2 · PF-002
 **Objective**: compile and run the exact emitted prototypes against the NDK.
 
-- [ ] 1.2.1 Create `spikes/02-ffi-abi/ffi_abi.c` and Makefile per S2
+- [x] 1.2.1 Create `spikes/02-ffi-abi/ffi_abi.c` and Makefile per S2 ✅ (completed: 2026-09-18 11:53)
 - [ ] 1.2.2 Compile with GCC and vbcc; run under `vamos` through the SDK; capture ABI observations and release counters
 - [ ] 1.2.3 Write the S2 decision note: ABI facts confirmed, any prototype change required
 
