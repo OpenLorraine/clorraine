@@ -1,0 +1,32 @@
+== vbcc object header ==
+0000000  \0  \0 003 347  \0  \0  \0  \a   s   p   i   k   e   s   /   0
+0000020   1   -   v   b   c   c   -   l   i   n   e   /   d   e   m   o
+0000040   .   c  \0  \0  \0  \0 003 350  \0  \0  \0 001   C   O   D   E
+== objdump -h vbcc executable ==
+
+spikes/01-vbcc-line/build/demo:     file format amiga
+
+Sections:
+Idx Name          Size      VMA       LMA       File off  Algn
+  0 .text         00001bd8  00000000  00000000  00000034  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, CODE
+  1 .data         0000003c  00000000  00000000  00002274  2**2
+                  CONTENTS, ALLOC, LOAD, DATA
+  2 .data         00000114  00000000  00000000  00002384  2**2
+                  CONTENTS, ALLOC, LOAD, DATA
+  3 .data         0000000c  00000000  00000000  00002508  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, DATA
+  4 .data         00000010  00000000  00000000  00002550  2**2
+                  CONTENTS, ALLOC, LOAD, RELOC, DATA
+  5 .bss          00000018  00000000  00000000  000025a0  2**2
+                  ALLOC
+== readelf -S vbcc executable ==
+readelf: Error: Not an ELF file - it has the wrong magic bytes at the start
+== vobjdump vbcc object ==
+Not a VOBJ file!
+== mapped filename strings ==
+spikes/01-vbcc-line/build/demo.o:demo.clor
+spikes/01-vbcc-line/build/demo:demo.clor
+== objdump -h GCC executable ==
+Sections:
+                  CONTENTS, ALLOC, DEBUGGING

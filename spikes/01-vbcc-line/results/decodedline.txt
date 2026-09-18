@@ -1,0 +1,9 @@
+== objdump --dwarf=decodedline ==
+
+spikes/01-vbcc-line/build/demo:     file format amiga
+
+== readelf --debug-dump=decodedline ==
+readelf: Error: Not an ELF file - it has the wrong magic bytes at the start
+== gdb: info line demo.clor:28 ==
+No symbol table is loaded.  Use the "file" command.
+No symbol table is loaded.  Use the "file" command.

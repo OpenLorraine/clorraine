@@ -1,0 +1,12 @@
+>    };
+warning 53 in line 80 of "devices/timer.h": struct/union member needs identifier
+	included from file "/opt/amiga/m68k-amigaos/ndk-include/dos/dosextens.h":29
+	included from file "/opt/amiga/m68k-amigaos/ndk-include/clib/dos_protos.h":18
+	included from file "/opt/amiga/m68k-amigaos/ndk-include/proto/dos.h":6
+	included from file "spikes/01-vbcc-line/demo.c":21
+>    };
+warning 53 in line 84 of "devices/timer.h": struct/union member needs identifier
+	included from file "/opt/amiga/m68k-amigaos/ndk-include/dos/dosextens.h":29
+	included from file "/opt/amiga/m68k-amigaos/ndk-include/clib/dos_protos.h":18
+	included from file "/opt/amiga/m68k-amigaos/ndk-include/proto/dos.h":6
+	included from file "spikes/01-vbcc-line/demo.c":21
