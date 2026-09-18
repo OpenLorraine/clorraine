@@ -12,7 +12,7 @@
 |---|---|---|
 | `spec/` (Ch 00-17, appendices, ledger, grammar, lineage) | Frozen, preflight-passed (27 files, `spec check: OK`) | The oracle: every rule, diagnostic, and codegen contract the MVP implements |
 | `spec/check.sh` | Working bash validator | Structural gate; stays the spec-side check |
-| `spec/tests/compile-fail/` | 95+ `.clor` golden files, structure-validated only | Becomes the compile-fail harness input |
+| `spec/tests/compile-fail/` | 95+ `.clo` golden files, structure-validated only | Becomes the compile-fail harness input |
 | `spec/tests/run/` | 6 runtime-fault cases, not executable | Becomes the run-fault harness input |
 | `spec/tests/staged/` | 4 staged intent files | Excluded from coverage (AR-10) |
 | `docker/` SDK (GCC 16.2, vbcc, libnix, NDK, gdb, vamos, FS-UAE, Rust stable, host cc) | Ready (`docker/README.md`) | The build/test environment and the implementation toolchain |
@@ -32,7 +32,7 @@
 | `Makefile` (root) | `check` / `verify` orchestration | Create |
 | `docs/findings-phase2.md` | Spike results | Create |
 | `plans/00-roadmap.md`, `AGENTS.md` | Tracking and project guidance | Create (AR-38, AR-40) |
-| `spec/tests/compile-fail/W10000_deny_warnings.clor` | Warning escalation golden | Create (AR-34) |
+| `spec/tests/compile-fail/W10000_deny_warnings.clo` | Warning escalation golden | Create (AR-34) |
 
 ### Code Analysis
 

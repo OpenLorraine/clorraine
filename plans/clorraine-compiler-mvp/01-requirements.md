@@ -22,7 +22,7 @@ artifact.
 
 | # | Requirement | Source |
 |---|---|---|
-| R1 | The four corpus programs (file copier, interrupt counter, string/parser, buffer/container) exist under `spec/tests/corpus/` with `program.clor`, `expected-output.txt`, and a `README.md` rule-coverage record | AR-3, AR-28, `spec/lineage.md:169-175` |
+| R1 | The four corpus programs (file copier, interrupt counter, string/parser, buffer/container) exist under `spec/tests/corpus/` with `program.clo`, `expected-output.txt`, and a `README.md` rule-coverage record | AR-3, AR-28, `spec/lineage.md:169-175` |
 | R2 | Each corpus program is hand-checked line-by-line against the frozen specification; the user accepts the corpus before front-end work starts | AR-31, AR-43 |
 | R3 | Four spikes are executed and recorded: vbcc `#line`, generated-C FFI ABI, arithmetic wrapping/shifts, and the run-fault patterns | AR-8, AR-41; `decisions.md:330,336,370`, `preflight-report.md:121-126` |
 | R4 | `clc` lexes and parses the frozen grammar (Ch 01, grammar §9-§11), including the targeted parser-only diagnostics E10204, E10208, E10501, E20008 | AR-6, AR-21 |

@@ -30,8 +30,8 @@ constructs, and the W10002/W10006 audits are truthful.
 
 | Area | Files |
 |---|---|
-| Corpus | `spec/tests/corpus/string-parser/{program.clor,expected-output.txt,README.md}`, `spec/tests/corpus/interrupt-counter/README.md`, `spec/tests/corpus/file-copier/README.md` |
-| Specification (AR-55) | `spec/03-ownership.md`, `spec/06-functions.md`, `spec/14-diagnostics.md`, `spec/16-borrow-rules.md`, `spec/decisions.md` (D9), `spec/lineage.md` (D9 row), `spec/tests/compile-fail/W10001_needless_lend.clor` |
+| Corpus | `spec/tests/corpus/string-parser/{program.clo,expected-output.txt,README.md}`, `spec/tests/corpus/interrupt-counter/README.md`, `spec/tests/corpus/file-copier/README.md` |
+| Specification (AR-55) | `spec/03-ownership.md`, `spec/06-functions.md`, `spec/14-diagnostics.md`, `spec/16-borrow-rules.md`, `spec/decisions.md` (D9), `spec/lineage.md` (D9 row), `spec/tests/compile-fail/W10001_needless_lend.clo` |
 | Plan | `03-01-corpus.md`, `03-05-ownership.md`, `03-06-codegen.md`, `00-ambiguity-register.md`, `00-index.md`, this record |
 
 The AR-55 amendment changes only the W10001 trigger wording; the diagnostic

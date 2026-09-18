@@ -11,7 +11,7 @@ The raw command transcripts live under each spike's `results/` directory.
 
 | Spike | Verdict | Codegen rule it fixes |
 |---|---|---|
-| S1 `#line` | Diagnostics on both compilers name the mapped `.clor` line; GCC's DWARF is debuggable, vbcc's Hunk Debug is not decodable with the SDK tools | Always emit `#line`; record the vbcc debugging limitation |
+| S1 `#line` | Diagnostics on both compilers name the mapped `.clo` line; GCC's DWARF is debuggable, vbcc's Hunk Debug is not decodable with the SDK tools | Always emit `#line`; record the vbcc debugging limitation |
 | S2 FFI ABI | ABI-typed prototypes build warning-free on GCC and vbcc, run under `vamos`, and balance their release counters | Emit ABI types (`BPTR`, `APTR`, `struct Library *`); include only type headers, not `proto/` headers; discard a `void` deleter's result |
 | S3 arithmetic | Host, GCC `-fwrapv`, and vbcc unsigned-idiom legs all match the hand-computed table | `-fwrapv` for GCC, the unsigned idiom for vbcc, masked shift counts, arithmetic vs logical `>>`, and the division guard |
 | S4 run faults | The shim contract is confirmed and five of six run cases trap on every leg; the NaN case is blocked by `vamos` | `cl_trap` prints `error CODE: message` first and aborts without the ladder; add `-lm` (GCC) and `-lmieee` (vbcc) for floats |
@@ -47,14 +47,14 @@ AR-56..AR-59 record the changes.
 
 ## S1 - vbcc `#line` (PF-042)
 
-**Goal:** prove or refute that `#line N "file.clor"` survives vbcc into usable
+**Goal:** prove or refute that `#line N "file.clo"` survives vbcc into usable
 debug and diagnostic information, before the emitter depends on it.
 
 **Fixture:** [`spikes/01-vbcc-line/demo.c`](../spikes/01-vbcc-line/demo.c) - a
 hand-written copy routine with an owned file handle, an owned buffer, a
 single-exit cleanup ladder with null-safe drops, and a `#line` directive
 directly before each statement. The directives map the statements to a
-Clorraine source file, `demo.clor`, that is deliberately absent from disk.
+Clorraine source file, `demo.clo`, that is deliberately absent from disk.
 Compiling with `-DERR` adds one statement that names an undefined symbol.
 Makefile: [`spikes/01-vbcc-line/Makefile`](../spikes/01-vbcc-line/Makefile).
 
@@ -65,7 +65,7 @@ Makefile: [`spikes/01-vbcc-line/Makefile`](../spikes/01-vbcc-line/Makefile).
 | vbcc build | `vc +aos68k -c99 -g -O0 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -c -o build/demo.o demo.c` then link with `-lamiga` |
 | objdump decode | `m68k-amigaos-objdump --dwarf=decodedline build/demo` |
 | readelf decode | `m68k-amigaos-readelf --debug-dump=decodedline build/demo` |
-| gdb lookup | `m68k-amigaos-gdb --batch -ex "info line demo.clor:28" build/demo` |
+| gdb lookup | `m68k-amigaos-gdb --batch -ex "info line demo.clo:28" build/demo` |
 | error location | `vc ... -DERR -o build/demo-err demo.c -lamiga` |
 | GCC comparison | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -o build/demo-gcc demo.c -lamiga`, then the same gdb lookup |
 
@@ -76,17 +76,17 @@ Raw output: `spikes/01-vbcc-line/results/{compile,decodedline,err,gcc-debug,form
 | Probe | Result |
 |---|---|
 | vbcc build | succeeds; the only warnings are warning 53 from the system header `devices/timer.h`, not from `demo.c` |
-| vbcc diagnostic through `#line` | `error 82 in line 32 of "demo.clor": unknown identifier <undefined_spike_symbol>` - the mapped file and line are used |
+| vbcc diagnostic through `#line` | `error 82 in line 32 of "demo.clo": unknown identifier <undefined_spike_symbol>` - the mapped file and line are used |
 | vbcc debug decode | `objdump --dwarf=decodedline` prints only the file header; `readelf` rejects the file (`Not an ELF file`); `gdb` reports `No symbol table is loaded` |
-| vbcc debug payload | the string `demo.clor` is present in both `demo.o` and the linked executable, so vbcc's `-hunkdebug` blob does carry the mapped name, but no SDK tool can decode it |
-| GCC diagnostic through `#line` | `demo.clor:32:15: error: 'undefined_spike_symbol' undeclared` - same mapping |
-| GCC debug decode | `gdb` resolves `Line 28 of "/work/demo.clor"` and lists `/work/demo.clor` in `info sources`; the executable has a `DEBUGGING` section |
+| vbcc debug payload | the string `demo.clo` is present in both `demo.o` and the linked executable, so vbcc's `-hunkdebug` blob does carry the mapped name, but no SDK tool can decode it |
+| GCC diagnostic through `#line` | `demo.clo:32:15: error: 'undefined_spike_symbol' undeclared` - same mapping |
+| GCC debug decode | `gdb` resolves `Line 28 of "/work/demo.clo"` and lists `/work/demo.clo` in `info sources`; the executable has a `DEBUGGING` section |
 
 **Decision / rule:**
 
 * The emitter writes `#line` before every emitted statement unconditionally
   (P13). The spike confirms this is both correct and useful: both compilers name
-  the `.clor` file and line in diagnostics, at no observed build cost.
+  the `.clo` file and line in diagnostics, at no observed build cost.
 * On the GCC legs the mapping reaches DWARF and a debugger can step and list the
   Clorraine source; the Ch 17 section 11 debugging claim holds there.
 * On vbcc the mapping reaches only the Hunk Debug blob, which the SDK image's

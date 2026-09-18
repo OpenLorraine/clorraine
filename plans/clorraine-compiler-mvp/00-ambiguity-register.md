@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 60 items resolved (AR-1..AR-60; AR-54/AR-55 added at the Phase 0 checkpoint, AR-56..AR-59 at the Phase 1 spike checkpoint, AR-60 at execution)
-> **Last Updated**: 2026-09-18 14:50
+> **Status**: ✅ GATE PASSED — all 61 items resolved (AR-1..AR-61; AR-54/AR-55 added at the Phase 0 checkpoint, AR-56..AR-59 at the Phase 1 spike checkpoint, AR-60/AR-61 at execution)
+> **Last Updated**: 2026-09-18 14:51
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -54,13 +54,13 @@ its Phase 2 verification spikes, and its test suites.
 | AR-25 | Technical | Module loading and source discovery (MOD-2) | User files given on the CLI; imports resolve against the loaded set plus the embedded stdlib table; module identity comes from `module` declarations; no directory scanning | ✅ Resolved — user accepted recommendation |
 | AR-26 | Naming | Rust test-file naming vs `[feature].spec.test.[ext]` | `compiler/tests/<feature>_spec_test.rs` and `<feature>_impl_test.rs`, documented in AGENTS.md as the Rust spelling of the standard | ✅ Resolved — user accepted recommendation |
 | AR-27 | Technical | Profile facts storage | Compiled-in Rust profile tables for `host` and `hosted-amiga` (Ch 15 §6 first position) | ✅ Resolved — user accepted recommendation |
-| AR-28 | Naming | Corpus location, layout, program names | `spec/tests/corpus/{file-copier,interrupt-counter,string-parser,buffer-container}/` each with `program.clor`, `expected-output.txt`, `README.md` | ✅ Resolved — user accepted recommendation |
+| AR-28 | Naming | Corpus location, layout, program names | `spec/tests/corpus/{file-copier,interrupt-counter,string-parser,buffer-container}/` each with `program.clo`, `expected-output.txt`, `README.md` | ✅ Resolved — user accepted recommendation |
 | AR-29 | Behavioral | Corpus program behavior contract | Deterministic stdout, no CLI arguments (M8), relative file paths only, self-contained fixtures | ✅ Resolved — user accepted recommendation |
 | AR-30 | Behavioral | Interrupt-counter mechanism and profile behavior | VBlank handler through `std.amiga.interrupt`; `volatile let ticks: u32`; deterministic output shape; `--profile host` reports E11200 | ✅ Resolved — user accepted recommendation |
 | AR-31 | Process | Corpus and spike hand-check gate | User reviews each corpus program's rule-coverage table and the spike findings before Phase 2 starts; spec friction pauses the run and needs an explicit user ruling (lineage §10: amend the rule, not the model) | ✅ Resolved — user accepted recommendation |
 | AR-32 | Behavioral | Run-fault execution legs | All six cases compile and execute under `host` in `cargo test`; the same cases also execute under `hosted-amiga` via vamos in `make verify` | ✅ Resolved — user accepted recommendation |
 | AR-33 | Behavioral | Compile-fail execution profile and annotations | Default `host`; honor `// profile:` and `// cli:`; warnings assert the `warning CODE:` first line | ✅ Resolved — user accepted recommendation |
-| AR-34 | Behavioral | Warning escalation case (PF-020) | Add `spec/tests/compile-fail/W10000_deny_warnings.clor` with `// cli: --deny-warnings`, asserting a nonzero exit and the `warning W10000:` first line; document the semantics in the suite README | ✅ Resolved — user accepted recommendation |
+| AR-34 | Behavioral | Warning escalation case (PF-020) | Add `spec/tests/compile-fail/W10000_deny_warnings.clo` with `// cli: --deny-warnings`, asserting a nonzero exit and the `warning W10000:` first line; document the semantics in the suite README | ✅ Resolved — user accepted recommendation |
 | AR-35 | Behavioral | Output determinism proof (P13) | A spec test compiles the same input twice and requires byte-identical C; `#line` carries the logical CLI path | ✅ Resolved — user accepted recommendation |
 | AR-36 | Technical | Runtime-fault and panic output streams | Host profile prints the fault first line to stderr then `abort()`; hosted-amiga prints to stdout then exits (Ch 17 §12); `panic` prints `panic: <msg>` | ✅ Resolved — user accepted recommendation |
 | AR-37 | Technical | Host-profile C compile command | `cc -std=c99 -O0 -g -Wall -Wextra -Werror` | ✅ Resolved — user accepted recommendation |
@@ -97,7 +97,7 @@ resolved at the 0.2.2 checkpoint before any compiler work.
 | # | Category | Ambiguity / Gap | Accepted resolution | Status |
 |---|----------|-----------------|---------------------|--------|
 | AR-54 | Technical (runtime) | The corpus contract asked `string-parser` to print `hex=0x00003A` via `padLeft(toHex(u32(sum)), 8, '0')`, but the frozen `toHex` already returns the `0x` prefix, so the expression yields `00000x3A` | The program prints `hex=0x3A` via `toHex(u32(sum))`; `padLeft` stays in the stdlib surface without a dedicated corpus behavior. Plan 03-01 and the expected output were amended; no specification change | ✅ Resolved — user chose option A |
-| AR-55 | Behavioral (runtime, specification amendment) | `removeHandler(t: HandlerToken)` passes a duplicable struct to an unmarked read-only lend, which the original W10001 rule (golden `W10001_needless_lend.clor`) made a warning, contradicting the zero-diagnostic corpus contract (AR-43) | W10001 is narrowed to **writable** lends of duplicable values (writes affect only the copy); read-only lends copy silently. Amended: Ch 03, Ch 06, Ch 14 registry, Ch 16 §2/§5/§7, ledger D9, the lineage D9 row, and the `W10001_needless_lend.clor` golden. The corpus compiles clean | ✅ Resolved — user chose option A (spec amendment approved) |
+| AR-55 | Behavioral (runtime, specification amendment) | `removeHandler(t: HandlerToken)` passes a duplicable struct to an unmarked read-only lend, which the original W10001 rule (golden `W10001_needless_lend.clo`) made a warning, contradicting the zero-diagnostic corpus contract (AR-43) | W10001 is narrowed to **writable** lends of duplicable values (writes affect only the copy); read-only lends copy silently. Amended: Ch 03, Ch 06, Ch 14 registry, Ch 16 §2/§5/§7, ledger D9, the lineage D9 row, and the `W10001_needless_lend.clo` golden. The corpus compiles clean | ✅ Resolved — user chose option A (spec amendment approved) |
 
 ## Batch 5 — runtime items from the Phase 1 spikes (2026-09-18)
 
@@ -106,7 +106,7 @@ All four are specification-text changes approved by the user (AR-31).
 
 | # | Category | Ambiguity / Gap | Accepted resolution | Status |
 |---|----------|-----------------|---------------------|--------|
-| AR-56 | Technical (runtime) | S1: vbcc embeds the `#line` filename in its Hunk Debug data, but the SDK's `objdump`, `readelf`, and `gdb` cannot decode it, so the Ch 17 §11 debugging claim is unusable for vbcc | Record the limitation in Ch 17 §11: GCC legs are debuggable and mapped; vbcc emits the mapping but SDK tooling cannot decode it in v1. `#line` is still emitted and diagnostics name the `.clor` source | ✅ Resolved — user chose "record the limitation" |
+| AR-56 | Technical (runtime) | S1: vbcc embeds the `#line` filename in its Hunk Debug data, but the SDK's `objdump`, `readelf`, and `gdb` cannot decode it, so the Ch 17 §11 debugging claim is unusable for vbcc | Record the limitation in Ch 17 §11: GCC legs are debuggable and mapped; vbcc emits the mapping but SDK tooling cannot decode it in v1. `#line` is still emitted and diagnostics name the `.clo` source | ✅ Resolved — user chose "record the limitation" |
 | AR-57 | Technical (runtime) | S2: Ch 17 §3 maps a handle binding to the opaque `Cl<Name>` typedef, while the ABI table says the FFI prototype uses the contract-table C type (`File` -> `BPTR`) | Emit the contract-table ABI type directly for an FFI-mapped handle local (`BPTR`, `struct Library *`); reserve `Cl<Name>` for handles with no fixed C type. Align Ch 17 §3, §4, §7 and PF-047 | ✅ Resolved — user chose the ABI type |
 | AR-58 | Technical (runtime) | S4: under `vamos` the `mathieeedoubbas` comparisons are not IEEE, so `!(f >= lo && f <= hi)` does not trap NaN; the vbcc leg makes `vamos` raise in `IEEEDPFix` | Emit `cl_isnan(f) || !(f >= lo && f <= hi)`, where `cl_isnan` is a shim IEEE bit-pattern test. Amend Ch 17 §10, §12, §14 | ✅ Resolved — user chose the `cl_isnan` bit test |
 | AR-59 | Technical (runtime) | S4: GCC float programs need `-lm` and vbcc float programs need `-lmieee`; the Ch 17 §13 matrix lists neither | Always append `-lm` (GCC) and `-lmieee` (vbcc) to the Amiga leg commands. Amend Ch 17 §13 | ✅ Resolved — user chose always-on flags |
@@ -116,6 +116,7 @@ All four are specification-text changes approved by the user (AR-31).
 | # | Category | Ambiguity / Gap | Accepted resolution | Status |
 |---|----------|-----------------|---------------------|--------|
 | AR-60 | Naming (execution amendment) | The compiler binary was named `clorc`; the user requested the shorter, DX-friendly `clc` ("Clorraine Compiler") | Rename the binary to `clc`: Cargo `[[bin]] name = "clc"`, `CARGO_BIN_EXE_clc`, and every CLI sample updated. Supersedes the binary-name fields of AR-6, AR-20, AR-21, and AR-24 | ✅ Resolved — user directed the rename |
+| AR-61 | Naming (execution amendment) | The source extension was `.clor`; the user requested a short, DX-friendly extension. `.cl` (Common Lisp/OpenCL) and `.cr` (Crystal) were rejected as misclassified by host tooling, and `.clo` was found to have no verified file-type collision | Rename the extension to `.clo`: all 115 `spec/tests/**` sources renamed, `spec/check.sh` globs, spec examples, plan docs, spike fixtures and evidence, and the living docs updated. Supersedes the extension references in AR-23, AR-44, and the suite READMEs | ✅ Resolved — user chose `.clo` |
 
 ## Complexity Escalation packet (AR-24)
 

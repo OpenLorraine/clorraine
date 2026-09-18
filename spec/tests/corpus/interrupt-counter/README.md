@@ -1,6 +1,6 @@
 # Corpus: interrupt-counter
 
-`program.clor` registers a VBlank handler that counts ticks into a module-level
+`program.clo` registers a VBlank handler that counts ticks into a module-level
 `volatile` value, waits for fifty ticks with a bounded delay loop, then removes
 the handler and reports the result. It is the acceptance target for the
 interrupt dispatcher boundary and shared interrupt state.

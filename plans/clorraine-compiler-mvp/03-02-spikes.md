@@ -20,23 +20,23 @@ AR-1); the compiler phases depend on both.
 
 ## S1 — VBCC `#line` (PF-042)
 
-**Goal:** prove or refute that `#line N "file.clor"` (Ch 17 §11) survives
+**Goal:** prove or refute that `#line N "file.clo"` (Ch 17 §11) survives
 vbcc into usable debug/line information.
 
 **Fixture:** `spikes/01-vbcc-line/demo.c` — a small program with `#line`
-directives that map successive statements to `demo.clor` lines, including one
+directives that map successive statements to `demo.clo` lines, including one
 deliberately erroneous statement behind a second translation of the file
 (`-DERR`), plus a cleanup ladder shape.
 
 **Procedure:**
 1. Compile with `vc +aos68k -c99 -g -O0 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga`.
 2. Confirm `#line` is accepted (no error, no warning).
-3. Inspect the debug/line table: `m68k-amigaos-objdump --dwarf=decodedline demo` (and `m68k-amigaos-readelf --debug-dump=decodedline demo` as fallback); record whether entries name `demo.clor`.
+3. Inspect the debug/line table: `m68k-amigaos-objdump --dwarf=decodedline demo` (and `m68k-amigaos-readelf --debug-dump=decodedline demo` as fallback); record whether entries name `demo.clo`.
 4. Compile the `-DERR` variant and record which file/line the vbcc error names.
 5. If gdb can load the hunk executable (`m68k-amigaos-gdb demo`), record `info line` / `list` output.
 
 **Acceptance / decision impact:** the finding records exactly how far vbcc
-honors `#line`. If debug line tables do not carry `demo.clor`, the Ch 17 §11
+honors `#line`. If debug line tables do not carry `demo.clo`, the Ch 17 §11
 debugging claim is refuted in practice; the user rules on the spec text at the
 checkpoint (AR-31). The emitter always writes `#line` (P13) regardless.
 

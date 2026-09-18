@@ -1,6 +1,6 @@
 # Corpus: file-copier
 
-`program.clor` copies a 30-byte payload from one file to another through a
+`program.clo` copies a 30-byte payload from one file to another through a
 4096-byte `Buffer` and checks the copy byte for byte. It is the acceptance
 target for file IO, buffer views, nullable acquisition, partial IO, and the
 cleanup ladder on nested failure paths.

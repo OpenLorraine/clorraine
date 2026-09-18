@@ -25,8 +25,8 @@ readelf: Error: Not an ELF file - it has the wrong magic bytes at the start
 == vobjdump vbcc object ==
 Not a VOBJ file!
 == mapped filename strings ==
-spikes/01-vbcc-line/build/demo.o:demo.clor
-spikes/01-vbcc-line/build/demo:demo.clor
+spikes/01-vbcc-line/build/demo.o:demo.clo
+spikes/01-vbcc-line/build/demo:demo.clo
 == objdump -h GCC executable ==
 Sections:
                   CONTENTS, ALLOC, DEBUGGING

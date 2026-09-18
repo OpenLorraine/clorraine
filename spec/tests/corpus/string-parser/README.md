@@ -1,6 +1,6 @@
 # Corpus: string-parser
 
-`program.clor` splits a fixed input line on spaces, classifies each token as a
+`program.clo` splits a fixed input line on spaces, classifies each token as a
 number or a word through an enum and a `switch`, sums the numbers with
 hand-rolled digit parsing, and formats decimal and padded hex output. It is the
 acceptance target for `str` scanning, enum dispatch, template formatting, and

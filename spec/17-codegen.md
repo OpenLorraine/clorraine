@@ -314,7 +314,7 @@ ladder, like `panic` (E4); no profile disables these checks (T12). Codes:
 
 ## 11. Source mapping and determinism - P13
 
-* `#line N "file.clor"` precedes each emitted statement, mapping it to its
+* `#line N "file.clo"` precedes each emitted statement, mapping it to its
   Clorraine source line.
 * One source statement maps to one emitted statement. The emitter never splits or
   merges statements across mapped lines.
@@ -328,7 +328,7 @@ ladder, like `panic` (E4); no profile disables these checks (T12). Codes:
   vbcc emits the mapping into its Hunk Debug data, which the SDK's `objdump`,
   `readelf`, and `gdb` cannot decode, so vbcc debugger stepping is unavailable
   in this toolchain. The `#line` directives are still emitted, and diagnostics
-  from both compilers name the `.clor` source and line.
+  from both compilers name the `.clo` source and line.
 
 ## 12. Runtime shim
 

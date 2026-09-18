@@ -77,14 +77,14 @@ merged module is E11101.
 | MOD-8 | A name declared twice in the merged module is an error | E11101 |
 
 ```clorraine
-// File: util_math.clor
+// File: util_math.clo
 module Demo.Util;
 
 export func add(a: i32, b: i32): i32 { return a + b; }
 ```
 
 ```clorraine
-// File: util_text.clor
+// File: util_text.clo
 module Demo.Util;
 
 export func trim(s: str): str { return s; }   // same module, merged
@@ -264,7 +264,7 @@ an exported wrapper function. The contract vocabulary is in
 Two files, one module pair:
 
 ```clorraine
-// File: minmax.clor
+// File: minmax.clo
 module Demo.MinMax;
 
 export const LIMIT: i32 = 100;
@@ -281,7 +281,7 @@ export func clamp(n: i32): i32 {
 ```
 
 ```clorraine
-// File: app.clor
+// File: app.clo
 module Demo.App;
 
 import { clamp, LIMIT as MAX } from Demo.MinMax;

@@ -46,9 +46,9 @@ inspect:
 		m68k-amigaos-objdump --dwarf=decodedline $(BIN); \
 		echo "== readelf --debug-dump=decodedline ==" && \
 		(m68k-amigaos-readelf --debug-dump=decodedline $(BIN) || true); \
-		echo "== gdb: info line demo.clor:28 ==" && \
-		(m68k-amigaos-gdb --batch -ex "info line demo.clor:28" \
-			-ex "info line demo.clor:30" $(BIN) || true)' 2>&1 \
+		echo "== gdb: info line demo.clo:28 ==" && \
+		(m68k-amigaos-gdb --batch -ex "info line demo.clo:28" \
+			-ex "info line demo.clo:30" $(BIN) || true)' 2>&1 \
 		| tee $(REPO)/$(RESULTS)/decodedline.txt
 
 err:
@@ -60,9 +60,9 @@ err:
 gcc:
 	$(DEV) bash -lc 'set -o pipefail; cd /work && \
 		$(GCC) -o $(GCC_BIN) $(SPIKE)/demo.c -lamiga && \
-		echo "== gdb: info line demo.clor:28 (GCC) ==" && \
-		m68k-amigaos-gdb --batch -ex "info line demo.clor:28" \
-			-ex "info line demo.clor:30" -ex "info sources" $(GCC_BIN); \
+		echo "== gdb: info line demo.clo:28 (GCC) ==" && \
+		m68k-amigaos-gdb --batch -ex "info line demo.clo:28" \
+			-ex "info line demo.clo:30" -ex "info sources" $(GCC_BIN); \
 		echo "== GCC -DERR diagnostic ==" && \
 		($(GCC) -DERR -c -o /tmp/demo-err.o $(SPIKE)/demo.c || true)' 2>&1 \
 		| tee $(REPO)/$(RESULTS)/gcc-debug.txt
@@ -73,7 +73,7 @@ probe: build gcc
 		echo "== objdump -h vbcc executable ==" && m68k-amigaos-objdump -h $(BIN); \
 		echo "== readelf -S vbcc executable ==" && (m68k-amigaos-readelf -S $(BIN) || true); \
 		echo "== vobjdump vbcc object ==" && (vobjdump $(OBJ) || true); \
-		echo "== mapped filename strings ==" && grep -a -o "demo[.]clor" $(OBJ) $(BIN) | head; \
+		echo "== mapped filename strings ==" && grep -a -o "demo[.]clo" $(OBJ) $(BIN) | head; \
 		echo "== objdump -h GCC executable ==" && m68k-amigaos-objdump -h $(GCC_BIN) | grep -i -E "sections|debug"' 2>&1 \
 		| tee $(REPO)/$(RESULTS)/format-probe.txt
 

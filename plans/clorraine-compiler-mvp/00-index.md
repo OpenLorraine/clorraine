@@ -82,11 +82,11 @@ challenger verdict of `Unnecessary` for the larger option.
 
 ```sh
 # Compile for the fast test profile (inside the SDK container)
-clc --profile host -o out.c program.clor
+clc --profile host -o out.c program.clo
 cc -std=c99 -O0 -g -Wall -Wextra -Werror -o program out.c && ./program
 
 # Compile for the Amiga target (inside the SDK container)
-clc --profile hosted-amiga -o out.c program.clor
+clc --profile hosted-amiga -o out.c program.clo
 m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g \
     -Wall -Wextra -Werror -o demo out.c -lamiga
 vamos ./demo

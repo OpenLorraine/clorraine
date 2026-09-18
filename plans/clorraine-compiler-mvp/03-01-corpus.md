@@ -22,19 +22,19 @@ and the hand-check procedure. Exact standard-library signatures live in
 ```
 spec/tests/corpus/
 ├── file-copier/
-│   ├── program.clor          # module tests.corpus.FileCopier
+│   ├── program.clo          # module tests.corpus.FileCopier
 │   ├── expected-output.txt   # byte-exact stdout
 │   └── README.md             # rule-coverage + hand-check record
 ├── interrupt-counter/
-│   ├── program.clor          # module tests.corpus.InterruptCounter
+│   ├── program.clo          # module tests.corpus.InterruptCounter
 │   ├── expected-output.txt
 │   └── README.md
 ├── string-parser/
-│   ├── program.clor          # module tests.corpus.StringParser
+│   ├── program.clo          # module tests.corpus.StringParser
 │   ├── expected-output.txt
 │   └── README.md
 └── buffer-container/
-    ├── program.clor          # module tests.corpus.BufferContainer
+    ├── program.clo          # module tests.corpus.BufferContainer
     ├── expected-output.txt
     └── README.md
 ```

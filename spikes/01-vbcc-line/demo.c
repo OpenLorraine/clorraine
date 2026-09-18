@@ -6,7 +6,7 @@
  * emit for a small copy routine: an owned file handle and an owned buffer, a
  * single-exit cleanup ladder with null-safe drops, and a #line directive
  * directly before each emitted statement. The directives map the statements
- * back to a Clorraine source file, demo.clor, that does not exist on disk.
+ * back to a Clorraine source file, demo.clo, that does not exist on disk.
  *
  * Copying a payload exercises every part of the routine, so the normal build
  * is a meaningful program rather than a syntax husk. Compiling with -DERR
@@ -36,40 +36,40 @@ static int copy_via_ladder(void)
     LONG written = 0;
     int ok = 0;
 
-#line 20 "demo.clor"
+#line 20 "demo.clo"
     file = Open((STRPTR) "RAM:s1-demo.txt", MODE_NEWFILE);
-#line 21 "demo.clor"
+#line 21 "demo.clo"
     if (file == 0) {
         goto cleanup;
     }
-#line 24 "demo.clor"
+#line 24 "demo.clo"
     buf = AllocVec(64, MEMF_ANY);
-#line 25 "demo.clor"
+#line 25 "demo.clo"
     if (buf == NULL) {
         goto cleanup;
     }
-#line 28 "demo.clor"
+#line 28 "demo.clo"
     CopyMem((APTR) payload, buf, (ULONG) sizeof(payload));
-#line 29 "demo.clor"
+#line 29 "demo.clo"
     written = Write(file, (APTR) buf, PAYLOAD_LEN);
-#line 30 "demo.clor"
+#line 30 "demo.clo"
     ok = (written == PAYLOAD_LEN);
 
 #ifdef ERR
-#line 32 "demo.clor"
+#line 32 "demo.clo"
     ok = ok + undefined_spike_symbol;
 #endif
 
 cleanup:
-#line 36 "demo.clor"
+#line 36 "demo.clo"
     if (buf != NULL) {
         FreeVec(buf);
     }
-#line 37 "demo.clor"
+#line 37 "demo.clo"
     if (file != 0) {
         Close(file);
     }
-#line 38 "demo.clor"
+#line 38 "demo.clo"
     return ok;
 }
 
@@ -82,10 +82,10 @@ int main(void)
 {
     int ok;
 
-#line 50 "demo.clor"
+#line 50 "demo.clo"
     ok = copy_via_ladder();
-#line 51 "demo.clor"
+#line 51 "demo.clo"
     printf("spike-s1: %s\n", ok ? "ok" : "FAIL");
-#line 52 "demo.clor"
+#line 52 "demo.clo"
     return ok ? 0 : 1;
 }

@@ -40,7 +40,7 @@ real shims. Test names state behavior (`should [expected] when [condition]`).
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|---|---|---|
-| ST-SPIKE-1 | `spikes/01-vbcc-line/demo.c` via the vbcc command | `#line` accepted; decoded line table or vbcc diagnostics name `demo.clor` lines, or the refutation is recorded and the phase pauses | 03-02 S1, PF-042 |
+| ST-SPIKE-1 | `spikes/01-vbcc-line/demo.c` via the vbcc command | `#line` accepted; decoded line table or vbcc diagnostics name `demo.clo` lines, or the refutation is recorded and the phase pauses | 03-02 S1, PF-042 |
 | ST-SPIKE-2 | `spikes/02-ffi-abi/ffi_abi.c` via GCC and vbcc, run under vamos | prototypes accepted warning-free; the copy succeeds; acquisitions equal releases | 03-02 S2, PF-002 |
 | ST-SPIKE-3 | `spikes/03-arithmetic/arith_{gcc,vbcc}.c` on host, GCC+vamos, vbcc+vamos | every entry matches the Ch 17 §10 wrapping/masking table; the vbcc idiom is recorded | 03-02 S3, PF-008 |
 | ST-SPIKE-4 | `spikes/04-run-faults/traps.c` (host and Amiga shims) | first line `error CODE: message`; abort/exit; the cleanup counter stays 0 | 03-02 S4, PF-020 |
@@ -49,30 +49,30 @@ real shims. Test names state behavior (`should [expected] when [condition]`).
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|---|---|---|
-| ST-CORPUS-1 | `file-copier/program.clor` on host and hosted-amiga/vamos | zero diagnostics; stdout equals `expected-output.txt`; exit 0 | 03-01 §1, AR-28 |
-| ST-CORPUS-2 | `interrupt-counter/program.clor` on hosted-amiga/FS-UAE; under `--profile host` | FS-UAE: stdout equals expected, exit 0. Host: `error E11200:` first line, exit 1 | 03-01 §2, AR-30 |
-| ST-CORPUS-3 | `string-parser/program.clor` on host and hosted-amiga/vamos | zero diagnostics; stdout equals expected; exit 0 | 03-01 §3 |
-| ST-CORPUS-4 | `buffer-container/program.clor` on host and hosted-amiga/vamos | zero diagnostics; stdout equals expected; exit 0 | 03-01 §4 |
+| ST-CORPUS-1 | `file-copier/program.clo` on host and hosted-amiga/vamos | zero diagnostics; stdout equals `expected-output.txt`; exit 0 | 03-01 §1, AR-28 |
+| ST-CORPUS-2 | `interrupt-counter/program.clo` on hosted-amiga/FS-UAE; under `--profile host` | FS-UAE: stdout equals expected, exit 0. Host: `error E11200:` first line, exit 1 | 03-01 §2, AR-30 |
+| ST-CORPUS-3 | `string-parser/program.clo` on host and hosted-amiga/vamos | zero diagnostics; stdout equals expected; exit 0 | 03-01 §3 |
+| ST-CORPUS-4 | `buffer-container/program.clo` on host and hosted-amiga/vamos | zero diagnostics; stdout equals expected; exit 0 | 03-01 §4 |
 
 ### Run-fault suite (`spec/tests/run/`)
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|---|---|---|
-| ST-RUN-1 | `E11210_division_by_zero.clor` | compiles clean; first line `error E11210: integer division by zero`; aborts without the ladder | Ch 14 §11, Ch 17 §10 |
-| ST-RUN-2 | `E11210_min_neg_one.clor` | compiles clean; first line `error E11210: integer division by zero`; aborts | Ch 14 §11, PF-006 |
-| ST-RUN-3 | `E11211_index_out_of_range.clor` | compiles clean; first line `error E11211: index out of range`; aborts | Ch 14 §11, IX-1 |
-| ST-RUN-4 | `E11212_float_to_int_range.clor` | compiles clean; first line `error E11212: float-to-integer conversion out of range`; aborts | Ch 14 §11, PF-007 |
-| ST-RUN-5 | `E11212_nan_float_to_int.clor` | same as ST-RUN-4 (NaN fails `cl_isnan(f) || !(f >= lo && f <= hi)`) | Ch 14 §11, PF-007, AR-58 |
-| ST-RUN-6 | `E11213_assertion_failed.clor` | compiles clean; first line `error E11213: assertion failed`; aborts | Ch 14 §11, EX-15 |
+| ST-RUN-1 | `E11210_division_by_zero.clo` | compiles clean; first line `error E11210: integer division by zero`; aborts without the ladder | Ch 14 §11, Ch 17 §10 |
+| ST-RUN-2 | `E11210_min_neg_one.clo` | compiles clean; first line `error E11210: integer division by zero`; aborts | Ch 14 §11, PF-006 |
+| ST-RUN-3 | `E11211_index_out_of_range.clo` | compiles clean; first line `error E11211: index out of range`; aborts | Ch 14 §11, IX-1 |
+| ST-RUN-4 | `E11212_float_to_int_range.clo` | compiles clean; first line `error E11212: float-to-integer conversion out of range`; aborts | Ch 14 §11, PF-007 |
+| ST-RUN-5 | `E11212_nan_float_to_int.clo` | same as ST-RUN-4 (NaN fails `cl_isnan(f) || !(f >= lo && f <= hi)`) | Ch 14 §11, PF-007, AR-58 |
+| ST-RUN-6 | `E11213_assertion_failed.clo` | compiles clean; first line `error E11213: assertion failed`; aborts | Ch 14 §11, EX-15 |
 | ST-RUN-7 | all six above under hosted-amiga via vamos (S4 patterns) | each prints its first line on stdout and exits nonzero; ladder skipped | AR-32, AR-36 |
 
 ### Compile-fail suites (`spec/tests/compile-fail/`)
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|---|---|---|
-| ST-CF-OWN | all `E100*.clor` files (23 cases incl. three E10031) | exit 1; annotated code; first line matches the Ch 14 template | Ch 14 §3, Ch 03, Ch 16 |
-| ST-CF-FFI | `E101*.clor` (5 files) | exit 1; annotated code; template match | Ch 14 §4, Ch 12 |
-| ST-CF-TYPE | all `E102*.clor` except E10213/E10214 (excluded, AR-10) | exit 1; annotated code; template match | Ch 14 §5, Ch 02/04/07/09 |
+| ST-CF-OWN | all `E100*.clo` files (23 cases incl. three E10031) | exit 1; annotated code; first line matches the Ch 14 template | Ch 14 §3, Ch 03, Ch 16 |
+| ST-CF-FFI | `E101*.clo` (5 files) | exit 1; annotated code; template match | Ch 14 §4, Ch 12 |
+| ST-CF-TYPE | all `E102*.clo` except E10213/E10214 (excluded, AR-10) | exit 1; annotated code; template match | Ch 14 §5, Ch 02/04/07/09 |
 | ST-CF-GEN | `E10300`, `E10301`, `E10302`, `E10305` (E10303/E10304/E10306 excluded) | exit 1; annotated code; template match | Ch 14 §6, AR-13 |
 | ST-CF-STR | `E10500`, `E10501`, `E10503` | exit 1; annotated code; template match | Ch 14 §8, Ch 04 §11 |
 | ST-CF-UNSAFE | `E10600`-`E10604` (5 files) | exit 1; annotated code; template match | Ch 14 §9, T6/T7 |
@@ -80,8 +80,8 @@ real shims. Test names state behavior (`should [expected] when [condition]`).
 | ST-CF-PROFILE | `E11200`, `E11201` | exit 1; annotated code; template match | Ch 14 §11, Ch 15 |
 | ST-CF-LEX | `E20000`-`E20008` (9 files) | exit 1; annotated code; template match | Ch 14 §12, Ch 01 |
 | ST-CF-WARN | `W10000`-`W10004`, `W10006` (6 files) | exit 0; first line `warning CODE: ...`; default build keeps warnings deniable | Ch 14 §14, N6 |
-| ST-CF-STAGED | `E90001_comptime_staged.clor`, `E90005_nested_template.clor` | exit 1; annotated code | Ch 14 §13 |
-| ST-CF-DENY | `W10000_deny_warnings.clor` (`// cli: --deny-warnings`) | exit 1; first line stays `warning W10000: unused local '...'` | AR-34, N6 |
+| ST-CF-STAGED | `E90001_comptime_staged.clo`, `E90005_nested_template.clo` | exit 1; annotated code | Ch 14 §13 |
+| ST-CF-DENY | `W10000_deny_warnings.clo` (`// cli: --deny-warnings`) | exit 1; first line stays `warning W10000: unused local '...'` | AR-34, N6 |
 | ST-CF-SKIP | `tests/staged/*` (4 files) and all `// stage:` files (E10306, E10401-E10404, E90002) plus the AR-10 exclusion list | not executed; each reported by name and reason; aggregate skip count shown | AR-10, AR-23 |
 
 ### Stage behavior (not covered by a golden alone)
@@ -111,7 +111,7 @@ real shims. Test names state behavior (`should [expected] when [condition]`).
 | ST-FFI-2 | `Write(borrow file: File, const buf: u8[], len: i32)` emitted prototype | `LONG Write(BPTR, APTR, LONG)` | Ch 17 §3, S2 |
 | ST-CG-1 | a function owning two resources with an early return | one `__cl_c<N>` label per scope; null-safe drops on the fall-through path | Ch 17 §4 |
 | ST-CG-2 | handle move; aggregate move | `dst = src; src = NULL;`; `dst = src; cl_zero(&src);` | Ch 17 §5 |
-| ST-CG-3 | any compiled statement | `#line N "logical/path.clor"` precedes it; the path is the CLI path, never absolute | P13, AR-35 |
+| ST-CG-3 | any compiled statement | `#line N "logical/path.clo"` precedes it; the path is the CLI path, never absolute | P13, AR-35 |
 | ST-CG-4 | `a / b`, `xs[i]`, `i32(f)` | guards for E11210, E11211, E11212 exactly as Ch 17 §10 | Ch 17 §10, S4 |
 | ST-CG-5 | two modules with initializers and a dependency | `cl_init_*` functions in topological order, lexicographic tie-break; stub runs them before user `main` | MOD-20/21, PF-009 |
 | ST-CG-6 | `identity<i32>` and `identity<t2>` where both key `i32`; a distinct key | identical instantiations dedupe to one symbol; distinct use `__<typekey>` | P11, G3 |

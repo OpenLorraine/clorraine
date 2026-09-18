@@ -60,7 +60,7 @@ cd spec && ./check.sh
 
 ## Compile-fail suite conventions and limits
 
-* One `.clor` file per registry code; the first line declares
+* One `.clo` file per registry code; the first line declares
   `// expect-error CODE` or `// expect-warning CODE`.
 * The suite is **not executable yet**: no compiler exists, so `check.sh`
   validates structure and coverage, not behavior.

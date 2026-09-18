@@ -11,6 +11,6 @@ warning 53 in line 84 of "devices/timer.h": struct/union member needs identifier
 	included from file "/opt/amiga/m68k-amigaos/ndk-include/proto/dos.h":6
 	included from file "spikes/01-vbcc-line/demo.c":21
 >    ok = ok + undefined_spike_symbol;
-error 82 in line 32 of "demo.clor": unknown identifier <undefined_spike_symbol>
+error 82 in line 32 of "demo.clo": unknown identifier <undefined_spike_symbol>
 1 error found!
 vbccm68k -quiet "spikes/01-vbcc-line/demo.c" -o= "<tmp>.asm" -c99 -g -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -DERR -hunkdebug -amiga-softfloat  -O=0 -I/opt/amiga/m68k-amigaos/vbcc/include failed

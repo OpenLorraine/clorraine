@@ -1,6 +1,6 @@
 # Corpus: buffer-container
 
-`program.clor` builds an `Array<i32>` of eight elements, walks it through
+`program.clo` builds an `Array<i32>` of eight elements, walks it through
 one-element views to sum and count the even elements, then fills a 16-byte
 `Buffer` through its byte view. It is the acceptance target for monomorphized
 generics, dot-calls, view arithmetic, and structural drop order.

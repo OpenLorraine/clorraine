@@ -69,10 +69,10 @@ bounded by the task-size criteria in the quality checklist)
 **Objective**: create the acceptance target and positive golden suite before
 any compiler code exists.
 
-- [x] 0.1.1 Write `spec/tests/corpus/file-copier/program.clor` and `expected-output.txt` per 03-01 §1 ✅ (completed: 2026-09-18 00:19)
-- [x] 0.1.2 Write `spec/tests/corpus/interrupt-counter/program.clor` and `expected-output.txt` per 03-01 §2 ✅ (completed: 2026-09-18 00:20)
-- [x] 0.1.3 Write `spec/tests/corpus/string-parser/program.clor` and `expected-output.txt` per 03-01 §3 ✅ (completed: 2026-09-18 00:20)
-- [x] 0.1.4 Write `spec/tests/corpus/buffer-container/program.clor` and `expected-output.txt` per 03-01 §4 ✅ (completed: 2026-09-18 00:21)
+- [x] 0.1.1 Write `spec/tests/corpus/file-copier/program.clo` and `expected-output.txt` per 03-01 §1 ✅ (completed: 2026-09-18 00:19)
+- [x] 0.1.2 Write `spec/tests/corpus/interrupt-counter/program.clo` and `expected-output.txt` per 03-01 §2 ✅ (completed: 2026-09-18 00:20)
+- [x] 0.1.3 Write `spec/tests/corpus/string-parser/program.clo` and `expected-output.txt` per 03-01 §3 ✅ (completed: 2026-09-18 00:20)
+- [x] 0.1.4 Write `spec/tests/corpus/buffer-container/program.clo` and `expected-output.txt` per 03-01 §4 ✅ (completed: 2026-09-18 00:21)
 - [x] 0.1.5 Write the four `README.md` rule-coverage, warning-audit, and deliberate-avoidance records per 03-01 ✅ (completed: 2026-09-18 00:22)
 
 **Deliverables**:
@@ -104,7 +104,7 @@ get the user's explicit acceptance before front-end work.
 ## Phase 1: Accepted Phase 2 Spikes
 
 > **Phase baseline tree**: b6a74c7a7263eaab0f068c5843303710a12ccd64
-> **Expected modification set**: `spikes/**`, `docs/findings-phase2.md`, `plans/clorraine-compiler-mvp/99-execution-plan.md`, plus the user-approved checkpoint amendments to `spec/{17-codegen.md,04-expressions.md,preflight-report.md}` and `plans/clorraine-compiler-mvp/00-ambiguity-register.md` (AR-31 rulings AR-56..AR-59)
+> **Expected modification set**: `spikes/**`, `docs/findings-phase2.md`, `plans/clorraine-compiler-mvp/99-execution-plan.md`, plus the user-approved checkpoint amendments to `spec/{17-codegen.md,04-expressions.md,preflight-report.md}` and `plans/clorraine-compiler-mvp/00-ambiguity-register.md` (AR-31 rulings AR-56..AR-59), and the AR-60/AR-61 naming amendment that renamed the binary to `clc` and the source extension to `.clo`
 > **Scope mode**: strict
 
 ### Step 1.1: Spike S1 — vbcc `#line`
@@ -460,7 +460,7 @@ loan decision explicit.
 **Reference**: [03-07-stdlib.md](03-07-stdlib.md) · ST-STDLIB-1..6, ST-WARN-1, ST-CF-WARN, ST-CF-DENY
 **Objective**: write the stdlib and warning spec cases before implementing.
 
-- [ ] 7.1.1 [spec-author] Add the ST-STDLIB cases to `stage_spec_test.rs` and the warning cases; add `spec/tests/compile-fail/W10000_deny_warnings.clor` and update the suite README (AR-34); run and record the red phase
+- [ ] 7.1.1 [spec-author] Add the ST-STDLIB cases to `stage_spec_test.rs` and the warning cases; add `spec/tests/compile-fail/W10000_deny_warnings.clo` and update the suite README (AR-34); run and record the red phase
 
 **Deliverables**:
 - Stdlib/warning spec cases and recorded red phase
@@ -476,10 +476,10 @@ loan decision explicit.
 **Objective**: the AR-15/AR-46/AR-47 slice compiles warning-free and supports
 the corpus.
 
-- [ ] 7.2.1 Implement the intrinsic helpers (`rawSlice`, `rawStr`, `slice`, `len` cases) plus `stdlib/std.mem.clor`
-- [ ] 7.2.2 Implement `stdlib/std.text.clor` and `stdlib/std.fmt.clor`
-- [ ] 7.2.3 Implement `stdlib/std.io.clor` and the shim IO/print additions
-- [ ] 7.2.4 Implement `stdlib/std.amiga.dos.clor`, `stdlib/std.amiga.interrupt.clor`, and the dispatcher shim
+- [ ] 7.2.1 Implement the intrinsic helpers (`rawSlice`, `rawStr`, `slice`, `len` cases) plus `stdlib/std.mem.clo`
+- [ ] 7.2.2 Implement `stdlib/std.text.clo` and `stdlib/std.fmt.clo`
+- [ ] 7.2.3 Implement `stdlib/std.io.clo` and the shim IO/print additions
+- [ ] 7.2.4 Implement `stdlib/std.amiga.dos.clo`, `stdlib/std.amiga.interrupt.clo`, and the dispatcher shim
 
 **Deliverables**:
 - Six stdlib modules embedded via `stdlib.rs`

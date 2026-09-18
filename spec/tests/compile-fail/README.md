@@ -1,6 +1,6 @@
 # Compile-Fail Suite
 
-One `.clor` source per diagnostic code registered in
+One `.clo` source per diagnostic code registered in
 [Ch 14](../../14-diagnostics.md). The compiler does not exist yet; these files
 are the golden expectations for the first semantic stages of the Phase 2
 compiler.
@@ -18,7 +18,7 @@ compiler.
   * `// stage: N` - the lambda or `comptime` stage that activates the code.
   * `// requires: ...` - anything a single-file harness cannot provide.
 * The module is `module tests.compile_fail.<CODE>;` and the filename is
-  `<CODE>_<slug>.clor`.
+  `<CODE>_<slug>.clo`.
 * The program is valid Clorraine except for the single intended error
   (syntax tests are exempt). Parameter modes precede names, `.` is the only
   member operator, and assignment is never used as a value.

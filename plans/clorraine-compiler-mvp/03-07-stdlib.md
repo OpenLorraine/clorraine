@@ -17,12 +17,12 @@ intrinsic helpers (AR-46, AR-50, AR-51), and the shim C API (AR-19).
 
 | Module | File | Provides |
 |---|---|---|
-| `std.mem` | `stdlib/std.mem.clor` | `Buffer`, `Array<T>`, `Span`, `Status`, allocation and slice helpers |
-| `std.text` | `stdlib/std.text.clor` | `String`, `stringOf`, `clone`, `bytes`, `toCString` |
-| `std.fmt` | `stdlib/std.fmt.clor` | `text`, `toHex`, `toDecimal`, `padLeft`, `padRight` |
-| `std.io` | `stdlib/std.io.clor` | `File`, `openFile`, `createFile`, `readFile`, `writeBytes`, `print`, `println`, mode constants |
-| `std.amiga.dos` | `stdlib/std.amiga.dos.clor` | `delayTicks` (hosted-amiga only) |
-| `std.amiga.interrupt` | `stdlib/std.amiga.interrupt.clor` | `HandlerToken`, `addHandler`, `removeHandler` (hosted-amiga only) |
+| `std.mem` | `stdlib/std.mem.clo` | `Buffer`, `Array<T>`, `Span`, `Status`, allocation and slice helpers |
+| `std.text` | `stdlib/std.text.clo` | `String`, `stringOf`, `clone`, `bytes`, `toCString` |
+| `std.fmt` | `stdlib/std.fmt.clo` | `text`, `toHex`, `toDecimal`, `padLeft`, `padRight` |
+| `std.io` | `stdlib/std.io.clo` | `File`, `openFile`, `createFile`, `readFile`, `writeBytes`, `print`, `println`, mode constants |
+| `std.amiga.dos` | `stdlib/std.amiga.dos.clo` | `delayTicks` (hosted-amiga only) |
+| `std.amiga.interrupt` | `stdlib/std.amiga.interrupt.clo` | `HandlerToken`, `addHandler`, `removeHandler` (hosted-amiga only) |
 
 Declarations use lowercase dotted names (`module std.mem;`), matching every
 import example in the specification (AR-52). The appendix's `module Std.Mem;`

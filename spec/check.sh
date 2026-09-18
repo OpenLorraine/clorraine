@@ -94,7 +94,7 @@ done <<< "${chapter_codes}"
 # until the feature or harness exists (see tests/staged/README.md).
 tests=0
 tested_codes=""
-for f in tests/compile-fail/*.clor; do
+for f in tests/compile-fail/*.clo; do
     [ -e "${f}" ] || continue
     tests=$((tests + 1))
     first="$(head -1 "${f}")"
@@ -120,7 +120,7 @@ tested_codes="$(sort -u <<< "${tested_codes}")"
 # Each run test declares its expected runtime fault on the first line:
 # '// expect-fault CODE'. Runtime faults are excluded from the per-code coverage
 # rule above because they are not compile errors.
-for f in tests/run/*.clor; do
+for f in tests/run/*.clo; do
     [ -e "${f}" ] || continue
     first="$(head -1 "${f}")"
     case "${first}" in
@@ -141,7 +141,7 @@ done
 # --- staged suite (tests/staged/) --------------------------------------------
 # Staged tests use the compile-fail expectation prefixes but are excluded from
 # the per-code coverage rule until their feature or harness exists.
-for f in tests/staged/*.clor; do
+for f in tests/staged/*.clo; do
     [ -e "${f}" ] || continue
     first="$(head -1 "${f}")"
     case "${first}" in
