@@ -62,7 +62,7 @@ real shims. Test names state behavior (`should [expected] when [condition]`).
 | ST-RUN-2 | `E11210_min_neg_one.clor` | compiles clean; first line `error E11210: integer division by zero`; aborts | Ch 14 §11, PF-006 |
 | ST-RUN-3 | `E11211_index_out_of_range.clor` | compiles clean; first line `error E11211: index out of range`; aborts | Ch 14 §11, IX-1 |
 | ST-RUN-4 | `E11212_float_to_int_range.clor` | compiles clean; first line `error E11212: float-to-integer conversion out of range`; aborts | Ch 14 §11, PF-007 |
-| ST-RUN-5 | `E11212_nan_float_to_int.clor` | same as ST-RUN-4 (NaN fails `!(f >= lo && f <= hi)`) | Ch 14 §11, PF-007 |
+| ST-RUN-5 | `E11212_nan_float_to_int.clor` | same as ST-RUN-4 (NaN fails `cl_isnan(f) || !(f >= lo && f <= hi)`) | Ch 14 §11, PF-007, AR-58 |
 | ST-RUN-6 | `E11213_assertion_failed.clor` | compiles clean; first line `error E11213: assertion failed`; aborts | Ch 14 §11, EX-15 |
 | ST-RUN-7 | all six above under hosted-amiga via vamos (S4 patterns) | each prints its first line on stdout and exits nonzero; ladder skipped | AR-32, AR-36 |
 

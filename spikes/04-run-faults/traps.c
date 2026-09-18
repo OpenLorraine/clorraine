@@ -79,7 +79,12 @@ static i32 guarded_index(const i32 *xs, u32 n, u32 i)
     return xs[i];
 }
 
-/* Float-to-integer: the negated range check also rejects NaN. */
+/*
+ * Float-to-integer. This is the guard as it stood when the run-fault evidence
+ * was captured; the checkpoint ruling adds a cl_isnan bit test in front of the
+ * comparison, but the file keeps the original form so the recorded results
+ * still match.
+ */
 static i32 guarded_float_to_int(f64 f)
 {
     f64 lo = -2147483648.0;

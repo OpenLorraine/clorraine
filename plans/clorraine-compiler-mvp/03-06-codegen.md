@@ -35,7 +35,7 @@ No timestamps, host paths, or environment data appear in the output (P13); the
 | Private function | `static cl_<module>_<name>` |
 | Exported function | `cl_<module>_<name>` (external) |
 | Generic instantiation | `cl_<name>__<typekey>`, hash-deduped |
-| Handle typedef / built-in view struct | `Cl<Name>` (`ClFile`, `ClStr`, `ClSlice_u8`) |
+| Handle typedef (unmapped) / built-in view struct | `Cl<Name>` (`ClBuffer`, `ClStr`, `ClSlice_u8`); a contract-table handle uses its ABI type (`BPTR` for `File`) |
 | User aggregate | `Cl<Module>_<Type>` |
 | Local | source name when it is a valid, unique C identifier; stable suffix otherwise |
 | Temporary | `__cl_tmp<N>`, stable counter |
@@ -52,7 +52,9 @@ generics), so the same input always yields the same symbol order.
 - Scalars: fixed-width C typedefs from the shim (`i32`/`u32`/`u8`/`bool`/
   `usize`); `f32`/`f64` are C `float`/`double` (P15, AR-11).
 - Views: pointer-and-length value structs (`ClStr`, `ClSlice_T`).
-- Handles: opaque pointer typedefs; `NULL` is the zero empty state.
+- Handles: the contract-table ABI type when one exists (`BPTR` for `File`,
+  `struct Library *` for `Library`), otherwise an opaque `Cl<Name>` typedef; the
+  zero value is the empty state.
 - `raw T` is `T *`, `cstring` is `char *`.
 - Structs are C structs in declaration order, never reordered; `volatile`
   fields stay `volatile` (T7, STR-2).
@@ -73,7 +75,7 @@ generics), so the same input always yields the same symbol order.
 | `branch`/`switch` | C `if`/`switch`, C-exact fallthrough (B5) |
 | index | runtime bounds guard before the access (T12, E11211) |
 | `/`, `%` | guard `d == 0 \|\| (a == MIN && d == -1)` first (E11210) |
-| float→int cast | guard `!(f >= lo && f <= hi)` so NaN faults (E11212, PF-007) |
+| float→int cast | guard `cl_isnan(f) || !(f >= lo && f <= hi)` so NaN faults (E11212, PF-007, AR-58) |
 | `assert`/`panic` | shim `cl_trap`/`cl_panic` calls; no ladder (E4, E11213) |
 | wrapping arithmetic | GCC: `-fwrapv`; vbcc: unsigned-idiom forms converted back (spike S3, PF-008) |
 | shifts | counts masked to the operand width; signed `>>` sign-replicating (B7a, Ch 17 §10) |

@@ -54,6 +54,7 @@ inspect:
 err:
 	$(DEV) bash -lc 'cd /work && \
 		($(VBCC) -DERR -o $(SPIKE)/build/demo-err $(SPIKE)/demo.c -lamiga || true)' 2>&1 \
+		| sed -E 's#/tmp/[A-Za-z0-9_]+[.]asm#<tmp>.asm#g' \
 		| tee $(REPO)/$(RESULTS)/err.txt
 
 gcc:

@@ -318,8 +318,11 @@ Casts use exactly one form, `T(expr)` (B8). There are no C-style casts.
 | Enum cast | `Direction(1)` | Parses as a call, resolved semantically into an enum cast |
 | Handle cast | `File(0)` | Parses as a call, resolved semantically into a handle cast |
 
-The float-to-integer runtime check is `!(f >= lo && f <= hi)`, so a NaN value
-faults E11212, as does a value outside the target range.
+The float-to-integer runtime check is `cl_isnan(f) || !(f >= lo && f <= hi)`, so
+a NaN value faults E11212, as does a value outside the target range. The
+`cl_isnan` test reads the IEEE bit pattern directly, so the check does not rely
+on the platform math library's comparison behavior ([Ch 17](17-codegen.md) §10,
+§12).
 
 An implicit conversion the language does not allow is E10200. A cast it does
 not allow is E10201.

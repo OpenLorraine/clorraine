@@ -73,6 +73,7 @@ challenger verdict of `Unnecessary` for the larger option.
 | 03-07 | [Standard Library](03-07-stdlib.md) | Stdlib modules, signatures, shim API, layouts |
 | 07  | [Testing Strategy](07-testing-strategy.md) | Spec test cases (ST-\*) and verification |
 | 08  | [Phase 0 Review](08-phase0-review.md) | Independent corpus review findings and checkpoint rulings |
+| 09  | [Phase 1 Review](09-phase1-review.md) | Independent spike review findings and fix batch |
 | 99  | [Execution Plan](99-execution-plan.md) | Phases, steps, and the task checklist |
 
 ## Quick Reference

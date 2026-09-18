@@ -114,7 +114,7 @@ codegen, so the six `spec/tests/run/` cases become executable patterns.
 **Fixture:** `spikes/04-run-faults/traps.c` — the emitted patterns:
 - division guard: `if (d == 0 || (a == INT32_MIN && d == -1)) cl_trap("E11210", "integer division by zero");`
 - bounds guard: `if (i >= n) cl_trap("E11211", "index out of range");`
-- float guard: `if (!(f >= lo && f <= hi)) cl_trap("E11212", "float-to-integer conversion out of range");`
+- float guard: `if (cl_isnan(f) || !(f >= lo && f <= hi)) cl_trap("E11212", "float-to-integer conversion out of range");`
 - `assert`: `if (!cond) cl_trap("E11213", "assertion failed");`
 
 `cl_trap` prints exactly `error CODE: message` as its first line and aborts

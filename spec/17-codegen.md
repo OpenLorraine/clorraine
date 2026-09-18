@@ -371,13 +371,13 @@ flag and relies on the unsigned-idiom emission in section 10. A Phase 2
 arithmetic verification spike compiles a signed-overflow and shift stress corpus
 with both compilers and confirms the wrapping results match this chapter.
 
-Float legs (P15) are **planned but not yet verified**: Phase 0 exercised no
-float code, so the soft-float ABIs and the FPU leg remain unproven.
+The soft-float double ABI was exercised by the run-fault spike (S4) on both
+compilers under `vamos`; the FPU leg remains unproven.
 
 | Leg | Setting | Status |
 |---|---|---|
-| GCC soft-float 68000 | the GCC lines above (no FPU option) | planned; not yet verified |
-| vbcc soft-float 68000 | the vbcc line above | planned; not yet verified |
+| GCC soft-float 68000 | the GCC lines above (no FPU option) with `-lm` | compiled and run on `vamos` (S4) |
+| vbcc soft-float 68000 | the vbcc line above with `-lmieee` | compiled and run on `vamos` (S4) |
 | GCC 68881 FPU (opt-in) | add `-m68881` | planned; not yet verified |
 
 `-lamiga` is the stub archive, not `-ldos`; vbcc needs the NDK include path.

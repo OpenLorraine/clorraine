@@ -104,7 +104,7 @@ get the user's explicit acceptance before front-end work.
 ## Phase 1: Accepted Phase 2 Spikes
 
 > **Phase baseline tree**: b6a74c7a7263eaab0f068c5843303710a12ccd64
-> **Expected modification set**: `spikes/**`, `docs/findings-phase2.md`, `plans/clorraine-compiler-mvp/99-execution-plan.md`
+> **Expected modification set**: `spikes/**`, `docs/findings-phase2.md`, `plans/clorraine-compiler-mvp/99-execution-plan.md`, plus the user-approved checkpoint amendments to `spec/{17-codegen.md,04-expressions.md,preflight-report.md}` and `plans/clorraine-compiler-mvp/00-ambiguity-register.md` (AR-31 rulings AR-56..AR-59)
 > **Scope mode**: strict
 
 ### Step 1.1: Spike S1 — vbcc `#line`
