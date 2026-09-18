@@ -17,7 +17,7 @@ architecture and interfaces (AR-20, AR-24).
 ```
 Cargo.toml                     # [workspace] members = ["compiler"]; no dependencies
 compiler/
-├── Cargo.toml                 # package clorc; [[bin]] clorc; lib clorc
+├── Cargo.toml                 # package clc; [[bin]] clc; lib clc
 ├── src/
 │   ├── main.rs                # thin CLI entry (calls driver::run)
 │   ├── lib.rs                 # module declarations; compile() for unit tests
@@ -154,7 +154,7 @@ E90000/E90002/E90001 (AR-10, AR-14; Ch 06 §6.1/§7).
 `driver.rs` implements the AR-21 contract from the first phase:
 
 ```text
-clorc --profile <host|hosted-amiga> [--deny-warnings] [--max-errors=N]
+clc --profile <host|hosted-amiga> [--deny-warnings] [--max-errors=N]
       [-o OUT.c] FILE...
 ```
 

@@ -52,7 +52,7 @@ consumes (Ch 16 §6, `16-borrow-rules.md:213`), and the C emission contract
 
 **Current Behavior:** Clorraine source cannot be compiled; the golden suites
 are structure-validated data only (`spec/tests/compile-fail/README.md:21-24`).
-**Required Behavior:** `clorc` lexes, parses, resolves, type-checks,
+**Required Behavior:** `clc` lexes, parses, resolves, type-checks,
 borrow-checks, and emits C for the corpus subset.
 **Fix Required:** Phases 2-6 of `99-execution-plan.md`.
 

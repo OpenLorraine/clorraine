@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 59 items resolved (AR-1..AR-59; AR-54/AR-55 added at the Phase 0 checkpoint, AR-56..AR-59 at the Phase 1 spike checkpoint)
-> **Last Updated**: 2026-09-18 14:24
+> **Status**: ✅ GATE PASSED — all 60 items resolved (AR-1..AR-60; AR-54/AR-55 added at the Phase 0 checkpoint, AR-56..AR-59 at the Phase 1 spike checkpoint, AR-60 at execution)
+> **Last Updated**: 2026-09-18 14:50
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -27,7 +27,7 @@ its Phase 2 verification spikes, and its test suites.
 | AR-3 | Scope | Corpus role | Executable golden / design-only / +FS-UAE all | Executable golden programs, hand-checked now, compiled and diffed under host and hosted-amiga | ✅ Resolved — user chose executable golden |
 | AR-4 | Behavioral | Interrupt-counter execution | FS-UAE run + build fallback / run everywhere / compile-only | FS-UAE run; build-only fallback where interrupts are unsupported | ✅ Resolved — user chose FS-UAE run with fallback |
 | AR-5 | Technical | Profiles implemented by the MVP | host+hosted-amiga / hosted-amiga only / host only | Both `host` (fast tests) and `hosted-amiga` (GCC, vbcc, vamos) | ✅ Resolved — user chose both profiles |
-| AR-6 | Naming | Compiler location, binary, CLI role | `compiler/` crate, `clorc`, emits C / driver / other name | `compiler/` crate, binary `clorc`, emits C only; scripts drive GCC/vbcc | ✅ Resolved — user chose crate + clorc |
+| AR-6 | Naming | Compiler location, binary, CLI role | `compiler/` crate, `clorc`, emits C / driver / other name | `compiler/` crate, binary `clorc`, emits C only; scripts drive GCC/vbcc | ✅ Resolved — user chose crate + clorc (binary renamed `clc` by AR-60) |
 | AR-7 | Technical | Verify command | Layered make targets / separate commands / other | Layered: fast `cargo` tests in the container; full `make verify` umbrella whose targets the plan defines | ✅ Resolved — user chose layered make targets |
 | AR-8 | Naming | Spike code and findings location | `spikes/` + `docs/findings-phase2.md` / scratch / examples | Committed `spikes/` sources; findings in `docs/findings-phase2.md` | ✅ Resolved — user chose spikes/ + findings doc |
 | AR-9 | Scope | Roadmap creation | Yes / no | Create `plans/00-roadmap.md` | ✅ Resolved — user chose to create the roadmap |
@@ -46,11 +46,11 @@ its Phase 2 verification spikes, and its test suites.
 | AR-17 | Scope | Per-chip MMIO wrappers (`std.amiga.custom`) | Excluded from the MVP; no corpus program needs them | ✅ Resolved — user accepted recommendation |
 | AR-18 | Scope | `defer`, enums, `static str` fields, `///` doc comments | All included; `///` is parsed and ignored | ✅ Resolved — user accepted recommendation |
 | AR-19 | Technical | Runtime shim and stdlib architecture | Stdlib in Clorraine under top-level `stdlib/`, embedded in the binary and compiled with each program; per-profile C shim (`runtime/host.c`, `runtime/hosted-amiga.c`) embedded and prepended to the single TU, exposing the profile C API the stdlib binds through `ffi` | ✅ Resolved — user accepted recommendation |
-| AR-20 | Technical | Rust project shape and dependency policy | Root `Cargo.toml` workspace + `compiler/` crate (lib + `clorc` bin), edition 2021, std-only, zero external crates | ✅ Resolved — user accepted recommendation |
-| AR-21 | Interface | `clorc` CLI surface | `clorc --profile <host\|hosted-amiga> [--deny-warnings] [--max-errors=N] -o OUT.c FILE...`; profile required; exit 1 on any error; `--version` | ✅ Resolved — user accepted recommendation |
+| AR-20 | Technical | Rust project shape and dependency policy | Root `Cargo.toml` workspace + `compiler/` crate (lib + `clorc` bin; renamed `clc` by AR-60), edition 2021, std-only, zero external crates | ✅ Resolved — user accepted recommendation |
+| AR-21 | Interface | `clorc` CLI surface | `clorc --profile <host\|hosted-amiga> [--deny-warnings] [--max-errors=N] -o OUT.c FILE...`; profile required; exit 1 on any error; `--version`. Binary renamed `clc` by AR-60 | ✅ Resolved — user accepted recommendation |
 | AR-22 | UX | Diagnostic rendering | stderr; first line exactly `error CODE: message` / `warning CODE: message` (N4); following lines `  --> file:line:col` and optional `  help: ...` | ✅ Resolved — user accepted recommendation |
 | AR-23 | Technical | Compile-fail message assertion | Assert the code and wildcard-match the registered Ch 14 template (`{...}` matches any text); fall back to code-only for unparseable rows | ✅ Resolved — user accepted recommendation |
-| AR-24 | Technical (complexity escalation) | Test-harness support surface | Use the smaller solution: std-only Rust integration tests in `compiler/tests/` spawning the built `clorc` binary (`CARGO_BIN_EXE_clorc`), golden files read from `spec/tests/`; cross-toolchain legs are thin Make targets delegating to `docker/Makefile`; no separate harness crate. Direct user choice after the visible packet; independent challenger verdict: Unnecessary for the larger harness crate | ✅ Resolved — user chose the smaller solution A |
+| AR-24 | Technical (complexity escalation) | Test-harness support surface | Use the smaller solution: std-only Rust integration tests in `compiler/tests/` spawning the built `clorc` binary (`CARGO_BIN_EXE_clorc`), golden files read from `spec/tests/`; cross-toolchain legs are thin Make targets delegating to `docker/Makefile`; no separate harness crate. Direct user choice after the visible packet; independent challenger verdict: Unnecessary for the larger harness crate. Spawning binary later renamed `clc` (`CARGO_BIN_EXE_clc`), AR-60 | ✅ Resolved — user chose the smaller solution A |
 | AR-25 | Technical | Module loading and source discovery (MOD-2) | User files given on the CLI; imports resolve against the loaded set plus the embedded stdlib table; module identity comes from `module` declarations; no directory scanning | ✅ Resolved — user accepted recommendation |
 | AR-26 | Naming | Rust test-file naming vs `[feature].spec.test.[ext]` | `compiler/tests/<feature>_spec_test.rs` and `<feature>_impl_test.rs`, documented in AGENTS.md as the Rust spelling of the standard | ✅ Resolved — user accepted recommendation |
 | AR-27 | Technical | Profile facts storage | Compiled-in Rust profile tables for `host` and `hosted-amiga` (Ch 15 §6 first position) | ✅ Resolved — user accepted recommendation |
@@ -111,6 +111,12 @@ All four are specification-text changes approved by the user (AR-31).
 | AR-58 | Technical (runtime) | S4: under `vamos` the `mathieeedoubbas` comparisons are not IEEE, so `!(f >= lo && f <= hi)` does not trap NaN; the vbcc leg makes `vamos` raise in `IEEEDPFix` | Emit `cl_isnan(f) || !(f >= lo && f <= hi)`, where `cl_isnan` is a shim IEEE bit-pattern test. Amend Ch 17 §10, §12, §14 | ✅ Resolved — user chose the `cl_isnan` bit test |
 | AR-59 | Technical (runtime) | S4: GCC float programs need `-lm` and vbcc float programs need `-lmieee`; the Ch 17 §13 matrix lists neither | Always append `-lm` (GCC) and `-lmieee` (vbcc) to the Amiga leg commands. Amend Ch 17 §13 | ✅ Resolved — user chose always-on flags |
 
+## Batch 6 — naming amendments during execution (2026-09-18)
+
+| # | Category | Ambiguity / Gap | Accepted resolution | Status |
+|---|----------|-----------------|---------------------|--------|
+| AR-60 | Naming (execution amendment) | The compiler binary was named `clorc`; the user requested the shorter, DX-friendly `clc` ("Clorraine Compiler") | Rename the binary to `clc`: Cargo `[[bin]] name = "clc"`, `CARGO_BIN_EXE_clc`, and every CLI sample updated. Supersedes the binary-name fields of AR-6, AR-20, AR-21, and AR-24 | ✅ Resolved — user directed the rename |
+
 ## Complexity Escalation packet (AR-24)
 
 ```text
@@ -123,7 +129,7 @@ Why it may be needed: centralized orchestration and reporting for four suites ac
 Evidence: no CI and no Rust test infrastructure exist yet; the repo precedent is
   spec/check.sh (bash) plus Makefiles; every golden file declares its expectation on line 1.
 Smallest solution that still works: std-only Rust integration tests in compiler/tests/
-  spawning the built clorc binary, discovering golden files from ../spec/tests/, with thin
+  spawning the built clorc binary (now `clc`, AR-60), discovering golden files from ../spec/tests/, with thin
   Make targets delegating cross-toolchain legs to docker/Makefile and docker/scripts/run.sh.
 Extra cost: a second build/orchestration surface, duplicated orchestration, and
   configuration no current requirement uses.

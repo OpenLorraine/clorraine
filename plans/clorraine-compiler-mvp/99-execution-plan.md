@@ -205,7 +205,7 @@ proven first line and skipped ladder.
 compiler logic.
 
 - [ ] 2.1.1 Create the root `Cargo.toml` workspace, the `compiler/` crate (stub binary), and the root `Makefile` with `check` (spec check + container `cargo test`)
-- [ ] 2.1.2 [spec-author] Write `compiler/tests/compile_fail_spec_test.rs` (golden discovery, `clorc` spawn, Ch 14 template wildcard matching, skip list) and the `stage_spec_test.rs` helper with the ST-LEX-1..2 and ST-PARSE-1..4 cases
+- [ ] 2.1.2 [spec-author] Write `compiler/tests/compile_fail_spec_test.rs` (golden discovery, `clc` spawn, Ch 14 template wildcard matching, skip list) and the `stage_spec_test.rs` helper with the ST-LEX-1..2 and ST-PARSE-1..4 cases
 - [ ] 2.1.3 Run the new spec tests and record the red phase (failures expected: no compiler behavior exists)
 
 **Deliverables**:

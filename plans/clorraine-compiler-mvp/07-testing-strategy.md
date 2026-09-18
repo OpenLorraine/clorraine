@@ -10,7 +10,7 @@ the specification tests for compiler behavior, and the harness mechanically
 iterates them; the ST cases below add the concrete stage behaviors that the
 goldens do not cover (AR-44). Expectations come from the specification only.
 Spec-test code lives in `compiler/tests/` as CLI-level drivers that spawn the
-built `clorc` binary — never the library API — so the immutable oracle is the
+built `clc` binary — never the library API — so the immutable oracle is the
 published CLI behavior (AR-24). Implementation tests are in-module Rust unit
 tests (`#[cfg(test)]`) and are written after the implementation.
 

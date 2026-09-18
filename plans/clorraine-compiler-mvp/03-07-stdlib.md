@@ -6,7 +6,7 @@
 ## Overview
 
 The standard-library slice is ordinary Clorraine (X6,
-`appendix-stdlib.md:9-11`) under top-level `stdlib/`, embedded in `clorc` and
+`appendix-stdlib.md:9-11`) under top-level `stdlib/`, embedded in `clc` and
 compiled with every program (AR-19, AR-25). It binds the per-profile C shim
 through `ffi` blocks; application code never writes `ffi` and never touches
 `unsafe` (X6, M9). This document owns the MVP module list, the plan-local
@@ -201,7 +201,7 @@ server. The spike S2 fixture fixes the ABI expectations.
 ## Build and Embedding
 
 - `stdlib.rs` holds a fixed table `module name → include_str!` for the six
-  files; `clorc` embeds them and loads a module when an import names it
+  files; `clc` embeds them and loads a module when an import names it
   (AR-25). No filesystem lookup and no install path (deterministic output).
 - The stdlib is compiled with every program, so the compiler must accept its
   own library: a spec test compiles the stdlib alone with zero diagnostics

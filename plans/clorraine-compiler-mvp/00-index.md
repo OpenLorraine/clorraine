@@ -1,6 +1,6 @@
 # Clorraine Compiler MVP Implementation Plan
 
-> **Feature**: The first Clorraine compiler: a Rust program (`clorc`) that compiles the corpus subset of the frozen specification to one C99 translation unit, with the validation corpus, the four accepted Phase 2 spikes, the standard-library slice, and the golden test suites.
+> **Feature**: The first Clorraine compiler: a Rust program (`clc`) that compiles the corpus subset of the frozen specification to one C99 translation unit, with the validation corpus, the four accepted Phase 2 spikes, the standard-library slice, and the golden test suites.
 > **Status**: Planning Complete
 > **Created**: 2026-09-17 23:56
 > **Implements**: none (standalone plan; the requirements source is the frozen specification `spec/`, v0.4)
@@ -38,7 +38,7 @@ verified work automatically during execution.
 single C99 translation unit per program; a Clorraine standard-library slice
 under `stdlib/` compiled together with the program; a small per-profile C shim
 prepended to the emitted unit; and golden-suite test drivers that spawn the
-built `clorc` binary and read the existing `spec/tests/` files (AR-19, AR-20,
+built `clc` binary and read the existing `spec/tests/` files (AR-19, AR-20,
 AR-24, AR-25, AR-46).
 
 **Excluded machinery:**
@@ -82,11 +82,11 @@ challenger verdict of `Unnecessary` for the larger option.
 
 ```sh
 # Compile for the fast test profile (inside the SDK container)
-clorc --profile host -o out.c program.clor
+clc --profile host -o out.c program.clor
 cc -std=c99 -O0 -g -Wall -Wextra -Werror -o program out.c && ./program
 
 # Compile for the Amiga target (inside the SDK container)
-clorc --profile hosted-amiga -o out.c program.clor
+clc --profile hosted-amiga -o out.c program.clor
 m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g \
     -Wall -Wextra -Werror -o demo out.c -lamiga
 vamos ./demo
@@ -101,7 +101,7 @@ make verify    # check + corpus and run-fault legs (host, hosted-amiga, FS-UAE)
 | Decision | Outcome | Ref |
 | -------- | ------- | --- |
 | Acceptance target | Four-program corpus + 6 run faults + 4 spikes | AR-2, AR-3 |
-| Compiler | `compiler/` crate, binary `clorc`, emits C only | AR-6, AR-20 |
+| Compiler | `compiler/` crate, binary `clc`, emits C only | AR-6, AR-20 |
 | Implementation language | Rust (pinned by the SDK), std-only, zero crates; compiler is host-only — no AmigaOS/LorraineOS-hosted or self-hosted compiler in scope | AR-20 |
 | Profiles | `host` + `hosted-amiga` | AR-5 |
 | Stdlib | Clorraine sources under `stdlib/`, embedded; per-profile C shim | AR-19, AR-47 |

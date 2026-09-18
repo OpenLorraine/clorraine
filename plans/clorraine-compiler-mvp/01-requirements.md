@@ -25,7 +25,7 @@ artifact.
 | R1 | The four corpus programs (file copier, interrupt counter, string/parser, buffer/container) exist under `spec/tests/corpus/` with `program.clor`, `expected-output.txt`, and a `README.md` rule-coverage record | AR-3, AR-28, `spec/lineage.md:169-175` |
 | R2 | Each corpus program is hand-checked line-by-line against the frozen specification; the user accepts the corpus before front-end work starts | AR-31, AR-43 |
 | R3 | Four spikes are executed and recorded: vbcc `#line`, generated-C FFI ABI, arithmetic wrapping/shifts, and the run-fault patterns | AR-8, AR-41; `decisions.md:330,336,370`, `preflight-report.md:121-126` |
-| R4 | `clorc` lexes and parses the frozen grammar (Ch 01, grammar §9-§11), including the targeted parser-only diagnostics E10204, E10208, E10501, E20008 | AR-6, AR-21 |
+| R4 | `clc` lexes and parses the frozen grammar (Ch 01, grammar §9-§11), including the targeted parser-only diagnostics E10204, E10208, E10501, E20008 | AR-6, AR-21 |
 | R5 | Name resolution, module merging, imports, and module initialization order follow Ch 10 | AR-25 |
 | R6 | Type checking, conversions, operators, constant evaluation, structs, and enums follow Ch 02, Ch 04, Ch 07, Ch 09 | AR-11, AR-13 |
 | R7 | Definite assignment, moves, partial moves, nullability, drop planning, and the v1 lexical loan checker follow Ch 03, Ch 16, and `lineage.md` §6 | AR-18 |
@@ -54,7 +54,7 @@ user-provided contract tables (`--contracts`, W10005); the `freestanding`
 profile; `comptime` semantics; nested templates; per-chip MMIO wrappers;
 `std.amiga.exec` message/signal APIs; a library-build entry (MOD-29); 64-bit
 fixed integers; tuple/multiple returns (AR-10, AR-14, AR-17, AR-47); and a
-compiler that runs on AmigaOS/LorraineOS or a self-hosted compiler — `clorc`
+compiler that runs on AmigaOS/LorraineOS or a self-hosted compiler — `clc`
 is a host-side development tool (AR-20; user scope statement, 2026-09-18).
 
 ## Technical Requirements
@@ -103,7 +103,7 @@ this plan (AR-24 keeps CI/CD out of scope).
 | Compiler implementation | Rust / C / self-hosted | Rust (already pinned by the SDK) | `docker/Dockerfile:136` pins Rust; host tooling is ready | AR-20 |
 | Compiler output | emit C only / drive the toolchain | emit C only | Matches P10 and keeps the driver small; Ch 17 fixes the commands | AR-6 |
 | Stdlib shape | Clorraine source / C library | Clorraine source + C shim | `appendix-stdlib.md:9-11` says the library is ordinary Clorraine | AR-19, AR-46 |
-| Test harness | Rust integration tests / dedicated harness / shell | Rust integration tests spawning `clorc` | Smallest viable; challenger verdict `Unnecessary` for the larger option | AR-24 |
+| Test harness | Rust integration tests / dedicated harness / shell | Rust integration tests spawning `clc` | Smallest viable; challenger verdict `Unnecessary` for the larger option | AR-24 |
 | Staged features | E90000 / partial implementations | E90000 + skipped tests | Honest MVP boundary; the spec's staged codes exist for this | AR-10, AR-14 |
 
 > **Traceability:** every row cites the register entry that resolved it; see
