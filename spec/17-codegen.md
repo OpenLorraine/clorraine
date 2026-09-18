@@ -65,7 +65,7 @@ mapping below, where the declared type alone fixes the C parameter type.
 | `borrow` parameter | `T *` (writable lend) |
 | `take` parameter | `T` by value; ownership transfers into the callee |
 | scalar parameter | `T` by value in every mode (V5) |
-| `handle File freedBy Close;` | an opaque pointer typedef `ClFile`; `NULL` is the zero empty state |
+| `handle File freedBy Close;` | the contract-table ABI type when one exists (`BPTR` for `File`, `struct Library *` for `Library`); otherwise an opaque pointer typedef `Cl<Name>`; the zero value is the empty state |
 | `str` and `T[]` views | emitted pointer-and-length value structs (`ClStr`, `ClSlice_T`) |
 | `cstring` | C `char *` |
 | `raw T` | `T *` |
@@ -142,19 +142,19 @@ The example below emits `func copy(srcPath: str, dstPath: str): bool` from modul
 `Demo.Copy`. The `defer` is registered first, so it runs last at scope exit.
 
 ```c
-typedef struct ClFileClosure *ClFile;  /* NULL is the empty state        */
+typedef struct ClBufferClosure *ClBuffer; /* NULL is the empty state     */
 typedef struct { const u8 *ptr; usize len; } ClStr;  /* the str view     */
 
 bool tracing = true;                   /* duplicable global (O10)        */
 
 static bool cl_Demo_Copy_copy(ClStr srcPath, ClStr dstPath)
 {
-    ClFile src = NULL;                 /* owned locals hoisted, empty    */
-    ClFile dst = NULL;
-    Buffer buf = NULL;
+    BPTR src = 0;                      /* owned File handles, empty      */
+    BPTR dst = 0;
+    ClBuffer buf = NULL;
     bool   __cl_rc = false;
 
-    src = cl_acquire_file(srcPath);    /* File? : NULL means null        */
+    src = cl_acquire_file(srcPath);    /* File? : 0 means null           */
     if (!src) { __cl_rc = false; goto __cl_c2; }
 
     dst = cl_acquire_file(dstPath);
@@ -244,7 +244,7 @@ linker never sees a name the program did not export.
 | Generated helper | `cl_` prefix (`cl_zero`, `cl_acquire_*`, `cl_text_*`) |
 | Temporary | `__cl_tmp<N>`, a stable counter |
 | Cleanup label | `__cl_c<N>` |
-| Handle typedef, built-in view struct | `Cl<Name>` (`ClFile`, `ClStr`, `ClSlice_u8`) |
+| Handle typedef (unmapped), built-in view struct | `Cl<Name>` (`ClBuffer`, `ClStr`, `ClSlice_u8`); a contract-table handle uses its ABI type instead (`BPTR` for `File`) |
 | User aggregate type | `Cl<Module>_<Type>`, to avoid C tag clashes |
 | Entry | `int main(void)` in the generated stub |
 
@@ -297,7 +297,7 @@ E10500. The builder is shim code, so the allocation strategy stays in one place.
 | Signed shift into the sign bit | emitted through unsigned operands so both compilers agree | - |
 | Integer `/` or `%` by zero, or `MIN / -1` | the guard `d == 0 \|\| (a == MIN && d == -1)` before the operation; signed `/` and `%` emit directly behind the guard | E11210 |
 | Index out of range | a runtime check before every index | E11211 |
-| Float-to-integer conversion out of range or NaN | the guard `!(f >= lo && f <= hi)` before the cast | E11212 |
+| Float-to-integer conversion out of range or NaN | the guard `cl_isnan(f) || !(f >= lo && f <= hi)` before the cast | E11212 |
 | Float `/` by zero | IEEE 754 Inf or NaN; no check (T1) | - |
 
 The target is two's-complement. Signed wrapping of `+`, `-`, `*`, and unary `-`
@@ -324,6 +324,11 @@ ladder, like `panic` (E4); no profile disables these checks (T12). Codes:
 * Same source, same profile, same flags produce **byte-identical C**: stable
   symbol names, stable temporary numbering, stable drop order, no timestamps and
   no absolute paths (only the logical source path, in `#line`).
+* The GCC legs carry the mapping into DWARF, which `m68k-amigaos-gdb` reads.
+  vbcc emits the mapping into its Hunk Debug data, which the SDK's `objdump`,
+  `readelf`, and `gdb` cannot decode, so vbcc debugger stepping is unavailable
+  in this toolchain. The `#line` directives are still emitted, and diagnostics
+  from both compilers name the `.clor` source and line.
 
 ## 12. Runtime shim
 
@@ -337,6 +342,7 @@ sentinel, the trap helper, the panic, and the debug output.
 | null policy | zero handle / `NULL` | `NULL` | null |
 | panic | print then `exit`/`Exit` | `abort` | halt or reset |
 | runtime trap (E11210-E11212) | print `error CODE: message`, then abort | same | same |
+| NaN test | `cl_isnan`: an IEEE bit-pattern test on the value | same | same |
 | debug output | `printf` (libnix) or serial | `fprintf(stderr, ...)` | serial/UART |
 
 Drops are emitted directly as `if (value) { Deleter(value); }` using the handle's
@@ -349,9 +355,16 @@ Exact command lines (the input object is the generated single `.c` file):
 
 | Target | Command |
 |---|---|
-| GCC debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga` |
-| GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -o demo demo.c -lamiga` |
-| vbcc release | `vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga` |
+| GCC debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga -lm` |
+| GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -o demo demo.c -lamiga -lm` |
+| vbcc release | `vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga -lmieee` |
+
+`-lm` (GCC) supplies the soft-float double helpers, and `-lmieee` (vbcc)
+supplies the IEEE double library; both are appended on every Amiga leg so the
+command line stays deterministic. `cl_isnan` tests the IEEE bit pattern
+directly, so the NaN guard does not depend on the platform math library's
+comparison behavior (the SDK's `vamos` soft-float comparisons are not IEEE for
+NaN).
 
 `-fwrapv` makes signed overflow wrap in the GCC legs; vbcc has no equivalent
 flag and relies on the unsigned-idiom emission in section 10. A Phase 2
@@ -385,7 +398,7 @@ the hosted matrix precisely: GCC 68000 on `vamos` and both FS-UAE media; GCC
 | Null dereference of an owned handle | use before a `== null` / `!= null` check is rejected; drops are null-safe | E10010 |
 | Bounds | every indexed access is checked, always on | E11211 |
 | Integer division or modulo by zero, or `MIN / -1` | runtime guard `d == 0 \|\| (a == MIN && d == -1)` | E11210 |
-| Out-of-range or NaN float-to-integer conversion | runtime guard `!(f >= lo && f <= hi)` | E11212 |
+| Out-of-range or NaN float-to-integer conversion | runtime guard `cl_isnan(f) || !(f >= lo && f <= hi)` | E11212 |
 
 The front end rejects at compile time what it can prove; the inserted runtime
 checks cover the rest. Memory safety is strong above the hardware boundary; below

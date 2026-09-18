@@ -37,6 +37,12 @@ Preflight items the spikes bear on:
 | D-3 | S4 | Keep the `!(f >= lo && f <= hi)` NaN guard and mark the Amiga NaN leg environment-blocked, or add a shim `cl_isnan` bit test so the guard is platform-independent (recommended) |
 | D-4 | S4 | Add `-lm`/`-lmieee` to the Amiga float legs always (recommended) or only when a program uses floats |
 
+**Rulings recorded (2026-09-18):** all four recommendations were accepted —
+D-1 record the vbcc debug-decoding limitation, D-2 emit the contract-table ABI
+type directly for mapped handles, D-3 add the shim `cl_isnan` bit test, and
+D-4 always append the float libraries. The Ch 17 amendments and register entries
+AR-56..AR-59 record the changes.
+
 ---
 
 ## S1 - vbcc `#line` (PF-042)

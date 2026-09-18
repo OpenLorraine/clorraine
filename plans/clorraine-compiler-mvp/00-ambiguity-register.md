@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 55 items resolved (AR-1..AR-55; AR-54/AR-55 added during execution)
-> **Last Updated**: 2026-09-18 09:05
+> **Status**: ✅ GATE PASSED — all 59 items resolved (AR-1..AR-59; AR-54/AR-55 added at the Phase 0 checkpoint, AR-56..AR-59 at the Phase 1 spike checkpoint)
+> **Last Updated**: 2026-09-18 14:24
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -98,6 +98,18 @@ resolved at the 0.2.2 checkpoint before any compiler work.
 |---|----------|-----------------|---------------------|--------|
 | AR-54 | Technical (runtime) | The corpus contract asked `string-parser` to print `hex=0x00003A` via `padLeft(toHex(u32(sum)), 8, '0')`, but the frozen `toHex` already returns the `0x` prefix, so the expression yields `00000x3A` | The program prints `hex=0x3A` via `toHex(u32(sum))`; `padLeft` stays in the stdlib surface without a dedicated corpus behavior. Plan 03-01 and the expected output were amended; no specification change | ✅ Resolved — user chose option A |
 | AR-55 | Behavioral (runtime, specification amendment) | `removeHandler(t: HandlerToken)` passes a duplicable struct to an unmarked read-only lend, which the original W10001 rule (golden `W10001_needless_lend.clor`) made a warning, contradicting the zero-diagnostic corpus contract (AR-43) | W10001 is narrowed to **writable** lends of duplicable values (writes affect only the copy); read-only lends copy silently. Amended: Ch 03, Ch 06, Ch 14 registry, Ch 16 §2/§5/§7, ledger D9, the lineage D9 row, and the `W10001_needless_lend.clor` golden. The corpus compiles clean | ✅ Resolved — user chose option A (spec amendment approved) |
+
+## Batch 5 — runtime items from the Phase 1 spikes (2026-09-18)
+
+Surfaced by the four accepted spikes and ruled on at the 1.5.2 checkpoint.
+All four are specification-text changes approved by the user (AR-31).
+
+| # | Category | Ambiguity / Gap | Accepted resolution | Status |
+|---|----------|-----------------|---------------------|--------|
+| AR-56 | Technical (runtime) | S1: vbcc embeds the `#line` filename in its Hunk Debug data, but the SDK's `objdump`, `readelf`, and `gdb` cannot decode it, so the Ch 17 §11 debugging claim is unusable for vbcc | Record the limitation in Ch 17 §11: GCC legs are debuggable and mapped; vbcc emits the mapping but SDK tooling cannot decode it in v1. `#line` is still emitted and diagnostics name the `.clor` source | ✅ Resolved — user chose "record the limitation" |
+| AR-57 | Technical (runtime) | S2: Ch 17 §3 maps a handle binding to the opaque `Cl<Name>` typedef, while the ABI table says the FFI prototype uses the contract-table C type (`File` -> `BPTR`) | Emit the contract-table ABI type directly for an FFI-mapped handle local (`BPTR`, `struct Library *`); reserve `Cl<Name>` for handles with no fixed C type. Align Ch 17 §3, §4, §7 and PF-047 | ✅ Resolved — user chose the ABI type |
+| AR-58 | Technical (runtime) | S4: under `vamos` the `mathieeedoubbas` comparisons are not IEEE, so `!(f >= lo && f <= hi)` does not trap NaN; the vbcc leg makes `vamos` raise in `IEEEDPFix` | Emit `cl_isnan(f) || !(f >= lo && f <= hi)`, where `cl_isnan` is a shim IEEE bit-pattern test. Amend Ch 17 §10, §12, §14 | ✅ Resolved — user chose the `cl_isnan` bit test |
+| AR-59 | Technical (runtime) | S4: GCC float programs need `-lm` and vbcc float programs need `-lmieee`; the Ch 17 §13 matrix lists neither | Always append `-lm` (GCC) and `-lmieee` (vbcc) to the Amiga leg commands. Amend Ch 17 §13 | ✅ Resolved — user chose always-on flags |
 
 ## Complexity Escalation packet (AR-24)
 
