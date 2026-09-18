@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-18 12:03
-> **Progress**: 20/84 tasks (24%)
+> **Progress**: 21/84 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -168,7 +168,7 @@ proven first line and skipped ladder.
 - [x] 1.4.1 Create `spikes/04-run-faults/traps.c` with the host and Amiga shim variants ✅ (completed: 2026-09-18 11:59)
 - [x] 1.4.2 Run the host legs; assert the exact first lines and the skipped cleanup counter ✅ (completed: 2026-09-18 12:00)
 - [x] 1.4.3 Run the Amiga legs under `vamos`; map each of the six run cases to its fixture pattern ✅ (completed: 2026-09-18 12:03)
-- [ ] 1.4.4 Write the S4 decision note: the shim contract codegen will implement
+- [x] 1.4.4 Write the S4 decision note: the shim contract codegen will implement ✅ (completed: 2026-09-18 12:03)
 
 **Deliverables**:
 - S4 fixture, raw outputs, six-case mapping

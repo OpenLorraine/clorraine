@@ -1,7 +1,6 @@
 # Phase 2 spike findings - codegen strategy
 
-Status: in progress. S1-S3 recorded; S4 pending. Consolidated at the Phase 1
-checkpoint.
+Status: complete through S4; consolidated at the Phase 1 checkpoint.
 
 This document records the four accepted Phase 2 spikes. Each section states the
 goal, the fixture, the exact commands, the raw output, the codegen rule it
@@ -208,3 +207,95 @@ and the recorded diffs.
 **Open question:** none. The spike confirms the rules already written in
 Ch 17 section 10, so no specification ruling is needed and PF-008 can close at
 the checkpoint.
+
+---
+
+## S4 - run-fault patterns (PF-020)
+
+**Goal:** validate the emitted runtime guards and the fault shim before codegen,
+so the six `spec/tests/run/` cases become executable patterns with a proven
+first line and skipped cleanup.
+
+**Fixture:** [`spikes/04-run-faults/traps.c`](../spikes/04-run-faults/traps.c) -
+the emitted guards for E11210 (zero divisor and `MIN / -1`), E11211 (bounds),
+E11212 (float range and NaN), and E11213 (assert), plus a cleanup stand-in that
+prints if it ever runs. Two shim variants are selected with `-DAMIGA_SHIM`:
+host (`fprintf(stderr, ...)` then `abort()`) and Amiga (`printf(...)` then
+`exit(20)`). The checker
+[`spikes/04-run-faults/run-faults.sh`](../spikes/04-run-faults/run-faults.sh)
+asserts, per case, the exact first line, that the cleanup ladder did not run,
+and that the program did not exit 0.
+[`case-map.txt`](../spikes/04-run-faults/case-map.txt) maps the six spec run
+cases to the fixture cases.
+
+**Commands** (inside the SDK container, from `/work`):
+
+| Leg | Command |
+|---|---|
+| host | `cc -std=c99 -O2 -Wall -Wextra -Werror traps.c`, then `run-faults.sh host ...` |
+| GCC | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -O2 -DAMIGA_SHIM ... -lamiga -lm`, then `run-faults.sh amiga-gcc ... vamos` |
+| vbcc | `vc +aos68k -c99 -O2 -cpu=68000 ... -DAMIGA_SHIM ... -lamiga -lmieee`, then `run-faults.sh amiga-vbcc ... vamos` |
+
+Raw output: `spikes/04-run-faults/results/{host,amiga-gcc,amiga-vbcc}-<case>.txt`.
+
+**Observed:**
+
+| Case | Host | Amiga GCC | Amiga vbcc |
+|---|---|---|---|
+| `div_by_zero` (E11210) | traps, exit 134 | traps, exit 20 | traps, exit 20 |
+| `min_neg_one` (E11210) | traps, exit 134 | traps, exit 20 | traps, exit 20 |
+| `index_out_of_range` (E11211) | traps, exit 134 | traps, exit 20 | traps, exit 20 |
+| `float_to_int_range` (E11212) | traps, exit 134 | traps, exit 20 | traps, exit 20 |
+| `nan_float_to_int` (E11212) | traps, exit 134 | **no trap**: prints a result and runs cleanup | **no trap**: `vamos` raises `ValueError: cannot convert float NaN to integer` in `IEEEDPFix` |
+| `assertion_failed` (E11213) | traps, exit 134 | traps, exit 20 | traps, exit 20 |
+
+The exact first line is `error CODE: message` using the Ch 14 messages, and no
+captured output contains a cleanup marker for the five trapping cases.
+
+**Decision / rule:**
+
+* The **shim contract is confirmed**: `cl_trap` prints exactly
+  `error CODE: message` as its first line and aborts without running the
+  cleanup ladder. The host shim writes to stderr and calls `abort`; the Amiga
+  shim writes to stdout and calls `exit(20)`. Codegen implements this contract.
+* The guard shapes are confirmed and executable for five of the six cases:
+  `d == 0 || (a == MIN && d == -1)`, `i >= n`, `!(f >= lo && f <= hi)`, and
+  `!cond`.
+* The GCC Amiga float legs need `-lm`; without it the soft-float double helpers
+  (`__divdf3`, `__gedf2`, `__ledf2`) do not link. The vbcc float legs need
+  `-lmieee`; without it `_MathIeeeDoubBasBase` is undefined. These are
+  additions to the Ch 17 section 13 compile matrix.
+* A NaN must be built from two distinct volatile zeros. A single `0.0 / 0.0`
+  is folded to `1.0` by vbcc at `-O2`; two volatile zeros survive on both
+  compilers and produce a real quiet NaN.
+
+**Open questions (specification rulings requested at the Phase 1 checkpoint):**
+
+1. **The E11212 NaN case cannot be verified under `vamos`.** The emulator's
+   `mathieeedoubbas` comparisons are not IEEE: a real NaN (bits
+   `7FF8000000000000`) compares as `nan == nan`, `nan >= lo`, and
+   `nan <= hi`, so `!(f >= lo && f <= hi)` is false. The vbcc leg is worse:
+   `vamos` raises a Python exception in `IEEEDPFix` when asked to convert NaN.
+   This is an emulator limitation, not an emitted-C defect; the host leg and
+   IEEE hardware behave correctly.
+
+   | Option | Change | Trade-off |
+   |---|---|---|
+   | A | Keep the Ch 17 section 10 guard; mark the Amiga NaN run leg environment-blocked in the suite (PF-020 note) | No spec or codegen change; the NaN rule stays unverified on the Amiga legs until real hardware or a fixed emulator |
+   | B | Add a shim `cl_isnan` (a bit test) and emit `if (cl_isnan(f) || !(f >= lo && f <= hi)) cl_trap(...)` | Makes NaN detection independent of the platform math library, so the NaN run case passes under `vamos`; needs a small Ch 17 section 10/12 amendment and one shim helper |
+
+   Recommendation: **B**. It is a one-helper change that removes a dependency on
+   a library the spikes proved unreliable, and it makes the always-on safety
+   promise testable on every leg.
+
+2. **Compile matrix update.** Ch 17 section 13 lists GCC as `... -lamiga` and
+   vbcc as `... -lamiga`. Float programs need `-lm` (GCC) and `-lmieee`
+   (vbcc). Either add the flags only for float-using programs or always.
+
+   | Option | Change | Trade-off |
+   |---|---|---|
+   | A | Always append the flags to the Amiga leg commands | Deterministic and simple; a tiny unused-library cost when a program has no floats |
+   | B | Add the flag only when the translation unit uses a float type | Smaller command line; needs a "uses float" tracking rule |
+
+   Recommendation: **A**. The flags are harmless when unused, and always-on
+   keeps the emitted command line deterministic and the matrix simple.
