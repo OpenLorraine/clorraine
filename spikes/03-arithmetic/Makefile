@@ -27,7 +27,7 @@ GCC := m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -O2 -Wall -Wextra -Werror
 VBCC := vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include
 SPIKE := spikes/03-arithmetic
 RESULTS := $(SPIKE)/results
-EXPECTED := $(SPIKE)/expected.txt
+EXPECTED := $(REPO)/$(SPIKE)/expected.txt
 
 .PHONY: all host gcc gcc-nowrapv vbcc vbcc-plain check clean
 

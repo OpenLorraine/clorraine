@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-18 11:57
-> **Progress**: 15/84 tasks (18%)
+> **Progress**: 16/84 tasks (19%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -148,7 +148,7 @@ get the user's explicit acceptance before front-end work.
 
 - [x] 1.3.1 Create `spikes/03-arithmetic/arith_gcc.c`, `arith_vbcc.c`, the expected table, and the Makefile per S3 ✅ (completed: 2026-09-18 11:56)
 - [x] 1.3.2 Run the host and GCC/`-fwrapv` legs (plus the no-flag leg) and diff against the table ✅ (completed: 2026-09-18 11:57)
-- [ ] 1.3.3 Run the vbcc leg with the unsigned idiom and diff against the table
+- [x] 1.3.3 Run the vbcc leg with the unsigned idiom and diff against the table ✅ (completed: 2026-09-18 11:57)
 - [ ] 1.3.4 Write the S3 decision note: the exact vbcc emission idiom (or proof none is needed)
 
 **Deliverables**:
