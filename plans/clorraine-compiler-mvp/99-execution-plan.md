@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 11:53
-> **Progress**: 11/84 tasks (13%)
+> **Last Updated**: 2026-09-18 11:54
+> **Progress**: 12/84 tasks (14%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -130,7 +130,7 @@ get the user's explicit acceptance before front-end work.
 **Objective**: compile and run the exact emitted prototypes against the NDK.
 
 - [x] 1.2.1 Create `spikes/02-ffi-abi/ffi_abi.c` and Makefile per S2 ✅ (completed: 2026-09-18 11:53)
-- [ ] 1.2.2 Compile with GCC and vbcc; run under `vamos` through the SDK; capture ABI observations and release counters
+- [x] 1.2.2 Compile with GCC and vbcc; run under `vamos` through the SDK; capture ABI observations and release counters ✅ (completed: 2026-09-18 11:54)
 - [ ] 1.2.3 Write the S2 decision note: ABI facts confirmed, any prototype change required
 
 **Deliverables**:

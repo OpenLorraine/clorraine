@@ -1,0 +1,5 @@
+spike-s2: widths BPTR=4 APTR=4 ClFile=4 ClLibrary=4
+spike-s2: struct-by-value pair_sum=7
+spike-s2: round-trip=ok
+spike-s2: acquisitions=4 releases=4
+spike-s2: all ok
