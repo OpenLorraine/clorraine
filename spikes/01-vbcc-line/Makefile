@@ -61,7 +61,9 @@ gcc:
 		$(GCC) -o $(GCC_BIN) $(SPIKE)/demo.c -lamiga && \
 		echo "== gdb: info line demo.clor:28 (GCC) ==" && \
 		m68k-amigaos-gdb --batch -ex "info line demo.clor:28" \
-			-ex "info line demo.clor:30" -ex "info sources" $(GCC_BIN)' 2>&1 \
+			-ex "info line demo.clor:30" -ex "info sources" $(GCC_BIN); \
+		echo "== GCC -DERR diagnostic ==" && \
+		($(GCC) -DERR -c -o /tmp/demo-err.o $(SPIKE)/demo.c || true)' 2>&1 \
 		| tee $(REPO)/$(RESULTS)/gcc-debug.txt
 
 probe: build gcc
