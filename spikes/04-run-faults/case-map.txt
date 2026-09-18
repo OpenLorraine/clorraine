@@ -1,0 +1,9 @@
+# Six-case mapping: the spec run case, the fixture case that reproduces it,
+# and the fault code each must produce.
+#
+# spec/tests/run/E11210_division_by_zero.clor   -> div_by_zero          E11210
+# spec/tests/run/E11210_min_neg_one.clor        -> min_neg_one          E11210
+# spec/tests/run/E11211_index_out_of_range.clor -> index_out_of_range   E11211
+# spec/tests/run/E11212_float_to_int_range.clor -> float_to_int_range   E11212
+# spec/tests/run/E11212_nan_float_to_int.clor   -> nan_float_to_int     E11212
+# spec/tests/run/E11213_assertion_failed.clor   -> assertion_failed     E11213

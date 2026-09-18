@@ -1,0 +1,8 @@
+# One fault case per line: <fixture-case> <fault-code> <message>
+# The first output line must be exactly "error <fault-code>: <message>".
+div_by_zero E11210 integer division by zero
+min_neg_one E11210 integer division by zero
+index_out_of_range E11211 index out of range
+float_to_int_range E11212 float-to-integer conversion out of range
+nan_float_to_int E11212 float-to-integer conversion out of range
+assertion_failed E11213 assertion failed
