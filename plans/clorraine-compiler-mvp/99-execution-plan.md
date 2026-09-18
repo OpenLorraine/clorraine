@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 12:03
-> **Progress**: 21/84 tasks (25%)
+> **Last Updated**: 2026-09-18 12:04
+> **Progress**: 22/84 tasks (26%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -183,7 +183,7 @@ proven first line and skipped ladder.
 **Reference**: 03-02 "Deliverables and Findings" · AR-31, AR-41
 **Objective**: consolidate the four spikes and obtain the user's ruling.
 
-- [ ] 1.5.1 Write `docs/findings-phase2.md` with one section per spike (goal, commands, raw output, decision, open questions)
+- [x] 1.5.1 Write `docs/findings-phase2.md` with one section per spike (goal, commands, raw output, decision, open questions) ✅ (completed: 2026-09-18 12:04)
 - [ ] 1.5.2 Present the findings to the user; record the ruling; any required specification amendment pauses codegen work
 
 **Deliverables**:

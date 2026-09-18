@@ -7,6 +7,36 @@ goal, the fixture, the exact commands, the raw output, the codegen rule it
 confirms or changes, and any open question that needs a specification ruling.
 The raw command transcripts live under each spike's `results/` directory.
 
+## Consolidated result
+
+| Spike | Verdict | Codegen rule it fixes |
+|---|---|---|
+| S1 `#line` | Diagnostics on both compilers name the mapped `.clor` line; GCC's DWARF is debuggable, vbcc's Hunk Debug is not decodable with the SDK tools | Always emit `#line`; record the vbcc debugging limitation |
+| S2 FFI ABI | ABI-typed prototypes build warning-free on GCC and vbcc, run under `vamos`, and balance their release counters | Emit ABI types (`BPTR`, `APTR`, `struct Library *`); include only type headers, not `proto/` headers; discard a `void` deleter's result |
+| S3 arithmetic | Host, GCC `-fwrapv`, and vbcc unsigned-idiom legs all match the hand-computed table | `-fwrapv` for GCC, the unsigned idiom for vbcc, masked shift counts, arithmetic vs logical `>>`, and the division guard |
+| S4 run faults | The shim contract is confirmed and five of six run cases trap on every leg; the NaN case is blocked by `vamos` | `cl_trap` prints `error CODE: message` first and aborts without the ladder; add `-lm` (GCC) and `-lmieee` (vbcc) for floats |
+
+Preflight items the spikes bear on:
+
+| Item | Severity | Status after the spikes |
+|---|---|---|
+| PF-002 | 🔴 | Resolved by S2; the checkpoint rules on the handle representation (see S2) |
+| PF-006 | 🟠 | Guard confirmed; S4's `min_neg_one` case traps E11210 |
+| PF-007 | 🟠 | The guard is confirmed on the host; the Amiga NaN verification is blocked by `vamos` (ruling requested) |
+| PF-008 | 🟠 | Resolved by S3 |
+| PF-020 | 🟠 | Run-case patterns and the corpus exist; the Amiga NaN leg is blocked (ruling requested) |
+| PF-042 | 🟡 | `#line` diagnostics confirmed; the debug-decoding limitation is requested for a ruling (see S1) |
+| PF-047 | 🟡 | Tied to the S2 handle-representation ruling |
+
+## Checkpoint decisions requested
+
+| # | From | Decision |
+|---|---|---|
+| D-1 | S1 | Keep Ch 17 section 11 as-is, or record that GCC is debuggable and vbcc debug output is not decodable with the SDK tools (recommended) |
+| D-2 | S2 | Emit an opaque `Cl<Name>` handle plus a boundary cast, or emit the ABI type directly (recommended, with PF-047) |
+| D-3 | S4 | Keep the `!(f >= lo && f <= hi)` NaN guard and mark the Amiga NaN leg environment-blocked, or add a shim `cl_isnan` bit test so the guard is platform-independent (recommended) |
+| D-4 | S4 | Add `-lm`/`-lmieee` to the Amiga float legs always (recommended) or only when a program uses floats |
+
 ---
 
 ## S1 - vbcc `#line` (PF-042)
