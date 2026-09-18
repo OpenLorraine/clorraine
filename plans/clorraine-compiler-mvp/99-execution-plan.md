@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 11:55
-> **Progress**: 13/84 tasks (15%)
+> **Last Updated**: 2026-09-18 11:56
+> **Progress**: 14/84 tasks (17%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -146,7 +146,7 @@ get the user's explicit acceptance before front-end work.
 **Reference**: 03-02 §S3 · PF-008 · P12, B7a
 **Objective**: fix the wrapping strategy for GCC (`-fwrapv`) and vbcc (unsigned idiom).
 
-- [ ] 1.3.1 Create `spikes/03-arithmetic/arith_gcc.c`, `arith_vbcc.c`, the expected table, and the Makefile per S3
+- [x] 1.3.1 Create `spikes/03-arithmetic/arith_gcc.c`, `arith_vbcc.c`, the expected table, and the Makefile per S3 ✅ (completed: 2026-09-18 11:56)
 - [ ] 1.3.2 Run the host and GCC/`-fwrapv` legs (plus the no-flag leg) and diff against the table
 - [ ] 1.3.3 Run the vbcc leg with the unsigned idiom and diff against the table
 - [ ] 1.3.4 Write the S3 decision note: the exact vbcc emission idiom (or proof none is needed)
