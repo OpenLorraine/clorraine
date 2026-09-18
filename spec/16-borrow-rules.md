@@ -90,10 +90,11 @@ func demo(): i32 {
 }
 ```
 
-A lend of a duplicable value binds a copy (V9, V5), so a write through a
-`borrow` parameter of a duplicable type affects that copy only. W10001 marks
-the needless lend; it is a warning, not an error (D9). The warning keeps
-generic code that spells `borrow T` valid for `T = u8`. A view lend is not a
+A lend of a duplicable value binds a copy (V9, V5). Writes through a `borrow`
+parameter of a duplicable type therefore affect that copy only, and W10001
+marks such a writable lend as needless; it is a warning, not an error (D9).
+Read-only lends of duplicables copy silently. The warning keeps generic code
+that spells `borrow T` valid for `T = u8`. A view lend is not a
 value lend: the view itself copies, but the storage it points into is shared,
 so a `borrow` view parameter and an element view (`for (borrow e in xs)`) write
 through to the owner.
@@ -206,7 +207,7 @@ Related access rules live in [Ch 03](03-ownership.md) and
 | A call-site marker that contradicts the declaration | E10039 |
 | An element loop over non-duplicable elements without `borrow` | E10040 |
 | Mutation, move, or reallocation of a `String` while a derived `str` view is live | E10031 / E10022 |
-| A lend of a duplicable value (needless lend) | W10001 (warning) |
+| A writable lend of a duplicable value (writes affect only the copy) | W10001 (warning) |
 
 ## 6. Checker pipeline
 
@@ -250,7 +251,7 @@ keeps compiling when the checker gains precision (lineage section 6).
 | Return a view of a local owner | rejected (E10035) |
 | Reborrow through a `borrow` parameter while calling a function | accepted (O12) |
 | An exclusive loan while a shared loan is live, even if unused later | rejected in v1 (E10032); accepted by v2 NLL |
-| Needless lend of a duplicable value | warning (W10001) |
+| Writable lend of a duplicable value | warning (W10001) |
 
 ```clorraine
 import { String, stringOf, bytes } from std.text;
@@ -280,13 +281,14 @@ func bad(): u8[] {
 ```clorraine
 struct Point { x: i32; y: i32; }
 
-func show(p: Point): i32 {
-    return p.x;
+func bump(borrow p: Point): void {
+    p.x = p.x + 1;
 }
 
 func demo(): i32 {
     let p = Point { x: 1, y: 2 };
-    return show(p);                 // W10001: Point is duplicable; a copy would do
+    bump(p);                        // W10001: the write lands on the copy
+    return p.x;                     // still 1
 }
 ```
 

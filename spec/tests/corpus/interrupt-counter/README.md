@@ -36,7 +36,7 @@ interrupt dispatcher boundary and shared interrupt state.
 | Warning | Why the program is clean |
 |---|---|
 | W10000 unused local | `token`, `i`, and `rc` are all read after assignment |
-| W10001 lend of a duplicable value | **Open question:** `removeHandler(token)` passes a duplicable struct to an unmarked lend parameter. The golden `W10001_needless_lend.clor` expects W10001 for exactly that shape (`show(p: Point)`), so this call is expected to warn unless the rule is narrowed or the signature changes. See the friction log. `addHandler(onTick)` passes a function value, not a place |
+| W10001 lend of a duplicable value | Clean under the amended rule: W10001 warns only on writable lends of duplicable values (writes affect only the copy). `removeHandler(token)` is an unmarked read-only lend, which copies silently; `addHandler(onTick)` passes a function value, not a place |
 | W10002 switch fallthrough | No `switch` in this program |
 | W10003 unreachable code | Every statement is reachable; the failure branch returns a nonzero code |
 | W10004 large stack frame | Scalars only |
@@ -52,17 +52,15 @@ is deliberately minimal: no allocation, no drop, no panic, no loan.
 
 ## Friction log
 
-1. **W10001 versus `removeHandler(t: HandlerToken)`.** The dispatcher token is a
-   duplicable struct and the standard-library signature takes it as an unmarked
-   read-only lend. The warning rule as demonstrated by the golden test fires on
-   that shape, so a zero-diagnostic corpus and the fixed signature cannot both
-   hold. Options: narrow W10001 to explicit `borrow`/`const` markers, change the
-   signature to `take`, or accept one warning for this call. Needs a ruling at
-   the phase checkpoint.
-2. **Function values and W10001.** A function type is duplicable (Ch 02 §8); if
-   the warning is implemented literally over duplicable types it could also
-   cover `addHandler(onTick)`. Functions are not places, so the program assumes
-   the warning targets places only.
+1. **W10001 versus `removeHandler(t: HandlerToken)` — resolved.** The
+   dispatcher token is a duplicable struct and the signature takes it as an
+   unmarked read-only lend; the original golden rule warned on that shape,
+   which contradicted the zero-diagnostic corpus. The checkpoint ruling of
+   2026-09-18 narrowed W10001 to writable lends of duplicable values, so this
+   call is clean. The spec text and the golden test were amended accordingly.
+2. **Function values and W10001.** A function type is duplicable (Ch 02 §8);
+   under the amended rule the warning targets writable lends of places, so
+   `addHandler(onTick)` is clean.
 3. **Execution leg.** The accepted run leg is FS-UAE with `RUN_CAPTURE=1`; if
    the handler cannot execute there, the documented fallback is a build-only
    leg plus a recorded finding.
@@ -70,7 +68,7 @@ is deliberately minimal: no allocation, no drop, no panic, no loan.
 ## Hand-check record
 
 Line-by-line review against the frozen specification completed on 2026-09-18.
-Every line maps to a rule in the coverage table. The W10001 item is the open
-question for this program's zero-diagnostic claim and needs a phase checkpoint
-ruling; the handler itself is clean (no allocation, no drop, no panic, no
-loan). No program text changed during the pass.
+Every line maps to a rule in the coverage table. The W10001 question was
+resolved at the checkpoint by narrowing the warning to writable lends; the
+handler itself is clean (no allocation, no drop, no panic, no loan). No
+program text changed during the pass.

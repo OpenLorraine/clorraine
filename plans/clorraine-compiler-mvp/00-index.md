@@ -72,6 +72,7 @@ challenger verdict of `Unnecessary` for the larger option.
 | 03-06 | [Code Generation](03-06-codegen.md) | C emitter, cleanup ladder, ABI, profiles, runtime shim, driver |
 | 03-07 | [Standard Library](03-07-stdlib.md) | Stdlib modules, signatures, shim API, layouts |
 | 07  | [Testing Strategy](07-testing-strategy.md) | Spec test cases (ST-\*) and verification |
+| 08  | [Phase 0 Review](08-phase0-review.md) | Independent corpus review findings and checkpoint rulings |
 | 99  | [Execution Plan](99-execution-plan.md) | Phases, steps, and the task checklist |
 
 ## Quick Reference

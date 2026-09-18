@@ -46,8 +46,8 @@ argument.
 * Scalars are copied at the call, whatever the mode (V5).
 * Writing through a read-only parameter is E10024.
 * A lend of a duplicable value binds a copy (V9); a write through a `borrow`
-  of a duplicable type affects that copy only. A needless lend warns as
-  W10001, not an error (D9).
+  of a duplicable type affects that copy only, so such a writable lend warns
+  as W10001, not an error (D9).
 
 ```clorraine
 struct Entity { name: String; x: i32; y: i32; }
@@ -343,4 +343,4 @@ intrinsic func readVolatile16(addr: raw u16): u16;
 | E20006 | An ordinary declaration of a reserved built-in name |
 | E90001 | `comptime` semantics are staged |
 | E90002 | Lambda captures are staged |
-| W10001 | Needless read-only borrow of a duplicable value |
+| W10001 | Writable lend of a duplicable value |

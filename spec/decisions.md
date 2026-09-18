@@ -29,7 +29,7 @@ surface decisions listed here.
 | D6 | No interior mutability (`Cell`/`RefCell`/locks in the language) |
 | D7 | No `Rc`/`Arc`/`Send`/`Sync`; the language is single-threaded |
 | D8 | Surface spellings differ from Rust (`func`; `const`/`borrow`/`take`; no `fn`/`&`/`&mut`) |
-| D9 | A read-only borrow of a duplicable type is **not** an error — it is a warning (needless borrow). Generic code needs `borrow T` to compile for `T = u8` |
+| D9 | A writable lend of a duplicable type affects only a copy, so it is **not** an error but a warning (W10001). Read-only lends of duplicables copy silently. Generic code needs `borrow T` to compile for `T = u8` |
 | A1-safety | Safety wording: memory safety is strong **above the hardware boundary**; below it (MMIO, interrupts, raw memory) access is audited `unsafe`. Standard-library wrappers shrink that surface over time |
 | Local rule IDs | The draft `OW-*`/`BR-*` rule IDs become an index for diagnostics and tests, not the source of truth |
 
@@ -253,7 +253,7 @@ through the cleanup ladder.
 | Tagged unions + `match` | Cancelled; C-style tagged structs + `switch` |
 | Owning text = `Buffer` | `String` / `str` / `cstring` |
 | `var` for mutable locals | `let` is mutable; `const` immutable |
-| Read-only borrow of copy types banned | Warning (needless borrow) |
+| Writable borrow of copy types banned | Warning (W10001: writes affect only the copy) |
 | `out` parameters | Rejected |
 | Local view expressions | None |
 | `nullable` keyword in contracts | `T?` type suffix |
@@ -308,7 +308,7 @@ the diagnostics registry follow them.
 | T6a | An explicit `raw`→integer value cast (for example `usize(p)`) is allowed outside `unsafe`; it reads the address as a number and performs no dereference. |
 | T2a | Core handle types declare their own FFI deleters instead of reusing the deleter of a differently-typed handle: `handle String freedBy FreeString;` with `func FreeString(take s: String): void;`, and `handle Buffer freedBy FreeBuffer;`. C-facing types keep the C symbols (`Memory`/`FreeVec`, `Library`/`CloseLibrary`, `File`/`Close`, `MsgPort`/`DeleteMsgPort`). This makes T2's shorthand type-correct under X1. |
 | T10a | Enums compare with `==` and `!=` only; ordering an enum is E10222. Members without an explicit value number sequentially from 0. |
-| V9a | A lend parameter instantiated with a duplicable type binds a copy (V5). Writes through a `borrow` parameter of a duplicable type affect that copy only, and W10001 marks the needless lend. Generic copy obligations are recorded and discharged at instantiation. |
+| V9a | A writable lend parameter instantiated with a duplicable type binds a copy (V5). Writes affect that copy only, and W10001 marks the needless writable lend; read-only lends of duplicables copy silently. Generic copy obligations are recorded and discharged at instantiation. |
 | X1a | The `freedBy` name is a qualified name resolved like any other declaration; the deleter is an FFI function taking `take T` and returning `void`. |
 | E112xx | Runtime fault codes live in the E112xx block next to the profile limits (`E11210` division by zero, `E11211` index out of range, `E11212` float-to-integer range, `E11213` assertion failure). They print the standard `error CODE: message` first line and abort (N8). |
 | N8a | New compile-time codes assigned in Phase C: definite assignment `E10021`, the index checks `E10216`/`E11211`, the float rules `E11212`, and the completeness codes `E10218`-`E10222`. `E10605` is retired before release; misplaced `volatile` is `E10208`. |

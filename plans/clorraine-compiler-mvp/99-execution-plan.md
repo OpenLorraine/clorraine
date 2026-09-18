@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 00:27
-> **Progress**: 6/84 tasks (7%)
+> **Last Updated**: 2026-09-18 09:09
+> **Progress**: 7/84 tasks (8%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -91,7 +91,7 @@ diagnostics are expected from the eventual compiler (AR-43).
 get the user's explicit acceptance before front-end work.
 
 - [x] 0.2.1 Run the full line-by-line hand-check; complete every coverage record and list all friction in the four READMEs ✅ (completed: 2026-09-18 00:23)
-- [~] 0.2.2 Present the corpus and friction list to the user; record the ruling (accept / revise). Any specification amendment requested by the friction pauses the phase ⏳ (implemented: 2026-09-18 00:27)
+- [x] 0.2.2 Present the corpus and friction list to the user; record the ruling (accept / revise). Any specification amendment requested by the friction pauses the phase ✅ (completed: 2026-09-18 09:09)
 
 **Deliverables**:
 - Completed coverage records

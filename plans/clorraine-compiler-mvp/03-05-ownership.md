@@ -123,9 +123,10 @@ Ch 12 owns the semantics; the checks are:
 
 ## Generics and Copy Obligations
 
-Generic bodies are checked once (Ch 06 §8). A lend parameter instantiated with
-a duplicable type binds a copy (V9a); writing through a `borrow` of a
-duplicable type affects the copy and warns W10001 (not an error, D9). Copy
+Generic bodies are checked once (Ch 06 §8). A writable lend parameter
+instantiated with a duplicable type binds a copy (V9a); writes affect the copy
+and the compiler warns W10001 (not an error, D9). Read-only lends copy
+silently. Copy
 obligations are recorded in the generic body and discharged at each
 instantiation; the error names the instantiation site, not the declaration.
 Monomorphization (dedupe, naming, recursion cap E10305) is finalized in

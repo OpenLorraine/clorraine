@@ -28,7 +28,7 @@ acceptance target for `str` scanning, enum dispatch, template formatting, and
 | Digit parsing `value * 10 + i32(input[j] - '0')` | wrapping arithmetic Ch 02 §10; explicit cast Ch 04 §14 |
 | `if` / early return classification | STMT-1, STMT-2 (Ch 05 §§5-6); F2 |
 | Template placeholders `{tokens}`, `{sum}`, `{hex}` | S1, S4, S5, TP-1..TP-4 (Ch 04 §12, Ch 08 §8) |
-| `toHex(u32(sum))` and `padLeft(..., 8, '0')` | appendix §5; T5 named conversions |
+| `toHex(u32(sum))` | appendix §5; T5 named conversions |
 | `let hex: String` from a helper; `String` widens to `str` | T2, T5 (Ch 08 §7) |
 | Temporaries drop at the end of their statement | D5, OW-13 (Ch 03 §5); Ch 04 §3 |
 | Drops: the `String` result and the second `String` temporary | O2: locals in reverse declaration order (Ch 03 §5) |
@@ -43,7 +43,7 @@ acceptance target for `str` scanning, enum dispatch, template formatting, and
 | W10003 unreachable code | The `default` case is reachable; every `return` is last on its path |
 | W10004 large stack frame | Scalars, views, and one `String` handle |
 | W10005 user contract table | No `ffi` block and no `--contracts` use |
-| W10006 unused import | `toHex`, `padLeft`, `String`, and `println` are all used; `text` and `toDecimal` are not imported |
+| W10006 unused import | `toHex`, `String`, and `println` are all used; `padLeft`, `text`, and `toDecimal` are not imported |
 
 ## Deliberately not used
 
@@ -61,15 +61,18 @@ templates, or library builds. The program uses `str` indexing rather than
    only `T[]`. The program sidesteps this by passing `(start, end)` indices to
    the classifier and parser. A `slice` form for `str` would make the natural
    tokenizer possible.
-2. **Unused required APIs.** The corpus contract lists `text` and `toDecimal`
-   among the required helpers, but the behavior is fully covered by templates
-   and `toHex`; importing them would trip W10006. They are not imported.
+2. **Unused required APIs.** The corpus contract originally listed `toDecimal`,
+   `padLeft`, and `text` among the required helpers; the checkpoint ruling
+   changed the hex line to call `toHex` directly (`hex=0x3A`) because the
+   frozen `toHex` already returns the `0x` prefix. The dropped helpers stay in
+   the stdlib slice without a dedicated corpus behavior.
 3. **Enum ordering.** Classification uses only `switch` and equality-compatible
    labels; ordering an enum is outside the program (E10222, EN-6).
 
 ## Hand-check record
 
 Line-by-line review against the frozen specification completed on 2026-09-18.
-Every line maps to a rule in the coverage table; the missing `str` slice and
-the unused required helpers are open for the phase checkpoint ruling. No
-program text changed during the pass.
+Every line maps to a rule in the coverage table. The checkpoint ruling of the
+same date changed the hex line to `toHex(u32(sum))` and the expected output to
+`hex=0x3A`; the missing `str` slice remains open and is recorded above. No
+other program text changed during the pass.

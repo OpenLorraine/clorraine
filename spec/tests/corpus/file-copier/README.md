@@ -77,10 +77,18 @@ ambiguous; the full list is reviewed at the phase checkpoint.
 4. **`bufferBytes` loan wording.** Ch 16 §3 calls the buffer view a writable
    reborrow, while the corpus hand-check notes call it a shared loan; the
    program relies on the writable reading (fill, then `readFile` into it).
+5. **Unused required APIs.** The corpus contract lists `bufferLen` and
+   `MODE_NEWFILE` as required for this program, but no behavior step needs
+   them; importing either would trip W10006. Neither is imported.
+6. **Reported byte counts.** The two success lines print the payload length
+   rather than an accumulated counter. On success the values are equal, and a
+   short copy fails verification and prints `file-copier: FAILED`, so the
+   byte-exact output is unaffected; the loop counters still drive the partial
+   IO logic.
 
 ## Hand-check record
 
 Line-by-line review against the frozen specification completed on 2026-09-18.
-Every line maps to a rule in the coverage table; the four friction items above
-are open for the phase checkpoint ruling. No authorization was found missing
-and no program text changed during the pass.
+Every line maps to a rule in the coverage table; the friction items above are
+recorded for the phase checkpoint. No authorization was found missing and no
+program text changed during the pass.

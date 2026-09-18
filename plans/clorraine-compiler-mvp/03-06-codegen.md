@@ -124,7 +124,7 @@ captures.
 | Warning | Produced by |
 |---|---|
 | W10000 unused local | resolve/ownership (scope end) |
-| W10001 needless lend of a duplicable value | ownership (V9a, D9) |
+| W10001 writable lend of a duplicable value | ownership (V9a, D9) |
 | W10002 switch case falls through | sema/parser (B5) |
 | W10003 unreachable statement | sema CFG |
 | W10004 stack frame above the profile threshold | codegen (sum of local sizes; threshold from the profile) |

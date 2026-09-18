@@ -172,8 +172,8 @@ digit parsing without library help.
 `if`/`else`; templates; `String`; `static str` widening; explicit conversions
 (`i32`, `u32`, `usize`).
 
-**Required stdlib APIs (03-07):** `std.fmt`: `toHex`, `toDecimal`, `padLeft`;
-`std.text`: `text`; `std.io`: `println`.
+**Required stdlib APIs (03-07):** `std.fmt`: `toHex`; `std.text`:
+`String`; `std.io`: `println`.
 
 **Behavior:**
 1. `const INPUT: static str = "MOV 12 34 ADD 5 7";`
@@ -182,19 +182,19 @@ digit parsing without library help.
 3. Count `tokens`, `numbers`, `words`.
 4. Print `string-parser: tokens=6 numbers=4 words=2`, then
    `string-parser: sum=58`, then
-   `string-parser: hex=0x00003A` using
-   `padLeft(toHex(u32(sum)), 8, '0')`, then `string-parser: ok`; return 0.
+   `string-parser: hex=0x3A` using `toHex(u32(sum))`, then
+   `string-parser: ok`; return 0.
 
 **Expected output (`expected-output.txt`):**
 ```
 string-parser: tokens=6 numbers=4 words=2
 string-parser: sum=58
-string-parser: hex=0x00003A
+string-parser: hex=0x3A
 string-parser: ok
 ```
 
-**Hand-check focus:** `toHex`/`padLeft` produce owned `String`s that widen to
-`str` for `println` and drop at statement end (D5, T5); `switch` cases end in
+**Hand-check focus:** `toHex` produces an owned `String` that widens to `str`
+for `println` and drops at statement end (D5, T5); `switch` cases end in
 `break` so the program is `W10002`-clean; indexing is bounds-checked (IX-1);
 the `enum` has an integer backing type (EN-1) and is compared/selected without
 ordering (T10a).

@@ -2,7 +2,7 @@
 // a word, sums the numbers without library help, and formats the result.
 module tests.corpus.StringParser;
 
-import { toHex, padLeft } from std.fmt;
+import { toHex } from std.fmt;
 import { String } from std.text;
 import { println } from std.io;
 
@@ -78,7 +78,7 @@ func main(): i32 {
 
     println($"string-parser: tokens={tokens} numbers={numbers} words={words}");
     println($"string-parser: sum={sum}");
-    let hex: String = padLeft(toHex(u32(sum)), 8, '0');
+    let hex: String = toHex(u32(sum));
     println($"string-parser: hex={hex}");
     println("string-parser: ok");
     return 0;

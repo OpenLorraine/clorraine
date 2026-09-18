@@ -64,8 +64,9 @@ be read, copied when duplicable, and lent read-only; assigning to it is E10023,
 and moving out of it or taking a writable lend of it is an error (V3).
 Assigning through a read-only parameter is E10024; declare the parameter
 `borrow` to write through it. A lend of a duplicable value binds a copy (V9);
-a needless lend warns as W10001 instead of erroring (D9), and a `const` marker
-on a copy type has no effect and is likewise a warning (V4). The copy rule
+a writable lend of a duplicable value warns as W10001 instead of erroring
+(D9), and a `const` marker on a copy type has no effect and is likewise
+tolerated as a warning (V4; no dedicated registry code in v1). The copy rule
 covers value lends: a view lend (`T[]`, `str`, `cstring`) copies only the view
 (pointer and length), and the storage it points into is shared, so writes
 through a writable view reach the owner. The same holds for the per-element
@@ -240,7 +241,7 @@ release a value and never change ownership.
 | A view return must derive from exactly one view-like lend parameter | E10036 |
 | A global may not be borrowed | E10038 |
 | A writable view may not derive from a read-only borrow | E10041 |
-| A needless lend of a duplicable value is a warning, not an error | W10001 |
+| A writable lend of a duplicable value is a warning, not an error | W10001 |
 
 The shape is many readers XOR one writer. Field borrows are allowed and tracked
 conservatively as whole-struct loans (O8). **Reborrowing views** (O12): a

@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 53 items resolved (AR-1..AR-53)
-> **Last Updated**: 2026-09-18 00:14
+> **Status**: ✅ GATE PASSED — all 55 items resolved (AR-1..AR-55; AR-54/AR-55 added during execution)
+> **Last Updated**: 2026-09-18 09:05
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -89,6 +89,16 @@ were written (surface-during-authoring rule).
 | AR-52 | Naming | The appendix uses both `module Std.Mem;` and `import ... from std.mem;`; identifiers are case-sensitive | Stdlib modules declare lowercase dotted names (`module std.mem;`), matching every import example. The appendix's `Std.Mem` line is a known editorial defect; correcting the spec text needs a separate ruling (AR-31) | ✅ Resolved — user accepted recommendation |
 | AR-53 | Interface | Appendix §1 says allocation returns `T?`; appendix §5/§9 list builders as returning plain `String` | Low-level allocators return nullable (`bufferNew: Buffer?`, `bufferFrom: Buffer?`); convenience builders (`text`, `toHex`, `toDecimal`, `padLeft`, `padRight`, `stringOf`, `clone`) return `String` and panic on OOM (E1). Template builders panic on OOM inside the shim | ✅ Resolved — user accepted recommendation |
 
+## Batch 4 — runtime items (execution checkpoint, 2026-09-18)
+
+Surfaced by the Phase 0 corpus hand-check and the independent phase review;
+resolved at the 0.2.2 checkpoint before any compiler work.
+
+| # | Category | Ambiguity / Gap | Accepted resolution | Status |
+|---|----------|-----------------|---------------------|--------|
+| AR-54 | Technical (runtime) | The corpus contract asked `string-parser` to print `hex=0x00003A` via `padLeft(toHex(u32(sum)), 8, '0')`, but the frozen `toHex` already returns the `0x` prefix, so the expression yields `00000x3A` | The program prints `hex=0x3A` via `toHex(u32(sum))`; `padLeft` stays in the stdlib surface without a dedicated corpus behavior. Plan 03-01 and the expected output were amended; no specification change | ✅ Resolved — user chose option A |
+| AR-55 | Behavioral (runtime, specification amendment) | `removeHandler(t: HandlerToken)` passes a duplicable struct to an unmarked read-only lend, which the original W10001 rule (golden `W10001_needless_lend.clor`) made a warning, contradicting the zero-diagnostic corpus contract (AR-43) | W10001 is narrowed to **writable** lends of duplicable values (writes affect only the copy); read-only lends copy silently. Amended: Ch 03, Ch 06, Ch 14 registry, Ch 16 §2/§5/§7, ledger D9, the lineage D9 row, and the `W10001_needless_lend.clor` golden. The corpus compiles clean | ✅ Resolved — user chose option A (spec amendment approved) |
+
 ## Complexity Escalation packet (AR-24)
 
 ```text
@@ -120,6 +130,10 @@ Direct user decision: chose the smaller solution A (2026-09-18).
   items, surfaced before any plan document was written).
 - AR-49..AR-53: resolved by the user's answers on 2026-09-18 (authoring-time
   items, surfaced while writing 03-05/03-07, before the dependent text).
+- AR-54..AR-55: runtime items surfaced by the Phase 0 corpus hand-check and
+  the independent phase review, adjudicated by the user on 2026-09-18 at the
+  0.2.2 checkpoint. AR-55 approved a specification amendment; the amended
+  sentence set and the fix batch are recorded in `08-phase0-review.md`.
 - AR-20 clarification (2026-09-18, post-gate user scope statement): the
   compiler is host-only; a compiler running on AmigaOS/LorraineOS and a
   self-hosted compiler are explicitly out of scope. Rust remains the

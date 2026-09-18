@@ -211,7 +211,7 @@ semantic stage reports the code.
 | Code | Trigger | First line (after the code) |
 |---|---|---|
 | W10000 | Local declared and never used | `unused local '{name}'` |
-| W10001 | Lend of a duplicable value, which binds a copy anyway | `unnecessary lend of duplicable '{name}'` |
+| W10001 | Writable lend of a duplicable value; writes affect only the copy | `unnecessary lend of duplicable '{name}'` |
 | W10002 | `switch` case body falls through | `case falls through to the next label` |
 | W10003 | Statement is unreachable | `unreachable code` |
 | W10004 | Stack frame exceeds the profile threshold | `stack frame of '{fn}' is {size} bytes` |

@@ -133,7 +133,7 @@ deviation is a design choice, not a bug to fix later.
 | D6 | `Cell`/`RefCell`/locks | No interior mutability | Keeps aliasing rules simple |
 | D7 | `Rc`/`Arc`, `Send`/`Sync` | Absent; single-threaded | Matches the OS task model through FFI (C1) |
 | D8 | `fn`, `&`, `&mut` spellings | `func`, `const`, `borrow`, `take` | C-like surface identity |
-| D9 | `&` on a copy type is normal | Read-only borrow of a duplicable type warns (needless borrow) | Generic code must compile for `T = u8` |
+| D9 | `&` on a copy type is normal | Read-only lends of duplicables copy silently; a writable lend warns W10001 because writes affect only the copy | Generic code must compile for `T = u8` |
 | F2 | `&T`/`&mut T` return types | View returns only; aggregate views deferred | Views come from view types and elision |
 
 ## 9. Resolution rule
