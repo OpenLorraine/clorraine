@@ -1,7 +1,7 @@
 # Phase 2 spike findings - codegen strategy
 
-Status: in progress. S1 and S2 recorded; S3-S4 pending. Consolidated at the
-Phase 1 checkpoint.
+Status: in progress. S1-S3 recorded; S4 pending. Consolidated at the Phase 1
+checkpoint.
 
 This document records the four accepted Phase 2 spikes. Each section states the
 goal, the fixture, the exact commands, the raw output, the codegen rule it
@@ -145,3 +145,66 @@ Recommendation: **B**. On m68k both are 32-bit and the cast is a no-op, so B
 produces less code and removes a conversion the checker would otherwise have to
 track. It requires a small Ch 17 section 3/7 wording change, so it waits for the
 checkpoint ruling together with PF-047.
+
+---
+
+## S3 - arithmetic wrapping and shifts (PF-008)
+
+**Goal:** fix the wrapping strategy for both compilers (P12, Ch 17 section 10):
+GCC takes `-fwrapv`; vbcc receives the unsigned idiom.
+
+**Fixture:** one shared case table,
+[`spikes/03-arithmetic/arith_cases.h`](../spikes/03-arithmetic/arith_cases.h),
+driven by two entry points: `arith_gcc.c` (host and GCC) and `arith_vbcc.c`
+(vbcc, with `-DVBCC_IDIOM` selecting the unsigned +, -, *, and unary - forms).
+The table covers the signed extremes, `MIN / -1` and divide-by-zero behind the
+emitted guard, and shift counts 0, 15, 31, 32, 33, and -1 for signed and
+unsigned right shifts. The hand-computed reference is
+[`spikes/03-arithmetic/expected.txt`](../spikes/03-arithmetic/expected.txt).
+Makefile: [`spikes/03-arithmetic/Makefile`](../spikes/03-arithmetic/Makefile).
+
+**Commands** (exact legs):
+
+| Leg | Command |
+|---|---|
+| host | `cc -std=c99 -fwrapv -O2 -Wall -Wextra -Werror arith_gcc.c` |
+| GCC | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -O2 -fwrapv ... arith_gcc.c -lamiga`, run under `vamos` |
+| GCC no-flag | the same without `-fwrapv` (recorded, not normative) |
+| vbcc | `vc +aos68k -c99 -O2 -cpu=68000 ... -DVBCC_IDIOM arith_vbcc.c -lamiga`, run under `vamos` |
+| vbcc plain | the same without the idiom (recorded, not normative) |
+
+Raw output: `spikes/03-arithmetic/results/{host,gcc,gcc-nowrapv,vbcc,vbcc-plain}.txt`
+and the recorded diffs.
+
+**Observed:**
+
+| Leg | Result |
+|---|---|
+| host `-fwrapv` | matches the expected table exactly |
+| GCC `-fwrapv` | matches exactly |
+| vbcc with the unsigned idiom | matches exactly |
+| GCC without `-fwrapv` | also matches at `-O2`; the recorded diff is empty |
+| vbcc without the idiom | also matches at `-O2`; the recorded diff is empty |
+| shifts | masked counts and sign-replicating signed `>>` agree on every leg |
+| division guard | the `MIN / -1` and divide-by-zero cases return the sentinel; no undefined operation executes |
+
+**Decision / rule:**
+
+* The emission strategy of Ch 17 section 10 is **confirmed**: GCC legs carry
+  `-fwrapv`, and vbcc receives `+`, `-`, `*`, and unary `-` on the unsigned
+  counterpart, converted back to the signed type. The exact idiom is the
+  `WRAP_ADD` / `WRAP_SUB` / `WRAP_MUL` / `WRAP_NEG` macros in
+  `spikes/03-arithmetic/arith_cases.h`.
+* Shift emission is confirmed: mask the count with `& 31`, shift the unsigned
+  value for `<<` and logical `>>`, and keep the signed value for arithmetic
+  `>>`.
+* `/` and `%` stay behind `d == 0 || (a == MIN && d == -1)`; `/` and `%` then
+  execute directly.
+* At `-O2` both compilers happened to produce the wrapped results even without
+  the flag or idiom. That is a coincidence of this optimizer setting: signed
+  overflow is undefined behavior, so `-fwrapv` and the idiom remain normative
+  and are what the emitter must produce.
+
+**Open question:** none. The spike confirms the rules already written in
+Ch 17 section 10, so no specification ruling is needed and PF-008 can close at
+the checkpoint.
