@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 09:09
-> **Progress**: 7/84 tasks (8%)
+> **Last Updated**: 2026-09-18 11:48
+> **Progress**: 8/84 tasks (10%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -103,14 +103,16 @@ get the user's explicit acceptance before front-end work.
 
 ## Phase 1: Accepted Phase 2 Spikes
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: b6a74c7a7263eaab0f068c5843303710a12ccd64
+> **Expected modification set**: `spikes/**`, `docs/findings-phase2.md`, `plans/clorraine-compiler-mvp/99-execution-plan.md`
+> **Scope mode**: strict
 
 ### Step 1.1: Spike S1 — vbcc `#line`
 
 **Reference**: [03-02-spikes.md](03-02-spikes.md) §S1 · AR-8, AR-41 · PF-042
 **Objective**: measure how far vbcc honors `#line` before the emitter relies on it.
 
-- [ ] 1.1.1 Create `spikes/01-vbcc-line/demo.c` and its Makefile per S1
+- [x] 1.1.1 Create `spikes/01-vbcc-line/demo.c` and its Makefile per S1 ✅ (completed: 2026-09-18 11:48)
 - [ ] 1.1.2 Run the vbcc compile, the decoded-line-table inspection, and the `-DERR` diagnostic check; capture raw output
 - [ ] 1.1.3 Write the S1 decision note: the confirmed or refuted `#line` behavior and any required spec ruling request
 
