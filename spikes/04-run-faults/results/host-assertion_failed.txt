@@ -1,0 +1,2 @@
+error E11213: assertion failed
+Aborted (core dumped)
