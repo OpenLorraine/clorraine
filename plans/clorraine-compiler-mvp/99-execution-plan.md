@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 11:54
-> **Progress**: 12/84 tasks (14%)
+> **Last Updated**: 2026-09-18 11:55
+> **Progress**: 13/84 tasks (15%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -131,7 +131,7 @@ get the user's explicit acceptance before front-end work.
 
 - [x] 1.2.1 Create `spikes/02-ffi-abi/ffi_abi.c` and Makefile per S2 ✅ (completed: 2026-09-18 11:53)
 - [x] 1.2.2 Compile with GCC and vbcc; run under `vamos` through the SDK; capture ABI observations and release counters ✅ (completed: 2026-09-18 11:54)
-- [ ] 1.2.3 Write the S2 decision note: ABI facts confirmed, any prototype change required
+- [x] 1.2.3 Write the S2 decision note: ABI facts confirmed, any prototype change required ✅ (completed: 2026-09-18 11:55)
 
 **Deliverables**:
 - S2 fixture and raw results
