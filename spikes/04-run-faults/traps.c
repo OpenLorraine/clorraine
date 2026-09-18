@@ -119,8 +119,13 @@ int main(int argc, char **argv)
         volatile f64 big = 3.0e9;
         printf("result %ld\n", (long)guarded_float_to_int(big));
     } else if (strcmp(argv[1], "nan_float_to_int") == 0) {
-        volatile f64 zero = 0.0;
-        volatile f64 nan = zero / zero;
+        /*
+         * Two distinct volatile zeros keep a compiler from folding 0.0/0.0 to
+         * 1.0; IEEE division then yields a quiet NaN on every leg.
+         */
+        volatile f64 zero_a = 0.0;
+        volatile f64 zero_b = 0.0;
+        volatile f64 nan = zero_a / zero_b;
         printf("result %ld\n", (long)guarded_float_to_int(nan));
     } else if (strcmp(argv[1], "assertion_failed") == 0) {
         volatile int cond = 0;

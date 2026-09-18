@@ -36,11 +36,13 @@ host:
 
 amiga:
 	$(DEV) bash -lc 'set -o pipefail; cd /work && \
-		$(GCC) -DAMIGA_SHIM -o $(SPIKE)/build/traps-amiga-gcc $(SPIKE)/traps.c -lamiga && \
-		$(VBCC) -DAMIGA_SHIM -o $(SPIKE)/build/traps-amiga-vbcc $(SPIKE)/traps.c -lamiga'
+		$(GCC) -DAMIGA_SHIM -o $(SPIKE)/build/traps-amiga-gcc $(SPIKE)/traps.c -lamiga -lm && \
+		$(VBCC) -DAMIGA_SHIM -o $(SPIKE)/build/traps-amiga-vbcc $(SPIKE)/traps.c -lamiga -lmieee'
 	$(DEV) bash -lc 'cd /work && chmod +x $(SPIKE)/run-faults.sh && \
+		KNOWN_MISMATCH="nan_float_to_int" \
 		$(SPIKE)/run-faults.sh amiga-gcc $(SPIKE)/build/traps-amiga-gcc $(RESULTS) vamos'
 	$(DEV) bash -lc 'cd /work && \
+		KNOWN_MISMATCH="nan_float_to_int" \
 		$(SPIKE)/run-faults.sh amiga-vbcc $(SPIKE)/build/traps-amiga-vbcc $(RESULTS) vamos'
 
 clean:

@@ -1,0 +1,1 @@
+error E11210: integer division by zero

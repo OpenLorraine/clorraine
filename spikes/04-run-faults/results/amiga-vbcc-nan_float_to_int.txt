@@ -1,0 +1,38 @@
+Traceback (most recent call last):
+  File "/opt/amitools/bin/vamos", line 6, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/tools/vamos.py", line 34, in main
+    ret_code = vmain(cfg_files, args=args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/main.py", line 141, in main
+    exit_code = mode.run(mode_ctx)
+                ^^^^^^^^^^^^^^^^^^
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/mode/base.py", line 27, in run
+    ctx.scheduler.schedule()
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/schedule/scheduler.py", line 167, in schedule
+    task.switch()
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/schedule/task.py", line 206, in switch
+    self.glet.switch()
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/schedule/task.py", line 254, in start
+    self.run_state = self.runtime.start(self.code)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/machine/runtime.py", line 107, in start
+    run_state.regs = self._run_loop(run_state, code.set_regs, code.get_regs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/machine/runtime.py", line 211, in _run_loop
+    er = self.machine.execute(run_cycles)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/machine/machine.py", line 414, in execute
+    er = self.raw_machine.execute(max_cycles)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "src/mach.pyx", line 169, in machine68k.Machine.execute
+  File "src/mach.pyx", line 143, in machine68k.Machine.execute
+  File "src/pytraps.pyx", line 59, in machine68k.Traps.call
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/libcore/stub.py", line 302, in base_func
+    result_value = method(ctx)
+                   ^^^^^^^^^^^
+  File "/opt/amitools/lib/python3.11/site-packages/amitools/vamos/lib/MathIEEEDoubBasLibrary.py", line 15, in IEEEDPFix
+    res = int(arg)
+          ^^^^^^^^
+ValueError: cannot convert float NaN to integer

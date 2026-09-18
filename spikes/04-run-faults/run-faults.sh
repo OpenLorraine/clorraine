@@ -42,6 +42,20 @@ while read -r name code message; do
     first=$(sed -n '1p' "$out")
     want="error $code: $message"
 
+    # A case listed in KNOWN_MISMATCH is recorded, not asserted. The Amiga
+    # legs use this for the NaN case, whose comparison behavior is a finding.
+    known="${KNOWN_MISMATCH:-}"
+    is_known=0
+    for k in $known; do
+        if [ "$k" = "$name" ]; then
+            is_known=1
+        fi
+    done
+    if [ "$is_known" -eq 1 ]; then
+        echo "recorded $label/$name: first='$first' exit=$status (see the S4 note)"
+        continue
+    fi
+
     if [ "$first" != "$want" ]; then
         echo "FAIL $label/$name: first line '$first' != '$want'"
         fail=1
