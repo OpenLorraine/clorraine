@@ -31,6 +31,7 @@ pub const MODULES: &[StdlibModule] = &[
             "bufferFrom",
             "bufferBytes",
             "bufferLen",
+            "slice",
             "spanOf",
             "spanBytes",
             "Array",
@@ -111,5 +112,52 @@ mod tests {
         let count = names.len();
         names.dedup();
         assert_eq!(names.len(), count);
+    }
+
+    #[test]
+    fn every_corpus_import_is_exported() {
+        let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/tests/corpus");
+        let mut checked = 0;
+        for entry in std::fs::read_dir(&corpus).expect("corpus directory") {
+            let program = entry.expect("corpus entry").path().join("program.clo");
+            let text = std::fs::read_to_string(&program)
+                .unwrap_or_else(|error| panic!("cannot read {}: {error}", program.display()));
+            for (module, name) in corpus_imports(&text) {
+                assert!(
+                    exports(&module, &name),
+                    "the corpus imports '{name}' from '{module}', but the table does not export it"
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "no corpus imports were found to check");
+    }
+
+    /// Reads the `import { ... } from A.B;` lines of one program.
+    fn corpus_imports(text: &str) -> Vec<(String, String)> {
+        let mut imports = Vec::new();
+        for line in text.lines() {
+            let line = line.trim();
+            let Some(rest) = line.strip_prefix("import") else {
+                continue;
+            };
+            let Some(rest) = rest.trim().strip_prefix('{') else {
+                continue;
+            };
+            let Some((names, tail)) = rest.split_once('}') else {
+                continue;
+            };
+            let Some(module) = tail.trim().strip_prefix("from") else {
+                continue;
+            };
+            let module = module.trim().trim_end_matches(';').trim();
+            for name in names.split(',') {
+                let name = name.split_whitespace().next().unwrap_or("");
+                if !name.is_empty() {
+                    imports.push((module.to_owned(), name.to_owned()));
+                }
+            }
+        }
+        imports
     }
 }

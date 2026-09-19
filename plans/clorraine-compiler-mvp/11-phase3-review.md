@@ -1,0 +1,45 @@
+# Phase 3 Review: Name Resolution and Modules
+
+> **Document**: 11-phase3-review.md
+> **Parent**: [Index](00-index.md)
+> **Date**: 2026-09-19
+> **Scope mode**: strict
+
+## What was reviewed
+
+The complete Phase 3 diff from the phase baseline tree
+(`fe1717c242353ac381e2e302265551580371054f`) through task 3.3.3: the new
+`load` module (module table, merged modules, import bindings, the identifier
+scan), the `stdlib` export table, the new `resolve` module, the parser's
+misplaced-module record, the driver wiring, and the new spec and implementation
+tests. Reviewer: an independent phase-review subagent carrying the
+correctness, maintainability, and standards lenses, running `make check` and
+exercising the built binary on adversarial inputs.
+
+## Findings and rulings
+
+| ID | Severity | Finding | Ruling (user, 2026-09-19) |
+|---|---|---|---|
+| RV-102 | 🔴 CRITICAL | The stdlib table omitted `std.mem.slice`, so the corpus `file-copier` program would fail with a false `E11102` | Fix: add `slice` to the table and pin the whole corpus import set against it |
+| RV-103 | 🟠 MAJOR | Names inside an `ffi` block were never module declarations, so `handle T freedBy F` and direct ffi calls reported a false `E10219` | Fix: register each ffi signature name as an unexported declaration and include them in the duplicate check |
+| RV-104 | 🟡 MINOR | The unused-import scan skipped ffi signatures, and it is scope-blind | Fix: scan ffi signatures and handle `freedBy` names; document the deliberate conservative scope-blindness |
+| RV-105 | 🟡 MINOR | A module could not reach its own private declaration by full name (`app.helper()` inside `app`) | Fix: own-module qualified access accepts any declaration; only other modules require `export` |
+| RV-106 | 🟡 MINOR | The `E11104`/`E11105` help text differed from the Ch 14 registry | Fix: use the registered help strings |
+| RV-107 | 🟡 MINOR | No test pinned alias imports or the stdlib export surface | Fix: add an alias-import test and a corpus-import surface test |
+| RV-108 | 🟡 MINOR | `resolve()` returns no resolved symbol graph | Defer (user ruling): no consumer exists yet; the type layer will add annotations when it needs them. The deferral is recorded in the execution plan at task 3.2.2 |
+| RV-109 | 🟡 MINOR | `E11104` could cascade when the declaration holding `main` was dropped by an earlier error | Fix: skip the entry-point check when any error was already reported |
+
+## Fix evidence
+
+- `make check` green: spec check OK (27 files, 101 compile-fail tests), 76
+  unit tests, 2 compile-fail driver tests, 8 stage driver tests.
+- New tests: ffi signature and deleter resolution, ffi names in the duplicate
+  check, own-module qualified access, alias imports, an import used only in an
+  ffi signature, entry-point poisoning suppression, and the corpus-import
+  surface check (which is what would have caught RV-102).
+- Size standard: `resolve.rs` was split into `resolve/mod.rs` plus
+  `resolve/tests.rs`; every source file is again under the threshold.
+
+## Re-review of the fix diff
+
+_(recorded after the single scoped re-review)_

@@ -176,7 +176,12 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
     }
 
     let loaded = Loaded { modules };
-    check_entry_point(&loaded, diagnostics);
+    if diagnostics.error_count() == 0 {
+        // A dropped declaration may have held the entry point, and the entry
+        // point is dependent on the module structure being sound, so an
+        // already-reported error suppresses this check.
+        check_entry_point(&loaded, diagnostics);
+    }
     loaded
 }
 
@@ -196,7 +201,7 @@ fn file_module(file: FileId, program: &Program, diagnostics: &mut Diagnostics) -
                 "'module' must be the first declaration in the file",
                 misplaced.span,
             )
-            .with_help("move the module declaration to the top of the file"),
+            .with_help("move the module declaration to the top"),
         );
         if name.is_empty() {
             name = misplaced.name.to_dotted();
@@ -209,34 +214,54 @@ fn file_module(file: FileId, program: &Program, diagnostics: &mut Diagnostics) -
                 "'module' must be the first declaration in the file",
                 Span::new(file, 0, 0),
             )
-            .with_help("start the file with `module A.B;`"),
+            .with_help("move the module declaration to the top"),
         );
         return None;
     }
     Some(name)
 }
 
-/// Describes one top-level item's declaration, if it declares a name.
-fn declaration_of(item: &Item) -> Option<Decl> {
+/// Describes the module-level declarations one top-level item introduces.
+///
+/// An `ffi` block introduces its own name and one declaration per signature
+/// inside it: the C functions resolve globally within the module, so a
+/// `handle T freedBy F` may name a deleter declared in any block, in any order.
+fn declarations_of(item: &Item) -> Vec<Decl> {
     let (kind, name, name_span, exported) = match item {
         Item::Func(decl) => (DeclKind::Func, &decl.name, decl.name_span, decl.exported),
         Item::Comptime(decl) => (DeclKind::Func, &decl.name, decl.name_span, decl.exported),
         Item::Struct(decl) => (DeclKind::Struct, &decl.name, decl.name_span, decl.exported),
         Item::Enum(decl) => (DeclKind::Enum, &decl.name, decl.name_span, decl.exported),
         Item::Handle(decl) => (DeclKind::Handle, &decl.name, decl.name_span, decl.exported),
-        Item::Ffi(block) => (DeclKind::Ffi, &block.name, block.name_span, false),
+        Item::Ffi(block) => {
+            let mut decls = vec![Decl {
+                kind: DeclKind::Ffi,
+                name: block.name.clone(),
+                name_span: block.name_span,
+                exported: false,
+            }];
+            for signature in &block.decls {
+                decls.push(Decl {
+                    kind: DeclKind::Ffi,
+                    name: signature.name.clone(),
+                    name_span: signature.name_span,
+                    exported: false,
+                });
+            }
+            return decls;
+        }
         Item::Intrinsic(signature) => {
             (DeclKind::Intrinsic, &signature.name, signature.name_span, false)
         }
         Item::GlobalLet(decl) => (DeclKind::Global, &decl.name, decl.name_span, decl.exported),
         Item::GlobalConst(decl) => (DeclKind::Const, &decl.name, decl.name_span, decl.exported),
     };
-    Some(Decl {
+    vec![Decl {
         kind,
         name: name.clone(),
         name_span,
         exported,
-    })
+    }]
 }
 
 /// Collects a module's declarations and reports duplicate names.
@@ -249,10 +274,7 @@ fn collect_declarations(
     diagnostics: &mut Diagnostics,
 ) -> BTreeMap<String, Decl> {
     let mut decls: BTreeMap<String, Decl> = BTreeMap::new();
-    for item in items {
-        let Some(decl) = declaration_of(item) else {
-            continue;
-        };
+    for decl in items.iter().flat_map(declarations_of) {
         if decls.contains_key(&decl.name) {
             diagnostics.push(
                 Diagnostic::error(
@@ -359,7 +381,7 @@ fn check_entry_point(loaded: &Loaded, diagnostics: &mut Diagnostics) {
             "executable builds need exactly one 'func main(): i32'",
             span,
         )
-        .with_help("declare `func main(): i32` and remove other entry points"),
+        .with_help("declare or fix `main`"),
     );
 }
 #[cfg(test)]
@@ -495,5 +517,32 @@ mod tests {
             "module b;\nfunc main(): i32 { return 0; }\n",
         ]);
         assert_eq!(errors(&two_mains), ["E11104"]);
+    }
+
+    #[test]
+    fn ffi_signatures_are_module_declarations() {
+        let (_, codes) = compile(&[r#"
+module app;
+
+ffi lib {
+    func CloseFile(value: i32): void;
+}
+
+func CloseFile(value: i32): void {}
+
+func main(): i32 {
+    return 0;
+}
+"#]);
+        assert_eq!(errors(&codes), ["E11101"]);
+    }
+
+    #[test]
+    fn entry_point_check_is_suppressed_by_earlier_errors() {
+        let (_, codes) = compile(&[
+            "func main(): i32 { return 0; }\n",
+            "module dep;\nfunc other(): i32 { return 1; }\n",
+        ]);
+        assert_eq!(errors(&codes), ["E11105"]);
     }
 }

@@ -5,6 +5,11 @@
 //! expression, and statement for that answer. It deliberately ignores dotted
 //! names (qualified access works without an import) and member names after `.`
 //! (those belong to the type layer), so neither marks an import as used.
+//!
+//! The scan is conservative in one direction: it does not track scopes, so a
+//! mention anywhere marks the import used even when that mention resolves to a
+//! module declaration instead. That can miss an unused-import warning, but it
+//! never reports one for an import the code really uses.
 
 use std::collections::BTreeSet;
 
@@ -39,7 +44,19 @@ pub(super) fn collect_name_mentions(items: &[Item]) -> BTreeSet<String> {
                     }
                 }
             }
-            Item::Handle(_) | Item::Ffi(_) => {}
+            Item::Handle(decl) => {
+                if let [only] = decl.freed_by.segments.as_slice() {
+                    names.insert(only.clone());
+                }
+            }
+            Item::Ffi(block) => {
+                for signature in &block.decls {
+                    for param in &signature.params {
+                        mention_type(&param.ty, &mut names);
+                    }
+                    mention_type(&signature.returns, &mut names);
+                }
+            }
             Item::Intrinsic(signature) => {
                 for param in &signature.params {
                     mention_type(&param.ty, &mut names);

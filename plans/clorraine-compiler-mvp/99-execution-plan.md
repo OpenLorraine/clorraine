@@ -260,7 +260,7 @@ compiler logic.
 ## Phase 3: Name Resolution and Modules
 
 > **Phase baseline tree**: fe1717c242353ac381e2e302265551580371054f
-> **Expected modification set**: `compiler/**`, `plans/clorraine-compiler-mvp/99-execution-plan.md`, `plans/00-roadmap.md`
+> **Expected modification set**: `compiler/**`, `plans/clorraine-compiler-mvp/99-execution-plan.md`, `plans/00-roadmap.md`, and the post-phase review files `plans/clorraine-compiler-mvp/{00-index.md,11-phase3-review.md}`
 > **Scope mode**: strict
 
 ### Step 3.1: Specification tests first
@@ -303,6 +303,8 @@ compiler logic.
 - Implementation tests
 
 **Verify**: `make check`.
+
+**Post-phase review**: `11-phase3-review.md` — the independent reviewer found RV-102..RV-109 (one critical: the stdlib table missed `std.mem.slice`; one major: `ffi` inner names were not declarations). The user ruled to fix every finding except RV-108 (the resolved symbol graph), which stays deferred to the type layer. All accepted fixes are implemented with tests and verified by `make check` (76 unit tests, 2 compile-fail driver tests, 8 stage driver tests).
 
 ---
 
