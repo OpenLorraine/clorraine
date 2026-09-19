@@ -23,7 +23,7 @@ struct Options {
     deny_warnings: bool,
     /// Cap on reported errors.
     max_errors: Option<usize>,
-    /// Output file, or standard output when absent.
+    /// Output file from `-o`; without it a successful run writes nothing.
     output: Option<String>,
     /// Input files in command-line order.
     files: Vec<String>,

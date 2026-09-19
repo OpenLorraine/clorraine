@@ -31,13 +31,6 @@ pub enum ExprKind {
     Name(String),
     /// Dotted identifier.
     Qualified(QualifiedName),
-    /// Bare generic reference such as `identity<i32>`.
-    GenericRef {
-        /// Referenced name.
-        name: QualifiedName,
-        /// Explicit type arguments.
-        args: Vec<Type>,
-    },
     /// Call with optional explicit type arguments.
     Call {
         /// Called expression.

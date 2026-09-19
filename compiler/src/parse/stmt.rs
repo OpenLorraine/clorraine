@@ -9,10 +9,13 @@ impl Parser<'_> {
         self.expect_punct(Punct::LBrace);
         let mut statements = Vec::new();
         while !self.at_punct(Punct::RBrace) && !self.at_eof() {
+            let before = self.pos;
             match self.parse_statement() {
                 Some(statement) => statements.push(statement),
                 None => {
-                    self.bump();
+                    if self.pos == before {
+                        self.bump();
+                    }
                 }
             }
         }
@@ -59,9 +62,14 @@ impl Parser<'_> {
                 self.parse_statement()
             }
             TokenKind::Punct(Punct::LBrace) => Some(Stmt::Block(self.parse_block())),
+            TokenKind::Error => {
+                // The lexer already recorded the problem.
+                self.bump();
+                None
+            }
             _ => {
                 let expr = self.parse_expression();
-                self.expect_punct(Punct::Semi);
+                self.expect_statement_end();
                 Some(Stmt::Expr(expr))
             }
         }
@@ -70,7 +78,7 @@ impl Parser<'_> {
     /// Parses a `let` statement including its semicolon.
     fn parse_let(&mut self) -> LetStmt {
         let statement = self.parse_let_head();
-        self.expect_punct(Punct::Semi);
+        self.expect_statement_end();
         statement
     }
 
@@ -101,7 +109,7 @@ impl Parser<'_> {
     /// Parses a `const` statement including its semicolon.
     fn parse_const(&mut self) -> ConstStmt {
         let statement = self.parse_const_head();
-        self.expect_punct(Punct::Semi);
+        self.expect_statement_end();
         statement
     }
 
@@ -275,10 +283,13 @@ impl Parser<'_> {
                 && !self.at_keyword(Keyword::Default)
                 && !self.at_eof()
             {
+                let before = self.pos;
                 match self.parse_statement() {
                     Some(statement) => statements.push(statement),
                     None => {
-                        self.bump();
+                        if self.pos == before {
+                            self.bump();
+                        }
                     }
                 }
             }
@@ -305,7 +316,7 @@ impl Parser<'_> {
         } else {
             Some(self.parse_expression())
         };
-        self.expect_punct(Punct::Semi);
+        self.expect_statement_end();
         Stmt::Return {
             value,
             span: self.span_from(start),

@@ -73,11 +73,10 @@ impl Parser<'_> {
     pub(super) fn parse_item(&mut self) -> Option<Item> {
         let exported = self.eat_keyword(Keyword::Export);
         let item = match self.peek_kind() {
-            TokenKind::Keyword(Keyword::Func) => Some(Item::Func(self.parse_func(exported, false))),
+            TokenKind::Keyword(Keyword::Func) => Some(Item::Func(self.parse_func(exported))),
             TokenKind::Keyword(Keyword::Comptime) => {
                 self.bump();
-                self.expect_keyword(Keyword::Func);
-                Some(Item::Comptime(self.parse_func(exported, true)))
+                Some(Item::Comptime(self.parse_func(exported)))
             }
             TokenKind::Keyword(Keyword::Struct) => Some(Item::Struct(self.parse_struct(exported))),
             TokenKind::Keyword(Keyword::Enum) => Some(Item::Enum(self.parse_enum(exported))),
@@ -86,16 +85,21 @@ impl Parser<'_> {
             TokenKind::Keyword(Keyword::Intrinsic) => Some(Item::Intrinsic(self.parse_intrinsic())),
             TokenKind::Keyword(Keyword::Let) => Some(Item::GlobalLet(self.parse_global_let(exported, false))),
             TokenKind::Keyword(Keyword::Volatile) => {
-                self.bump();
-                if self.at_keyword(Keyword::Let) {
+                if matches!(self.kind_at(1), TokenKind::Keyword(Keyword::Let)) {
+                    self.bump();
                     Some(Item::GlobalLet(self.parse_global_let(exported, true)))
                 } else {
                     self.volatile_here();
-                    None
+                    self.bump();
+                    self.parse_item()
                 }
             }
             TokenKind::Keyword(Keyword::Const) => {
                 Some(Item::GlobalConst(self.parse_global_const(exported)))
+            }
+            TokenKind::Error => {
+                self.bump();
+                None
             }
             _ => {
                 self.unexpected();
@@ -126,14 +130,8 @@ impl Parser<'_> {
     pub(super) fn parse_union_decl(&mut self) {
         let start = self.current_start();
         self.bump();
-        if let Some((_, span)) = self.expect_ident() {
-            let message = "tagged unions are not part of Clorraine";
-            self.report(
-                Diagnostic::error("E10204", message, Span::new(self.file, start, span.end as usize))
-                    .with_help("model the data as a C-style tagged struct and use `switch`"),
-            );
-        } else {
-            let span = self.span_from(start);
+        if let Some((_, name_span)) = self.expect_ident() {
+            let span = Span::new(self.file, start, name_span.end as usize);
             self.report(
                 Diagnostic::error("E10204", "tagged unions are not part of Clorraine", span)
                     .with_help("model the data as a C-style tagged struct and use `switch`"),
@@ -147,7 +145,7 @@ impl Parser<'_> {
     }
 
     /// Parses a `func` declaration; the leading keyword is at the cursor.
-    fn parse_func(&mut self, exported: bool, comptime: bool) -> FuncDecl {
+    fn parse_func(&mut self, exported: bool) -> FuncDecl {
         let start = self.current_start();
         self.expect_keyword(Keyword::Func);
         let (name, name_span) = self.parse_declared_name(false);
@@ -156,7 +154,6 @@ impl Parser<'_> {
         self.expect_punct(Punct::Colon);
         let returns = self.parse_return_type();
         let body = self.parse_block();
-        let _ = comptime;
         FuncDecl {
             exported,
             name,

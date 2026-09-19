@@ -201,16 +201,41 @@ impl Parser<'_> {
                 break;
             }
         }
-        self.expect_punct(Punct::Gt);
+        self.expect_type_args_close();
         args
+    }
+
+    /// Consumes the `>` that closes a type-argument list.
+    ///
+    /// Nested arguments such as `Box<Box<i32>>` arrive as one `>>` token, so
+    /// the closing angle brackets are split and the extra one is owed to the
+    /// next close.
+    pub(super) fn expect_type_args_close(&mut self) -> bool {
+        if self.pending_gt > 0 {
+            self.pending_gt -= 1;
+            return true;
+        }
+        if self.at_punct(Punct::Shr) {
+            self.bump();
+            self.pending_gt += 1;
+            return true;
+        }
+        self.expect_punct(Punct::Gt)
     }
 
     /// Tries to parse type arguments without recording diagnostics.
     ///
     /// Used in expression position, where `<` is type arguments only when the
-    /// list closes with `>` directly before `(` or `{`.
+    /// list closes with `>` directly before `(` or `{`; a close that leaves a
+    /// split angle bracket behind never matches that rule.
     pub(super) fn try_type_args(&mut self) -> Option<Vec<Type>> {
-        self.speculate(Self::parse_type_args)
+        self.speculate(|parser| {
+            let args = parser.parse_type_args();
+            if parser.pending_gt != 0 {
+                parser.speculation_failed = true;
+            }
+            args
+        })
     }
 
     /// Parses an optional `<T: bound, ...>` parameter list.
@@ -237,7 +262,7 @@ impl Parser<'_> {
                 break;
             }
         }
-        self.expect_punct(Punct::Gt);
+        self.expect_type_args_close();
         params
     }
 

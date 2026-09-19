@@ -325,6 +325,78 @@ fn template_placeholders_are_parsed_expressions() {
 }
 
 #[test]
+fn module_volatile_let_is_valid_and_misplaced_volatile_recovers() {
+    let valid = parse("volatile let shared: u32 = 0;");
+    assert!(valid.1.is_empty(), "unexpected diagnostics: {:?}", valid.1);
+    let misplaced = parse("volatile func helper(): void { }");
+    assert_eq!(misplaced.1, ["E10208"]);
+    assert_eq!(misplaced.0.items.len(), 1);
+}
+
+#[test]
+fn comptime_functions_parse_fully() {
+    let source = r#"
+comptime func tableSize(n: i32): i32 { return n * 4; }
+"#;
+    let (program, codes) = parse(source);
+    assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    assert!(matches!(program.items[0], Item::Comptime(_)));
+}
+
+#[test]
+fn nested_type_arguments_parse() {
+    let source = r#"
+func main(): i32 {
+    let value: Box<Box<i32>> = other;
+    let made = make<Box<i32>>(1);
+    return 0;
+}
+"#;
+    let (program, codes) = parse(source);
+    assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    let func = first_func(&program);
+    let Stmt::Let(binding) = &func.body.statements[0] else {
+        panic!("expected a let binding");
+    };
+    let TypeKind::Named { args, .. } = &binding.ty.as_ref().expect("declared type").kind else {
+        panic!("expected a named type");
+    };
+    assert_eq!(args.len(), 1);
+    let ExprKind::Call { type_args, .. } = &let_value(func, "made").kind else {
+        panic!("expected a generic call");
+    };
+    assert_eq!(type_args.len(), 1);
+}
+
+#[test]
+fn a_stray_close_angle_is_relational() {
+    let source = r#"
+func compare(a: i32, b: i32, c: i32): i32 {
+    let chained = a < b > c;
+    let nested = a < b > (c);
+    return 0;
+}
+"#;
+    let (program, codes) = parse(source);
+    assert!(codes.is_empty(), "unexpected diagnostics: {codes:?}");
+    let func = first_func(&program);
+    let ExprKind::Binary { op: BinaryOp::Gt, left, .. } = &let_value(func, "chained").kind else {
+        panic!("`a < b > c` must parse as a comparison chain");
+    };
+    assert!(matches!(left.kind, ExprKind::Binary { op: BinaryOp::Lt, .. }));
+    let ExprKind::Call { .. } = &let_value(func, "nested").kind else {
+        panic!("`a < b > (c)` must parse as a generic call");
+    };
+}
+
+#[test]
+fn lexical_errors_do_not_cascade() {
+    assert_eq!(parse("func main(): i32 { let s: str = \"no close;\n return 0; }").1, ["E20002"]);
+    assert_eq!(parse("func main(): i32 { let n = 0x; return 0; }").1, ["E20004"]);
+    assert_eq!(parse("func main(): i32 { let c: u8 = 'ab'; return 0; }").1, ["E20007"]);
+}
+
+#[test]
 fn imports_and_qualified_names_parse() {
     let source = r#"
 module A.B;

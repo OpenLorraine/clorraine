@@ -298,6 +298,12 @@ impl Parser<'_> {
                 return self.parse_array_literal(start);
             }
             TokenKind::Ident(name) => return self.parse_name_expression(name, start),
+            TokenKind::Error => {
+                // The lexer already recorded the problem; consuming the token
+                // as an expression keeps the surrounding statement intact.
+                self.bump();
+                ExprKind::Error
+            }
             _ => {
                 self.unexpected();
                 self.bump();
@@ -386,6 +392,7 @@ impl Parser<'_> {
             span: self.span_from(start),
         };
         if self.at_punct(Punct::Lt) {
+            let checkpoint = self.pos;
             if let Some(args) = self.try_type_args() {
                 if self.at_punct(Punct::LParen) {
                     let call_args = self.parse_call_args();
@@ -410,10 +417,9 @@ impl Parser<'_> {
                         span: self.span_from(start),
                     };
                 }
-                return Expr {
-                    kind: ExprKind::GenericRef { name, args },
-                    span: self.span_from(start),
-                };
+                // The type list closed but nothing callable or literal
+                // follows, so `<` was a relational operator after all.
+                self.pos = checkpoint;
             }
         }
         if self.at_punct(Punct::LBrace) {
@@ -551,14 +557,12 @@ impl Parser<'_> {
     /// spelling, not code, so re-lexing it would produce misleading errors.
     fn parse_placeholder(&mut self, span: Span) -> Expr {
         let mut placeholder_diagnostics = Diagnostics::new(false, None);
-        let tokens: Vec<Token> = Lexer::range(self.sources, self.file, span, &mut placeholder_diagnostics)
-            .lex()
-            .into_iter()
-            .filter(|token| token.kind != TokenKind::Error)
-            .collect();
+        let tokens: Vec<Token> =
+            Lexer::range(self.sources, self.file, span, &mut placeholder_diagnostics).lex();
         let mut inner = Parser {
             tokens,
             pos: 0,
+            pending_gt: 0,
             sources: self.sources,
             file: self.file,
             diagnostics: &mut placeholder_diagnostics,

@@ -27,6 +27,9 @@ use crate::span::{FileId, SourceMap, Span};
 pub struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
+    /// Number of `>` characters a split `>>` token still owes the type
+    /// argument parser.
+    pending_gt: usize,
     sources: &'a SourceMap,
     file: FileId,
     diagnostics: &'a mut Diagnostics,
@@ -40,17 +43,15 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     /// Lexes a whole file and prepares it for parsing.
     ///
-    /// Error tokens are dropped: their diagnostics are already recorded and
-    /// the parser only sees well-formed tokens.
+    /// Lexical-error tokens stay in the stream so the parser can consume them
+    /// as expression atoms and keep the surrounding statement intact; their
+    /// diagnostics are already recorded.
     pub fn new(sources: &'a SourceMap, file: FileId, diagnostics: &'a mut Diagnostics) -> Self {
-        let tokens = Lexer::new(sources, file, diagnostics)
-            .lex()
-            .into_iter()
-            .filter(|token| token.kind != TokenKind::Error)
-            .collect();
+        let tokens = Lexer::new(sources, file, diagnostics).lex();
         Self {
             tokens,
             pos: 0,
+            pending_gt: 0,
             sources,
             file,
             diagnostics,
@@ -75,10 +76,13 @@ impl<'a> Parser<'a> {
                 self.parse_union_decl();
                 continue;
             }
+            let before = self.pos;
             match self.parse_item() {
                 Some(item) => items.push(item),
                 None => {
-                    self.bump();
+                    if self.pos == before {
+                        self.bump();
+                    }
                 }
             }
         }
@@ -154,6 +158,21 @@ impl<'a> Parser<'a> {
         } else {
             false
         }
+    }
+
+    /// Consumes the semicolon that ends a statement.
+    ///
+    /// A statement whose expression ended in a lexical-error token may have
+    /// had its semicolon swallowed by that token, so a missing semicolon right
+    /// after an error ends the statement without a second diagnostic.
+    fn expect_statement_end(&mut self) {
+        if self.eat_punct(Punct::Semi) {
+            return;
+        }
+        if self.pos > 0 && self.tokens[self.pos - 1].kind == TokenKind::Error {
+            return;
+        }
+        self.unexpected();
     }
 
     /// Consumes the given punctuation or reports `E20000`.
@@ -251,6 +270,7 @@ impl<'a> Parser<'a> {
     /// the attempt left it.
     fn speculate<T>(&mut self, parse: impl FnOnce(&mut Self) -> T) -> Option<T> {
         let checkpoint = self.pos;
+        let pending_gt = self.pending_gt;
         self.speculation += 1;
         let previously_failed = self.speculation_failed;
         self.speculation_failed = false;
@@ -260,6 +280,7 @@ impl<'a> Parser<'a> {
         self.speculation_failed = previously_failed;
         if failed {
             self.pos = checkpoint;
+            self.pending_gt = pending_gt;
             None
         } else {
             Some(value)

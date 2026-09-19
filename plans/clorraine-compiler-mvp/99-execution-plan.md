@@ -197,7 +197,7 @@ proven first line and skipped ladder.
 ## Phase 2: Front End, Diagnostics, CLI, Harness Skeleton
 
 > **Phase baseline tree**: 5d0f1a57f20c8bf901d4ec701675ba12b4c4d673
-> **Expected modification set**: `Cargo.toml`, `Cargo.lock`, `compiler/**`, `Makefile`, `plans/clorraine-compiler-mvp/99-execution-plan.md`
+> **Expected modification set**: `Cargo.toml`, `Cargo.lock`, `compiler/**`, `Makefile`, `plans/clorraine-compiler-mvp/99-execution-plan.md`, and the approved post-phase review files `plans/clorraine-compiler-mvp/{00-index.md,10-phase2-review.md}`
 > **Scope mode**: strict
 
 ### Step 2.1: Specification tests and scaffolding
@@ -252,6 +252,8 @@ compiler logic.
 - Implementations tests in `src/lex.rs`, `src/parse.rs`
 
 **Verify**: `make check`.
+
+**Post-phase review**: `10-phase2-review.md` — the independent reviewer found RV-001..RV-007 (three major: `comptime func`, nested type arguments, expression-position `<...>`). The user ruled to fix all seven; every fix is implemented with a regression test and verified by `make check` (47 unit tests, 2 compile-fail driver tests, 6 stage driver tests).
 
 ---
 
