@@ -91,7 +91,12 @@ impl Parser<'_> {
                 } else {
                     self.volatile_here();
                     self.bump();
-                    self.parse_item()
+                    let before = self.pos;
+                    let item = self.parse_item();
+                    if item.is_none() && self.pos == before {
+                        self.bump();
+                    }
+                    item
                 }
             }
             TokenKind::Keyword(Keyword::Const) => {

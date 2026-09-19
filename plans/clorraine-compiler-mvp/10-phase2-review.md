@@ -31,13 +31,30 @@ Follow-up found while verifying RV-004: `volatile let` at module level (the
 valid form) was itself reporting `E10208`; the check now accepts it and only
 reports a misplaced `volatile`.
 
+## Re-review of the fix diff
+
+The single permitted re-review confirmed all seven findings resolved and
+reported two new minor regressions introduced by the fix batch; both were
+fixed immediately:
+
+| ID | Severity | Finding | Ruling (author, minor) |
+|---|---|---|---|
+| RV-101 | 🟡 MINOR | A misplaced top-level `volatile` before a non-item token produced the same `E20000` twice because the recovery retried the token | Fix: the recovery consumes the offending token once |
+| RV-102 | 🟡 MINOR | A `>>` split outside a nested angle list was accepted silently and leaked into later type parsing, breaking later valid statements | Fix: only a nested list may split `>>`; a stray closing angle is reported and consumed |
+
+Re-review probes after the fixes: `let stray: Box<i32>> = other;` reports one
+`E20000` and the next valid statements parse cleanly; a malformed lambda with
+`>>` reports its own errors and does not corrupt the following statement;
+`volatile 123` reports `E10208` and one `E20000`.
+
 ## Fix evidence
 
-- `make check` green: spec check OK (27 files, 101 compile-fail tests), 47
+- `make check` green: spec check OK (27 files, 101 compile-fail tests), 49
   unit tests, 2 compile-fail driver tests, 6 stage driver tests.
 - New regression tests: `comptime` parsing, nested type arguments, the
-  relational fallback, lexical-error non-cascade, and module `volatile let`
-  versus misplaced `volatile`.
+  relational fallback, lexical-error non-cascade, module `volatile let`
+  versus misplaced `volatile`, stray closing angles, and the single-report
+  `volatile` recovery.
 - Direct binary probes: the `E20002`/`E20004`/`E20007` goldens each print one
   diagnostic; `Box<Box<i32>>` and `a < b > c` compile cleanly; the staged
   `comptime` golden parses without syntax noise.

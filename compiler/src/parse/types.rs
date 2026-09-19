@@ -195,6 +195,7 @@ impl Parser<'_> {
     pub(super) fn parse_type_args(&mut self) -> Vec<Type> {
         let mut args = Vec::new();
         self.expect_punct(Punct::Lt);
+        self.angle_depth += 1;
         loop {
             args.push(self.parse_type());
             if !self.eat_punct(Punct::Comma) {
@@ -202,23 +203,30 @@ impl Parser<'_> {
             }
         }
         self.expect_type_args_close();
+        self.angle_depth -= 1;
         args
     }
 
     /// Consumes the `>` that closes a type-argument list.
     ///
-    /// Nested arguments such as `Box<Box<i32>>` arrive as one `>>` token, so
-    /// the closing angle brackets are split and the extra one is owed to the
-    /// next close.
+    /// A nested list such as `Box<Box<i32>>` arrives as one `>>` token, so the
+    /// brackets are split and the extra one is owed to the enclosing close.
+    /// A list that has no enclosing close cannot own both brackets; there the
+    /// second `>` is stray and reported.
     pub(super) fn expect_type_args_close(&mut self) -> bool {
         if self.pending_gt > 0 {
             self.pending_gt -= 1;
             return true;
         }
         if self.at_punct(Punct::Shr) {
+            if self.angle_depth >= 2 {
+                self.bump();
+                self.pending_gt += 1;
+                return true;
+            }
+            self.unexpected();
             self.bump();
-            self.pending_gt += 1;
-            return true;
+            return false;
         }
         self.expect_punct(Punct::Gt)
     }
@@ -245,6 +253,7 @@ impl Parser<'_> {
             return params;
         }
         self.bump();
+        self.angle_depth += 1;
         loop {
             let start = self.current_start();
             let (name, _) = self.parse_declared_name(false);
@@ -263,6 +272,7 @@ impl Parser<'_> {
             }
         }
         self.expect_type_args_close();
+        self.angle_depth -= 1;
         params
     }
 

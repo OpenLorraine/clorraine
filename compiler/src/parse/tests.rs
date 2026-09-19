@@ -325,6 +325,27 @@ fn template_placeholders_are_parsed_expressions() {
 }
 
 #[test]
+fn stray_closing_angles_are_reported_without_breaking_later_parsing() {
+    let source = r#"
+func main(): i32 {
+    let stray: Box<i32>> = other;
+    let made = make<i32>(1);
+    return 0;
+}
+"#;
+    let (program, codes) = parse(source);
+    assert_eq!(codes, ["E20000"]);
+    let func = first_func(&program);
+    assert!(matches!(let_value(func, "made").kind, ExprKind::Call { .. }));
+}
+
+#[test]
+fn top_level_volatile_before_a_non_item_reports_once() {
+    let (_, codes) = parse("volatile 123");
+    assert_eq!(codes, ["E10208", "E20000"]);
+}
+
+#[test]
 fn module_volatile_let_is_valid_and_misplaced_volatile_recovers() {
     let valid = parse("volatile let shared: u32 = 0;");
     assert!(valid.1.is_empty(), "unexpected diagnostics: {:?}", valid.1);

@@ -563,6 +563,7 @@ impl Parser<'_> {
             tokens,
             pos: 0,
             pending_gt: 0,
+            angle_depth: 0,
             sources: self.sources,
             file: self.file,
             diagnostics: &mut placeholder_diagnostics,

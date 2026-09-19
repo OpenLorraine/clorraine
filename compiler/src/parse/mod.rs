@@ -30,6 +30,8 @@ pub struct Parser<'a> {
     /// Number of `>` characters a split `>>` token still owes the type
     /// argument parser.
     pending_gt: usize,
+    /// Nesting depth of the angle-bracket list currently being parsed.
+    angle_depth: usize,
     sources: &'a SourceMap,
     file: FileId,
     diagnostics: &'a mut Diagnostics,
@@ -52,6 +54,7 @@ impl<'a> Parser<'a> {
             tokens,
             pos: 0,
             pending_gt: 0,
+            angle_depth: 0,
             sources,
             file,
             diagnostics,
