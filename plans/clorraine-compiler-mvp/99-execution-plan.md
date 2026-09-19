@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 09:57
-> **Progress**: 33/84 tasks (39%)
+> **Last Updated**: 2026-09-19 10:45
+> **Progress**: 34/84 tasks (40%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -259,14 +259,16 @@ compiler logic.
 
 ## Phase 3: Name Resolution and Modules
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: fe1717c242353ac381e2e302265551580371054f
+> **Expected modification set**: `compiler/**`, `plans/clorraine-compiler-mvp/99-execution-plan.md`, `plans/00-roadmap.md`
+> **Scope mode**: strict
 
 ### Step 3.1: Specification tests first
 
 **Reference**: [03-04-semantics.md](03-04-semantics.md) "Name Resolution" · ST-NAME-1..2, ST-CF-MOD
 **Objective**: write the name/module cases before implementing them.
 
-- [ ] 3.1.1 [spec-author] Add the ST-NAME cases to `stage_spec_test.rs` and confirm the in-scope golden subset (E10219, E11101-E11105, W10006); run and record the red phase
+- [x] 3.1.1 [spec-author] Add the ST-NAME cases to `stage_spec_test.rs` and confirm the in-scope golden subset (E10219, E11101-E11105, W10006); run and record the red phase ✅ (completed: 2026-09-19 10:45)
 
 **Deliverables**:
 - New spec cases and recorded red phase

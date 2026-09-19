@@ -1,20 +1,29 @@
 //! Command-line specification tests for front-end stage behavior.
 //!
 //! The golden suites state one expected diagnostic per file; these cases cover
-//! the lexical and parser forms the specification calls out explicitly: the
+//! the lexical and parser forms the specification calls out explicitly (the
 //! literal and template spellings, the statement-level disambiguations, and
-//! the diagnostic-only declaration starts. Every case drives the built `clc`
-//! binary, so the published command-line behavior is the oracle.
+//! the diagnostic-only declaration starts) plus the name and module rules that
+//! no single golden states on its own: shadowing, declaration order, merged
+//! modules, and import bindings. Every case drives the built `clc` binary, so
+//! the published command-line behavior is the oracle.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// Codes only the front end reports. A snippet that must be accepted is not
-/// allowed to produce any of them.
-const FRONT_END_CODES: &[&str] = &[
+/// Codes that a snippet the in-scope stages accept must never produce.
+///
+/// The lexical and parser diagnoses come first; the name and module diagnoses
+/// follow, because an accepted program must also pass resolution. A case that
+/// pins acceptance fails when any of these appears, so a stage regression is
+/// visible as an unexpected diagnostic instead of a silent pass.
+const UNACCEPTABLE_CODES: &[&str] = &[
+    // Lexical and parser diagnoses.
     "E10204", "E10208", "E10501", "E20000", "E20001", "E20002", "E20003", "E20004", "E20005",
     "E20006", "E20007", "E20008", "E90005",
+    // Name and module diagnoses.
+    "E10219", "E11101", "E11102", "E11103", "E11104", "E11105",
 ];
 
 /// Temporary directory that removes itself when the test finishes.
@@ -72,6 +81,30 @@ fn run_source(tag: &str, source: &str) -> Output {
     ])
 }
 
+/// Compiles several source files in one invocation and returns its output.
+///
+/// A merged-module case needs more than one file in one compilation, because
+/// the merge happens only when the driver loads the files together. Each entry
+/// is a file name and its contents; the file name carries no semantic meaning
+/// and only keeps the paths in diagnostics readable.
+fn run_sources(tag: &str, files: &[(&str, &str)]) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let output_path = scratch.path().join("out.c");
+    let mut args = vec![
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+    ];
+    for (name, source) in files {
+        let source_path = scratch.path().join(name);
+        std::fs::write(&source_path, source)
+            .unwrap_or_else(|err| panic!("cannot write snippet {name}: {err}"));
+        args.push(source_path.display().to_string());
+    }
+    run_clc(&args)
+}
+
 /// True when the line starts a rendered diagnostic.
 fn is_diagnostic_head(line: &str) -> bool {
     line.starts_with("error ") || line.starts_with("warning ")
@@ -85,13 +118,14 @@ fn diagnostic_code(line: &str) -> Option<&str> {
     rest.get(..6)
 }
 
-/// Asserts that the front end accepts a snippet.
+/// Asserts that the in-scope stages accept a snippet.
 ///
-/// "Accepts" means every stderr line is part of a rendered diagnostic, no
-/// front-end code is reported, and the exit code follows the command-line
-/// contract (1 when an error was reported, 0 otherwise). Later stages may add
-/// semantic diagnostics for the same snippet; those are allowed because the
-/// case targets the front-end stage.
+/// "Accepts" means every stderr line is part of a rendered diagnostic, no code
+/// from `UNACCEPTABLE_CODES` is reported, and the exit code follows the
+/// command-line contract (1 when an error was reported, 0 otherwise). Later
+/// stages may add their own diagnostics for the same snippet; those are
+/// tolerated because the case pins the stage that owns it, not the whole
+/// pipeline.
 fn assert_front_end_accepts(tag: &str, source: &str) {
     let run = run_source(tag, source);
     let stderr = String::from_utf8_lossy(&run.stderr);
@@ -101,8 +135,8 @@ fn assert_front_end_accepts(tag: &str, source: &str) {
             panic!("{tag}: unexpected compiler output line {line:?}");
         }
         if let Some(code) = diagnostic_code(line) {
-            if FRONT_END_CODES.contains(&code) {
-                panic!("{tag}: front end reported {code}: {line}");
+            if UNACCEPTABLE_CODES.contains(&code) {
+                panic!("{tag}: the in-scope stages reported {code}: {line}");
             }
         }
         if line.starts_with("error ") {
@@ -117,9 +151,11 @@ fn assert_front_end_accepts(tag: &str, source: &str) {
     );
 }
 
-/// Asserts that compiling a snippet reports every expected diagnostic line.
-fn assert_reports(tag: &str, source: &str, expected_lines: &[&str]) {
-    let run = run_source(tag, source);
+/// Asserts that a captured run reported every expected diagnostic line.
+///
+/// Shared by the single-file and multi-file drivers so both exercise the same
+/// rendering and exit-code contract.
+fn assert_run_reports(tag: &str, run: Output, expected_lines: &[&str]) {
     let stderr = String::from_utf8_lossy(&run.stderr);
     for expected in expected_lines {
         assert!(
@@ -128,6 +164,16 @@ fn assert_reports(tag: &str, source: &str, expected_lines: &[&str]) {
         );
     }
     assert_eq!(run.status.code(), Some(1), "{tag}: failing compiles exit 1");
+}
+
+/// Asserts that compiling one snippet reports every expected diagnostic line.
+fn assert_reports(tag: &str, source: &str, expected_lines: &[&str]) {
+    assert_run_reports(tag, run_source(tag, source), expected_lines);
+}
+
+/// Asserts that compiling several files together reports the expected lines.
+fn assert_reports_across_files(tag: &str, files: &[(&str, &str)], expected_lines: &[&str]) {
+    assert_run_reports(tag, run_sources(tag, files), expected_lines);
 }
 
 /// Literal and template spellings from the lexical chapter are accepted.
@@ -278,5 +324,112 @@ func demo(): String {
 }
 ",
         &["error E10501: format specifiers are not supported in v1"],
+    );
+}
+
+/// Names resolve in lexical scopes with the innermost binding winning.
+///
+/// The specification's shadowing example must be accepted: a parameter shadows
+/// a module value and a local shadows the parameter, so the same spelling
+/// legally binds to three different declarations. A reference before the
+/// name's declaration in its own block is instead E10219, proving that a block
+/// local is not visible at an earlier point even though the spelling exists
+/// elsewhere.
+#[test]
+fn name_resolution_honors_scopes_and_declaration_order() {
+    assert_front_end_accepts(
+        "name-shadowing",
+        "module spec.stage.name_shadowing;
+
+let LIMIT: i32 = 100;
+
+func pick(LIMIT: i32): i32 {       // the parameter shadows the module value
+    let doubled: i32 = LIMIT * 2;  // LIMIT here is the parameter
+    let LIMIT: i32 = doubled;      // the local shadows the parameter
+    return LIMIT;
+}
+
+func main(): i32 {
+    return pick(5);
+}
+",
+    );
+
+    assert_reports(
+        "name-use-before-declaration",
+        "module spec.stage.name_use_before_declaration;
+
+func demo(): i32 {
+    let first: i32 = second;   // E10219: declared later in this block
+    let second: i32 = 2;
+    return first + second;
+}
+",
+        &["error E10219: 'second' is not declared"],
+    );
+}
+
+/// Files that declare the same module merge, and imports bind module names.
+///
+/// Two files with the same `module` declaration share one namespace, so one
+/// function declared in both is E11101. An import naming a missing export is
+/// E11102, and binding one imported name twice is E11103; the rename form with
+/// `as` is the documented escape hatch and is not exercised here.
+#[test]
+fn merged_modules_and_import_bindings_report_their_codes() {
+    assert_reports_across_files(
+        "module-merged-duplicate",
+        &[
+            (
+                "alpha.clo",
+                "module spec.stage.merged;
+
+func f(): i32 {
+    return 1;
+}
+",
+            ),
+            (
+                "beta.clo",
+                "module spec.stage.merged;
+
+func f(): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    return f();
+}
+",
+            ),
+        ],
+        &["error E11101: duplicate declaration of 'f' in module 'spec.stage.merged'"],
+    );
+
+    assert_reports(
+        "import-not-exported",
+        "module spec.stage.import_not_exported;
+
+import { clamp } from Demo.MinMax;
+
+func main(): i32 {
+    return clamp(0);
+}
+",
+        &["error E11102: 'clamp' is not exported from module 'Demo.MinMax'"],
+    );
+
+    assert_reports(
+        "import-bound-twice",
+        "module spec.stage.import_bound_twice;
+
+import { clamp } from Demo.MinMax;
+import { clamp } from Demo.More;
+
+func main(): i32 {
+    return clamp(0);
+}
+",
+        &["error E11103: duplicate import of 'clamp'"],
     );
 }

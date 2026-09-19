@@ -19,13 +19,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// Diagnostic codes the front end currently reports.
+/// Diagnostic codes the in-scope stages currently report.
 ///
 /// The list grows as later stages land; every code listed here must have at
 /// least one golden file in the compile-fail suite.
 const ASSERTED_CODES: &[&str] = &[
-    "E10204", "E10208", "E10501", "E20000", "E20001", "E20002", "E20003", "E20004", "E20005",
-    "E20006", "E20007", "E20008", "E90005",
+    "E10204", "E10208", "E10219", "E10501", "E11101", "E11102", "E11103", "E11104", "E11105",
+    "E20000", "E20001", "E20002", "E20003", "E20004", "E20005", "E20006", "E20007", "E20008",
+    "E90005", "W10006",
 ];
 
 /// Golden codes excluded from the suite because the language feature is staged
