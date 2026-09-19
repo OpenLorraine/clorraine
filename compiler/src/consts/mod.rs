@@ -3,10 +3,11 @@
 //! A constant context is an array extent, an enum member value, a `case`
 //! label, or a module-level `const` initializer. In those positions the value
 //! must be computable at compile time, and the folding here follows the
-//! runtime arithmetic rules: integer operations wrap at the width of the
-//! context type, and shift counts are masked to that width. A form the folder
-//! cannot compute is `E10224`; an integer division or remainder by zero,
-//! including the minimum signed value over `-1`, is `E10223`.
+//! runtime arithmetic rules: each integer operation wraps at its own result
+//! type, a shift count is masked to the left operand's width, and the declared
+//! context type is the fallback a bare literal takes. A form the folder cannot
+//! compute is `E10224`; an integer division or remainder by zero, including the
+//! minimum signed value over `-1`, is `E10223`.
 //!
 //! The folder only sees module-level names. A name that is a module-level
 //! `const`, or a `const` imported from another module, folds from its
@@ -22,8 +23,14 @@ use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::span::Span;
 use crate::types::{
-    integer_scalar, is_float_scalar, is_integer_scalar, is_signed_scalar, resolve_ty_with,
-    scalar_bits, Ty, TyKind, TypeTable,
+    int_literal_value, integer_scalar, is_float_scalar, is_integer_scalar, resolve_ty_with, Ty,
+    TyKind, TypeTable,
+};
+
+mod arithmetic;
+use arithmetic::{
+    binary_operand_scalar, fold_float, fold_integer, result_scalar, usize_value, wrap_int,
+    FoldValue,
 };
 
 /// A value a constant expression folds to.
@@ -61,7 +68,7 @@ pub struct ConstFolder<'a> {
     /// Constants currently being folded, so a cycle stops instead of looping.
     active: BTreeSet<String>,
     /// Folded values, cached under a module- or enum-qualified key.
-    values: BTreeMap<String, ConstValue>,
+    values: BTreeMap<String, FoldValue>,
 }
 
 impl<'a> ConstFolder<'a> {
@@ -78,40 +85,46 @@ impl<'a> ConstFolder<'a> {
 
     /// Folds an expression to its constant value without a context type.
     pub fn fold(&mut self, expr: &Expr) -> Result<ConstValue, ConstError> {
-        self.fold_with(expr, None)
+        self.fold_value(expr, None).map(|folded| folded.value)
     }
 
     /// Folds an expression that must be constant, reporting `E10224` or
     /// `E10223` on failure.
     pub fn require(&mut self, expr: &Expr, diagnostics: &mut Diagnostics) {
-        let result = self.fold_with(expr, None);
+        let result = self.fold_value(expr, None);
         report(result.err(), diagnostics);
     }
 
-    /// Folds a constant-context expression at its declared width, reporting
-    /// `E10224` or `E10223` on failure.
+    /// Folds a constant-context expression, reporting `E10224` or `E10223` on
+    /// failure.
     pub fn require_at(
         &mut self,
         expr: &Expr,
         context: Option<ScalarType>,
         diagnostics: &mut Diagnostics,
     ) {
-        let result = self.fold_with(expr, context);
+        let result = self.fold_value(expr, context);
         report(result.err(), diagnostics);
     }
 
     /// The integer value of an expression, when it folds to one.
     pub fn integer(&mut self, expr: &Expr) -> Option<i128> {
-        match self.fold_with(expr, None) {
-            Ok(ConstValue::Int(value)) => Some(value),
+        match self.fold_value(expr, None) {
+            Ok(FoldValue {
+                value: ConstValue::Int(value),
+                ..
+            }) => Some(value),
             _ => None,
         }
     }
 
     /// The integer value of a constant-context expression, when it folds.
     pub fn integer_at(&mut self, expr: &Expr, context: Option<ScalarType>) -> Option<i128> {
-        match self.fold_with(expr, context) {
-            Ok(ConstValue::Int(value)) => Some(value),
+        match self.fold_value(expr, context) {
+            Ok(FoldValue {
+                value: ConstValue::Int(value),
+                ..
+            }) => Some(value),
             _ => None,
         }
     }
@@ -122,21 +135,38 @@ impl<'a> ConstFolder<'a> {
         self.integer_at(expr, context)
     }
 
-    /// Folds an expression, wrapping each integer operation at `context`.
+    /// Folds an expression, carrying the scalar type each result evaluates at.
     ///
-    /// `context` is the integer type the constant context requires; `None`
-    /// evaluates in the wide accumulator without a wrap width.
-    fn fold_with(
+    /// `context` is the integer type the constant context requires; a bare
+    /// literal takes it. `None` evaluates in the wide accumulator, which has
+    /// no wrap width. An operation replaces the context with its own result
+    /// type, so a narrower operation wraps and faults at that narrower width.
+    fn fold_value(
         &mut self,
         expr: &Expr,
         context: Option<ScalarType>,
-    ) -> Result<ConstValue, ConstError> {
+    ) -> Result<FoldValue, ConstError> {
         match &expr.kind {
-            ExprKind::Int(value) => Ok(ConstValue::Int(*value as i128)),
-            ExprKind::Bool(value) => Ok(ConstValue::Bool(*value)),
-            ExprKind::Char(value) => Ok(ConstValue::Int(*value as i128)),
-            ExprKind::Float(value) => Ok(ConstValue::Float(*value)),
-            ExprKind::Str(_) => Ok(ConstValue::Str),
+            ExprKind::Int(value) => Ok(FoldValue {
+                scalar: context,
+                value: ConstValue::Int(*value as i128),
+            }),
+            ExprKind::Bool(value) => Ok(FoldValue {
+                scalar: None,
+                value: ConstValue::Bool(*value),
+            }),
+            ExprKind::Char(value) => Ok(FoldValue {
+                scalar: Some(ScalarType::U8),
+                value: ConstValue::Int(*value as i128),
+            }),
+            ExprKind::Float(value) => Ok(FoldValue {
+                scalar: Some(ScalarType::F64),
+                value: ConstValue::Float(*value),
+            }),
+            ExprKind::Str(_) => Ok(FoldValue {
+                scalar: None,
+                value: ConstValue::Str,
+            }),
             ExprKind::Unary { op, operand } => self.fold_unary(*op, operand, expr.span, context),
             ExprKind::Binary { op, left, right } => {
                 self.fold_binary(*op, left, right, expr.span, context)
@@ -150,80 +180,128 @@ impl<'a> ConstFolder<'a> {
     }
 
     /// Folds a unary operator over its constant operand.
+    ///
+    /// The result keeps the operand's own type, falling back to the context
+    /// for a bare literal, so the negation and bitwise complement wrap there.
     fn fold_unary(
         &mut self,
         op: UnaryOp,
         operand: &Expr,
         span: Span,
         context: Option<ScalarType>,
-    ) -> Result<ConstValue, ConstError> {
-        match (op, self.fold_with(operand, context)?) {
-            (UnaryOp::Neg, ConstValue::Int(value)) => {
-                Ok(ConstValue::Int(wrap_int(value.wrapping_neg(), context)))
-            }
-            (UnaryOp::Neg, ConstValue::Float(value)) => Ok(ConstValue::Float(-value)),
-            (UnaryOp::BitNot, ConstValue::Int(value)) => {
-                Ok(ConstValue::Int(wrap_int(!value, context)))
-            }
-            (UnaryOp::Not, ConstValue::Bool(value)) => Ok(ConstValue::Bool(!value)),
+    ) -> Result<FoldValue, ConstError> {
+        let operand = self.fold_value(operand, context)?;
+        let scalar = operand.scalar.or(context);
+        match (op, operand.value) {
+            (UnaryOp::Neg, ConstValue::Int(value)) => Ok(FoldValue {
+                scalar,
+                value: ConstValue::Int(wrap_int(value.wrapping_neg(), scalar)),
+            }),
+            (UnaryOp::Neg, ConstValue::Float(value)) => Ok(FoldValue {
+                scalar,
+                value: ConstValue::Float(-value),
+            }),
+            (UnaryOp::BitNot, ConstValue::Int(value)) => Ok(FoldValue {
+                scalar,
+                value: ConstValue::Int(wrap_int(!value, scalar)),
+            }),
+            (UnaryOp::Not, ConstValue::Bool(value)) => Ok(FoldValue {
+                scalar: None,
+                value: ConstValue::Bool(!value),
+            }),
             _ => Err(ConstError::NotConstant(span)),
         }
     }
 
     /// Folds a binary operator over its constant operands.
     ///
-    /// Both operands are folded at the context width, and an integer result is
-    /// wrapped at that width, matching the runtime operator rules.
+    /// Each operand keeps its own type; a bare integer literal adopts the other
+    /// operand's type when it has one, matching the runtime operand adaptation.
+    /// The result of an integer operation is wrapped, and a division or shift
+    /// faulted, at the operation's own result type rather than the context.
     fn fold_binary(
         &mut self,
         op: BinaryOp,
-        left: &Expr,
-        right: &Expr,
+        left_expr: &Expr,
+        right_expr: &Expr,
         span: Span,
         context: Option<ScalarType>,
-    ) -> Result<ConstValue, ConstError> {
-        match (
-            self.fold_with(left, context)?,
-            self.fold_with(right, context)?,
-        ) {
-            (ConstValue::Int(a), ConstValue::Int(b)) => fold_integer(op, a, b, span, context),
-            (ConstValue::Float(a), ConstValue::Float(b)) => fold_float(op, a, b, span),
-            (ConstValue::Bool(a), ConstValue::Bool(b)) => match op {
-                BinaryOp::Eq => Ok(ConstValue::Bool(a == b)),
-                BinaryOp::Ne => Ok(ConstValue::Bool(a != b)),
-                BinaryOp::LogicalAnd => Ok(ConstValue::Bool(a && b)),
-                BinaryOp::LogicalOr => Ok(ConstValue::Bool(a || b)),
-                _ => Err(ConstError::NotConstant(span)),
-            },
+    ) -> Result<FoldValue, ConstError> {
+        let mut left = self.fold_value(left_expr, context)?;
+        let mut right = self.fold_value(right_expr, context)?;
+        if int_literal_value(left_expr).is_some() {
+            if let Some(scalar) = right.scalar {
+                left.scalar = Some(scalar);
+            }
+        }
+        if int_literal_value(right_expr).is_some() {
+            if let Some(scalar) = left.scalar {
+                right.scalar = Some(scalar);
+            }
+        }
+        match (left.value, right.value) {
+            (ConstValue::Int(a), ConstValue::Int(b)) => {
+                let operand = binary_operand_scalar(op, left.scalar, right.scalar);
+                let value = fold_integer(op, a, b, span, operand)?;
+                Ok(FoldValue {
+                    scalar: result_scalar(op, operand),
+                    value,
+                })
+            }
+            (ConstValue::Float(a), ConstValue::Float(b)) => {
+                let value = fold_float(op, a, b, span)?;
+                Ok(FoldValue { scalar: None, value })
+            }
+            (ConstValue::Bool(a), ConstValue::Bool(b)) => {
+                let value = match op {
+                    BinaryOp::Eq => ConstValue::Bool(a == b),
+                    BinaryOp::Ne => ConstValue::Bool(a != b),
+                    BinaryOp::LogicalAnd => ConstValue::Bool(a && b),
+                    BinaryOp::LogicalOr => ConstValue::Bool(a || b),
+                    _ => return Err(ConstError::NotConstant(span)),
+                };
+                Ok(FoldValue { scalar: None, value })
+            }
             _ => Err(ConstError::NotConstant(span)),
         }
     }
 
     /// Folds a scalar cast over its constant operand.
     ///
-    /// The operand is folded at the cast's target width, so a nested operation
-    /// wraps the way the cast's type does.
+    /// The operand folds at its own type, then the result wraps at the cast's
+    /// target, so a cast truncates exactly the way the runtime cast does.
     fn fold_cast(
         &mut self,
         ty: &Type,
         value: &Expr,
         span: Span,
-    ) -> Result<ConstValue, ConstError> {
+    ) -> Result<FoldValue, ConstError> {
         let target = self.resolve_const_type(ty);
-        let context = integer_scalar(&target);
-        let value = self.fold_with(value, context)?;
-        match (&target.kind, value) {
+        let inner = self.fold_value(value, None)?;
+        match (&target.kind, inner.value) {
             (TyKind::Scalar(scalar), ConstValue::Int(v)) if is_integer_scalar(*scalar) => {
-                Ok(ConstValue::Int(wrap_int(v, Some(*scalar))))
+                Ok(FoldValue {
+                    scalar: Some(*scalar),
+                    value: ConstValue::Int(wrap_int(v, Some(*scalar))),
+                })
             }
             (TyKind::Scalar(scalar), ConstValue::Float(v)) if is_integer_scalar(*scalar) => {
-                Ok(ConstValue::Int(v as i128))
+                Ok(FoldValue {
+                    scalar: Some(*scalar),
+                    value: ConstValue::Int(v as i128),
+                })
             }
             (TyKind::Scalar(scalar), ConstValue::Int(v)) if is_float_scalar(*scalar) => {
-                Ok(ConstValue::Float(v as f64))
+                Ok(FoldValue {
+                    scalar: Some(*scalar),
+                    value: ConstValue::Float(v as f64),
+                })
             }
             (TyKind::Scalar(scalar), ConstValue::Float(v)) if is_float_scalar(*scalar) => {
-                Ok(ConstValue::Float(v))
+                Ok(FoldValue {
+                    scalar: Some(*scalar),
+                    value: ConstValue::Float(v),
+                })
             }
             _ => Err(ConstError::NotConstant(span)),
         }
@@ -243,7 +321,7 @@ impl<'a> ConstFolder<'a> {
     /// folds from the declaration in its own module, and any other name is not
     /// constant. A local binding is invisible here, so it is deliberately not
     /// treated as an opaque constant.
-    fn fold_name(&mut self, name: &str, span: Span) -> Result<ConstValue, ConstError> {
+    fn fold_name(&mut self, name: &str, span: Span) -> Result<FoldValue, ConstError> {
         let own_module = self.module.name.clone();
         let kind = self.module.decl(name).map(|decl| decl.kind);
         match kind {
@@ -269,14 +347,13 @@ impl<'a> ConstFolder<'a> {
     /// Folds a qualified name: an enum member or a module-qualified constant.
     ///
     /// Any other dotted name, such as a value's field access, is not constant.
-    fn fold_qualified(&mut self, name: &QualifiedName, span: Span) -> Result<ConstValue, ConstError> {
+    fn fold_qualified(&mut self, name: &QualifiedName, span: Span) -> Result<FoldValue, ConstError> {
         if name.segments.len() >= 2 {
             let first = &name.segments[0];
             if self.table.is_enum(first) {
                 let member = name.segments.last().expect("a qualified name");
                 return self
                     .fold_enum_member(first, member)
-                    .map(ConstValue::Int)
                     .ok_or(ConstError::NotConstant(span));
             }
             if let Some((last, head)) = name.segments.split_last() {
@@ -293,10 +370,12 @@ impl<'a> ConstFolder<'a> {
 
     /// Folds a module-level `const` declared in the named module.
     ///
-    /// The declared type supplies the width the initializer folds at. The
-    /// active set and the value cache both use a module-qualified key, so two
-    /// modules may declare the same constant name and a cycle is caught.
-    fn fold_module_const(&mut self, module_name: &str, name: &str) -> Option<ConstValue> {
+    /// The declared type supplies the width the initializer folds at, and a
+    /// reference to the constant carries that declared type: the initializer's
+    /// own narrower type has already done its wrapping. The active set and the
+    /// value cache both use a module-qualified key, so two modules may declare
+    /// the same constant name and a cycle is caught.
+    fn fold_module_const(&mut self, module_name: &str, name: &str) -> Option<FoldValue> {
         let key = format!("@{module_name}::{name}");
         if let Some(value) = self.values.get(&key) {
             return Some(*value);
@@ -318,7 +397,14 @@ impl<'a> ConstFolder<'a> {
             .table
             .global(module_name, name)
             .and_then(integer_scalar);
-        let folded = initializer.and_then(|expr| self.fold_with(expr, context).ok());
+        let folded = initializer.and_then(|expr| {
+            self.fold_value(expr, context).ok().map(|mut folded| {
+                if context.is_some() {
+                    folded.scalar = context;
+                }
+                folded
+            })
+        });
         self.active.remove(&key);
         if let Some(value) = folded {
             self.values.insert(key, value);
@@ -331,11 +417,11 @@ impl<'a> ConstFolder<'a> {
     /// A member with no explicit value continues from the previous value plus
     /// one, wrapped at the backing type; an explicit value folds in the backing
     /// type's width.
-    fn fold_enum_member(&mut self, enum_name: &str, member: &str) -> Option<i128> {
+    fn fold_enum_member(&mut self, enum_name: &str, member: &str) -> Option<FoldValue> {
         let key = format!("#{enum_name}::{member}");
         if let Some(value) = self.values.get(&key) {
-            return match value {
-                ConstValue::Int(value) => Some(*value),
+            return match value.value {
+                ConstValue::Int(_) => Some(*value),
                 _ => None,
             };
         }
@@ -348,19 +434,24 @@ impl<'a> ConstFolder<'a> {
             let mut current: i128 = 0;
             for declared in &declaration.members {
                 let value = match &declared.value {
-                    Some(expr) => match self.fold_with(expr, context) {
-                        Ok(ConstValue::Int(value)) => value,
+                    Some(expr) => match self.fold_value(expr, context) {
+                        Ok(FoldValue {
+                            value: ConstValue::Int(value),
+                            ..
+                        }) => value,
                         _ => break,
                     },
                     None => current,
                 };
-                self.values.insert(
-                    format!("#{enum_name}::{}", declared.name),
-                    ConstValue::Int(value),
-                );
+                let folded = FoldValue {
+                    scalar: context,
+                    value: ConstValue::Int(value),
+                };
+                self.values
+                    .insert(format!("#{enum_name}::{}", declared.name), folded);
                 current = wrap_int(value.wrapping_add(1), context);
                 if declared.name == member {
-                    result = Some(value);
+                    result = Some(folded);
                     break;
                 }
             }
@@ -390,17 +481,18 @@ impl<'a> ConstFolder<'a> {
         name: &str,
         args: &[IntrinsicArg],
         span: Span,
-    ) -> Result<ConstValue, ConstError> {
+    ) -> Result<FoldValue, ConstError> {
         match name {
             "sizeof" => {
                 let Some(IntrinsicArg::Type(ty)) = args.first() else {
                     return Err(ConstError::NotConstant(span));
                 };
                 let resolved = self.resolve_const_type(ty);
-                self.table
+                let size = self
+                    .table
                     .size_of(&resolved)
-                    .map(|size| ConstValue::Int(size as i128))
-                    .ok_or(ConstError::NotConstant(span))
+                    .ok_or(ConstError::NotConstant(span))?;
+                Ok(usize_value(size))
             }
             "offsetof" => {
                 let Some(IntrinsicArg::Type(ty)) = args.first() else {
@@ -416,10 +508,11 @@ impl<'a> ConstFolder<'a> {
                 let ExprKind::Name(field_name) = &field.kind else {
                     return Err(ConstError::NotConstant(span));
                 };
-                self.table
+                let offset = self
+                    .table
                     .offset_of(&struct_name, field_name)
-                    .map(|offset| ConstValue::Int(offset as i128))
-                    .ok_or(ConstError::NotConstant(span))
+                    .ok_or(ConstError::NotConstant(span))?;
+                Ok(usize_value(offset))
             }
             "len" => {
                 let Some(IntrinsicArg::Expr(inner)) = args.first() else {
@@ -433,15 +526,15 @@ impl<'a> ConstFolder<'a> {
 
     /// Folds `len` of a fixed literal, string literal, or module array whose
     /// extent is known.
-    fn fold_len(&mut self, expr: &Expr, span: Span) -> Result<ConstValue, ConstError> {
+    fn fold_len(&mut self, expr: &Expr, span: Span) -> Result<FoldValue, ConstError> {
         match &expr.kind {
-            ExprKind::ArrayLiteral { elements, .. } => Ok(ConstValue::Int(elements.len() as i128)),
-            ExprKind::Str(bytes) => Ok(ConstValue::Int(bytes.len() as i128)),
+            ExprKind::ArrayLiteral { elements, .. } => Ok(usize_value(elements.len())),
+            ExprKind::Str(bytes) => Ok(usize_value(bytes.len())),
             ExprKind::Name(name) => {
                 let global = self.table.global(&self.module.name, name).cloned();
                 match global.map(|ty| ty.kind) {
                     Some(TyKind::Array { extents, .. }) => match extents.first() {
-                        Some(Some(extent)) => Ok(ConstValue::Int(*extent as i128)),
+                        Some(Some(extent)) => Ok(usize_value(*extent)),
                         _ => Err(ConstError::NotConstant(span)),
                     },
                     _ => Err(ConstError::NotConstant(span)),
@@ -466,122 +559,6 @@ fn report(error: Option<ConstError>, diagnostics: &mut Diagnostics) {
                 "remove the zero divisor or the MIN/-1 operation, or use a non-constant operand",
             ),
         ),
-    }
-}
-
-/// Wraps a wide value to the width and signedness of an integer context.
-///
-/// A `None` context leaves the value untouched in the wide accumulator.
-fn wrap_int(value: i128, context: Option<ScalarType>) -> i128 {
-    let Some(scalar) = context.filter(|scalar| is_integer_scalar(*scalar)) else {
-        return value;
-    };
-    let bits = scalar_bits(scalar);
-    if bits >= 128 {
-        return value;
-    }
-    let modulus = 1i128 << bits;
-    let mask = modulus - 1;
-    let truncated = value & mask;
-    if is_signed_scalar(scalar) && (truncated & (modulus >> 1)) != 0 {
-        truncated - modulus
-    } else {
-        truncated
-    }
-}
-
-/// The most negative value an integer context can hold, when it is signed.
-fn signed_min(scalar: ScalarType) -> Option<i128> {
-    match scalar {
-        ScalarType::I8 => Some(i8::MIN as i128),
-        ScalarType::I16 => Some(i16::MIN as i128),
-        ScalarType::I32 | ScalarType::Isize => Some(i32::MIN as i128),
-        _ => None,
-    }
-}
-
-/// Folds a binary operator over two integers with runtime semantics.
-///
-/// `context` is the integer type the operation is evaluated at: it fixes the
-/// wrap width, the shift-count mask, and the signed minimum over `-1`. Without
-/// a context the wide accumulator's own rules apply.
-fn fold_integer(
-    op: BinaryOp,
-    a: i128,
-    b: i128,
-    span: Span,
-    context: Option<ScalarType>,
-) -> Result<ConstValue, ConstError> {
-    let wrap = |value: i128| ConstValue::Int(wrap_int(value, context));
-    match op {
-        BinaryOp::Add => Ok(wrap(a.wrapping_add(b))),
-        BinaryOp::Sub => Ok(wrap(a.wrapping_sub(b))),
-        BinaryOp::Mul => Ok(wrap(a.wrapping_mul(b))),
-        BinaryOp::Div => {
-            if let Some(min) = context.and_then(signed_min) {
-                if a == min && b == -1 {
-                    return Err(ConstError::DivisionByZero(span));
-                }
-            }
-            a.checked_div(b)
-                .map(wrap)
-                .ok_or(ConstError::DivisionByZero(span))
-        }
-        BinaryOp::Rem => {
-            if let Some(min) = context.and_then(signed_min) {
-                if a == min && b == -1 {
-                    return Err(ConstError::DivisionByZero(span));
-                }
-            }
-            a.checked_rem(b)
-                .map(wrap)
-                .ok_or(ConstError::DivisionByZero(span))
-        }
-        BinaryOp::BitAnd => Ok(wrap(a & b)),
-        BinaryOp::BitOr => Ok(wrap(a | b)),
-        BinaryOp::BitXor => Ok(wrap(a ^ b)),
-        BinaryOp::Shl => {
-            let count = shift_count(b, context);
-            Ok(wrap(a.wrapping_shl(count)))
-        }
-        BinaryOp::Shr => {
-            let count = shift_count(b, context);
-            Ok(wrap(a.wrapping_shr(count)))
-        }
-        BinaryOp::Eq => Ok(ConstValue::Bool(a == b)),
-        BinaryOp::Ne => Ok(ConstValue::Bool(a != b)),
-        BinaryOp::Lt => Ok(ConstValue::Bool(a < b)),
-        BinaryOp::Le => Ok(ConstValue::Bool(a <= b)),
-        BinaryOp::Gt => Ok(ConstValue::Bool(a > b)),
-        BinaryOp::Ge => Ok(ConstValue::Bool(a >= b)),
-        BinaryOp::LogicalAnd | BinaryOp::LogicalOr => Err(ConstError::NotConstant(span)),
-    }
-}
-
-/// Masks a shift count to the width of the operand's type.
-fn shift_count(count: i128, context: Option<ScalarType>) -> u32 {
-    let width = context
-        .filter(|scalar| is_integer_scalar(*scalar))
-        .map(scalar_bits)
-        .unwrap_or(128);
-    (count as u32) & (width - 1)
-}
-
-/// Folds a binary operator over two floats. A float division by zero yields an
-/// infinity rather than an error, matching the defined float behavior.
-fn fold_float(op: BinaryOp, a: f64, b: f64, span: Span) -> Result<ConstValue, ConstError> {
-    match op {
-        BinaryOp::Add => Ok(ConstValue::Float(a + b)),
-        BinaryOp::Sub => Ok(ConstValue::Float(a - b)),
-        BinaryOp::Mul => Ok(ConstValue::Float(a * b)),
-        BinaryOp::Div => Ok(ConstValue::Float(a / b)),
-        BinaryOp::Eq => Ok(ConstValue::Bool(a == b)),
-        BinaryOp::Ne => Ok(ConstValue::Bool(a != b)),
-        BinaryOp::Lt => Ok(ConstValue::Bool(a < b)),
-        BinaryOp::Le => Ok(ConstValue::Bool(a <= b)),
-        BinaryOp::Gt => Ok(ConstValue::Bool(a > b)),
-        BinaryOp::Ge => Ok(ConstValue::Bool(a >= b)),
-        _ => Err(ConstError::NotConstant(span)),
     }
 }
 

@@ -9,7 +9,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{Expr, Item, QualifiedName, Type, TypeKind, TypeParam};
+use crate::ast::{Expr, Item, QualifiedName, ScalarType, Type, TypeKind, TypeParam};
+use crate::consts::ConstFolder;
 use crate::load::Loaded;
 
 use super::{int_literal_value, FuncTy, Ty, TyKind};
@@ -182,7 +183,74 @@ impl TypeTable {
                 }
             }
         }
+        table.resolve_constant_extents(loaded);
         table
+    }
+
+    /// Re-resolves struct fields and global types so a `const` name, or an
+    /// arithmetic expression, supplies an array extent rather than leaving it
+    /// omitted.
+    ///
+    /// The first two passes read integer literals only, because the table they
+    /// would need does not exist yet. Once every declaration and its type is
+    /// in place, a constant folder can resolve the remaining extents the same
+    /// way the checker does. Each new type is collected before it is written,
+    /// so the shared borrow the folder holds ends first. A type whose folder
+    /// cannot resolve an extent keeps its previous, literal-only form.
+    fn resolve_constant_extents(&mut self, loaded: &Loaded) {
+        let mut struct_updates: Vec<(String, Vec<(String, Ty)>)> = Vec::new();
+        let mut global_updates: Vec<(String, String, Ty)> = Vec::new();
+        {
+            for module in loaded.modules.values() {
+                let mut folder = ConstFolder::new(self, module, loaded);
+                for item in &module.items {
+                    match item {
+                        Item::Struct(decl) => {
+                            let params = type_param_names(&decl.type_params);
+                            let fields = decl
+                                .fields
+                                .iter()
+                                .map(|field| {
+                                    let ty = resolve_ty_with(
+                                        &field.ty,
+                                        &params,
+                                        self,
+                                        &mut |expr| {
+                                            folder.integer_at(expr, Some(ScalarType::Usize))
+                                        },
+                                    );
+                                    (field.name.clone(), ty)
+                                })
+                                .collect();
+                            struct_updates.push((decl.name.clone(), fields));
+                        }
+                        Item::GlobalLet(decl) => {
+                            let ty = resolve_ty_with(&decl.ty, &[], self, &mut |expr| {
+                                folder.integer_at(expr, Some(ScalarType::Usize))
+                            });
+                            global_updates.push((module.name.clone(), decl.name.clone(), ty));
+                        }
+                        Item::GlobalConst(decl) => {
+                            let ty = resolve_ty_with(&decl.ty, &[], self, &mut |expr| {
+                                folder.integer_at(expr, Some(ScalarType::Usize))
+                            });
+                            global_updates.push((module.name.clone(), decl.name.clone(), ty));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        for (name, fields) in struct_updates {
+            if let Some(info) = self.structs.get_mut(&name) {
+                info.fields = fields;
+            }
+        }
+        for (module, name, ty) in global_updates {
+            if let Some(globals) = self.globals.get_mut(&module) {
+                globals.insert(name, ty);
+            }
+        }
     }
 
     /// True when the program declares a struct with this name.

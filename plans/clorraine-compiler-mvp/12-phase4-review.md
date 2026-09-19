@@ -53,4 +53,18 @@ Strict scope excludes optional work; these are recorded, not fixed:
 
 ## Re-review of the fix diff
 
-_(recorded after the single scoped re-review)_
+The single permitted re-review accepted RV-202, RV-203, RV-204, RV-206,
+RV-207, and RV-208, and confirmed RV-201 and RV-205 as mostly resolved. It
+found one residual major and two minors:
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| RV-210 | 🟠 MAJOR | Folding wrapped at the declared/context width rather than the operation's own type, so `i16(30000) + i16(30000)` assigned to `i32` did not wrap and `i16(-32768) / i16(-1)` did not fault | Fixed: folding now carries each value's scalar and wraps, masks, and faults at the operation's own type |
+| RV-211 | 🟡 MINOR | A struct field whose array extent is a `const` name still resolved to an omitted extent, so `sizeof(S)` was a false `E10224` | Fixed: table construction folds constant extents |
+| RV-212 | 🟡 MINOR | An array of overlay values used as a by-value local was accepted | Fixed: the overlay check follows arrays and struct fields, stopping at `raw` |
+
+The single re-review pass is the budget; the residual fixes were verified by
+`make check` and by re-running every trigger through the built binary. Final
+state: spec check OK, 158 unit tests (8 more regressions), 2 compile-fail
+driver tests, 14 stage driver tests, 47 of 47 asserted goldens.
+

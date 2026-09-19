@@ -159,20 +159,44 @@ impl<'a, 'd> Checker<'a, 'd> {
         })
     }
 
-    /// Reports `E10207` when a bare overlay type is used as a value.
+    /// Reports `E10207` when a value of `ty` reaches an overlay type.
     ///
-    /// An overlay type is reached only through a `raw` pointer, so a `raw`
-    /// pointer type is not by-value use and passes.
+    /// An overlay type is reached only through a `raw` pointer, so this follows
+    /// arrays and struct fields but stops at `raw`. The array case matters
+    /// because an array of overlay values is itself a by-value local.
     fn check_overlay_value(&mut self, ty: &Ty, span: Span) {
-        if let TyKind::Struct(name) = &ty.kind {
-            if self.table.is_overlay(name) {
-                self.error(
-                    "E10207",
-                    format!("overlay type '{name}' cannot be used by value"),
-                    "access it through a `raw` pointer inside `unsafe`",
-                    span,
-                );
+        if let Some(name) = self.overlay_reached(ty, 0) {
+            self.error(
+                "E10207",
+                format!("overlay type '{name}' cannot be used by value"),
+                "access it through a `raw` pointer inside `unsafe`",
+                span,
+            );
+        }
+    }
+
+    /// The name of the first overlay type a value of `ty` contains, if any.
+    ///
+    /// The recursion is depth-limited so a malformed self-referential
+    /// declaration cannot loop.
+    fn overlay_reached(&self, ty: &Ty, depth: usize) -> Option<String> {
+        if depth > 32 {
+            return None;
+        }
+        match &ty.kind {
+            TyKind::Raw(_) => None,
+            TyKind::Array { element, .. } => self.overlay_reached(element, depth + 1),
+            TyKind::Struct(name) => {
+                if self.table.is_overlay(name) {
+                    return Some(name.clone());
+                }
+                self.table.struct_fields(name).and_then(|fields| {
+                    fields
+                        .iter()
+                        .find_map(|(_, field)| self.overlay_reached(field, depth + 1))
+                })
             }
+            _ => None,
         }
     }
 

@@ -154,6 +154,97 @@ func main(): i32 { return 0; }
 }
 
 #[test]
+fn constant_operations_fold_at_their_own_type() {
+    // The `i16` addition wraps to a negative value, so the extent is E10226
+    // even though the constant's declared type is the wider `i32`.
+    assert_codes(
+        r#"module test;
+const A: i32 = i16(30000) + i16(30000);
+func demo(): void { let x: u8[A]; }
+func main(): i32 { return 0; }
+"#,
+        &["E10226"],
+    );
+    // The `i16` operands make the division fault at `i16`.
+    assert_codes(
+        r#"module test;
+const A: i32 = i16(-32768) / i16(-1);
+func main(): i32 { return 0; }
+"#,
+        &["E10223"],
+    );
+    // The shift count masks to the 16-bit left operand, so `A` is `16`: the
+    // extent `A - 16` is zero.
+    assert_codes(
+        r#"module test;
+const A: u32 = u16(1) << 20;
+func demo(): void { let x: u8[A - 16]; }
+func main(): i32 { return 0; }
+"#,
+        &["E10226"],
+    );
+    // An enum member folds its explicit value at the operation's type.
+    assert_codes(
+        r#"module test;
+enum E : i32 { A = i16(30000) + i16(30000) }
+func demo(): void { let x: u8[E.A]; }
+func main(): i32 { return 0; }
+"#,
+        &["E10226"],
+    );
+}
+
+#[test]
+fn struct_field_extents_fold_constant_names() {
+    // The field extent is the constant name `W`, so the struct has a known
+    // size and `sizeof(S)` folds instead of reporting E10224.
+    assert_accepts(
+        r#"module test;
+const W: usize = 4;
+struct S { a: u8[W]; }
+const N: usize = sizeof(S);
+func main(): i32 { return 0; }
+"#,
+    );
+    // The extent also reaches a global declared with the constant.
+    assert_accepts(
+        r#"module test;
+const W: usize = 4;
+let buffer: u8[W] = [; 0];
+func main(): i32 { return 0; }
+"#,
+    );
+}
+
+#[test]
+fn overlay_values_are_rejected_through_arrays_and_fields() {
+    assert_codes(
+        r#"module test;
+struct CustomRegs { ctrl: volatile u16; }
+func demo(): void { let r: CustomRegs[4]; }
+func main(): i32 { return 0; }
+"#,
+        &["E10207"],
+    );
+    assert_codes(
+        r#"module test;
+struct Inner { v: volatile u16; }
+struct Outer { i: Inner; }
+func demo(o: Outer): void {}
+func main(): i32 { return 0; }
+"#,
+        &["E10207"],
+    );
+    assert_accepts(
+        r#"module test;
+struct CustomRegs { ctrl: volatile u16; }
+func demo(): void { let regs: raw CustomRegs = raw CustomRegs(0); }
+func main(): i32 { return 0; }
+"#,
+    );
+}
+
+#[test]
 fn assert_checks_its_condition_once() {
     assert_codes(
         r#"module test;
