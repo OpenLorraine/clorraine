@@ -135,10 +135,15 @@ impl Checker<'_, '_> {
     }
 
     /// Types an integer literal by its context, checking that it fits.
+    ///
+    /// Only an integer scalar context adapts the literal; a `bool`, float, or
+    /// non-scalar context leaves it as the default `i32` so the caller reports
+    /// the conversion error. This keeps an integer from silently becoming a
+    /// `bool`.
     fn check_int(&mut self, value: u64, expected: Option<&Ty>, span: Span) -> Ty {
         if let Some(expected) = expected {
             if let TyKind::Scalar(scalar) = expected.kind {
-                if !crate::types::is_float_scalar(scalar) {
+                if crate::types::is_integer_scalar(scalar) {
                     if !int_fits(value as i128, scalar) {
                         self.error(
                             "E10202",
@@ -202,6 +207,22 @@ impl Checker<'_, '_> {
             }
         }
         Ty::unknown()
+    }
+
+    /// Types the receiver of a value-headed dotted callee.
+    ///
+    /// For `a.b.c(args)` the receiver is `a.b` and the last segment `c` is the
+    /// called member; the receiver is walked the same way a member chain is.
+    pub(super) fn qualified_receiver_type(&mut self, name: &QualifiedName) -> Ty {
+        let Some(first) = name.segments.first() else {
+            return Ty::unknown();
+        };
+        let mut ty = self.name_type(first);
+        let last = name.segments.len().saturating_sub(1);
+        for segment in &name.segments[1..last] {
+            ty = self.member_type(&ty, segment, name.span);
+        }
+        ty
     }
 
     /// Types a member access: a struct field or an enum member.
@@ -430,7 +451,10 @@ impl Checker<'_, '_> {
         let expected_extent = expected_extents
             .as_ref()
             .and_then(|extents| extents.first().copied().flatten());
-        if fill.is_some() && expected_extent.is_none() {
+        // A context type that is already opaque cannot name an extent; the
+        // extent error, if any, was reported where the extent was checked.
+        let opaque_context = expected.is_some_and(Ty::is_unknown);
+        if fill.is_some() && expected_extent.is_none() && !opaque_context {
             self.error(
                 "E10215",
                 "array fill requires a fixed extent",
@@ -449,22 +473,34 @@ impl Checker<'_, '_> {
             }
         }
 
-        let expected_element = expected.and_then(|ty| match &ty.kind {
-            TyKind::Array { element, .. } => Some((**element).clone()),
-            _ => None,
-        });
-        let mut element = expected_element.clone();
-        for (index, expr) in elements.iter().enumerate() {
-            let ty = match &expected_element {
+        // A single-extent element is checked at the element type. For a
+        // multi-extent type such as `u8[3][2]`, each element is itself the
+        // array of the remaining extents, while the literal's type keeps the
+        // base element and every extent.
+        let (mut element, result_element) = match expected {
+            Some(ty) => match &ty.kind {
+                TyKind::Array { element, extents } if extents.len() > 1 => (
+                    Some(Ty::array((**element).clone(), extents[1..].to_vec())),
+                    Some((**element).clone()),
+                ),
+                TyKind::Array { element, .. } => {
+                    (Some((**element).clone()), Some((**element).clone()))
+                }
+                _ => (None, None),
+            },
+            None => (None, None),
+        };
+        for expr in elements {
+            let ty = match &element {
                 Some(element_ty) => self.check_into(expr, element_ty),
                 None => self.check_value(expr, None),
             };
-            if index == 0 && element.is_none() {
+            if element.is_none() {
                 element = Some(ty);
             }
         }
         if let Some(fill_expr) = fill {
-            match &expected_element {
+            match &element {
                 Some(element_ty) => {
                     self.check_into(fill_expr, element_ty);
                 }
@@ -478,7 +514,10 @@ impl Checker<'_, '_> {
             _ if elements.is_empty() && fill.is_some() => vec![None],
             _ => vec![Some(elements.len())],
         };
-        Ty::array(element.unwrap_or_else(Ty::unknown), extents)
+        Ty::array(
+            result_element.or(element).unwrap_or_else(Ty::unknown),
+            extents,
+        )
     }
 
     /// Types a reserved built-in call. Only the modeled diagnostics are
@@ -519,7 +558,8 @@ impl Checker<'_, '_> {
                     let ty = self.check_value(condition, None);
                     self.require_bool(&ty, condition.span);
                 }
-                self.check_intrinsic_expr_args(args);
+                // The first argument was already checked as the condition.
+                self.check_intrinsic_expr_args(args.get(1..).unwrap_or(&[]));
                 Ty::void()
             }
             "panic" => {

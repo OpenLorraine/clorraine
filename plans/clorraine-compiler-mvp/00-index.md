@@ -76,6 +76,7 @@ challenger verdict of `Unnecessary` for the larger option.
 | 09  | [Phase 1 Review](09-phase1-review.md) | Independent spike review findings and fix batch |
 | 10  | [Phase 2 Review](10-phase2-review.md) | Independent front-end review findings and fix batch |
 | 11  | [Phase 3 Review](11-phase3-review.md) | Independent name/module review findings and fix batch |
+| 12  | [Phase 4 Review](12-phase4-review.md) | Independent type/const review findings and fix batch |
 | 99  | [Execution Plan](99-execution-plan.md) | Phases, steps, and the task checklist |
 
 ## Quick Reference

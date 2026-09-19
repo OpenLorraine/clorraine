@@ -358,6 +358,8 @@ compiler logic.
 
 **Verify**: `make check`.
 
+**Post-phase review**: `12-phase4-review.md` — the independent reviewer found RV-200..RV-208 (six major: constant folding ignored operand width, array extents read only literals, nested array element type, unchecked dot-calls, `bool` literal context, and the overlay by-value ban limited to literals). The user ruled to fix all nine; every accepted fix is implemented with a regression test and verified by `make check` (150 unit tests, 2 compile-fail driver tests, 14 stage driver tests; 47 of 47 asserted goldens).
+
 ---
 
 ## Phase 5: Ownership, Borrows, FFI Contracts, Generics

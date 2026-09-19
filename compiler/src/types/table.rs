@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{Extent, Item, QualifiedName, Type, TypeKind, TypeParam};
+use crate::ast::{Expr, Item, QualifiedName, Type, TypeKind, TypeParam};
 use crate::load::Loaded;
 
 use super::{int_literal_value, FuncTy, Ty, TyKind};
@@ -341,24 +341,53 @@ fn type_param_names(params: &[TypeParam]) -> Vec<String> {
 /// A name that is not a known struct, enum, handle, type parameter, or the
 /// built-in `String` becomes [`TyKind::Unknown`], so a not-yet-modelled type
 /// does not cascade into false diagnostics.
+///
+/// Array extents are folded by [`int_literal_value`], which reads plain and
+/// negated integer literals only. Callers that can evaluate a constant name or
+/// arithmetic use [`resolve_ty_with`] to supply their own folder.
 pub fn resolve_ty(ty: &Type, type_params: &[String], table: &TypeTable) -> Ty {
+    resolve_ty_with(ty, type_params, table, &mut |expr| int_literal_value(expr))
+}
+
+/// Resolves an AST type, folding each array extent with `fold`.
+///
+/// `fold` returns the wide integer value of an extent expression, or `None`
+/// when it is not constant. A negative or too-large value that does not fit a
+/// `usize` leaves the extent unknown so the caller can report the fault.
+pub fn resolve_ty_with<F>(
+    ty: &Type,
+    type_params: &[String],
+    table: &TypeTable,
+    fold: &mut F,
+) -> Ty
+where
+    F: FnMut(&Expr) -> Option<i128>,
+{
     let kind = match &ty.kind {
         TypeKind::Void => TyKind::Void,
         TypeKind::Scalar(scalar) => TyKind::Scalar(*scalar),
         TypeKind::Str => TyKind::Str,
         TypeKind::CString => TyKind::CString,
         TypeKind::StaticStr => TyKind::StaticStr,
-        TypeKind::Raw(inner) => TyKind::Raw(Box::new(resolve_ty(inner, type_params, table))),
+        TypeKind::Raw(inner) => {
+            TyKind::Raw(Box::new(resolve_ty_with(inner, type_params, table, fold)))
+        }
         TypeKind::Array { element, extents } => TyKind::Array {
-            element: Box::new(resolve_ty(element, type_params, table)),
-            extents: extents.iter().map(extent_size).collect(),
+            element: Box::new(resolve_ty_with(element, type_params, table, fold)),
+            extents: extents
+                .iter()
+                .map(|extent| {
+                    let value = extent.size.as_ref().and_then(|expr| fold(expr))?;
+                    usize::try_from(value).ok()
+                })
+                .collect(),
         },
         TypeKind::Function { params, returns } => TyKind::Func(FuncTy {
             params: params
                 .iter()
-                .map(|param| resolve_ty(&param.ty, type_params, table))
+                .map(|param| resolve_ty_with(&param.ty, type_params, table, fold))
                 .collect(),
-            returns: Box::new(resolve_ty(returns, type_params, table)),
+            returns: Box::new(resolve_ty_with(returns, type_params, table, fold)),
         }),
         TypeKind::Named { name, .. } => resolve_named(name, type_params, table),
         TypeKind::Error => TyKind::Unknown,
@@ -392,12 +421,6 @@ fn resolve_named(name: &QualifiedName, type_params: &[String], table: &TypeTable
         }
     }
     TyKind::Unknown
-}
-
-/// Reads a constant array extent, when it is a plain integer literal.
-fn extent_size(extent: &Extent) -> Option<usize> {
-    let value = int_literal_value(extent.size.as_ref()?)?;
-    usize::try_from(value).ok()
 }
 
 #[cfg(test)]

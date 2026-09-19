@@ -8,7 +8,7 @@ use crate::ast::{
     Block, ConstStmt, DoWhileStmt, ElseBranch, ForCStmt, ForInStmt, ForInit, IfStmt, LetStmt, Stmt,
     SwitchLabel, SwitchStmt,
 };
-use crate::types::{Ty, TyKind};
+use crate::types::{integer_scalar, Ty, TyKind};
 
 use super::Checker;
 
@@ -56,8 +56,14 @@ impl Checker<'_, '_> {
     }
 
     /// Checks a `let` binding; the name is declared after its initializer.
+    ///
+    /// An overlay type has no by-value form, so a declared overlay type is
+    /// rejected before its initializer is checked.
     fn check_let(&mut self, decl: &LetStmt) {
         let declared = decl.ty.as_ref().map(|ty| self.resolve_type(ty));
+        if let Some(ty) = &declared {
+            self.check_overlay_value(ty, decl.name_span);
+        }
         match (&declared, &decl.value) {
             (Some(ty), Some(value)) => {
                 self.check_into(value, ty);
@@ -147,7 +153,7 @@ impl Checker<'_, '_> {
         for clause in &decl.clauses {
             self.push_scope();
             if let SwitchLabel::Case(value) = &clause.label {
-                self.require_constant(value);
+                self.require_constant(value, integer_scalar(&scrutinee));
                 self.check_value(value, Some(&scrutinee));
             }
             for statement in &clause.statements {

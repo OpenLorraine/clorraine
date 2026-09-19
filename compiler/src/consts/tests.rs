@@ -11,14 +11,14 @@ use crate::parse::Parser;
 use crate::span::{SourceMap, Span};
 
 /// A span for a synthetic expression; the folder carries it into errors.
-fn span() -> Span {
+pub(super) fn span() -> Span {
     let mut sources = SourceMap::new();
     let id = sources.add_file("test.clo".to_owned(), String::new());
     Span::new(id, 0, 0)
 }
 
 /// An integer literal expression.
-fn int(value: u64) -> Expr {
+pub(super) fn int(value: u64) -> Expr {
     Expr {
         kind: ExprKind::Int(value),
         span: span(),
@@ -34,15 +34,26 @@ fn boolean(value: bool) -> Expr {
 }
 
 /// A name reference.
-fn name(text: &str) -> Expr {
+pub(super) fn name(text: &str) -> Expr {
     Expr {
         kind: ExprKind::Name(text.to_owned()),
         span: span(),
     }
 }
 
+/// A dotted name reference.
+pub(super) fn dotted(segments: &[&str]) -> Expr {
+    Expr {
+        kind: ExprKind::Qualified(QualifiedName {
+            segments: segments.iter().map(|segment| (*segment).to_owned()).collect(),
+            span: span(),
+        }),
+        span: span(),
+    }
+}
+
 /// A unary operator application.
-fn unary(op: UnaryOp, operand: Expr) -> Expr {
+pub(super) fn unary(op: UnaryOp, operand: Expr) -> Expr {
     Expr {
         kind: ExprKind::Unary {
             op,
@@ -53,12 +64,23 @@ fn unary(op: UnaryOp, operand: Expr) -> Expr {
 }
 
 /// A binary operator application.
-fn op(operator: BinaryOp, left: Expr, right: Expr) -> Expr {
+pub(super) fn op(operator: BinaryOp, left: Expr, right: Expr) -> Expr {
     Expr {
         kind: ExprKind::Binary {
             op: operator,
             left: Box::new(left),
             right: Box::new(right),
+        },
+        span: span(),
+    }
+}
+
+/// A scalar cast `T(value)`.
+pub(super) fn cast(scalar: ScalarType, value: Expr) -> Expr {
+    Expr {
+        kind: ExprKind::Cast {
+            ty: scalar_type(scalar),
+            value: Box::new(value),
         },
         span: span(),
     }
@@ -103,62 +125,74 @@ fn intrinsic(which: &str, arg: IntrinsicArg) -> Expr {
 ///
 /// The closure receives the folder so the table and module borrows stay
 /// alive for the whole fold.
-fn with_folder<R>(source: &str, run: impl FnOnce(&mut ConstFolder) -> R) -> R {
-    let mut sources = SourceMap::new();
+pub(super) fn with_folder<R>(source: &str, run: impl FnOnce(&mut ConstFolder) -> R) -> R {
+    with_loaded(&[source], "test", run)
+}
+
+/// Builds a folder over several parsed sources, for the named module.
+///
+/// The closure receives the folder so the table and module borrows stay alive
+/// for the whole fold.
+pub(super) fn with_loaded<R>(sources: &[&str], module: &str, run: impl FnOnce(&mut ConstFolder) -> R) -> R {
+    let mut source_map = SourceMap::new();
     let mut diagnostics = Diagnostics::new(false, None);
-    let id = sources.add_file("test.clo".to_owned(), source.to_owned());
-    let program = Parser::new(&sources, id, &mut diagnostics).parse_program();
-    let loaded = load::load(vec![(id, program)], &mut diagnostics);
+    let mut programs = Vec::new();
+    for (index, text) in sources.iter().enumerate() {
+        let id = source_map.add_file(format!("file{index}.clo"), (*text).to_owned());
+        let program = Parser::new(&source_map, id, &mut diagnostics).parse_program();
+        programs.push((id, program));
+    }
+    let loaded = load::load(programs, &mut diagnostics);
     let table = TypeTable::build(&loaded);
-    let module = loaded.module("test").expect("the test module loaded");
-    let mut folder = ConstFolder::new(&table, module);
+    let module = loaded.module(module).expect("the test module loaded");
+    let mut folder = ConstFolder::new(&table, module, &loaded);
     run(&mut folder)
 }
 
 /// The baseline module every direct fold is evaluated against.
-const BASELINE: &str = "module test;\nfunc main(): i32 { return 0; }\n";
+pub(super) const BASELINE: &str = "module test;\nfunc main(): i32 { return 0; }\n";
 
 /// Folds one synthetic expression against an otherwise empty module.
-fn fold(expr: &Expr) -> Result<ConstValue, ConstError> {
+pub(super) fn fold(expr: &Expr) -> Result<ConstValue, ConstError> {
     with_folder(BASELINE, |folder| folder.fold(expr))
 }
 
 #[test]
 fn integer_arithmetic_wraps_in_the_wide_accumulator() {
     assert_eq!(
-        fold_integer(BinaryOp::Add, i128::MAX, 1, span()),
+        fold_integer(BinaryOp::Add, i128::MAX, 1, span(), None),
         Ok(ConstValue::Int(i128::MIN))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Sub, i128::MIN, 1, span()),
+        fold_integer(BinaryOp::Sub, i128::MIN, 1, span(), None),
         Ok(ConstValue::Int(i128::MAX))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Mul, i128::MAX, 2, span()),
+        fold_integer(BinaryOp::Mul, i128::MAX, 2, span(), None),
         Ok(ConstValue::Int(-2))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Add, 2, 3, span()),
+        fold_integer(BinaryOp::Add, 2, 3, span(), None),
         Ok(ConstValue::Int(5))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Sub, 2, 5, span()),
+        fold_integer(BinaryOp::Sub, 2, 5, span(), None),
         Ok(ConstValue::Int(-3))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Mul, -4, 3, span()),
+        fold_integer(BinaryOp::Mul, -4, 3, span(), None),
         Ok(ConstValue::Int(-12))
     );
     assert_eq!(
-        fold_integer(BinaryOp::BitAnd, 0b1100, 0b1010, span()),
+        fold_integer(BinaryOp::BitAnd, 0b1100, 0b1010, span(), None),
         Ok(ConstValue::Int(0b1000))
     );
     assert_eq!(
-        fold_integer(BinaryOp::BitOr, 0b1100, 0b1010, span()),
+        fold_integer(BinaryOp::BitOr, 0b1100, 0b1010, span(), None),
         Ok(ConstValue::Int(0b1110))
     );
     assert_eq!(
-        fold_integer(BinaryOp::BitXor, 0b1100, 0b1010, span()),
+        fold_integer(BinaryOp::BitXor, 0b1100, 0b1010, span(), None),
         Ok(ConstValue::Int(0b0110))
     );
 }
@@ -166,32 +200,32 @@ fn integer_arithmetic_wraps_in_the_wide_accumulator() {
 #[test]
 fn shift_counts_wrap_and_signed_right_shift_is_arithmetic() {
     assert_eq!(
-        fold_integer(BinaryOp::Shl, 1, 0, span()),
+        fold_integer(BinaryOp::Shl, 1, 0, span(), None),
         Ok(ConstValue::Int(1))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Shl, 1, 8, span()),
+        fold_integer(BinaryOp::Shl, 1, 8, span(), None),
         Ok(ConstValue::Int(256))
     );
     // The count is applied modulo the accumulator width.
     assert_eq!(
-        fold_integer(BinaryOp::Shl, 1, 128, span()),
+        fold_integer(BinaryOp::Shl, 1, 128, span(), None),
         Ok(ConstValue::Int(1))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Shl, 1, 127, span()),
+        fold_integer(BinaryOp::Shl, 1, 127, span(), None),
         Ok(ConstValue::Int(i128::MIN))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Shl, 1, -1, span()),
+        fold_integer(BinaryOp::Shl, 1, -1, span(), None),
         Ok(ConstValue::Int(i128::MIN))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Shr, -8, 2, span()),
+        fold_integer(BinaryOp::Shr, -8, 2, span(), None),
         Ok(ConstValue::Int(-2))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Shr, 8, 2, span()),
+        fold_integer(BinaryOp::Shr, 8, 2, span(), None),
         Ok(ConstValue::Int(2))
     );
 }
@@ -199,19 +233,19 @@ fn shift_counts_wrap_and_signed_right_shift_is_arithmetic() {
 #[test]
 fn division_and_remainder_truncate_toward_zero() {
     assert_eq!(
-        fold_integer(BinaryOp::Div, 7, 2, span()),
+        fold_integer(BinaryOp::Div, 7, 2, span(), None),
         Ok(ConstValue::Int(3))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Div, -7, 2, span()),
+        fold_integer(BinaryOp::Div, -7, 2, span(), None),
         Ok(ConstValue::Int(-3))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Rem, -7, 2, span()),
+        fold_integer(BinaryOp::Rem, -7, 2, span(), None),
         Ok(ConstValue::Int(-1))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Rem, 7, -2, span()),
+        fold_integer(BinaryOp::Rem, 7, -2, span(), None),
         Ok(ConstValue::Int(1))
     );
 }
@@ -219,11 +253,11 @@ fn division_and_remainder_truncate_toward_zero() {
 #[test]
 fn division_and_remainder_by_zero_fault() {
     assert_eq!(
-        fold_integer(BinaryOp::Div, 10, 0, span()),
+        fold_integer(BinaryOp::Div, 10, 0, span(), None),
         Err(ConstError::DivisionByZero(span()))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Rem, 10, 0, span()),
+        fold_integer(BinaryOp::Rem, 10, 0, span(), None),
         Err(ConstError::DivisionByZero(span()))
     );
 }
@@ -231,15 +265,15 @@ fn division_and_remainder_by_zero_fault() {
 #[test]
 fn the_signed_minimum_over_minus_one_faults_on_both_operators() {
     assert_eq!(
-        fold_integer(BinaryOp::Div, i128::MIN, -1, span()),
+        fold_integer(BinaryOp::Div, i128::MIN, -1, span(), None),
         Err(ConstError::DivisionByZero(span()))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Rem, i128::MIN, -1, span()),
+        fold_integer(BinaryOp::Rem, i128::MIN, -1, span(), None),
         Err(ConstError::DivisionByZero(span()))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Div, i128::MIN, 1, span()),
+        fold_integer(BinaryOp::Div, i128::MIN, 1, span(), None),
         Ok(ConstValue::Int(i128::MIN))
     );
 }
@@ -247,36 +281,36 @@ fn the_signed_minimum_over_minus_one_faults_on_both_operators() {
 #[test]
 fn integer_comparisons_and_boolean_logic_fold() {
     assert_eq!(
-        fold_integer(BinaryOp::Eq, 1, 1, span()),
+        fold_integer(BinaryOp::Eq, 1, 1, span(), None),
         Ok(ConstValue::Bool(true))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Ne, 1, 1, span()),
+        fold_integer(BinaryOp::Ne, 1, 1, span(), None),
         Ok(ConstValue::Bool(false))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Lt, 1, 2, span()),
+        fold_integer(BinaryOp::Lt, 1, 2, span(), None),
         Ok(ConstValue::Bool(true))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Le, 2, 2, span()),
+        fold_integer(BinaryOp::Le, 2, 2, span(), None),
         Ok(ConstValue::Bool(true))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Gt, 3, 2, span()),
+        fold_integer(BinaryOp::Gt, 3, 2, span(), None),
         Ok(ConstValue::Bool(true))
     );
     assert_eq!(
-        fold_integer(BinaryOp::Ge, 2, 2, span()),
+        fold_integer(BinaryOp::Ge, 2, 2, span(), None),
         Ok(ConstValue::Bool(true))
     );
     // `&&` and `||` need short-circuit semantics, so they stay unfoled.
     assert!(matches!(
-        fold_integer(BinaryOp::LogicalAnd, 1, 1, span()),
+        fold_integer(BinaryOp::LogicalAnd, 1, 1, span(), None),
         Err(ConstError::NotConstant(_))
     ));
     assert!(matches!(
-        fold_integer(BinaryOp::LogicalOr, 1, 1, span()),
+        fold_integer(BinaryOp::LogicalOr, 1, 1, span(), None),
         Err(ConstError::NotConstant(_))
     ));
 }
@@ -439,8 +473,12 @@ func main(): i32 { return 0; }
             folder.fold(&name("helper")),
             Err(ConstError::NotConstant(_))
         ));
-        // A name the folder cannot tie to a declaration is opaque.
-        assert_eq!(folder.fold(&name("mystery")), Ok(ConstValue::Int(0)));
+        // A name the folder cannot tie to a constant declaration is not a
+        // constant, so a runtime local is reported rather than guessed at.
+        assert!(matches!(
+            folder.fold(&name("mystery")),
+            Err(ConstError::NotConstant(_))
+        ));
     });
 }
 
@@ -474,7 +512,7 @@ fn require_reports_the_two_constant_fault_codes() {
             .map(|item| item.code)
             .collect::<Vec<_>>()
     });
-    assert_eq!(codes, ["E10223", "E10224"]);
+    assert_eq!(codes, ["E10223", "E10224", "E10224"]);
 }
 
 #[test]

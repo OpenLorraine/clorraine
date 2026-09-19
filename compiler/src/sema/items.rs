@@ -8,8 +8,8 @@
 //! constant-shaped parts of every type, such as array extents and the type
 //! arguments of a generic struct.
 
-use crate::ast::{EnumDecl, Expr, StructDecl, Type, TypeKind};
-use crate::types::{int_fits, TyKind};
+use crate::ast::{EnumDecl, Expr, ScalarType, StructDecl, Type, TypeKind};
+use crate::types::{int_fits, integer_scalar, TyKind};
 
 use super::Checker;
 
@@ -70,9 +70,9 @@ impl Checker<'_, '_> {
             let Some(value) = &member.value else {
                 continue;
             };
-            self.require_constant(value);
+            self.require_constant(value, integer_scalar(&backing));
             if let TyKind::Scalar(scalar) = backing.kind {
-                if let Some(folded) = self.folder.integer(value) {
+                if let Some(folded) = self.folder.integer_in(value, &backing) {
                     if !int_fits(folded, scalar) {
                         self.error(
                             "E10202",
@@ -92,38 +92,53 @@ impl Checker<'_, '_> {
     /// context; a `let` initializer is computed at run time and is not.
     pub(super) fn check_global(&mut self, declared: &Type, value: &Expr, constant: bool) {
         let ty = self.resolve_type(declared);
+        self.check_overlay_value(&ty, declared.span);
         if constant {
-            self.require_constant(value);
+            self.require_constant(value, integer_scalar(&ty));
         }
         self.check_into(value, &ty);
     }
 
-    /// Reports `E10224` or `E10223` when an expression is not foldable.
-    pub(super) fn require_constant(&mut self, expr: &Expr) {
-        self.folder.require(expr, self.diagnostics);
+    /// Reports `E10224` or `E10223` when an expression is not foldable at the
+    /// width of its constant context.
+    pub(super) fn require_constant(&mut self, expr: &Expr, context: Option<ScalarType>) {
+        self.folder.require_at(expr, context, self.diagnostics);
     }
 
     /// Validates the constant-shaped parts of a type.
     ///
-    /// An array extent must be greater than zero, only the outermost extent of
-    /// a multi-dimensional type may be omitted, and a generic struct's type
-    /// argument count must match its declaration.
-    pub(super) fn validate_type(&mut self, ty: &Type) {
+    /// An array extent must fold at `usize` width and be greater than zero,
+    /// only the outermost extent of a multi-dimensional type may be omitted,
+    /// and a generic struct's type argument count must match its declaration.
+    ///
+    /// Returns false when an extent is present but not constant; the caller
+    /// then treats the whole type as opaque so the reported `E10224` does not
+    /// cascade into array-literal or bounds errors.
+    pub(super) fn validate_type(&mut self, ty: &Type) -> bool {
+        let mut valid = true;
         match &ty.kind {
             TypeKind::Array { element, extents } => {
-                self.validate_type(element);
+                if !self.validate_type(element) {
+                    valid = false;
+                }
                 for (index, extent) in extents.iter().enumerate() {
                     match &extent.size {
                         Some(size) => {
-                            self.require_constant(size);
-                            if let Some(value) = self.folder.integer(size) {
-                                if value <= 0 {
-                                    self.error(
-                                        "E10226",
-                                        "array extent must be greater than zero",
-                                        "use a positive extent",
-                                        extent.span,
-                                    );
+                            let folded = self.folder.integer_at(size, Some(ScalarType::Usize));
+                            match folded {
+                                Some(value) => {
+                                    if value <= 0 {
+                                        self.error(
+                                            "E10226",
+                                            "array extent must be greater than zero",
+                                            "use a positive extent",
+                                            extent.span,
+                                        );
+                                    }
+                                }
+                                None => {
+                                    self.require_constant(size, Some(ScalarType::Usize));
+                                    valid = false;
                                 }
                             }
                         }
@@ -139,16 +154,26 @@ impl Checker<'_, '_> {
                     }
                 }
             }
-            TypeKind::Raw(inner) => self.validate_type(inner),
+            TypeKind::Raw(inner) => {
+                if !self.validate_type(inner) {
+                    valid = false;
+                }
+            }
             TypeKind::Function { params, returns } => {
                 for param in params {
-                    self.validate_type(&param.ty);
+                    if !self.validate_type(&param.ty) {
+                        valid = false;
+                    }
                 }
-                self.validate_type(returns);
+                if !self.validate_type(returns) {
+                    valid = false;
+                }
             }
             TypeKind::Named { name, args } => {
                 for arg in args {
-                    self.validate_type(arg);
+                    if !self.validate_type(arg) {
+                        valid = false;
+                    }
                 }
                 if let Some(last) = name.segments.last() {
                     if let Some(params) = self.table.struct_type_params(last) {
@@ -174,5 +199,6 @@ impl Checker<'_, '_> {
             | TypeKind::StaticStr
             | TypeKind::Error => {}
         }
+        valid
     }
 }

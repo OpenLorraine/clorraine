@@ -18,12 +18,12 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{FuncDecl, Item, Type};
+use crate::ast::{FuncDecl, Item, ScalarType, Type};
 use crate::consts::ConstFolder;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::span::Span;
-use crate::types::{resolve_ty, Ty, TypeTable};
+use crate::types::{resolve_ty_with, Ty, TyKind, TypeTable};
 
 mod call;
 mod expr;
@@ -32,13 +32,15 @@ mod ops;
 mod stmt;
 
 #[cfg(test)]
+mod regressions;
+#[cfg(test)]
 mod tests;
 
 /// Checks every module of the loaded program.
 pub fn check(loaded: &Loaded, diagnostics: &mut Diagnostics) {
     let table = TypeTable::build(loaded);
     for module in loaded.modules.values() {
-        let mut checker = Checker::new(module, &table, diagnostics);
+        let mut checker = Checker::new(module, &table, loaded, diagnostics);
         checker.check_module();
     }
 }
@@ -71,11 +73,16 @@ struct Checker<'a, 'd> {
 
 impl<'a, 'd> Checker<'a, 'd> {
     /// Creates a checker for one module.
-    fn new(module: &'a Module, table: &'a TypeTable, diagnostics: &'d mut Diagnostics) -> Self {
+    fn new(
+        module: &'a Module,
+        table: &'a TypeTable,
+        loaded: &'a Loaded,
+        diagnostics: &'d mut Diagnostics,
+    ) -> Self {
         Self {
             module,
             table,
-            folder: ConstFolder::new(table, module),
+            folder: ConstFolder::new(table, module, loaded),
             scopes: Vec::new(),
             type_params: Vec::new(),
             function_name: None,
@@ -123,20 +130,50 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.function_name = Some(decl.name.clone());
         for param in &decl.params {
             let ty = self.resolve_type(&param.ty);
+            self.check_overlay_value(&ty, param.name_span);
             self.declare(&param.name, ty);
         }
         self.returns = self.resolve_type(&decl.returns);
+        let returns = self.returns.clone();
+        self.check_overlay_value(&returns, decl.name_span);
         self.check_block(&decl.body);
         self.function_name = None;
         self.type_params.clear();
         self.pop_scope();
     }
 
-    /// Resolves an AST type in the current type-parameter scope, checking the
-    /// constant-shaped parts of the type as it goes.
+    /// Resolves an AST type in the current type-parameter scope, folding its
+    /// array extents and checking the rest of its constant-shaped parts.
+    ///
+    /// A type whose extent is present but not constant is already reported as
+    /// `E10224`, so it becomes the opaque type instead of cascading into an
+    /// array-extent error.
     fn resolve_type(&mut self, ty: &Type) -> Ty {
-        self.validate_type(ty);
-        resolve_ty(ty, &self.type_params, self.table)
+        if !self.validate_type(ty) {
+            return Ty::unknown();
+        }
+        let table = self.table;
+        let type_params = &self.type_params;
+        resolve_ty_with(ty, type_params, table, &mut |expr| {
+            self.folder.integer_at(expr, Some(ScalarType::Usize))
+        })
+    }
+
+    /// Reports `E10207` when a bare overlay type is used as a value.
+    ///
+    /// An overlay type is reached only through a `raw` pointer, so a `raw`
+    /// pointer type is not by-value use and passes.
+    fn check_overlay_value(&mut self, ty: &Ty, span: Span) {
+        if let TyKind::Struct(name) = &ty.kind {
+            if self.table.is_overlay(name) {
+                self.error(
+                    "E10207",
+                    format!("overlay type '{name}' cannot be used by value"),
+                    "access it through a `raw` pointer inside `unsafe`",
+                    span,
+                );
+            }
+        }
     }
 
     /// Declares a name in the innermost scope.

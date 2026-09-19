@@ -40,14 +40,18 @@ impl Checker<'_, '_> {
         }
         if let ExprKind::Member { base, name } = &callee.kind {
             let base_ty = self.check_value(base, None);
-            if let Some(signature) = self.dot_call(&base_ty, name) {
-                self.check_args(args, &signature.params);
-                return signature.returns;
+            return self.check_dot_call(base_ty, name, args, base.span);
+        }
+        if let ExprKind::Qualified(name) = &callee.kind {
+            // A dotted callee whose head is a value in scope is a dot-call,
+            // exactly like the `Member` shape the parser builds elsewhere.
+            if name.segments.len() >= 2 && self.name_is_value(&name.segments[0]) {
+                let receiver = self.qualified_receiver_type(name);
+                if let Some(member) = name.segments.last() {
+                    let member = member.clone();
+                    return self.check_dot_call(receiver, &member, args, name.span);
+                }
             }
-            for arg in args {
-                self.check_value(&arg.value, None);
-            }
-            return Ty::unknown();
         }
         if let Some(name) = call_name(callee) {
             if !self.is_local(name) {
@@ -157,22 +161,75 @@ impl Checker<'_, '_> {
         })
     }
 
-    /// Resolves the free function a dot-call names, when the receiver is a
-    /// struct whose field of that name is callable, or a module function.
-    fn dot_call(&self, base: &Ty, name: &str) -> Option<FuncSig> {
+    /// Types a dot-call `receiver.name(args)`.
+    ///
+    /// A callable field wins over a free function and carries no receiver
+    /// parameter. A free-function candidate takes the receiver as its first
+    /// parameter, so the receiver is checked against it and the remaining
+    /// parameters are matched against the written arguments.
+    fn check_dot_call(&mut self, receiver: Ty, name: &str, args: &[Arg], span: Span) -> Ty {
+        match self.dot_call(&receiver, name) {
+            Some(DotCall::Field(signature)) => {
+                self.check_args(args, &signature.params);
+                signature.returns
+            }
+            Some(DotCall::Function(signature)) => {
+                if let Some((receiver_param, rest)) = signature.params.split_first() {
+                    self.check_conversion(&receiver, receiver_param, span);
+                    self.check_args(args, rest);
+                } else {
+                    self.check_args(args, &signature.params);
+                }
+                signature.returns
+            }
+            None => {
+                for arg in args {
+                    self.check_value(&arg.value, None);
+                }
+                Ty::unknown()
+            }
+        }
+    }
+
+    /// Resolves the candidate a dot-call names.
+    ///
+    /// A struct field of that name wins outright: a callable field is a
+    /// `Field` candidate, and a non-callable field stops the search. Without a
+    /// field, a visible free function is a `Function` candidate, and the
+    /// receiver-taking `len` intrinsic stands in as one so `xs.len()` works.
+    fn dot_call(&self, base: &Ty, name: &str) -> Option<DotCall> {
         if let TyKind::Struct(struct_name) = &base.kind {
             if let Some(field_ty) = self.table.struct_field(struct_name, name) {
-                if let TyKind::Func(signature) = &field_ty.kind {
-                    return Some(FuncSig {
+                return match &field_ty.kind {
+                    TyKind::Func(signature) => Some(DotCall::Field(FuncSig {
                         params: signature.params.clone(),
                         returns: (*signature.returns).clone(),
                         type_params: Vec::new(),
-                    });
-                }
-                return None;
+                    })),
+                    _ => None,
+                };
             }
         }
-        self.free_function(name)
+        if let Some(signature) = self.free_function(name) {
+            return Some(DotCall::Function(signature));
+        }
+        self.intrinsic_dot_call(name)
+    }
+
+    /// The signature of an intrinsic reachable as a dot-call.
+    ///
+    /// `xs.len()` is the documented spelling of `len(xs)`, so `len` is offered
+    /// as a receiver-taking free function. Its parameter type is opaque
+    /// because it accepts an array, a slice, or a string.
+    fn intrinsic_dot_call(&self, name: &str) -> Option<DotCall> {
+        match name {
+            "len" => Some(DotCall::Function(FuncSig {
+                params: vec![Ty::unknown()],
+                returns: Ty::usize_ty(),
+                type_params: Vec::new(),
+            })),
+            _ => None,
+        }
     }
 
     /// Checks a call's arguments against a known parameter list.
@@ -219,6 +276,14 @@ impl Checker<'_, '_> {
         }
         target.clone()
     }
+}
+
+/// The candidate a dot-call resolves to.
+enum DotCall {
+    /// A callable struct field; its signature has no receiver parameter.
+    Field(FuncSig),
+    /// A free function whose first parameter is the receiver.
+    Function(FuncSig),
 }
 
 /// The simple name of a callee, when it is one.

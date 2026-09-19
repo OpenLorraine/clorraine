@@ -15,7 +15,7 @@ use crate::ast::{Expr, ExprKind, ScalarType};
 
 mod table;
 
-pub use table::{resolve_ty, FuncSig, TypeTable};
+pub use table::{resolve_ty, resolve_ty_with, FuncSig, TypeTable};
 
 /// A checked type: a shape plus the `?` empty-state flag.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,6 +244,44 @@ pub fn is_integer_scalar(scalar: ScalarType) -> bool {
 /// True for `f32` and `f64`.
 pub fn is_float_scalar(scalar: ScalarType) -> bool {
     matches!(scalar, ScalarType::F32 | ScalarType::F64)
+}
+
+/// The bit width of a scalar type.
+///
+/// `usize` and `isize` are reported as 32-bit, matching the primary m68k
+/// target. The width drives constant folding, where an operation wraps at the
+/// width of its context type and a shift count is masked to it.
+pub fn scalar_bits(scalar: ScalarType) -> u32 {
+    match scalar {
+        ScalarType::I8 | ScalarType::U8 | ScalarType::Bool => 8,
+        ScalarType::I16 | ScalarType::U16 => 16,
+        ScalarType::I32
+        | ScalarType::U32
+        | ScalarType::F32
+        | ScalarType::Usize
+        | ScalarType::Isize => 32,
+        ScalarType::F64 => 64,
+    }
+}
+
+/// True for the signed integer scalars.
+pub fn is_signed_scalar(scalar: ScalarType) -> bool {
+    matches!(
+        scalar,
+        ScalarType::I8 | ScalarType::I16 | ScalarType::I32 | ScalarType::Isize
+    )
+}
+
+/// The integer scalar a type denotes, when it is an integer scalar.
+///
+/// A constant folder uses this to learn the width an expression wraps at; a
+/// non-integer context, such as `bool` or a float, yields `None` so the folder
+/// keeps its context-free behavior.
+pub fn integer_scalar(ty: &Ty) -> Option<ScalarType> {
+    match ty.kind {
+        TyKind::Scalar(scalar) if is_integer_scalar(scalar) => Some(scalar),
+        _ => None,
+    }
 }
 
 /// True when `from` widens to `to` implicitly (the T1a set).

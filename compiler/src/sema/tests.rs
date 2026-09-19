@@ -17,7 +17,7 @@ use crate::span::SourceMap;
 ///
 /// The parse and load diagnostics are deliberately discarded: these cases pin
 /// the semantic stage, and the driver never runs it after an earlier error.
-fn check_sources(files: &[&str]) -> Vec<(&'static str, String)> {
+pub(super) fn check_sources(files: &[&str]) -> Vec<(&'static str, String)> {
     let mut sources = SourceMap::new();
     let mut parse_diagnostics = Diagnostics::new(false, None);
     let mut programs = Vec::new();
@@ -42,13 +42,13 @@ fn codes(diagnostics: &[(&'static str, String)]) -> Vec<&'static str> {
 }
 
 /// Asserts that the semantic stage accepts a snippet with no diagnostics.
-fn assert_accepts(source: &str) {
+pub(super) fn assert_accepts(source: &str) {
     let diagnostics = check_sources(&[source]);
     assert!(diagnostics.is_empty(), "unexpected diagnostics: {diagnostics:?}");
 }
 
 /// Asserts that the semantic stage reports exactly the given codes.
-fn assert_codes(source: &str, expected: &[&str]) {
+pub(super) fn assert_codes(source: &str, expected: &[&str]) {
     assert_eq!(codes(&check_sources(&[source])), expected);
 }
 

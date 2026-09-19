@@ -340,7 +340,12 @@ impl Checker<'_, '_> {
                 // equivalent binary operator.
                 let value_ty = self.adapt_literal(value, &target_ty).unwrap_or(value_ty);
                 if let Some(binary) = assign_binary(op) {
-                    self.binary_result(binary, &target_ty, target.span, &value_ty, value.span);
+                    // `x op= y` is `x = x op y`, so the operator result must
+                    // convert back to the target exactly as the equivalent
+                    // assignment would.
+                    let result =
+                        self.binary_result(binary, &target_ty, target.span, &value_ty, value.span);
+                    self.check_conversion(&result, &target_ty, value.span);
                 }
             }
         }
