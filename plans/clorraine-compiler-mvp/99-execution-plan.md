@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 09:45
-> **Progress**: 28/84 tasks (33%)
+> **Last Updated**: 2026-09-19 09:51
+> **Progress**: 29/84 tasks (35%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -227,7 +227,7 @@ compiler logic.
 
 - [x] 2.2.1 Implement `src/span.rs` and `src/diag.rs` (diagnostic value, renderer, warning policy, `--max-errors`) ✅ (completed: 2026-09-19 09:41)
 - [x] 2.2.2 Implement `src/lex.rs` (all tokens, literals, templates, comments, lexical diagnostics) ✅ (completed: 2026-09-19 09:46) — mechanical correction: the token vocabulary lives in `src/token.rs` and the literal scanners in `src/lex/literals.rs` to keep files inside the size standard
-- [ ] 2.2.3 Implement `src/ast.rs` and `src/parse.rs` (recursive descent + Pratt, disambiguation table, diagnostic-only starts)
+- [x] 2.2.3 Implement `src/ast.rs` and `src/parse.rs` (recursive descent + Pratt, disambiguation table, diagnostic-only starts) ✅ (completed: 2026-09-19 09:53) — mechanical correction: the AST lives under `src/ast/` and the parser under `src/parse/` (items, types, expressions, statements) to keep files inside the size standard
 - [ ] 2.2.4 Implement `src/driver.rs` CLI skeleton (`--profile`, files, diagnostics, exit codes; empty translation unit on success until Phase 6)
 
 **Deliverables**:

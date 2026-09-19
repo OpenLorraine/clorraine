@@ -6,7 +6,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ast;
 pub mod diag;
 pub mod lex;
+pub mod parse;
 pub mod span;
 pub mod token;

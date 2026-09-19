@@ -171,6 +171,28 @@ pub enum Punct {
     MinusMinus,
 }
 
+/// Names that only an `intrinsic func` declaration may bind. They are
+/// identifier-shaped tokens; the parser recognizes them in call position.
+pub const RESERVED_BUILTINS: &[&str] = &[
+    "sizeof",
+    "offsetof",
+    "len",
+    "embed",
+    "panic",
+    "assert",
+    "readVolatile8",
+    "readVolatile16",
+    "readVolatile32",
+    "writeVolatile8",
+    "writeVolatile16",
+    "writeVolatile32",
+];
+
+/// True when `name` is a reserved built-in name.
+pub fn is_reserved_builtin(name: &str) -> bool {
+    RESERVED_BUILTINS.contains(&name)
+}
+
 /// One piece of a template string.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TemplatePart {
