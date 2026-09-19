@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 64 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution on 2026-09-19)
-> **Last Updated**: 2026-09-19 12:57
+> **Status**: ✅ GATE PASSED — all 65 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution; AR-65 raised and resolved during Phase 5 execution on 2026-09-19)
+> **Last Updated**: 2026-09-19 17:20
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -128,6 +128,16 @@ Both were ruled on by the user on 2026-09-19 (option A in each case).
 |---|----------|-----------------|-------------------|--------|
 | AR-63 | Technical (runtime) | `String` scoping. The compile-fail goldens use bare `String` with no import (16 files; the first to be asserted is `E10500_nonformattable_placeholder.clo`), and Ch 11 says "`String` is built in (T2)". But Ch 02 §4 lists `String` as a named type, 03-07 declares `export handle String freedBy FreeString;` in `std.text`, the AR-62 export table lists `String` under `std.text`, and every corpus program imports it. The name layer reports `E10219` for bare `String`, so a later-stage golden that uses it bare can never reach its intended diagnostic | **A**: treat `String` as a compiler-predeclared handle type visible in every module (with its `FreeString` deleter as the T2a declaration), keep the `std.text` export, and accept the now-redundant import; no oracle change. **B**: keep `String` a `std.text` export only and add `import { String } from std.text;` to the affected goldens (oracle change, AR-31). **C**: defer the bare-`String` later-stage goldens | ✅ Resolved — user chose A (built-in `String`) |
 | AR-64 | Technical (runtime) | ST-TYPE-3 in `07-testing-strategy.md` assigns `1 && true` to `E10222`, but Ch 04 §6 lists `&&` among the constructs that require a `bool` condition, otherwise `E10218`; the plan artifact and the frozen specification disagree | **A**: follow the specification — a non-`bool` `&&` operand is `E10218` — and correct the ST-TYPE-3 row in `07-testing-strategy.md`. **B**: follow the plan row — `1 && true` is `E10222` | ✅ Resolved — user chose A (spec is authoritative; ST row corrected) |
+
+## Batch 8 — runtime items during Phase 5 execution (2026-09-19)
+
+Surfaced while authoring the Phase 5 specification tests (task 5.1.1).
+Ruled on by the user on 2026-09-19.
+
+| # | Category | Ambiguity / Gap | Options Presented | Status |
+|---|----------|-----------------|-------------------|--------|
+| AR-65 | Specification amendment (runtime, golden correction) | The Phase 5 red phase shows four compile-fail goldens reporting an earlier-stage code instead of their annotated ownership/duplicability code, so the red state is not clean. `E10025_use_partially_moved.clo` declares `observe(s: String)` but calls `observe(p)` with `p: Pair`, so `E10200` masks the intended partial-move `E10025` and the golden's own trigger ("whole-value use of a partially moved struct") is unreachable. `E10031_tocstring_mutation.clo` and `E10031_view_widening_mutation.clo` call `stringOf`/`toCString` with no `import … from std.text;`, so `E10219` masks `E10031` (MOD-4). `E11106_nonduplicable_global.clo` has the same missing import and was unasserted | **A**: correct the goldens — change `E10025`'s parameter type to `Pair`, add the missing `std.text` imports to the two `E10031` files and `E11106`, and assert `E11106`. **B**: keep the goldens frozen and record them as excluded/deferred. **C**: change the resolver to predeclare the stdlib names (rejected: MOD-4 requires imports) | ✅ Resolved — user chose A |
+| AR-65a | Implementation correction (runtime, same batch) | `E10602_pointer_arithmetic_outside_unsafe.clo` reports `E10222` ("operator '+' is not defined for 'raw u32'") because the type layer rejects raw pointer arithmetic. Ch 02 §7 and Ch 04 §7 make `p + n`, `p - n`, and `p[i]` legal operations that require `unsafe`; the diagnostic is `E10602`, so the type layer must admit them and the unsafe check must report outside `unsafe` | **A**: fix the type layer to type `raw T` arithmetic as `raw T` and let the unsafe-context check report `E10602`. **B**: defer the golden. This is not a golden defect | ✅ Resolved — user chose A |
 
 ## Complexity Escalation packet (AR-24)
 

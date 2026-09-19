@@ -2,6 +2,8 @@
 // trigger: mutating a String while a cstring view of it from toCString is live
 module tests.compile_fail.E10031;
 
+import { stringOf, toCString } from std.text;
+
 func sink(c: cstring): void {
 }
 

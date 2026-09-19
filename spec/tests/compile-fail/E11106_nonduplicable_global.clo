@@ -2,6 +2,8 @@
 // trigger: module-level let initialized with a non-duplicable value
 module tests.compile_fail.E11106;
 
+import { stringOf } from std.text;
+
 let name: String = stringOf("x");   // E11106: module-level let must be duplicable
 
 func main(): i32 {

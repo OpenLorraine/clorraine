@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 13:26
-> **Progress**: 47/84 tasks (56%)
+> **Last Updated**: 2026-09-19 21:34
+> **Progress**: 48/84 tasks (57%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -364,14 +364,16 @@ compiler logic.
 
 ## Phase 5: Ownership, Borrows, FFI Contracts, Generics
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 3e4b7a20a54c32114a3da594633de2e0063b0bff
+> **Expected modification set**: `compiler/**`; `spec/tests/compile-fail/**` (the AR-65 golden corrections); `plans/clorraine-compiler-mvp/{99-execution-plan.md,00-ambiguity-register.md,03-05-ownership.md,07-testing-strategy.md}`; `plans/00-roadmap.md`; the `13-phase5-review.md` post-phase review artifact and the `00-index.md` row for it
+> **Scope mode**: strict
 
 ### Step 5.1: Specification tests first
 
 **Reference**: [03-05-ownership.md](03-05-ownership.md) · ST-OWN-1..6, ST-FFI-1..2, ST-CF-OWN, ST-CF-FFI, ST-CF-UNSAFE
 **Objective**: write the ownership/FFI spec cases and confirm the golden subset.
 
-- [ ] 5.1.1 [spec-author] Add the ST-OWN/ST-FFI cases to `stage_spec_test.rs`; confirm the E100xx/E101xx/E106xx scope; run and record the red phase
+- [x] 5.1.1 [spec-author] Add the ST-OWN/ST-FFI cases to `stage_spec_test.rs`; confirm the E100xx/E101xx/E106xx scope; run and record the red phase ✅ (completed: 2026-09-19 21:34) — 34/81 asserted goldens and 5 stage cases red (intended unimplemented); the AR-65 golden corrections landed
 
 **Deliverables**:
 - New spec cases and recorded red phase

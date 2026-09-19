@@ -5,7 +5,10 @@
 //! literal and template spellings, the statement-level disambiguations, and
 //! the diagnostic-only declaration starts) plus the name and module rules that
 //! no single golden states on its own: shadowing, declaration order, merged
-//! modules, and import bindings. Every case drives the built `clc` binary, so
+//! modules, and import bindings. The ownership, borrow, and FFI cases cover the
+//! same gap for the ownership layer: move state, nullability narrowing, partial
+//! moves, lifetime elision, exclusive reborrow, drop planning, and the
+//! uncontracted-extern boundary. Every case drives the built `clc` binary, so
 //! the published command-line behavior is the oracle.
 
 use std::path::{Path, PathBuf};
@@ -30,6 +33,13 @@ const UNACCEPTABLE_CODES: &[&str] = &[
     "E10200", "E10201", "E10202", "E10203", "E10205", "E10206", "E10207", "E10209", "E10210",
     "E10211", "E10212", "E10215", "E10216", "E10217", "E10218", "E10220", "E10221", "E10222",
     "E10223", "E10224", "E10226", "E10300", "E10301", "E10302", "E10305", "E10500", "E10503",
+    // Ownership, borrow, FFI, and unsafe diagnoses. An accepted program must
+    // not false-reject through these either, so the positive reborrow and drop
+    // cases stay meaningful once the ownership layer lands.
+    "E10010", "E10011", "E10012", "E10020", "E10021", "E10022", "E10023", "E10024", "E10025",
+    "E10026", "E10030", "E10031", "E10032", "E10033", "E10034", "E10035", "E10036", "E10038",
+    "E10039", "E10040", "E10041", "E10100", "E10101", "E10102", "E10103", "E10104", "E10600",
+    "E10601", "E10602", "E10603", "E10604",
 ];
 
 /// Temporary directory that removes itself when the test finishes.
@@ -765,5 +775,397 @@ func main(): i32 {
 }
 ",
         &["error E10503: unbalanced braces in template"],
+    );
+}
+
+/// A move invalidates its source, an owner may not move while a loan of it is
+/// live, and a `const` binding is not assignable.
+///
+/// Each fault is independent, so it gets its own snippet: the move in the
+/// first, the live shared loan in the second, and the immutable binding in the
+/// third.
+#[test]
+fn moves_loans_and_const_bindings_report_their_codes() {
+    assert_reports(
+        "own-use-after-move",
+        "module spec.stage.own_move_then_use;
+
+func observe(s: String): void {
+}
+
+func demo(): void {
+    let s: String = $\"x{1}\";
+    let t: String = s;      // move: s is invalid after this
+    observe(s);             // E10020
+    observe(t);
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10020: 's' was moved and cannot be used"],
+    );
+
+    assert_reports(
+        "own-move-while-borrowed",
+        "module spec.stage.own_move_while_borrowed;
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func observe(s: str): void {
+}
+
+func consume(take s: String): void {
+}
+
+func demo(): void {
+    let s: String = $\"x{1}\";
+    let v: str = viewOf(s); // a live shared loan of s
+    consume(s);             // E10022
+    observe(v);
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10022: cannot move 's' while it is borrowed"],
+    );
+
+    assert_reports(
+        "own-assign-to-const",
+        "module spec.stage.own_assign_to_const;
+
+func demo(): void {
+    const limit: i32 = 10;
+    limit = 20;             // E10023
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10023: cannot assign to immutable 'limit'"],
+    );
+}
+
+/// A view return must derive from exactly one view-like lend parameter, and a
+/// view of a local owner cannot be returned.
+///
+/// The first snippet has two view-like lends, the second returns a view of a
+/// local, and the third has only a `take` parameter. `take` creates no loan, so
+/// it is not an elision candidate and the return still has zero lend sources.
+#[test]
+fn view_returns_elide_from_exactly_one_lend_parameter() {
+    assert_reports(
+        "own-view-two-params",
+        "module spec.stage.own_view_two_params;
+
+func pick(a: u8[], b: u8[]): u8[] {
+    return a;               // E10036: two candidates
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10036: view return does not derive from exactly one parameter"],
+    );
+
+    assert_reports(
+        "own-view-of-local",
+        "module spec.stage.own_view_of_local;
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func bad(): str {
+    let s: String = $\"x{1}\";
+    return viewOf(s);       // E10035
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10035: cannot return a view of local 's'"],
+    );
+
+    assert_reports(
+        "own-view-take-only",
+        "module spec.stage.own_view_take_only;
+
+func takeView(take s: str): str {
+    return s;               // E10036: 'take' is not an elision candidate
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10036: view return does not derive from exactly one parameter"],
+    );
+}
+
+/// A nullable value is usable only after an `== null` / `!= null` narrowing on
+/// the dominating path, and `null` is not allowed where a non-nullable type is
+/// required.
+#[test]
+fn nullability_narrowing_and_null_assignment_report_their_codes() {
+    assert_reports(
+        "own-nullable-use",
+        "module spec.stage.own_nullable_use;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func OpenFile(): File?;
+    func CloseFile(take f: File): void;
+}
+
+func use(f: File): void {
+}
+
+func demo(): void {
+    let f: File? = OpenFile();
+    use(f);                 // E10010: f may be null here
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10010: value 'f' may be null here"],
+    );
+
+    assert_reports(
+        "own-null-where-nonnull",
+        "module spec.stage.own_null_where_nonnull;
+
+func demo(): i32 {
+    let n: i32 = null;      // E10012
+    return n;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10012: 'null' is not allowed here"],
+    );
+}
+
+/// Partial moves are limited to a top-level field of an owned local or `take`
+/// parameter; a nested path is E10026, and a whole-value use of a partially
+/// moved value is E10025.
+///
+/// The `observePair` parameter is the same struct type, so the second snippet
+/// isolates the partial-move fault and does not also carry a type mismatch.
+#[test]
+fn partial_moves_report_their_codes() {
+    assert_reports(
+        "own-nested-partial-move",
+        "module spec.stage.own_nested_partial_move;
+
+struct Inner {
+    s: String;
+}
+
+struct Outer {
+    inner: Inner;
+}
+
+func observe(s: String): void {
+}
+
+func demo(): void {
+    let o = Outer { inner: Inner { s: $\"x{1}\" } };
+    let s: String = o.inner.s;  // E10026: nested-path move
+    observe(s);
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10026: partial moves are limited to top-level fields in v1"],
+    );
+
+    assert_reports(
+        "own-partial-move-whole-use",
+        "module spec.stage.own_partial_move_whole_use;
+
+struct Pair {
+    left: String;
+    right: String;
+}
+
+func observePair(p: Pair): void {
+}
+
+func observe(s: String): void {
+}
+
+func demo(): void {
+    let p = Pair { left: $\"a{1}\", right: $\"b{2}\" };
+    let l: String = p.left; // partial move of a top-level field
+    observePair(p);         // E10025: p is partially moved
+    observe(l);
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10025: 'p' is partially moved and cannot be used as a whole"],
+    );
+}
+
+/// A writable view derived from a `borrow` parameter is an exclusive reborrow
+/// limited to the expression that creates it.
+///
+/// `bufferBytes(buf)` derives a writable view from the writable loan `buf`, so
+/// `borrow bufferBytes(buf)` is legal and `buf` is usable again right after the
+/// call. The case pins acceptance: any ownership diagnostic here is a false
+/// rejection.
+#[test]
+fn exclusive_reborrow_of_a_borrow_parameter_is_accepted() {
+    assert_front_end_accepts(
+        "own-exclusive-reborrow",
+        "module spec.stage.own_exclusive_reborrow;
+
+import { Buffer, bufferBytes } from std.mem;
+
+func writeInto(borrow bytes: u8[]): void {
+    bytes[0] = 1;
+}
+
+func loadFrom(borrow buf: Buffer): void {
+    writeInto(borrow bufferBytes(buf));
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+    );
+}
+
+/// A well-ordered program with locals, owned struct fields, a statement
+/// temporary, and a `defer` compiles clean.
+///
+/// Drop order itself is only observable in the emitted ladder, which is a
+/// codegen assertion; at this stage the case pins that the planned scope
+/// cleanup is accepted. The locals are declared `a` then `r`, `r` holds owned
+/// fields, `observe($"temp{4}")` creates a statement temporary, and the `defer`
+/// is registered last.
+#[test]
+fn well_ordered_drops_compile_clean() {
+    assert_front_end_accepts(
+        "own-drop-order",
+        "module spec.stage.own_drop_order;
+
+struct Resources {
+    first: String;
+    second: String;
+}
+
+func observe(s: String): void {
+}
+
+func demo(): void {
+    let a: String = $\"a{1}\";
+    let r = Resources { first: $\"b{2}\", second: $\"c{3}\" };
+    defer {
+        observe(a);
+    }
+    observe($\"temp{4}\");
+    observe(r.first);
+    observe(r.second);
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+    );
+}
+
+/// The FFI boundary enforces its contracts: an uncontracted extern may be
+/// called only inside `unsafe`, its uncontracted parameters accept only
+/// values with no ownership, and a `freedBy` deleter must take `take T` and
+/// return `void`.
+///
+/// The three faults are independent, so each gets its own snippet. The
+/// `E10010` nullable check lives with the other nullability cases.
+#[test]
+fn ffi_contract_violations_report_their_codes() {
+    assert_reports(
+        "ffi-uncontracted-call",
+        "module spec.stage.ffi_uncontracted_call;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func RawRead(f: File?, n: i32): i32;   // no mode on 'f': uncontracted
+    func CloseFile(take f: File): void;
+}
+
+func demo(): i32 {
+    let f: File? = null;
+    return RawRead(f, 0);   // E10100
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10100: uncontracted call to 'RawRead' requires 'unsafe'"],
+    );
+
+    assert_reports(
+        "ffi-owned-to-uncontracted",
+        "module spec.stage.ffi_owned_to_uncontracted;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func RawStat(f: File): i32;    // uncontracted extern
+    func CloseFile(take f: File): void;
+}
+
+func demo(f: File): void {
+    unsafe {
+        let n = RawStat(f);        // E10101: no contract for parameter 'f'
+        n = n + 1;
+    }
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10101: 'RawStat' has no contract for parameter 'f'"],
+    );
+
+    assert_reports(
+        "ffi-bad-deleter",
+        "module spec.stage.ffi_bad_deleter;
+
+handle File freedBy BadDeleter;
+
+ffi lib {
+    func BadDeleter(f: File): i32;  // E10102: needs 'take File' and 'void'
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10102: 'BadDeleter' is not a valid deleter for 'File'"],
     );
 }

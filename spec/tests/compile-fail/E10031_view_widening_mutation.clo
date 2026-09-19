@@ -2,6 +2,8 @@
 // trigger: mutating a String while an implicitly-widened str view of it is live
 module tests.compile_fail.E10031;
 
+import { stringOf } from std.text;
+
 func demo(): void {
     let s: String = stringOf("hello");
     let v: str = s;            // String widens to str: a shared loan of s
