@@ -17,7 +17,8 @@ pub enum Severity {
     Warning,
 }
 
-/// One diagnostic: code, message, primary span, and optional help.
+/// One diagnostic: code, message, optional source location, and optional
+/// help.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
     /// Stable registry code, for example `E20000`.
@@ -26,31 +27,43 @@ pub struct Diagnostic {
     pub severity: Severity,
     /// Rendered message, the text after `CODE: `.
     pub message: String,
-    /// Primary source location.
-    pub span: Span,
+    /// Primary source location; command-line diagnostics have none.
+    pub span: Option<Span>,
     /// Optional fix guidance rendered on its own line.
     pub help: Option<String>,
 }
 
 impl Diagnostic {
-    /// Builds an error diagnostic.
+    /// Builds an error diagnostic at a source location.
     pub fn error(code: &'static str, message: impl Into<String>, span: Span) -> Self {
         Self {
             code,
             severity: Severity::Error,
             message: message.into(),
-            span,
+            span: Some(span),
             help: None,
         }
     }
 
-    /// Builds a warning diagnostic.
+    /// Builds a warning diagnostic at a source location.
     pub fn warning(code: &'static str, message: impl Into<String>, span: Span) -> Self {
         Self {
             code,
             severity: Severity::Warning,
             message: message.into(),
-            span,
+            span: Some(span),
+            help: None,
+        }
+    }
+
+    /// Builds an error diagnostic with no source location, used for problems
+    /// the command line itself carries.
+    pub fn cli_error(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            severity: Severity::Error,
+            message: message.into(),
+            span: None,
             help: None,
         }
     }
@@ -144,17 +157,19 @@ impl Diagnostics {
                 Severity::Error => "error",
                 Severity::Warning => "warning",
             };
-            let location = sources.location(diagnostic.span.file, diagnostic.span.start as usize);
             rendered.push_str(&format!(
                 "{kind} {}: {}\n",
                 diagnostic.code, diagnostic.message
             ));
-            rendered.push_str(&format!(
-                "  --> {}:{}:{}\n",
-                sources.path(diagnostic.span.file),
-                location.line,
-                location.column
-            ));
+            if let Some(span) = diagnostic.span {
+                let location = sources.location(span.file, span.start as usize);
+                rendered.push_str(&format!(
+                    "  --> {}:{}:{}\n",
+                    sources.path(span.file),
+                    location.line,
+                    location.column
+                ));
+            }
             if let Some(help) = &diagnostic.help {
                 rendered.push_str(&format!("  help: {help}\n"));
             }
@@ -225,6 +240,17 @@ mod tests {
         assert!(diagnostics.failed());
         assert_eq!(diagnostics.exit_code(), 1);
         assert!(diagnostics.render(&sources).starts_with("warning W10000: "));
+    }
+
+    #[test]
+    fn cli_diagnostics_render_without_a_location() {
+        let (sources, _) = single_file_sources();
+        let mut diagnostics = Diagnostics::new(false, None);
+        diagnostics.push(Diagnostic::cli_error("E11201", "unknown profile 'nope'"));
+        assert_eq!(
+            diagnostics.render(&sources),
+            "error E11201: unknown profile 'nope'\n"
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@
 
 pub mod ast;
 pub mod diag;
+pub mod driver;
 pub mod lex;
 pub mod parse;
 pub mod span;
