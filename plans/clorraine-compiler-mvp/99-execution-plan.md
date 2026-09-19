@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-19 09:57
-> **Progress**: 32/84 tasks (38%)
+> **Progress**: 33/84 tasks (39%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -245,7 +245,7 @@ compiler logic.
 
 - [x] 2.3.1 Run the compile-fail driver on the E20xxx files plus E10204/E10208/E10501/E90005; fix until green ✅ (completed: 2026-09-19 09:55)
 - [x] 2.3.2 Write lexer and parser impl tests (tokenization, templates, disambiguation, recovery) ✅ (completed: 2026-09-19 09:57) — the tests found one diagnostic cascade (a format-specifier placeholder also reported a malformed number); placeholder parsing now drops the format text so `E10501` is reported alone
-- [ ] 2.3.3 Run the full fast verify (`make check`)
+- [x] 2.3.3 Run the full fast verify (`make check`) ✅ (completed: 2026-09-19 09:57)
 
 **Deliverables**:
 - In-scope syntax goldens green
