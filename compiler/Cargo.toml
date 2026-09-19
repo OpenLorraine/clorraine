@@ -1,0 +1,14 @@
+# The `clc` compiler: a library plus a thin command-line binary.
+[package]
+name = "clc"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "clc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "clc"
+path = "src/main.rs"

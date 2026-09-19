@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-18 14:24
-> **Progress**: 23/84 tasks (27%)
+> **Last Updated**: 2026-09-19 09:35
+> **Progress**: 24/84 tasks (29%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -196,7 +196,9 @@ proven first line and skipped ladder.
 
 ## Phase 2: Front End, Diagnostics, CLI, Harness Skeleton
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 5d0f1a57f20c8bf901d4ec701675ba12b4c4d673
+> **Expected modification set**: `Cargo.toml`, `Cargo.lock`, `compiler/**`, `Makefile`, `plans/clorraine-compiler-mvp/99-execution-plan.md`
+> **Scope mode**: strict
 
 ### Step 2.1: Specification tests and scaffolding
 
@@ -204,7 +206,7 @@ proven first line and skipped ladder.
 **Objective**: create the workspace and write the first spec tests before any
 compiler logic.
 
-- [ ] 2.1.1 Create the root `Cargo.toml` workspace, the `compiler/` crate (stub binary), and the root `Makefile` with `check` (spec check + container `cargo test`)
+- [x] 2.1.1 Create the root `Cargo.toml` workspace, the `compiler/` crate (stub binary), and the root `Makefile` with `check` (spec check + container `cargo test`) ✅ (completed: 2026-09-19 09:35)
 - [ ] 2.1.2 [spec-author] Write `compiler/tests/compile_fail_spec_test.rs` (golden discovery, `clc` spawn, Ch 14 template wildcard matching, skip list) and the `stage_spec_test.rs` helper with the ST-LEX-1..2 and ST-PARSE-1..4 cases
 - [ ] 2.1.3 Run the new spec tests and record the red phase (failures expected: no compiler behavior exists)
 

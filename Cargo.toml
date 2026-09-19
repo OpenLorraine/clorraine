@@ -1,0 +1,7 @@
+# The Clorraine compiler workspace.
+#
+# `compiler/` is the only member. The workspace is std-only: do not add
+# dependencies or build scripts here or in member crates.
+[workspace]
+resolver = "2"
+members = ["compiler"]
