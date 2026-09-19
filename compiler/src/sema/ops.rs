@@ -148,7 +148,14 @@ impl Checker<'_, '_> {
                 }
                 Ty::boolean()
             }
-            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => {
+            BinaryOp::Add | BinaryOp::Sub => {
+                if let Some(result) = pointer_arithmetic(op, left_ty, right_ty) {
+                    result
+                } else {
+                    self.arithmetic(op, left_ty, left_span, right_ty, right_span)
+                }
+            }
+            BinaryOp::Mul | BinaryOp::Div => {
                 self.arithmetic(op, left_ty, left_span, right_ty, right_span)
             }
             BinaryOp::Rem => {
@@ -378,6 +385,30 @@ impl Checker<'_, '_> {
             _ => false,
         }
     }
+}
+
+/// Types pointer arithmetic when an operand is a raw pointer.
+///
+/// `raw T + n`, `n + raw T`, and `raw T - n` all yield `raw T`. The operation
+/// itself is legal only inside `unsafe`; the type layer accepts it so the
+/// unsafe-context check owns the diagnostic instead of reporting an undefined
+/// operator. Any other shape, including `raw - raw`, is left to the ordinary
+/// arithmetic rules.
+fn pointer_arithmetic(op: BinaryOp, left_ty: &Ty, right_ty: &Ty) -> Option<Ty> {
+    let left_pointer = matches!(left_ty.kind, TyKind::Raw(_));
+    let right_pointer = matches!(right_ty.kind, TyKind::Raw(_));
+    match op {
+        BinaryOp::Add if left_pointer && offset_operand(right_ty) => Some(left_ty.clone()),
+        BinaryOp::Add if right_pointer && offset_operand(left_ty) => Some(right_ty.clone()),
+        BinaryOp::Sub if left_pointer && offset_operand(right_ty) => Some(left_ty.clone()),
+        _ => None,
+    }
+}
+
+/// True for an operand that advances a raw pointer: an integer, an opaque
+/// type, or a generic parameter.
+fn offset_operand(ty: &Ty) -> bool {
+    ty.is_integer() || ty.is_unknown() || ty.is_param()
 }
 
 /// True for a type that supports ordering with `<`, `<=`, `>`, `>=`.

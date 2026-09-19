@@ -20,10 +20,20 @@ use crate::types::{implicit_conversion, int_fits, scalar_cast_allowed, Ty, TyKin
 use super::Checker;
 
 impl Checker<'_, '_> {
+    /// Checks an expression, records its type, and returns it.
+    ///
+    /// The recorded `(node, type)` pair is what the ownership stage reads, so
+    /// the two stages cannot disagree about the type of any expression.
+    pub(super) fn check_expr(&mut self, expr: &Expr, expected: Option<&Ty>) -> Ty {
+        let ty = self.check_expr_inner(expr, expected);
+        self.recorded.push((expr as *const Expr as usize, ty.clone()));
+        ty
+    }
+
     /// Checks an expression and returns its type.
     ///
     /// `expected` carries the context type where it matters to a literal.
-    pub(super) fn check_expr(&mut self, expr: &Expr, expected: Option<&Ty>) -> Ty {
+    fn check_expr_inner(&mut self, expr: &Expr, expected: Option<&Ty>) -> Ty {
         match &expr.kind {
             ExprKind::Int(value) => self.check_int(*value, expected, expr.span),
             ExprKind::Float(_) => self.check_float(expected),
@@ -295,7 +305,10 @@ impl Checker<'_, '_> {
                 }
             }
             TyKind::Str | TyKind::CString | TyKind::StaticStr => Ty::scalar(ScalarType::U8),
-            TyKind::Raw(inner) => (**inner).clone(),
+            // Raw indexing is pointer arithmetic: `p[i]` advances the pointer,
+            // staying a `raw T` until it is dereferenced. The operation is
+            // legal only inside `unsafe`, which the ownership stage checks.
+            TyKind::Raw(_) => base_ty.clone(),
             TyKind::Unknown => Ty::unknown(),
             _ => {
                 self.error(

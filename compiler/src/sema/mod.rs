@@ -16,7 +16,7 @@
 //! stage after a clean name pass, so a file that already failed resolution
 //! never reaches here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::ast::{FuncDecl, Item, ScalarType, Type};
 use crate::consts::ConstFolder;
@@ -36,13 +36,31 @@ mod regressions;
 #[cfg(test)]
 mod tests;
 
-/// Checks every module of the loaded program.
-pub fn check(loaded: &Loaded, diagnostics: &mut Diagnostics) {
+/// What the type stage hands to the stage that follows it.
+///
+/// The program-wide type table is kept so a later stage does not rebuild it,
+/// and `expr_types` maps every checked expression node to the type it was
+/// given. The key is the address of the node in the loaded tree, which is
+/// stable because the tree is borrowed immutably for the whole compilation;
+/// this lets a later stage reuse the exact types this stage computed instead
+/// of inferring them a second time.
+pub struct SemaOutput {
+    /// Every declared type of the program.
+    pub table: TypeTable,
+    /// The type of each expression node, keyed by the node's address.
+    pub expr_types: HashMap<usize, Ty>,
+}
+
+/// Checks every module of the loaded program and records the result.
+pub fn check(loaded: &Loaded, diagnostics: &mut Diagnostics) -> SemaOutput {
     let table = TypeTable::build(loaded);
+    let mut expr_types: HashMap<usize, Ty> = HashMap::new();
     for module in loaded.modules.values() {
         let mut checker = Checker::new(module, &table, loaded, diagnostics);
         checker.check_module();
+        expr_types.extend(checker.recorded.drain(..));
     }
+    SemaOutput { table, expr_types }
 }
 
 /// A local or parameter binding: its checked type.
@@ -67,6 +85,9 @@ struct Checker<'a, 'd> {
     function_name: Option<String>,
     /// Return type of the function currently being checked.
     returns: Ty,
+    /// `(node address, type)` for every checked expression, handed to the
+    /// ownership stage.
+    recorded: Vec<(usize, Ty)>,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
 }
@@ -87,6 +108,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             type_params: Vec::new(),
             function_name: None,
             returns: Ty::void(),
+            recorded: Vec::new(),
             diagnostics,
         }
     }

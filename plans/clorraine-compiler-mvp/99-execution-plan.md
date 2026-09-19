@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 21:34
-> **Progress**: 48/84 tasks (57%)
+> **Last Updated**: 2026-09-19 21:51
+> **Progress**: 56/84 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -388,12 +388,12 @@ compiler logic.
 **Objective**: produce the typed control-flow IR with every drop, defer, and
 loan decision explicit.
 
-- [ ] 5.2.1 Implement `src/ir.rs` lowering to CFGs with the Ch 17 §2 statement set
-- [ ] 5.2.2 Implement `src/own.rs` definite assignment and nullability narrowing (E10021, E10010-E10012, F9)
-- [ ] 5.2.3 Implement move state, partial moves, and drop planning (E10020, E10022, E10025, E10026; O3-O7, O2)
-- [ ] 5.2.4 Implement `src/borrow.rs` loan collection, conflicts, elision, and reborrow (E10030-E10036, E10038, E10039, E10041; EL-1..6, O12)
-- [ ] 5.2.5 Implement `src/ffi.rs` contract checking (E10100-E10104; CN-6..CN-16) and `unsafe`/raw checks (E10600-E10604)
-- [ ] 5.2.6 Implement generics monomorphization inputs: instantiation set, copy obligations, dedupe keys (V9/V9a, G3, E10305)
+- [x] 5.2.1 Implement `src/ir.rs` lowering to CFGs with the Ch 17 §2 statement set ✅ (completed: 2026-09-19 21:51)
+- [x] 5.2.2 Implement `src/own.rs` definite assignment and nullability narrowing (E10021, E10010-E10012, F9) ✅ (completed: 2026-09-19 21:51)
+- [x] 5.2.3 Implement move state, partial moves, and drop planning (E10020, E10022, E10025, E10026; O3-O7, O2) ✅ (completed: 2026-09-19 21:51)
+- [x] 5.2.4 Implement `src/borrow.rs` loan collection, conflicts, elision, and reborrow (E10030-E10036, E10038, E10039, E10041; EL-1..6, O12) ✅ (completed: 2026-09-19 21:51)
+- [x] 5.2.5 Implement `src/ffi.rs` contract checking (E10100-E10104; CN-6..CN-16) and `unsafe`/raw checks (E10600-E10604) ✅ (completed: 2026-09-19 21:51)
+- [x] 5.2.6 Implement generics monomorphization inputs: instantiation set, copy obligations, dedupe keys (V9/V9a, G3, E10305) ✅ (completed: 2026-09-19 21:51)
 
 **Deliverables**:
 - Checked IR with explicit drops/defers and the instantiation set
@@ -404,8 +404,8 @@ loan decision explicit.
 
 ### Step 5.3: Green phase and implementation tests
 
-- [ ] 5.3.1 Run the ownership/FFI spec cases and golden files; fix until green
-- [ ] 5.3.2 Write `ir.rs`/`own.rs`/`borrow.rs`/`ffi.rs` impl tests and run the full fast verify (`make check`)
+- [x] 5.3.1 Run the ownership/FFI spec cases and golden files; fix until green ✅ (completed: 2026-09-19 21:51)
+- [x] 5.3.2 Write `ir.rs`/`own.rs`/`borrow.rs`/`ffi.rs` impl tests and run the full fast verify (`make check`) ✅ (completed: 2026-09-19 21:51)
 
 **Deliverables**:
 - Ownership/FFI goldens green

@@ -8,6 +8,7 @@
 
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load;
+use crate::own;
 use crate::parse::Parser;
 use crate::resolve;
 use crate::sema;
@@ -153,7 +154,12 @@ pub fn run(args: Vec<String>) -> i32 {
     if diagnostics.error_count() == 0 {
         // A file that already failed resolution has no trustworthy names, so
         // the type stage would only produce dependent errors.
-        sema::check(&loaded, &mut diagnostics);
+        let sema = sema::check(&loaded, &mut diagnostics);
+        if diagnostics.error_count() == 0 {
+            // The ownership stage consumes the types the type stage recorded,
+            // so it runs only on a program that typed cleanly.
+            own::check(&loaded, &sema, &mut diagnostics);
+        }
     }
     eprint!("{}", diagnostics.render(&sources));
     let exit_code = diagnostics.exit_code();

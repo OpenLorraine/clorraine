@@ -7,11 +7,15 @@
 #![forbid(unsafe_code)]
 
 pub mod ast;
+pub mod borrow;
 pub mod consts;
 pub mod diag;
 pub mod driver;
+pub mod ffi;
+pub mod ir;
 pub mod lex;
 pub mod load;
+pub mod own;
 pub mod parse;
 pub mod resolve;
 pub mod sema;

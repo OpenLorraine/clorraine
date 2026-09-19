@@ -1,0 +1,365 @@
+//! Generic instantiation and copy-obligation collection.
+//!
+//! A generic body is checked once, but codegen needs one concrete copy per
+//! distinct instantiation. This pass walks every function body, records each
+//! call that instantiates a generic function, and deduplicates the instances
+//! by a stable key. It also turns the copy obligation a generic writable lend
+//! implies into a concrete obligation per instance: when a `borrow x: T`
+//! parameter is instantiated with a duplicable type, the lend binds a copy, so
+//! the instance carries that copy duty. The recursion cap itself is checked by
+//! the type stage, which owns the `E10305` diagnostic.
+
+use std::collections::BTreeMap;
+
+use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, Type};
+use crate::ir::{CopyObligation, Instance, Monomorphization};
+use crate::load::Loaded;
+use crate::sema::SemaOutput;
+use crate::types::{resolve_ty, Ty, TyKind};
+
+use super::program::{Callee, ProgramInfo};
+
+/// Collects the instantiation set and copy obligations of the program.
+///
+/// Only explicit type arguments are recorded. An inferred instantiation has no
+/// written spelling to key on, so it is left to the type stage's inference,
+/// which already validates it; this pass never guesses a key.
+pub fn collect(
+    loaded: &Loaded,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+) -> Monomorphization {
+    let mut mono = Monomorphization::default();
+    for module in loaded.modules.values() {
+        for item in &module.items {
+            if let Item::Func(decl) = item {
+                walk_block(&decl.body, program, sema, &mut mono);
+            }
+        }
+    }
+    mono
+}
+
+/// Walks a block looking for generic call sites.
+fn walk_block(
+    block: &Block,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
+    for statement in &block.statements {
+        walk_stmt(statement, program, sema, mono);
+    }
+}
+
+/// Walks one statement.
+fn walk_stmt(
+    stmt: &Stmt,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
+    match stmt {
+        Stmt::Let(decl) => {
+            if let Some(value) = &decl.value {
+                walk_expr(value, program, sema, mono);
+            }
+        }
+        Stmt::Const(decl) => walk_expr(&decl.value, program, sema, mono),
+        Stmt::Expr(expr) => walk_expr(expr, program, sema, mono),
+        Stmt::If(decl) => walk_if(decl, program, sema, mono),
+        Stmt::While(decl) => {
+            walk_expr(&decl.condition, program, sema, mono);
+            walk_block(&decl.body, program, sema, mono);
+        }
+        Stmt::DoWhile(decl) => {
+            walk_block(&decl.body, program, sema, mono);
+            walk_expr(&decl.condition, program, sema, mono);
+        }
+        Stmt::ForC(decl) => {
+            match &decl.init {
+                Some(crate::ast::ForInit::Expr(expressions)) => {
+                    for expression in expressions {
+                        walk_expr(expression, program, sema, mono);
+                    }
+                }
+                Some(crate::ast::ForInit::Let(binding)) => {
+                    if let Some(value) = &binding.value {
+                        walk_expr(value, program, sema, mono);
+                    }
+                }
+                Some(crate::ast::ForInit::Const(binding)) => {
+                    walk_expr(&binding.value, program, sema, mono);
+                }
+                None => {}
+            }
+            if let Some(condition) = &decl.condition {
+                walk_expr(condition, program, sema, mono);
+            }
+            for step in &decl.step {
+                walk_expr(step, program, sema, mono);
+            }
+            walk_block(&decl.body, program, sema, mono);
+        }
+        Stmt::ForIn(decl) => {
+            walk_expr(&decl.iterable, program, sema, mono);
+            walk_block(&decl.body, program, sema, mono);
+        }
+        Stmt::Return { value, .. } => {
+            if let Some(value) = value {
+                walk_expr(value, program, sema, mono);
+            }
+        }
+        Stmt::Switch(decl) => {
+            walk_expr(&decl.scrutinee, program, sema, mono);
+            for clause in &decl.clauses {
+                for statement in &clause.statements {
+                    walk_stmt(statement, program, sema, mono);
+                }
+            }
+        }
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
+            walk_block(block, program, sema, mono)
+        }
+        Stmt::Break(_) | Stmt::Continue(_) => {}
+    }
+}
+
+/// Walks an `if`, including any chained `else if`.
+fn walk_if(
+    decl: &crate::ast::IfStmt,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
+    walk_expr(&decl.condition, program, sema, mono);
+    walk_block(&decl.then_block, program, sema, mono);
+    match &decl.else_branch {
+        Some(crate::ast::ElseBranch::If(nested)) => walk_if(nested, program, sema, mono),
+        Some(crate::ast::ElseBranch::Block(block)) => walk_block(block, program, sema, mono),
+        None => {}
+    }
+}
+
+/// Walks an expression, recording any generic instantiation it names.
+fn walk_expr(
+    expr: &Expr,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
+    match &expr.kind {
+        ExprKind::Call {
+            callee,
+            type_args,
+            args,
+        } => {
+            record_call(callee, type_args, program, sema, mono);
+            walk_expr(callee, program, sema, mono);
+            for arg in args {
+                walk_expr(&arg.value, program, sema, mono);
+            }
+        }
+        ExprKind::Index { base, index } => {
+            walk_expr(base, program, sema, mono);
+            walk_expr(index, program, sema, mono);
+        }
+        ExprKind::Member { base, .. } => walk_expr(base, program, sema, mono),
+        ExprKind::Unary { operand, .. } => walk_expr(operand, program, sema, mono),
+        ExprKind::Binary { left, right, .. } => {
+            walk_expr(left, program, sema, mono);
+            walk_expr(right, program, sema, mono);
+        }
+        ExprKind::Assign { target, value, .. } => {
+            walk_expr(target, program, sema, mono);
+            walk_expr(value, program, sema, mono);
+        }
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            walk_expr(condition, program, sema, mono);
+            walk_expr(then_value, program, sema, mono);
+            walk_expr(else_value, program, sema, mono);
+        }
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+            walk_expr(value, program, sema, mono)
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                walk_expr(&field.value, program, sema, mono);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                walk_expr(element, program, sema, mono);
+            }
+            if let Some(fill) = fill {
+                walk_expr(fill, program, sema, mono);
+            }
+        }
+        ExprKind::Unsafe(inner) => walk_expr(inner, program, sema, mono),
+        ExprKind::IntrinsicCall { args, .. } => {
+            for arg in args {
+                if let crate::ast::IntrinsicArg::Expr(inner) = arg {
+                    walk_expr(inner, program, sema, mono);
+                }
+            }
+        }
+        ExprKind::Template(pieces) => {
+            for piece in pieces {
+                if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
+                    walk_expr(inner, program, sema, mono);
+                }
+            }
+        }
+        ExprKind::Lambda { body, .. } => match body {
+            crate::ast::LambdaBody::Expr(inner) => walk_expr(inner, program, sema, mono),
+            crate::ast::LambdaBody::Block(block) => walk_block(block, program, sema, mono),
+        },
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Null
+        | ExprKind::Name(_)
+        | ExprKind::Qualified(_)
+        | ExprKind::Error => {}
+    }
+}
+
+/// Records one explicit generic call and its copy obligations.
+fn record_call(
+    callee: &Expr,
+    type_args: &[Type],
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
+    if type_args.is_empty() {
+        return;
+    }
+    let Some(name) = callee_simple_name(callee) else {
+        return;
+    };
+    let Some(Callee::User(decl)) = program.callee(&name) else {
+        return;
+    };
+    if decl.type_params.len() != type_args.len() {
+        return;
+    }
+    let bindings = type_bindings(decl, type_args, sema);
+    let instance = Instance {
+        function: decl.name.clone(),
+        args: type_args
+            .iter()
+            .map(|ty| resolve_ty(ty, &[], &sema.table).display())
+            .collect(),
+    };
+    let key = instance.dedupe_key();
+    if !mono.record(instance) {
+        return;
+    }
+    let parameter_names: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
+    for param in &decl.params {
+        if param.mode != Mode::Borrow {
+            continue;
+        }
+        let declared = resolve_ty(&param.ty, &parameter_names, &sema.table);
+        let TyKind::Param(parameter) = &declared.kind else {
+            continue;
+        };
+        let Some(concrete) = bindings.get(parameter) else {
+            continue;
+        };
+        if sema.table.duplicable(concrete) && !crate::borrow::is_view(concrete) {
+            mono.require_copy(CopyObligation {
+                function: decl.name.clone(),
+                instance: key.clone(),
+                parameter: param.name.clone(),
+                ty: concrete.display(),
+            });
+        }
+    }
+}
+
+/// Binds each generic parameter to the concrete type its type argument names.
+fn type_bindings(
+    decl: &crate::ast::FuncDecl,
+    type_args: &[Type],
+    sema: &SemaOutput,
+) -> BTreeMap<String, Ty> {
+    let mut bindings = BTreeMap::new();
+    for (param, written) in decl.type_params.iter().zip(type_args) {
+        bindings.insert(param.name.clone(), resolve_ty(written, &[], &sema.table));
+    }
+    bindings
+}
+
+/// The simple name a callee expression carries.
+fn callee_simple_name(callee: &Expr) -> Option<String> {
+    match &callee.kind {
+        ExprKind::Name(name) => Some(name.clone()),
+        ExprKind::Qualified(name) => name.segments.last().cloned(),
+        ExprKind::Member { name, .. } => Some(name.clone()),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diag::Diagnostics;
+    use crate::parse::Parser;
+    use crate::span::SourceMap;
+
+    /// Parses, loads, and types one source, returning its generic inputs.
+    fn inputs(source: &str) -> Monomorphization {
+        let mut sources = SourceMap::new();
+        let mut diagnostics = Diagnostics::new(false, None);
+        let id = sources.add_file("test.clo".to_owned(), source.to_owned());
+        let program = Parser::new(&sources, id, &mut diagnostics).parse_program();
+        let loaded = crate::load::load(vec![(id, program)], &mut diagnostics);
+        let sema = crate::sema::check(&loaded, &mut diagnostics);
+        let info = ProgramInfo::collect(&loaded, &sema.table);
+        collect(&loaded, &info, &sema)
+    }
+
+    #[test]
+    fn explicit_generic_calls_become_deduplicated_instances() {
+        let mono = inputs(
+            r#"module test;
+func identity<T>(x: T): T { return x; }
+func demo(): i32 {
+    let a = identity<i32>(1);
+    let b = identity<i32>(2);
+    let c = identity<u8>(3);
+    return a;
+}
+func main(): i32 { return 0; }
+"#,
+        );
+        assert_eq!(mono.instances().len(), 2);
+    }
+
+    #[test]
+    fn a_writable_lend_of_a_duplicable_type_records_a_copy_obligation() {
+        let mono = inputs(
+            r#"module test;
+func set<T>(borrow slot: T, value: T): void { slot = value; }
+func demo(): void {
+    let n: i32 = 0;
+    set<i32>(borrow n, 1);
+}
+func main(): i32 { return 0; }
+"#,
+        );
+        assert_eq!(mono.instances().len(), 1);
+        assert_eq!(mono.obligations().len(), 1);
+        assert_eq!(mono.obligations()[0].instance, "set<i32>");
+    }
+}
+
+
