@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 09:54
-> **Progress**: 30/84 tasks (36%)
+> **Last Updated**: 2026-09-19 09:55
+> **Progress**: 31/84 tasks (37%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -243,7 +243,7 @@ compiler logic.
 **Reference**: 03-03 "Testing Requirements" · ST-CF-LEX, ST-PARSE-*
 **Objective**: pass the in-scope syntax goldens and add internals tests.
 
-- [ ] 2.3.1 Run the compile-fail driver on the E20xxx files plus E10204/E10208/E10501/E90005; fix until green
+- [x] 2.3.1 Run the compile-fail driver on the E20xxx files plus E10204/E10208/E10501/E90005; fix until green ✅ (completed: 2026-09-19 09:55)
 - [ ] 2.3.2 Write lexer and parser impl tests (tokenization, templates, disambiguation, recovery)
 - [ ] 2.3.3 Run the full fast verify (`make check`)
 
