@@ -56,13 +56,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
-        if !state.initialized {
+        if !state.initialized && !self.all_fields_initialized(id, &state) {
             self.error(
                 "E10021",
                 format!("'{name}' may be used before it is initialized"),
                 "initialize the binding on every path; out-parameter slots are not exempt",
                 span,
             );
+        }
+    }
+
+    /// True when every declared top-level field of a struct binding is written.
+    ///
+    /// Field-by-field initialization never sets the whole-binding flag, but a
+    /// struct whose fields are all written holds a complete value, so reading
+    /// it as a whole is allowed. A non-struct, or one with an unknown field
+    /// set, is never treated as complete this way.
+    fn all_fields_initialized(&self, id: usize, state: &PlaceState) -> bool {
+        let TyKind::Struct(name) = &self.bindings[id].ty.kind else {
+            return false;
+        };
+        match self.sema.table.struct_fields(name) {
+            Some(fields) => fields
+                .iter()
+                .all(|(field, _)| state.field_initialized(field)),
+            None => false,
         }
     }
 

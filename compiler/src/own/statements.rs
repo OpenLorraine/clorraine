@@ -252,7 +252,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         let pre = self.state.clone();
         let floor = self.scopes.len();
-        let (entry, _post) = self.loop_entry_state(pre.clone(), |checker| {
+        let (entry, post) = self.loop_entry_state(pre.clone(), |checker| {
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -269,11 +269,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .push(ExitFrame::new(exit, Some(head), floor, floor));
         self.switch_to(body_block);
         self.check_block(&decl.body);
-        if !self.is_terminated() {
+        let body_terminated = self.is_terminated();
+        if !body_terminated {
             self.terminate(Terminator::Goto(head));
         }
         let frame = self.exits.pop().expect("loop frame");
-        self.state = join_breaks(entry, &frame);
+        let always_true = condition_is_true(&decl.condition);
+        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
         self.switch_to(exit);
     }
 
@@ -366,7 +368,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         let pre = self.state.clone();
         let continue_floor = floor + 1;
-        let (entry, _post) = self.loop_entry_state(pre.clone(), |checker| {
+        let (entry, post) = self.loop_entry_state(pre.clone(), |checker| {
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -392,7 +394,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         ));
         self.switch_to(body_block);
         self.check_block(&decl.body);
-        if !self.is_terminated() {
+        let body_terminated = self.is_terminated();
+        if !body_terminated {
             self.terminate(Terminator::Goto(step_block));
         }
         self.switch_to(step_block);
@@ -403,12 +406,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.terminate(Terminator::Goto(head));
         }
         let frame = self.exits.pop().expect("loop frame");
-        self.state = join_breaks(entry, &frame);
+        let always_true = decl
+            .condition
+            .as_ref()
+            .map_or(true, condition_is_true);
+        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
         self.switch_to(exit);
         self.pop_scope();
     }
 
+    /// Declares the loop element in its own scope and returns its binding.
+    ///
+    /// The element is bound fresh on every iteration, so the declaration and
+    /// its initial state live inside the loop's speculative body and are re-run
+    /// on each fixpoint pass.
+    fn declare_for_in_element(&mut self, decl: &'a ForInStmt, element: &Ty) -> usize {
+        self.push_scope();
+        let kind = if decl.borrow {
+            BindingKind::OutSlot
+        } else {
+            BindingKind::Local
+        };
+        let id = self.declare(
+            &decl.name,
+            element.clone(),
+            kind,
+            if decl.borrow { Mode::Borrow } else { Mode::None },
+            false,
+            false,
+        );
+        self.set_place(
+            id,
+            PlaceState {
+                initialized: true,
+                ..PlaceState::default()
+            },
+        );
+        id
+    }
+
     /// Checks an element loop, requiring `borrow` for non-duplicable elements.
+    ///
+    /// The element binding and the body are analyzed to a fixed point just like
+    /// the other loops, so a value moved in one iteration is seen as moved in
+    /// the next. The loop may run zero times, so the head also joins the
+    /// pre-loop state.
     pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
         let iterable_ty = self.eval(&decl.iterable);
         let element = match &iterable_ty.kind {
@@ -432,27 +474,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let exit = self.new_block();
         self.terminate(Terminator::Goto(body_block));
 
-        self.push_scope();
-        let kind = if decl.borrow {
-            BindingKind::OutSlot
-        } else {
-            BindingKind::Local
-        };
-        let id = self.declare(
-            &decl.name,
-            element,
-            kind,
-            if decl.borrow { Mode::Borrow } else { Mode::None },
-            false,
-            false,
-        );
-        self.set_place(
-            id,
-            PlaceState {
-                initialized: true,
-                ..PlaceState::default()
-            },
-        );
+        let (entry, _post) = self.loop_entry_state(pre.clone(), |checker| {
+            checker.declare_for_in_element(decl, &element);
+            checker
+                .exits
+                .push(ExitFrame::new(exit, Some(body_block), floor, floor));
+            checker.switch_to(body_block);
+            checker.check_block(&decl.body);
+            checker.exits.pop();
+            checker.pop_scope();
+        });
+
+        self.state = entry.clone();
+        self.declare_for_in_element(decl, &element);
         self.exits
             .push(ExitFrame::new(exit, Some(body_block), floor, floor));
         self.switch_to(body_block);
@@ -462,8 +496,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let frame = self.exits.pop().expect("loop frame");
         self.pop_scope();
-        let after = Self::merge(pre, self.state.clone());
-        self.state = join_breaks(after, &frame);
+        self.state = join_breaks(entry, &frame);
         self.switch_to(exit);
     }
 
@@ -537,6 +570,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !terminated {
                 let target = clause_blocks.get(index + 1).copied().unwrap_or(exit);
                 self.terminate(Terminator::Goto(target));
+                // A clause with no following clause falls straight out of the
+                // switch, so its state is an exit path and must join the code
+                // after the switch.
+                if target == exit {
+                    exit_states.push(self.state.clone());
+                }
                 fallthrough = Some(self.state.clone());
             } else {
                 fallthrough = None;
@@ -677,5 +716,34 @@ fn join_breaks(entry: FlowState, frame: &ExitFrame) -> FlowState {
         FunctionChecker::merge(entry, frame.break_state.clone())
     } else {
         entry
+    }
+}
+
+/// True when a loop condition is the literal `true`.
+///
+/// Such a loop can only leave through a `break` or a `return`, never through a
+/// false condition, so its condition edge does not reach the code after it.
+fn condition_is_true(condition: &Expr) -> bool {
+    matches!(condition.kind, ExprKind::Bool(true))
+}
+
+/// The state that reaches the code after a loop.
+///
+/// Normally the exit joins the loop-entry state with every `break` edge,
+/// because the condition may be false before the body runs. When the body
+/// always terminates and the condition is the literal `true`, the loop cannot
+/// leave through its condition, so the only reachable exit is the body's
+/// terminator, whose state is `post`.
+fn loop_exit_state(
+    entry: FlowState,
+    post: FlowState,
+    body_terminated: bool,
+    condition_always_true: bool,
+    frame: &ExitFrame,
+) -> FlowState {
+    if body_terminated && condition_always_true && frame.saw_break {
+        post
+    } else {
+        join_breaks(entry, frame)
     }
 }

@@ -317,9 +317,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The speculative pass emits into a copy of the graph and reports no
     /// diagnostics; the graph and the binding table are restored before the
-    /// real pass that lowers the body. It returns the stable entry state, the
-    /// state at the head of every iteration, and the stable state after the
-    /// body, which is the exit state of a loop whose body always runs.
+    /// real pass that lowers the body. A body that ends in a terminator never
+    /// reaches the back edge, so its effect is kept out of the entry and only
+    /// the pre-state joins the head. It returns the stable entry state and the
+    /// stable state after the body, which is the exit state of a loop whose
+    /// body always runs.
     fn loop_entry_state<F>(&mut self, pre: FlowState, run_body: F) -> (FlowState, FlowState)
     where
         F: Fn(&mut Self),
@@ -343,7 +345,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.builder = saved_builder.clone();
                 run_body(self);
                 let post = self.state.clone();
-                let next = Self::merge(pre.clone(), post.clone());
+                // A body whose current block is already terminated does not
+                // fall through to a later point in the body, so its effect
+                // belongs to that exit edge rather than to the next iteration's
+                // entry. Joining the effect would make a value moved on the
+                // exiting edge look moved at the head even though no later
+                // iteration runs.
+                let next = if self.is_terminated() {
+                    pre.clone()
+                } else {
+                    Self::merge(pre.clone(), post.clone())
+                };
                 if next == entry {
                     break 'fixpoint (entry, post);
                 }

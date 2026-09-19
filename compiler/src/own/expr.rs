@@ -492,9 +492,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             );
                         }
                     }
-                    // A writable lend may write the caller's place, so a null
-                    // narrowing proved before the call no longer holds.
-                    self.with_place(owner, |place| place.narrowed.clear());
+                    // A writable lend can only invalidate a null narrowing when
+                    // the lent type admits `null`: a `borrow T` of a
+                    // non-nullable `T` cannot write `null` back. Fall back to
+                    // the owner's type when no parameter type is known.
+                    let writes_nullable = match expected {
+                        Some(ty) => ty.nullable,
+                        None => self.bindings[owner].ty.nullable,
+                    };
+                    if writes_nullable {
+                        self.with_place(owner, |place| place.narrowed.clear());
+                    }
                 }
             }
             Mode::None | Mode::Const => {

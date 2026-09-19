@@ -78,4 +78,36 @@ Two notes recorded during verification:
 
 ## Re-review of the fix diff
 
-_(recorded after the single scoped re-review)_
+The single permitted re-review accepted RV-301..RV-318; RV-300 is only partial
+(the element `for` loop is not fixpointed) and three fixes over-correct. It
+also found a residual minor. New identifiers `RV-330+`:
+
+| ID | Severity | Finding |
+|---|---|---|
+| RV-330 | 🔴 CRITICAL | The element `for (e in xs)` form is not run through the loop fixpoint, so `for (e in xs) { observe(s); consume(s); }` accepts a second-iteration use-after-move where the equivalent `while` body reports `E10020` |
+| RV-331 | 🟠 MAJOR | A `switch` default (or last clause) falling through to the exit never contributes to the exit state, so `switch (n) { default: x = 2; } return x;` false-reports `E10021` |
+| RV-332 | 🟠 MAJOR | `loop_entry_state` merges a body that always terminates with the pre-state, so `while (true) { consume(s); break; }` false-reports `E10020` (and `E10021` for an assignment) |
+| RV-333 | 🟠 MAJOR | Clearing narrowing on every lend is too aggressive: a non-nullable `borrow File` cannot write `null`, so `if (f == null) return; touch(f); use(f);` false-reports `E10010` |
+| RV-334 | 🟡 MINOR | A struct read after every top-level field was written is still `E10021`; only a whole write sets the initialized flag |
+
+User ruling (2026-09-19): **fix all five**. This is the final review pass; no
+third review runs. Each fix carries a regression test and is verified by
+`make check` plus targeted corpus-shape probes.
+
+### Closure
+
+All five are fixed and verified: the element `for` loop now runs through the
+loop fixpoint (RV-330), a switch clause that falls through to the exit
+contributes its state (RV-331), a loop body that always terminates no longer
+poisons the entry (RV-332), only a nullable lend clears a caller's narrowing
+(RV-333), and a struct written field by field may be read whole (RV-334).
+`make check` is green with 220 unit tests, 2 compile-fail driver tests, 21 stage
+driver tests, and 81/81 asserted goldens.
+
+## Phase outcome
+
+The ownership, borrow, FFI, and generics layer is implemented and reviewed.
+Two independent reviewers plus one scoped re-review and a final fix pass
+produced findings RV-300..RV-334; every accepted finding is fixed with a
+regression test. Residual conservative behaviors are recorded above (the
+read-only raw pointee write, RV-318) and deferred deliberately.

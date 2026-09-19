@@ -502,3 +502,114 @@ fn returning_a_borrow_parameter_is_rejected() {
         func main(): i32 { return 0; }\n";
     assert_eq!(error_codes(source), vec!["E10034"]);
 }
+
+#[test]
+fn an_element_loop_move_is_seen_on_the_next_iteration() {
+    // The element loop is analyzed to a fixed point, so the move in the body
+    // comes back around and the second iteration's reads are reported.
+    let source = with_view_helper(
+        "func demo(xs: i32[]): void {\n\
+             let s: String = $\"x{1}\";\n\
+             for (e in xs) { observe(s); consume(s); }\n\
+         }",
+    );
+    assert!(reports(&source, "E10020"), "{:?}", error_codes(&source));
+}
+
+#[test]
+fn a_default_only_switch_initializes_after_the_switch() {
+    let source = "module t;\n\
+        func demo(n: i32): i32 {\n\
+            let x: i32;\n\
+            switch (n) { default: x = 2; }\n\
+            return x;\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}
+
+#[test]
+fn a_falling_default_clause_initializes_after_the_switch() {
+    let source = "module t;\n\
+        func demo(n: i32): i32 {\n\
+            let x: i32;\n\
+            switch (n) { case 1: x = 1; default: x = 2; }\n\
+            return x;\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}
+
+#[test]
+fn a_terminated_loop_body_does_not_poison_the_entry() {
+    let source = with_view_helper(
+        "func demo(): void {\n\
+             let s: String = $\"x{1}\";\n\
+             while (true) { consume(s); break; }\n\
+         }",
+    );
+    assert!(error_codes(&source).is_empty(), "{:?}", error_codes(&source));
+}
+
+#[test]
+fn a_terminated_loop_body_still_initializes_on_exit() {
+    let source = "module t;\n\
+        func demo(): i32 {\n\
+            let x: i32;\n\
+            while (true) { x = 1; break; }\n\
+            return x;\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}
+
+#[test]
+fn a_non_nullable_borrow_lend_keeps_a_caller_narrowing() {
+    // A `borrow T` of a non-nullable `T` cannot write `null`, so the earlier
+    // null check still holds after the call.
+    let source = "module t;\n\
+        handle File freedBy CloseFile;\n\
+        ffi lib {\n\
+            func OpenFile(): File?;\n\
+            func CloseFile(take f: File): void;\n\
+        }\n\
+        func touch(borrow f: File): void {}\n\
+        func use(f: File): void {}\n\
+        func demo(): void {\n\
+            let f: File? = OpenFile();\n\
+            if (f == null) { return; }\n\
+            touch(borrow f);\n\
+            use(f);\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}
+
+#[test]
+fn a_struct_written_field_by_field_may_be_read_whole() {
+    let source = "module t;\n\
+        struct Pair { a: i32; b: i32; }\n\
+        func observe(p: Pair): void {}\n\
+        func demo(): void {\n\
+            let p: Pair;\n\
+            p.a = 1;\n\
+            p.b = 2;\n\
+            observe(p);\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}
+
+#[test]
+fn a_partially_written_struct_may_not_be_read_whole() {
+    let source = "module t;\n\
+        struct Pair { a: i32; b: i32; }\n\
+        func observe(p: Pair): void {}\n\
+        func demo(): void {\n\
+            let p: Pair;\n\
+            p.a = 1;\n\
+            observe(p);\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10021"]);
+}
