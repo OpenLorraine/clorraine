@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 09:40
-> **Progress**: 26/84 tasks (31%)
+> **Last Updated**: 2026-09-19 09:41
+> **Progress**: 27/84 tasks (32%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -225,7 +225,7 @@ compiler logic.
 **Reference**: 03-03 "Diagnostics", "Lexer", "Parser", "CLI Skeleton" · Ch 01, grammar §10-§11
 **Objective**: make the front end produce the E20xxx and parser-only diagnostics.
 
-- [ ] 2.2.1 Implement `src/span.rs` and `src/diag.rs` (diagnostic value, renderer, warning policy, `--max-errors`)
+- [x] 2.2.1 Implement `src/span.rs` and `src/diag.rs` (diagnostic value, renderer, warning policy, `--max-errors`) ✅ (completed: 2026-09-19 09:41)
 - [ ] 2.2.2 Implement `src/lex.rs` (all tokens, literals, templates, comments, lexical diagnostics)
 - [ ] 2.2.3 Implement `src/ast.rs` and `src/parse.rs` (recursive descent + Pratt, disambiguation table, diagnostic-only starts)
 - [ ] 2.2.4 Implement `src/driver.rs` CLI skeleton (`--profile`, files, diagnostics, exit codes; empty translation unit on success until Phase 6)

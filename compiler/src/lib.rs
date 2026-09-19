@@ -5,3 +5,6 @@
 //! the compiler grows.
 
 #![forbid(unsafe_code)]
+
+pub mod diag;
+pub mod span;
