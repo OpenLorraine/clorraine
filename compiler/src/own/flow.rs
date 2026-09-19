@@ -1,0 +1,169 @@
+//! Flow-state values for the ownership walk.
+//!
+//! The checker tracks, for every binding, whether its value was moved or is
+//! partially moved, whether it is initialized (as a whole or field by field),
+//! and which projection paths were narrowed against `null`. Loops and
+//! `switch`es open an exit frame so a `break` or `continue` records the state
+//! on its edge. Keeping these plain values separate from the walk keeps the
+//! module that drives the walk focused on the rules.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::ast::{Block, Mode};
+use crate::borrow::{Loans, Provenance};
+use crate::ir::{self, BlockId};
+use crate::types::Ty;
+
+/// What a binding is: a local, a parameter, or a `borrow T?` out-parameter.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum BindingKind {
+    /// A local `let` or `const`.
+    Local,
+    /// A parameter that lends a value.
+    Param,
+    /// A `borrow T?` out-parameter slot, which owns its incoming value.
+    OutSlot,
+}
+
+/// One declared binding of the function currently being checked.
+pub(super) struct Binding {
+    /// The written name.
+    pub(super) name: String,
+    /// The resolved type.
+    pub(super) ty: Ty,
+    /// The scope depth the binding was declared in.
+    pub(super) scope: usize,
+    /// What kind of binding it is.
+    pub(super) kind: BindingKind,
+    /// The written parameter mode, or no mode for a local.
+    pub(super) mode: Mode,
+    /// True for a `const` local.
+    pub(super) is_const: bool,
+    /// True when the binding owns a value that needs a drop.
+    pub(super) needs_drop: bool,
+    /// For a view binding, where its storage comes from.
+    pub(super) provenance: Provenance,
+}
+
+/// One lexical scope and the bindings declared in it.
+#[derive(Default)]
+pub(super) struct Scope {
+    /// Names bound here, innermost wins.
+    pub(super) names: BTreeMap<String, usize>,
+    /// Binding indices in declaration order, for reverse drop emission.
+    pub(super) order: Vec<usize>,
+}
+
+/// The flow-sensitive state of one place.
+///
+/// Initialization is tracked both for the whole binding and per top-level
+/// field, so a struct that is written field by field is usable for its
+/// initialized fields but never as a whole. Narrowing is tracked per projection
+/// path, so a nullable field can be narrowed without narrowing the owner.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub(super) struct PlaceState {
+    /// The value was moved out and not re-initialized.
+    pub(super) moved: bool,
+    /// Top-level fields moved out, which makes whole use invalid.
+    pub(super) partial: BTreeSet<String>,
+    /// The binding is assigned on all paths reaching this point.
+    pub(super) initialized: bool,
+    /// Top-level fields written on all paths reaching this point.
+    pub(super) initialized_fields: BTreeSet<String>,
+    /// Projection paths proved not null on all paths reaching this point. The
+    /// empty path means the whole binding.
+    pub(super) narrowed: BTreeSet<Vec<ir::Projection>>,
+}
+
+impl PlaceState {
+    /// True when the whole binding is initialized or the top-level field is.
+    pub(super) fn field_initialized(&self, field: &str) -> bool {
+        self.initialized || self.initialized_fields.contains(field)
+    }
+
+    /// True when the projection path is known to be not null.
+    pub(super) fn is_narrowed(&self, projections: &[ir::Projection]) -> bool {
+        self.narrowed.contains(projections)
+    }
+}
+
+/// The flow state of one function at one program point.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub(super) struct FlowState {
+    /// Per-binding place state.
+    pub(super) places: BTreeMap<usize, PlaceState>,
+    /// Loans live at this point.
+    pub(super) loans: Loans,
+}
+
+impl FlowState {
+    /// Reads the state of a place, defaulting to "uninitialized and unmoved".
+    pub(super) fn place(&self, id: usize) -> PlaceState {
+        self.places.get(&id).cloned().unwrap_or_default()
+    }
+}
+
+/// The target of an assignment or a move.
+pub(super) enum PlaceTarget {
+    /// A local or parameter with its projections.
+    Local(usize, Vec<ir::Projection>),
+    /// A module-level binding with its projections.
+    Global(String, Vec<ir::Projection>),
+}
+
+/// One open `break`/`continue` target: a loop or a `switch`.
+///
+/// The frame joins the state of every edge seen so far, so the loop exit or
+/// the code after a `switch` sees the conservative union of the paths that
+/// actually leave it.
+pub(super) struct ExitFrame {
+    /// The block a `break` jumps to.
+    pub(super) break_block: BlockId,
+    /// The block a `continue` jumps to, or `None` inside a `switch`.
+    pub(super) continue_block: Option<BlockId>,
+    /// Scope depth a `break` must not clean: scopes at or below it stay.
+    pub(super) scope_floor: usize,
+    /// Scope depth a `continue` must not clean.
+    pub(super) continue_floor: usize,
+    /// Joined state of every `break` edge.
+    pub(super) break_state: FlowState,
+    /// True once a `break` edge was seen.
+    pub(super) saw_break: bool,
+}
+
+impl ExitFrame {
+    /// A frame that no edge has reached yet.
+    pub(super) fn new(
+        break_block: BlockId,
+        continue_block: Option<BlockId>,
+        scope_floor: usize,
+        continue_floor: usize,
+    ) -> Self {
+        Self {
+            break_block,
+            continue_block,
+            scope_floor,
+            continue_floor,
+            break_state: FlowState::default(),
+            saw_break: false,
+        }
+    }
+
+    /// Records a `break` edge leaving the frame with `state`.
+    pub(super) fn record_break(&mut self, state: FlowState) {
+        if self.saw_break {
+            self.break_state = super::FunctionChecker::merge(self.break_state.clone(), state);
+        } else {
+            self.break_state = state;
+            self.saw_break = true;
+        }
+    }
+}
+
+/// A deferred block waiting to be checked on the scope's exit edges.
+pub(super) struct DeferEntry<'a> {
+    /// Depth of the scope that registered the defer.
+    pub(super) depth: usize,
+    /// The deferred statements.
+    pub(super) block: &'a Block,
+}

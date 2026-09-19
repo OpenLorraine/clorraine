@@ -22,7 +22,7 @@ use crate::ast::{
 };
 use crate::borrow::{
     is_elided_view, is_handle_or_aggregate, is_lend_candidate, is_nullable_capable, is_view,
-    LoanKind, Loans, Provenance,
+    LoanKind, Provenance,
 };
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ffi::{self, UnsafeOp};
@@ -30,19 +30,35 @@ use crate::ir::{self, BlockId, Builder, Place, Statement, Terminator, Value};
 use crate::load::{Loaded, Module};
 use crate::sema::SemaOutput;
 use crate::span::Span;
-use crate::types::{resolve_ty, Ty, TyKind};
+use crate::types::{int_literal_value, resolve_ty, Ty, TyKind};
 
 pub mod program;
 
 mod expr;
+mod flow;
 mod generics;
 mod place;
 mod statements;
 
+use flow::{Binding, BindingKind, DeferEntry, ExitFrame, FlowState, PlaceState, PlaceTarget, Scope};
+
+#[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
+mod tests;
+
 use program::{Callee, ProgramInfo, StdlibEffect};
 
+/// What the ownership stage hands to the emitter.
+pub struct OwnershipOutput {
+    /// The lowered control-flow graph of every function body.
+    pub functions: Vec<ir::Function>,
+    /// The generic instantiation set and copy obligations.
+    pub monomorphization: ir::Monomorphization,
+}
+
 /// Checks the ownership, borrow, and FFI rules of every function body and
-/// returns the monomorphization inputs codegen consumes.
+/// returns the lowered IR and the monomorphization inputs codegen consumes.
 ///
 /// The stage is run only after a clean name and type pass, so it never
 /// cascades a diagnostic from a program that already failed earlier.
@@ -50,22 +66,26 @@ pub fn check(
     loaded: &Loaded,
     sema: &SemaOutput,
     diagnostics: &mut Diagnostics,
-) -> ir::Monomorphization {
+) -> OwnershipOutput {
     let program = ProgramInfo::collect(loaded, &sema.table);
     ffi::check_items(&program, diagnostics);
     for module in loaded.modules.values() {
         check_globals(module, sema, diagnostics);
         check_struct_declarations(module, sema, diagnostics);
     }
+    let mut functions = Vec::new();
     for module in loaded.modules.values() {
         for item in &module.items {
             if let Item::Func(decl) = item {
-                let mut checker = FunctionChecker::new(&program, sema, decl, diagnostics);
-                checker.check();
+                let checker = FunctionChecker::new(&program, sema, decl, diagnostics);
+                functions.push(checker.check());
             }
         }
     }
-    generics::collect(loaded, &program, sema)
+    OwnershipOutput {
+        functions,
+        monomorphization: generics::collect(loaded, &program, sema),
+    }
 }
 
 /// Rejects a module-level `let` whose declared type needs a drop.
@@ -130,83 +150,6 @@ fn report_illegal_nullable(ty: &Ty, span: Span, diagnostics: &mut Diagnostics) {
     );
 }
 
-/// What a binding is: a local, a parameter, or a `borrow T?` out-parameter.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum BindingKind {
-    /// A local `let` or `const`.
-    Local,
-    /// A parameter that lends a value.
-    Param,
-    /// A `borrow T?` out-parameter slot, which owns its incoming value.
-    OutSlot,
-}
-
-/// One declared binding of the function currently being checked.
-struct Binding {
-    /// The written name.
-    name: String,
-    /// The resolved type.
-    ty: Ty,
-    /// The scope depth the binding was declared in.
-    scope: usize,
-    /// What kind of binding it is.
-    kind: BindingKind,
-    /// The written parameter mode, or no mode for a local.
-    mode: Mode,
-    /// True for a `const` local.
-    is_const: bool,
-    /// True when the binding owns a value that needs a drop.
-    needs_drop: bool,
-    /// For a view binding, where its storage comes from.
-    provenance: Provenance,
-}
-
-/// One lexical scope and the bindings declared in it.
-#[derive(Default)]
-struct Scope {
-    /// Names bound here, innermost wins.
-    names: BTreeMap<String, usize>,
-    /// Binding indices in declaration order, for reverse drop emission.
-    order: Vec<usize>,
-}
-
-/// The flow-sensitive state of one place.
-#[derive(Clone, Default)]
-struct PlaceState {
-    /// The value was moved out and not re-initialized.
-    moved: bool,
-    /// Top-level fields moved out, which makes whole use invalid.
-    partial: BTreeSet<String>,
-    /// The binding is assigned on all paths reaching this point.
-    initialized: bool,
-    /// A dominating null test proved the place is not null.
-    narrowed: bool,
-}
-
-/// The flow state of one function at one program point.
-#[derive(Clone, Default)]
-struct FlowState {
-    /// Per-binding place state.
-    places: BTreeMap<usize, PlaceState>,
-    /// Loans live at this point.
-    loans: Loans,
-}
-
-impl FlowState {
-    /// Reads the state of a place, defaulting to "uninitialized and unmoved".
-    fn place(&self, id: usize) -> PlaceState {
-        self.places.get(&id).cloned().unwrap_or_default()
-    }
-}
-
-/// The target of an assignment or a move.
-enum PlaceTarget {
-    /// A local or parameter with its projections.
-    Local(usize, Vec<ir::Projection>),
-    /// A module-level binding with its projections.
-    Global(String, Vec<ir::Projection>),
-}
-
 /// Checks one function body and lowers it to the typed control-flow IR.
 struct FunctionChecker<'a, 'd> {
     /// Program-wide ownership facts.
@@ -237,6 +180,12 @@ struct FunctionChecker<'a, 'd> {
     /// Next compiler-created temporary index. A cell lets the lowering hand
     /// out fresh indices through a shared reference.
     next_temp: std::cell::Cell<u32>,
+    /// Open loops and switches, innermost last.
+    exits: Vec<ExitFrame>,
+    /// Deferred blocks registered by the open scopes, in registration order.
+    defer_entries: Vec<DeferEntry<'a>>,
+    /// False during a speculative pass, which computes state without reporting.
+    report_diagnostics: bool,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
 }
@@ -270,12 +219,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             suppress_elision: false,
             builder: Builder::new(&decl.name, params),
             next_temp: std::cell::Cell::new(0),
+            exits: Vec::new(),
+            defer_entries: Vec::new(),
+            report_diagnostics: true,
             diagnostics,
         }
     }
 
     /// Runs the whole function check and finishes the IR.
-    fn check(&mut self) {
+    fn check(mut self) -> ir::Function {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
         self.elision_prelude();
@@ -289,6 +241,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !self.is_terminated() {
             self.builder.terminate(Terminator::Return(None));
         }
+        self.builder.finish()
     }
 
     // -- scopes and bindings -------------------------------------------------
@@ -298,8 +251,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes.push(Scope::default());
     }
 
-    /// Leaves the innermost scope, emitting the drops it owns.
+    /// Leaves the innermost scope, running its defers and emitting its drops.
+    ///
+    /// The defers run before the scope is popped so the names the deferred
+    /// block closes over are still visible to the ownership walk.
     fn pop_scope(&mut self) {
+        let depth = self.scopes.len();
+        if depth == 0 {
+            return;
+        }
+        self.run_defers_from(depth);
         let Some(scope) = self.scopes.pop() else {
             return;
         };
@@ -312,7 +273,91 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for id in scope.order {
             self.state.places.remove(&id);
         }
-        self.state.loans.end_scope(self.scopes.len() + 1);
+        self.state.loans.end_scope(depth);
+    }
+
+    /// Runs every deferred block registered at or below `floor`, newest first.
+    ///
+    /// Each deferred block is checked against the state on the exit edge and
+    /// then discarded, so its writes and moves belong to the edge and do not
+    /// leak into the flow that follows. The check emits no IR: the deferred
+    /// block already has its own lowerd block from registration.
+    fn run_defers_from(&mut self, floor: usize) {
+        while self
+            .defer_entries
+            .last()
+            .is_some_and(|entry| entry.depth >= floor)
+        {
+            let entry = self.defer_entries.pop().expect("defer entry");
+            self.check_defer_exit(entry.block);
+        }
+    }
+
+    /// Checks one deferred block on an exit edge without emitting IR.
+    fn check_defer_exit(&mut self, block: &'a Block) {
+        let saved_state = self.state.clone();
+        let saved_builder = self.builder.clone();
+        let saved_bindings = self.bindings.len();
+        let saved_scopes = self.scopes.len();
+        let saved_defers = self.defer_entries.len();
+        self.push_scope();
+        for statement in &block.statements {
+            self.check_stmt(statement);
+        }
+        self.pop_scope();
+        self.state = saved_state;
+        self.builder = saved_builder;
+        self.bindings.truncate(saved_bindings);
+        self.scopes.truncate(saved_scopes);
+        self.defer_entries.truncate(saved_defers);
+    }
+
+    /// Repeats `run_body` in a speculative pass until the loop state stops
+    /// changing, starting from `pre` joined with the body effect.
+    ///
+    /// The speculative pass emits into a copy of the graph and reports no
+    /// diagnostics; the graph and the binding table are restored before the
+    /// real pass that lowers the body. It returns the stable entry state, the
+    /// state at the head of every iteration, and the stable state after the
+    /// body, which is the exit state of a loop whose body always runs.
+    fn loop_entry_state<F>(&mut self, pre: FlowState, run_body: F) -> (FlowState, FlowState)
+    where
+        F: Fn(&mut Self),
+    {
+        let saved_state = self.state.clone();
+        let saved_builder = self.builder.clone();
+        let saved_bindings = self.bindings.len();
+        let saved_scopes = self.scopes.len();
+        let saved_defers = self.defer_entries.len();
+        let saved_exits = self.exits.len();
+        let saved_report = self.report_diagnostics;
+        self.report_diagnostics = false;
+        let (entry, stable_post) = 'fixpoint: {
+            let mut entry = pre.clone();
+            loop {
+                self.state = entry.clone();
+                self.scopes.truncate(saved_scopes);
+                self.bindings.truncate(saved_bindings);
+                self.defer_entries.truncate(saved_defers);
+                self.exits.truncate(saved_exits);
+                self.builder = saved_builder.clone();
+                run_body(self);
+                let post = self.state.clone();
+                let next = Self::merge(pre.clone(), post.clone());
+                if next == entry {
+                    break 'fixpoint (entry, post);
+                }
+                entry = next;
+            }
+        };
+        self.state = saved_state;
+        self.builder = saved_builder;
+        self.bindings.truncate(saved_bindings);
+        self.scopes.truncate(saved_scopes);
+        self.defer_entries.truncate(saved_defers);
+        self.exits.truncate(saved_exits);
+        self.report_diagnostics = saved_report;
+        (entry, stable_post)
     }
 
     /// Declares a local binding and returns its index.
@@ -436,51 +481,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Merges two branch states conservatively.
-    fn merge(then_state: FlowState, else_state: FlowState) -> FlowState {
+    ///
+    /// A move or partial move on either path survives; a value is initialized
+    /// only when it is on both; narrowing survives only when both paths agree;
+    /// a loan live on either path stays live.
+    fn merge(first: FlowState, second: FlowState) -> FlowState {
         let mut places: BTreeMap<usize, PlaceState> = BTreeMap::new();
         let mut ids: BTreeSet<usize> = BTreeSet::new();
-        ids.extend(then_state.places.keys().copied());
-        ids.extend(else_state.places.keys().copied());
+        ids.extend(first.places.keys().copied());
+        ids.extend(second.places.keys().copied());
         for id in ids {
-            let a = then_state.place(id);
-            let b = else_state.place(id);
+            let a = first.place(id);
+            let b = second.place(id);
+            let mut initialized_fields = BTreeSet::new();
+            for field in a.initialized_fields.iter().chain(b.initialized_fields.iter()) {
+                if a.field_initialized(field) && b.field_initialized(field) {
+                    initialized_fields.insert(field.clone());
+                }
+            }
             places.insert(
                 id,
                 PlaceState {
                     moved: a.moved || b.moved,
                     partial: a.partial.union(&b.partial).cloned().collect(),
                     initialized: a.initialized && b.initialized,
-                    narrowed: a.narrowed && b.narrowed,
+                    initialized_fields,
+                    narrowed: a.narrowed.intersection(&b.narrowed).cloned().collect(),
                 },
             );
         }
-        let mut loans = then_state.loans;
-        loans.merge(&else_state.loans);
-        FlowState { places, loans }
-    }
-
-    /// Merges a loop body state back into the pre-loop state, keeping the
-    /// assignments that hold on every path.
-    fn merge_loop(pre: FlowState, body: FlowState) -> FlowState {
-        let mut places: BTreeMap<usize, PlaceState> = BTreeMap::new();
-        let mut ids: BTreeSet<usize> = BTreeSet::new();
-        ids.extend(pre.places.keys().copied());
-        ids.extend(body.places.keys().copied());
-        for id in ids {
-            let a = pre.place(id);
-            let b = body.place(id);
-            places.insert(
-                id,
-                PlaceState {
-                    moved: a.moved || b.moved,
-                    partial: a.partial.union(&b.partial).cloned().collect(),
-                    initialized: a.initialized && b.initialized,
-                    narrowed: a.narrowed,
-                },
-            );
-        }
-        let mut loans = pre.loans;
-        loans.merge(&body.loans);
+        let mut loans = first.loans;
+        loans.merge(&second.loans);
         FlowState { places, loans }
     }
 
@@ -515,7 +546,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Emits the drops of every open scope, innermost first, then returns.
+    ///
+    /// Deferred blocks run first, in reverse registration order, followed by
+    /// the drops. The deferred effects are checked but do not change the
+    /// return value, which was already evaluated.
     fn emit_return_cleanup(&mut self) {
+        self.run_defers_from(1);
         let depths: Vec<usize> = (1..=self.scopes.len()).rev().collect();
         for depth in depths {
             let ids: Vec<usize> = self

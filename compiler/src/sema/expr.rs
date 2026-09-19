@@ -74,9 +74,27 @@ impl Checker<'_, '_> {
             ExprKind::ArrayLiteral { elements, fill } => {
                 self.check_array_literal(elements, fill, expected, expr.span)
             }
-            // Lambdas and the staged features are not modeled yet; the opaque
-            // type keeps their uses from producing false follow-on errors.
-            ExprKind::Lambda { .. } => Ty::unknown(),
+            // Lambda syntax is frozen but its semantics are staged out, so a
+            // lambda reports its staged-feature code. The opaque type keeps
+            // its uses from producing false follow-on errors.
+            ExprKind::Lambda { captures, .. } => {
+                if captures.is_empty() {
+                    self.error(
+                        "E90000",
+                        "'lambda' is not yet supported",
+                        "remove the lambda or wait for the staged feature",
+                        expr.span,
+                    );
+                } else {
+                    self.error(
+                        "E90002",
+                        "lambda captures are not yet implemented",
+                        "remove the capture list or wait for the staged feature",
+                        expr.span,
+                    );
+                }
+                Ty::unknown()
+            }
             ExprKind::Unsafe(inner) => self.check_value(inner, expected),
             ExprKind::IntrinsicCall { name, args } => self.check_intrinsic(name, args),
             ExprKind::Template(pieces) => self.check_template(pieces),
@@ -305,10 +323,10 @@ impl Checker<'_, '_> {
                 }
             }
             TyKind::Str | TyKind::CString | TyKind::StaticStr => Ty::scalar(ScalarType::U8),
-            // Raw indexing is pointer arithmetic: `p[i]` advances the pointer,
-            // staying a `raw T` until it is dereferenced. The operation is
-            // legal only inside `unsafe`, which the ownership stage checks.
-            TyKind::Raw(_) => base_ty.clone(),
+            // Indexing a raw pointer reaches the pointee, so `p[i]` has the
+            // element type. The access is legal only inside `unsafe`, which
+            // the ownership stage checks.
+            TyKind::Raw(inner) => (**inner).clone(),
             TyKind::Unknown => Ty::unknown(),
             _ => {
                 self.error(

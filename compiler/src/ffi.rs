@@ -159,3 +159,99 @@ impl UnsafeOp {
 pub fn is_volatile_intrinsic(name: &str) -> bool {
     name.starts_with("readVolatile") || name.starts_with("writeVolatile")
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::own::test_support::{error_codes, reports};
+
+    #[test]
+    fn a_well_formed_deleter_is_accepted() {
+        let source = "module t;\n\
+            handle File freedBy CloseFile;\n\
+            ffi lib { func CloseFile(take f: File): void; }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(!reports(source, "E10102"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_deleter_with_the_wrong_signature_is_rejected() {
+        let source = "module t;\n\
+            handle File freedBy BadDeleter;\n\
+            ffi lib { func BadDeleter(f: File): i32; }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10102"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn an_exported_ffi_block_is_rejected() {
+        let source = "module t;\n\
+            export ffi lib { func CloseFile(take f: File): void; }\n\
+            handle File freedBy CloseFile;\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10103"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn freed_by_on_a_struct_is_rejected() {
+        let source = "module t;\n\
+            struct Node freedBy CloseFile { value: i32; }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10104"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn an_uncontracted_call_outside_unsafe_is_rejected() {
+        let source = "module t;\n\
+            handle File freedBy CloseFile;\n\
+            ffi lib {\n\
+                func RawRead(f: File?, n: i32): i32;\n\
+                func CloseFile(take f: File): void;\n\
+            }\n\
+            func demo(): i32 {\n\
+                let f: File? = null;\n\
+                return RawRead(f, 0);\n\
+            }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10100"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn an_owned_handle_to_an_uncontracted_parameter_is_rejected() {
+        let source = "module t;\n\
+            handle File freedBy CloseFile;\n\
+            ffi lib {\n\
+                func RawStat(f: File): i32;\n\
+                func CloseFile(take f: File): void;\n\
+            }\n\
+            func demo(f: File): void {\n\
+                unsafe { let n = RawStat(f); }\n\
+            }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10101"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_narrowed_nullable_handle_is_still_rejected_by_an_uncontracted_parameter() {
+        let source = "module t;\n\
+            handle File freedBy Close;\n\
+            ffi lib {\n\
+                func RawStat(f: File?): i32;\n\
+                func Close(take f: File): void;\n\
+            }\n\
+            func demo(f: File): void {\n\
+                let g: File? = f;\n\
+                if (g != null) { unsafe { let n = RawStat(g); } }\n\
+            }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10101"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_scalar_to_an_uncontracted_parameter_is_accepted() {
+        let source = "module t;\n\
+            ffi lib { func RawTick(n: i32): i32; }\n\
+            func demo(): i32 { unsafe { return RawTick(0); } }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(!reports(source, "E10101"), "{:?}", error_codes(source));
+    }
+}

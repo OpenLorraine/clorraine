@@ -25,7 +25,7 @@ pub enum LoanKind {
 }
 
 /// One live loan of an owning place.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Loan {
     /// Index of the binding that owns the storage.
     pub owner: usize,
@@ -39,14 +39,25 @@ pub struct Loan {
 }
 
 /// The loans live at one program point.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct Loans {
     entries: Vec<Loan>,
 }
 
 impl Loans {
-    /// Records a new loan.
+    /// Records a new loan, ignoring an identical live loan.
+    ///
+    /// Re-adding the same `(owner, kind, origin)` loan happens when a flow
+    /// state is re-derived at a fixed point; keeping the set canonical makes
+    /// the equality check that detects the fixed point meaningful.
     pub fn add(&mut self, owner: usize, kind: LoanKind, origin: usize, span: Span) {
+        if self
+            .entries
+            .iter()
+            .any(|loan| loan.owner == owner && loan.kind == kind && loan.origin == origin)
+        {
+            return;
+        }
         self.entries.push(Loan {
             owner,
             kind,
@@ -193,4 +204,123 @@ pub fn is_nullable_capable(ty: &Ty) -> bool {
             | TyKind::Array { .. }
             | TyKind::Unknown
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::own::test_support::{error_codes, reports};
+    use crate::span::Span;
+
+    /// A synthetic span; the loan set never renders it in these tests.
+    fn span() -> Span {
+        let mut sources = crate::span::SourceMap::new();
+        let id = sources.add_file("test.clo".to_owned(), String::new());
+        Span::new(id, 0, 0)
+    }
+
+    #[test]
+    fn any_second_loan_conflicts_in_the_conservative_model() {
+        let mut loans = Loans::default();
+        loans.add(0, LoanKind::Shared, 1, span());
+        assert!(loans.conflict(0, LoanKind::Shared), "v1 rejects a second loan");
+        assert!(loans.conflict(0, LoanKind::Exclusive), "a writer excludes");
+        assert!(loans.blocks_write(0), "a shared loan blocks a write");
+        assert!(loans.blocks_move(0), "any loan blocks a move");
+        assert!(!loans.any_live(1), "another owner is unaffected");
+    }
+
+    #[test]
+    fn an_exclusive_loan_excludes_a_second_loan_of_either_kind() {
+        let mut loans = Loans::default();
+        loans.add(0, LoanKind::Exclusive, 1, span());
+        assert!(loans.conflict(0, LoanKind::Shared));
+        assert!(loans.conflict(0, LoanKind::Exclusive));
+    }
+
+    #[test]
+    fn ending_a_scope_retires_the_loans_it_owns() {
+        let mut loans = Loans::default();
+        loans.add(0, LoanKind::Shared, 2, span());
+        loans.add(0, LoanKind::Exclusive, 3, span());
+        loans.end_scope(3);
+        assert!(loans.any_live(0), "the inner loan is gone but the outer stays");
+        loans.end_scope(2);
+        assert!(!loans.any_live(0), "the outer loan is gone");
+    }
+
+    #[test]
+    fn a_move_while_a_view_is_live_is_rejected() {
+        let source = "module t;\n\
+            func viewOf(s: str): str { return s; }\n\
+            func consume(take s: String): void {}\n\
+            func demo(): void {\n\
+                let s: String = $\"x{1}\";\n\
+                let v: str = viewOf(s);\n\
+                consume(s);\n\
+                observe(v);\n\
+            }\n\
+            func observe(s: str): void {}\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10022"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_write_while_a_view_is_live_is_rejected() {
+        let source = "module t;\n\
+            func viewOf(s: str): str { return s; }\n\
+            func demo(): void {\n\
+                let s: String = $\"x{1}\";\n\
+                let v: str = viewOf(s);\n\
+                s = $\"y{2}\";\n\
+                observe(v);\n\
+            }\n\
+            func observe(s: str): void {}\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10031"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_shared_reborrow_of_a_borrow_parameter_is_accepted() {
+        let source = "module t;\n\
+            import { slice } from std.mem;\n\
+            func observe(buf: u8[]): void {}\n\
+            func demo(borrow b: u8[]): void {\n\
+                observe(slice(b, 0, 1));\n\
+            }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_field_view_borrows_the_whole_struct_conservatively() {
+        let source = "module t;\n\
+            import { String, stringOf, bytes } from std.text;\n\
+            struct Holder { name: String; }\n\
+            func demo(): void {\n\
+                let h: Holder = Holder { name: stringOf(\"x\") };\n\
+                let v: u8[] = bytes(h.name);\n\
+                h.name = stringOf(\"y\");\n\
+                observe(v);\n\
+            }\n\
+            func observe(v: u8[]): void {}\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10031"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_second_view_of_one_owner_is_a_conflict_in_v1() {
+        let source = "module t;\n\
+            import { String, stringOf, bytes } from std.text;\n\
+            func demo(): void {\n\
+                let s: String = stringOf(\"x\");\n\
+                let v: u8[] = bytes(s);\n\
+                let w: u8[] = bytes(s);\n\
+                observe(v);\n\
+                observe(w);\n\
+            }\n\
+            func observe(v: u8[]): void {}\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10032"), "{:?}", error_codes(source));
+    }
 }

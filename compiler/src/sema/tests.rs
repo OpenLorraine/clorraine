@@ -406,7 +406,7 @@ fn indexing_returns_the_element_type_and_checks_constant_bounds() {
         r#"module test;
 func demo(text: str, bytes: raw u8, grid: u8[2][3]): u8 {
     let first: u8 = text[0];
-    let raw_element: raw u8 = bytes[0];
+    let element: u8 = bytes[0];
     let next: raw u8 = bytes + 1;
     let back: raw u8 = bytes - 1;
     let row: u8[3] = grid[0];

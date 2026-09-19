@@ -11,13 +11,18 @@ use super::*;
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- expressions ---------------------------------------------------------
 
-    /// The recorded type of an expression, or the opaque type.
+    /// The recorded type of an expression.
+    ///
+    /// The type stage records every expression the ownership walk can reach,
+    /// so a miss means the two stages disagree about the tree shape. That is
+    /// an internal error: it must not silently become the opaque type, because
+    /// the opaque type disables every ownership check.
     pub(super) fn ty(&self, expr: &Expr) -> Ty {
         self.sema
             .expr_types
             .get(&(expr as *const Expr as usize))
             .cloned()
-            .unwrap_or_else(Ty::unknown)
+            .expect("internal error: the type stage recorded no type for this expression")
     }
 
     /// Resolves a written type in the current generic scope.
@@ -39,7 +44,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             | ExprKind::Lambda { .. } => {}
             ExprKind::Name(name) => {
                 if let Some(id) = self.lookup(name) {
-                    self.read_place(id, expr.span);
+                    self.read_place(id, &[], expr.span);
                 }
             }
             ExprKind::Qualified(name) => self.eval_qualified(name, expr.span),
@@ -149,19 +154,46 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         ty
     }
 
-    /// Walks a dotted name, checking reads and implied raw dereferences.
+    /// Walks a dotted name, checking each hop's read and raw dereference.
+    ///
+    /// Every segment is walked, not just the first, so a raw pointer reached
+    /// part way through a chain (`o.inner.x` where `inner: raw Inner`) still
+    /// reports the implied dereference.
     pub(super) fn eval_qualified(&mut self, name: &crate::ast::QualifiedName, span: Span) {
         let Some(first) = name.segments.first() else {
             return;
         };
-        if let Some(id) = self.lookup(first) {
-            self.read_place(id, span);
-            if name.segments.len() >= 2 {
-                let base_ty = self.bindings[id].ty.clone();
-                self.check_member_raw(&base_ty, span);
-            }
-        } else if let Some(global) = self.program.globals.get(first) {
-            let _ = global;
+        let Some(id) = self.lookup(first) else {
+            return;
+        };
+        let projections: Vec<ir::Projection> = name.segments[1..]
+            .iter()
+            .map(|segment| ir::Projection::Field(segment.clone()))
+            .collect();
+        self.read_place(id, &projections, span);
+        let mut current = self.bindings[id].ty.clone();
+        for segment in &name.segments[1..] {
+            self.check_member_raw(&current, span);
+            current = self.member_type(&current, segment);
+        }
+    }
+
+    /// The type of a field selected from `base`, following a raw pointer.
+    pub(super) fn member_type(&self, base: &Ty, field: &str) -> Ty {
+        match &base.kind {
+            TyKind::Struct(name) => self
+                .sema
+                .table
+                .struct_fields(name)
+                .and_then(|fields| {
+                    fields
+                        .iter()
+                        .find(|(declared, _)| declared == field)
+                        .map(|(_, ty)| ty.clone())
+                })
+                .unwrap_or_else(Ty::unknown),
+            TyKind::Raw(inner) => self.member_type(inner, field),
+            _ => Ty::unknown(),
         }
     }
 
@@ -173,9 +205,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Reports a nullable place used where a non-null value is required.
+    ///
+    /// The check covers projected places too, so a nullable struct field is
+    /// reported unless that exact field path was narrowed.
     pub(super) fn check_nonnull_expr(&mut self, expr: &Expr, span: Span) {
         if let Some((id, projections)) = self.plain_binding(expr) {
-            if projections.is_empty() && !self.state.place(id).narrowed {
+            if !self.state.place(id).is_narrowed(&projections) {
                 let name = self.bindings[id].name.clone();
                 self.error(
                     "E10010",
@@ -209,11 +244,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Checks an assignment expression.
     pub(super) fn check_assign(&mut self, op: AssignOp, target: &Expr, value: &Expr) {
         let target_ty = self.ty(target);
+        if op != AssignOp::Assign && matches!(target_ty.kind, TyKind::Raw(_)) {
+            self.report_unsafe(UnsafeOp::PointerArithmetic, target.span);
+        }
+        self.check_place_raw(target);
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
                 self.eval(value);
                 if op != AssignOp::Assign {
-                    self.read_place(id, target.span);
+                    self.read_place(id, &projections, target.span);
                 }
                 if !projections.is_empty() && self.is_loan_value(value) {
                     let name = self.bindings[id].name.clone();
@@ -224,15 +263,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         target.span,
                     );
                 }
-                let whole = projections.is_empty();
-                self.write_place(id, whole, target.span);
-                if whole {
-                    let place = self.binding_place(id);
-                    let lowered = self.lower_value(value);
-                    self.emit(Statement::Assign {
-                        target: place,
-                        value: lowered,
-                    });
+                self.write_place(id, &projections, target.span);
+                let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
+                let lowered = self.lower_value(value);
+                self.emit(Statement::Assign {
+                    target: place,
+                    value: lowered,
+                });
+                if projections.is_empty() {
                     self.bind_value(id, &target_ty, value, target.span);
                 }
             }
@@ -266,6 +304,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         self.check_value_into(value, &target_ty, value.span);
+    }
+
+    /// Reports raw operations implied by an assignment target's projections.
+    ///
+    /// Walking the projections rather than the whole expression keeps the
+    /// target from being read as a value, which would be wrong for a field of
+    /// a partially initialized or partially moved struct.
+    pub(super) fn check_place_raw(&mut self, target: &Expr) {
+        let Some(PlaceTarget::Local(id, projections)) = self.place_target(target) else {
+            return;
+        };
+        let mut current = self.bindings[id].ty.clone();
+        for projection in &projections {
+            match projection {
+                ir::Projection::Field(field) => {
+                    self.check_member_raw(&current, target.span);
+                    current = self.member_type(&current, field);
+                }
+                ir::Projection::Element(_) => {
+                    if matches!(current.kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
+                        self.report_unsafe(UnsafeOp::PointerArithmetic, target.span);
+                    }
+                    current = Ty::unknown();
+                }
+            }
+        }
     }
 
     // -- calls ---------------------------------------------------------------
@@ -339,7 +403,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks a call's arguments against user-declared parameter modes.
+    ///
+    /// An exclusive lend is call-scoped, so `lent` accumulates the owners
+    /// already lent in this one call: lending the same place twice in one call
+    /// is a conflicting loan even though two separate calls are fine.
     pub(super) fn check_arguments(&mut self, args: &[Arg], params: &[(Mode, Ty)], _span: Span) {
+        let mut lent: BTreeSet<usize> = BTreeSet::new();
         for (index, arg) in args.iter().enumerate() {
             let expected = params.get(index).map(|(_, ty)| ty.clone());
             let arg_ty = self.eval(&arg.value);
@@ -347,7 +416,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.check_value_into(&arg.value, expected, arg.span);
             }
             let mode = params.get(index).map(|(mode, _)| *mode).unwrap_or(Mode::None);
-            self.check_argument_place(arg, mode, expected.as_ref(), &arg_ty);
+            self.check_argument_place(arg, mode, expected.as_ref(), &arg_ty, &mut lent);
         }
     }
 
@@ -358,42 +427,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         mode: Mode,
         expected: Option<&Ty>,
         arg_ty: &Ty,
+        lent: &mut BTreeSet<usize>,
     ) {
-        let Some(target) = self.place_target(&arg.value) else {
-            return;
-        };
+        let target = self.place_target(&arg.value);
         match mode {
             Mode::Take => {
                 if !self.sema.table.duplicable(arg_ty) {
-                    self.move_target(target, arg.span);
+                    if let Some(target) = target {
+                        self.move_target(target, arg.span);
+                    }
                 }
             }
             Mode::Borrow => {
-                if let PlaceTarget::Global(name, _) = &target {
-                    self.error(
-                        "E10038",
-                        format!("cannot borrow global '{name}'"),
-                        "borrow from a local owner",
-                        arg.span,
-                    );
+                if let Some(PlaceTarget::Global(name, _)) = &target {
+                    if !self.global_is_const(name) {
+                        self.error(
+                            "E10038",
+                            format!("cannot borrow global '{name}'"),
+                            "borrow from a local owner",
+                            arg.span,
+                        );
+                    }
                     return;
                 }
                 if self.sema.table.duplicable(arg_ty) && !is_view(arg_ty) {
                     // A writable lend of a duplicable value binds a copy, so
                     // the write reaches the copy only.
                     let name = match &target {
-                        PlaceTarget::Local(id, _) => self.bindings[*id].name.clone(),
-                        PlaceTarget::Global(name, _) => name.clone(),
+                        Some(PlaceTarget::Local(id, _)) => self.bindings[*id].name.clone(),
+                        _ => String::from("value"),
                     };
-                    self.diagnostics.push(Diagnostic::warning(
+                    self.warn(
                         "W10001",
                         format!("unnecessary lend of duplicable '{name}'"),
                         arg.span,
-                    ));
+                    );
                 }
-                if let PlaceTarget::Local(id, _) = target {
-                    if expected.is_some_and(is_view) && self.is_readonly_borrow(id) {
-                        let name = self.bindings[id].name.clone();
+                // The owner may be a direct place or a view derived from a
+                // call such as `slice(buf, ...)`; both lend the base storage.
+                let owner = match &target {
+                    Some(PlaceTarget::Local(id, _)) => Some(*id),
+                    _ => self.argument_owner(&arg.value),
+                };
+                if let Some(owner) = owner {
+                    if expected.is_some_and(is_view) && self.is_readonly_borrow(owner) {
+                        let name = self.bindings[owner].name.clone();
                         self.error(
                             "E10041",
                             format!("cannot write through a view of read-only borrow '{name}'"),
@@ -402,39 +480,69 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         );
                         return;
                     }
-                    if !self.sema.table.duplicable(arg_ty)
-                        && self.state.loans.conflict(id, LoanKind::Exclusive)
-                    {
-                        let name = self.bindings[id].name.clone();
+                    if !self.sema.table.duplicable(arg_ty) {
+                        let duplicate = !lent.insert(owner);
+                        if duplicate || self.state.loans.conflict(owner, LoanKind::Exclusive) {
+                            let name = self.bindings[owner].name.clone();
+                            self.error(
+                                "E10032",
+                                format!("'{name}' is already borrowed"),
+                                "end the first borrow first",
+                                arg.span,
+                            );
+                        }
+                    }
+                    // A writable lend may write the caller's place, so a null
+                    // narrowing proved before the call no longer holds.
+                    self.with_place(owner, |place| place.narrowed.clear());
+                }
+            }
+            Mode::None | Mode::Const => {
+                if let Some(PlaceTarget::Global(name, _)) = &target {
+                    if !self.global_is_const(name) {
                         self.error(
-                            "E10032",
-                            format!("'{name}' is already borrowed"),
-                            "end the first borrow first",
+                            "E10038",
+                            format!("cannot borrow global '{name}'"),
+                            "borrow from a local owner",
                             arg.span,
                         );
                     }
                 }
             }
-            Mode::None | Mode::Const => {
-                if let PlaceTarget::Global(name, _) = &target {
-                    self.error(
-                        "E10038",
-                        format!("cannot borrow global '{name}'"),
-                        "borrow from a local owner",
-                        arg.span,
-                    );
-                }
-            }
         }
     }
 
+    /// The binding that owns the storage a view value points into.
+    pub(super) fn argument_owner(&self, expr: &Expr) -> Option<usize> {
+        match self.view_provenance(expr) {
+            Provenance::Local(id) | Provenance::Param(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// True when the module-level binding is a `const`.
+    pub(super) fn global_is_const(&self, name: &str) -> bool {
+        self.program
+            .globals
+            .get(name)
+            .is_some_and(|global| global.is_const)
+    }
+
     /// True when the binding is a read-only borrow of view storage.
+    ///
+    /// A local view is read-only when the parameter it was derived from is a
+    /// read-only lend; a view derived from a `borrow` or `take` parameter is
+    /// writable, because that parameter owns or may write the storage.
     pub(super) fn is_readonly_borrow(&self, id: usize) -> bool {
         let binding = &self.bindings[id];
         if binding.kind == BindingKind::Param {
             return matches!(binding.mode, Mode::None | Mode::Const);
         }
-        matches!(&binding.provenance, Provenance::Param(owner) if self.bindings[*owner].mode != Mode::Borrow)
+        matches!(
+            &binding.provenance,
+            Provenance::Param(owner)
+                if matches!(self.bindings[*owner].mode, Mode::None | Mode::Const)
+        )
     }
 
     /// Checks a call to an `ffi`-declared function.
@@ -462,16 +570,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ));
         }
         self.check_marker_matches(name, args, &params);
+        let mut lent: BTreeSet<usize> = BTreeSet::new();
         for (index, arg) in args.iter().enumerate() {
             let arg_ty = self.eval(&arg.value);
             let Some((mode, expected)) = params.get(index) else {
                 continue;
             };
             if ffi::is_uncontracted_param(*mode, expected) {
-                if is_handle_or_aggregate(&arg_ty)
-                    && !arg_ty.nullable
-                    && !matches!(arg.value.kind, ExprKind::Null)
-                {
+                // An uncontracted parameter accepts only scalars, `raw`,
+                // `cstring`, views, and a literal `null`. A handle or
+                // aggregate is rejected whether or not it is nullable: a
+                // narrowed value still owns storage.
+                if is_handle_or_aggregate(&arg_ty) && !matches!(arg.value.kind, ExprKind::Null) {
                     let param_name = signature.params[index].name.clone();
                     self.error(
                         "E10101",
@@ -483,7 +593,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 continue;
             }
             self.check_value_into(&arg.value, expected, arg.span);
-            self.check_argument_place(arg, *mode, Some(expected), &arg_ty);
+            self.check_argument_place(arg, *mode, Some(expected), &arg_ty, &mut lent);
         }
     }
 
@@ -494,12 +604,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.eval(&written.value);
                 if index == arg {
                     if let Some(PlaceTarget::Global(name, _)) = self.place_target(&written.value) {
-                        self.error(
-                            "E10038",
-                            format!("cannot borrow global '{name}'"),
-                            "borrow from a local owner",
-                            written.span,
-                        );
+                        if !self.global_is_const(&name) {
+                            self.error(
+                                "E10038",
+                                format!("cannot borrow global '{name}'"),
+                                "borrow from a local owner",
+                                written.span,
+                            );
+                        }
                     }
                 }
             }

@@ -80,7 +80,10 @@ pub enum PlaceBase {
 }
 
 /// One selection applied to a place.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// The ordering is total so a set of projection paths can be kept sorted; the
+/// order itself has no meaning beyond giving narrowing facts a stable key.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Projection {
     /// A named struct field.
     Field(String),
@@ -257,6 +260,10 @@ pub struct Function {
 /// into it; starting a branch means creating the successor blocks and ending
 /// the current one with a terminator, so a finished function never has a block
 /// without an explicit exit.
+///
+/// The builder is cloneable so a speculative analysis pass can emit into a
+/// copy and then discard it, leaving the real graph untouched.
+#[derive(Clone)]
 pub struct Builder {
     function: Function,
     current: BlockId,

@@ -11,10 +11,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- place rules ---------------------------------------------------------
 
     /// Reports a read of a moved, partially moved, or uninitialized place.
-    pub(super) fn read_place(&mut self, id: usize, span: Span) {
+    ///
+    /// A read of a top-level field checks that field's own state, so the
+    /// remaining fields of a partially moved or partially initialized struct
+    /// stay usable.
+    pub(super) fn read_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
         let state = self.state.place(id);
+        let name = self.bindings[id].name.clone();
         if state.moved {
-            let name = self.bindings[id].name.clone();
             self.error(
                 "E10020",
                 format!("'{name}' was moved and cannot be used"),
@@ -23,8 +27,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
+        if let Some(ir::Projection::Field(field)) = projections.first() {
+            if state.partial.contains(field) {
+                self.error(
+                    "E10020",
+                    format!("'{name}.{field}' was moved and cannot be used"),
+                    "re-initialize the field or use a view",
+                    span,
+                );
+                return;
+            }
+            if !state.field_initialized(field) {
+                self.error(
+                    "E10021",
+                    format!("'{name}.{field}' may be used before it is initialized"),
+                    "initialize the field on every path",
+                    span,
+                );
+            }
+            return;
+        }
         if !state.partial.is_empty() {
-            let name = self.bindings[id].name.clone();
             self.error(
                 "E10025",
                 format!("'{name}' is partially moved and cannot be used as a whole"),
@@ -34,7 +57,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         if !state.initialized {
-            let name = self.bindings[id].name.clone();
             self.error(
                 "E10021",
                 format!("'{name}' may be used before it is initialized"),
@@ -45,7 +67,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Validates a write to a local place.
-    pub(super) fn write_place(&mut self, id: usize, whole: bool, span: Span) {
+    ///
+    /// A whole write re-initializes the binding. A field write re-initializes
+    /// that field and clears its portion of the narrowing facts; writing a
+    /// field of a wholly moved value is a use after move.
+    pub(super) fn write_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
         let binding = &self.bindings[id];
         if binding.is_const {
             let name = binding.name.clone();
@@ -77,13 +103,40 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
+        if !projections.is_empty() && self.state.place(id).moved {
+            let name = self.bindings[id].name.clone();
+            self.error(
+                "E10020",
+                format!("'{name}' was moved and cannot be used"),
+                "re-initialize the binding before writing a field",
+                span,
+            );
+            return;
+        }
+        let first = projections.first().cloned();
         self.with_place(id, |place| {
-            place.initialized = true;
-            place.moved = false;
-            if whole {
-                place.partial.clear();
+            match &first {
+                None => {
+                    place.initialized = true;
+                    place.initialized_fields.clear();
+                    place.partial.clear();
+                    place.moved = false;
+                    place.narrowed.clear();
+                }
+                Some(ir::Projection::Field(field)) => {
+                    if !place.initialized {
+                        place.initialized_fields.insert(field.clone());
+                    }
+                    place.partial.remove(field);
+                    place.moved = false;
+                    place.narrowed.retain(|path| path.first() != first.as_ref());
+                }
+                Some(ir::Projection::Element(_)) => {
+                    place.initialized = true;
+                    place.moved = false;
+                    place.narrowed.clear();
+                }
             }
-            place.narrowed = false;
         });
     }
 
@@ -96,7 +149,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Moves out of a place, applying partial-move and loan rules.
     pub(super) fn move_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
         let binding = &self.bindings[id];
-        if binding.kind == BindingKind::Param && binding.mode == Mode::Borrow {
+        if binding.kind == BindingKind::Param
+            && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)
+        {
             let name = binding.name.clone();
             self.error(
                 "E10034",
@@ -117,18 +172,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         if projections.is_empty() {
-            if self.state.place(id).moved {
-                let name = self.bindings[id].name.clone();
-                self.error(
-                    "E10020",
-                    format!("'{name}' was moved and cannot be used"),
-                    "re-initialize the binding or use a view",
-                    span,
-                );
-            }
+            // A read always precedes a move in the same expression, so a move
+            // of an already-moved value has already been diagnosed; repeating
+            // it here would double-report.
             self.with_place(id, |place| {
                 place.moved = true;
                 place.partial.clear();
+                place.narrowed.clear();
             });
             return;
         }
@@ -151,7 +201,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ir::Projection::Element(_) => return,
         };
         self.with_place(id, |place| {
-            place.partial.insert(field);
+            place.partial.insert(field.clone());
+            place.initialized_fields.remove(&field);
+            place.narrowed.retain(|path| path.first() != projections.first());
         });
     }
 
@@ -188,7 +240,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Str(_) => Provenance::Static,
             ExprKind::Unsafe(inner) => self.view_provenance(inner),
             ExprKind::Call { callee, args, .. } => self.call_provenance(callee, args),
+            // A projection points into the same storage as its base, so the
+            // provenance of `h.f` or `xs[0]` is the provenance of `h` or `xs`.
+            ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+                self.view_provenance(base)
+            }
             _ => Provenance::None,
+        }
+    }
+
+    /// The loan kind a view-producing expression creates.
+    ///
+    /// A standard-library helper that yields a writable view is an exclusive
+    /// loan; every other view derivation is a shared loan.
+    pub(super) fn view_loan_kind(&self, expr: &Expr) -> LoanKind {
+        match &expr.kind {
+            ExprKind::Unsafe(inner) => self.view_loan_kind(inner),
+            ExprKind::Call { callee, .. } => {
+                let Some(name) = self.callee_name(callee) else {
+                    return LoanKind::Shared;
+                };
+                match self.program.callee(&name) {
+                    Some(Callee::Stdlib {
+                        effect: StdlibEffect::ViewOf { kind, .. },
+                        ..
+                    }) => kind,
+                    _ => LoanKind::Shared,
+                }
+            }
+            _ => LoanKind::Shared,
         }
     }
 
@@ -328,8 +408,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Detects an `== null` / `!= null` test that narrows a place.
-    pub(super) fn narrowing(&self, cond: &Expr) -> Option<(usize, bool)> {
+    /// Detects an `== null` / `!= null` test that narrows a place path.
+    ///
+    /// The narrowed path may be a projected place, so a nullable field can be
+    /// narrowed without narrowing its owner.
+    pub(super) fn narrowing(&self, cond: &Expr) -> Option<(usize, Vec<ir::Projection>, bool)> {
         let ExprKind::Binary { op, left, right } = &cond.kind else {
             return None;
         };
@@ -338,17 +421,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             BinaryOp::Eq => false,
             _ => return None,
         };
-        let (name, other) = match (&left.kind, &right.kind) {
-            (ExprKind::Null, _) => (right, left),
-            (_, ExprKind::Null) => (left, right),
+        let name = match (&left.kind, &right.kind) {
+            (ExprKind::Null, _) => right,
+            (_, ExprKind::Null) => left,
             _ => return None,
         };
-        let _ = other;
         let (id, projections) = self.plain_binding(name)?;
-        if !projections.is_empty() {
+        // A run-time index names no stable path, so narrowing it would conflate
+        // different elements; leave it unnarrowed and let the use be reported.
+        if projections
+            .iter()
+            .any(|projection| matches!(projection, ir::Projection::Element(None)))
+        {
             return None;
         }
-        Some((id, non_null))
+        Some((id, projections, non_null))
     }
 
     /// Lowers an expression to an IR value.
@@ -442,6 +529,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Reports one unsafe-context diagnostic.
     pub(super) fn report_unsafe(&mut self, op: UnsafeOp, span: Span) {
+        if !self.report_diagnostics {
+            return;
+        }
         self.diagnostics.push(
             Diagnostic::error(op.code(), op.message(), span).with_help(op.help()),
         );
@@ -449,7 +539,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Reports an error diagnostic.
     pub(super) fn error(&mut self, code: &'static str, message: impl Into<String>, help: &str, span: Span) {
+        if !self.report_diagnostics {
+            return;
+        }
         self.diagnostics
             .push(Diagnostic::error(code, message, span).with_help(help));
+    }
+
+    /// Reports a warning diagnostic.
+    pub(super) fn warn(&mut self, code: &'static str, message: impl Into<String>, span: Span) {
+        if !self.report_diagnostics {
+            return;
+        }
+        self.diagnostics
+            .push(Diagnostic::warning(code, message, span));
     }
 }

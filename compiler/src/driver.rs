@@ -157,8 +157,10 @@ pub fn run(args: Vec<String>) -> i32 {
         let sema = sema::check(&loaded, &mut diagnostics);
         if diagnostics.error_count() == 0 {
             // The ownership stage consumes the types the type stage recorded,
-            // so it runs only on a program that typed cleanly.
-            own::check(&loaded, &sema, &mut diagnostics);
+            // so it runs only on a program that typed cleanly. It returns the
+            // lowered IR and the monomorphization set for the emitter, which
+            // is the next stage.
+            let _ownership = own::check(&loaded, &sema, &mut diagnostics);
         }
     }
     eprint!("{}", diagnostics.render(&sources));
