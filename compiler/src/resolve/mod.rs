@@ -79,7 +79,7 @@ impl Resolver<'_, '_> {
                     }
                 }
             }
-            Item::Handle(decl) => self.resolve_name_use(&decl.freed_by.to_dotted(), decl.freed_by.span),
+            Item::Handle(decl) => self.resolve_dotted_name(&decl.freed_by),
             Item::Ffi(block) => {
                 for signature in &block.decls {
                     self.resolve_signature(signature);
@@ -294,7 +294,7 @@ impl Resolver<'_, '_> {
                 type_args,
                 fields,
             } => {
-                self.resolve_type_name(name);
+                self.resolve_dotted_name(name);
                 for ty in type_args {
                     self.resolve_type(ty);
                 }
@@ -362,7 +362,7 @@ impl Resolver<'_, '_> {
     fn resolve_type(&mut self, ty: &Type) {
         match &ty.kind {
             TypeKind::Named { name, args } => {
-                self.resolve_type_name(name);
+                self.resolve_dotted_name(name);
                 for arg in args {
                     self.resolve_type(arg);
                 }
@@ -391,8 +391,12 @@ impl Resolver<'_, '_> {
         }
     }
 
-    /// Resolves a type name, reporting an undeclared name.
-    fn resolve_type_name(&mut self, name: &QualifiedName) {
+    /// Resolves a dotted name in a type or deleter position, reporting an
+    /// undeclared name.
+    ///
+    /// A single segment is a lexical or module-scope name; a longer name is
+    /// either a module path or a member of something in scope.
+    fn resolve_dotted_name(&mut self, name: &QualifiedName) {
         if name.segments.len() == 1 {
             let only = &name.segments[0];
             if !self.resolve_name(only) {
@@ -470,7 +474,6 @@ impl Resolver<'_, '_> {
         );
     }
 }
-
 
 #[cfg(test)]
 mod tests;

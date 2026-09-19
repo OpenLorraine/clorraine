@@ -42,4 +42,16 @@ exercising the built binary on adversarial inputs.
 
 ## Re-review of the fix diff
 
-_(recorded after the single scoped re-review)_
+The single permitted re-review confirmed RV-102, RV-103 (bare-name contract),
+RV-104, RV-105, RV-106, RV-107, and RV-109 resolved, with RV-108's deferral on
+record, and reported two new minor findings:
+
+| ID | Severity | Finding | Disposition |
+|---|---|---|---|
+| RV-110 | 🟡 MINOR | A qualified deleter such as `handle File freedBy app.Close;` still reported a false `E10219`, although the grammar allows a qualified name and RV-105 makes the self-module form legal | Fixed: dotted names in type and deleter position share one resolver that routes multi-segment names through qualified resolution; a `qualified_deleter_resolves_in_its_own_module` test pins it |
+| RV-111 | 🟡 MINOR | The entry-point suppression is broader than the root cause: it skips on any prior error, so a mistyped `main` is not reported when an unrelated error exists | Accepted as the authorized RV-109 behavior; no spec or golden requires the narrower scope, and the tradeoff is recorded here |
+
+A double blank line before the `resolve` test module was also cleaned up. The
+re-review's remaining nit (the test-only corpus-import parser would misread a
+trailing comment on an import line) has no current corpus case and is left as
+is.
