@@ -7,4 +7,6 @@
 #![forbid(unsafe_code)]
 
 pub mod diag;
+pub mod lex;
 pub mod span;
+pub mod token;
