@@ -333,3 +333,6 @@ fn fold_float(op: BinaryOp, a: f64, b: f64, span: Span) -> Result<ConstValue, Co
         _ => Err(ConstError::NotConstant(span)),
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -420,6 +420,11 @@ mod tests {
         );
     }
 
+    /// A non-nullable scalar type.
+    fn scalar(scalar: ScalarType) -> Ty {
+        Ty::scalar(scalar)
+    }
+
     #[test]
     fn a_handle_field_makes_a_struct_move_only() {
         let mut table = TypeTable::default();
@@ -432,7 +437,31 @@ mod tests {
         assert!(!table.duplicable(&Ty::struct_("Label")));
         assert!(table.duplicable(&Ty::struct_("Point")));
         assert!(!table.duplicable(&Ty::handle("String")));
-        assert!(table.duplicable(&Ty::scalar(ScalarType::F64)));
+        assert!(table.duplicable(&scalar(ScalarType::F64)));
+    }
+
+    #[test]
+    fn duplicability_recurses_through_fields_and_elements() {
+        let mut table = TypeTable::default();
+        insert_struct(&mut table, "Owner", vec![("name", Ty::handle("String"))]);
+        insert_struct(&mut table, "Nested", vec![("owner", Ty::struct_("Owner"))]);
+        insert_struct(&mut table, "Plain", vec![("n", Ty::i32_ty())]);
+        insert_struct(
+            &mut table,
+            "Batch",
+            vec![("items", Ty::array(Ty::handle("String"), vec![Some(2)]))],
+        );
+        assert!(!table.duplicable(&Ty::struct_("Owner")));
+        assert!(!table.duplicable(&Ty::struct_("Nested")));
+        assert!(!table.duplicable(&Ty::struct_("Batch")));
+        assert!(table.duplicable(&Ty::struct_("Plain")));
+        assert!(table.duplicable(&Ty::array(Ty::i32_ty(), vec![Some(4)])));
+        // A raw pointer is a copy even when it names an owner.
+        assert!(table.duplicable(&Ty {
+            kind: TyKind::Raw(Box::new(Ty::struct_("Owner"))),
+            nullable: false,
+        }));
+        assert!(table.duplicable(&Ty::unknown()));
     }
 
     #[test]
@@ -446,5 +475,79 @@ mod tests {
         assert_eq!(table.size_of(&Ty::struct_("Point")), Some(8));
         assert_eq!(table.offset_of("Point", "y"), Some(4));
         assert_eq!(table.offset_of("Point", "missing"), None);
+    }
+
+    #[test]
+    fn mixed_field_widths_drive_size_and_field_offsets() {
+        let mut table = TypeTable::default();
+        insert_struct(
+            &mut table,
+            "Mixed",
+            vec![
+                ("tag", scalar(ScalarType::U8)),
+                ("count", scalar(ScalarType::U16)),
+                ("value", scalar(ScalarType::U32)),
+                ("scale", scalar(ScalarType::F64)),
+            ],
+        );
+        assert_eq!(table.size_of(&Ty::struct_("Mixed")), Some(15));
+        assert_eq!(table.offset_of("Mixed", "tag"), Some(0));
+        assert_eq!(table.offset_of("Mixed", "count"), Some(1));
+        assert_eq!(table.offset_of("Mixed", "value"), Some(3));
+        assert_eq!(table.offset_of("Mixed", "scale"), Some(7));
+        assert_eq!(table.offset_of("Mixed", "missing"), None);
+    }
+
+    #[test]
+    fn aggregate_sizes_follow_scalars_extents_and_elements() {
+        let table = TypeTable::default();
+        assert_eq!(table.size_of(&Ty::boolean()), Some(1));
+        assert_eq!(table.size_of(&scalar(ScalarType::I16)), Some(2));
+        assert_eq!(table.size_of(&scalar(ScalarType::F32)), Some(4));
+        assert_eq!(table.size_of(&scalar(ScalarType::F64)), Some(8));
+        assert_eq!(table.size_of(&scalar(ScalarType::Usize)), Some(4));
+        assert_eq!(table.size_of(&Ty::void()), Some(0));
+        assert_eq!(
+            table.size_of(&Ty {
+                kind: TyKind::Raw(Box::new(Ty::i32_ty())),
+                nullable: false,
+            }),
+            Some(4)
+        );
+        assert_eq!(
+            table.size_of(&Ty {
+                kind: TyKind::Str,
+                nullable: false,
+            }),
+            Some(8)
+        );
+        assert_eq!(
+            table.size_of(&Ty::array(scalar(ScalarType::U16), vec![Some(3), Some(2)])),
+            Some(12)
+        );
+        // A slice has an omitted extent, so its size is not known yet.
+        assert_eq!(
+            table.size_of(&Ty::array(scalar(ScalarType::U16), vec![None])),
+            None
+        );
+        assert_eq!(table.size_of(&Ty::unknown()), None);
+    }
+
+    #[test]
+    fn an_unmodelled_field_size_defers_the_whole_layout() {
+        let mut table = TypeTable::default();
+        insert_struct(
+            &mut table,
+            "Flexible",
+            vec![
+                ("head", scalar(ScalarType::U8)),
+                ("body", Ty::array(scalar(ScalarType::U8), vec![None])),
+                ("tail", Ty::i32_ty()),
+            ],
+        );
+        assert_eq!(table.size_of(&Ty::struct_("Flexible")), None);
+        assert_eq!(table.offset_of("Flexible", "head"), Some(0));
+        // The first field has a known offset; the one past the slice does not.
+        assert_eq!(table.offset_of("Flexible", "tail"), None);
     }
 }

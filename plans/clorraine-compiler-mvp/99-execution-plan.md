@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 13:15
-> **Progress**: 45/84 tasks (54%)
+> **Last Updated**: 2026-09-19 13:26
+> **Progress**: 47/84 tasks (56%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -349,8 +349,8 @@ compiler logic.
 ### Step 4.3: Green phase and implementation tests
 
 - [x] 4.3.1 Run the type/const/enum spec cases and golden files; fix until green ✅ (completed: 2026-09-19 13:15) — 47/47 asserted goldens and both type stage cases pass
-- [ ] 4.3.2 Write `types.rs`, `sema.rs`, and `consts.rs` impl tests (conversion matrix, fold/fault cases)
-- [ ] 4.3.3 Run the full fast verify (`make check`)
+- [x] 4.3.2 Write `types.rs`, `sema.rs`, and `consts.rs` impl tests (conversion matrix, fold/fault cases) ✅ (completed: 2026-09-19 13:26) — 53 new unit tests; `consts` split into `consts/{mod,tests}.rs`; found and fixed a compound-assignment literal adaptation and value-headed dotted-name member access (`point.x` was wrongly rejected as a non-place and `point.z` was not reported)
+- [x] 4.3.3 Run the full fast verify (`make check`) ✅ (completed: 2026-09-19 13:26)
 
 **Deliverables**:
 - Type/const/enum goldens green

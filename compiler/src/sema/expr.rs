@@ -164,11 +164,21 @@ impl Checker<'_, '_> {
         Ty::scalar(ScalarType::F64)
     }
 
-    /// Types a dotted name: an enum member, a module-qualified function, or an
-    /// opaque external name.
+    /// Types a dotted name: a value's member chain, an enum member, a
+    /// module-qualified function, or an opaque external name.
     fn check_qualified(&mut self, name: &QualifiedName) -> Ty {
         if let Some(first) = name.segments.first() {
-            if !self.name_is_value(first) && self.table.is_enum(first) {
+            // A dotted name that starts with a value in scope is member access,
+            // for example `point.x`; the parser cannot tell that apart from a
+            // type path, so the choice is made here once names are known.
+            if self.name_is_value(first) {
+                let mut ty = self.name_type(first);
+                for segment in &name.segments[1..] {
+                    ty = self.member_type(&ty, segment, name.span);
+                }
+                return ty;
+            }
+            if self.table.is_enum(first) {
                 if name.segments.len() >= 2 {
                     let member = name.segments.last().expect("a qualified name");
                     if !self.table.enum_has_member(first, member) {
@@ -197,19 +207,25 @@ impl Checker<'_, '_> {
     /// Types a member access: a struct field or an enum member.
     fn check_member(&mut self, base: &Expr, name: &str) -> Ty {
         let base_ty = self.check_value(base, None);
+        self.member_type(&base_ty, name, base.span)
+    }
+
+    /// Types one member of an already-typed value, reporting an unknown name.
+    ///
+    /// A field and a free function may share a spelling for a dot-call, so the
+    /// field wins and only a name that is neither is reported.
+    fn member_type(&mut self, base_ty: &Ty, name: &str, span: Span) -> Ty {
         match &base_ty.kind {
             TyKind::Struct(struct_name) => {
                 if let Some(field_ty) = self.table.struct_field(struct_name, name) {
                     return field_ty;
                 }
-                // A field and a free function may share a spelling; the field
-                // wins, so only report when neither exists.
                 if self.free_function(name).is_none() {
                     self.error(
                         "E10212",
                         format!("'{name}' is not a member of '{struct_name}'"),
                         "check the declaration or the spelling",
-                        base.span,
+                        span,
                     );
                 }
                 Ty::unknown()
@@ -220,7 +236,7 @@ impl Checker<'_, '_> {
                         "E10212",
                         format!("'{name}' is not a member of '{enum_name}'"),
                         "check the declaration or the spelling",
-                        base.span,
+                        span,
                     );
                 }
                 base_ty.clone()

@@ -31,6 +31,9 @@ mod items;
 mod ops;
 mod stmt;
 
+#[cfg(test)]
+mod tests;
+
 /// Checks every module of the loaded program.
 pub fn check(loaded: &Loaded, diagnostics: &mut Diagnostics) {
     let table = TypeTable::build(loaded);

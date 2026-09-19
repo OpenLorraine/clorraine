@@ -65,17 +65,24 @@ impl Checker<'_, '_> {
     ) -> (Ty, Ty) {
         let mut left_ty = left_ty;
         let mut right_ty = right_ty;
-        if let Some(value) = int_literal_value(left) {
-            if right_ty.is_integer() {
-                left_ty = self.literal_type(left.span, value, &right_ty);
-            }
+        if let Some(adapted) = self.adapt_literal(left, &right_ty) {
+            left_ty = adapted;
         }
-        if let Some(value) = int_literal_value(right) {
-            if left_ty.is_integer() {
-                right_ty = self.literal_type(right.span, value, &left_ty);
-            }
+        if let Some(adapted) = self.adapt_literal(right, &left_ty) {
+            right_ty = adapted;
         }
         (left_ty, right_ty)
+    }
+
+    /// Gives an integer literal the type of `target` when the target is an
+    /// integer, reporting a literal whose value does not fit.
+    fn adapt_literal(&mut self, expr: &Expr, target: &Ty) -> Option<Ty> {
+        let value = int_literal_value(expr)?;
+        if target.is_integer() {
+            Some(self.literal_type(expr.span, value, target))
+        } else {
+            None
+        }
     }
 
     /// Types an integer literal for an integer target, reporting a literal
@@ -328,6 +335,10 @@ impl Checker<'_, '_> {
             }
             _ => {
                 let value_ty = self.check_value(value, None);
+                // A compound assignment is `x = x op y`, so a literal right
+                // operand takes the target's type exactly as it would in the
+                // equivalent binary operator.
+                let value_ty = self.adapt_literal(value, &target_ty).unwrap_or(value_ty);
                 if let Some(binary) = assign_binary(op) {
                     self.binary_result(binary, &target_ty, target.span, &value_ty, value.span);
                 }
@@ -340,6 +351,11 @@ impl Checker<'_, '_> {
     fn is_place(&self, expr: &Expr) -> bool {
         match &expr.kind {
             ExprKind::Name(_) | ExprKind::Index { .. } => true,
+            // The parser spells `value.field` as a dotted name, so a dotted name
+            // that starts with a value in scope is a place just like a field.
+            ExprKind::Qualified(name) => {
+                name.segments.len() >= 2 && self.name_is_value(&name.segments[0])
+            }
             ExprKind::Unary {
                 op: UnaryOp::Deref, ..
             } => true,
