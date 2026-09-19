@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 11:58
-> **Progress**: 36/84 tasks (43%)
+> **Last Updated**: 2026-09-19 11:59
+> **Progress**: 39/84 tasks (46%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -294,9 +294,9 @@ compiler logic.
 
 ### Step 3.3: Green phase and implementation tests
 
-- [ ] 3.3.1 Run the name/module spec cases and golden files; fix until green
-- [ ] 3.3.2 Write `load.rs`/`resolve.rs` impl tests (merge, imports, scopes, init-edge cases)
-- [ ] 3.3.3 Run the full fast verify (`make check`)
+- [x] 3.3.1 Run the name/module spec cases and golden files; fix until green ✅ (completed: 2026-09-19 11:59)
+- [x] 3.3.2 Write `load.rs`/`resolve.rs` impl tests (merge, imports, scopes, init-edge cases) ✅ (completed: 2026-09-19 11:59)
+- [x] 3.3.3 Run the full fast verify (`make check`) ✅ (completed: 2026-09-19 11:59)
 
 **Deliverables**:
 - Name/module goldens green
