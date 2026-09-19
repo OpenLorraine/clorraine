@@ -546,9 +546,12 @@ impl Parser<'_> {
     /// Parses the expression inside one template placeholder.
     ///
     /// A top-level `:` is the deferred format specifier and reports `E10501`
-    /// here, before any semantic stage runs.
+    /// here, before any semantic stage runs. Diagnostics from the placeholder
+    /// text are dropped in that case: the text behind the colon is a format
+    /// spelling, not code, so re-lexing it would produce misleading errors.
     fn parse_placeholder(&mut self, span: Span) -> Expr {
-        let tokens: Vec<Token> = Lexer::range(self.sources, self.file, span, self.diagnostics)
+        let mut placeholder_diagnostics = Diagnostics::new(false, None);
+        let tokens: Vec<Token> = Lexer::range(self.sources, self.file, span, &mut placeholder_diagnostics)
             .lex()
             .into_iter()
             .filter(|token| token.kind != TokenKind::Error)
@@ -558,24 +561,31 @@ impl Parser<'_> {
             pos: 0,
             sources: self.sources,
             file: self.file,
-            diagnostics: &mut *self.diagnostics,
+            diagnostics: &mut placeholder_diagnostics,
             speculation: 0,
             speculation_failed: false,
         };
         let expr = inner.parse_expression();
-        if inner.at_punct(Punct::Colon) {
-            let colon = inner.peek().span;
-            inner.report(
+        let format_specifier = if inner.at_punct(Punct::Colon) {
+            Some(inner.peek().span)
+        } else {
+            if !inner.at_eof() {
+                inner.unexpected();
+            }
+            None
+        };
+        drop(inner);
+        if let Some(colon) = format_specifier {
+            self.report(
                 Diagnostic::error("E10501", "format specifiers are not supported in v1", colon)
                     .with_help("use a conversion function"),
             );
-            while !inner.at_eof() {
-                inner.bump();
-            }
+            return Expr {
+                kind: ExprKind::Error,
+                span,
+            };
         }
-        if !inner.at_eof() {
-            inner.unexpected();
-        }
+        self.diagnostics.absorb(placeholder_diagnostics);
         expr
     }
 

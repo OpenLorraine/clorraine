@@ -13,6 +13,8 @@ use crate::span::{FileId, SourceMap, Span};
 pub use crate::token::{Keyword, Punct, TemplatePart, Token, TokenKind};
 
 mod literals;
+#[cfg(test)]
+mod tests;
 
 /// Byte-to-token scanner for one file.
 pub struct Lexer<'a> {

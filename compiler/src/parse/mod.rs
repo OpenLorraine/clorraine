@@ -14,6 +14,8 @@
 mod expr;
 mod items;
 mod stmt;
+#[cfg(test)]
+mod tests;
 mod types;
 
 use crate::ast::*;

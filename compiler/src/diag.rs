@@ -114,6 +114,14 @@ impl Diagnostics {
         self.items.push(diagnostic);
     }
 
+    /// Moves every kept diagnostic of another collector into this one,
+    /// honoring this collector's error cap.
+    pub fn absorb(&mut self, other: Diagnostics) {
+        for diagnostic in other.items {
+            self.push(diagnostic);
+        }
+    }
+
     /// Kept diagnostics in report order.
     pub fn items(&self) -> &[Diagnostic] {
         &self.items
