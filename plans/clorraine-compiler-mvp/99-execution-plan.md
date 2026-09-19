@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 09:39
-> **Progress**: 25/84 tasks (30%)
+> **Last Updated**: 2026-09-19 09:40
+> **Progress**: 26/84 tasks (31%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -208,7 +208,9 @@ compiler logic.
 
 - [x] 2.1.1 Create the root `Cargo.toml` workspace, the `compiler/` crate (stub binary), and the root `Makefile` with `check` (spec check + container `cargo test`) ✅ (completed: 2026-09-19 09:35)
 - [x] 2.1.2 [spec-author] Write `compiler/tests/compile_fail_spec_test.rs` (golden discovery, `clc` spawn, Ch 14 template wildcard matching, skip list) and the `stage_spec_test.rs` helper with the ST-LEX-1..2 and ST-PARSE-1..4 cases ✅ (completed: 2026-09-19 09:39)
-- [ ] 2.1.3 Run the new spec tests and record the red phase (failures expected: no compiler behavior exists)
+- [x] 2.1.3 Run the new spec tests and record the red phase (failures expected: no compiler behavior exists) ✅ (completed: 2026-09-19 09:40)
+
+> **Red phase (2026-09-19 09:40)**: `cargo test --workspace --no-fail-fast` reports 7 failures and 1 pass. All 13 asserted goldens fail because the stub binary reports no diagnostic lines, and the six stage cases fail on the stub's non-diagnostic output; the skip report passes by design because it checks suite structure, not compiler behavior. `spec/check.sh` stays green.
 
 **Deliverables**:
 - Workspace, crate stub, root Makefile
