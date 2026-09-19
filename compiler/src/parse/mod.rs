@@ -66,9 +66,17 @@ impl<'a> Parser<'a> {
     /// Parses the whole token stream into a program.
     pub fn parse_program(mut self) -> Program {
         let module = self.parse_module_decl();
+        let mut misplaced_module = None;
         let mut imports = Vec::new();
         let mut items = Vec::new();
         while !self.at_eof() {
+            if self.at_keyword(Keyword::Module) {
+                let misplaced = self.parse_module_decl();
+                if misplaced_module.is_none() {
+                    misplaced_module = Some(misplaced);
+                }
+                continue;
+            }
             if self.at_keyword(Keyword::Import) {
                 if let Some(import) = self.parse_import() {
                     imports.push(import);
@@ -91,6 +99,7 @@ impl<'a> Parser<'a> {
         }
         Program {
             module,
+            misplaced_module,
             imports,
             items,
         }

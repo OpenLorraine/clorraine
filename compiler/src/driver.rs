@@ -7,6 +7,7 @@
 //! are already exercised end to end.
 
 use crate::diag::{Diagnostic, Diagnostics};
+use crate::load;
 use crate::parse::Parser;
 use crate::span::{FileId, SourceMap};
 
@@ -132,11 +133,20 @@ pub fn run(args: Vec<String>) -> i32 {
             }
         }
     }
+    let mut programs = Vec::new();
     for file in files {
-        // The front end's deliverable is the diagnostic stream; later stages
-        // will consume the parsed program instead of dropping it here.
-        let _program = Parser::new(&sources, file, &mut diagnostics).parse_program();
+        let before = diagnostics.error_count();
+        let program = Parser::new(&sources, file, &mut diagnostics).parse_program();
+        if diagnostics.error_count() > before {
+            // The front end already poisoned this file; running the module
+            // stage would only add dependent errors.
+            continue;
+        }
+        programs.push((file, program));
     }
+    // The module and name stages consume the loaded program instead of
+    // dropping it; the emitter lands later and will take the same value.
+    let _loaded = load::load(programs, &mut diagnostics);
     eprint!("{}", diagnostics.render(&sources));
     let exit_code = diagnostics.exit_code();
     if exit_code != 0 {

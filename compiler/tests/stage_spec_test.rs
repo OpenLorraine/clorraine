@@ -237,6 +237,10 @@ func shapes(a: i32, b: i32, c: i32, f: i32): i32 {
     let call_shaped = a < b > (c);
     return 0;
 }
+
+func main(): i32 {
+    return shapes(1, 2, 3, 4);
+}
 ",
     );
 }

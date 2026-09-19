@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 10:45
-> **Progress**: 34/84 tasks (40%)
+> **Last Updated**: 2026-09-19 11:55
+> **Progress**: 35/84 tasks (41%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -282,7 +282,7 @@ compiler logic.
 **Reference**: 03-04 "Loading and Module Identity", "Name Resolution" · Ch 10 · AR-25
 **Objective**: resolve every name in the program.
 
-- [ ] 3.2.1 Implement `src/load.rs` (module table, merged modules, imports, embedded stdlib table, E11101-E11105, W10006)
+- [x] 3.2.1 Implement `src/load.rs` (module table, merged modules, imports, embedded stdlib table, E11101-E11105, W10006) ✅ (completed: 2026-09-19 11:55) — mechanical corrections: the parser records a misplaced `module` declaration (new `Program.misplaced_module`) so the module stage owns E11105, and `compiler/src/stdlib.rs` holds the static export surface (AR-62)
 - [ ] 3.2.2 Implement `src/resolve.rs` (scopes, declaration-before-use, shadowing, qualified access, dot-call candidates, E10219/E20006)
 
 **Deliverables**:

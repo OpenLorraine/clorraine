@@ -16,6 +16,10 @@ pub struct Program {
     /// The `module` declaration. An empty name marks a missing declaration,
     /// which the module stage reports.
     pub module: ModuleDecl,
+    /// A further `module` declaration found after the first declaration has
+    /// started. The parser records it without reporting so the module stage
+    /// owns the "must be first" diagnostic.
+    pub misplaced_module: Option<ModuleDecl>,
     /// Import statements in source order.
     pub imports: Vec<ImportDecl>,
     /// Declarations in source order.

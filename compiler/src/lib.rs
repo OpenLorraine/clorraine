@@ -10,6 +10,8 @@ pub mod ast;
 pub mod diag;
 pub mod driver;
 pub mod lex;
+pub mod load;
 pub mod parse;
 pub mod span;
+pub mod stdlib;
 pub mod token;

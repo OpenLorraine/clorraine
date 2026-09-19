@@ -1,6 +1,6 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 61 items resolved (AR-1..AR-61; AR-54/AR-55 added at the Phase 0 checkpoint, AR-56..AR-59 at the Phase 1 spike checkpoint, AR-60/AR-61 at execution)
+> **Status**: ✅ GATE PASSED — all 62 items resolved (AR-1..AR-62; AR-54/AR-55 added at the Phase 0 checkpoint, AR-56..AR-59 at the Phase 1 spike checkpoint, AR-60/AR-61 at execution, AR-62 during Phase 3 execution)
 > **Last Updated**: 2026-09-18 14:51
 > **CodeOps Artifact Schema**: 1
 
@@ -117,6 +117,7 @@ All four are specification-text changes approved by the user (AR-31).
 |---|----------|-----------------|---------------------|--------|
 | AR-60 | Naming (execution amendment) | The compiler binary was named `clorc`; the user requested the shorter, DX-friendly `clc` ("Clorraine Compiler") | Rename the binary to `clc`: Cargo `[[bin]] name = "clc"`, `CARGO_BIN_EXE_clc`, and every CLI sample updated. Supersedes the binary-name fields of AR-6, AR-20, AR-21, and AR-24 | ✅ Resolved — user directed the rename |
 | AR-61 | Naming (execution amendment) | The source extension was `.clor`; the user requested a short, DX-friendly extension. `.cl` (Common Lisp/OpenCL) and `.cr` (Crystal) were rejected as misclassified by host tooling, and `.clo` was found to have no verified file-type collision | Rename the extension to `.clo`: all 115 `spec/tests/**` sources renamed, `spec/check.sh` globs, spec examples, plan docs, spike fixtures and evidence, and the living docs updated. Supersedes the extension references in AR-23, AR-44, and the suite READMEs | ✅ Resolved — user chose `.clo` |
+| AR-62 | Technical (runtime) | The module stage needs the stdlib export surface, and the W10006 golden imports `Buffer` from `std.mem`, but the stdlib sources are Phase 7 work and `stdlib/` does not exist yet; the design documents define the embedded table as `include_str!` of the six sources | `compiler/src/stdlib.rs` holds a static table of the six stdlib module names and their exported names (from 03-07 and the appendix), used by loading, import resolution, and the unused-import warning. Phase 7 replaces the table body with `include_str!` of the real sources behind the same interface | ✅ Resolved — user chose the static export-name table |
 
 ## Complexity Escalation packet (AR-24)
 
