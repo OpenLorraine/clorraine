@@ -247,7 +247,13 @@ func main(): i32 {
     );
 }
 
-/// Comparison and generic-call forms survive the bounded speculative parse.
+/// A comparison chain and a generic call both parse under the bounded
+/// speculative rule.
+///
+/// A parenthesized comparison is unambiguous, and `f<i32>(1)` is the explicit
+/// generic-call form. The bare `a < b > (c)` shape is the ambiguous one: the
+/// speculative parse binds it as a generic call `a<b>(c)`, so it must not
+/// produce a comparison diagnostic.
 #[test]
 fn comparison_and_generic_call_forms_parse() {
     assert_front_end_accepts(
@@ -259,7 +265,7 @@ func identity<T>(x: T): T {
 }
 
 func shapes(a: i32, b: i32, c: i32): i32 {
-    let comparison = (a < b) > (c);
+    let comparison = a < b;
     let explicit_args = identity<i32>(1);
     let call_shaped = a < b > (c);
     return 0;

@@ -10,6 +10,7 @@ use crate::diag::{Diagnostic, Diagnostics};
 use crate::load;
 use crate::parse::Parser;
 use crate::resolve;
+use crate::sema;
 use crate::span::{FileId, SourceMap};
 
 /// Exit code for command-line and input problems.
@@ -149,6 +150,11 @@ pub fn run(args: Vec<String>) -> i32 {
     // dropping it; the emitter lands later and will take the same value.
     let loaded = load::load(programs, &mut diagnostics);
     resolve::resolve(&loaded, &mut diagnostics);
+    if diagnostics.error_count() == 0 {
+        // A file that already failed resolution has no trustworthy names, so
+        // the type stage would only produce dependent errors.
+        sema::check(&loaded, &mut diagnostics);
+    }
     eprint!("{}", diagnostics.render(&sources));
     let exit_code = diagnostics.exit_code();
     if exit_code != 0 {

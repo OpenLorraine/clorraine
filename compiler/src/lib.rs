@@ -13,6 +13,8 @@ pub mod lex;
 pub mod load;
 pub mod parse;
 pub mod resolve;
+pub mod sema;
 pub mod span;
 pub mod stdlib;
 pub mod token;
+pub mod types;

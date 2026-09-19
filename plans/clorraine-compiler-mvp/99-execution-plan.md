@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 12:52
-> **Progress**: 40/84 tasks (48%)
+> **Last Updated**: 2026-09-19 13:07
+> **Progress**: 42/84 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -333,8 +333,8 @@ compiler logic.
 **Reference**: 03-04 "Type System" · Ch 02, Ch 04, Ch 07, Ch 09 · AR-11, AR-13
 **Objective**: type every expression and declaration in the corpus subset.
 
-- [ ] 4.2.1 Implement `src/types.rs` (`Ty`, duplicability, conversions T1a, unification, casts, `sizeof`/`offsetof` folding support)
-- [ ] 4.2.2 Implement expression and statement checking in `src/sema.rs` (operators, conditions, assignment, indexing, calls, dot-calls, intrinsics)
+- [x] 4.2.1 Implement `src/types.rs` (`Ty`, duplicability, conversions T1a, unification, casts, `sizeof`/`offsetof` folding support) ✅ (completed: 2026-09-19 13:07) — split into `src/types/mod.rs` and `src/types/table.rs`
+- [x] 4.2.2 Implement expression and statement checking in `src/sema.rs` (operators, conditions, assignment, indexing, calls, dot-calls, intrinsics) ✅ (completed: 2026-09-19 13:07) — split into `src/sema/{mod,expr,ops,stmt}.rs`; the built-in `String` handle (AR-63) resolves without an import. Mechanical correction: the parse acceptance snippet used the type-invalid `(a < b) > (c)` (ordering a `bool` is `E10222` per Ch 04 §5), so it now uses `a < b`; the ambiguous `a < b > (c)` stays and parses as a generic call
 - [ ] 4.2.3 Implement struct, enum, and struct-literal checking (STR-*, EN-*, E10203/E10205/E10206/E10207/E10208/E10210/E10211/E10212) and template typing (E10500/E10501/E10503)
 - [ ] 4.2.4 Implement `src/consts.rs` (constant contexts, folding with runtime semantics, E10202/E10215/E10216/E10220/E10223/E10224/E10226)
 

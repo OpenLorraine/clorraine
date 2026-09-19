@@ -1,0 +1,389 @@
+//! The program-wide type table.
+//!
+//! The table collects every struct, enum, handle, function, and global the
+//! program declares, so a written type name can be turned into a [`Ty`] and a
+//! struct's fields can be looked up. Names are global within a program; the
+//! MVP corpus and the diagnostic fixtures declare each type once, so a
+//! program-wide name is enough. A future revision can qualify the keys by
+//! module without changing the callers.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::ast::{Extent, Item, QualifiedName, Type, TypeKind, TypeParam};
+use crate::load::Loaded;
+
+use super::{int_literal_value, FuncTy, Ty, TyKind};
+
+/// A function signature collected from a declaration.
+#[derive(Clone, Debug)]
+pub struct FuncSig {
+    /// Parameter types in order.
+    pub params: Vec<Ty>,
+    /// Return type.
+    pub returns: Ty,
+    /// Names of the function's generic parameters.
+    pub type_params: Vec<String>,
+}
+
+impl FuncSig {
+    /// The function-pointer type of this signature.
+    pub fn ty(&self) -> FuncTy {
+        FuncTy {
+            params: self.params.clone(),
+            returns: Box::new(self.returns.clone()),
+        }
+    }
+}
+
+impl Default for FuncSig {
+    fn default() -> Self {
+        Self {
+            params: Vec::new(),
+            returns: Ty::unknown(),
+            type_params: Vec::new(),
+        }
+    }
+}
+
+/// Every declared type of a loaded program, keyed by its written name.
+#[derive(Default)]
+pub struct TypeTable {
+    structs: BTreeMap<String, Vec<(String, Ty)>>,
+    enums: BTreeMap<String, Ty>,
+    handles: BTreeSet<String>,
+    functions: BTreeMap<String, BTreeMap<String, FuncSig>>,
+    globals: BTreeMap<String, BTreeMap<String, Ty>>,
+}
+
+impl TypeTable {
+    /// Collects the declarations of every module in two passes: first the name
+    /// sets (so a reference can be classified), then the resolved types.
+    pub fn build(loaded: &Loaded) -> Self {
+        let mut table = TypeTable::default();
+        table.handles.insert("String".to_owned());
+
+        for module in loaded.modules.values() {
+            for item in &module.items {
+                match item {
+                    Item::Struct(decl) => {
+                        table.structs.entry(decl.name.clone()).or_default();
+                    }
+                    Item::Enum(decl) => {
+                        table.enums.entry(decl.name.clone()).or_insert_with(Ty::unknown);
+                    }
+                    Item::Handle(decl) => {
+                        table.handles.insert(decl.name.clone());
+                    }
+                    Item::Func(decl) | Item::Comptime(decl) => {
+                        table
+                            .functions
+                            .entry(module.name.clone())
+                            .or_default()
+                            .insert(decl.name.clone(), FuncSig::default());
+                    }
+                    Item::GlobalLet(decl) => {
+                        table
+                            .globals
+                            .entry(module.name.clone())
+                            .or_default()
+                            .insert(decl.name.clone(), Ty::unknown());
+                    }
+                    Item::GlobalConst(decl) => {
+                        table
+                            .globals
+                            .entry(module.name.clone())
+                            .or_default()
+                            .insert(decl.name.clone(), Ty::unknown());
+                    }
+                    Item::Ffi(_) | Item::Intrinsic(_) => {}
+                }
+            }
+        }
+
+        for module in loaded.modules.values() {
+            for item in &module.items {
+                match item {
+                    Item::Struct(decl) => {
+                        let params = type_param_names(&decl.type_params);
+                        let fields = decl
+                            .fields
+                            .iter()
+                            .map(|field| {
+                                (field.name.clone(), resolve_ty(&field.ty, &params, &table))
+                            })
+                            .collect();
+                        table.structs.insert(decl.name.clone(), fields);
+                    }
+                    Item::Enum(decl) => {
+                        let backing = resolve_ty(&decl.backing, &[], &table);
+                        table.enums.insert(decl.name.clone(), backing);
+                    }
+                    Item::Func(decl) | Item::Comptime(decl) => {
+                        let params = type_param_names(&decl.type_params);
+                        let signature = FuncSig {
+                            params: decl
+                                .params
+                                .iter()
+                                .map(|param| resolve_ty(&param.ty, &params, &table))
+                                .collect(),
+                            returns: resolve_ty(&decl.returns, &params, &table),
+                            type_params: params,
+                        };
+                        if let Some(module_functions) = table.functions.get_mut(&module.name) {
+                            module_functions.insert(decl.name.clone(), signature);
+                        }
+                    }
+                    Item::GlobalLet(decl) => {
+                        let ty = resolve_ty(&decl.ty, &[], &table);
+                        if let Some(module_globals) = table.globals.get_mut(&module.name) {
+                            module_globals.insert(decl.name.clone(), ty);
+                        }
+                    }
+                    Item::GlobalConst(decl) => {
+                        let ty = resolve_ty(&decl.ty, &[], &table);
+                        if let Some(module_globals) = table.globals.get_mut(&module.name) {
+                            module_globals.insert(decl.name.clone(), ty);
+                        }
+                    }
+                    Item::Handle(_) | Item::Ffi(_) | Item::Intrinsic(_) => {}
+                }
+            }
+        }
+        table
+    }
+
+    /// True when the program declares a struct with this name.
+    pub fn is_struct(&self, name: &str) -> bool {
+        self.structs.contains_key(name)
+    }
+
+    /// True when the program declares an enum with this name.
+    pub fn is_enum(&self, name: &str) -> bool {
+        self.enums.contains_key(name)
+    }
+
+    /// True when the program declares a handle with this name, or it is the
+    /// built-in `String`.
+    pub fn is_handle(&self, name: &str) -> bool {
+        self.handles.contains(name)
+    }
+
+    /// The declared fields of a struct, in declaration order.
+    pub fn struct_fields(&self, name: &str) -> Option<&[(String, Ty)]> {
+        self.structs.get(name).map(Vec::as_slice)
+    }
+
+    /// The type of one struct field.
+    pub fn struct_field(&self, name: &str, field: &str) -> Option<Ty> {
+        self.structs
+            .get(name)
+            .and_then(|fields| fields.iter().find(|(f, _)| f == field))
+            .map(|(_, ty)| ty.clone())
+    }
+
+    /// The backing integer type of an enum.
+    pub fn enum_backing(&self, name: &str) -> Option<&Ty> {
+        self.enums.get(name)
+    }
+
+    /// The signature of a module-level function.
+    pub fn function(&self, module: &str, name: &str) -> Option<&FuncSig> {
+        self.functions.get(module).and_then(|fns| fns.get(name))
+    }
+
+    /// The declared type of a module-level `let` or `const`.
+    pub fn global(&self, module: &str, name: &str) -> Option<&Ty> {
+        self.globals.get(module).and_then(|globals| globals.get(name))
+    }
+
+    /// True when values of the type copy instead of moving.
+    ///
+    /// Duplicability is derived from the type's fields and elements: a handle
+    /// owns a resource and is move-only, and an aggregate that contains one is
+    /// move-only as well. The recursion is depth-limited so a malformed
+    /// self-referential declaration cannot loop forever.
+    pub fn duplicable(&self, ty: &Ty) -> bool {
+        self.duplicable_at(ty, 0)
+    }
+
+    /// Depth-limited worker for [`TypeTable::duplicable`].
+    fn duplicable_at(&self, ty: &Ty, depth: usize) -> bool {
+        if depth > 32 {
+            return true;
+        }
+        match &ty.kind {
+            TyKind::Handle(_) => false,
+            TyKind::Struct(name) => self.struct_fields(name).is_none_or(|fields| {
+                fields
+                    .iter()
+                    .all(|(_, field)| self.duplicable_at(field, depth + 1))
+            }),
+            TyKind::Array { element, .. } => self.duplicable_at(element, depth + 1),
+            _ => true,
+        }
+    }
+
+    /// The storage size of a type in bytes, when it is known at this stage.
+    ///
+    /// The value is used by constant folding; a type whose size is not
+    /// modelled yet yields `None` so the caller can defer.
+    pub fn size_of(&self, ty: &Ty) -> Option<usize> {
+        match &ty.kind {
+            TyKind::Void => Some(0),
+            TyKind::Scalar(scalar) => scalar_size(*scalar),
+            TyKind::Raw(_) | TyKind::Func(_) => Some(4),
+            TyKind::Str | TyKind::CString => Some(8),
+            TyKind::Array { element, extents } => {
+                let element = self.size_of(element)?;
+                let mut total = element;
+                for extent in extents {
+                    total = total.checked_mul((*extent)?)?;
+                }
+                Some(total)
+            }
+            TyKind::Struct(name) => {
+                let mut total = 0usize;
+                for (_, field) in self.struct_fields(name)? {
+                    total = total.checked_add(self.size_of(field)?)?;
+                }
+                Some(total)
+            }
+            _ => None,
+        }
+    }
+
+    /// The byte offset of a struct field, when every earlier field's size is
+    /// known.
+    pub fn offset_of(&self, struct_name: &str, field: &str) -> Option<usize> {
+        let mut offset = 0usize;
+        for (name, ty) in self.struct_fields(struct_name)? {
+            if name == field {
+                return Some(offset);
+            }
+            offset = offset.checked_add(self.size_of(ty)?)?;
+        }
+        None
+    }
+}
+
+/// The byte width of a scalar.
+fn scalar_size(scalar: crate::ast::ScalarType) -> Option<usize> {
+    use crate::ast::ScalarType;
+    match scalar {
+        ScalarType::I8 | ScalarType::U8 | ScalarType::Bool => Some(1),
+        ScalarType::I16 | ScalarType::U16 => Some(2),
+        ScalarType::I32 | ScalarType::U32 | ScalarType::F32 => Some(4),
+        ScalarType::F64 => Some(8),
+        ScalarType::Usize | ScalarType::Isize => Some(4),
+    }
+}
+
+/// Collects the written names of a declaration's type parameters.
+fn type_param_names(params: &[TypeParam]) -> Vec<String> {
+    params.iter().map(|param| param.name.clone()).collect()
+}
+
+/// Resolves an AST type against the collected declarations.
+///
+/// A name that is not a known struct, enum, handle, type parameter, or the
+/// built-in `String` becomes [`TyKind::Unknown`], so a not-yet-modelled type
+/// does not cascade into false diagnostics.
+pub fn resolve_ty(ty: &Type, type_params: &[String], table: &TypeTable) -> Ty {
+    let kind = match &ty.kind {
+        TypeKind::Void => TyKind::Void,
+        TypeKind::Scalar(scalar) => TyKind::Scalar(*scalar),
+        TypeKind::Str => TyKind::Str,
+        TypeKind::CString => TyKind::CString,
+        TypeKind::StaticStr => TyKind::StaticStr,
+        TypeKind::Raw(inner) => TyKind::Raw(Box::new(resolve_ty(inner, type_params, table))),
+        TypeKind::Array { element, extents } => TyKind::Array {
+            element: Box::new(resolve_ty(element, type_params, table)),
+            extents: extents.iter().map(extent_size).collect(),
+        },
+        TypeKind::Function { params, returns } => TyKind::Func(FuncTy {
+            params: params
+                .iter()
+                .map(|param| resolve_ty(&param.ty, type_params, table))
+                .collect(),
+            returns: Box::new(resolve_ty(returns, type_params, table)),
+        }),
+        TypeKind::Named { name, .. } => resolve_named(name, type_params, table),
+        TypeKind::Error => TyKind::Unknown,
+    };
+    Ty {
+        kind,
+        nullable: ty.nullable,
+    }
+}
+
+/// Resolves a named type to its kind.
+fn resolve_named(name: &QualifiedName, type_params: &[String], table: &TypeTable) -> TyKind {
+    let Some(last) = name.segments.last() else {
+        return TyKind::Unknown;
+    };
+    if name.segments.len() == 1 {
+        if type_params.iter().any(|param| param == last) {
+            return TyKind::Param(last.clone());
+        }
+        if last == "String" {
+            return TyKind::Handle("String".to_owned());
+        }
+        if table.is_handle(last) {
+            return TyKind::Handle(last.clone());
+        }
+        if table.is_struct(last) {
+            return TyKind::Struct(last.clone());
+        }
+        if table.is_enum(last) {
+            return TyKind::Enum(last.clone());
+        }
+    }
+    TyKind::Unknown
+}
+
+/// Reads a constant array extent, when it is a plain integer literal.
+fn extent_size(extent: &Extent) -> Option<usize> {
+    let value = int_literal_value(extent.size.as_ref()?)?;
+    usize::try_from(value).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::ScalarType;
+
+    #[test]
+    fn a_handle_field_makes_a_struct_move_only() {
+        let mut table = TypeTable::default();
+        table.structs.insert(
+            "Label".to_owned(),
+            vec![("name".to_owned(), Ty::handle("String"))],
+        );
+        table.structs.insert(
+            "Point".to_owned(),
+            vec![
+                ("x".to_owned(), Ty::i32_ty()),
+                ("y".to_owned(), Ty::i32_ty()),
+            ],
+        );
+        assert!(!table.duplicable(&Ty::struct_("Label")));
+        assert!(table.duplicable(&Ty::struct_("Point")));
+        assert!(!table.duplicable(&Ty::handle("String")));
+        assert!(table.duplicable(&Ty::scalar(ScalarType::F64)));
+    }
+
+    #[test]
+    fn sizes_and_offsets_fold_for_plain_layouts() {
+        let mut table = TypeTable::default();
+        table.structs.insert(
+            "Point".to_owned(),
+            vec![
+                ("x".to_owned(), Ty::i32_ty()),
+                ("y".to_owned(), Ty::i32_ty()),
+            ],
+        );
+        assert_eq!(table.size_of(&Ty::struct_("Point")), Some(8));
+        assert_eq!(table.offset_of("Point", "y"), Some(4));
+        assert_eq!(table.offset_of("Point", "missing"), None);
+    }
+}

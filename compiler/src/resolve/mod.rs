@@ -418,8 +418,12 @@ impl Resolver<'_, '_> {
 
     /// True when the name is bound in a lexical scope, by a module-level
     /// declaration, or by an import.
+    ///
+    /// `String` is a compiler-predeclared handle type visible in every module,
+    /// so a bare `String` resolves whether or not it is imported.
     fn resolve_name(&self, name: &str) -> bool {
-        self.scopes.iter().rev().any(|scope| scope.contains(name))
+        name == "String"
+            || self.scopes.iter().rev().any(|scope| scope.contains(name))
             || self.module.decls.contains_key(name)
             || self.module.import(name).is_some()
     }
