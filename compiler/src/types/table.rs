@@ -45,11 +45,30 @@ impl Default for FuncSig {
     }
 }
 
+/// The shape of a declared struct.
+#[derive(Default)]
+struct StructInfo {
+    /// Fields in declaration order.
+    fields: Vec<(String, Ty)>,
+    /// Written names of the struct's generic parameters.
+    type_params: Vec<String>,
+    /// True when the struct has a `volatile` field, making it an overlay type.
+    overlay: bool,
+}
+
+/// The shape of a declared enum.
+struct EnumInfo {
+    /// The required integer backing type.
+    backing: Ty,
+    /// Member names in declaration order.
+    members: Vec<String>,
+}
+
 /// Every declared type of a loaded program, keyed by its written name.
 #[derive(Default)]
 pub struct TypeTable {
-    structs: BTreeMap<String, Vec<(String, Ty)>>,
-    enums: BTreeMap<String, Ty>,
+    structs: BTreeMap<String, StructInfo>,
+    enums: BTreeMap<String, EnumInfo>,
     handles: BTreeSet<String>,
     functions: BTreeMap<String, BTreeMap<String, FuncSig>>,
     globals: BTreeMap<String, BTreeMap<String, Ty>>,
@@ -69,7 +88,10 @@ impl TypeTable {
                         table.structs.entry(decl.name.clone()).or_default();
                     }
                     Item::Enum(decl) => {
-                        table.enums.entry(decl.name.clone()).or_insert_with(Ty::unknown);
+                        table.enums.entry(decl.name.clone()).or_insert_with(|| EnumInfo {
+                            backing: Ty::unknown(),
+                            members: Vec::new(),
+                        });
                     }
                     Item::Handle(decl) => {
                         table.handles.insert(decl.name.clone());
@@ -112,11 +134,22 @@ impl TypeTable {
                                 (field.name.clone(), resolve_ty(&field.ty, &params, &table))
                             })
                             .collect();
-                        table.structs.insert(decl.name.clone(), fields);
+                        let overlay = decl.fields.iter().any(|field| field.volatile);
+                        table.structs.insert(
+                            decl.name.clone(),
+                            StructInfo {
+                                fields,
+                                type_params: params,
+                                overlay,
+                            },
+                        );
                     }
                     Item::Enum(decl) => {
                         let backing = resolve_ty(&decl.backing, &[], &table);
-                        table.enums.insert(decl.name.clone(), backing);
+                        let members = decl.members.iter().map(|member| member.name.clone()).collect();
+                        table
+                            .enums
+                            .insert(decl.name.clone(), EnumInfo { backing, members });
                     }
                     Item::Func(decl) | Item::Comptime(decl) => {
                         let params = type_param_names(&decl.type_params);
@@ -170,20 +203,40 @@ impl TypeTable {
 
     /// The declared fields of a struct, in declaration order.
     pub fn struct_fields(&self, name: &str) -> Option<&[(String, Ty)]> {
-        self.structs.get(name).map(Vec::as_slice)
+        self.structs.get(name).map(|info| info.fields.as_slice())
+    }
+
+    /// The written names of a struct's generic parameters.
+    pub fn struct_type_params(&self, name: &str) -> Option<&[String]> {
+        self.structs
+            .get(name)
+            .map(|info| info.type_params.as_slice())
+    }
+
+    /// True when a struct has a `volatile` field and is therefore an overlay
+    /// type that cannot be used as an ordinary value.
+    pub fn is_overlay(&self, name: &str) -> bool {
+        self.structs.get(name).is_some_and(|info| info.overlay)
     }
 
     /// The type of one struct field.
     pub fn struct_field(&self, name: &str, field: &str) -> Option<Ty> {
         self.structs
             .get(name)
-            .and_then(|fields| fields.iter().find(|(f, _)| f == field))
+            .and_then(|info| info.fields.iter().find(|(f, _)| f == field))
             .map(|(_, ty)| ty.clone())
     }
 
     /// The backing integer type of an enum.
     pub fn enum_backing(&self, name: &str) -> Option<&Ty> {
-        self.enums.get(name)
+        self.enums.get(name).map(|info| &info.backing)
+    }
+
+    /// True when the enum declares this member name.
+    pub fn enum_has_member(&self, name: &str, member: &str) -> bool {
+        self.enums
+            .get(name)
+            .is_some_and(|info| info.members.iter().any(|known| known == member))
     }
 
     /// The signature of a module-level function.
@@ -352,19 +405,29 @@ mod tests {
     use super::*;
     use crate::ast::ScalarType;
 
+    /// Inserts a struct with the given fields for a layout test.
+    fn insert_struct(table: &mut TypeTable, name: &str, fields: Vec<(&str, Ty)>) {
+        table.structs.insert(
+            name.to_owned(),
+            StructInfo {
+                fields: fields
+                    .into_iter()
+                    .map(|(field, ty)| (field.to_owned(), ty))
+                    .collect(),
+                type_params: Vec::new(),
+                overlay: false,
+            },
+        );
+    }
+
     #[test]
     fn a_handle_field_makes_a_struct_move_only() {
         let mut table = TypeTable::default();
-        table.structs.insert(
-            "Label".to_owned(),
-            vec![("name".to_owned(), Ty::handle("String"))],
-        );
-        table.structs.insert(
-            "Point".to_owned(),
-            vec![
-                ("x".to_owned(), Ty::i32_ty()),
-                ("y".to_owned(), Ty::i32_ty()),
-            ],
+        insert_struct(&mut table, "Label", vec![("name", Ty::handle("String"))]);
+        insert_struct(
+            &mut table,
+            "Point",
+            vec![("x", Ty::i32_ty()), ("y", Ty::i32_ty())],
         );
         assert!(!table.duplicable(&Ty::struct_("Label")));
         assert!(table.duplicable(&Ty::struct_("Point")));
@@ -375,12 +438,10 @@ mod tests {
     #[test]
     fn sizes_and_offsets_fold_for_plain_layouts() {
         let mut table = TypeTable::default();
-        table.structs.insert(
-            "Point".to_owned(),
-            vec![
-                ("x".to_owned(), Ty::i32_ty()),
-                ("y".to_owned(), Ty::i32_ty()),
-            ],
+        insert_struct(
+            &mut table,
+            "Point",
+            vec![("x", Ty::i32_ty()), ("y", Ty::i32_ty())],
         );
         assert_eq!(table.size_of(&Ty::struct_("Point")), Some(8));
         assert_eq!(table.offset_of("Point", "y"), Some(4));

@@ -18,13 +18,16 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{FuncDecl, Item};
+use crate::ast::{FuncDecl, Item, Type};
+use crate::consts::ConstFolder;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::span::Span;
 use crate::types::{resolve_ty, Ty, TypeTable};
 
+mod call;
 mod expr;
+mod items;
 mod ops;
 mod stmt;
 
@@ -49,10 +52,14 @@ struct Checker<'a, 'd> {
     module: &'a Module,
     /// Every declared type of the program.
     table: &'a TypeTable,
+    /// Folds the constant expressions of this module.
+    folder: ConstFolder<'a>,
     /// Lexical scopes from outermost to innermost.
     scopes: Vec<BTreeMap<String, Binding>>,
     /// Type parameters of the function currently being checked.
     type_params: Vec<String>,
+    /// Name of the function currently being checked, for recursion checks.
+    function_name: Option<String>,
     /// Return type of the function currently being checked.
     returns: Ty,
     /// Diagnostic sink.
@@ -65,8 +72,10 @@ impl<'a, 'd> Checker<'a, 'd> {
         Self {
             module,
             table,
+            folder: ConstFolder::new(table, module),
             scopes: Vec::new(),
             type_params: Vec::new(),
+            function_name: None,
             returns: Ty::void(),
             diagnostics,
         }
@@ -83,42 +92,47 @@ impl<'a, 'd> Checker<'a, 'd> {
     fn check_item(&mut self, item: &Item) {
         match item {
             Item::Func(decl) => self.check_function(decl),
-            Item::GlobalLet(decl) => self.check_global(&decl.ty, &decl.value),
-            Item::GlobalConst(decl) => self.check_global(&decl.ty, &decl.value),
-            // `comptime` bodies, structs, enums, handles, and FFI signatures
-            // are checked by later work; signatures are still collected in the
-            // type table so bodies can use them.
+            Item::Struct(decl) => self.check_struct(decl),
+            Item::Enum(decl) => self.check_enum(decl),
+            Item::GlobalLet(decl) => self.check_global(&decl.ty, &decl.value, false),
+            Item::GlobalConst(decl) => self.check_global(&decl.ty, &decl.value, true),
+            // `comptime` bodies, handles, and FFI signatures are checked by
+            // later work; their signatures are already in the type table.
             Item::Comptime(_)
-            | Item::Struct(_)
-            | Item::Enum(_)
             | Item::Handle(_)
             | Item::Ffi(_)
             | Item::Intrinsic(_) => {}
         }
     }
 
-    /// Checks a function body with its type parameters and parameters in scope.
+    /// Checks a function declaration, its type parameters, and its body.
     fn check_function(&mut self, decl: &FuncDecl) {
+        if decl.exported && !decl.type_params.is_empty() {
+            self.error(
+                "E10302",
+                format!("generic '{}' cannot be exported", decl.name),
+                "write a concrete exported wrapper",
+                decl.name_span,
+            );
+        }
         self.push_scope();
         self.type_params = decl.type_params.iter().map(|p| p.name.clone()).collect();
+        self.function_name = Some(decl.name.clone());
         for param in &decl.params {
             let ty = self.resolve_type(&param.ty);
             self.declare(&param.name, ty);
         }
         self.returns = self.resolve_type(&decl.returns);
         self.check_block(&decl.body);
+        self.function_name = None;
         self.type_params.clear();
         self.pop_scope();
     }
 
-    /// Checks a module-level `let`/`const` initializer against its type.
-    fn check_global(&mut self, declared: &crate::ast::Type, value: &crate::ast::Expr) {
-        let ty = self.resolve_type(declared);
-        self.check_into(value, &ty);
-    }
-
-    /// Resolves an AST type in the current type-parameter scope.
-    fn resolve_type(&self, ty: &crate::ast::Type) -> Ty {
+    /// Resolves an AST type in the current type-parameter scope, checking the
+    /// constant-shaped parts of the type as it goes.
+    fn resolve_type(&mut self, ty: &Type) -> Ty {
+        self.validate_type(ty);
         resolve_ty(ty, &self.type_params, self.table)
     }
 
@@ -205,6 +219,17 @@ impl<'a, 'd> Checker<'a, 'd> {
             ),
             None => self.module.import(name).is_some(),
         }
+    }
+
+    /// True when the name is bound in a lexical scope.
+    ///
+    /// A local binding shadows a module-level function of the same spelling,
+    /// so a call must resolve through the binding rather than the function.
+    fn is_local(&self, name: &str) -> bool {
+        self.scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.contains_key(name))
     }
 
     /// The type a call-shaped name denotes when it is a type name, if any.

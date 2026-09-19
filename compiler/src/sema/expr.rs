@@ -6,15 +6,16 @@
 //! value is needed is reported here as the assignment-result error.
 //!
 //! The operator, assignment, and conditional rules live in the sibling
-//! `ops` module; this one owns names, calls, literals, and aggregates.
+//! `ops` module; calls and generics live in `call`; this one owns names,
+//! literals, aggregates, intrinsics, and templates.
+
+use std::collections::BTreeSet;
 
 use crate::ast::{
-    Arg, Expr, ExprKind, FieldInit, IntrinsicArg, QualifiedName, ScalarType, TemplatePiece, Type,
+    Expr, ExprKind, FieldInit, IntrinsicArg, QualifiedName, ScalarType, TemplatePiece, Type,
 };
 use crate::span::Span;
-use crate::types::{
-    implicit_conversion, int_fits, scalar_cast_allowed, FuncSig, Ty, TyKind,
-};
+use crate::types::{implicit_conversion, int_fits, scalar_cast_allowed, Ty, TyKind};
 
 use super::Checker;
 
@@ -38,7 +39,11 @@ impl Checker<'_, '_> {
             },
             ExprKind::Name(name) => self.name_type(name),
             ExprKind::Qualified(name) => self.check_qualified(name),
-            ExprKind::Call { callee, args, .. } => self.check_call(callee, args, expr.span),
+            ExprKind::Call {
+                callee,
+                type_args,
+                args,
+            } => self.check_call(callee, type_args, args, expr.span),
             ExprKind::Index { base, index } => self.check_index(base, index),
             ExprKind::Member { base, name } => self.check_member(base, name),
             ExprKind::Unary { op, operand } => self.check_unary(*op, operand),
@@ -51,9 +56,13 @@ impl Checker<'_, '_> {
             } => self.check_conditional(condition, then_value, else_value),
             ExprKind::Cast { ty, value } => self.check_cast(ty, value),
             ExprKind::RawCast { ty, value } => self.check_raw_cast(ty, value),
-            ExprKind::StructLiteral { name, fields, .. } => self.check_struct_literal(name, fields),
+            ExprKind::StructLiteral {
+                name,
+                type_args,
+                fields,
+            } => self.check_struct_literal(name, type_args, fields, expr.span),
             ExprKind::ArrayLiteral { elements, fill } => {
-                self.check_array_literal(elements, fill, expected)
+                self.check_array_literal(elements, fill, expected, expr.span)
             }
             // Lambdas and the staged features are not modeled yet; the opaque
             // type keeps their uses from producing false follow-on errors.
@@ -87,8 +96,17 @@ impl Checker<'_, '_> {
         if ty.is_void() {
             return ty;
         }
+        self.check_conversion(&ty, expected, expr.span);
+        ty
+    }
+
+    /// Checks an already-computed type against an expected one.
+    ///
+    /// Used where the caller has already checked the expression and only the
+    /// conversion remains, so the expression is never walked twice.
+    pub(super) fn check_conversion(&mut self, ty: &Ty, expected: &Ty, span: Span) {
         if let (TyKind::Func(_), TyKind::Func(_)) = (&ty.kind, &expected.kind) {
-            if ty != *expected {
+            if ty != expected {
                 self.error(
                     "E10210",
                     format!(
@@ -97,12 +115,12 @@ impl Checker<'_, '_> {
                         ty.display()
                     ),
                     "match the exact signature; capture-less lambdas only",
-                    expr.span,
+                    span,
                 );
             }
-            return ty;
+            return;
         }
-        if !implicit_conversion(&ty, expected) {
+        if !implicit_conversion(ty, expected) {
             self.error(
                 "E10200",
                 format!(
@@ -111,10 +129,9 @@ impl Checker<'_, '_> {
                     expected.display()
                 ),
                 "use an explicit cast `T(expr)`",
-                expr.span,
+                span,
             );
         }
-        ty
     }
 
     /// Types an integer literal by its context, checking that it fits.
@@ -152,6 +169,17 @@ impl Checker<'_, '_> {
     fn check_qualified(&mut self, name: &QualifiedName) -> Ty {
         if let Some(first) = name.segments.first() {
             if !self.name_is_value(first) && self.table.is_enum(first) {
+                if name.segments.len() >= 2 {
+                    let member = name.segments.last().expect("a qualified name");
+                    if !self.table.enum_has_member(first, member) {
+                        self.error(
+                            "E10212",
+                            format!("'{member}' is not a member of '{first}'"),
+                            "check the declaration or the spelling",
+                            name.span,
+                        );
+                    }
+                }
                 return Ty::enum_(first);
             }
         }
@@ -170,21 +198,59 @@ impl Checker<'_, '_> {
     fn check_member(&mut self, base: &Expr, name: &str) -> Ty {
         let base_ty = self.check_value(base, None);
         match &base_ty.kind {
-            TyKind::Struct(struct_name) => self
-                .table
-                .struct_field(struct_name, name)
-                .unwrap_or_else(Ty::unknown),
-            TyKind::Enum(_) => base_ty.clone(),
+            TyKind::Struct(struct_name) => {
+                if let Some(field_ty) = self.table.struct_field(struct_name, name) {
+                    return field_ty;
+                }
+                // A field and a free function may share a spelling; the field
+                // wins, so only report when neither exists.
+                if self.free_function(name).is_none() {
+                    self.error(
+                        "E10212",
+                        format!("'{name}' is not a member of '{struct_name}'"),
+                        "check the declaration or the spelling",
+                        base.span,
+                    );
+                }
+                Ty::unknown()
+            }
+            TyKind::Enum(enum_name) => {
+                if !self.table.enum_has_member(enum_name, name) {
+                    self.error(
+                        "E10212",
+                        format!("'{name}' is not a member of '{enum_name}'"),
+                        "check the declaration or the spelling",
+                        base.span,
+                    );
+                }
+                base_ty.clone()
+            }
             _ => Ty::unknown(),
         }
     }
 
-    /// Types an index expression and reports a non-indexable base.
+    /// Types an index expression, reporting a non-indexable base or a constant
+    /// index past a fixed array's extent.
     fn check_index(&mut self, base: &Expr, index: &Expr) -> Ty {
         let base_ty = self.check_value(base, None);
         self.check_value(index, None);
         match &base_ty.kind {
             TyKind::Array { element, extents } => {
+                if let Some(Some(extent)) = extents.first() {
+                    if let Some(value) = self.folder.integer(index) {
+                        if value < 0 || value >= *extent as i128 {
+                            self.error(
+                                "E10216",
+                                format!(
+                                    "index {value} is out of range for '{}[{extent}]'",
+                                    element.display()
+                                ),
+                                "fix the index or the extent",
+                                index.span,
+                            );
+                        }
+                    }
+                }
                 if extents.len() > 1 {
                     Ty::array((**element).clone(), extents[1..].to_vec())
                 } else {
@@ -204,105 +270,6 @@ impl Checker<'_, '_> {
                 Ty::unknown()
             }
         }
-    }
-
-    /// Types a call: a type cast, a function call, a dot-call, or an opaque
-    /// external call whose signature is not modelled.
-    fn check_call(&mut self, callee: &Expr, args: &[Arg], span: Span) -> Ty {
-        if let Some(target) = self.callee_type(callee) {
-            let arg_ty = match args.first() {
-                Some(arg) => self.check_value(&arg.value, None),
-                None => Ty::unknown(),
-            };
-            for extra in args.iter().skip(1) {
-                self.check_value(&extra.value, None);
-            }
-            return self.check_type_cast(&target, arg_ty, span);
-        }
-        if let ExprKind::Member { base, name } = &callee.kind {
-            let base_ty = self.check_value(base, None);
-            if let Some(signature) = self.dot_call(&base_ty, name) {
-                self.check_args(args, &signature.params);
-                return signature.returns;
-            }
-            for arg in args {
-                self.check_value(&arg.value, None);
-            }
-            return Ty::unknown();
-        }
-        let callee_ty = self.check_value(callee, None);
-        if let TyKind::Func(signature) = &callee_ty.kind {
-            let signature = signature.clone();
-            self.check_args(args, &signature.params);
-            return (*signature.returns).clone();
-        }
-        for arg in args {
-            self.check_value(&arg.value, None);
-        }
-        Ty::unknown()
-    }
-
-    /// Resolves the free function a dot-call names, when the receiver is a
-    /// struct whose field of that name is callable, or a module function.
-    fn dot_call(&self, base: &Ty, name: &str) -> Option<FuncSig> {
-        if let TyKind::Struct(struct_name) = &base.kind {
-            if let Some(field_ty) = self.table.struct_field(struct_name, name) {
-                if let TyKind::Func(signature) = &field_ty.kind {
-                    return Some(FuncSig {
-                        params: signature.params.clone(),
-                        returns: (*signature.returns).clone(),
-                        type_params: Vec::new(),
-                    });
-                }
-                return None;
-            }
-        }
-        self.free_function(name)
-    }
-
-    /// Checks a call's arguments against a known parameter list.
-    ///
-    /// An arity mismatch is left alone: no diagnostic in this phase owns it.
-    fn check_args(&mut self, args: &[Arg], params: &[Ty]) {
-        if args.len() == params.len() {
-            for (arg, param) in args.iter().zip(params) {
-                self.check_into(&arg.value, param);
-            }
-        } else {
-            for arg in args {
-                self.check_value(&arg.value, None);
-            }
-        }
-    }
-
-    /// Checks a call whose callee is a type name: a struct, enum, or handle
-    /// cast.
-    fn check_type_cast(&mut self, target: &Ty, arg_ty: Ty, span: Span) -> Ty {
-        let allowed = match &target.kind {
-            // A struct is an aggregate, not a scalar; a call in cast position
-            // cannot build one.
-            TyKind::Struct(_) => false,
-            TyKind::Enum(name) => {
-                arg_ty.is_integer()
-                    || arg_ty.is_unknown()
-                    || arg_ty.is_param()
-                    || self
-                        .table
-                        .enum_backing(name)
-                        .is_some_and(|backing| implicit_conversion(&arg_ty, backing))
-            }
-            TyKind::Handle(_) => arg_ty.is_integer() || arg_ty.is_unknown() || arg_ty.is_param(),
-            _ => true,
-        };
-        if !allowed {
-            self.error(
-                "E10201",
-                format!("cannot cast '{}' to '{}'", arg_ty.display(), target.display()),
-                "convert through a supported value or `raw` in `unsafe`",
-                span,
-            );
-        }
-        target.clone()
     }
 
     /// Types a scalar cast `T(expr)`.
@@ -334,33 +301,138 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Types a struct literal, checking field values against their declared
-    /// types where those are known.
-    fn check_struct_literal(&mut self, name: &QualifiedName, fields: &[FieldInit]) -> Ty {
+    /// Types a struct literal, checking its fields and its type arguments.
+    ///
+    /// The field list must name every declared field exactly once, unless it
+    /// is empty, which is the explicit zero value. An overlay type cannot be
+    /// built as a value; a generic struct needs explicit type arguments.
+    fn check_struct_literal(
+        &mut self,
+        name: &QualifiedName,
+        type_args: &[Type],
+        fields: &[FieldInit],
+        span: Span,
+    ) -> Ty {
         let target = match name.segments.last() {
             Some(last) if self.table.is_struct(last) => Ty::struct_(last),
             _ => Ty::unknown(),
         };
-        for field in fields {
-            if let TyKind::Struct(struct_name) = &target.kind {
-                if let Some(field_ty) = self.table.struct_field(struct_name, &field.name) {
-                    self.check_into(&field.value, &field_ty);
-                    continue;
-                }
+        let TyKind::Struct(struct_name) = &target.kind else {
+            for field in fields {
+                self.check_value(&field.value, None);
             }
-            self.check_value(&field.value, None);
+            return target;
+        };
+        let struct_name = struct_name.clone();
+
+        for ty in type_args {
+            self.resolve_type(ty);
+        }
+        if let Some(params) = self.table.struct_type_params(&struct_name) {
+            if type_args.is_empty() && !params.is_empty() {
+                self.error(
+                    "E10301",
+                    format!("cannot infer type arguments for '{struct_name}'"),
+                    "write the type arguments explicitly",
+                    span,
+                );
+            } else if type_args.len() != params.len() {
+                self.error(
+                    "E10300",
+                    format!(
+                        "wrong number of type arguments for '{struct_name}': expected {}, found {}",
+                        params.len(),
+                        type_args.len()
+                    ),
+                    "list all type arguments",
+                    span,
+                );
+            }
+        }
+        if self.table.is_overlay(&struct_name) {
+            self.error(
+                "E10207",
+                format!("overlay type '{struct_name}' cannot be used by value"),
+                "access it through a `raw` pointer inside `unsafe`",
+                span,
+            );
+        }
+        if !fields.is_empty() && !self.fields_match(&struct_name, fields) {
+            self.error(
+                "E10203",
+                format!("struct literal for '{struct_name}' does not match its fields"),
+                "list every field exactly once, by name",
+                span,
+            );
+        }
+        for field in fields {
+            if let Some(field_ty) = self.table.struct_field(&struct_name, &field.name) {
+                self.check_into(&field.value, &field_ty);
+            } else {
+                self.check_value(&field.value, None);
+            }
         }
         target
     }
 
+    /// True when a struct literal lists every declared field exactly once.
+    fn fields_match(&self, struct_name: &str, fields: &[FieldInit]) -> bool {
+        let Some(declared) = self.table.struct_fields(struct_name) else {
+            return true;
+        };
+        if fields.len() != declared.len() {
+            return false;
+        }
+        let mut seen = BTreeSet::new();
+        for field in fields {
+            if !declared.iter().any(|(name, _)| name == &field.name) {
+                return false;
+            }
+            if !seen.insert(field.name.as_str()) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Types an array literal, taking element type and extent from context
     /// where the context provides them.
+    ///
+    /// A fill form needs a fixed extent, and a literal prefix may not be
+    /// longer than the context extent.
     fn check_array_literal(
         &mut self,
         elements: &[Expr],
         fill: &Option<Box<Expr>>,
         expected: Option<&Ty>,
+        span: Span,
     ) -> Ty {
+        let expected_extents = expected.and_then(|ty| match &ty.kind {
+            TyKind::Array { extents, .. } => Some(extents.clone()),
+            _ => None,
+        });
+        let expected_extent = expected_extents
+            .as_ref()
+            .and_then(|extents| extents.first().copied().flatten());
+        if fill.is_some() && expected_extent.is_none() {
+            self.error(
+                "E10215",
+                "array fill requires a fixed extent",
+                "annotate the array type",
+                span,
+            );
+        }
+        if let Some(extent) = expected_extent {
+            if elements.len() > extent {
+                self.error(
+                    "E10215",
+                    "array fill requires a fixed extent",
+                    "annotate the array type",
+                    span,
+                );
+            }
+        }
+
         let expected_element = expected.and_then(|ty| match &ty.kind {
             TyKind::Array { element, .. } => Some((**element).clone()),
             _ => None,
@@ -385,10 +457,10 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        let extents = if elements.is_empty() && fill.is_some() {
-            vec![None]
-        } else {
-            vec![Some(elements.len())]
+        let extents = match expected_extents {
+            Some(extents) if !extents.is_empty() => extents,
+            _ if elements.is_empty() && fill.is_some() => vec![None],
+            _ => vec![Some(elements.len())],
         };
         Ty::array(element.unwrap_or_else(Ty::unknown), extents)
     }
@@ -455,12 +527,24 @@ impl Checker<'_, '_> {
     }
 
     /// Types a template: `String` with placeholders, `str` without.
+    ///
+    /// Every placeholder must hold a formattable type: `str`, `static str`,
+    /// `String`, or a scalar (integers, floats, and `bool`). An opaque type is
+    /// left alone because the layer cannot name it.
     fn check_template(&mut self, pieces: &[TemplatePiece]) -> Ty {
         let mut has_placeholder = false;
         for piece in pieces {
             if let TemplatePiece::Placeholder(expr) = piece {
                 has_placeholder = true;
-                self.check_value(expr, None);
+                let ty = self.check_value(expr, None);
+                if !ty.is_unknown() && !ty.is_param() && !formattable(&ty) {
+                    self.error(
+                        "E10500",
+                        format!("type '{}' is not formattable", ty.display()),
+                        "convert with `text`, `toHex`, or `toDecimal`",
+                        expr.span,
+                    );
+                }
             }
         }
         if has_placeholder {
@@ -484,5 +568,15 @@ impl Checker<'_, '_> {
             "compare explicitly, for example `x != 0`",
             span,
         );
+    }
+}
+
+/// True when a type may appear in a template placeholder.
+fn formattable(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Str | TyKind::StaticStr => true,
+        TyKind::Handle(name) => name == "String",
+        TyKind::Scalar(_) => true,
+        _ => false,
     }
 }

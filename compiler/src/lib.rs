@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod ast;
+pub mod consts;
 pub mod diag;
 pub mod driver;
 pub mod lex;

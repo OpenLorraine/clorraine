@@ -147,6 +147,7 @@ impl Checker<'_, '_> {
         for clause in &decl.clauses {
             self.push_scope();
             if let SwitchLabel::Case(value) = &clause.label {
+                self.require_constant(value);
                 self.check_value(value, Some(&scrutinee));
             }
             for statement in &clause.statements {

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 13:07
-> **Progress**: 42/84 tasks (50%)
+> **Last Updated**: 2026-09-19 13:15
+> **Progress**: 45/84 tasks (54%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -335,8 +335,8 @@ compiler logic.
 
 - [x] 4.2.1 Implement `src/types.rs` (`Ty`, duplicability, conversions T1a, unification, casts, `sizeof`/`offsetof` folding support) ✅ (completed: 2026-09-19 13:07) — split into `src/types/mod.rs` and `src/types/table.rs`
 - [x] 4.2.2 Implement expression and statement checking in `src/sema.rs` (operators, conditions, assignment, indexing, calls, dot-calls, intrinsics) ✅ (completed: 2026-09-19 13:07) — split into `src/sema/{mod,expr,ops,stmt}.rs`; the built-in `String` handle (AR-63) resolves without an import. Mechanical correction: the parse acceptance snippet used the type-invalid `(a < b) > (c)` (ordering a `bool` is `E10222` per Ch 04 §5), so it now uses `a < b`; the ambiguous `a < b > (c)` stays and parses as a generic call
-- [ ] 4.2.3 Implement struct, enum, and struct-literal checking (STR-*, EN-*, E10203/E10205/E10206/E10207/E10208/E10210/E10211/E10212) and template typing (E10500/E10501/E10503)
-- [ ] 4.2.4 Implement `src/consts.rs` (constant contexts, folding with runtime semantics, E10202/E10215/E10216/E10220/E10223/E10224/E10226)
+- [x] 4.2.3 Implement struct, enum, and struct-literal checking (STR-*, EN-*, E10203/E10205/E10206/E10207/E10208/E10210/E10211/E10212) and template typing (E10500/E10501/E10503) ✅ (completed: 2026-09-19 13:15) — split into `src/sema/{items,call}.rs`; also covers the generic declaration checks (E10300/E10301/E10302/E10305)
+- [x] 4.2.4 Implement `src/consts.rs` (constant contexts, folding with runtime semantics, E10202/E10215/E10216/E10220/E10223/E10224/E10226) ✅ (completed: 2026-09-19 13:15)
 
 **Deliverables**:
 - Typed AST with constant values resolved
@@ -348,7 +348,7 @@ compiler logic.
 
 ### Step 4.3: Green phase and implementation tests
 
-- [ ] 4.3.1 Run the type/const/enum spec cases and golden files; fix until green
+- [x] 4.3.1 Run the type/const/enum spec cases and golden files; fix until green ✅ (completed: 2026-09-19 13:15) — 47/47 asserted goldens and both type stage cases pass
 - [ ] 4.3.2 Write `types.rs`, `sema.rs`, and `consts.rs` impl tests (conversion matrix, fold/fault cases)
 - [ ] 4.3.3 Run the full fast verify (`make check`)
 
