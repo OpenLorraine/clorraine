@@ -98,7 +98,7 @@ real shims. Test names state behavior (`should [expected] when [condition]`).
 | ST-NAME-2 | merged duplicate `func f`; missing import; duplicate import | E11101; E11102; E11103 | MOD-7..MOD-12 |
 | ST-TYPE-1 | `u8 + u16`, `i32 + u32`, `let x: u8 = 300`, `let y: i32 = 1.5` | unify to `u16`; E10200; E10202; E10200 | T1a, TY-11..13, PF-005 |
 | ST-TYPE-2 | `u16(u8val)`; `u8(u16val)`; `i32(f64val)`; `f32(f64val)` | explicit widening/narrowing/casts allowed; `f32→f64` implicit | T1/T1a, TY-12 |
-| ST-TYPE-3 | `if (1) { }`; `1 && true`; `E.A > E.B` | E10218; E10222; E10222 (enum ordering, T10a) | EX-7, EN-6 |
+| ST-TYPE-3 | `if (1) { }`; `1 && true`; `E.A > E.B` | E10218; E10218 (non-`bool` logical operand); E10222 (enum ordering, T10a) | EX-6, EX-7, EN-6 |
 | ST-CONST-1 | `const N: i32 = 2 + 3 * 4;`; `const Z: i32 = 1 / 0;`; module `let n = 5; const M: i32 = n;` | 14; E10223; E10224 | EX-16 |
 | ST-ENUM-1 | `enum E : u8 { A, B = 5, C }` | values 0, 5, 6; `E(x)` cast | EN-1/EN-3, T10a |
 | ST-OWN-1 | move then use; move while borrowed; assign to `const` | E10020; E10022; E10023 | OW-4/OW-5, STMT-3 |

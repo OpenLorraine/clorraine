@@ -22,9 +22,15 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// Diagnostic codes the in-scope stages currently report.
 ///
 /// The list grows as later stages land; every code listed here must have at
-/// least one golden file in the compile-fail suite.
+/// least one golden file in the compile-fail suite. The type, constant, enum,
+/// and template codes are grouped with the front-end codes they build on:
+/// `E10213`/`E10214` stay out because data inclusion is staged out, and the
+/// retired `E10225` has no trigger and no golden.
 const ASSERTED_CODES: &[&str] = &[
-    "E10204", "E10208", "E10219", "E10501", "E11101", "E11102", "E11103", "E11104", "E11105",
+    "E10200", "E10201", "E10202", "E10203", "E10204", "E10205", "E10206", "E10207", "E10208",
+    "E10209", "E10210", "E10211", "E10212", "E10215", "E10216", "E10217", "E10218", "E10219",
+    "E10220", "E10221", "E10222", "E10223", "E10224", "E10226", "E10300", "E10301", "E10302",
+    "E10305", "E10500", "E10501", "E10503", "E11101", "E11102", "E11103", "E11104", "E11105",
     "E20000", "E20001", "E20002", "E20003", "E20004", "E20005", "E20006", "E20007", "E20008",
     "E90005", "W10006",
 ];

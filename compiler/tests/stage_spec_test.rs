@@ -24,6 +24,12 @@ const UNACCEPTABLE_CODES: &[&str] = &[
     "E20006", "E20007", "E20008", "E90005",
     // Name and module diagnoses.
     "E10219", "E11101", "E11102", "E11103", "E11104", "E11105",
+    // Type, constant, enum, and template diagnoses. A snippet the in-scope
+    // stages accept must not produce any of these either, so a false type,
+    // fold, or format error fails an acceptance case instead of passing it.
+    "E10200", "E10201", "E10202", "E10203", "E10205", "E10206", "E10207", "E10209", "E10210",
+    "E10211", "E10212", "E10215", "E10216", "E10217", "E10218", "E10220", "E10221", "E10222",
+    "E10223", "E10224", "E10226", "E10300", "E10301", "E10302", "E10305", "E10500", "E10503",
 ];
 
 /// Temporary directory that removes itself when the test finishes.
@@ -169,6 +175,23 @@ fn assert_run_reports(tag: &str, run: Output, expected_lines: &[&str]) {
 /// Asserts that compiling one snippet reports every expected diagnostic line.
 fn assert_reports(tag: &str, source: &str, expected_lines: &[&str]) {
     assert_run_reports(tag, run_source(tag, source), expected_lines);
+}
+
+/// Asserts that compiling one snippet reports a diagnostic with the given code.
+///
+/// A full-line assertion is right when the registry fully determines the
+/// message. A mixed-sign binary operator fixes the code but not which operand
+/// the rendered message names, so the case pins the code alone and leaves the
+/// operand direction to the implementation.
+fn assert_reports_code(tag: &str, source: &str, code: &str) {
+    let run = run_source(tag, source);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    let head = format!("error {code}: ");
+    assert!(
+        stderr.lines().any(|line| line.starts_with(&head)),
+        "{tag}: missing `{head}...` diagnostic; stderr:\n{stderr}"
+    );
+    assert_eq!(run.status.code(), Some(1), "{tag}: failing compiles exit 1");
 }
 
 /// Asserts that compiling several files together reports the expected lines.
@@ -439,5 +462,302 @@ func main(): i32 {
 }
 ",
         &["error E11103: duplicate import of 'clamp'"],
+    );
+}
+
+/// Same-sign integer operands unify to a common type, and conversions the
+/// language does not allow are reported: a mixed-sign operator, a literal that
+/// overflows its context type, and an implicit float-to-integer assignment.
+///
+/// The `u8 + u16` result type is only observable once code is emitted, a later
+/// stage, so that part pins acceptance instead of the unified type. The
+/// mixed-sign message names one operand and the specification does not fix
+/// which one, so it pins the code alone.
+#[test]
+fn integer_operands_unify_and_bad_conversions_report_their_codes() {
+    assert_front_end_accepts(
+        "type-widening",
+        "module spec.stage.type_widening;
+
+func sum(a: u8, b: u16): u16 {
+    return a + b;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+    );
+
+    assert_reports_code(
+        "type-mixed-sign",
+        "module spec.stage.type_mixed_sign;
+
+func demo(): i32 {
+    let a: i32 = 1;
+    let b: u32 = 2;
+    let c = a + b;
+    return c;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        "E10200",
+    );
+
+    assert_reports(
+        "type-literal-overflow",
+        "module spec.stage.type_literal_overflow;
+
+func demo(): u8 {
+    let x: u8 = 300;
+    return x;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10202: literal does not fit 'u8'"],
+    );
+
+    assert_reports(
+        "type-float-to-integer",
+        "module spec.stage.type_float_to_integer;
+
+func demo(): i32 {
+    let y: i32 = 1.5;
+    return y;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10200: cannot convert 'f64' to 'i32' implicitly"],
+    );
+}
+
+/// Explicit casts cover widening, narrowing, and float conversions, and `f32`
+/// widens to `f64` implicitly.
+///
+/// The specification allows every form here, so the case pins acceptance: any
+/// type diagnostic would be a false rejection.
+#[test]
+fn explicit_casts_and_float_widening_are_accepted() {
+    assert_front_end_accepts(
+        "type-casts",
+        "module spec.stage.type_casts;
+
+func demo(): i32 {
+    let small: u8 = 1;
+    let wide: u16 = u16(small);
+    let narrow: u8 = u8(wide);
+    let exact: f64 = 1.5;
+    let as_int: i32 = i32(exact);
+    let as_float: f32 = f32(exact);
+    let promoted: f64 = as_float;
+    return as_int;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+    );
+}
+
+/// A non-`bool` condition, a non-`bool` logical operand, and an operator
+/// applied to the wrong operand type are reported, including ordering an enum.
+#[test]
+fn non_bool_conditions_and_undefined_operators_report_their_codes() {
+    assert_reports(
+        "type-non-bool-condition",
+        "module spec.stage.type_non_bool_condition;
+
+func demo(): i32 {
+    if (1) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10218: condition must be 'bool'"],
+    );
+
+    assert_reports(
+        "type-logical-operand",
+        "module spec.stage.type_logical_operand;
+
+func demo(): bool {
+    let x = 1 && true;
+    return x;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10218: condition must be 'bool'"],
+    );
+
+    assert_reports(
+        "type-enum-ordering",
+        "module spec.stage.type_enum_ordering;
+
+enum E : u8 {
+    A,
+    B,
+}
+
+func demo(): bool {
+    let ordered = E.A > E.B;
+    return ordered;
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10222: operator '>' is not defined for 'E'"],
+    );
+}
+
+/// A module `const` initializer folds with runtime semantics, and the two
+/// constant faults are reported: division by zero and a runtime value where a
+/// constant is required.
+///
+/// The folded value `14` is only observable once code is emitted, so that part
+/// pins acceptance instead of the folded value.
+#[test]
+fn constant_initializers_fold_and_constant_faults_report_their_codes() {
+    assert_front_end_accepts(
+        "const-fold",
+        "module spec.stage.const_fold;
+
+const N: i32 = 2 + 3 * 4;
+
+func main(): i32 {
+    return N;
+}
+",
+    );
+
+    assert_reports(
+        "const-division-by-zero",
+        "module spec.stage.const_division_by_zero;
+
+const Z: i32 = 1 / 0;
+
+func main(): i32 {
+    return Z;
+}
+",
+        &["error E10223: constant expression divides by zero"],
+    );
+
+    assert_reports(
+        "const-non-constant",
+        "module spec.stage.const_non_constant;
+
+let n: i32 = 5;
+const M: i32 = n;
+
+func main(): i32 {
+    return M;
+}
+",
+        &["error E10224: expression is not constant"],
+    );
+}
+
+/// Enum members without an explicit value number sequentially from zero, and
+/// the enum converts to and from its backing integer type only through
+/// explicit casts.
+///
+/// The member values `0`, `5`, and `6` are only observable once code is
+/// emitted, so the case pins acceptance instead of the member values.
+#[test]
+fn enum_members_number_sequentially_and_cast_explicitly() {
+    assert_front_end_accepts(
+        "enum-values",
+        "module spec.stage.enum_values;
+
+enum E : u8 {
+    A,
+    B = 5,
+    C,
+}
+
+func demo(): u8 {
+    let x: u8 = 0;
+    let e: E = E(x);
+    return u8(e);
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+    );
+}
+
+/// A template placeholder that holds a non-formattable type and a template
+/// with an unbalanced brace each report their registered code.
+///
+/// `String` is a standard-library type, so it is imported: the placeholder
+/// check runs after name resolution, and a program that does not resolve could
+/// not reach that check.
+#[test]
+fn template_placeholder_diagnostics_report_their_codes() {
+    assert_reports(
+        "template-non-formattable",
+        "module spec.stage.template_non_formattable;
+
+import { String } from std.text;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func sink(s: String): void {
+}
+
+func demo(): void {
+    let p = Point { x: 1, y: 2 };
+    let s: String = $\"at {p}\";
+    sink(s);
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10500: type 'Point' is not formattable"],
+    );
+
+    assert_reports(
+        "template-unbalanced",
+        "module spec.stage.template_unbalanced;
+
+import { String } from std.text;
+
+func demo(): String {
+    let n: u32 = 1;
+    return $\"n={n\";
+}
+
+func main(): i32 {
+    return 0;
+}
+",
+        &["error E10503: unbalanced braces in template"],
     );
 }

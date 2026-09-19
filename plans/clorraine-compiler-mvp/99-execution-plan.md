@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 11:59
-> **Progress**: 39/84 tasks (46%)
+> **Last Updated**: 2026-09-19 12:52
+> **Progress**: 40/84 tasks (48%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -310,14 +310,16 @@ compiler logic.
 
 ## Phase 4: Types, Constants, Structs, Enums
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: ec101bd121c45b8a1c1a1bdd4ceb0690f6d05001
+> **Expected modification set**: `compiler/**`, `plans/clorraine-compiler-mvp/{99-execution-plan.md,00-ambiguity-register.md,07-testing-strategy.md}`, `plans/00-roadmap.md`, and the post-phase review files
+> **Scope mode**: strict
 
 ### Step 4.1: Specification tests first
 
 **Reference**: 03-04 "Type System", "Constant Evaluation" · ST-TYPE-1..3, ST-CONST-1, ST-ENUM-1, ST-CF-TYPE, ST-CF-STR
 **Objective**: write the type/const/enum spec cases and confirm the golden subset.
 
-- [ ] 4.1.1 [spec-author] Add the ST-TYPE/ST-CONST/ST-ENUM cases and template cases (E10500/E10501/E10503) to `stage_spec_test.rs`; confirm the E102xx scope (E10213/E10214 excluded, AR-10); run and record the red phase
+- [x] 4.1.1 [spec-author] Add the ST-TYPE/ST-CONST/ST-ENUM cases and template cases (E10500/E10501/E10503) to `stage_spec_test.rs`; confirm the E102xx scope (E10213/E10214 excluded, AR-10); run and record the red phase ✅ (completed: 2026-09-19 12:52) — the new cases fail for the intended reason; `String` scoping (AR-63) and the ST-TYPE-3 `E10218`/`E10222` conflict (AR-64) were ruled during this task
 
 **Deliverables**:
 - New spec cases and recorded red phase
