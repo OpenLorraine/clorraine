@@ -9,6 +9,7 @@
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load;
 use crate::parse::Parser;
+use crate::resolve;
 use crate::span::{FileId, SourceMap};
 
 /// Exit code for command-line and input problems.
@@ -146,7 +147,8 @@ pub fn run(args: Vec<String>) -> i32 {
     }
     // The module and name stages consume the loaded program instead of
     // dropping it; the emitter lands later and will take the same value.
-    let _loaded = load::load(programs, &mut diagnostics);
+    let loaded = load::load(programs, &mut diagnostics);
+    resolve::resolve(&loaded, &mut diagnostics);
     eprint!("{}", diagnostics.render(&sources));
     let exit_code = diagnostics.exit_code();
     if exit_code != 0 {

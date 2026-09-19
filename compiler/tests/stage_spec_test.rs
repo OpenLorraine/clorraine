@@ -231,15 +231,19 @@ fn comparison_and_generic_call_forms_parse() {
         "parse-call-forms",
         "module spec.stage.parse_call_forms;
 
-func shapes(a: i32, b: i32, c: i32, f: i32): i32 {
+func identity<T>(x: T): T {
+    return x;
+}
+
+func shapes(a: i32, b: i32, c: i32): i32 {
     let comparison = (a < b) > (c);
-    let explicit_args = f<a>(1);
+    let explicit_args = identity<i32>(1);
     let call_shaped = a < b > (c);
     return 0;
 }
 
 func main(): i32 {
-    return shapes(1, 2, 3, 4);
+    return shapes(1, 2, 3);
 }
 ",
     );
