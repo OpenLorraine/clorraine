@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-20 22:44
-> **Progress**: 63/84 tasks (75%)
+> **Last Updated**: 2026-09-20 22:45
+> **Progress**: 66/84 tasks (79%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -457,9 +457,9 @@ loan decision explicit.
 
 ### Step 6.3: Green phase and implementation tests
 
-- [ ] 6.3.1 Run the codegen/CLI spec cases, the determinism test, and the six run-fault cases on host; fix until green
-- [ ] 6.3.2 Write `codegen.rs`/`abi.rs` impl tests (fragments, ladder, naming, guards)
-- [ ] 6.3.3 Run the full fast verify (`make check`)
+- [x] 6.3.1 Run the codegen/CLI spec cases, the determinism test, and the six run-fault cases on host; fix until green ✅ (completed: 2026-09-20 22:45)
+- [x] 6.3.2 Write `codegen.rs`/`abi.rs` impl tests (fragments, ladder, naming, guards) ✅ (completed: 2026-09-20 22:45)
+- [x] 6.3.3 Run the full fast verify (`make check`) ✅ (completed: 2026-09-20 22:45)
 
 **Deliverables**:
 - Codegen/CLI/run-fault goldens green

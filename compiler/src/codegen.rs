@@ -445,3 +445,28 @@ fn is_c_keyword(name: &str) -> bool {
             | "while" | "bool"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identifiers_are_sanitized_for_c() {
+        assert_eq!(sanitize_identifier("value"), "value");
+        assert_eq!(sanitize_identifier("_tmp"), "_tmp");
+        assert_eq!(sanitize_identifier("2fast"), "_fast");
+        assert_eq!(sanitize_identifier("a-b"), "a_b");
+    }
+
+    #[test]
+    fn c_keywords_receive_a_stable_prefix() {
+        assert_eq!(sanitize_identifier("int"), "cl_int");
+        assert_eq!(sanitize_identifier("return"), "cl_return");
+        assert_eq!(sanitize_identifier("while"), "cl_while");
+    }
+
+    #[test]
+    fn an_empty_name_still_yields_a_valid_identifier() {
+        assert_eq!(sanitize_identifier(""), "cl_");
+    }
+}
