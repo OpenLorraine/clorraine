@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-19 23:39
-> **Progress**: 56/84 tasks (67%)
+> **Last Updated**: 2026-09-20 09:22
+> **Progress**: 57/84 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -417,14 +417,16 @@ loan decision explicit.
 
 ## Phase 6: Code Generation, Profiles, Runtime Shims
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: e4f9b86f161b33470ef224fc1dfa7561712a0bcf
+> **Expected modification set**: `compiler/**` (including `compiler/runtime/*.c`); `compiler/tests/**` (the stage, run-fault, and determinism spec drivers); `spec/tests/**` golden additions; `Makefile`/`docker/**` only if the shims require build wiring; `plans/clorraine-compiler-mvp/{99-execution-plan.md,00-ambiguity-register.md,03-06-codegen.md,07-testing-strategy.md,03-07-runtime-shims.md}`; `plans/00-roadmap.md`; the `14-phase6-review.md` post-phase review artifact and the `00-index.md` row for it
+> **Scope mode**: strict
 
 ### Step 6.1: Specification tests first
 
 **Reference**: [03-06-codegen.md](03-06-codegen.md) · ST-CG-1..8, ST-CLI-1..3, ST-RUN-1..6
 **Objective**: write the codegen/CLI/determinism spec cases before the emitter.
 
-- [ ] 6.1.1 [spec-author] Add the ST-CG/ST-CLI cases to `stage_spec_test.rs` and the run-fault driver (`run_fault_spec_test.rs`, `determinism_spec_test.rs`); run and record the red phase
+- [x] 6.1.1 [spec-author] Add the ST-CG/ST-CLI cases to `stage_spec_test.rs` and the run-fault driver (`run_fault_spec_test.rs`, `determinism_spec_test.rs`); run and record the red phase ✅ (completed: 2026-09-20 09:22)
 
 **Deliverables**:
 - Codegen/CLI/run-fault spec drivers and recorded red phase

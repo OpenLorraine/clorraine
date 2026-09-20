@@ -10,6 +10,12 @@
 //! moves, lifetime elision, exclusive reborrow, drop planning, and the
 //! uncontracted-extern boundary. Every case drives the built `clc` binary, so
 //! the published command-line behavior is the oracle.
+//!
+//! The codegen cases read the emitted translation unit and pin its contract:
+//! the cleanup ladder, move lowering, `#line` mapping, the runtime guards, the
+//! module initialization order, generic instantiation dedupe, and the
+//! float/double surface. The driver cases pin the profile errors, the error
+//! cap, and the fixed diagnostic head and location lines.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -207,6 +213,171 @@ fn assert_reports_code(tag: &str, source: &str, code: &str) {
 /// Asserts that compiling several files together reports the expected lines.
 fn assert_reports_across_files(tag: &str, files: &[(&str, &str)], expected_lines: &[&str]) {
     assert_run_reports(tag, run_sources(tag, files), expected_lines);
+}
+
+/// Compiles one source snippet and returns the process output and emitted C.
+///
+/// The plain `run_source` leaves the emitted file inside a scratch directory
+/// that is removed when the call returns. A codegen case needs the text, so
+/// this variant reads it back first. A missing or unreadable output becomes an
+/// empty string; the caller treats that as a failed emission.
+fn run_source_emitting(tag: &str, source: &str) -> (Output, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("cannot write snippet: {err}"));
+    let output_path = scratch.path().join("out.c");
+    let run = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    (run, read_emitted(&output_path))
+}
+
+/// Compiles several source files and returns the process output and emitted C.
+fn run_sources_emitting(tag: &str, files: &[(&str, &str)]) -> (Output, String) {
+    let scratch = ScratchDir::new(tag);
+    let output_path = scratch.path().join("out.c");
+    let mut args = vec![
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+    ];
+    for (name, source) in files {
+        let source_path = scratch.path().join(name);
+        std::fs::write(&source_path, source)
+            .unwrap_or_else(|err| panic!("cannot write snippet {name}: {err}"));
+        args.push(source_path.display().to_string());
+    }
+    (run_clc(&args), read_emitted(&output_path))
+}
+
+/// Compiles one snippet whose path on the command line is relative.
+///
+/// The command runs with the scratch directory as its working directory, so
+/// the path the driver sees is exactly `relative_path`. That is the logical
+/// path that reaches the emitted `#line` directives and the diagnostic
+/// locations, and it must stay relative rather than becoming an absolute path.
+fn run_source_relative(tag: &str, relative_path: &str, source: &str) -> (Output, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join(relative_path);
+    if let Some(parent) = source_path.parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|err| panic!("cannot create {}: {err}", parent.display()));
+    }
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("cannot write snippet: {err}"));
+    let output_path = scratch.path().join("out.c");
+    let run = Command::new(env!("CARGO_BIN_EXE_clc"))
+        .current_dir(scratch.path())
+        .args([
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            output_path.display().to_string(),
+            relative_path.to_owned(),
+        ])
+        .output()
+        .expect("failed to spawn the compiler binary");
+    (run, read_emitted(&output_path))
+}
+
+/// Compiles one snippet with extra flags inserted between `--profile` and `-o`.
+fn run_source_with_flags(tag: &str, source: &str, flags: &[&str]) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("cannot write snippet: {err}"));
+    let output_path = scratch.path().join("out.c");
+    let mut args = vec!["--profile".to_owned(), "host".to_owned()];
+    args.extend(flags.iter().map(|flag| (*flag).to_owned()));
+    args.push("-o".to_owned());
+    args.push(output_path.display().to_string());
+    args.push(source_path.display().to_string());
+    run_clc(&args)
+}
+
+/// Reads the emitted C, treating a missing file as empty output.
+fn read_emitted(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+
+/// Asserts that a codegen case compiled cleanly and produced C text.
+///
+/// The emitter writes an empty file until it lands, and an empty translation
+/// unit is never a passing codegen result. Failing here names the missing
+/// emitter instead of letting a later substring check report the same gap.
+fn assert_emitted(tag: &str, run: &Output, emitted: String) -> String {
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{tag}: the front end rejected a valid snippet; stderr:\n{stderr}"
+    );
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    emitted
+}
+
+/// Counts the cleanup labels defined in the emitted C.
+///
+/// A definition is a line whose first token is `__cl_c` followed by digits and
+/// a colon; a trailing comment is allowed. A `goto` reference never starts a
+/// line this way, so the count is the number of scopes that own a label.
+fn cleanup_label_count(emitted: &str) -> usize {
+    emitted
+        .lines()
+        .filter(|line| {
+            let Some(rest) = line.trim_start().strip_prefix("__cl_c") else {
+                return false;
+            };
+            let digits = rest.chars().take_while(|ch| ch.is_ascii_digit()).count();
+            digits > 0 && rest[digits..].starts_with(':')
+        })
+        .count()
+}
+
+/// Counts the C function bodies in `emitted` whose signature names `symbol`.
+///
+/// The emitted C puts the opening brace on its own line, so a body is a
+/// signature line ending in `)` whose next line opens a brace. A forward
+/// prototype ends in `;` and a call is not followed by a brace, so the count
+/// is the number of emitted definitions rather than references.
+fn definition_count(emitted: &str, symbol: &str) -> usize {
+    let lines: Vec<&str> = emitted.lines().collect();
+    lines
+        .windows(2)
+        .filter(|pair| {
+            pair[0].contains(symbol)
+                && pair[0].trim_end().ends_with(')')
+                && pair[1].trim_start().starts_with('{')
+        })
+        .count()
+}
+
+/// Asserts that every needle appears in `text` in the given order.
+fn assert_in_order(tag: &str, text: &str, needles: &[&str]) {
+    let mut cursor = 0;
+    for needle in needles {
+        match text[cursor..].find(needle) {
+            Some(offset) => cursor += offset + needle.len(),
+            None => panic!("{tag}: `{needle}` is missing or out of order in:\n{text}"),
+        }
+    }
+}
+
+/// Counts rendered error head lines in captured stderr.
+fn error_head_count(stderr: &[u8]) -> usize {
+    String::from_utf8_lossy(stderr)
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .count()
 }
 
 /// Literal and template spellings from the lexical chapter are accepted.
@@ -1168,4 +1339,474 @@ func main(): i32 {
 ",
         &["error E10102: 'BadDeleter' is not a valid deleter for 'File'"],
     );
+}
+
+/// A function that owns resources in nested scopes gets one cleanup label per
+/// owning scope, and every fall-through drop is null-safe.
+///
+/// The outer scope owns `first` and the inner block owns `second`, so the
+/// ladder has exactly two labels and neither drop can run on an empty value.
+/// The drop shape and the label naming are fixed, so the case asserts them
+/// exactly.
+#[test]
+fn cleanup_ladder_has_one_label_per_owning_scope() {
+    let source = r#"module spec.stage.cg_ladder;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func OpenFile(): File?;
+    func CloseFile(take f: File): void;
+}
+
+func acquireBoth(): bool {
+    let first: File? = OpenFile();
+    if (first == null) {
+        return false;
+    }
+    {
+        let second: File? = OpenFile();
+        if (second == null) {
+            return false;
+        }
+    }
+    return true;
+}
+
+func main(): i32 {
+    if (acquireBoth()) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let (run, emitted) = run_source_emitting("cg-ladder", source);
+    let c = assert_emitted("cg-ladder", &run, emitted);
+    assert_eq!(
+        cleanup_label_count(&c),
+        2,
+        "one label per owning scope:\n{c}"
+    );
+    assert!(c.contains("__cl_c1:"), "the inner label is numbered first:\n{c}");
+    assert!(c.contains("__cl_c2:"), "the outer label follows it:\n{c}");
+    assert!(
+        c.contains("if (first) { CloseFile(first); }"),
+        "the outer drop is null-safe:\n{c}"
+    );
+    assert!(
+        c.contains("if (second) { CloseFile(second); }"),
+        "the inner drop is null-safe:\n{c}"
+    );
+}
+
+/// A handle move empties the source with a null write, and an aggregate move
+/// zeroes the source so a later drop is a no-op.
+///
+/// The move spellings are fixed by the ownership-to-code contract, so the case
+/// asserts the exact assignments for one handle and one struct with owned
+/// fields.
+#[test]
+fn handle_and_aggregate_moves_zero_the_source() {
+    let source = r#"module spec.stage.cg_moves;
+
+import { String } from std.text;
+
+handle File freedBy CloseFile;
+
+ffi lib {
+    func OpenFile(): File?;
+    func CloseFile(take f: File): void;
+}
+
+struct Pair {
+    left: String;
+    right: String;
+}
+
+func observeHandle(f: File): void {
+}
+
+func observePair(p: Pair): void {
+}
+
+func demo(): void {
+    let a: File? = OpenFile();
+    if (a == null) {
+        return;
+    }
+    let b: File = a;
+    observeHandle(b);
+
+    let p = Pair { left: $"a{1}", right: $"b{2}" };
+    let q: Pair = p;
+    observePair(q);
+}
+
+func main(): i32 {
+    demo();
+    return 0;
+}
+"#;
+    let (run, emitted) = run_source_emitting("cg-moves", source);
+    let c = assert_emitted("cg-moves", &run, emitted);
+    assert!(c.contains("b = a;"), "a handle move copies first:\n{c}");
+    assert!(c.contains("a = NULL;"), "a handle move empties the source:\n{c}");
+    assert!(c.contains("q = p;"), "an aggregate move copies first:\n{c}");
+    assert!(c.contains("cl_zero(&p);"), "an aggregate move zeroes the source:\n{c}");
+}
+
+/// Every emitted statement is mapped to its logical source path by a `#line`
+/// directive, and the path is the command-line path, never an absolute one.
+///
+/// The command passes `sub/main.clo` from the scratch directory, and `return 0`
+/// sits on line 4 of that file, so the mapping is checked for both the exact
+/// line number and the relative path spelling.
+#[test]
+fn line_directives_name_the_logical_cli_path() {
+    let source = r#"module spec.stage.cg_line;
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let (run, emitted) = run_source_relative("cg-line", "sub/main.clo", source);
+    let c = assert_emitted("cg-line", &run, emitted);
+    assert!(c.contains("#line "), "the emitted C carries line mappings:\n{c}");
+    assert!(
+        c.contains("#line 4 \"sub/main.clo\""),
+        "the return maps to line 4 of the relative path:\n{c}"
+    );
+}
+
+/// The three arithmetic hazards lower to their fixed runtime guards.
+///
+/// Division uses the zero-and-minimum guard, the bounds check runs before an
+/// index, and the float-to-integer guard leads with the NaN bit test. The
+/// guard expressions are fixed; the bounds comparison spelling is not fixed, so
+/// that part asserts that the check reaches the fault code instead.
+#[test]
+fn division_index_and_float_guards_are_emitted() {
+    let source = r#"module spec.stage.cg_guards;
+
+func divide(a: i32, d: i32): i32 {
+    return a / d;
+}
+
+func index(xs: u32[2], i: usize): u32 {
+    return xs[i];
+}
+
+func convert(f: f64): i32 {
+    return i32(f);
+}
+
+func main(): i32 {
+    let xs: u32[2] = [1, 2];
+    let i: usize = 0;
+    let q: i32 = divide(10, 3);
+    let v: u32 = index(xs, i);
+    let n: i32 = convert(1.5);
+    return q + n + i32(v);
+}
+"#;
+    let (run, emitted) = run_source_emitting("cg-guards", source);
+    let c = assert_emitted("cg-guards", &run, emitted);
+    assert!(
+        c.contains("d == 0 || (a == "),
+        "the division guard tests a zero divisor first:\n{c}"
+    );
+    assert!(
+        c.contains(" && d == -1)"),
+        "the division guard also catches the minimum over -1 case:\n{c}"
+    );
+    assert!(c.contains("E11210"), "the division guard reaches E11210:\n{c}");
+    assert!(c.contains("E11211"), "every index reaches the E11211 check:\n{c}");
+    assert!(
+        c.contains("cl_isnan(f)"),
+        "the float guard leads with the NaN bit test:\n{c}"
+    );
+    assert!(
+        c.contains("!(f >= ") && c.contains("f <= "),
+        "the float guard range-checks the value:\n{c}"
+    );
+    assert!(c.contains("E11212"), "the float guard reaches E11212:\n{c}");
+}
+
+/// Module initializers are generated as `cl_init_*` functions and the entry
+/// stub runs them in topological order before the user's `main`.
+///
+/// Two modules are independent and one depends on another. The independent
+/// pair meets the lexicographic tie break, and the dependent module must wait
+/// for the module its initializer names, so the stub's call order is
+/// `Test.Bravo`, `Test.Zeta`, `Test.Alpha`, and only then the user's `main`.
+#[test]
+fn module_initializers_run_in_topological_order_before_main() {
+    let (run, emitted) = run_sources_emitting(
+        "cg-init",
+        &[
+            (
+                "z.clo",
+                "module Test.Zeta;
+
+export let z: i32 = 1;
+",
+            ),
+            (
+                "b.clo",
+                "module Test.Bravo;
+
+export let b: i32 = 2;
+",
+            ),
+            (
+                "a.clo",
+                "module Test.Alpha;
+
+import { z } from Test.Zeta;
+
+export let a: i32 = z + 1;
+
+func main(): i32 {
+    return a;
+}
+",
+            ),
+        ],
+    );
+    let c = assert_emitted("cg-init", &run, emitted);
+    assert_in_order(
+        "cg-init",
+        &c,
+        &[
+            "cl_init_Test_Bravo()",
+            "cl_init_Test_Zeta()",
+            "cl_init_Test_Alpha()",
+            "cl_Test_Alpha_main()",
+        ],
+    );
+}
+
+/// One generic body per distinct type key: two call sites that key `i32` share
+/// one symbol, and a distinct key gets its own type-keyed symbol.
+///
+/// The `i32` key is reached both by an explicit `identity<i32>` call and by a
+/// type parameter instantiated at `i32`, so a missed dedupe would emit two
+/// bodies under one name. The distinct `u8` key proves the `__<typekey>`
+/// suffix.
+#[test]
+fn identical_generic_instantiations_share_one_symbol() {
+    let source = r#"module spec.stage.cg_generic;
+
+func identity<T>(x: T): T {
+    return x;
+}
+
+func forward<t2>(x: t2): t2 {
+    return identity<t2>(x);
+}
+
+func other(y: u8): u8 {
+    return identity<u8>(y);
+}
+
+func demo(x: i32): i32 {
+    let a: i32 = identity<i32>(x);
+    let b: i32 = forward<i32>(x);
+    let c: u8 = other(u8(0));
+    return a + b + i32(c);
+}
+
+func main(): i32 {
+    return demo(1);
+}
+"#;
+    let (run, emitted) = run_source_emitting("cg-generic", source);
+    let c = assert_emitted("cg-generic", &run, emitted);
+    assert_eq!(
+        definition_count(&c, "cl_identity__i32"),
+        1,
+        "the two i32-keyed call sites dedupe to one body:\n{c}"
+    );
+    assert_eq!(
+        definition_count(&c, "cl_identity__u8"),
+        1,
+        "the distinct key emits one body under its type key:\n{c}"
+    );
+}
+
+/// Float types and casts lower to C `float` and `double`, and `text` lowers to
+/// the generated float-to-text helper.
+///
+/// The `f32`/`f64` mapping and the C-cast lowering are fixed. The fixed
+/// six-significant-digit precision that `text` promises is a property of the
+/// emitted library helper rather than a fixed spelling of the call, so this
+/// case checks the helper call reaches the output.
+#[test]
+fn float_and_double_operations_lower_to_c_float_code() {
+    let source = r#"module spec.stage.cg_float;
+
+import { text } from std.fmt;
+import { String } from std.text;
+
+func observe(s: String): void {
+}
+
+func demo(): f64 {
+    let x: f32 = 1.5;
+    let y: f64 = 2.5;
+    let sum: f64 = y + f64(x);
+    let wide: f64 = x;
+    let back: f32 = f32(y);
+    let cmp: bool = sum > wide;
+    let s: String = text(sum);
+    observe(s);
+    if (cmp) {
+        return sum;
+    }
+    return f64(back);
+}
+
+func main(): i32 {
+    let v: f64 = demo();
+    return i32(v);
+}
+"#;
+    let (run, emitted) = run_source_emitting("cg-float", source);
+    let c = assert_emitted("cg-float", &run, emitted);
+    assert!(c.contains("float"), "f32 lowers to C float:\n{c}");
+    assert!(c.contains("double"), "f64 lowers to C double:\n{c}");
+    assert!(c.contains("(float)"), "the f32 cast is a C float cast:\n{c}");
+    assert!(c.contains("(double)"), "the f64 cast is a C double cast:\n{c}");
+    assert!(
+        c.contains("cl_text_"),
+        "text lowers to the generated float-to-text helper:\n{c}"
+    );
+}
+
+/// The profile selection has three fixed rejections: a missing flag is a usage
+/// error, an unknown name is E11201, and the designed but unimplemented
+/// `freestanding` profile is E11200.
+#[test]
+fn profile_flag_errors_report_usage_and_codes() {
+    let scratch = ScratchDir::new("cli-profile");
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(
+        &source_path,
+        "module spec.cli.profile;
+
+func main(): i32 {
+    return 0;
+}
+",
+    )
+    .expect("write snippet");
+    let source = source_path.display().to_string();
+    let output = scratch.path().join("out.c").display().to_string();
+
+    let missing = run_clc(&["-o".to_owned(), output.clone(), source.clone()]);
+    assert_eq!(
+        missing.status.code(),
+        Some(2),
+        "a missing --profile is a usage error"
+    );
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).starts_with("usage error:"),
+        "a missing --profile prints a usage error"
+    );
+
+    let unknown = run_clc(&[
+        "--profile".to_owned(),
+        "nope".to_owned(),
+        "-o".to_owned(),
+        output.clone(),
+        source.clone(),
+    ]);
+    assert_eq!(unknown.status.code(), Some(1), "an unknown profile exits 1");
+    assert_eq!(
+        String::from_utf8_lossy(&unknown.stderr).lines().next(),
+        Some("error E11201: unknown profile 'nope'"),
+        "an unknown profile is E11201 on the first line"
+    );
+
+    let freestanding = run_clc(&[
+        "--profile".to_owned(),
+        "freestanding".to_owned(),
+        "-o".to_owned(),
+        output,
+        source,
+    ]);
+    assert_eq!(
+        freestanding.status.code(),
+        Some(1),
+        "an unimplemented profile exits 1"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&freestanding.stderr).lines().next(),
+        Some("error E11200: 'freestanding' is not available on profile 'freestanding'"),
+        "freestanding is E11200 on the first line"
+    );
+}
+
+/// Independent errors are all reported, and the error cap trims the report to
+/// the requested count.
+#[test]
+fn independent_errors_are_reported_up_to_the_cap() {
+    let source = r#"module spec.cli.two_errors;
+
+func demo(): i32 {
+    let a: i32 = missingOne;
+    let b: i32 = missingTwo;
+    return a + b;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let all = run_source_with_flags("cli-errors", source, &[]);
+    assert_eq!(all.status.code(), Some(1), "a failing compile exits 1");
+    assert_eq!(
+        error_head_count(&all.stderr),
+        2,
+        "both independent errors are reported"
+    );
+
+    let capped = run_source_with_flags("cli-errors-cap", source, &["--max-errors=1"]);
+    assert_eq!(capped.status.code(), Some(1), "a capped failing compile exits 1");
+    assert_eq!(
+        error_head_count(&capped.stderr),
+        1,
+        "--max-errors=1 keeps exactly one error"
+    );
+}
+
+/// A diagnostic renders its fixed head line first and its `  --> path:line:col`
+/// location on the next line.
+#[test]
+fn diagnostic_head_and_location_render_on_fixed_lines() {
+    let source = r#"module spec.cli.render;
+
+func demo(): i32 {
+    let a: i32 = missingOne;
+    return a;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let run = run_source_with_flags("cli-render", source, &[]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    let mut lines = stderr.lines();
+    assert_eq!(
+        lines.next(),
+        Some("error E10219: 'missingOne' is not declared"),
+        "the first line is `error CODE: message`"
+    );
+    let location = lines.next().unwrap_or_default();
+    assert!(
+        location.starts_with("  --> ") && location.ends_with(":4:18"),
+        "the second line is `  --> path:line:col`, got {location:?}"
+    );
+    assert_eq!(run.status.code(), Some(1), "a failing compile exits 1");
 }
