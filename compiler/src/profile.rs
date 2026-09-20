@@ -9,6 +9,9 @@
 /// The C runtime shim source of the host profile.
 const HOST_SHIM: &str = include_str!("../runtime/shim_host.c");
 
+/// The C runtime shim source of the hosted-amiga profile.
+const HOSTED_AMIGA_SHIM: &str = include_str!("../runtime/shim_hosted_amiga.c");
+
 /// A target profile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Profile {
@@ -43,9 +46,8 @@ impl Profile {
     /// The runtime shim embedded at the top of the emitted translation unit.
     pub fn shim(self) -> &'static str {
         match self {
-            // The hosted-amiga shim lands with the hosted runtime work; the
-            // emitter surface and the generated C are otherwise identical.
-            Profile::Host | Profile::HostedAmiga => HOST_SHIM,
+            Profile::Host => HOST_SHIM,
+            Profile::HostedAmiga => HOSTED_AMIGA_SHIM,
         }
     }
 
@@ -79,6 +81,18 @@ mod tests {
         assert!(shim.contains("cl_isnan"));
         assert!(shim.contains("cl_trap"));
         assert!(shim.contains("cl_panic"));
+    }
+
+    #[test]
+    fn the_hosted_amiga_shim_names_the_runtime_and_vblank_surface() {
+        let shim = Profile::HostedAmiga.shim();
+        assert!(shim.contains("cl_zero"));
+        assert!(shim.contains("cl_isnan"));
+        assert!(shim.contains("cl_trap"));
+        assert!(shim.contains("cl_panic"));
+        assert!(shim.contains("cl_add_handler"));
+        assert!(shim.contains("cl_remove_handler"));
+        assert!(shim.contains("INTB_VERTB"));
     }
 
     #[test]
