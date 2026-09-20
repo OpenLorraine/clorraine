@@ -18,7 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     Arg, AssignOp, BinaryOp, Block, ConstStmt, ElseBranch, Expr, ExprKind, ForCStmt, ForInStmt,
-    ForInit, IfStmt, Item, LetStmt, Mode, Param, Stmt, SwitchLabel, SwitchStmt, UnaryOp,
+    ForInit, IfStmt, IntrinsicArg, Item, LetStmt, Mode, Param, Stmt, SwitchLabel, SwitchStmt,
+    TemplatePiece, UnaryOp,
 };
 use crate::borrow::{
     is_elided_view, is_handle_or_aggregate, is_lend_candidate, is_nullable_capable, is_view,
@@ -26,17 +27,21 @@ use crate::borrow::{
 };
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ffi::{self, UnsafeOp};
-use crate::ir::{self, BlockId, Builder, Place, Statement, Terminator, Value};
+use crate::ir::{
+    self, BlockId, BranchShape, Builder, LoopKind, Place, Statement, Terminator, Value, ValueKind,
+    ValuePiece,
+};
 use crate::load::{Loaded, Module};
 use crate::sema::SemaOutput;
 use crate::span::Span;
-use crate::types::{int_literal_value, resolve_ty, Ty, TyKind};
+use crate::types::{resolve_ty, Ty, TyKind};
 
 pub mod program;
 
 mod expr;
 mod flow;
 mod generics;
+mod loops;
 mod place;
 mod statements;
 
@@ -44,6 +49,8 @@ use flow::{Binding, BindingKind, DeferEntry, ExitFrame, FlowState, PlaceState, P
 
 #[cfg(test)]
 pub(crate) mod test_support;
+#[cfg(test)]
+mod scope_tests;
 #[cfg(test)]
 mod tests;
 
@@ -177,9 +184,11 @@ struct FunctionChecker<'a, 'd> {
     suppress_elision: bool,
     /// The control-flow graph being built.
     builder: Builder,
-    /// Next compiler-created temporary index. A cell lets the lowering hand
-    /// out fresh indices through a shared reference.
-    next_temp: std::cell::Cell<u32>,
+    /// Type of each compiler-created temporary, by creation order.
+    temps: Vec<Ty>,
+    /// Source span of the construct currently being walked; attached to the IR
+    /// statements and terminators it emits.
+    current_span: Span,
     /// Open loops and switches, innermost last.
     exits: Vec<ExitFrame>,
     /// Deferred blocks registered by the open scopes, in registration order.
@@ -200,25 +209,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ) -> Self {
         let type_params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
         let returns = resolve_ty(&decl.returns, &type_params, &sema.table);
-        let params: Vec<Place> = decl
+        let params: Vec<ir::Param> = decl
             .params
             .iter()
-            .map(|param| Place::param(&param.name))
+            .map(|param| ir::Param {
+                name: param.name.clone(),
+                ty: resolve_ty(&param.ty, &type_params, &sema.table),
+                mode: param.mode,
+            })
             .collect();
         Self {
             program,
             sema,
             decl,
             type_params,
-            returns,
+            returns: returns.clone(),
             scopes: Vec::new(),
             bindings: Vec::new(),
             state: FlowState::default(),
             unsafe_depth: 0,
             elision_candidates: 0,
             suppress_elision: false,
-            builder: Builder::new(&decl.name, params),
-            next_temp: std::cell::Cell::new(0),
+            builder: Builder::new(&decl.name, params, returns),
+            temps: Vec::new(),
+            current_span: Span::default(),
             exits: Vec::new(),
             defer_entries: Vec::new(),
             report_diagnostics: true,
@@ -231,7 +245,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
         self.elision_prelude();
-        self.push_scope();
+        self.push_scope(self.decl.body.span);
         for param in &self.decl.params {
             self.declare_param(param);
         }
@@ -241,20 +255,59 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !self.is_terminated() {
             self.builder.terminate(Terminator::Return(None));
         }
-        self.builder.finish()
+        let mut function = self.builder.finish();
+        function.locals = self
+            .bindings
+            .iter()
+            .filter(|binding| binding.kind == BindingKind::Local)
+            .map(|binding| ir::Local {
+                name: binding.name.clone(),
+                ty: binding.ty.clone(),
+            })
+            .collect();
+        function.temps = self.temps.clone();
+        function
     }
 
     // -- scopes and bindings -------------------------------------------------
 
-    /// Enters a new lexical scope.
-    fn push_scope(&mut self) {
-        self.scopes.push(Scope::default());
+    /// Enters a new lexical scope and returns its id.
+    ///
+    /// The parent is the scope currently on top of the stack, or `None` for the
+    /// function body scope. A scope that opens while a loop body is being
+    /// checked is marked `in_loop`, so its cleanup runs on each iteration
+    /// rather than once at the end of the function. `close_span` is the source
+    /// range of the point that closes the scope, so the emitter can attribute
+    /// the scope's generated cleanup to that line.
+    fn push_scope(&mut self, close_span: Span) -> ir::ScopeId {
+        let parent = self.scopes.last().map(|scope| scope.id);
+        let in_loop = self
+            .exits
+            .iter()
+            .any(|frame| frame.continue_block.is_some());
+        let id = self.builder.add_scope(parent, in_loop, close_span);
+        self.scopes.push(Scope {
+            id,
+            ..Scope::default()
+        });
+        id
+    }
+
+    /// The id of the innermost open scope.
+    ///
+    /// Every statement is emitted inside at least the function body scope, so
+    /// the stack is never empty when this is called; the fallback keeps the
+    /// caller total rather than panicking.
+    fn current_scope(&self) -> ir::ScopeId {
+        self.scopes.last().map(|scope| scope.id).unwrap_or(0)
     }
 
     /// Leaves the innermost scope, running its defers and emitting its drops.
     ///
     /// The defers run before the scope is popped so the names the deferred
-    /// block closes over are still visible to the ownership walk.
+    /// block closes over are still visible to the ownership walk. Each drop is
+    /// tagged with this scope's id so the emitter can place it on the matching
+    /// rung of the cleanup ladder.
     fn pop_scope(&mut self) {
         let depth = self.scopes.len();
         if depth == 0 {
@@ -264,10 +317,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let Some(scope) = self.scopes.pop() else {
             return;
         };
+        let scope_id = scope.id;
         for id in scope.order.iter().rev() {
             if self.bindings[*id].needs_drop {
                 let place = self.binding_place(*id);
-                self.emit(Statement::Drop(place));
+                self.emit(Statement::Drop {
+                    place,
+                    scope: scope_id,
+                });
             }
         }
         for id in scope.order {
@@ -300,7 +357,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_bindings = self.bindings.len();
         let saved_scopes = self.scopes.len();
         let saved_defers = self.defer_entries.len();
-        self.push_scope();
+        self.push_scope(block.span);
         for statement in &block.statements {
             self.check_stmt(statement);
         }
@@ -459,10 +516,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The IR place for a binding.
     fn binding_place(&self, id: usize) -> Place {
         let binding = &self.bindings[id];
-        match binding.kind {
+        let place = match binding.kind {
             BindingKind::Param | BindingKind::OutSlot => Place::param(&binding.name),
             BindingKind::Local => Place::local(&binding.name),
-        }
+        };
+        place.with_type(binding.ty.clone())
     }
 
     /// The IR place for a resolved target, keeping the binding's own name.
@@ -471,12 +529,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             PlaceTarget::Local(id, projections) => Place {
                 base: self.binding_place(*id).base,
                 projections: projections.clone(),
+                ty: self.projected_type(*id, projections),
             },
             PlaceTarget::Global(name, projections) => Place {
                 base: ir::PlaceBase::Global(name.clone()),
                 projections: projections.clone(),
+                ty: self
+                    .program
+                    .globals
+                    .get(name)
+                    .map(|global| global.ty.clone())
+                    .unwrap_or_else(Ty::unknown),
             },
         }
+    }
+
+    /// The type a projection chain reaches from a local binding.
+    fn projected_type(&self, id: usize, projections: &[ir::Projection]) -> Ty {
+        let mut ty = self.bindings[id].ty.clone();
+        for projection in projections {
+            ty = match projection {
+                ir::Projection::Field(field) => self.member_type(&ty, field),
+                ir::Projection::Element(_) => match &ty.kind {
+                    TyKind::Array { element, .. } => (**element).clone(),
+                    _ => Ty::unknown(),
+                },
+            };
+        }
+        ty
     }
 
     // -- flow state ----------------------------------------------------------
@@ -530,7 +610,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- IR emission ---------------------------------------------------------
 
     /// Emits a statement into the current block.
+    ///
+    /// The current span is attached so the emitter can place a `#line`
+    /// directive before the statement.
     fn emit(&mut self, statement: Statement) {
+        self.builder.set_span(self.current_span);
         self.builder.emit(statement);
     }
 
@@ -544,8 +628,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.builder.switch_to(block);
     }
 
-    /// Ends the current block with a terminator.
+    /// Ends the current block with a terminator, carrying the current span.
     fn terminate(&mut self, terminator: Terminator) {
+        self.builder.set_span(self.current_span);
         self.builder.terminate(terminator);
     }
 
@@ -566,15 +651,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.run_defers_from(1);
         let depths: Vec<usize> = (1..=self.scopes.len()).rev().collect();
         for depth in depths {
-            let ids: Vec<usize> = self
-                .scopes
-                .get(depth - 1)
-                .map(|scope| scope.order.iter().rev().copied().collect())
-                .unwrap_or_default();
+            let Some(scope) = self.scopes.get(depth - 1) else {
+                continue;
+            };
+            let scope_id = scope.id;
+            let ids: Vec<usize> = scope.order.iter().rev().copied().collect();
             for id in ids {
                 if self.bindings[id].needs_drop {
                     let place = self.binding_place(id);
-                    self.emit(Statement::Drop(place));
+                    self.emit(Statement::Drop {
+                        place,
+                        scope: scope_id,
+                    });
                 }
             }
         }
@@ -588,24 +676,5 @@ impl PlaceTarget {
             Self::Local(id, _) => Self::Local(id, projections),
             Self::Global(name, _) => Self::Global(name, projections),
         }
-    }
-}
-
-/// The exclusive/shared class a call-site or declaration marker denotes.
-///
-/// An unmarked parameter and an explicit `const` both grant read-only access,
-/// so they are treated as the same assertion.
-fn marker_kind(mode: Mode) -> Mode {
-    match mode {
-        Mode::None | Mode::Const => Mode::Const,
-        other => other,
-    }
-}
-
-/// The constant index of an element expression, when it is a literal.
-fn element_index(expr: &Expr) -> Option<usize> {
-    match &expr.kind {
-        ExprKind::Int(value) => usize::try_from(*value).ok(),
-        _ => None,
     }
 }

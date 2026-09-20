@@ -48,6 +48,8 @@ pub(super) struct Binding {
 /// One lexical scope and the bindings declared in it.
 #[derive(Default)]
 pub(super) struct Scope {
+    /// The scope's id in the lowered function.
+    pub(super) id: ir::ScopeId,
     /// Names bound here, innermost wins.
     pub(super) names: BTreeMap<String, usize>,
     /// Binding indices in declaration order, for reverse drop emission.

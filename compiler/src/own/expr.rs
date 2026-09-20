@@ -265,22 +265,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 self.write_place(id, &projections, target.span);
                 let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
-                let lowered = self.lower_value(value);
-                self.emit(Statement::Assign {
-                    target: place,
-                    value: lowered,
-                });
+                self.emit_store(place, &target_ty, value);
                 if projections.is_empty() {
                     self.bind_value(id, &target_ty, value, target.span);
                 }
             }
-            Some(PlaceTarget::Global(name, _projections)) => {
-                if self
+            Some(PlaceTarget::Global(name, projections)) => {
+                let is_const = self
                     .program
                     .globals
                     .get(&name)
-                    .is_some_and(|global| global.is_const)
-                {
+                    .is_some_and(|global| global.is_const);
+                if is_const {
                     self.error(
                         "E10023",
                         format!("cannot assign to immutable '{name}'"),
@@ -296,6 +292,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         "derive the view from a parameter or take ownership",
                         target.span,
                     );
+                }
+                if !is_const {
+                    let place = self.target_place(&PlaceTarget::Global(name, projections));
+                    self.emit_store(place, &target_ty, value);
                 }
             }
             None => {
@@ -366,11 +366,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .collect();
                 self.check_marker_matches(&name, args, &params);
                 self.check_arguments(args, &params, span);
-                self.emit(Statement::Call {
-                    callee: name,
-                    args: args.iter().map(|arg| self.lower_value(&arg.value)).collect(),
-                    result: None,
-                });
             }
             Callee::Ffi(signature) => self.check_ffi_call(&name, signature, args, span),
             Callee::Stdlib { effect, .. } => self.check_stdlib_call(effect, args),
@@ -630,4 +625,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+}
+
+/// The exclusive/shared class a call-site or declaration marker denotes.
+///
+/// An unmarked parameter and an explicit `const` both grant read-only access,
+/// so they are treated as the same assertion.
+fn marker_kind(mode: Mode) -> Mode {
+    match mode {
+        Mode::None | Mode::Const => Mode::Const,
+        other => other,
+    }
 }

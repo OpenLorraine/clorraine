@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 65 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution; AR-65 raised and resolved during Phase 5 execution on 2026-09-19)
-> **Last Updated**: 2026-09-19 17:20
+> **Status**: ✅ GATE PASSED — all 68 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution; AR-65 raised and resolved during Phase 5 execution on 2026-09-19; AR-66, AR-66a, and AR-67 raised and resolved during Phase 6 execution on 2026-09-20)
+> **Last Updated**: 2026-09-20 22:29
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -138,6 +138,16 @@ Ruled on by the user on 2026-09-19.
 |---|----------|-----------------|-------------------|--------|
 | AR-65 | Specification amendment (runtime, golden correction) | The Phase 5 red phase shows four compile-fail goldens reporting an earlier-stage code instead of their annotated ownership/duplicability code, so the red state is not clean. `E10025_use_partially_moved.clo` declares `observe(s: String)` but calls `observe(p)` with `p: Pair`, so `E10200` masks the intended partial-move `E10025` and the golden's own trigger ("whole-value use of a partially moved struct") is unreachable. `E10031_tocstring_mutation.clo` and `E10031_view_widening_mutation.clo` call `stringOf`/`toCString` with no `import … from std.text;`, so `E10219` masks `E10031` (MOD-4). `E11106_nonduplicable_global.clo` has the same missing import and was unasserted | **A**: correct the goldens — change `E10025`'s parameter type to `Pair`, add the missing `std.text` imports to the two `E10031` files and `E11106`, and assert `E11106`. **B**: keep the goldens frozen and record them as excluded/deferred. **C**: change the resolver to predeclare the stdlib names (rejected: MOD-4 requires imports) | ✅ Resolved — user chose A |
 | AR-65a | Implementation correction (runtime, same batch) | `E10602_pointer_arithmetic_outside_unsafe.clo` reports `E10222` ("operator '+' is not defined for 'raw u32'") because the type layer rejects raw pointer arithmetic. Ch 02 §7 and Ch 04 §7 make `p + n`, `p - n`, and `p[i]` legal operations that require `unsafe`; the diagnostic is `E10602`, so the type layer must admit them and the unsafe check must report outside `unsafe` | **A**: fix the type layer to type `raw T` arithmetic as `raw T` and let the unsafe-context check report `E10602`. **B**: defer the golden. This is not a golden defect | ✅ Resolved — user chose A |
+
+## Batch 9 — runtime item during Phase 6 execution (2026-09-20)
+
+Surfaced while implementing the code generator (task 6.2.1). Ruled on by the user on 2026-09-20.
+
+| # | Category | Ambiguity / Gap | Options Presented | Status |
+|---|----------|-----------------|-------------------|--------|
+| AR-66 | Technical (runtime) | The code-generation contract (Ch 17 §2) and `03-06-codegen.md` describe "the typed control-flow IR", but the Phase 5 IR is untyped: `ir::Value` and `ir::Place` carry no type, and `ir::Function` carries no return type, parameter types, or local declarations. The type facts live only in `sema.expr_types`, keyed by AST-node address, which IR values do not reference, so the emitter cannot declare locals or choose guards and casts from the IR alone | **A**: make the IR genuinely typed — thread each value's and place's `Ty` (and the function signature facts) through `lower_value` and the function builder, so codegen translates the typed IR and ownership and emission cannot disagree. **B**: keep the IR untyped and have the emitter re-walk the AST with `sema` in lockstep with IR control flow | ✅ Resolved — user chose A (typed IR) |
+| AR-66a | Implementation correction (runtime, same batch) | The Phase 5 IR stores `Drop`/`Defer` inline with no scope boundary, so an emitter translating the IR cannot build the Ch 17 §4 cleanup ladder (one label per owning scope, innermost first) | Add cleanup-scope structure to the IR: `ScopeId`, `ScopeInfo { parent, in_loop }`, scoped `Drop`/`Defer`, and a `ScopeEnd` marker at normal fall-through scope ends; the checker assigns scope ids and tags every cleanup. Keeps the ownership semantics | ✅ Resolved — implemented (IR scope structure) |
+| AR-67 | Technical (runtime) | Implementing AR-66 exposed a conflict: the Phase 5 IR is a flat control-flow graph, so translating it directly emits every block as a label plus `goto`, which Ch 17 §1 forbids ("`goto` for cleanup ladders only"). Ch 17 §2's statement list (`branch`, `switch`) describes structured statements, not a block graph | **A**: add structured-control metadata to the IR (if/loop/switch descriptors over the existing blocks) and emit structured C `if`/`while`/`switch`, keeping the CFG for the ownership fixpoint and `goto` for the ladder only. **B**: recover structure in the emitter from the reducible CFG. **C**: accept the `goto` control flow and record a deviation | ✅ Resolved — user chose A (structured IR metadata) |
 
 ## Complexity Escalation packet (AR-24)
 

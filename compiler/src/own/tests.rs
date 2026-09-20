@@ -5,20 +5,8 @@
 //! joins, the out-parameter slot carve-out, and a snapshot of the lowered
 //! control-flow graph.
 
-use super::test_support::{compile, error_codes, reports};
+use super::test_support::{compile, error_codes, reports, with_view_helper};
 use crate::ir::{Statement, Terminator};
-
-/// A module header with a view helper used by the loan tests.
-fn with_view_helper(body: &str) -> String {
-    format!(
-        "module t;\n\
-         func viewOf(s: str): str {{ return s; }}\n\
-         func consume(take s: String): void {{}}\n\
-         func observe(s: str): void {{}}\n\
-         {body}\n\
-         func main(): i32 {{ return 0; }}\n"
-    )
-}
 
 #[test]
 fn a_move_on_one_branch_survives_the_join() {
@@ -241,7 +229,7 @@ fn the_lowered_ir_has_a_branch_a_drop_and_a_join() {
     assert!(demo.blocks.iter().any(|block| block
         .statements
         .iter()
-        .any(|statement| matches!(statement, Statement::Drop(_)))));
+        .any(|statement| matches!(statement.statement, Statement::Drop { .. }))));
     assert!(demo
         .blocks
         .iter()
@@ -324,7 +312,7 @@ fn a_break_edge_drops_the_locals_it_leaves() {
                 && block
                     .statements
                     .iter()
-                    .any(|statement| matches!(statement, Statement::Drop(_)))
+                    .any(|statement| matches!(statement.statement, Statement::Drop { .. }))
         }),
         "the break edge must drop the loop body's local"
     );
@@ -613,3 +601,4 @@ fn a_partially_written_struct_may_not_be_read_whole() {
         func main(): i32 { return 0; }\n";
     assert_eq!(error_codes(source), vec!["E10021"]);
 }
+

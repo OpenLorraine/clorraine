@@ -1,0 +1,447 @@
+//! C code generation: the emitter for the single C99 translation unit.
+//!
+//! The emitter consumes the loaded program, the types the type stage computed,
+//! and the generic instantiations the ownership stage collected, and writes one
+//! C translation unit: a profile shim, the declaration surface, the generated
+//! module initializers, the function bodies, and the `int main(void)` entry
+//! stub. Every emission decision is deterministic: the same source, profile,
+//! and flags produce byte-identical C.
+//!
+//! The module is a thin driver over focused submodules: [`types`] owns the C
+//! type surface and naming, [`expr`] owns expressions and runtime guards, and
+//! [`function`] owns statements, the cleanup ladder, and function bodies.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::ast::{EnumDecl, Expr, FuncDecl, Item, StructDecl, Type};
+use crate::ir;
+use crate::load::{Loaded, Module};
+use crate::own::OwnershipOutput;
+use crate::profile::Profile;
+use crate::sema::SemaOutput;
+use crate::span::{SourceMap, Span};
+use crate::types::{resolve_ty, Ty, TyKind};
+
+mod control;
+mod expr;
+mod function;
+mod program;
+mod types;
+
+use function::Action;
+use types::{c_type, declarator, mangle_module};
+
+/// Everything the emitter needs about one function with a body.
+pub(super) struct FuncInfo<'a> {
+    /// Dotted module the function is declared in.
+    pub(super) module: String,
+    /// The declaration, including the body.
+    pub(super) decl: &'a FuncDecl,
+}
+
+/// Everything the emitter needs about one module-level binding.
+pub(super) struct GlobalInfo {
+    /// Dotted module the binding is declared in.
+    pub(super) module: String,
+    /// Binding name.
+    pub(super) name: String,
+    /// The checked type.
+    pub(super) ty: Ty,
+}
+
+/// A user enum with its declaration.
+pub(super) struct EnumInfo<'a> {
+    /// The declaration.
+    pub(super) decl: &'a EnumDecl,
+}
+
+/// The translation-unit emitter.
+pub(super) struct Emitter<'a> {
+    /// The loaded program.
+    loaded: &'a Loaded,
+    /// The types the type stage computed.
+    sema: &'a SemaOutput,
+    /// The generic instantiations and lowered bodies the ownership stage built.
+    ownership: &'a OwnershipOutput,
+    /// The source map, for `#line` paths and line numbers.
+    sources: &'a SourceMap,
+    /// The selected profile.
+    profile: Profile,
+    /// The output buffer.
+    out: String,
+    /// User functions keyed by simple name.
+    functions: BTreeMap<String, FuncInfo<'a>>,
+    /// Module-level bindings keyed by simple name.
+    globals: BTreeMap<String, GlobalInfo>,
+    /// User structs keyed by name.
+    structs: BTreeMap<String, &'a StructDecl>,
+    /// User enums keyed by name.
+    enums: BTreeMap<String, EnumInfo<'a>>,
+    /// Generic type-parameter substitutions active while a body is emitted.
+    pub(super) subst: BTreeMap<String, Ty>,
+    /// Unique C names already handed out in the function being emitted.
+    pub(super) used_names: BTreeSet<String>,
+    /// The IR body currently being emitted, when a function is open.
+    pub(super) function: Option<&'a ir::Function>,
+    /// C name assigned to each source local or parameter of the open function.
+    pub(super) local_names: BTreeMap<String, String>,
+    /// Cleanup actions of every scope of the open function, keyed by scope id.
+    pub(super) scope_actions: BTreeMap<usize, Vec<Action>>,
+    /// The owning scopes that take a function-end ladder rung, innermost first.
+    pub(super) rungs: Vec<usize>,
+    /// The cleanup label number assigned to each rung scope.
+    pub(super) labels: BTreeMap<usize, usize>,
+    /// Name of the result variable, set when the function has a ladder.
+    pub(super) result_var: Option<String>,
+    /// The open function's return type.
+    pub(super) return_ty: Ty,
+    /// Blocks reachable from the open function's entry.
+    pub(super) reachable: BTreeSet<ir::BlockId>,
+    /// Blocks already emitted during the current structured pass.
+    pub(super) emitted: BTreeSet<ir::BlockId>,
+    /// Blocks that need a `__cl_b<N>` label because a `goto` reaches them.
+    ///
+    /// The structured emitter plans these in a first pass that writes no output
+    /// and then prints them in the real pass, so a forward `goto` finds a label
+    /// already in place.
+    pub(super) pending_labels: BTreeSet<ir::BlockId>,
+    /// Entry block of each structured loop, mapped to the branch that describes
+    /// it. The entry is the branch block for a `while`/`for` and the body block
+    /// for a `do ... while`, whose test lives after the body.
+    pub(super) loop_entry: BTreeMap<ir::BlockId, ir::BlockId>,
+    /// True while a planning pass runs; it suppresses output but records the
+    /// labels the real pass needs.
+    pub(super) suppress_output: bool,
+    /// The diagnostic sink, for the large-stack-frame warning.
+    diagnostics: &'a mut crate::diag::Diagnostics,
+}
+
+/// Emits the whole translation unit for a successful compilation.
+///
+/// The emitter reports the large-stack-frame warning as it emits each function
+/// body, so the driver renders it together with the front-end diagnostics.
+pub fn emit(
+    loaded: &Loaded,
+    sema: &SemaOutput,
+    ownership: &OwnershipOutput,
+    profile: Profile,
+    sources: &SourceMap,
+    diagnostics: &mut crate::diag::Diagnostics,
+) -> String {
+    Emitter::new(loaded, sema, ownership, profile, sources, diagnostics).run()
+}
+
+impl<'a> Emitter<'a> {
+    /// Collects the program facts the emitter reads repeatedly.
+    fn new(
+        loaded: &'a Loaded,
+        sema: &'a SemaOutput,
+        ownership: &'a OwnershipOutput,
+        profile: Profile,
+        sources: &'a SourceMap,
+        diagnostics: &'a mut crate::diag::Diagnostics,
+    ) -> Self {
+        let mut emitter = Self {
+            loaded,
+            sema,
+            ownership,
+            sources,
+            profile,
+            out: String::new(),
+            functions: BTreeMap::new(),
+            globals: BTreeMap::new(),
+            structs: BTreeMap::new(),
+            enums: BTreeMap::new(),
+            subst: BTreeMap::new(),
+            used_names: BTreeSet::new(),
+            function: None,
+            local_names: BTreeMap::new(),
+            scope_actions: BTreeMap::new(),
+            rungs: Vec::new(),
+            labels: BTreeMap::new(),
+            result_var: None,
+            return_ty: Ty::void(),
+            reachable: BTreeSet::new(),
+            emitted: BTreeSet::new(),
+            pending_labels: BTreeSet::new(),
+            loop_entry: BTreeMap::new(),
+            suppress_output: false,
+            diagnostics,
+        };
+        emitter.collect();
+        emitter
+    }
+
+    /// Reports one warning through the shared diagnostic sink.
+    pub(super) fn warn(&mut self, code: &'static str, message: impl Into<String>, span: Span) {
+        self.diagnostics
+            .push(crate::diag::Diagnostic::warning(code, message, span));
+    }
+
+    /// Builds the per-program lookup tables.
+    fn collect(&mut self) {
+        let modules: Vec<&'a Module> = self.loaded.modules.values().collect();
+        for module in modules {
+            for item in &module.items {
+                match item {
+                    Item::Func(decl) => {
+                        self.functions.entry(decl.name.clone()).or_insert(FuncInfo {
+                            module: module.name.clone(),
+                            decl,
+                        });
+                    }
+                    Item::Struct(decl) => {
+                        self.structs.entry(decl.name.clone()).or_insert(decl);
+                    }
+                    Item::Enum(decl) => {
+                        self.enums.entry(decl.name.clone()).or_insert(EnumInfo { decl });
+                    }
+                    Item::GlobalLet(decl) => {
+                        self.record_global(module, &decl.name, Some(&decl.ty), &decl.value);
+                    }
+                    Item::GlobalConst(decl) => {
+                        self.record_global(module, &decl.name, Some(&decl.ty), &decl.value);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Records a module-level binding with its resolved type.
+    fn record_global(
+        &mut self,
+        module: &Module,
+        name: &str,
+        declared: Option<&Type>,
+        init: &'a Expr,
+    ) {
+        let ty = declared
+            .map(|ty| resolve_ty(ty, &[], &self.sema.table))
+            .or_else(|| self.expr_type(init))
+            .unwrap_or_else(Ty::unknown);
+        self.globals.entry(name.to_owned()).or_insert(GlobalInfo {
+            module: module.name.clone(),
+            name: name.to_owned(),
+            ty,
+        });
+    }
+
+    /// Runs the emission phases in order.
+    fn run(mut self) -> String {
+        self.emit_header();
+        self.out.push_str(self.profile.shim());
+        self.emit_typedefs();
+        self.emit_aggregate_declarations();
+        self.emit_prototypes();
+        self.emit_globals();
+        self.emit_init_functions();
+        self.emit_bodies();
+        self.emit_entry_stub();
+        self.out
+    }
+
+    // -- shared helpers ------------------------------------------------------
+
+    /// Appends one line to the output.
+    ///
+    /// A planning pass suppresses output so the structured emitter can record
+    /// the label set without writing a first copy of the body.
+    pub(super) fn push(&mut self, line: &str) {
+        if self.suppress_output {
+            return;
+        }
+        self.out.push_str(line);
+        self.out.push('\n');
+    }
+
+    /// The resolved type of an expression, with any active generic
+    /// substitution applied.
+    pub(super) fn expr_type(&self, expr: &Expr) -> Option<Ty> {
+        self.sema
+            .expr_types
+            .get(&(expr as *const Expr as usize))
+            .cloned()
+            .map(|ty| self.substitute(&ty))
+    }
+
+    /// Applies the active generic substitution to a type.
+    pub(super) fn substitute(&self, ty: &Ty) -> Ty {
+        substitute_in(ty, &self.subst)
+    }
+
+    /// The source line a span maps to.
+    pub(super) fn line_of(&self, span: Span) -> u32 {
+        self.sources.location(span.file, span.start as usize).line
+    }
+
+    /// The logical path a span belongs to.
+    pub(super) fn path_of(&self, span: Span) -> &str {
+        self.sources.path(span.file)
+    }
+
+    /// Writes a `#line` directive for a construct whose source is known.
+    pub(super) fn emit_line_directive(&mut self, span: Span) {
+        let line = self.line_of(span);
+        let path = self.path_of(span).to_owned();
+        self.push(&format!("#line {line} \"{path}\""));
+    }
+
+    /// The mangled symbol of a module-level binding.
+    pub(super) fn global_symbol(&self, module: &str, name: &str) -> String {
+        format!("cl_{}_{}", mangle_module(module), name)
+    }
+
+    /// The mangled symbol of a user function.
+    pub(super) fn function_symbol(&self, module: &str, name: &str) -> String {
+        format!("cl_{}_{}", mangle_module(module), name)
+    }
+
+    /// Picks a unique C name for a local declared with `name`.
+    pub(super) fn unique_local(&mut self, name: &str) -> String {
+        let base = sanitize_identifier(name);
+        let mut candidate = base.clone();
+        let mut counter = 1;
+        while self.used_names.contains(&candidate) {
+            candidate = format!("{base}_{counter}");
+            counter += 1;
+        }
+        self.used_names.insert(candidate.clone());
+        candidate
+    }
+
+    /// The signature of a non-generic function.
+    fn function_signature(&self, decl: &FuncDecl) -> String {
+        let module = self.module_of(decl);
+        let symbol = self.function_symbol(&module, &decl.name);
+        self.signature_with_symbol(decl, &BTreeMap::new(), &symbol)
+    }
+
+    /// Builds a full C function signature.
+    fn signature_with_symbol(
+        &self,
+        decl: &FuncDecl,
+        subst: &BTreeMap<String, Ty>,
+        symbol: &str,
+    ) -> String {
+        let storage = if decl.exported { "" } else { "static " };
+        let ret = resolve_ty(&decl.returns, &type_param_names(decl), &self.sema.table);
+        let ret = substitute_in(&ret, subst);
+        let ret_c = if ret.is_void() {
+            "void".to_owned()
+        } else {
+            c_type(&ret)
+        };
+        let mut params: Vec<String> = Vec::new();
+        for param in &decl.params {
+            let ty = resolve_ty(&param.ty, &type_param_names(decl), &self.sema.table);
+            let ty = substitute_in(&ty, subst);
+            params.push(declarator(&ty, &sanitize_identifier(&param.name)));
+        }
+        if params.is_empty() {
+            params.push("void".to_owned());
+        }
+        format!("{storage}{ret_c} {symbol}({})", params.join(", "))
+    }
+
+    /// The module a function is declared in.
+    fn module_of(&self, decl: &FuncDecl) -> String {
+        self.functions
+            .get(&decl.name)
+            .map(|info| info.module.clone())
+            .unwrap_or_default()
+    }
+
+    /// The substitution for a generic instantiation.
+    fn instance_subst(&self, decl: &FuncDecl, args: &[String]) -> BTreeMap<String, Ty> {
+        let mut subst = BTreeMap::new();
+        for (param, key) in decl.type_params.iter().zip(args) {
+            subst.insert(param.name.clone(), self.type_from_key(key));
+        }
+        subst
+    }
+
+    /// The type a generic instantiation key names.
+    fn type_from_key(&self, key: &str) -> Ty {
+        match key {
+            "i8" => Ty::scalar(crate::ast::ScalarType::I8),
+            "i16" => Ty::scalar(crate::ast::ScalarType::I16),
+            "i32" => Ty::i32_ty(),
+            "u8" => Ty::scalar(crate::ast::ScalarType::U8),
+            "u16" => Ty::scalar(crate::ast::ScalarType::U16),
+            "u32" => Ty::scalar(crate::ast::ScalarType::U32),
+            "usize" => Ty::usize_ty(),
+            "isize" => Ty::scalar(crate::ast::ScalarType::Isize),
+            "bool" => Ty::boolean(),
+            "f32" => Ty::scalar(crate::ast::ScalarType::F32),
+            "f64" => Ty::scalar(crate::ast::ScalarType::F64),
+            "String" => Ty::handle("String"),
+            name => Ty::struct_(name),
+        }
+    }
+
+    // -- local type helpers --------------------------------------------------
+
+    /// Resolves a written type in the current generic scope.
+    pub(super) fn resolve_written(&self, ty: &Type) -> Ty {
+        let params: Vec<String> = self.subst.keys().cloned().collect();
+        let resolved = resolve_ty(ty, &params, &self.sema.table);
+        self.substitute(&resolved)
+    }
+}
+
+/// Applies a substitution to a type.
+fn substitute_in(ty: &Ty, subst: &BTreeMap<String, Ty>) -> Ty {
+    if subst.is_empty() {
+        return ty.clone();
+    }
+    match &ty.kind {
+        TyKind::Param(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
+        TyKind::Array { element, extents } => Ty {
+            kind: TyKind::Array {
+                element: Box::new(substitute_in(element, subst)),
+                extents: extents.clone(),
+            },
+            nullable: ty.nullable,
+        },
+        TyKind::Raw(inner) => Ty {
+            kind: TyKind::Raw(Box::new(substitute_in(inner, subst))),
+            nullable: ty.nullable,
+        },
+        _ => ty.clone(),
+    }
+}
+
+/// The type-parameter names of a declaration.
+fn type_param_names(decl: &FuncDecl) -> Vec<String> {
+    decl.type_params.iter().map(|param| param.name.clone()).collect()
+}
+
+/// Turns a source name into a safe C identifier.
+pub(super) fn sanitize_identifier(name: &str) -> String {
+    let mut result = String::new();
+    for (index, ch) in name.chars().enumerate() {
+        let valid = ch == '_' || ch.is_ascii_alphanumeric();
+        if !valid || (index == 0 && ch.is_ascii_digit()) {
+            result.push('_');
+        } else {
+            result.push(ch);
+        }
+    }
+    if result.is_empty() || is_c_keyword(&result) {
+        return format!("cl_{result}");
+    }
+    result
+}
+
+/// True for a C keyword that may not be an identifier.
+fn is_c_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "auto" | "break" | "case" | "char" | "const" | "continue" | "default" | "do" | "double"
+            | "else" | "enum" | "extern" | "float" | "for" | "goto" | "if" | "inline" | "int"
+            | "long" | "register" | "return" | "short" | "signed" | "sizeof" | "static"
+            | "struct" | "switch" | "typedef" | "union" | "unsigned" | "void" | "volatile"
+            | "while" | "bool"
+    )
+}

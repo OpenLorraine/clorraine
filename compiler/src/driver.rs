@@ -6,10 +6,12 @@
 //! translation unit, so the command-line behavior and the diagnostic stream
 //! are already exercised end to end.
 
+use crate::codegen;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load;
 use crate::own;
 use crate::parse::Parser;
+use crate::profile::Profile;
 use crate::resolve;
 use crate::sema;
 use crate::span::{FileId, SourceMap};
@@ -151,25 +153,45 @@ pub fn run(args: Vec<String>) -> i32 {
     // dropping it; the emitter lands later and will take the same value.
     let loaded = load::load(programs, &mut diagnostics);
     resolve::resolve(&loaded, &mut diagnostics);
+    let mut analysis = None;
     if diagnostics.error_count() == 0 {
         // A file that already failed resolution has no trustworthy names, so
         // the type stage would only produce dependent errors.
         let sema = sema::check(&loaded, &mut diagnostics);
         if diagnostics.error_count() == 0 {
             // The ownership stage consumes the types the type stage recorded,
-            // so it runs only on a program that typed cleanly. It returns the
-            // lowered IR and the monomorphization set for the emitter, which
-            // is the next stage.
-            let _ownership = own::check(&loaded, &sema, &mut diagnostics);
+            // so it runs only on a program that typed cleanly. Its output is
+            // the input code generation consumes.
+            let ownership = own::check(&loaded, &sema, &mut diagnostics);
+            analysis = Some((sema, ownership));
         }
     }
+    // A front-end error rules out code generation; rendered here so the
+    // command-line contract still reports the diagnostics before exiting.
+    if diagnostics.exit_code() != 0 {
+        eprint!("{}", diagnostics.render(&sources));
+        return diagnostics.exit_code();
+    }
+    let Some(kind) = Profile::parse(profile) else {
+        return EXIT_USAGE;
+    };
+    // A successful compile emits the translation unit; an absent `-o` keeps the
+    // compiler silent, matching the command-line contract. The analysis is
+    // present whenever code generation runs, because a diagnostics-clean
+    // program always produced it. Code generation may add the large-frame
+    // warning, so the diagnostics render only after it runs.
+    let emitted = match &analysis {
+        Some((sema, ownership)) => {
+            codegen::emit(&loaded, sema, ownership, kind, &sources, &mut diagnostics)
+        }
+        None => String::new(),
+    };
     eprint!("{}", diagnostics.render(&sources));
-    let exit_code = diagnostics.exit_code();
-    if exit_code != 0 {
-        return exit_code;
+    if diagnostics.exit_code() != 0 {
+        return diagnostics.exit_code();
     }
     if let Some(path) = &options.output {
-        if let Err(error) = std::fs::write(path, "") {
+        if let Err(error) = std::fs::write(path, emitted) {
             eprintln!("clc: cannot write '{path}': {error}");
             return EXIT_USAGE;
         }

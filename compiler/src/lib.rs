@@ -6,8 +6,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod abi;
 pub mod ast;
 pub mod borrow;
+pub mod codegen;
 pub mod consts;
 pub mod diag;
 pub mod driver;
@@ -17,6 +19,7 @@ pub mod lex;
 pub mod load;
 pub mod own;
 pub mod parse;
+pub mod profile;
 pub mod resolve;
 pub mod sema;
 pub mod span;

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-20 09:22
-> **Progress**: 57/84 tasks (68%)
+> **Last Updated**: 2026-09-20 22:43
+> **Progress**: 62/84 tasks (74%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -440,11 +440,11 @@ loan decision explicit.
 **Reference**: 03-06 "Emitted File Structure" through "Driver" · Ch 17 · Ch 15 · AR-5, AR-19, AR-27, AR-35
 **Objective**: emit the single C99 translation unit for both profiles.
 
-- [ ] 6.2.1 Implement `src/codegen.rs` core: type emission, naming/mangling, declarations, globals
-- [ ] 6.2.2 Implement functions, statements, the cleanup ladder, moves/zero, `defer`, and `#line` placement
-- [ ] 6.2.3 Implement expressions, traps, templates desugaring, and the wrapping/masking strategy confirmed by spike S3
-- [ ] 6.2.4 Implement `src/abi.rs`, FFI prototype emission, module init functions, and the entry stub
-- [ ] 6.2.5 Implement `src/profile.rs`, `compiler/runtime/shim_host.c`, and the driver's output writing
+- [x] 6.2.1 Implement `src/codegen.rs` core: type emission, naming/mangling, declarations, globals ✅ (completed: 2026-09-20 22:43)
+- [x] 6.2.2 Implement functions, statements, the cleanup ladder, moves/zero, `defer`, and `#line` placement ✅ (completed: 2026-09-20 22:43)
+- [x] 6.2.3 Implement expressions, traps, templates desugaring, and the wrapping/masking strategy confirmed by spike S3 ✅ (completed: 2026-09-20 22:43)
+- [x] 6.2.4 Implement `src/abi.rs`, FFI prototype emission, module init functions, and the entry stub ✅ (completed: 2026-09-20 22:43)
+- [x] 6.2.5 Implement `src/profile.rs`, `compiler/runtime/shim_host.c`, and the driver's output writing ✅ (completed: 2026-09-20 22:43)
 - [ ] 6.2.6 Implement `compiler/runtime/shim_hosted_amiga.c` (exec/dos, fault output, VBlank dispatcher surface)
 
 **Deliverables**:

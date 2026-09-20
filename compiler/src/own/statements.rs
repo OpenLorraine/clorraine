@@ -3,9 +3,8 @@
 //! Every block opens a scope, a `let` declares its binding after the
 //! initializer is walked, and control flow applies the move,
 //! initialization, and null-narrowing rules across branches with a
-//! conservative join. Loops are analyzed to a fixed point so a value moved in
-//! one iteration is seen as moved in the next. The same walk lowers each
-//! statement into the typed control-flow IR.
+//! conservative join. The same walk lowers each statement into the typed
+//! control-flow IR; the loops live in the sibling `loops` module.
 
 use super::*;
 
@@ -16,25 +15,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// Statements after a terminator are unreachable, so the walk stops; the
     /// lowering would drop them anyway, and analyzing them could report on
-    /// code no path can reach.
+    /// code no path can reach. A block that falls through cleanly ends with a
+    /// scope-end marker; a block that leaves through `return`, `break`, or
+    /// `continue` already carries its cleanup on that edge, so no marker is
+    /// emitted.
     pub(super) fn check_block(&mut self, block: &'a Block) {
-        self.push_scope();
+        let scope = self.push_scope(block.span);
         for statement in &block.statements {
             if self.is_terminated() {
                 break;
             }
             self.check_stmt(statement);
         }
+        if !self.is_terminated() {
+            self.emit(Statement::ScopeEnd { scope });
+        }
         self.pop_scope();
     }
 
     /// Checks one statement.
     pub(super) fn check_stmt(&mut self, stmt: &'a Stmt) {
+        self.current_span = stmt_span(stmt);
         match stmt {
             Stmt::Let(decl) => self.check_let(decl),
             Stmt::Const(decl) => self.check_const(decl),
             Stmt::Expr(expr) => {
                 self.eval(expr);
+                // An assignment already emitted its store while it was walked;
+                // every other effectful expression lowers to a discarded call.
+                if !matches!(expr.kind, ExprKind::Assign { .. }) {
+                    self.emit_expr_statement(expr);
+                }
             }
             Stmt::If(decl) => self.check_if(decl),
             Stmt::While(decl) => self.check_while(decl),
@@ -55,8 +66,54 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Lowers an expression statement whose result is discarded.
+    ///
+    /// Only calls and the `assert`/`panic` intrinsics have a run-time effect;
+    /// any other bare expression lowers to nothing. The callee keeps its simple
+    /// name, so the emitter resolves the C symbol from the collected tables at
+    /// render time.
+    fn emit_expr_statement(&mut self, expr: &'a Expr) {
+        match &expr.kind {
+            ExprKind::Call {
+                callee,
+                type_args,
+                args,
+            } => {
+                let type_args = type_args.iter().map(|ty| self.resolve(ty)).collect();
+                let args = args
+                    .iter()
+                    .map(|arg| self.lower_value(&arg.value))
+                    .collect();
+                self.emit(Statement::Call {
+                    callee: self.callee_name(callee).unwrap_or_default(),
+                    type_args,
+                    args,
+                    result: None,
+                });
+            }
+            ExprKind::IntrinsicCall { name, args } if name == "assert" || name == "panic" => {
+                let name = name.clone();
+                let args = args
+                    .iter()
+                    .filter_map(|arg| match arg {
+                        IntrinsicArg::Expr(inner) => Some(self.lower_value(inner)),
+                        IntrinsicArg::Type(_) => None,
+                    })
+                    .collect();
+                self.emit(Statement::Call {
+                    callee: name,
+                    type_args: Vec::new(),
+                    args,
+                    result: None,
+                });
+            }
+            _ => {}
+        }
+    }
+
     /// Checks a `let` binding and plans its initialization.
     pub(super) fn check_let(&mut self, decl: &LetStmt) {
+        self.current_span = decl.span;
         let declared = decl.ty.as_ref().map(|ty| self.resolve(ty));
         if let Some(ty) = &declared {
             self.check_nullable_decl(ty, decl.span);
@@ -75,12 +132,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.set_place(id, init);
             self.check_value_into(value, &target, decl.span);
             self.bind_value(id, &target, value, decl.span);
+            let place = self.binding_place(id);
+            self.emit_store(place, &target, value);
+        } else {
+            self.emit(Statement::Nop);
         }
-        self.emit(Statement::Nop);
+    }
+
+    /// Emits the IR statement that stores an initializer or assignment value.
+    ///
+    /// A non-duplicable value that already names a place is an ownership
+    /// transfer, so it lowers to a move that copies and then zeroes the
+    /// source. Every other value lowers to an assign of the lowered value,
+    /// which covers duplicable copies and fresh call results.
+    pub(super) fn emit_store(&mut self, target: Place, ty: &Ty, value: &Expr) {
+        if !self.sema.table.duplicable(ty) {
+            if let Some(source) = self.place_target(value) {
+                let source = self.target_place(&source);
+                self.emit(Statement::Move { target, source });
+                return;
+            }
+        }
+        let lowered = self.lower_value(value);
+        self.emit(Statement::Assign { target, value: lowered });
     }
 
     /// Checks a `const` binding.
     pub(super) fn check_const(&mut self, decl: &ConstStmt) {
+        self.current_span = decl.span;
         let declared = decl.ty.as_ref().map(|ty| self.resolve(ty));
         if let Some(ty) = &declared {
             self.check_nullable_decl(ty, decl.span);
@@ -97,6 +176,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         );
         self.check_value_into(&decl.value, &target, decl.span);
         self.bind_value(id, &target, &decl.value, decl.span);
+        let place = self.binding_place(id);
+        self.emit_store(place, &target, &decl.value);
     }
 
     /// Checks a binding's initializer against nullability and moves or loans.
@@ -181,6 +262,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             condition,
             on_true: then_block,
             on_false: else_block,
+            shape: BranchShape::If { join },
         });
 
         self.switch_to(then_block);
@@ -230,275 +312,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
     }
 
-    /// Checks a `while` loop.
-    ///
-    /// The body may run zero or more times, so the state at the head is the
-    /// join of the pre-state and the body's effect, iterated to a fixed point.
-    /// `break` leaves through the exit block and `continue` returns to the
-    /// head, each running the scopes it leaves.
-    pub(super) fn check_while(&mut self, decl: &'a crate::ast::WhileStmt) {
-        let head = self.new_block();
-        self.terminate(Terminator::Goto(head));
-        self.switch_to(head);
-        self.eval(&decl.condition);
-        let body_block = self.new_block();
-        let exit = self.new_block();
-        let condition = self.lower_value(&decl.condition);
-        self.terminate(Terminator::Branch {
-            condition,
-            on_true: body_block,
-            on_false: exit,
-        });
-
-        let pre = self.state.clone();
-        let floor = self.scopes.len();
-        let (entry, post) = self.loop_entry_state(pre.clone(), |checker| {
-            checker.switch_to(body_block);
-            checker.exits.push(ExitFrame::new(
-                exit,
-                Some(head),
-                floor,
-                floor,
-            ));
-            checker.check_block(&decl.body);
-            checker.exits.pop();
-        });
-
-        self.state = entry.clone();
-        self.exits
-            .push(ExitFrame::new(exit, Some(head), floor, floor));
-        self.switch_to(body_block);
-        self.check_block(&decl.body);
-        let body_terminated = self.is_terminated();
-        if !body_terminated {
-            self.terminate(Terminator::Goto(head));
-        }
-        let frame = self.exits.pop().expect("loop frame");
-        let always_true = condition_is_true(&decl.condition);
-        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
-        self.switch_to(exit);
-    }
-
-    /// Checks a `do ... while` loop, whose body runs at least once.
-    pub(super) fn check_do_while(&mut self, decl: &'a crate::ast::DoWhileStmt) {
-        let body_block = self.new_block();
-        self.terminate(Terminator::Goto(body_block));
-        let condition_block = self.new_block();
-        let exit = self.new_block();
-
-        let pre = self.state.clone();
-        let floor = self.scopes.len();
-        let (entry, post) = self.loop_entry_state(pre, |checker| {
-            checker.switch_to(body_block);
-            checker.exits.push(ExitFrame::new(
-                exit,
-                Some(condition_block),
-                floor,
-                floor,
-            ));
-            checker.check_block(&decl.body);
-            if !checker.is_terminated() {
-                checker.eval(&decl.condition);
-            }
-            checker.exits.pop();
-        });
-
-        self.state = entry;
-        self.exits.push(ExitFrame::new(
-            exit,
-            Some(condition_block),
-            floor,
-            floor,
-        ));
-        self.switch_to(body_block);
-        self.check_block(&decl.body);
-        if !self.is_terminated() {
-            self.terminate(Terminator::Goto(condition_block));
-        }
-        self.switch_to(condition_block);
-        self.eval(&decl.condition);
-        let condition = self.lower_value(&decl.condition);
-        self.terminate(Terminator::Branch {
-            condition,
-            on_true: body_block,
-            on_false: exit,
-        });
-        let frame = self.exits.pop().expect("loop frame");
-        self.state = join_breaks(post, &frame);
-        self.switch_to(exit);
-    }
-
-    /// Checks a three-clause `for` loop.
-    ///
-    /// The header is lowered to an init (in the loop's own scope), a head that
-    /// tests the condition, a body, and a step block. `continue` runs the step,
-    /// so the entry state joins the pre-state, which covers the zero-iteration
-    /// case.
-    pub(super) fn check_for_c(&mut self, decl: &'a ForCStmt) {
-        let floor = self.scopes.len();
-        self.push_scope();
-        match &decl.init {
-            Some(ForInit::Let(binding)) => self.check_let(binding),
-            Some(ForInit::Const(binding)) => self.check_const(binding),
-            Some(ForInit::Expr(expressions)) => {
-                for expression in expressions {
-                    self.eval(expression);
-                }
-            }
-            None => {}
-        }
-        let head = self.new_block();
-        self.terminate(Terminator::Goto(head));
-        self.switch_to(head);
-        if let Some(condition) = &decl.condition {
-            self.eval(condition);
-        }
-        let body_block = self.new_block();
-        let step_block = self.new_block();
-        let exit = self.new_block();
-        let condition = match &decl.condition {
-            Some(condition) => self.lower_value(condition),
-            None => Value::Bool(true),
-        };
-        self.terminate(Terminator::Branch {
-            condition,
-            on_true: body_block,
-            on_false: exit,
-        });
-
-        let pre = self.state.clone();
-        let continue_floor = floor + 1;
-        let (entry, post) = self.loop_entry_state(pre.clone(), |checker| {
-            checker.switch_to(body_block);
-            checker.exits.push(ExitFrame::new(
-                exit,
-                Some(step_block),
-                floor,
-                continue_floor,
-            ));
-            checker.check_block(&decl.body);
-            if !checker.is_terminated() {
-                for step in &decl.step {
-                    checker.eval(step);
-                }
-            }
-            checker.exits.pop();
-        });
-
-        self.state = entry.clone();
-        self.exits.push(ExitFrame::new(
-            exit,
-            Some(step_block),
-            floor,
-            continue_floor,
-        ));
-        self.switch_to(body_block);
-        self.check_block(&decl.body);
-        let body_terminated = self.is_terminated();
-        if !body_terminated {
-            self.terminate(Terminator::Goto(step_block));
-        }
-        self.switch_to(step_block);
-        for step in &decl.step {
-            self.eval(step);
-        }
-        if !self.is_terminated() {
-            self.terminate(Terminator::Goto(head));
-        }
-        let frame = self.exits.pop().expect("loop frame");
-        let always_true = decl
-            .condition
-            .as_ref()
-            .map_or(true, condition_is_true);
-        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
-        self.switch_to(exit);
-        self.pop_scope();
-    }
-
-    /// Declares the loop element in its own scope and returns its binding.
-    ///
-    /// The element is bound fresh on every iteration, so the declaration and
-    /// its initial state live inside the loop's speculative body and are re-run
-    /// on each fixpoint pass.
-    fn declare_for_in_element(&mut self, decl: &'a ForInStmt, element: &Ty) -> usize {
-        self.push_scope();
-        let kind = if decl.borrow {
-            BindingKind::OutSlot
-        } else {
-            BindingKind::Local
-        };
-        let id = self.declare(
-            &decl.name,
-            element.clone(),
-            kind,
-            if decl.borrow { Mode::Borrow } else { Mode::None },
-            false,
-            false,
-        );
-        self.set_place(
-            id,
-            PlaceState {
-                initialized: true,
-                ..PlaceState::default()
-            },
-        );
-        id
-    }
-
-    /// Checks an element loop, requiring `borrow` for non-duplicable elements.
-    ///
-    /// The element binding and the body are analyzed to a fixed point just like
-    /// the other loops, so a value moved in one iteration is seen as moved in
-    /// the next. The loop may run zero times, so the head also joins the
-    /// pre-loop state.
-    pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
-        let iterable_ty = self.eval(&decl.iterable);
-        let element = match &iterable_ty.kind {
-            TyKind::Array { element, .. } => (**element).clone(),
-            _ => Ty::unknown(),
-        };
-        if !decl.borrow && !self.sema.table.duplicable(&element) {
-            self.error(
-                "E10040",
-                format!(
-                    "element loop requires 'borrow' for non-duplicable '{}'",
-                    element.display()
-                ),
-                "write `for (borrow e in xs)`",
-                decl.span,
-            );
-        }
-        let pre = self.state.clone();
-        let floor = self.scopes.len();
-        let body_block = self.new_block();
-        let exit = self.new_block();
-        self.terminate(Terminator::Goto(body_block));
-
-        let (entry, _post) = self.loop_entry_state(pre.clone(), |checker| {
-            checker.declare_for_in_element(decl, &element);
-            checker
-                .exits
-                .push(ExitFrame::new(exit, Some(body_block), floor, floor));
-            checker.switch_to(body_block);
-            checker.check_block(&decl.body);
-            checker.exits.pop();
-            checker.pop_scope();
-        });
-
-        self.state = entry.clone();
-        self.declare_for_in_element(decl, &element);
-        self.exits
-            .push(ExitFrame::new(exit, Some(body_block), floor, floor));
-        self.switch_to(body_block);
-        self.check_block(&decl.body);
-        if !self.is_terminated() {
-            self.terminate(Terminator::Goto(body_block));
-        }
-        let frame = self.exits.pop().expect("loop frame");
-        self.pop_scope();
-        self.state = join_breaks(entry, &frame);
-        self.switch_to(exit);
-    }
 
     /// Checks a `switch` statement.
     ///
@@ -513,7 +326,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let floor = self.scopes.len();
         let exit = self.new_block();
 
-        let mut arms: Vec<(i128, BlockId)> = Vec::new();
+        let mut arms: Vec<(Value, BlockId)> = Vec::new();
         let mut clause_blocks: Vec<BlockId> = Vec::new();
         let mut default_block = exit;
         let mut has_default = false;
@@ -522,9 +335,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             clause_blocks.push(block);
             match &clause.label {
                 SwitchLabel::Case(value) => {
-                    if let Some(literal) = int_literal_value(value) {
-                        arms.push((literal, block));
-                    }
+                    // Keep the written label as a value so an enum member is
+                    // rendered with its `E.V` spelling rather than folded.
+                    let label = self.lower_value(value);
+                    arms.push((label, block));
                 }
                 SwitchLabel::Default => {
                     default_block = block;
@@ -536,6 +350,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             value: scrutinee,
             arms,
             default: default_block,
+            join: exit,
         });
 
         let mut exit_states: Vec<FlowState> = Vec::new();
@@ -551,7 +366,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.state = entry;
             self.switch_to(clause_blocks[index]);
             self.exits.push(ExitFrame::new(exit, None, floor, floor));
-            self.push_scope();
+            self.push_scope(decl.span);
             if let SwitchLabel::Case(value) = &clause.label {
                 self.eval(value);
             }
@@ -596,8 +411,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// here, so they do not leak into the enclosing flow.
     pub(super) fn check_defer(&mut self, block: &'a Block) {
         let saved_block = self.builder.current();
+        let scope = self.current_scope();
         let defer_block = self.new_block();
-        self.emit(Statement::Defer { block: defer_block });
+        self.emit(Statement::Defer {
+            block: defer_block,
+            scope,
+        });
 
         let saved_state = self.state.clone();
         let saved_bindings = self.bindings.len();
@@ -653,6 +472,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.run_defers_from(floor + 1);
         let depth = self.scopes.len();
         for index in (floor..depth).rev() {
+            let scope_id = self.scopes[index].id;
             let ids: Vec<usize> = self.scopes[index]
                 .order
                 .iter()
@@ -662,7 +482,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             for id in ids {
                 if self.bindings[id].needs_drop {
                     let place = self.binding_place(id);
-                    self.emit(Statement::Drop(place));
+                    self.emit(Statement::Drop {
+                        place,
+                        scope: scope_id,
+                    });
                 }
             }
         }
@@ -710,40 +533,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 }
 
-/// Joins the loop-entry state with the state of every `break` edge.
-fn join_breaks(entry: FlowState, frame: &ExitFrame) -> FlowState {
-    if frame.saw_break {
-        FunctionChecker::merge(entry, frame.break_state.clone())
-    } else {
-        entry
-    }
-}
 
-/// True when a loop condition is the literal `true`.
-///
-/// Such a loop can only leave through a `break` or a `return`, never through a
-/// false condition, so its condition edge does not reach the code after it.
-fn condition_is_true(condition: &Expr) -> bool {
-    matches!(condition.kind, ExprKind::Bool(true))
-}
-
-/// The state that reaches the code after a loop.
-///
-/// Normally the exit joins the loop-entry state with every `break` edge,
-/// because the condition may be false before the body runs. When the body
-/// always terminates and the condition is the literal `true`, the loop cannot
-/// leave through its condition, so the only reachable exit is the body's
-/// terminator, whose state is `post`.
-fn loop_exit_state(
-    entry: FlowState,
-    post: FlowState,
-    body_terminated: bool,
-    condition_always_true: bool,
-    frame: &ExitFrame,
-) -> FlowState {
-    if body_terminated && condition_always_true && frame.saw_break {
-        post
-    } else {
-        join_breaks(entry, frame)
+/// The source span of a statement, used for the IR's `#line` facts.
+fn stmt_span(stmt: &Stmt) -> Span {
+    match stmt {
+        Stmt::Let(decl) => decl.span,
+        Stmt::Const(decl) => decl.span,
+        Stmt::Expr(expr) => expr.span,
+        Stmt::If(decl) => decl.span,
+        Stmt::While(decl) => decl.span,
+        Stmt::DoWhile(decl) => decl.span,
+        Stmt::ForC(decl) => decl.span,
+        Stmt::ForIn(decl) => decl.span,
+        Stmt::Return { span, .. } => *span,
+        Stmt::Break(span) => *span,
+        Stmt::Continue(span) => *span,
+        Stmt::Switch(decl) => decl.span,
+        Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => block.span,
     }
 }

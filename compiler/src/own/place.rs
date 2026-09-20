@@ -456,43 +456,116 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Some((id, projections, non_null))
     }
 
-    /// Lowers an expression to an IR value.
-    pub(super) fn lower_value(&self, expr: &Expr) -> Value {
-        match &expr.kind {
-            ExprKind::Int(value) => Value::Int(*value as i128),
-            ExprKind::Bool(value) => Value::Bool(*value),
-            ExprKind::Null => Value::Null,
-            ExprKind::Str(bytes) => Value::Str(String::from_utf8_lossy(bytes).into_owned()),
-            ExprKind::Name(_)
-            | ExprKind::Qualified(_)
-            | ExprKind::Member { .. }
-            | ExprKind::Index { .. } => match self.place_target(expr) {
-                Some(target) => Value::Place(self.target_place(&target)),
-                None => {
-                    let temp = self.next_temp.get();
-                    self.next_temp.set(temp + 1);
-                    Value::Temp(temp)
+    /// Lowers an expression to a typed IR value.
+    ///
+    /// Every value records the type the type stage computed for its expression,
+    /// and a form the checker does not need to name explicitly becomes a fresh
+    /// temporary whose type joins the function's temporary list.
+    pub(super) fn lower_value(&mut self, expr: &Expr) -> Value {
+        let ty = self.ty(expr);
+        let kind = match &expr.kind {
+            ExprKind::Int(value) => ValueKind::Int(*value as i128),
+            ExprKind::Float(value) => ValueKind::Float(*value),
+            ExprKind::Char(byte) => ValueKind::Char(*byte),
+            ExprKind::Bool(value) => ValueKind::Bool(*value),
+            ExprKind::Null => ValueKind::Null,
+            ExprKind::Str(bytes) => ValueKind::Str(String::from_utf8_lossy(bytes).into_owned()),
+            ExprKind::Name(name) => match self.place_target(expr) {
+                Some(target) => ValueKind::Place(self.target_place(&target)),
+                None => ValueKind::Path(vec![name.clone()]),
+            },
+            ExprKind::Qualified(name) => match self.place_target(expr) {
+                Some(target) => ValueKind::Place(self.target_place(&target)),
+                None => ValueKind::Path(name.segments.clone()),
+            },
+            ExprKind::Member { base, name } => ValueKind::Member {
+                base: Box::new(self.lower_value(base)),
+                name: name.clone(),
+            },
+            ExprKind::Index { base, index } => ValueKind::Index {
+                base: Box::new(self.lower_value(base)),
+                index: Box::new(self.lower_value(index)),
+            },
+            ExprKind::Call {
+                callee,
+                type_args,
+                args,
+            } => {
+                let type_args = type_args.iter().map(|arg| self.resolve(arg)).collect();
+                let lowered = args.iter().map(|arg| self.lower_value(&arg.value)).collect();
+                ValueKind::Call {
+                    callee: self.callee_name(callee).unwrap_or_default(),
+                    type_args,
+                    args: lowered,
                 }
-            },
-            ExprKind::Call { callee, args, .. } => Value::Call {
-                callee: self.callee_name(callee).unwrap_or_default(),
-                args: args.iter().map(|arg| self.lower_value(&arg.value)).collect(),
-            },
-            ExprKind::Unary { op, operand } => Value::Unary {
+            }
+            ExprKind::Unary { op, operand } => ValueKind::Unary {
                 op: *op,
                 operand: Box::new(self.lower_value(operand)),
             },
-            ExprKind::Binary { op, left, right } => Value::Binary {
+            ExprKind::Binary { op, left, right } => ValueKind::Binary {
                 op: *op,
                 left: Box::new(self.lower_value(left)),
                 right: Box::new(self.lower_value(right)),
             },
-            ExprKind::Cast { ty, value } | ExprKind::RawCast { ty, value } => Value::Cast {
-                to: self.resolve(ty).display(),
+            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => ValueKind::Cast {
+                to: ty.display(),
                 value: Box::new(self.lower_value(value)),
             },
-            _ => Value::Aggregate,
-        }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => ValueKind::Conditional {
+                condition: Box::new(self.lower_value(condition)),
+                then_value: Box::new(self.lower_value(then_value)),
+                else_value: Box::new(self.lower_value(else_value)),
+            },
+            ExprKind::StructLiteral { name, fields, .. } => ValueKind::StructLit {
+                name: name.segments.last().cloned().unwrap_or_default(),
+                fields: fields
+                    .iter()
+                    .map(|field| (field.name.clone(), self.lower_value(&field.value)))
+                    .collect(),
+            },
+            ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
+                elements: elements.iter().map(|element| self.lower_value(element)).collect(),
+                fill: fill
+                    .as_ref()
+                    .map(|fill| Box::new(self.lower_value(fill))),
+            },
+            ExprKind::Unsafe(inner) => return self.lower_value(inner),
+            ExprKind::IntrinsicCall { name, args } => {
+                let mut values = Vec::new();
+                let mut type_arg = None;
+                for arg in args {
+                    match arg {
+                        IntrinsicArg::Expr(inner) => values.push(self.lower_value(inner)),
+                        IntrinsicArg::Type(written) => type_arg = Some(self.resolve(written)),
+                    }
+                }
+                ValueKind::Intrinsic {
+                    name: name.clone(),
+                    args: values,
+                    type_arg,
+                }
+            }
+            ExprKind::Template(pieces) => ValueKind::Template(
+                pieces
+                    .iter()
+                    .map(|piece| match piece {
+                        TemplatePiece::Literal(bytes) => ValuePiece::Literal(
+                            String::from_utf8_lossy(bytes).into_owned(),
+                        ),
+                        TemplatePiece::Placeholder(inner) => {
+                            ValuePiece::Placeholder(self.lower_value(inner))
+                        }
+                    })
+                    .collect(),
+            ),
+            _ => ValueKind::Aggregate,
+        };
+        Value { ty, kind }
     }
 
     // -- shared helpers ------------------------------------------------------
@@ -571,5 +644,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.diagnostics
             .push(Diagnostic::warning(code, message, span));
+    }
+}
+
+/// The constant index of an element expression, when it is a literal.
+fn element_index(expr: &Expr) -> Option<usize> {
+    match &expr.kind {
+        ExprKind::Int(value) => usize::try_from(*value).ok(),
+        _ => None,
     }
 }

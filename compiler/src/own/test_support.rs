@@ -47,3 +47,19 @@ pub(crate) fn error_codes(source: &str) -> Vec<String> {
 pub(crate) fn reports(source: &str, code: &str) -> bool {
     error_codes(source).iter().any(|reported| reported == code)
 }
+
+/// Wraps a body in a module with the view and consumer helpers the tests use.
+///
+/// `viewOf` returns a view of its parameter, `consume` takes ownership of a
+/// `String`, and `observe` borrows a `str`. The wrapper is shared by the tests
+/// that need a helper function to move, borrow, or view a value.
+pub(crate) fn with_view_helper(body: &str) -> String {
+    format!(
+        "module t;\n\
+         func viewOf(s: str): str {{ return s; }}\n\
+         func consume(take s: String): void {{}}\n\
+         func observe(s: str): void {{}}\n\
+         {body}\n\
+         func main(): i32 {{ return 0; }}\n"
+    )
+}

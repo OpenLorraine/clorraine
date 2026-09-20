@@ -30,7 +30,6 @@ impl Span {
         let end = end.max(start as usize) as u32;
         Self { file, start, end }
     }
-
     /// Number of bytes covered by the span.
     pub fn len(self) -> usize {
         (self.end - self.start) as usize
@@ -39,6 +38,13 @@ impl Span {
     /// True when the span covers no text.
     pub fn is_empty(self) -> bool {
         self.start == self.end
+    }
+}
+
+impl Default for Span {
+    /// A placeholder span before a real source position is known.
+    fn default() -> Self {
+        Self::new(FileId(0), 0, 0)
     }
 }
 
