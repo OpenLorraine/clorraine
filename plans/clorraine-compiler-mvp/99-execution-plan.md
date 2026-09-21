@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 20:42
-> **Progress**: 76/84 tasks (90%)
+> **Last Updated**: 2026-09-21 20:46
+> **Progress**: 77/84 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -549,7 +549,7 @@ the corpus.
 
 - [x] 8.2.1 Add the `corpus-amiga` Make target: GCC build plus `vamos` run for file-copier, string-parser, buffer-container, with output diff ✅ (completed: 2026-09-21 20:25)
 - [x] 8.2.2 Add the vbcc build-only leg for file-copier ✅ (completed: 2026-09-21 20:42)
-- [ ] 8.2.3 Add the interrupt-counter FS-UAE leg (`RUN_CAPTURE=1`); on environment failure, record the build-only fallback and request a user ruling
+- [x] 8.2.3 Add the interrupt-counter FS-UAE leg (`RUN_CAPTURE=1`); on environment failure, record the build-only fallback and request a user ruling ✅ (completed: 2026-09-21 20:46)
 - [ ] 8.2.4 Add the hosted-amiga run-fault leg (ST-RUN-7) via `vamos`
 
 **Deliverables**:

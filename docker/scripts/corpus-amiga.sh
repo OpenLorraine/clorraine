@@ -82,6 +82,18 @@ else
     echo "corpus-amiga: file-copier: vbcc build is warning-free"
 fi
 
+# The interrupt-counter is hosted-amiga only and needs the real interrupt
+# dispatcher, so it cannot run under `vamos`. It is built here because the
+# FS-UAE leg consumes the binary; that leg boots the emulator separately.
+echo "corpus-amiga: interrupt-counter: build-only"
+interrupt_dir="${OUTDIR}/interrupt-counter"
+mkdir -p "${interrupt_dir}"
+"${CLC}" --profile hosted-amiga -o "${interrupt_dir}/program.c" \
+    "${CORPUS}/interrupt-counter/program.clo"
+"${GCC}" "${GCC_FLAGS[@]}" -o "${interrupt_dir}/program" \
+    "${interrupt_dir}/program.c" -lamiga -lm
+echo "corpus-amiga: interrupt-counter: built"
+
 if [ "${status}" -ne 0 ]; then
     echo "corpus-amiga: FAILED" >&2
 else
