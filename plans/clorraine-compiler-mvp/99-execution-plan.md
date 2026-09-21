@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 20:56
-> **Progress**: 81/84 tasks (96%)
+> **Last Updated**: 2026-09-21 20:57
+> **Progress**: 82/84 tasks (98%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -582,7 +582,7 @@ the corpus.
 **Objective**: the project's verify commands and guidance are persistent.
 
 - [x] 8.4.1 Complete the root Makefile: `check` (spec + fast tests) and `verify` (check + corpus/run-fault cross legs) ✅ (completed: 2026-09-21 20:56)
-- [ ] 8.4.2 Create `AGENTS.md` with the analyze-project skill (commands, layout, Rust test-naming map)
+- [x] 8.4.2 Create `AGENTS.md` with the analyze-project skill (commands, layout, Rust test-naming map) ✅ (completed: 2026-09-21 20:57)
 - [ ] 8.4.3 Create/refresh `plans/00-roadmap.md`, update `README.md` status, and finalize `docs/findings-phase2.md` cross-references
 
 **Deliverables**:
