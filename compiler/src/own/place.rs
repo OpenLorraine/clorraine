@@ -16,6 +16,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// remaining fields of a partially moved or partially initialized struct
     /// stay usable.
     pub(super) fn read_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
+        self.bindings[id].used = true;
         let state = self.state.place(id);
         let name = self.bindings[id].name.clone();
         if state.moved {
@@ -90,6 +91,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// that field and clears its portion of the narrowing facts; writing a
     /// field of a wholly moved value is a use after move.
     pub(super) fn write_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
+        self.bindings[id].used = true;
         let binding = &self.bindings[id];
         if binding.is_const {
             let name = binding.name.clone();
@@ -166,6 +168,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Moves out of a place, applying partial-move and loan rules.
     pub(super) fn move_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
+        self.bindings[id].used = true;
         let binding = &self.bindings[id];
         if binding.kind == BindingKind::Param
             && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)

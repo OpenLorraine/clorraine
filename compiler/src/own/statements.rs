@@ -23,6 +23,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let scope = self.push_scope(block.span);
         for statement in &block.statements {
             if self.is_terminated() {
+                // The walk stopped at a terminator, so this statement and
+                // every one after it is unreachable. One warning names the
+                // first such statement.
+                self.warn("W10003", "unreachable code", stmt_span(statement));
                 break;
             }
             self.check_stmt(statement);
@@ -119,7 +123,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .clone()
             .or(value_ty)
             .unwrap_or_else(Ty::unknown);
-        let id = self.declare_local(&decl.name, target.clone(), false);
+        let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
         if let Some(value) = &decl.value {
             let init = PlaceState {
                 initialized: true,
@@ -162,7 +166,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let value_ty = self.eval(&decl.value);
         let target = declared.or(Some(value_ty)).unwrap_or_else(Ty::unknown);
-        let id = self.declare_local(&decl.name, target.clone(), true);
+        let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         self.set_place(
             id,
             PlaceState {
@@ -174,6 +178,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.bind_value(id, &target, &decl.value, decl.span);
         let place = self.binding_place(id);
         self.emit_store(place, &target, &decl.value);
+    }
+
+    /// Reports W10000 for every declared local that was never used.
+    ///
+    /// A local counts as used once it is read, moved, or written; only the
+    /// declaration's own initializer store does not mark it, so `let x = f();`
+    /// with no later use warns while a value written through by index does not.
+    /// Parameters, out-param slots, globals, and temporaries are outside the
+    /// rule, and the warning is suppressed during a speculative pass that only
+    /// computes flow state.
+    pub(super) fn report_unused_locals(&mut self) {
+        let unused: Vec<(String, Span)> = self
+            .bindings
+            .iter()
+            .filter(|binding| binding.kind == BindingKind::Local && !binding.used)
+            .map(|binding| (binding.name.clone(), binding.span))
+            .collect();
+        for (name, span) in unused {
+            self.warn("W10000", format!("unused local '{name}'"), span);
+        }
     }
 
     /// Checks a binding's initializer against nullability and moves or loans.
@@ -368,6 +392,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             for statement in &clause.statements {
                 if self.is_terminated() {
+                    // The clause body already left through a terminator, so
+                    // this statement cannot be reached.
+                    self.warn("W10003", "unreachable code", stmt_span(statement));
                     break;
                 }
                 self.check_stmt(statement);
@@ -379,6 +406,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 exit_states.push(frame.break_state);
             }
             if !terminated {
+                // A non-empty body that can complete normally falls into the
+                // next label; a stacked empty label does not warn.
+                let has_next_label = index + 1 < decl.clauses.len();
+                if has_next_label && !clause.statements.is_empty() {
+                    self.warn(
+                        "W10002",
+                        "case falls through to the next label",
+                        clause.span,
+                    );
+                }
                 let target = clause_blocks.get(index + 1).copied().unwrap_or(exit);
                 self.terminate(Terminator::Goto(target));
                 // A clause with no following clause falls straight out of the

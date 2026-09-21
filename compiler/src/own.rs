@@ -202,6 +202,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.check_block(&self.decl.body);
         self.pop_scope();
         self.elision_postlude();
+        self.report_unused_locals();
         if !self.is_terminated() {
             self.builder.terminate(Terminator::Return(None));
         }
@@ -382,9 +383,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Declares a local binding and returns its index.
-    fn declare_local(&mut self, name: &str, ty: Ty, is_const: bool) -> usize {
+    fn declare_local(&mut self, name: &str, ty: Ty, is_const: bool, span: Span) -> usize {
         let needs_drop = self.owns_drop(&ty);
-        self.declare(name, ty, BindingKind::Local, Mode::None, is_const, needs_drop)
+        self.declare(
+            name,
+            span,
+            ty,
+            BindingKind::Local,
+            Mode::None,
+            is_const,
+            needs_drop,
+        )
     }
 
     /// Declares a function parameter.
@@ -400,6 +409,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let needs_drop = param.mode == Mode::Take && self.owns_drop(&ty);
         let id = self.declare(
             &param.name,
+            param.name_span,
             ty,
             kind,
             param.mode,
@@ -416,6 +426,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn declare(
         &mut self,
         name: &str,
+        span: Span,
         ty: Ty,
         kind: BindingKind,
         mode: Mode,
@@ -433,6 +444,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.bindings.push(Binding {
             name: name.to_owned(),
             ty,
+            span,
+            used: false,
             scope,
             kind,
             mode,

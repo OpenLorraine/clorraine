@@ -183,7 +183,7 @@ impl<'a> Emitter<'a> {
         if total > limit {
             self.warn(
                 "W10004",
-                "stack frame exceeds the profile threshold",
+                format!("stack frame of '{}' is {total} bytes", function.name),
                 span,
             );
         }

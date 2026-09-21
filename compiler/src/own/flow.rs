@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ast::{Block, Mode};
 use crate::borrow::{Loans, Provenance};
 use crate::ir::{self, BlockId};
+use crate::span::Span;
 use crate::types::Ty;
 
 /// What a binding is: a local, a parameter, or a `borrow T?` out-parameter.
@@ -31,6 +32,11 @@ pub(super) struct Binding {
     pub(super) name: String,
     /// The resolved type.
     pub(super) ty: Ty,
+    /// Source span of the declared name, used to report an unused local.
+    pub(super) span: Span,
+    /// True once the binding is read, written, or moved. A local that stays
+    /// false through the whole function is reported as unused.
+    pub(super) used: bool,
     /// The scope depth the binding was declared in.
     pub(super) scope: usize,
     /// What kind of binding it is.

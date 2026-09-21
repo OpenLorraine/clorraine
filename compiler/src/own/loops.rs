@@ -231,6 +231,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.push_scope(decl.span);
         let id = self.declare(
             &decl.name,
+            decl.name_span,
             element.clone(),
             BindingKind::Local,
             if decl.borrow { Mode::Borrow } else { Mode::None },
@@ -298,6 +299,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         index: &Value,
         id: usize,
     ) {
+        self.bindings[id].used = true;
         let selected = Value::new(
             element.clone(),
             ValueKind::Index {
