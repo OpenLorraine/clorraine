@@ -27,6 +27,7 @@ use crate::types::{resolve_ty_with, Ty, TyKind, TypeTable};
 
 pub(crate) mod call;
 mod expr;
+mod init_cycle;
 mod items;
 mod ops;
 mod stmt;
@@ -54,6 +55,9 @@ pub struct SemaOutput {
 /// Checks every module of the loaded program and records the result.
 pub fn check(loaded: &Loaded, diagnostics: &mut Diagnostics) -> SemaOutput {
     let table = TypeTable::build(loaded);
+    // A global initializer cycle has no valid initialization order, so it is
+    // reported before the per-module type checks that would consume the order.
+    init_cycle::check(loaded, diagnostics);
     let mut expr_types: HashMap<usize, Ty> = HashMap::new();
     for module in loaded.modules.values() {
         let mut checker = Checker::new(module, &table, loaded, diagnostics);
@@ -128,12 +132,17 @@ impl<'a, 'd> Checker<'a, 'd> {
             Item::Enum(decl) => self.check_enum(decl),
             Item::GlobalLet(decl) => self.check_global(&decl.ty, &decl.value, false),
             Item::GlobalConst(decl) => self.check_global(&decl.ty, &decl.value, true),
-            // `comptime` bodies, handles, and FFI signatures are checked by
-            // later work; their signatures are already in the type table.
-            Item::Comptime(_)
-            | Item::Handle(_)
-            | Item::Ffi(_)
-            | Item::Intrinsic(_) => {}
+            // A `comptime` body is frozen syntax whose semantics are staged
+            // out, so it reports its staged-feature code. Handles and FFI
+            // signatures are checked by later work; their signatures are
+            // already in the type table.
+            Item::Comptime(decl) => self.error(
+                "E90001",
+                "'comptime' semantics are not yet implemented",
+                "remove the comptime declaration or wait for the staged feature",
+                decl.name_span,
+            ),
+            Item::Handle(_) | Item::Ffi(_) | Item::Intrinsic(_) => {}
         }
     }
 

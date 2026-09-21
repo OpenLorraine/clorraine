@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 70 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution; AR-65 raised and resolved during Phase 5 execution on 2026-09-19; AR-66, AR-66a, and AR-67 raised and resolved during Phase 6 execution on 2026-09-20; AR-68 raised and resolved during Phase 7 execution on 2026-09-21; AR-69 raised and resolved during Phase 8 execution on 2026-09-21)
-> **Last Updated**: 2026-09-21 20:30
+> **Status**: ✅ GATE PASSED — all 71 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution; AR-65 raised and resolved during Phase 5 execution on 2026-09-19; AR-66, AR-66a, and AR-67 raised and resolved during Phase 6 execution on 2026-09-20; AR-68 raised and resolved during Phase 7 execution on 2026-09-21; AR-69 and AR-70 raised and resolved during Phase 8 execution on 2026-09-21)
+> **Last Updated**: 2026-09-21 20:52
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -164,6 +164,14 @@ Surfaced while adding the hosted-amiga vbcc leg (task 8.2.2). Ruled on by the us
 | # | Category | Ambiguity / Gap | Options Presented | Status |
 |---|----------|-----------------|-------------------|--------|
 | AR-69 | Technical (runtime) | The emitted C marks unused parameters, unread hoisted locals and temporaries, and private-function references with `(void)x;`. That idiom is silent under GCC `-Wall -Wextra -Werror` and host `cc`, but vbcc 0.9 reports `warning 153: statement has no effect` for every occurrence, so the vbcc leg is not warning-free as `03-01-corpus.md` requires (R17). The normative vbcc command line is frozen (`spec/17-codegen.md:360`) and carries no `-Werror`, so the fix must be in the emitted C | **A**: replace every marker with `if (sizeof(x)) { }`, and private functions with `if (sizeof(&fn)) { }` — uniform, type-agnostic, silent under m68k GCC 16.2, host cc 12.2, and vbcc 0.9, with no casts and no self-assignment. **B**: use `x = x;` for variables and a same-typed local function pointer self-assigned in the entry stub for functions — portable but more emitter code and less uniform. **C**: keep `(void)x;` and accept the vbcc warnings, ruling that the `warning-free` phrasing is not binding for the vbcc leg | ✅ Resolved — user chose A (`if (sizeof(x)) { }`) |
+
+## Batch 12 — runtime item during Phase 8 execution (2026-09-21)
+
+Surfaced while running the full compile-fail scope (task 8.3.1). Ruled on by the user on 2026-09-21.
+
+| # | Category | Ambiguity / Gap | Options Presented | Status |
+|---|----------|-----------------|-------------------|--------|
+| AR-70 | Technical (runtime) | Running the full compile-fail scope shows five goldens are silently "pending" (skipped with the vague reason "not covered by the implemented front end yet") rather than asserted or honestly excluded. Two are explicitly in scope in the ST-CF table but unimplemented: `E90001_comptime_staged.clo` (ST-CF-STAGED; a `comptime` body is accepted, so E90001 is never reported) and `E11100_initializer_cycle.clo` (ST-CF-MOD; no program-wide global-initializer dependency graph exists, so a same-module `let a = b + 1; let b = a + 1;` cycle is accepted). Two more are in scope and already work but are missing from the asserted list (`E11200_unimplemented_profile`, `E11201_unknown_profile`; ST-CF-PROFILE). The fifth, `E10400_capturing_lambda_as_func.clo`, is unreachable until lambda captures land (AR-10 stages lambda semantics) but lacks a `// stage:` annotation | **A**: implement E90001 (reject a `comptime` body) and E11100 (build a program-wide global-initializer dependency graph and report a cycle); add E11200/E11201 to the asserted list; exclude E10400 with an explicit staged reason. Pending becomes zero and the full ST-CF scope is asserted. **B**: implement E90001, assert E11200/E11201, and reclassify E11100 and E10400 as explicitly skipped with reasons (honest report, but ST-CF-MOD stays unmet). **C**: assert only E11200/E11201 and reclassify E90001, E11100, and E10400 as skipped with reasons (fastest; two in-scope diagnostics remain unimplemented) | ✅ Resolved — user chose A (implement E90001 and E11100) |
 
 ## Complexity Escalation packet (AR-24)
 
