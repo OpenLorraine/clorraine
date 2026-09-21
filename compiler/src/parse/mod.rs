@@ -102,6 +102,9 @@ impl<'a> Parser<'a> {
             misplaced_module,
             imports,
             items,
+            // The parser only sees text; the driver marks the embedded sources
+            // it injects, so a user file never carries the flag.
+            embedded: false,
         }
     }
 

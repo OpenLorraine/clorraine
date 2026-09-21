@@ -203,6 +203,10 @@ pub enum ValueKind {
         type_args: Vec<Ty>,
         /// Lowered arguments in source order.
         args: Vec<Value>,
+        /// The callable value, when the callee is a `func`-typed field rather
+        /// than a named function. The emitter calls it directly instead of
+        /// prefixing a receiver as the first argument.
+        receiver: Option<Box<Value>>,
     },
     /// A field selection, which keeps a run-time base intact.
     Member {
@@ -320,6 +324,17 @@ pub enum Statement {
         /// The place whose ownership is transferred.
         source: Place,
     },
+    /// Empty a place whose value moved into a call, without releasing it.
+    ///
+    /// A `take` argument transfers ownership to the callee, so the caller's
+    /// binding must be emptied afterward or its scope drop would release the
+    /// value a second time. The statement zeroes the place only; unlike
+    /// [`Statement::Move`] it never drops the old value, because the callee
+    /// already owns it.
+    MoveOut {
+        /// The place whose value the callee took.
+        place: Place,
+    },
     /// Begin a loan over a place. This is a checker statement and has no
     /// runtime code of its own.
     Borrow {
@@ -336,6 +351,9 @@ pub enum Statement {
         type_args: Vec<Ty>,
         /// Lowered arguments in source order.
         args: Vec<Value>,
+        /// The callable value, when the callee is a `func`-typed field rather
+        /// than a named function.
+        receiver: Option<Box<Value>>,
         /// The place that receives an owned result, when there is one.
         result: Option<Place>,
     },

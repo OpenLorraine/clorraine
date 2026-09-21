@@ -141,6 +141,10 @@ impl<'a> Emitter<'a> {
                 declarator(&ty, &format!("__cl_tmp{index}")),
                 empty
             ));
+            // A compiler temporary may only be written on a path that never
+            // reads it, so mark it deliberately used to keep the emitted C
+            // free of `-Wunused-but-set-variable`.
+            self.push(&format!("    (void)__cl_tmp{index};"));
         }
         if let Some(result) = self.result_var.clone() {
             let ret = self.return_ty.clone();
@@ -216,6 +220,12 @@ impl<'a> Emitter<'a> {
                 let source_ty = self.substitute(&source.ty);
                 self.emit_move_zero(&source_c, &source_ty);
             }
+            Statement::MoveOut { place } => {
+                self.emit_line_directive(span);
+                let source = self.place(place);
+                let ty = self.substitute(&place.ty);
+                self.emit_move_zero(&source, &ty);
+            }
             Statement::StorePointer { pointer, value } => {
                 self.emit_line_directive(span);
                 // The pointer expression carries the element's run-time index,
@@ -230,9 +240,17 @@ impl<'a> Emitter<'a> {
                 callee,
                 type_args,
                 args,
+                receiver,
                 result,
             } => {
-                self.emit_call(span, callee, type_args, args, result.as_ref());
+                self.emit_call(
+                    span,
+                    callee,
+                    type_args,
+                    args,
+                    receiver.as_deref(),
+                    result.as_ref(),
+                );
             }
             Statement::Borrow { .. }
             | Statement::Drop { .. }
@@ -250,6 +268,7 @@ impl<'a> Emitter<'a> {
         callee: &str,
         type_args: &[Ty],
         args: &[ir::Value],
+        receiver: Option<&ir::Value>,
         result: Option<&Place>,
     ) {
         match callee {
@@ -276,37 +295,12 @@ impl<'a> Emitter<'a> {
                 for arg in args {
                     self.emit_guards(arg);
                 }
-                let call = self.call(callee, type_args, args);
+                let call = self.call(callee, type_args, args, receiver);
                 let prefix = match result {
                     Some(place) => format!("{} = ", self.place(place)),
                     None => String::new(),
                 };
                 self.push(&format!("    {prefix}{call};"));
-                self.emit_moved_argument_zeros(callee, args);
-            }
-        }
-    }
-
-    /// Zeroes every `take` argument source after a call.
-    ///
-    /// A `take` parameter moves ownership into the call, so the caller's
-    /// binding is empty afterward. Zeroing the source makes the scope's later
-    /// drop a no-op instead of a second release.
-    fn emit_moved_argument_zeros(&mut self, callee: &str, args: &[ir::Value]) {
-        let Some(modes) = self.callee_modes(callee) else {
-            return;
-        };
-        for (arg, mode) in args.iter().zip(modes) {
-            if mode != crate::ast::Mode::Take {
-                continue;
-            }
-            let ValueKind::Place(place) = &arg.kind else {
-                continue;
-            };
-            let ty = self.substitute(&place.ty);
-            if self.needs_drop(&ty) {
-                let source = self.place(place);
-                self.emit_move_zero(&source, &ty);
             }
         }
     }
@@ -469,7 +463,10 @@ fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
                     note_value(pointer, &mut read);
                     note_value(value, &mut read);
                 }
-                Statement::Call { args, .. } => {
+                Statement::Call { args, receiver, .. } => {
+                    if let Some(receiver) = receiver {
+                        note_value(receiver, &mut read);
+                    }
                     for arg in args {
                         note_value(arg, &mut read);
                     }
@@ -538,9 +535,15 @@ fn value_reads_base(value: &Value, target: &Place) -> bool {
             ValuePiece::Literal(_) => false,
             ValuePiece::Placeholder(inner) => value_reads_base(inner, target),
         }),
-        ValueKind::Call { args, .. } | ValueKind::Intrinsic { args, .. } => {
-            args.iter().any(|arg| value_reads_base(arg, target))
+        ValueKind::Call {
+            args, receiver, ..
+        } => {
+            receiver
+                .as_deref()
+                .is_some_and(|receiver| value_reads_base(receiver, target))
+                || args.iter().any(|arg| value_reads_base(arg, target))
         }
+        ValueKind::Intrinsic { args, .. } => args.iter().any(|arg| value_reads_base(arg, target)),
         ValueKind::Int(_)
         | ValueKind::Float(_)
         | ValueKind::Char(_)
@@ -604,7 +607,17 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>) {
                 }
             }
         }
-        ValueKind::Call { args, .. } | ValueKind::Intrinsic { args, .. } => {
+        ValueKind::Call {
+            args, receiver, ..
+        } => {
+            if let Some(receiver) = receiver {
+                note_value(receiver, read);
+            }
+            for arg in args {
+                note_value(arg, read);
+            }
+        }
+        ValueKind::Intrinsic { args, .. } => {
             for arg in args {
                 note_value(arg, read);
             }

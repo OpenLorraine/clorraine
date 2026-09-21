@@ -324,6 +324,7 @@ pub fn collect_ir_instances(functions: &[Function], program: &ProgramInfo, mono:
                         }
                     }
                     Statement::Move { .. }
+                    | Statement::MoveOut { .. }
                     | Statement::Borrow { .. }
                     | Statement::Drop { .. }
                     | Statement::Defer { .. }
@@ -376,8 +377,16 @@ fn record_instance(
 /// Walks a value, recording every generic call it contains.
 fn walk_value(value: &Value, program: &ProgramInfo, mono: &mut Monomorphization) {
     match &value.kind {
-        ValueKind::Call { callee, type_args, args } => {
+        ValueKind::Call {
+            callee,
+            type_args,
+            args,
+            receiver,
+        } => {
             record_instance(callee, type_args, program, mono);
+            if let Some(receiver) = receiver {
+                walk_value(receiver, program, mono);
+            }
             for arg in args {
                 walk_value(arg, program, mono);
             }

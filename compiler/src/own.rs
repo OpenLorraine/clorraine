@@ -39,9 +39,11 @@ use crate::types::{resolve_ty, Ty, TyKind};
 pub mod program;
 
 mod call;
+mod call_check;
 mod expr;
 mod flow;
 mod generics;
+mod lower;
 mod loops;
 mod place;
 mod statements;
@@ -142,6 +144,13 @@ struct FunctionChecker<'a, 'd> {
     /// Next cleanup registration number, shared by bindings and `defer`
     /// entries so a scope's cleanup can interleave them in one reverse order.
     next_registration: u32,
+    /// Next name suffix for a compiler-owned temporary local that takes an
+    /// unnamed owned call result so the scope cleanup can release it.
+    next_owned_temp: u32,
+    /// False while lowering a deferred block, whose bindings are not kept in
+    /// the function's local list, so an owned temporary must not be bound
+    /// there.
+    materialize_owned_temporaries: bool,
     /// False during a speculative pass, which computes state without reporting.
     report_diagnostics: bool,
     /// Diagnostic sink.
@@ -185,6 +194,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             exits: Vec::new(),
             defer_entries: Vec::new(),
             next_registration: 0,
+            next_owned_temp: 0,
+            materialize_owned_temporaries: true,
             report_diagnostics: true,
             diagnostics,
         }
@@ -310,6 +321,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_bindings = self.bindings.len();
         let saved_scopes = self.scopes.len();
         let saved_defers = self.defer_entries.len();
+        let saved_temps = self.temps.len();
         self.push_scope(block.span);
         for statement in &block.statements {
             self.check_stmt(statement);
@@ -320,6 +332,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.bindings.truncate(saved_bindings);
         self.scopes.truncate(saved_scopes);
         self.defer_entries.truncate(saved_defers);
+        self.temps.truncate(saved_temps);
     }
 
     /// Repeats `run_body` in a speculative pass until the loop state stops
@@ -342,6 +355,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_scopes = self.scopes.len();
         let saved_defers = self.defer_entries.len();
         let saved_exits = self.exits.len();
+        let saved_temps = self.temps.len();
         let saved_report = self.report_diagnostics;
         self.report_diagnostics = false;
         let (entry, stable_post) = 'fixpoint: {
@@ -378,6 +392,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes.truncate(saved_scopes);
         self.defer_entries.truncate(saved_defers);
         self.exits.truncate(saved_exits);
+        self.temps.truncate(saved_temps);
         self.report_diagnostics = saved_report;
         (entry, stable_post)
     }

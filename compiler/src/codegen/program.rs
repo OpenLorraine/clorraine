@@ -544,6 +544,7 @@ impl<'a> Emitter<'a> {
                 callee: callee_name(callee).unwrap_or_default(),
                 type_args: type_args.iter().map(|ty| self.resolve_written(ty)).collect(),
                 args: args.iter().map(|arg| self.lower_global(&arg.value)).collect(),
+                receiver: None,
             },
             _ => ValueKind::Aggregate,
         };

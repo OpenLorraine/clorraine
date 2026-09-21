@@ -86,11 +86,15 @@ impl Loans {
     /// True when creating a loan of `kind` over `owner` conflicts with a live
     /// loan.
     ///
-    /// A new loan conflicts when any loan is already live: a second loan of
-    /// any kind overlaps, and an exclusive loan never coexists with another
-    /// access. This is BR-2 and BR-3 in the conservative lexical model.
-    pub fn conflict(&self, owner: usize, _kind: LoanKind) -> bool {
-        self.any_live(owner)
+    /// Any number of shared reads may coexist, so a shared request only
+    /// conflicts with a live exclusive loan. An exclusive request conflicts
+    /// with any live loan, because it excludes every other access. This is
+    /// BR-2 and BR-3 in the conservative lexical model.
+    pub fn conflict(&self, owner: usize, kind: LoanKind) -> bool {
+        self.entries.iter().any(|loan| {
+            loan.owner == owner
+                && (loan.kind == LoanKind::Exclusive || kind == LoanKind::Exclusive)
+        })
     }
 
     /// True when the owner may not be moved because a loan is live (BR-4).
@@ -223,10 +227,13 @@ mod tests {
     }
 
     #[test]
-    fn any_second_loan_conflicts_in_the_conservative_model() {
+    fn a_shared_loan_admits_another_shared_loan_but_not_a_writer() {
         let mut loans = Loans::default();
         loans.add(0, LoanKind::Shared, 1, span());
-        assert!(loans.conflict(0, LoanKind::Shared), "v1 rejects a second loan");
+        assert!(
+            !loans.conflict(0, LoanKind::Shared),
+            "any number of shared reads may coexist"
+        );
         assert!(loans.conflict(0, LoanKind::Exclusive), "a writer excludes");
         assert!(loans.blocks_write(0), "a shared loan blocks a write");
         assert!(loans.blocks_move(0), "any loan blocks a move");
@@ -312,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn a_second_view_of_one_owner_is_a_conflict_in_v1() {
+    fn two_shared_views_of_one_owner_are_accepted() {
         let source = "module t;\n\
             import { String, stringOf, bytes } from std.text;\n\
             func demo(): void {\n\
@@ -324,6 +331,6 @@ mod tests {
             }\n\
             func observe(v: u8[]): void {}\n\
             func main(): i32 { return 0; }\n";
-        assert!(reports(source, "E10032"), "{:?}", error_codes(source));
+        assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
     }
 }

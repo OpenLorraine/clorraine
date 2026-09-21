@@ -121,7 +121,9 @@ fn inject_stdlib(
     sources: &mut SourceMap,
     diagnostics: &mut Diagnostics,
 ) {
-    let mut imported: BTreeSet<String> = BTreeSet::new();
+    // A qualified reference to a standard-library module is as good as an
+    // import for loading it, so both kinds of request are collected.
+    let mut imported: BTreeSet<String> = load::referenced_modules(programs);
     let mut present: BTreeSet<String> = BTreeSet::new();
     for (_, program) in programs.iter() {
         present.insert(program.module.name.to_dotted());
@@ -140,12 +142,15 @@ fn inject_stdlib(
         let path = format!("stdlib/{name}.clo");
         let file = sources.add_file(path, text.to_owned());
         let before = diagnostics.error_count();
-        let program = Parser::new(sources, file, diagnostics).parse_program();
+        let mut program = Parser::new(sources, file, diagnostics).parse_program();
         if diagnostics.error_count() > before {
             // A malformed embedded module would be a compiler defect; the
             // parser already recorded the reason, so the stage stops here.
             continue;
         }
+        // Mark the item as embedded so the reserved-intrinsic check allows the
+        // library to declare the compiler-known helpers.
+        program.embedded = true;
         programs.push((file, program));
     }
 }

@@ -33,10 +33,41 @@ pub(super) fn c_type(ty: &Ty) -> String {
                 format!("ClSlice_{}", type_key(element))
             }
         }
-        TyKind::Func(_) => "void *".to_owned(),
+        TyKind::Func(signature) => func_pointer_type(signature),
         TyKind::Param(name) => format!("Cl{name}"),
         TyKind::Unknown => "i32".to_owned(),
     }
+}
+
+/// The C spelling of a function-pointer type in a value position.
+///
+/// A `func` value is a C function pointer, so it can be stored in a field and
+/// called through the field. An unnamed `ret (*)(params)` is a complete type
+/// usable in casts and `sizeof`.
+fn func_pointer_type(signature: &crate::types::FuncTy) -> String {
+    let returns = c_type(&signature.returns);
+    format!(
+        "{returns} (*)({})",
+        func_pointer_params(signature)
+    )
+}
+
+/// The spelling of a function-pointer declarator that names the pointer.
+fn func_pointer_declarator(signature: &crate::types::FuncTy, name: &str) -> String {
+    let returns = c_type(&signature.returns);
+    format!(
+        "{returns} (*{name})({})",
+        func_pointer_params(signature)
+    )
+}
+
+/// The comma-separated C parameter types of a function pointer, or `void`.
+fn func_pointer_params(signature: &crate::types::FuncTy) -> String {
+    if signature.params.is_empty() {
+        return "void".to_owned();
+    }
+    let params: Vec<String> = signature.params.iter().map(c_type).collect();
+    params.join(", ")
 }
 
 /// The C type of a handle: its contract ABI type, or an opaque `Cl<Name>`.
@@ -78,7 +109,7 @@ pub(super) fn declarator(ty: &Ty, name: &str) -> String {
         }
         TyKind::Raw(inner) => format!("{} *{name}", c_type(inner)),
         TyKind::CString => format!("char *{name}"),
-        TyKind::Func(_) => format!("void *{name}"),
+        TyKind::Func(signature) => func_pointer_declarator(signature, name),
         _ => format!("{} {name}", c_type(ty)),
     }
 }

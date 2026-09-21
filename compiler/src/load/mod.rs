@@ -148,6 +148,12 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
             continue;
         };
         let group = groups.entry(name).or_default();
+        // Only an embedded standard-library file may declare a compiler-known
+        // intrinsic, so the reserved-name check runs here where the file's
+        // origin is still known; the merged module keeps no per-item origin.
+        if !program.embedded {
+            check_reserved_declarations(&program.items, diagnostics);
+        }
         group.files.push(file);
         group.imports.extend(program.imports);
         group.items.extend(program.items);
@@ -190,6 +196,23 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
         check_entry_point(&loaded, diagnostics);
     }
     loaded
+}
+
+/// The standard-library modules named by qualified references in the files.
+///
+/// A dotted reference such as `std.mem.bufferNew` needs `std.mem` loaded, even
+/// though the file writes no `import`. The driver injects the modules named
+/// here alongside the imported ones. Embedded sources are skipped so the
+/// library does not ask for modules through its own qualified names.
+pub fn referenced_modules(programs: &[(FileId, Program)]) -> BTreeSet<String> {
+    let mut modules = BTreeSet::new();
+    for (_, program) in programs {
+        if program.embedded {
+            continue;
+        }
+        modules.extend(collect_name_mentions(&program.items).modules);
+    }
+    modules
 }
 
 /// Determines the module a file belongs to, reporting a missing or misplaced
@@ -271,6 +294,32 @@ fn declarations_of(item: &Item) -> Vec<Decl> {
     }]
 }
 
+/// Reports `E20006` for a user declaration of a compiler-known intrinsic.
+///
+/// The compiler implements these helpers itself, so a user `func` or
+/// `intrinsic func` with one of the reserved names would be silently replaced
+/// by the built-in lowering. Only an embedded standard-library file may
+/// declare one, which the caller has already established.
+fn check_reserved_declarations(items: &[Item], diagnostics: &mut Diagnostics) {
+    for item in items {
+        let (name, span) = match item {
+            Item::Intrinsic(signature) => (&signature.name, signature.name_span),
+            Item::Func(decl) => (&decl.name, decl.name_span),
+            _ => continue,
+        };
+        if stdlib::is_compiler_intrinsic(name) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "E20006",
+                    format!("'{name}' is a reserved built-in and cannot be redeclared"),
+                    span,
+                )
+                .with_help("the compiler provides this intrinsic; rename the declaration"),
+            );
+        }
+    }
+}
+
 /// Collects a module's declarations and reports duplicate names.
 ///
 /// Files that declare the same module share one namespace, so the second
@@ -280,27 +329,6 @@ fn collect_declarations(
     items: &[Item],
     diagnostics: &mut Diagnostics,
 ) -> BTreeMap<String, Decl> {
-    // The compiler implements the intrinsic helpers itself, so only an
-    // embedded standard-library module may declare one of them.
-    if !stdlib::is_standard_module(module) {
-        for item in items {
-            if let Item::Intrinsic(signature) = item {
-                if stdlib::is_compiler_intrinsic(&signature.name) {
-                    diagnostics.push(
-                        Diagnostic::error(
-                            "E20006",
-                            format!(
-                                "'{}' is a reserved built-in and cannot be redeclared",
-                                signature.name
-                            ),
-                            signature.name_span,
-                        )
-                        .with_help("the compiler provides this intrinsic; rename the declaration"),
-                    );
-                }
-            }
-        }
-    }
     let mut decls: BTreeMap<String, Decl> = BTreeMap::new();
     for decl in items.iter().flat_map(declarations_of) {
         if decls.contains_key(&decl.name) {
@@ -327,6 +355,7 @@ fn resolve_imports(
 ) -> Vec<ImportBinding> {
     let used = collect_name_mentions(&group.items);
     let mut bindings: Vec<ImportBinding> = Vec::new();
+    let used = &used.names;
     for import in &group.imports {
         let target = import.from.to_dotted();
         for item in &import.items {

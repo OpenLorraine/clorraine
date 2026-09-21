@@ -72,24 +72,83 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Lowers a call to its name, concrete type arguments, and arguments.
+    /// The member type a dot-call callee selects, when it is a field access.
+    ///
+    /// A `Member` callee is always a field access. A `Qualified` callee is a
+    /// field access only when its head names a value in scope; its final
+    /// segment is the field and the segments before it are field selections.
+    pub(super) fn callee_field_type(&self, callee: &Expr) -> Option<Ty> {
+        match &callee.kind {
+            ExprKind::Member { base, name } => {
+                let base_ty = self.ty(base);
+                Some(self.member_type(&base_ty, name))
+            }
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                let head = name.segments.first()?;
+                let mut ty = if let Some(id) = self.lookup(head) {
+                    self.bindings[id].ty.clone()
+                } else {
+                    self.program.globals.get(head)?.ty.clone()
+                };
+                let last = name.segments.len() - 1;
+                for segment in &name.segments[1..last] {
+                    ty = self.member_type(&ty, segment);
+                }
+                Some(self.member_type(&ty, &name.segments[last]))
+            }
+            _ => None,
+        }
+    }
+
+    /// The callable value of a `func`-typed field call.
+    ///
+    /// A call such as `c.f(0)` where `f` is a `func` field is a call through
+    /// the field, not a method taking the receiver: the field itself is the
+    /// callable value. Returning `None` for a non-field callee keeps the
+    /// ordinary dot-call path unchanged.
+    pub(super) fn func_field_receiver(&mut self, callee: &Expr) -> Option<Value> {
+        let field_ty = self.callee_field_type(callee)?;
+        if !matches!(field_ty.kind, TyKind::Func(_)) {
+            return None;
+        }
+        // The field itself is the callable value. It is built directly rather
+        // than through `lower_value`, which would look the field expression's
+        // recorded type up and find none: the type stage records the base's
+        // type and the call's result, not an internal callee.
+        let kind = match &callee.kind {
+            ExprKind::Member { base, name } => ValueKind::Member {
+                base: Box::new(self.lower_value(base)),
+                name: name.clone(),
+            },
+            ExprKind::Qualified(name) => ValueKind::Path(name.segments.clone()),
+            _ => return None,
+        };
+        Some(Value::new(field_ty, kind))
+    }
+
+    /// Lowers a call to its callable value, name, type arguments, and arguments.
     ///
     /// A dot-call's receiver becomes the first argument, matching the
-    /// free-function signature. An inferred generic call gets its concrete type
-    /// arguments from the argument types so the emitter can name the instance
-    /// symbol; an explicit list is used as written.
+    /// free-function signature; a `func`-typed field call instead carries the
+    /// field as its callable value and passes no receiver. An inferred generic
+    /// call gets its concrete type arguments from the argument types so the
+    /// emitter can name the instance symbol; an explicit list is used as
+    /// written.
     pub(super) fn lower_call(
         &mut self,
         callee: &Expr,
         type_args: &[crate::ast::Type],
         args: &[Arg],
-    ) -> (String, Vec<Ty>, Vec<Value>) {
+    ) -> LoweredCall {
         let name = self.callee_name(callee).unwrap_or_default();
+        let receiver = self.func_field_receiver(callee);
         let mut values: Vec<Value> = Vec::new();
         let mut arg_types: Vec<Ty> = Vec::new();
-        if let Some(receiver) = self.lower_dot_receiver(callee) {
-            arg_types.push(receiver.ty.clone());
-            values.push(receiver);
+        if receiver.is_none() {
+            if let Some(value) = self.lower_dot_receiver(callee) {
+                arg_types.push(value.ty.clone());
+                values.push(value);
+            }
         }
         for arg in args {
             let value = self.lower_value(&arg.value);
@@ -102,7 +161,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             explicit
         };
-        (name, resolved, values)
+        // A call result the callee only borrows stays owned by the caller; an
+        // unnamed one is bound to a scope local so the cleanup drops it, since
+        // the callee never does. A `take` argument is skipped: the callee owns
+        // it, and the move-out empties the caller's binding.
+        if let Some(modes) = self.callee_modes(&name) {
+            for (value, mode) in values.iter_mut().zip(modes) {
+                let pending =
+                    std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                *value = self.materialize_owned_argument(pending, mode == Mode::Take);
+            }
+        }
+        LoweredCall {
+            receiver,
+            name,
+            type_args: resolved,
+            args: values,
+        }
     }
 
     /// Infers the type arguments of a generic call from its argument types.
@@ -147,6 +222,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         args: &[Arg],
     ) -> Option<(Ty, ValueKind)> {
         let name = self.callee_name(callee)?;
+        // Only the compiler-known helper lowers as an intrinsic. A user or
+        // `ffi` declaration that happens to share the name must resolve to its
+        // own symbol, never be silently replaced by the built-in lowering.
+        if matches!(
+            self.program.callee(&name),
+            Some(Callee::User(_)) | Some(Callee::Ffi(_))
+        ) {
+            return None;
+        }
         if name == "len" && type_args.is_empty() {
             // `xs.len()` is the dot-call spelling of `len(xs)`; the receiver
             // becomes the intrinsic's argument.
@@ -164,7 +248,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return None;
         }
         let explicit: Vec<Ty> = type_args.iter().map(|arg| self.resolve(arg)).collect();
-        let lowered: Vec<Value> = args.iter().map(|arg| self.lower_value(&arg.value)).collect();
+        let mut lowered: Vec<Value> = args.iter().map(|arg| self.lower_value(&arg.value)).collect();
+        if name == "slice" {
+            // The slice guard and the slice builder both read the source and
+            // the two offsets, so a side-effecting one is stored once.
+            for value in lowered.iter_mut() {
+                let pending = std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                *value = self.materialize_guard_operand(pending);
+            }
+        }
         let type_arg = explicit
             .first()
             .cloned()
@@ -191,6 +283,53 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             },
         ))
     }
+
+    /// The declared parameter modes of a known user or `ffi` function.
+    pub(super) fn callee_modes(&self, name: &str) -> Option<Vec<Mode>> {
+        match self.program.callee(name) {
+            Some(Callee::User(decl)) => Some(decl.params.iter().map(|param| param.mode).collect()),
+            Some(Callee::Ffi(signature)) => {
+                Some(signature.params.iter().map(|param| param.mode).collect())
+            }
+            _ => None,
+        }
+    }
+
+    /// The places a call moves out of through non-duplicable `take` arguments.
+    ///
+    /// A duplicable `take` argument is copied, so the caller keeps its value;
+    /// a handle or aggregate is moved and its place must be emptied after the
+    /// call. Only a plain place argument can be emptied; a fresh call result
+    /// already transfers ownership and has no caller binding to clear.
+    pub(super) fn take_move_out_places(&self, name: &str, args: &[Value]) -> Vec<Place> {
+        let Some(modes) = self.callee_modes(name) else {
+            return Vec::new();
+        };
+        let mut places = Vec::new();
+        for (arg, mode) in args.iter().zip(modes) {
+            if mode != Mode::Take || self.sema.table.duplicable(&arg.ty) {
+                continue;
+            }
+            if let ValueKind::Place(place) = &arg.kind {
+                places.push(place.clone());
+            }
+        }
+        places
+    }
+
+}
+
+/// A call lowered for the IR: its callable value, symbol name, concrete type
+/// arguments, and arguments.
+pub(super) struct LoweredCall {
+    /// The `func`-typed field that is called, when the callee is a field.
+    pub receiver: Option<Value>,
+    /// Simple name of the callee, for symbol resolution.
+    pub name: String,
+    /// Concrete type arguments of a generic call.
+    pub type_args: Vec<Ty>,
+    /// Lowered arguments in source order.
+    pub args: Vec<Value>,
 }
 
 /// The element type of an array, slice, or string view.

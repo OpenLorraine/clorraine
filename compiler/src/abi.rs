@@ -56,9 +56,29 @@ pub fn ffi_type_with(ty: &Ty, enum_backing: Option<crate::ast::ScalarType>) -> S
         TyKind::Enum(_) => enum_backing_c_type(enum_backing).to_owned(),
         TyKind::Scalar(scalar) => scalar_c_type(*scalar).to_owned(),
         TyKind::Array { .. } => "APTR".to_owned(),
-        TyKind::Func(_) => "APTR".to_owned(),
+        // A `func` parameter crosses the boundary as a C function pointer, not
+        // as an object pointer: the target ABI calls it, so an `APTR` argument
+        // would not convert to the pointer type the shim expects.
+        TyKind::Func(signature) => ffi_function_pointer(signature),
         TyKind::Param(name) => format!("Cl{name}"),
         TyKind::Unknown => "APTR".to_owned(),
+    }
+}
+
+/// The C type of a `func` type, spelled as an unnamed function pointer.
+///
+/// The parameter and return types themselves map through the FFI table, so a
+/// callback that takes an ABI handle or scalar keeps that spelling. A pointer
+/// type like `void (*)(void)` is a valid parameter type in a prototype, which
+/// is all the caller needs; a declarator with a name uses
+/// [`crate::codegen`]'s own spelling.
+fn ffi_function_pointer(signature: &crate::types::FuncTy) -> String {
+    let returns = ffi_type(&signature.returns);
+    let params: Vec<String> = signature.params.iter().map(ffi_type).collect();
+    if params.is_empty() {
+        format!("{returns} (*)(void)")
+    } else {
+        format!("{returns} (*)({})", params.join(", "))
     }
 }
 

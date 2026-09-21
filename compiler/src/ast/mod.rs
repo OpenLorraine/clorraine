@@ -24,6 +24,11 @@ pub struct Program {
     pub imports: Vec<ImportDecl>,
     /// Declarations in source order.
     pub items: Vec<Item>,
+    /// True when the parser produced this file from an embedded
+    /// standard-library source rather than a user-supplied file. Only such a
+    /// file may declare a compiler-known intrinsic, so the reserved-name check
+    /// keys off this flag instead of the module name.
+    pub embedded: bool,
 }
 
 /// `module A.B.C;`

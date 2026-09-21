@@ -15,172 +15,13 @@ use crate::ir::{
 use crate::types::{is_signed_scalar, scalar_bits, Ty, TyKind};
 
 use super::render::{
-    binary_token, bounds_condition, element_type, escape_c_string, float_literal, index_text,
-    signed_min, unsigned_c, unsigned_scalar,
+    binary_token, element_type, escape_c_string, float_literal, index_text, unsigned_c,
+    unsigned_scalar,
 };
 use super::types::{c_type, scalar_of, type_key};
 use super::Emitter;
 
 impl<'a> Emitter<'a> {
-    // -- guards --------------------------------------------------------------
-
-    /// Emits every runtime guard a value's evaluation needs.
-    pub(super) fn emit_guards(&mut self, value: &Value) {
-        match &value.kind {
-            ValueKind::Binary { op, left, right } => {
-                self.emit_guards(left);
-                self.emit_guards(right);
-                if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
-                    self.emit_division_guard(left, right);
-                }
-            }
-            ValueKind::Index { base, index } => {
-                self.emit_guards(base);
-                self.emit_guards(index);
-                self.emit_bounds_guard(base, index);
-            }
-            ValueKind::Cast { value: inner, .. } => {
-                self.emit_guards(inner);
-                let target = self.substitute(&value.ty);
-                let source = self.substitute(&inner.ty);
-                if target.is_integer() && source.is_numeric() && !source.is_integer() {
-                    self.emit_float_guard(inner, &target);
-                }
-            }
-            ValueKind::Call { args, .. } => {
-                for arg in args {
-                    self.emit_guards(arg);
-                }
-            }
-            ValueKind::Unary { operand, .. } => self.emit_guards(operand),
-            ValueKind::Conditional {
-                condition,
-                then_value,
-                else_value,
-            } => {
-                self.emit_guards(condition);
-                self.emit_guards(then_value);
-                self.emit_guards(else_value);
-            }
-            ValueKind::Member { base, .. } => self.emit_guards(base),
-            ValueKind::StructLit { fields, .. } => {
-                for (_, field) in fields {
-                    self.emit_guards(field);
-                }
-            }
-            ValueKind::ArrayLit { elements, fill } => {
-                for element in elements {
-                    self.emit_guards(element);
-                }
-                if let Some(fill) = fill {
-                    self.emit_guards(fill);
-                }
-            }
-            ValueKind::Template(pieces) => {
-                for piece in pieces {
-                    if let ValuePiece::Placeholder(inner) = piece {
-                        self.emit_guards(inner);
-                    }
-                }
-            }
-            ValueKind::Intrinsic { name, args, .. } => {
-                for arg in args {
-                    self.emit_guards(arg);
-                }
-                if name == "slice" {
-                    self.emit_slice_guard(args);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Emits the integer division and modulo guard.
-    ///
-    /// Float division is IEEE-defined and never faults, so only an integer
-    /// operation gets a guard.
-    fn emit_division_guard(&mut self, left: &Value, right: &Value) {
-        let ty = self.substitute(&left.ty);
-        if !ty.is_integer() {
-            return;
-        }
-        let dividend = self.value(left);
-        let divisor = self.value(right);
-        match scalar_of(&ty) {
-            Some(scalar) if is_signed_scalar(scalar) => {
-                let min = signed_min(scalar);
-                self.push(&format!(
-                    "    if ({divisor} == 0 || ({dividend} == {min} && {divisor} == -1)) cl_trap(\"E11210\", \"integer division by zero\");"
-                ));
-            }
-            _ => {
-                self.push(&format!(
-                    "    if ({divisor} == 0) cl_trap(\"E11210\", \"integer division by zero\");"
-                ));
-            }
-        }
-    }
-
-    /// Emits the index bounds check for a fixed array, slice, or string view.
-    ///
-    /// A signed index also has to be non-negative: the upper-bound comparison
-    /// alone lets `xs[-1]` through. The comparison casts both sides to the
-    /// unsigned `usize` so a signed index does not trigger
-    /// `-Werror=sign-compare`; the negative check runs first, so the cast
-    /// never sees a value that wrapped.
-    fn emit_bounds_guard(&mut self, base: &Value, index: &Value) {
-        let ty = self.substitute(&base.ty);
-        let index_c = self.value(index);
-        let signed = scalar_of(&self.substitute(&index.ty)).is_some_and(is_signed_scalar);
-        match &ty.kind {
-            TyKind::Array { extents, .. } => {
-                if extents.iter().all(Option::is_some) {
-                    let extent = extents
-                        .iter()
-                        .filter_map(|size| *size)
-                        .fold(1usize, usize::saturating_mul);
-                    let condition = bounds_condition(&index_c, signed, &extent.to_string());
-                    self.push(&format!(
-                        "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
-                    ));
-                } else {
-                    let base_c = self.value(base);
-                    let bound = format!("({base_c}).len");
-                    let condition = bounds_condition(&index_c, signed, &bound);
-                    self.push(&format!(
-                        "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
-                    ));
-                }
-            }
-            TyKind::Str | TyKind::StaticStr => {
-                let base_c = self.value(base);
-                let bound = format!("({base_c}).len");
-                let condition = bounds_condition(&index_c, signed, &bound);
-                self.push(&format!(
-                    "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
-                ));
-            }
-            _ => {}
-        }
-    }
-
-    /// Emits the float-to-integer range guard.
-    fn emit_float_guard(&mut self, value: &Value, target: &Ty) {
-        let value_c = self.value(value);
-        let (low, high) = match scalar_of(target) {
-            Some(ScalarType::I8) => ("-128.0", "127.0"),
-            Some(ScalarType::I16) => ("-32768.0", "32767.0"),
-            Some(ScalarType::I32) | Some(ScalarType::Isize) => ("-2147483648.0", "2147483647.0"),
-            Some(ScalarType::U8) => ("0.0", "255.0"),
-            Some(ScalarType::U16) => ("0.0", "65535.0"),
-            Some(ScalarType::U32) | Some(ScalarType::Usize) => ("0.0", "4294967295.0"),
-            _ => return,
-        };
-        self.push(&format!(
-            "    if (cl_isnan({value_c}) || !({value_c} >= {low} && {value_c} <= {high})) cl_trap(\"E11212\", \"float-to-integer conversion out of range\");"
-        ));
-    }
-
     // -- values --------------------------------------------------------------
 
     /// Renders a typed IR value as a C expression.
@@ -208,6 +49,19 @@ impl<'a> Emitter<'a> {
                 index_text(&self.substitute(&base.ty), &base_c, &index_c)
             }
             ValueKind::Unary { op, operand } => self.unary(*op, operand, value),
+            // A short-circuit operator evaluates its right operand only when
+            // the left decides to, so the right operand carries its guards
+            // inline rather than as statements before the whole expression.
+            ValueKind::Binary {
+                op: BinaryOp::LogicalAnd,
+                left,
+                right,
+            } => format!("({} && {})", self.value(left), self.guarded_value(right)),
+            ValueKind::Binary {
+                op: BinaryOp::LogicalOr,
+                left,
+                right,
+            } => format!("({} || {})", self.value(left), self.guarded_value(right)),
             ValueKind::Binary { op, left, right } => self.binary(*op, left, right, value),
             ValueKind::Cast { value: inner, .. } => {
                 let target = self.substitute(&value.ty);
@@ -223,8 +77,8 @@ impl<'a> Emitter<'a> {
             } => format!(
                 "({} ? {} : {})",
                 self.value(condition),
-                self.value(then_value),
-                self.value(else_value)
+                self.guarded_value(then_value),
+                self.guarded_value(else_value)
             ),
             ValueKind::StructLit { name, fields } => self.struct_literal(name, fields),
             ValueKind::ArrayLit { elements, fill } => self.array_literal(elements, fill),
@@ -238,7 +92,8 @@ impl<'a> Emitter<'a> {
                 callee,
                 type_args,
                 args,
-            } => self.call(callee, type_args, args),
+                receiver,
+            } => self.call(callee, type_args, args, receiver.as_deref()),
             // A staged-out form never reaches a valid compile; the fallback
             // keeps the renderer total.
             ValueKind::Aggregate => "0".to_owned(),
@@ -478,8 +333,23 @@ impl<'a> Emitter<'a> {
     }
 
     /// Renders a call to a user function, an FFI function, or a helper.
-    pub(super) fn call(&self, callee: &str, type_args: &[Ty], args: &[Value]) -> String {
+    ///
+    /// A call whose callee is a `func`-typed field renders the field as the
+    /// callable expression and passes no receiver argument; every other call
+    /// resolves the callee name to a C symbol. An unresolved callee name is
+    /// spelled as-is so a compiler-known helper such as `text` still renders.
+    pub(super) fn call(
+        &self,
+        callee: &str,
+        type_args: &[Ty],
+        args: &[Value],
+        receiver: Option<&Value>,
+    ) -> String {
         let argument_list = self.call_arguments(callee, args);
+        if let Some(receiver) = receiver {
+            let target = self.value(receiver);
+            return format!("({target})({argument_list})");
+        }
         if let Some(info) = self.resolve_function(callee) {
             let symbol = if type_args.is_empty() {
                 self.function_symbol(&info.module, callee)
@@ -517,7 +387,35 @@ impl<'a> Emitter<'a> {
                 format!("cl_text_str(({value}).ptr, ({value}).len)")
             }
             TyKind::Handle(name) if name == "String" => format!("cl_string_copy({value})"),
+            // The shim defines one converter per distinct C integer width it
+            // can format. A narrower or wider scalar is normalized to the
+            // converter that preserves its value: a 32-bit signed or unsigned
+            // conversion covers every machine-word integer, and a `float` is
+            // promoted to `double`, matching how C already passes it to a
+            // variadic formatter.
+            TyKind::Scalar(scalar) => self.scalar_text(*scalar, &value),
             _ => format!("cl_text_{}({value})", type_key(&ty)),
+        }
+    }
+
+    /// The shim call that formats a scalar, normalizing to the converters the
+    /// shim defines.
+    ///
+    /// A 16-bit or 8-bit integer and the pointer-sized signed integer fit the
+    /// `i32` converter; `usize` on the 32-bit target fits the `u32` converter;
+    /// an `f32` promotes to the `f64` converter. The decimal value is unchanged
+    /// by the widening cast, so the printed text is the same.
+    fn scalar_text(&self, scalar: ScalarType, value: &str) -> String {
+        match scalar {
+            ScalarType::I8
+            | ScalarType::I16
+            | ScalarType::I32
+            | ScalarType::Isize => format!("cl_text_i32((i32)({value}))"),
+            ScalarType::U8 | ScalarType::U16 | ScalarType::U32 | ScalarType::Usize => {
+                format!("cl_text_u32((u32)({value}))")
+            }
+            ScalarType::Bool => format!("cl_text_bool((int)({value}))"),
+            ScalarType::F32 | ScalarType::F64 => format!("cl_text_f64((double)({value}))"),
         }
     }
 

@@ -19,21 +19,53 @@ impl Emitter<'_> {
     /// view. The guard runs before the view is built, so an out-of-range
     /// request traps with E11211 instead of reading past the storage.
     pub(super) fn emit_slice_guard(&mut self, args: &[Value]) {
-        let Some(view) = args.first() else {
-            return;
-        };
-        let Some(lo) = args.get(1) else {
-            return;
-        };
-        let Some(hi) = args.get(2) else {
-            return;
-        };
-        let view_c = self.value(view);
+        if let Some(condition) = self.slice_guard_condition(args) {
+            self.push(&format!(
+                "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
+            ));
+        }
+    }
+
+    /// The condition under which a `slice` request is out of range.
+    ///
+    /// A slice is illegal when `lo > hi` or `hi` lies past the source view.
+    /// The same condition drives the statement guard and the inline guard a
+    /// short-circuit operand embeds.
+    pub(super) fn slice_guard_condition(&self, args: &[Value]) -> Option<String> {
+        let view = args.first()?;
+        let lo = args.get(1)?;
+        let hi = args.get(2)?;
+        let (_ptr, len) = self.slice_source(view);
         let lo_c = self.value(lo);
         let hi_c = self.value(hi);
-        self.push(&format!(
-            "    if ((usize)({lo_c}) > (usize)({hi_c}) || (usize)({hi_c}) > (usize)(({view_c}).len)) cl_trap(\"E11211\", \"index out of range\");"
-        ));
+        Some(format!(
+            "(usize)({lo_c}) > (usize)({hi_c}) || (usize)({hi_c}) > {len}"
+        ))
+    }
+
+    /// The pointer and length expressions of the storage a `slice` selects from.
+    ///
+    /// A growable slice or string view carries its own `ptr` and `len` fields.
+    /// A fixed array has no such fields, so its address decays to the element
+    /// pointer and its extent is a compile-time constant. This lets `slice`
+    /// accept a fixed array without emitting `(arr).ptr`, which is not C.
+    fn slice_source(&self, view: &Value) -> (String, String) {
+        let ty = self.substitute(&view.ty);
+        let value = self.value(view);
+        match &ty.kind {
+            TyKind::Array { extents, .. } if extents.iter().all(Option::is_some) => {
+                let extent = extents
+                    .iter()
+                    .filter_map(|size| *size)
+                    .fold(1usize, usize::saturating_mul);
+                let element = self.intrinsic_element(None, Some(view));
+                (
+                    format!("({} *){value}", c_type(&element)),
+                    format!("(usize){extent}"),
+                )
+            }
+            _ => (format!("({value}).ptr"), format!("(usize)(({value}).len)")),
+        }
     }
 
     /// Renders a call's argument list, taking the address of pointer-lowered
@@ -141,12 +173,15 @@ impl Emitter<'_> {
                 format!("((ClStr){{ {}, (usize)({}) }})", pointer, count)
             }
             "slice" => {
-                let view = self.intrinsic_arg(args, 0);
+                let (pointer, _len) = match args.first() {
+                    Some(view) => self.slice_source(view),
+                    None => ("0".to_owned(), "0".to_owned()),
+                };
                 let low = self.intrinsic_arg(args, 1);
                 let high = self.intrinsic_arg(args, 2);
                 let element = self.intrinsic_element(type_arg, args.first());
                 format!(
-                    "((ClSlice_{}){{ ({view}).ptr + ({low}), (usize)(({high}) - ({low})) }})",
+                    "((ClSlice_{}){{ ({pointer}) + ({low}), (usize)(({high}) - ({low})) }})",
                     type_key(&element)
                 )
             }

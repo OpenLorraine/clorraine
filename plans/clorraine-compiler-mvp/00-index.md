@@ -79,6 +79,7 @@ challenger verdict of `Unnecessary` for the larger option.
 | 12  | [Phase 4 Review](12-phase4-review.md) | Independent type/const review findings and fix batch |
 | 13  | [Phase 5 Review](13-phase5-review.md) | Independent ownership/borrow review findings and fix batch |
 | 14  | [Phase 6 Review](14-phase6-review.md) | Independent codegen/ABI review findings and fix batch |
+| 15  | [Phase 7 Review](15-phase7-review.md) | Independent stdlib/intrinsic/memory review findings and fix batch |
 | 99  | [Execution Plan](99-execution-plan.md) | Phases, steps, and the task checklist |
 
 ## Quick Reference

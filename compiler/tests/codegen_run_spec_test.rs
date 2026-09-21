@@ -1051,3 +1051,279 @@ func main(): i32 {
     let output = build_and_run("sl-span", source, None);
     assert_traps("sl-span", &output, "error E11211: index out of range");
 }
+
+/// Runs the compiler with `--deny-warnings` and returns its result.
+///
+/// Used when the observable behavior is a diagnostic rather than a program
+/// run: a warning becomes fatal, so a clean exit proves none was reported.
+fn compile_with_deny_warnings(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source).expect("write the snippet");
+    let c_path = scratch.path().join("out.c");
+    run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "--deny-warnings".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ])
+}
+
+/// Compiles a source expected to be rejected and returns the stderr text.
+fn compile_expecting_rejection(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source).expect("write the snippet");
+    let c_path = scratch.path().join("out.c");
+    let compile = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_ne!(
+        compile.status.code(),
+        Some(0),
+        "{tag}: the program must be rejected"
+    );
+    String::from_utf8_lossy(&compile.stderr).into_owned()
+}
+
+/// A `take` argument of a call used as a value is emptied at the call site.
+///
+/// `eat` takes ownership of the handle and releases it. The caller's binding
+/// must be emptied after the call, or the scope drop releases it a second
+/// time; the stub prints one `close` only when that is true.
+#[test]
+fn a_value_position_take_argument_is_emptied_after_the_call() {
+    let source = r#"module codegen.fix501;
+
+handle File freedBy CloseFile;
+
+ffi dos {
+    func OpenFile(): File?;
+    func CloseFile(take f: File): void;
+    func emit(n: i32): void;
+}
+
+func eat(take f: File): i32 {
+    return 1;
+}
+
+func demo(): void {
+    let f: File? = OpenFile();
+    if (f == null) {
+        return;
+    }
+    let n: i32 = eat(f);
+    emit(n);
+}
+
+func main(): i32 {
+    demo();
+    return 0;
+}
+"#;
+    let output = build_and_run("fix501", source, Some(OPEN_CLOSE_EMIT_STUB));
+    assert_stdout("fix501", &output, "open\nclose\n1\n");
+}
+
+/// An owned call result passed to a borrowing callee is released by the caller.
+///
+/// `bytes(stringOf(...))` borrows the temporary string; the caller owns it, so
+/// the scope cleanup must release it. A leak is invisible without a sanitizer,
+/// so this case at least proves the value round-trips and the program is
+/// warning-free.
+#[test]
+fn an_owned_call_result_argument_is_released_by_the_caller() {
+    let source = r#"module codegen.fix506;
+
+import { stringOf, bytes } from std.text;
+import { println } from std.io;
+
+func main(): i32 {
+    let d: u8[] = bytes(stringOf("hello"));
+    println($"d0={i32(d[0])}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix506", source, None);
+    assert_stdout("fix506", &output, "d0=104\n");
+}
+
+/// `text(7)` returns a `String` and widens to the `str` a printer expects.
+#[test]
+fn a_text_conversion_passed_as_a_str_prints_its_value() {
+    let source = r#"module codegen.fix504;
+
+import { println } from std.io;
+import { text } from std.fmt;
+
+func main(): i32 {
+    println(text(7));
+    return 0;
+}
+"#;
+    let output = build_and_run("fix504", source, None);
+    assert_stdout("fix504", &output, "7\n");
+}
+
+/// A `usize` template placeholder uses the shim's unsigned converter.
+#[test]
+fn a_usize_template_placeholder_prints_its_value() {
+    let source = r#"module codegen.fix505;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let n: usize = 42;
+    println($"n={n}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix505", source, None);
+    assert_stdout("fix505", &output, "n=42\n");
+}
+
+/// A `&&` guard for the right operand runs only when the left operand holds.
+///
+/// At `i == n` the left comparison is false, so `a[i]` must not be evaluated
+/// and its bounds guard must not fire.
+#[test]
+fn a_short_circuit_guard_does_not_fire_for_an_unevaluated_operand() {
+    let source = r#"module codegen.fix503;
+
+import { println } from std.io;
+
+func scan(a: u8[4], n: usize): i32 {
+    let i: usize = 0;
+    while (i < n && a[i] == 7) {
+        i = i + 1;
+    }
+    return i32(i);
+}
+
+func main(): i32 {
+    let a: u8[4] = [7, 8, 9, 10];
+    println($"i={scan(a, 1)}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix503", source, None);
+    assert_stdout("fix503", &output, "i=1\n");
+}
+
+/// A side-effecting index and divisor are evaluated once, guard included.
+///
+/// The guard and the operation share one compiler temporary, so `next` and
+/// `half` each run once and the guarded value is the one used.
+#[test]
+fn a_side_effecting_index_and_divisor_are_guarded_once() {
+    let source = r#"module codegen.fix504b;
+
+import { println } from std.io;
+
+let calls: i32 = 0;
+
+func next(): usize {
+    calls = calls + 1;
+    return 1;
+}
+
+func half(): i32 {
+    calls = calls + 1;
+    return 2;
+}
+
+func main(): i32 {
+    let a: u8[4] = [10, 20, 30, 40];
+    let v: u8 = a[next()];
+    let q: i32 = 10 / half();
+    println($"v={i32(v)} q={q} calls={calls}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix504b", source, None);
+    assert_stdout("fix504b", &output, "v=20 q=5 calls=2\n");
+}
+
+/// `slice` over a fixed array builds a view from its address and extent.
+#[test]
+fn slicing_a_fixed_array_returns_the_selected_elements() {
+    let source = r#"module codegen.fix507;
+
+import { println } from std.io;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: u8[4] = [7, 8, 9, 10];
+    let sub: u8[] = slice<u8>(a, usize(1), usize(3));
+    println($"sub={i32(sub[0])},{i32(sub[1])}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix507", source, None);
+    assert_stdout("fix507", &output, "sub=8,9\n");
+}
+
+/// Two shared views of one owner are legal reads.
+#[test]
+fn two_shared_views_of_one_owner_compile() {
+    let source = r#"module codegen.fix509;
+
+import { String, stringOf, bytes } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("z");
+    let v: u8[] = bytes(s);
+    let w: u8[] = bytes(s);
+    return i32(v[0]) + i32(w[0]);
+}
+"#;
+    let output = build_and_run("fix509", source, None);
+    assert_eq!(output.status.code(), Some(244), "fix509: two 'z' bytes");
+}
+
+/// A local used only as a dot-call receiver is not reported unused.
+#[test]
+fn a_dot_call_receiver_only_local_is_not_warned_unused() {
+    let source = r#"module codegen.fix502;
+
+func main(): i32 {
+    let xs: u8[3] = [1, 2, 3];
+    let n: usize = xs.len();
+    return i32(n);
+}
+"#;
+    let output = compile_with_deny_warnings("fix502", source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "fix502: a receiver-only local must not warn; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A live dot-call view blocks a reallocating receiver call.
+#[test]
+fn a_dot_call_view_blocks_a_reallocating_receiver_call() {
+    let source = r#"module codegen.fix503b;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let xs: Array<i32> = arrayNew<i32>();
+    let v: i32[] = xs.get(0);
+    xs.push(1);
+    return i32(v[0]);
+}
+"#;
+    let stderr = compile_expecting_rejection("fix503b", source);
+    assert!(
+        stderr.contains("E10032") || stderr.contains("E10031"),
+        "fix503b: expected a borrow error, got:\n{stderr}"
+    );
+}

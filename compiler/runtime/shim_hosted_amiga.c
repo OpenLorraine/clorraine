@@ -23,6 +23,7 @@
  * generated code emits no AmigaOS typedef of its own, so the shim must supply
  * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
 #include <dos/dos.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -107,8 +108,10 @@ static void cl_vblank_code(void)
 /* Installs `handler` as the VBlank server, replacing any current one.
  *
  * A null handler is rejected so an accidental unregister cannot leave a
- * dangling callback. */
-ULONG cl_add_handler(APTR handler)
+ * dangling callback. The token is advanced past zero so a wrapped counter
+ * never names a registration with the token's "no handler" sentinel. The
+ * server primitives return no status on this NDK, so no result is checked. */
+ULONG cl_add_handler(cl_handler_fn handler)
 {
     if (handler == NULL) {
         return 0;
@@ -116,9 +119,12 @@ ULONG cl_add_handler(APTR handler)
     if (cl_vblank_handler != NULL) {
         RemIntServer(INTB_VERTB, &cl_vblank_server);
     }
-    cl_vblank_handler = (cl_handler_fn)handler;
+    cl_vblank_handler = handler;
     cl_vblank_token = cl_vblank_next_token;
     cl_vblank_next_token++;
+    if (cl_vblank_next_token == 0) {
+        cl_vblank_next_token = 1;
+    }
     cl_vblank_server.is_Node.ln_Type = NT_INTERRUPT;
     cl_vblank_server.is_Node.ln_Pri = 0;
     cl_vblank_server.is_Node.ln_Name = (char *)"clorraine.vblank";
@@ -139,10 +145,12 @@ void cl_remove_handler(ULONG id)
     }
 }
 
-/* Heap allocation with the allocator contract: a failure traps. */
-void *cl_alloc(ULONG size)
+/* Heap allocation with the allocator contract: a failure traps. The size is a
+ * `size_t`, so a caller that computes a block size in `size_t` never has it
+ * truncated back to the 32-bit `ULONG` an AmigaOS word would hold. */
+void *cl_alloc(size_t size)
 {
-    void *block = malloc(size == 0 ? 1 : (size_t)size);
+    void *block = malloc(size == 0 ? 1 : size);
     if (block == NULL) {
         cl_trap("E1", "out of memory");
     }
@@ -232,10 +240,17 @@ void cl_buffer_reserve(void *handle, ULONG cap)
 void cl_buffer_append(void *handle, APTR src, ULONG n)
 {
     cl_buffer_block *buffer = (cl_buffer_block *)handle;
+    if (n > ULONG_MAX - buffer->len) {
+        cl_trap("E1", "buffer too large");
+    }
     ULONG needed = buffer->len + n;
     if (needed > buffer->cap) {
         ULONG cap = buffer->cap == 0 ? 8 : buffer->cap;
         while (cap < needed) {
+            if (cap > ULONG_MAX / 2) {
+                cap = needed;
+                break;
+            }
             cap *= 2;
         }
         cl_buffer_reserve(handle, cap);
@@ -244,10 +259,15 @@ void cl_buffer_append(void *handle, APTR src, ULONG n)
     buffer->len = needed;
 }
 
-/* Write `n` bytes from `src` at `off`, growing the buffer as needed. */
+/* Write `n` bytes from `src` at `off`, growing the buffer as needed. The
+ * offset and count are both bounded so `off + n` cannot wrap and the copy stays
+ * inside the buffer. */
 void cl_buffer_write(void *handle, ULONG off, APTR src, ULONG n)
 {
     cl_buffer_block *buffer = (cl_buffer_block *)handle;
+    if (n > ULONG_MAX - off) {
+        cl_trap("E11211", "index out of range");
+    }
     ULONG needed = off + n;
     if (needed > buffer->cap) {
         cl_buffer_reserve(handle, needed);
@@ -277,10 +297,18 @@ static unsigned char *cl_string_bytes(cl_string_block *string)
     return (unsigned char *)(string + 1);
 }
 
-/* Allocate an empty string with room for `cap` payload bytes. */
+/* Allocate an empty string with room for `cap` payload bytes.
+ *
+ * The block size is computed in `size_t` so a capacity near the top of the
+ * 32-bit range cannot wrap the allocation size down to a short block; a
+ * capacity whose block cannot be represented is rejected with the E1 fault. */
 void *cl_string_new(ULONG cap)
 {
-    cl_string_block *string = (cl_string_block *)cl_alloc(sizeof *string + cap + 1);
+    if ((size_t)cap > SIZE_MAX - sizeof(cl_string_block) - 1) {
+        cl_trap("E1", "string too large");
+    }
+    cl_string_block *string =
+        (cl_string_block *)cl_alloc(sizeof *string + (size_t)cap + 1);
     string->len = 0;
     string->cap = cap;
     cl_string_bytes(string)[0] = '\0';

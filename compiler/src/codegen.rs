@@ -28,6 +28,7 @@ mod control;
 mod drop;
 mod expr;
 mod function;
+mod guards;
 mod init;
 mod program;
 mod render;

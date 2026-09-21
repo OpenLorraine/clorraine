@@ -62,6 +62,19 @@ impl Checker<'_, '_> {
                     self.check_args(args, &signature.params);
                     return signature.returns;
                 }
+                // The compiler-known `text(v)` formatter is not declared in
+                // Clorraine; the compiler lowers it to a `String`-returning
+                // shim conversion. Registering that return type here lets the
+                // `String`-to-`str` widening apply when it is passed to a view.
+                if name == "text" {
+                    for ty in type_args {
+                        self.resolve_type(ty);
+                    }
+                    for arg in args {
+                        self.check_value(&arg.value, None);
+                    }
+                    return Ty::handle("String");
+                }
             }
         }
         let callee_ty = self.check_value(callee, None);

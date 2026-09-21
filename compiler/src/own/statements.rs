@@ -83,13 +83,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 type_args,
                 args,
             } => {
-                let (name, resolved, lowered) = self.lower_call(callee, type_args, args);
+                let call = self.lower_call(callee, type_args, args);
+                let move_outs = self.take_move_out_places(&call.name, &call.args);
                 self.emit(Statement::Call {
-                    callee: name,
-                    type_args: resolved,
-                    args: lowered,
+                    callee: call.name,
+                    type_args: call.type_args,
+                    args: call.args,
+                    receiver: call.receiver.map(Box::new),
                     result: None,
                 });
+                for place in move_outs {
+                    self.emit(Statement::MoveOut { place });
+                }
             }
             ExprKind::IntrinsicCall { name, args } if name == "assert" || name == "panic" => {
                 let name = name.clone();
@@ -104,6 +109,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     callee: name,
                     type_args: Vec::new(),
                     args,
+                    receiver: None,
                     result: None,
                 });
             }
@@ -458,10 +464,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_scopes = self.scopes.len();
         let saved_defers = self.defer_entries.len();
         let saved_report = self.report_diagnostics;
+        let saved_owned = self.materialize_owned_temporaries;
         self.report_diagnostics = false;
+        self.materialize_owned_temporaries = false;
         self.switch_to(defer_block);
         self.check_block(block);
         self.report_diagnostics = saved_report;
+        self.materialize_owned_temporaries = saved_owned;
         self.state = saved_state;
         self.bindings.truncate(saved_bindings);
         self.scopes.truncate(saved_scopes);

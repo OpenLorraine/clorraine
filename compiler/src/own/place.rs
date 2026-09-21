@@ -310,10 +310,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// The provenance of a call result that is a view.
+    /// The provenance of a view produced by a call.
+    ///
+    /// A dot-call's receiver is its first parameter but is not a written
+    /// argument, so the parameter index mapping accounts for it: index zero is
+    /// the receiver and every later index is one past the written argument.
     pub(super) fn call_provenance(&self, callee: &Expr, args: &[Arg]) -> Provenance {
         let Some(name) = self.callee_name(callee) else {
             return Provenance::None;
+        };
+        let is_dot = self.is_dot_call(callee);
+        // The provenance of the source at a parameter index.
+        let source_provenance = |index: usize| -> Provenance {
+            if is_dot && index == 0 {
+                return self.dot_receiver_provenance(callee);
+            }
+            let written_index = if is_dot { index - 1 } else { index };
+            args.get(written_index)
+                .map(|arg| self.view_provenance(&arg.value))
+                .unwrap_or(Provenance::None)
         };
         match self.program.callee(&name) {
             Some(Callee::User(decl)) => {
@@ -344,19 +359,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .map(|(index, _)| index)
                     .collect();
                 if candidates.len() == 1 {
-                    return args
-                        .get(candidates[0])
-                        .map(|arg| self.view_provenance(&arg.value))
-                        .unwrap_or(Provenance::None);
+                    return source_provenance(candidates[0]);
                 }
                 Provenance::None
             }
             Some(Callee::Stdlib {
                 effect: StdlibEffect::ViewOf { arg, .. },
                 ..
-            }) => args
-                .get(arg)
-                .map(|written| self.view_provenance(&written.value))
+            }) => source_provenance(arg),
+            _ => Provenance::None,
+        }
+    }
+
+    /// The provenance of a dot-call receiver's storage.
+    ///
+    /// A `Member` receiver is read back through [`Self::view_provenance`]; a
+    /// qualified receiver names the head binding, so its own place provenance
+    /// is used.
+    fn dot_receiver_provenance(&self, callee: &Expr) -> Provenance {
+        match &callee.kind {
+            ExprKind::Member { base, .. } => self.view_provenance(base),
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => name
+                .segments
+                .first()
+                .and_then(|first| self.lookup(first))
+                .map(|id| self.place_provenance(id))
                 .unwrap_or(Provenance::None),
             _ => Provenance::None,
         }
@@ -470,124 +497,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Some((id, projections, non_null))
     }
 
-    /// Lowers an expression to a typed IR value.
-    ///
-    /// Every value records the type the type stage computed for its expression,
-    /// and a form the checker does not need to name explicitly becomes a fresh
-    /// temporary whose type joins the function's temporary list.
-    pub(super) fn lower_value(&mut self, expr: &Expr) -> Value {
-        let mut ty = self.ty(expr);
-        let kind = match &expr.kind {
-            ExprKind::Int(value) => ValueKind::Int(*value as i128),
-            ExprKind::Float(value) => ValueKind::Float(*value),
-            ExprKind::Char(byte) => ValueKind::Char(*byte),
-            ExprKind::Bool(value) => ValueKind::Bool(*value),
-            ExprKind::Null => ValueKind::Null,
-            ExprKind::Str(bytes) => ValueKind::Str(String::from_utf8_lossy(bytes).into_owned()),
-            ExprKind::Name(name) => match self.place_target(expr) {
-                Some(target) => ValueKind::Place(self.target_place(&target)),
-                None => ValueKind::Path(vec![name.clone()]),
-            },
-            ExprKind::Qualified(name) => match self.place_target(expr) {
-                Some(target) => ValueKind::Place(self.target_place(&target)),
-                None => ValueKind::Path(name.segments.clone()),
-            },
-            ExprKind::Member { base, name } => ValueKind::Member {
-                base: Box::new(self.lower_value(base)),
-                name: name.clone(),
-            },
-            ExprKind::Index { base, index } => ValueKind::Index {
-                base: Box::new(self.lower_value(base)),
-                index: Box::new(self.lower_value(index)),
-            },
-            ExprKind::Call {
-                callee,
-                type_args,
-                args,
-            } => {
-                if let Some((intrinsic_ty, intrinsic_kind)) =
-                    self.lower_intrinsic_call(callee, type_args, args)
-                {
-                    ty = intrinsic_ty;
-                    intrinsic_kind
-                } else {
-                    let (name, resolved, lowered) = self.lower_call(callee, type_args, args);
-                    ValueKind::Call {
-                        callee: name,
-                        type_args: resolved,
-                        args: lowered,
-                    }
-                }
-            }
-            ExprKind::Unary { op, operand } => ValueKind::Unary {
-                op: *op,
-                operand: Box::new(self.lower_value(operand)),
-            },
-            ExprKind::Binary { op, left, right } => ValueKind::Binary {
-                op: *op,
-                left: Box::new(self.lower_value(left)),
-                right: Box::new(self.lower_value(right)),
-            },
-            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => ValueKind::Cast {
-                to: ty.display(),
-                value: Box::new(self.lower_value(value)),
-            },
-            ExprKind::Conditional {
-                condition,
-                then_value,
-                else_value,
-            } => ValueKind::Conditional {
-                condition: Box::new(self.lower_value(condition)),
-                then_value: Box::new(self.lower_value(then_value)),
-                else_value: Box::new(self.lower_value(else_value)),
-            },
-            ExprKind::StructLiteral { name, fields, .. } => ValueKind::StructLit {
-                name: name.segments.last().cloned().unwrap_or_default(),
-                fields: fields
-                    .iter()
-                    .map(|field| (field.name.clone(), self.lower_value(&field.value)))
-                    .collect(),
-            },
-            ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
-                elements: elements.iter().map(|element| self.lower_value(element)).collect(),
-                fill: fill
-                    .as_ref()
-                    .map(|fill| Box::new(self.lower_value(fill))),
-            },
-            ExprKind::Unsafe(inner) => return self.lower_value(inner),
-            ExprKind::IntrinsicCall { name, args } => {
-                let mut values = Vec::new();
-                let mut type_arg = None;
-                for arg in args {
-                    match arg {
-                        IntrinsicArg::Expr(inner) => values.push(self.lower_value(inner)),
-                        IntrinsicArg::Type(written) => type_arg = Some(self.resolve(written)),
-                    }
-                }
-                ValueKind::Intrinsic {
-                    name: name.clone(),
-                    args: values,
-                    type_arg,
-                }
-            }
-            ExprKind::Template(pieces) => ValueKind::Template(
-                pieces
-                    .iter()
-                    .map(|piece| match piece {
-                        TemplatePiece::Literal(bytes) => ValuePiece::Literal(
-                            String::from_utf8_lossy(bytes).into_owned(),
-                        ),
-                        TemplatePiece::Placeholder(inner) => {
-                            ValuePiece::Placeholder(self.lower_value(inner))
-                        }
-                    })
-                    .collect(),
-            ),
-            _ => ValueKind::Aggregate,
-        };
-        Value { ty, kind }
-    }
-
     // -- shared helpers ------------------------------------------------------
 
     /// Checks a declared type for an illegal `?` suffix.
@@ -674,4 +583,3 @@ fn element_index(expr: &Expr) -> Option<usize> {
         _ => None,
     }
 }
-

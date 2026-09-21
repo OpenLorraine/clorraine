@@ -46,9 +46,15 @@ pub fn value_needs_guards(value: &Value) -> bool {
                 || value_needs_guards(else_value)
         }
         ValueKind::Member { base, .. } => value_needs_guards(base),
-        ValueKind::Call { args, .. } | ValueKind::Intrinsic { args, .. } => {
-            args.iter().any(value_needs_guards)
+        ValueKind::Call {
+            args, receiver, ..
+        } => {
+            receiver
+                .as_deref()
+                .is_some_and(value_needs_guards)
+                || args.iter().any(value_needs_guards)
         }
+        ValueKind::Intrinsic { args, .. } => args.iter().any(value_needs_guards),
         ValueKind::StructLit { fields, .. } => {
             fields.iter().any(|(_, field)| value_needs_guards(field))
         }

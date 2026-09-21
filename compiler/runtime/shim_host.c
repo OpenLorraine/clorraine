@@ -7,6 +7,7 @@
  * unused inline function.
  */
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -50,8 +51,10 @@ static inline void cl_panic(const char *message)
     abort();
 }
 
-/* Heap allocation with the allocator contract: a failure traps. */
-void *cl_alloc(unsigned int size)
+/* Heap allocation with the allocator contract: a failure traps. The size is a
+ * `size_t`, so a caller that computes a block size in `size_t` never has it
+ * truncated back to the 32-bit `unsigned int` an AmigaOS word would hold. */
+void *cl_alloc(size_t size)
 {
     void *block = malloc(size == 0 ? 1 : size);
     if (block == NULL) {
@@ -143,10 +146,17 @@ void cl_buffer_reserve(void *handle, unsigned int cap)
 void cl_buffer_append(void *handle, void *src, unsigned int n)
 {
     cl_buffer_block *buffer = (cl_buffer_block *)handle;
+    if (n > UINT_MAX - buffer->len) {
+        cl_trap("E1", "buffer too large");
+    }
     unsigned int needed = buffer->len + n;
     if (needed > buffer->cap) {
         unsigned int cap = buffer->cap == 0 ? 8 : buffer->cap;
         while (cap < needed) {
+            if (cap > UINT_MAX / 2) {
+                cap = needed;
+                break;
+            }
             cap *= 2;
         }
         cl_buffer_reserve(handle, cap);
@@ -155,10 +165,15 @@ void cl_buffer_append(void *handle, void *src, unsigned int n)
     buffer->len = needed;
 }
 
-/* Write `n` bytes from `src` at `off`, growing the buffer as needed. */
+/* Write `n` bytes from `src` at `off`, growing the buffer as needed. The
+ * offset and count are both bounded so `off + n` cannot wrap and the copy stays
+ * inside the buffer. */
 void cl_buffer_write(void *handle, unsigned int off, void *src, unsigned int n)
 {
     cl_buffer_block *buffer = (cl_buffer_block *)handle;
+    if (n > UINT_MAX - off) {
+        cl_trap("E11211", "index out of range");
+    }
     unsigned int needed = off + n;
     if (needed > buffer->cap) {
         cl_buffer_reserve(handle, needed);
@@ -188,10 +203,22 @@ static unsigned char *cl_string_bytes(cl_string_block *string)
     return (unsigned char *)(string + 1);
 }
 
-/* Allocate an empty string with room for `cap` payload bytes. */
+/* Allocate an empty string with room for `cap` payload bytes.
+ *
+ * The block size is computed in `size_t`, a wider type than the 32-bit `cap`
+ * on the host, so the size never wraps and a request too large to allocate
+ * traps through the allocator contract instead of writing past a short block. */
 void *cl_string_new(unsigned int cap)
 {
-    cl_string_block *string = (cl_string_block *)cl_alloc(sizeof *string + cap + 1);
+    // The modeled `usize` is 32 bits, so a block of `cap` payload bytes must
+    // still fit a 32-bit size; the top few capacities do not, and are rejected
+    // rather than asking the host allocator for a block the target cannot
+    // address.
+    if (cap > UINT_MAX - (unsigned int)(sizeof(cl_string_block) + 1)) {
+        cl_trap("E1", "string too large");
+    }
+    size_t total = sizeof(cl_string_block) + (size_t)cap + 1;
+    cl_string_block *string = (cl_string_block *)cl_alloc(total);
     string->len = 0;
     string->cap = cap;
     cl_string_bytes(string)[0] = '\0';
