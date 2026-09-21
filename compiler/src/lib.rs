@@ -14,6 +14,7 @@ pub mod consts;
 pub mod diag;
 pub mod driver;
 pub mod ffi;
+pub mod init_graph;
 pub mod ir;
 pub mod lex;
 pub mod load;

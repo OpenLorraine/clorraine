@@ -4,13 +4,14 @@
 //! user's `main`. A module must be initialized after every module it imports or
 //! names in a global initializer, transitively; independent modules break ties
 //! on the dotted module name compared byte-wise, so the order is deterministic.
-//! A dependency cycle is rejected before codegen, but the walk stays total and
-//! falls back to name order rather than looping.
+//! Inside one module the globals follow the same read relation read from
+//! [`crate::init_graph`], with declaration order as the tie break. A dependency
+//! cycle is rejected before codegen, but the walks stay total and fall back to
+//! source order rather than looping.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{Expr, ExprKind, Item};
-use crate::load::Module;
+use crate::ast::{Expr, Item};
 
 use super::Emitter;
 
@@ -22,29 +23,7 @@ impl<'a> Emitter<'a> {
     /// dotted name compared byte-wise, so the order is deterministic.
     pub(super) fn init_order(&self) -> Vec<String> {
         let modules: Vec<String> = self.loaded.modules.keys().cloned().collect();
-        let known: BTreeSet<String> = modules.iter().cloned().collect();
-        let mut prereqs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for name in &modules {
-            let mut deps: BTreeSet<String> = BTreeSet::new();
-            if let Some(module) = self.loaded.module(name) {
-                for import in &module.imports {
-                    if known.contains(&import.module) && &import.module != name {
-                        deps.insert(import.module.clone());
-                    }
-                }
-                for item in &module.items {
-                    let init = match item {
-                        Item::GlobalLet(decl) => Some(&decl.value),
-                        Item::GlobalConst(decl) => Some(&decl.value),
-                        _ => None,
-                    };
-                    if let Some(init) = init {
-                        self.collect_name_modules(module, init, &known, &mut deps);
-                    }
-                }
-            }
-            prereqs.insert(name.clone(), deps);
-        }
+        let prereqs = crate::init_graph::module_dependencies(self.loaded);
 
         let mut order: Vec<String> = Vec::new();
         let mut done: BTreeSet<String> = BTreeSet::new();
@@ -79,94 +58,64 @@ impl<'a> Emitter<'a> {
         order
     }
 
-    /// Adds the user modules an initializer expression names through imports.
-    pub(super) fn collect_name_modules(
-        &self,
-        module: &Module,
-        expr: &Expr,
-        known: &BTreeSet<String>,
-        deps: &mut BTreeSet<String>,
-    ) {
-        match &expr.kind {
-            ExprKind::Name(name) => {
-                if let Some(binding) = module.import(name) {
-                    if known.contains(&binding.module) && binding.module != module.name {
-                        deps.insert(binding.module.clone());
-                    }
-                }
-            }
-            ExprKind::Qualified(name) => {
-                if let Some(first) = name.segments.first() {
-                    if let Some(binding) = module.import(first) {
-                        if known.contains(&binding.module) && binding.module != module.name {
-                            deps.insert(binding.module.clone());
-                        }
-                    }
-                }
-            }
-            ExprKind::Call { callee, args, .. } => {
-                self.collect_name_modules(module, callee, known, deps);
-                for arg in args {
-                    self.collect_name_modules(module, &arg.value, known, deps);
-                }
-            }
-            ExprKind::Index { base, index } => {
-                self.collect_name_modules(module, base, known, deps);
-                self.collect_name_modules(module, index, known, deps);
-            }
-            ExprKind::Member { base, .. } => self.collect_name_modules(module, base, known, deps),
-            ExprKind::Unary { operand, .. } => {
-                self.collect_name_modules(module, operand, known, deps)
-            }
-            ExprKind::Binary { left, right, .. } => {
-                self.collect_name_modules(module, left, known, deps);
-                self.collect_name_modules(module, right, known, deps);
-            }
-            ExprKind::Assign { target, value, .. } => {
-                self.collect_name_modules(module, target, known, deps);
-                self.collect_name_modules(module, value, known, deps);
-            }
-            ExprKind::Conditional {
-                condition,
-                then_value,
-                else_value,
-            } => {
-                self.collect_name_modules(module, condition, known, deps);
-                self.collect_name_modules(module, then_value, known, deps);
-                self.collect_name_modules(module, else_value, known, deps);
-            }
-            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-                self.collect_name_modules(module, value, known, deps)
-            }
-            ExprKind::StructLiteral { fields, .. } => {
-                for field in fields {
-                    self.collect_name_modules(module, &field.value, known, deps);
-                }
-            }
-            ExprKind::ArrayLiteral { elements, fill } => {
-                for element in elements {
-                    self.collect_name_modules(module, element, known, deps);
-                }
-                if let Some(fill) = fill {
-                    self.collect_name_modules(module, fill, known, deps);
-                }
-            }
-            ExprKind::Unsafe(inner) => self.collect_name_modules(module, inner, known, deps),
-            ExprKind::IntrinsicCall { args, .. } => {
-                for arg in args {
-                    if let crate::ast::IntrinsicArg::Expr(inner) = arg {
-                        self.collect_name_modules(module, inner, known, deps);
-                    }
-                }
-            }
-            ExprKind::Template(pieces) => {
-                for piece in pieces {
-                    if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
-                        self.collect_name_modules(module, inner, known, deps);
-                    }
-                }
-            }
-            _ => {}
+    /// One module's globals in initialization order.
+    ///
+    /// The globals are declared in source order, but a global that reads a
+    /// later-declared global must still be initialized after it, so the order
+    /// follows the reads between the module's bindings. Declaration order
+    /// breaks ties, which keeps an independent program in its source order. A
+    /// `const`-only cycle is legal, so a blocked walk falls back to the
+    /// remaining declaration order instead of looping.
+    pub(super) fn global_init_order(&self, module_name: &str) -> Vec<(String, &'a Expr)> {
+        let Some(module) = self.loaded.module(module_name) else {
+            return Vec::new();
+        };
+        let entries: Vec<(String, &'a Expr)> = module
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::GlobalLet(decl) => Some((decl.name.clone(), &decl.value)),
+                Item::GlobalConst(decl) => Some((decl.name.clone(), &decl.value)),
+                _ => None,
+            })
+            .collect();
+        if entries.len() < 2 {
+            return entries;
         }
+
+        // `reads[i]` holds the indices of the globals entry `i` reads.
+        let index: BTreeMap<&str, usize> = entries
+            .iter()
+            .enumerate()
+            .map(|(position, (name, _))| (name.as_str(), position))
+            .collect();
+        let mut reads: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); entries.len()];
+        for (position, (_, value)) in entries.iter().enumerate() {
+            for (read_module, name) in
+                crate::init_graph::global_reads(self.loaded, module, value)
+            {
+                if read_module != module_name {
+                    continue;
+                }
+                if let Some(&source) = index.get(name.as_str()) {
+                    if source != position {
+                        reads[position].insert(source);
+                    }
+                }
+            }
+        }
+
+        let mut done = vec![false; entries.len()];
+        let mut order = Vec::with_capacity(entries.len());
+        for _ in 0..entries.len() {
+            let pick = (0..entries.len())
+                .filter(|position| !done[*position])
+                .find(|position| reads[*position].iter().all(|source| done[*source]))
+                .or_else(|| (0..entries.len()).find(|position| !done[*position]))
+                .expect("an unfinished entry is either ready or part of a cycle");
+            done[pick] = true;
+            order.push(entries[pick].clone());
+        }
+        order
     }
 }

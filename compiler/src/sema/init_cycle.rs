@@ -7,29 +7,31 @@
 //! reads of the initializer expression are edges: a call to a function that
 //! happens to read a global is not, because the function body runs later.
 //!
-//! This pass runs before the per-module type checks so the cycle is reported
-//! once, with a source location, before any later stage would have to order the
-//! initializers.
+//! A module dependency cycle is the second form: a module initializes after
+//! every module it imports and every module its initializer expressions name,
+//! so a closed chain of modules has no valid order. That cycle is an error only
+//! when it involves at least one runtime `let`; a cycle of `const`-only modules
+//! is allowed because it adds no runtime step.
+//!
+//! Both graphs come from [`crate::init_graph`], so this pass and the emitter
+//! that orders the initializers cannot disagree about the dependencies.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{Expr, ExprKind, Item, QualifiedName};
 use crate::diag::{Diagnostic, Diagnostics};
-use crate::load::{DeclKind, Loaded, Module};
+use crate::init_graph::{self, GlobalKey};
+use crate::load::Loaded;
 use crate::span::Span;
-
-/// A runtime-initialized module global: its dotted module and its name.
-type Key = (String, String);
 
 /// One global's initializer: where it is written and which globals it reads.
 struct Node {
     /// Span of the initializer expression, used for the diagnostic location.
     span: Span,
-    /// The globals this initializer reads directly.
-    reads: Vec<Key>,
+    /// The other globals in the same module this initializer reads.
+    reads: Vec<GlobalKey>,
 }
 
-/// The depth-first state of one global while cycles are sought.
+/// The depth-first state of one node while cycles are sought.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
     /// Not visited yet.
@@ -40,27 +42,33 @@ enum State {
     Done,
 }
 
-/// Reports `E11100` for every cycle among runtime-initialized module globals.
+/// Reports `E11100` for every initializer dependency cycle.
 pub fn check(loaded: &Loaded, diagnostics: &mut Diagnostics) {
-    let graph = build(loaded);
-    let mut state: BTreeMap<Key, State> = BTreeMap::new();
-    let mut reported: BTreeSet<Key> = BTreeSet::new();
-    let keys: Vec<Key> = graph.keys().cloned().collect();
+    check_global_cycles(loaded, diagnostics);
+    check_module_cycles(loaded, diagnostics);
+}
+
+/// Reports a cycle among the runtime globals of a single module.
+fn check_global_cycles(loaded: &Loaded, diagnostics: &mut Diagnostics) {
+    let graph = build_global_graph(loaded);
+    let mut state: BTreeMap<GlobalKey, State> = BTreeMap::new();
+    let mut reported: BTreeSet<GlobalKey> = BTreeSet::new();
+    let keys: Vec<GlobalKey> = graph.keys().cloned().collect();
     for key in keys {
         if state.get(&key).copied().unwrap_or(State::New) == State::New {
-            let mut stack: Vec<Key> = Vec::new();
-            visit(&key, &graph, &mut state, &mut stack, &mut reported, diagnostics);
+            let mut stack: Vec<GlobalKey> = Vec::new();
+            visit_global(&key, &graph, &mut state, &mut stack, &mut reported, diagnostics);
         }
     }
 }
 
 /// Walks one global and its reads, reporting a cycle when a read closes one.
-fn visit(
-    key: &Key,
-    graph: &BTreeMap<Key, Node>,
-    state: &mut BTreeMap<Key, State>,
-    stack: &mut Vec<Key>,
-    reported: &mut BTreeSet<Key>,
+fn visit_global(
+    key: &GlobalKey,
+    graph: &BTreeMap<GlobalKey, Node>,
+    state: &mut BTreeMap<GlobalKey, State>,
+    stack: &mut Vec<GlobalKey>,
+    reported: &mut BTreeSet<GlobalKey>,
     diagnostics: &mut Diagnostics,
 ) {
     state.insert(key.clone(), State::Active);
@@ -71,13 +79,13 @@ fn visit(
                 continue;
             }
             match state.get(next).copied().unwrap_or(State::New) {
-                State::New => visit(next, graph, state, stack, reported, diagnostics),
+                State::New => visit_global(next, graph, state, stack, reported, diagnostics),
                 State::Active => {
                     // A read back to a global still on the search path closes a
                     // cycle: the part of the path from that global to here.
                     if let Some(start) = stack.iter().position(|item| item == next) {
-                        let cycle: Vec<Key> = stack[start..].to_vec();
-                        report(&cycle, node.span, reported, diagnostics);
+                        let cycle: Vec<GlobalKey> = stack[start..].to_vec();
+                        report_global_cycle(&cycle, node.span, reported, diagnostics);
                     }
                 }
                 State::Done => {}
@@ -88,34 +96,38 @@ fn visit(
     state.insert(key.clone(), State::Done);
 }
 
-/// Reports one cycle, naming the modules it spans, unless it was already part
-/// of a reported cycle.
-fn report(cycle: &[Key], span: Span, reported: &mut BTreeSet<Key>, diagnostics: &mut Diagnostics) {
+/// Reports a same-module cycle unless one of its globals was already reported.
+fn report_global_cycle(
+    cycle: &[GlobalKey],
+    span: Span,
+    reported: &mut BTreeSet<GlobalKey>,
+    diagnostics: &mut Diagnostics,
+) {
     if cycle.iter().any(|key| reported.contains(key)) {
         return;
     }
-    let modules: BTreeSet<&str> = cycle.iter().map(|(module, _)| module.as_str()).collect();
-    let names = modules.into_iter().collect::<Vec<_>>().join(", ");
-    diagnostics.push(Diagnostic::error(
-        "E11100",
-        format!("initializer cycle between modules: {names}"),
-        span,
-    ));
+    let modules: BTreeSet<String> = cycle.iter().map(|(module, _)| module.clone()).collect();
+    report(&modules, span, diagnostics);
     for key in cycle {
         reported.insert(key.clone());
     }
 }
 
-/// Builds the read graph over every runtime-initialized module global.
-fn build(loaded: &Loaded) -> BTreeMap<Key, Node> {
+/// Builds the same-module read graph over every runtime-initialized global.
+fn build_global_graph(loaded: &Loaded) -> BTreeMap<GlobalKey, Node> {
     let mut graph = BTreeMap::new();
     for module in loaded.modules.values() {
         for item in &module.items {
-            let Item::GlobalLet(decl) = item else {
+            let crate::ast::Item::GlobalLet(decl) = item else {
                 continue;
             };
-            let mut reads = Vec::new();
-            collect(loaded, module, &decl.value, &mut reads);
+            // A cross-module read is part of the module dependency relation,
+            // which is checked separately, so only the same-module reads create
+            // a global edge here. Reporting both would duplicate one cycle.
+            let reads = init_graph::global_reads(loaded, module, &decl.value)
+                .into_iter()
+                .filter(|(read_module, _)| read_module == &module.name)
+                .collect();
             graph.insert(
                 (module.name.clone(), decl.name.clone()),
                 Node {
@@ -128,108 +140,97 @@ fn build(loaded: &Loaded) -> BTreeMap<Key, Node> {
     graph
 }
 
-/// Collects the globals one initializer expression reads directly.
-fn collect(loaded: &Loaded, module: &Module, expr: &Expr, reads: &mut Vec<Key>) {
-    match &expr.kind {
-        ExprKind::Name(name) => {
-            if let Some(key) = global_named(loaded, module, name) {
-                reads.push(key);
-            }
+/// Reports a cycle in the module dependency relation that involves runtime work.
+fn check_module_cycles(loaded: &Loaded, diagnostics: &mut Diagnostics) {
+    let deps = init_graph::module_dependencies(loaded);
+    let mut state: BTreeMap<String, State> = BTreeMap::new();
+    let mut reported: BTreeSet<String> = BTreeSet::new();
+    let names: Vec<String> = deps.keys().cloned().collect();
+    for name in names {
+        if state.get(&name).copied().unwrap_or(State::New) == State::New {
+            let mut stack: Vec<String> = Vec::new();
+            visit_module(
+                &name,
+                &deps,
+                &mut state,
+                &mut stack,
+                &mut reported,
+                loaded,
+                diagnostics,
+            );
         }
-        ExprKind::Qualified(name) => {
-            if let Some(key) = qualified_global(loaded, module, name) {
-                reads.push(key);
-            }
-        }
-        ExprKind::Call { callee, args, .. } => {
-            collect(loaded, module, callee, reads);
-            for arg in args {
-                collect(loaded, module, &arg.value, reads);
-            }
-        }
-        ExprKind::Index { base, index } => {
-            collect(loaded, module, base, reads);
-            collect(loaded, module, index, reads);
-        }
-        ExprKind::Member { base, .. } => collect(loaded, module, base, reads),
-        ExprKind::Unary { operand, .. } => collect(loaded, module, operand, reads),
-        ExprKind::Binary { left, right, .. } => {
-            collect(loaded, module, left, reads);
-            collect(loaded, module, right, reads);
-        }
-        ExprKind::Assign { target, value, .. } => {
-            collect(loaded, module, target, reads);
-            collect(loaded, module, value, reads);
-        }
-        ExprKind::Conditional {
-            condition,
-            then_value,
-            else_value,
-        } => {
-            collect(loaded, module, condition, reads);
-            collect(loaded, module, then_value, reads);
-            collect(loaded, module, else_value, reads);
-        }
-        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-            collect(loaded, module, value, reads)
-        }
-        ExprKind::StructLiteral { fields, .. } => {
-            for field in fields {
-                collect(loaded, module, &field.value, reads);
-            }
-        }
-        ExprKind::ArrayLiteral { elements, fill } => {
-            for element in elements {
-                collect(loaded, module, element, reads);
-            }
-            if let Some(fill) = fill {
-                collect(loaded, module, fill, reads);
-            }
-        }
-        ExprKind::Unsafe(inner) => collect(loaded, module, inner, reads),
-        ExprKind::IntrinsicCall { args, .. } => {
-            for arg in args {
-                if let crate::ast::IntrinsicArg::Expr(inner) = arg {
-                    collect(loaded, module, inner, reads);
-                }
-            }
-        }
-        ExprKind::Template(pieces) => {
-            for piece in pieces {
-                if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
-                    collect(loaded, module, inner, reads);
-                }
-            }
-        }
-        _ => {}
     }
 }
 
-/// Resolves a bare name in an initializer to a module global, if it is one.
+/// Walks one module and its dependencies, reporting a cycle when one closes.
+fn visit_module(
+    name: &str,
+    deps: &BTreeMap<String, BTreeSet<String>>,
+    state: &mut BTreeMap<String, State>,
+    stack: &mut Vec<String>,
+    reported: &mut BTreeSet<String>,
+    loaded: &Loaded,
+    diagnostics: &mut Diagnostics,
+) {
+    state.insert(name.to_owned(), State::Active);
+    stack.push(name.to_owned());
+    if let Some(nexts) = deps.get(name) {
+        for next in nexts {
+            match state.get(next).copied().unwrap_or(State::New) {
+                State::New => visit_module(
+                    next, deps, state, stack, reported, loaded, diagnostics,
+                ),
+                State::Active => {
+                    if let Some(start) = stack.iter().position(|item| item == next) {
+                        let cycle: Vec<String> = stack[start..].to_vec();
+                        report_module_cycle(&cycle, loaded, reported, diagnostics);
+                    }
+                }
+                State::Done => {}
+            }
+        }
+    }
+    stack.pop();
+    state.insert(name.to_owned(), State::Done);
+}
+
+/// Reports a module cycle, unless it is `const`-only or already reported.
 ///
-/// A name declared in the module itself wins; otherwise an imported binding
-/// names the global in the module it was imported from.
-fn global_named(loaded: &Loaded, module: &Module, name: &str) -> Option<Key> {
-    if let Some(decl) = module.decl(name) {
-        return (decl.kind == DeclKind::Global).then(|| (module.name.clone(), name.to_owned()));
+/// A cycle of `const`-only modules is allowed: it adds no runtime step, so
+/// there is no order to satisfy. A cycle that includes at least one runtime
+/// `let` has no valid initialization order, so it is the `E11100` error.
+fn report_module_cycle(
+    cycle: &[String],
+    loaded: &Loaded,
+    reported: &mut BTreeSet<String>,
+    diagnostics: &mut Diagnostics,
+) {
+    if cycle.iter().any(|name| reported.contains(name)) {
+        return;
     }
-    let binding = module.import(name)?;
-    target_global(loaded, &binding.module, &binding.original)
+    let runtime: Option<&String> = cycle
+        .iter()
+        .filter(|name| init_graph::has_runtime_global(loaded, name))
+        .min();
+    let Some(runtime) = runtime else {
+        return;
+    };
+    let Some(span) = init_graph::runtime_span(loaded, runtime) else {
+        return;
+    };
+    let modules: BTreeSet<String> = cycle.iter().cloned().collect();
+    report(&modules, span, diagnostics);
+    for name in cycle {
+        reported.insert(name.clone());
+    }
 }
 
-/// Resolves a qualified access `Module.name` in an initializer to a global.
-fn qualified_global(loaded: &Loaded, module: &Module, name: &QualifiedName) -> Option<Key> {
-    let first = name.segments.first()?;
-    let last = name.segments.last()?;
-    let binding = module.import(first)?;
-    target_global(loaded, &binding.module, last)
-}
-
-/// The key of a global `name` declared in module `module`, when it is one.
-fn target_global(loaded: &Loaded, module: &str, name: &str) -> Option<Key> {
-    let node = loaded.module(module)?;
-    match node.decl(name) {
-        Some(decl) if decl.kind == DeclKind::Global => Some((module.to_owned(), name.to_owned())),
-        _ => None,
-    }
+/// Reports one cycle, naming the modules it spans.
+fn report(modules: &BTreeSet<String>, span: Span, diagnostics: &mut Diagnostics) {
+    let names = modules.iter().cloned().collect::<Vec<_>>().join(", ");
+    diagnostics.push(Diagnostic::error(
+        "E11100",
+        format!("initializer cycle between modules: {names}"),
+        span,
+    ));
 }

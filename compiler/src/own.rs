@@ -90,7 +90,7 @@ pub fn check(
     for module in loaded.modules.values() {
         for item in &module.items {
             if let Item::Func(decl) = item {
-                let checker = FunctionChecker::new(&program, sema, decl, diagnostics);
+                let checker = FunctionChecker::new(&program, loaded, module, sema, decl, diagnostics);
                 let mut function = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
@@ -109,6 +109,10 @@ pub fn check(
 struct FunctionChecker<'a, 'd> {
     /// Program-wide ownership facts.
     program: &'a ProgramInfo<'a>,
+    /// The loaded program, for module-aware global resolution.
+    loaded: &'a Loaded,
+    /// The module the function is declared in.
+    module: &'a crate::load::Module,
     /// The types the type stage computed.
     sema: &'a SemaOutput,
     /// The function being checked.
@@ -161,6 +165,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Creates a checker for one function.
     fn new(
         program: &'a ProgramInfo<'a>,
+        loaded: &'a Loaded,
+        module: &'a crate::load::Module,
         sema: &'a SemaOutput,
         decl: &'a crate::ast::FuncDecl,
         diagnostics: &'d mut Diagnostics,
@@ -178,6 +184,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .collect();
         Self {
             program,
+            loaded,
+            module,
             sema,
             decl,
             type_params,

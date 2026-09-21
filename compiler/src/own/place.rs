@@ -409,25 +409,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Name(name) => {
                 if let Some(id) = self.lookup(name) {
                     Some(PlaceTarget::Local(id, Vec::new()))
-                } else if self.program.globals.contains_key(name) {
-                    Some(PlaceTarget::Global(name.clone(), Vec::new()))
+                } else if let Some(global) =
+                    crate::init_graph::resolve_name_global(self.loaded, self.module, name)
+                {
+                    Some(PlaceTarget::Global(global.name, Vec::new()))
                 } else {
                     None
                 }
             }
             ExprKind::Qualified(name) => {
                 let first = name.segments.first()?;
-                let mut projections = Vec::new();
-                for segment in &name.segments[1..] {
-                    projections.push(ir::Projection::Field(segment.clone()));
-                }
+                // A local base keeps its own binding; every later segment is a
+                // field projection.
                 if let Some(id) = self.lookup(first) {
-                    Some(PlaceTarget::Local(id, projections))
-                } else if self.program.globals.contains_key(first) {
-                    Some(PlaceTarget::Global(first.clone(), projections))
-                } else {
-                    None
+                    let projections = name.segments[1..]
+                        .iter()
+                        .map(|segment| ir::Projection::Field(segment.clone()))
+                        .collect();
+                    return Some(PlaceTarget::Local(id, projections));
                 }
+                // Otherwise the name is a module-level binding: a same-module
+                // or imported head with field projections, or a full module
+                // path whose last segment is the binding.
+                let global = crate::init_graph::resolve_global(self.loaded, self.module, name)?;
+                let projections = global
+                    .fields
+                    .iter()
+                    .map(|segment| ir::Projection::Field(segment.clone()))
+                    .collect();
+                Some(PlaceTarget::Global(global.name, projections))
             }
             ExprKind::Member { base, name } => {
                 let (target, mut projections) = self.place_target_parts(base)?;

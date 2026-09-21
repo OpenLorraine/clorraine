@@ -157,16 +157,17 @@ fn buffer_container_matches_its_recorded_output() {
 ///
 /// The program imports the AmigaOS scheduler and interrupt dispatcher, which
 /// the host profile does not provide; the compiler must report `E11200` as its
-/// first diagnostic and exit nonzero rather than emit C that cannot link.
+/// first diagnostic and exit 1 rather than emit C that cannot link.
 #[test]
 fn interrupt_counter_is_rejected_on_the_host_profile() {
     let scratch = ScratchDir::new("interrupt-counter");
     let c_path = scratch.path().join("out.c");
     let compile = compile_host("interrupt-counter", &c_path);
-    assert_ne!(
+    assert_eq!(
         compile.status.code(),
-        Some(0),
-        "interrupt-counter: the host profile must reject the program"
+        Some(1),
+        "interrupt-counter: the host profile must reject the program with exit 1; stderr:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
     );
     let stderr = String::from_utf8_lossy(&compile.stderr);
     let first_line = stderr.lines().next().unwrap_or_default();

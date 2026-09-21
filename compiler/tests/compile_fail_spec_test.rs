@@ -444,6 +444,11 @@ fn skip_report() {
         assert!(!reason.is_empty(), "{name}: a skip reason is required");
     }
     assert!(
+        pending.is_empty(),
+        "the accepted front end must cover every in-scope golden, but {} remain pending: {pending:?}",
+        pending.len()
+    );
+    assert!(
         !excluded.is_empty(),
         "the staged and excluded files must appear in the skip report"
     );

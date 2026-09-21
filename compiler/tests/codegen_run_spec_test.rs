@@ -1493,3 +1493,43 @@ comptime func slice<T>(v: T[], lo: usize, hi: usize): T[] {
         "fix501r: expected E20006, got:\n{stderr}"
     );
 }
+
+/// A full module path reads another module's global at init and in a body.
+///
+/// `codegen.PB.y` is a module-path reference, not a member of a local. It must
+/// lower to the mangled global symbol in both the module initializer and a
+/// function body; the exit code proves both values.
+#[test]
+fn a_module_path_global_read_compiles_and_runs() {
+    let files = [
+        (
+            "alpha.clo",
+            "module codegen.PA;\n\nexport let a: i32 = codegen.PB.y + 1;\n\nfunc read(): i32 {\n    return codegen.PB.y;\n}\n\nfunc main(): i32 {\n    return a + read();\n}\n",
+        ),
+        ("beta.clo", "module codegen.PB;\n\nexport let y: i32 = 41;\n"),
+    ];
+    let output = build_and_run_files("m9", &files, None);
+    assert_eq!(output.status.code(), Some(83), "m9: expected 42 + 41");
+}
+
+/// Same-module globals initialize after the globals they read.
+///
+/// `b` is declared after `a`, but `a` reads it, so `b` must initialize first;
+/// the forward reference is legal at module scope. A `const` read by a later
+/// `let` stays a compile-time value and does not disturb the order.
+#[test]
+fn same_module_globals_follow_their_reads() {
+    let source = r#"module codegen.m10;
+
+let a: i32 = b + 1;
+let b: i32 = 41;
+const C: i32 = 10;
+let total: i32 = a + C;
+
+func main(): i32 {
+    return total;
+}
+"#;
+    let output = build_and_run("m10", source, None);
+    assert_eq!(output.status.code(), Some(52), "m10: expected 42 + 10");
+}

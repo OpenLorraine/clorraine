@@ -6,7 +6,7 @@
 //! translation unit, so the command-line behavior and the diagnostic stream
 //! are already exercised end to end.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::Program;
 use crate::codegen;
@@ -123,7 +123,8 @@ fn inject_stdlib(
 ) {
     // A qualified reference to a standard-library module is as good as an
     // import for loading it, so both kinds of request are collected.
-    let mut imported: BTreeSet<String> = load::referenced_modules(programs);
+    let mut imported: BTreeSet<String> =
+        load::referenced_modules(programs).into_keys().collect();
     let mut present: BTreeSet<String> = BTreeSet::new();
     for (_, program) in programs.iter() {
         present.insert(program.module.name.to_dotted());
@@ -155,33 +156,52 @@ fn inject_stdlib(
     }
 }
 
-/// Reports an import from a standard-library module the profile does not
-/// provide, returning false when at least one was reported.
+/// Reports a reference to an embedded standard-library module the profile does
+/// not provide, returning false when at least one was reported.
 ///
-/// A profile names its own API surface, so a module outside it is a
-/// profile-surface error rather than a missing-module error. Reporting it
-/// before the load stage keeps the diagnostic single instead of letting the
-/// import cascade into unresolved-name errors.
+/// A profile names its own API surface, so a standard-library module outside it
+/// is a profile-surface error rather than a missing-module error. Both an
+/// `import` and a qualified reference such as `std.amiga.dos.delayTicks(1)`
+/// name the module, so both are checked. The check is gated on the module
+/// actually being an embedded library module: a user module whose name happens
+/// to start with the same prefix is ordinary code and must not be rejected.
+/// Reporting before the load stage keeps the diagnostic single instead of
+/// letting the reference cascade into unresolved-name errors.
 fn report_unavailable_profile_imports(
     profile: Profile,
     programs: &[(FileId, Program)],
     diagnostics: &mut Diagnostics,
 ) -> bool {
-    let mut available = true;
+    let mut unavailable: BTreeMap<String, crate::span::Span> = BTreeMap::new();
     for (_, program) in programs {
         for import in &program.imports {
             let module = import.from.to_dotted();
-            if !profile.supports_module(&module) {
-                diagnostics.push(Diagnostic::error(
-                    "E11200",
-                    format!("'{module}' is not available on profile '{}'", profile.name()),
-                    import.span,
-                ));
-                available = false;
+            if is_unavailable_stdlib(profile, &module) {
+                unavailable.entry(module).or_insert(import.span);
             }
         }
     }
+    for (module, span) in load::referenced_modules(programs) {
+        if is_unavailable_stdlib(profile, &module) {
+            unavailable.entry(module).or_insert(span);
+        }
+    }
+    let mut available = true;
+    for (module, span) in unavailable {
+        diagnostics.push(Diagnostic::error(
+            "E11200",
+            format!("'{module}' is not available on profile '{}'", profile.name()),
+            span,
+        ));
+        available = false;
+    }
     available
+}
+
+/// True when the module is an embedded standard-library module the profile
+/// does not provide.
+fn is_unavailable_stdlib(profile: Profile, module: &str) -> bool {
+    stdlib::source(module).is_some() && !profile.supports_module(module)
 }
 
 /// Runs the compiler and returns the process exit code.

@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
 use crate::ir::{Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
+use crate::load::Module;
 use crate::profile::Profile;
 use crate::types::{resolve_ty, Ty, TyKind};
 
@@ -389,19 +390,7 @@ impl<'a> Emitter<'a> {
                 mangle_module(&module_name)
             ));
             self.push("{");
-            let inits: Vec<(String, &'a Expr)> = match self.loaded.module(&module_name) {
-                Some(module) => module
-                    .items
-                    .iter()
-                    .filter_map(|item| match item {
-                        Item::GlobalLet(decl) => Some((decl.name.clone(), &decl.value)),
-                        Item::GlobalConst(decl) => Some((decl.name.clone(), &decl.value)),
-                        _ => None,
-                    })
-                    .collect(),
-                None => Vec::new(),
-            };
-            for (name, value) in inits {
+            for (name, value) in self.global_init_order(&module_name) {
                 self.emit_global_init(&module_name, &name, value);
             }
             self.push("}");
@@ -413,7 +402,13 @@ impl<'a> Emitter<'a> {
     pub(super) fn emit_global_init(&mut self, module_name: &str, name: &str, value: &'a Expr) {
         self.emit_line_directive(value.span);
         let target = self.global_symbol(module_name, name);
-        let mut lowered = self.lower_global(value);
+        let mut lowered = match self.loaded.module(module_name) {
+            Some(module) => self.lower_global(module, value),
+            None => Value {
+                ty: self.expr_type(value).unwrap_or_else(Ty::unknown),
+                kind: ValueKind::Aggregate,
+            },
+        };
         // A global is a file-scope object, so the place keeps its declared type.
         if lowered.ty.is_unknown() {
             if let Some(ty) = self.expr_type(value) {
@@ -433,10 +428,11 @@ impl<'a> Emitter<'a> {
     ///
     /// Module initialization is a program-level phase, so it reuses the IR
     /// value renderer instead of the per-function body emitter. Only the forms
-    /// an initializer can spell are built here; a global name becomes a global
-    /// place and an enum member keeps its dotted path so the renderer can spell
-    /// it.
-    fn lower_global(&self, expr: &Expr) -> Value {
+    /// an initializer can spell are built here; a global name, whether bare,
+    /// field-projected, or written as a full module path, becomes a global
+    /// place so the renderer spells its mangled symbol, and an enum member
+    /// keeps its dotted path.
+    fn lower_global(&self, module: &Module, expr: &Expr) -> Value {
         let ty = self.expr_type(expr).unwrap_or_else(Ty::unknown);
         let kind = match &expr.kind {
             ExprKind::Int(value) => ValueKind::Int(*value as i128),
@@ -446,74 +442,78 @@ impl<'a> Emitter<'a> {
             ExprKind::Null => ValueKind::Null,
             ExprKind::Str(bytes) => ValueKind::Str(String::from_utf8_lossy(bytes).into_owned()),
             ExprKind::Name(name) => {
-                if self.globals.contains_key(name) {
-                    ValueKind::Place(Place::global(name).with_type(ty.clone()))
-                } else {
-                    ValueKind::Path(vec![name.clone()])
+                match crate::init_graph::resolve_name_global(self.loaded, module, name) {
+                    Some(global) => ValueKind::Place(Place::global(global.name).with_type(ty.clone())),
+                    None => ValueKind::Path(vec![name.clone()]),
                 }
             }
-            ExprKind::Qualified(name) => match name.segments.split_first() {
-                Some((first, rest)) if self.globals.contains_key(first) => {
-                    let projections = rest
-                        .iter()
-                        .map(|segment| Projection::Field(segment.clone()))
-                        .collect();
-                    ValueKind::Place(Place {
-                        base: PlaceBase::Global(first.clone()),
-                        projections,
-                        ty: ty.clone(),
-                    })
+            ExprKind::Qualified(name) => {
+                match crate::init_graph::resolve_global(self.loaded, module, name) {
+                    Some(global) => {
+                        let projections =
+                            global.fields.into_iter().map(Projection::Field).collect();
+                        ValueKind::Place(Place {
+                            base: PlaceBase::Global(global.name),
+                            projections,
+                            ty: ty.clone(),
+                        })
+                    }
+                    None => ValueKind::Path(name.segments.clone()),
                 }
-                _ => ValueKind::Path(name.segments.clone()),
-            },
+            }
             ExprKind::Member { base, name } => ValueKind::Member {
-                base: Box::new(self.lower_global(base)),
+                base: Box::new(self.lower_global(module, base)),
                 name: name.clone(),
             },
             ExprKind::Index { base, index } => ValueKind::Index {
-                base: Box::new(self.lower_global(base)),
-                index: Box::new(self.lower_global(index)),
+                base: Box::new(self.lower_global(module, base)),
+                index: Box::new(self.lower_global(module, index)),
             },
             ExprKind::Unary { op, operand } => ValueKind::Unary {
                 op: *op,
-                operand: Box::new(self.lower_global(operand)),
+                operand: Box::new(self.lower_global(module, operand)),
             },
             ExprKind::Binary { op, left, right } => ValueKind::Binary {
                 op: *op,
-                left: Box::new(self.lower_global(left)),
-                right: Box::new(self.lower_global(right)),
+                left: Box::new(self.lower_global(module, left)),
+                right: Box::new(self.lower_global(module, right)),
             },
             ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => ValueKind::Cast {
                 to: ty.display(),
-                value: Box::new(self.lower_global(value)),
+                value: Box::new(self.lower_global(module, value)),
             },
             ExprKind::Conditional {
                 condition,
                 then_value,
                 else_value,
             } => ValueKind::Conditional {
-                condition: Box::new(self.lower_global(condition)),
-                then_value: Box::new(self.lower_global(then_value)),
-                else_value: Box::new(self.lower_global(else_value)),
+                condition: Box::new(self.lower_global(module, condition)),
+                then_value: Box::new(self.lower_global(module, then_value)),
+                else_value: Box::new(self.lower_global(module, else_value)),
             },
             ExprKind::StructLiteral { name, fields, .. } => ValueKind::StructLit {
                 name: name.segments.last().cloned().unwrap_or_default(),
                 fields: fields
                     .iter()
-                    .map(|field| (field.name.clone(), self.lower_global(&field.value)))
+                    .map(|field| (field.name.clone(), self.lower_global(module, &field.value)))
                     .collect(),
             },
             ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
-                elements: elements.iter().map(|element| self.lower_global(element)).collect(),
-                fill: fill.as_ref().map(|fill| Box::new(self.lower_global(fill))),
+                elements: elements
+                    .iter()
+                    .map(|element| self.lower_global(module, element))
+                    .collect(),
+                fill: fill
+                    .as_ref()
+                    .map(|fill| Box::new(self.lower_global(module, fill))),
             },
-            ExprKind::Unsafe(inner) => return self.lower_global(inner),
+            ExprKind::Unsafe(inner) => return self.lower_global(module, inner),
             ExprKind::IntrinsicCall { name, args } => {
                 let mut values = Vec::new();
                 let mut type_arg = None;
                 for arg in args {
                     match arg {
-                        IntrinsicArg::Expr(inner) => values.push(self.lower_global(inner)),
+                        IntrinsicArg::Expr(inner) => values.push(self.lower_global(module, inner)),
                         IntrinsicArg::Type(written) => type_arg = Some(self.resolve_written(written)),
                     }
                 }
@@ -531,7 +531,7 @@ impl<'a> Emitter<'a> {
                             ValuePiece::Literal(String::from_utf8_lossy(bytes).into_owned())
                         }
                         TemplatePiece::Placeholder(inner) => {
-                            ValuePiece::Placeholder(self.lower_global(inner))
+                            ValuePiece::Placeholder(self.lower_global(module, inner))
                         }
                     })
                     .collect(),
@@ -543,7 +543,10 @@ impl<'a> Emitter<'a> {
             } => ValueKind::Call {
                 callee: callee_name(callee).unwrap_or_default(),
                 type_args: type_args.iter().map(|ty| self.resolve_written(ty)).collect(),
-                args: args.iter().map(|arg| self.lower_global(&arg.value)).collect(),
+                args: args
+                    .iter()
+                    .map(|arg| self.lower_global(module, &arg.value))
+                    .collect(),
                 receiver: None,
             },
             _ => ValueKind::Aggregate,

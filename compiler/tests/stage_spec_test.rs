@@ -1984,6 +1984,74 @@ func main(): i32 {
     );
 }
 
+/// A qualified `std.amiga.dos` reference is a profile-surface reference.
+///
+/// The reference loads the module like an import does, so the host profile
+/// must reject it with E11200 rather than emit a call to a symbol the host
+/// shim lacks; the hosted-amiga profile still accepts and emits it.
+#[test]
+fn a_qualified_amiga_reference_is_rejected_on_host_and_allowed_on_hosted_amiga() {
+    let source = r#"module spec.stage.qualified_amiga;
+
+func main(): i32 {
+    std.amiga.dos.delayTicks(1);
+    return 0;
+}
+"#;
+    let host = run_source("qualified-amiga", source);
+    assert_eq!(
+        host.status.code(),
+        Some(1),
+        "the host profile must reject a qualified std.amiga.dos reference; stderr:\n{}",
+        String::from_utf8_lossy(&host.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&host.stderr);
+    assert!(
+        stderr.lines().any(|line| line.starts_with("error E11200: ")
+            && line.contains("std.amiga.dos")
+            && line.contains("profile 'host'")),
+        "expected an E11200 naming std.amiga.dos, got:\n{stderr}"
+    );
+
+    let (amiga, emitted) = run_source_emitting_hosted_amiga("qualified-amiga-hosted", source);
+    assert_eq!(
+        amiga.status.code(),
+        Some(0),
+        "the hosted-amiga profile must accept the reference; stderr:\n{}",
+        String::from_utf8_lossy(&amiga.stderr)
+    );
+    assert!(
+        !emitted.trim().is_empty(),
+        "the hosted-amiga program must emit C"
+    );
+}
+
+/// A user module whose name starts with `std.amiga.` is not a profile error.
+///
+/// The profile check keys on the module actually being an embedded library
+/// module, so a user module that borrows the prefix resolves like any other.
+#[test]
+fn a_user_module_with_the_amiga_prefix_is_not_a_profile_error() {
+    let files = [
+        (
+            "main.clo",
+            "module spec.stage.user_amiga;\n\nimport { helper } from std.amiga.custom;\n\nfunc main(): i32 {\n    return helper();\n}\n",
+        ),
+        (
+            "custom.clo",
+            "module std.amiga.custom;\n\nexport func helper(): i32 {\n    return 7;\n}\n",
+        ),
+    ];
+    let (run, emitted) = run_sources_emitting("user-amiga", &files);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "a user module named std.amiga.custom must not be a profile error; stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(!emitted.trim().is_empty(), "the program must emit C");
+}
+
 /// Independent errors are all reported, and the error cap trims the report to
 /// the requested count.
 #[test]

@@ -37,7 +37,7 @@ pub(super) fn check_sources(files: &[&str]) -> Vec<(&'static str, String)> {
 }
 
 /// Codes of a diagnostic list.
-fn codes(diagnostics: &[(&'static str, String)]) -> Vec<&'static str> {
+pub(super) fn codes(diagnostics: &[(&'static str, String)]) -> Vec<&'static str> {
     diagnostics.iter().map(|(code, _)| *code).collect()
 }
 
@@ -560,65 +560,5 @@ func takesUnknown(xs: Array<Undeclared>): void {}
 func main(): i32 { return 0; }
 "#,
         &["E90000", "E90000"],
-    );
-}
-
-/// A `comptime` body is frozen syntax whose semantics are staged out.
-///
-/// The declaration is otherwise well-formed, so the staged-feature code is the
-/// only diagnostic; the body is not type-checked.
-#[test]
-fn a_comptime_body_reports_its_staged_feature_code() {
-    assert_codes(
-        r#"module test;
-comptime func tableSize(n: i32): i32 { return n * 4; }
-func main(): i32 { return 0; }
-"#,
-        &["E90001"],
-    );
-}
-
-/// Two same-module globals whose initializers read each other form a cycle.
-///
-/// There is no initialization order that satisfies both reads, so the stage
-/// reports the cycle instead of ordering the module's initializers.
-#[test]
-fn a_same_module_initializer_cycle_is_rejected() {
-    assert_codes(
-        r#"module test;
-let a: i32 = b + 1;
-let b: i32 = a + 1;
-func main(): i32 { return 0; }
-"#,
-        &["E11100"],
-    );
-}
-
-/// A global may read a global initialized before it without forming a cycle.
-#[test]
-fn an_acyclic_initializer_read_is_accepted() {
-    assert_accepts(
-        r#"module test;
-let a: i32 = 1;
-let b: i32 = a + 1;
-func main(): i32 { return 0; }
-"#,
-    );
-}
-
-/// An initializer cycle across two modules is rejected as well.
-///
-/// Each module reads the other's global, so neither module can be initialized
-/// first; the reported cycle names both modules.
-#[test]
-fn a_cross_module_initializer_cycle_is_rejected() {
-    let alpha = "module test.Alpha;\nimport { y } from test.Beta;\nlet x: i32 = y + 1;\n";
-    let beta = "module test.Beta;\nimport { x } from test.Alpha;\nlet y: i32 = x + 1;\n";
-    let diagnostics = check_sources(&[alpha, beta]);
-    assert_eq!(codes(&diagnostics), ["E11100"]);
-    assert!(
-        diagnostics[0].1.contains("test.Alpha") && diagnostics[0].1.contains("test.Beta"),
-        "the cycle must name both modules, got {:?}",
-        diagnostics[0].1
     );
 }

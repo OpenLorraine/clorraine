@@ -15,9 +15,10 @@
 //! module declaration instead. That can miss an unused-import warning, but it
 //! never reports one for an import the code really uses.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::*;
+use crate::span::Span;
 
 /// The identifiers and standard-library modules a module's declarations
 /// mention.
@@ -25,8 +26,9 @@ use crate::ast::*;
 pub(super) struct Mentions {
     /// Every simple identifier mentioned.
     pub names: BTreeSet<String>,
-    /// Every standard-library module named by a dotted reference.
-    pub modules: BTreeSet<String>,
+    /// Every standard-library module named by a dotted reference, with the
+    /// span of the first reference to it.
+    pub modules: BTreeMap<String, Span>,
 }
 
 /// Collects every simple identifier and qualified standard-library module a
@@ -96,15 +98,16 @@ pub(super) fn collect_name_mentions(items: &[Item]) -> Mentions {
 ///
 /// A path such as `std.mem.bufferNew` names the module `std.mem`; a path such
 /// as `point.x` names no standard module and is ignored, so an ordinary field
-/// access never asks for a module injection.
-fn mention_module(segments: &[String], mentions: &mut Mentions) {
+/// access never asks for a module injection. The first span seen for a module
+/// is kept, so a later profile-surface diagnostic can point at the reference.
+fn mention_module(segments: &[String], span: Span, mentions: &mut Mentions) {
     if segments.len() < 2 {
         return;
     }
     for end in (1..segments.len()).rev() {
         let candidate = segments[..end].join(".");
         if crate::stdlib::lookup(&candidate).is_some() {
-            mentions.modules.insert(candidate);
+            mentions.modules.entry(candidate).or_insert(span);
             return;
         }
     }
@@ -117,7 +120,7 @@ fn mention_type(ty: &Type, mentions: &mut Mentions) {
             if let [only] = name.segments.as_slice() {
                 mentions.names.insert(only.clone());
             } else {
-                mention_module(&name.segments, mentions);
+                mention_module(&name.segments, ty.span, mentions);
             }
             for arg in args {
                 mention_type(arg, mentions);
@@ -201,7 +204,7 @@ fn mention_expr(expr: &Expr, mentions: &mut Mentions) {
             if let [only] = name.segments.as_slice() {
                 mentions.names.insert(only.clone());
             } else {
-                mention_module(&name.segments, mentions);
+                mention_module(&name.segments, name.span, mentions);
             }
             for ty in type_args {
                 mention_type(ty, mentions);
@@ -250,7 +253,7 @@ fn mention_expr(expr: &Expr, mentions: &mut Mentions) {
                 }
             }
         }
-        ExprKind::Qualified(name) => mention_module(&name.segments, mentions),
+        ExprKind::Qualified(name) => mention_module(&name.segments, name.span, mentions),
         ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Char(_)

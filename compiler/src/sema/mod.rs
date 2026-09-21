@@ -35,6 +35,8 @@ mod stmt;
 #[cfg(test)]
 mod regressions;
 #[cfg(test)]
+mod init_tests;
+#[cfg(test)]
 mod tests;
 
 /// What the type stage hands to the stage that follows it.

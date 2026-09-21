@@ -203,14 +203,18 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
 /// A dotted reference such as `std.mem.bufferNew` needs `std.mem` loaded, even
 /// though the file writes no `import`. The driver injects the modules named
 /// here alongside the imported ones. Embedded sources are skipped so the
-/// library does not ask for modules through its own qualified names.
-pub fn referenced_modules(programs: &[(FileId, Program)]) -> BTreeSet<String> {
-    let mut modules = BTreeSet::new();
+/// library does not ask for modules through its own qualified names. Each
+/// module carries the span of the first reference to it, so a profile-surface
+/// diagnostic can point at the reference.
+pub fn referenced_modules(programs: &[(FileId, Program)]) -> BTreeMap<String, Span> {
+    let mut modules = BTreeMap::new();
     for (_, program) in programs {
         if program.embedded {
             continue;
         }
-        modules.extend(collect_name_mentions(&program.items).modules);
+        for (module, span) in collect_name_mentions(&program.items).modules {
+            modules.entry(module).or_insert(span);
+        }
     }
     modules
 }
