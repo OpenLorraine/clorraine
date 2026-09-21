@@ -12,10 +12,13 @@
 # `make corpus-fs-uae` boots the interrupt-counter in FS-UAE and diffs its
 # captured output; it depends on `corpus-amiga` for the binary and runs on the
 # host, because FS-UAE needs the X display and the local SDK settings.
+#
+# `make run-fault-amiga` runs the six runtime-fault programs under `vamos` and
+# asserts the exact fault line and a nonzero exit.
 
 DOCKER_MAKE ?= $(MAKE) -C docker
 
-.PHONY: check corpus-amiga corpus-fs-uae
+.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga
 
 check:
 	./spec/check.sh
@@ -27,3 +30,7 @@ corpus-amiga:
 
 corpus-fs-uae: corpus-amiga
 	docker/scripts/corpus-fs-uae.sh
+
+run-fault-amiga:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet"
+	$(DOCKER_MAKE) exec CMD="docker/scripts/run-fault-amiga.sh"
