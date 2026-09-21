@@ -109,6 +109,12 @@ Recommendation: **B**. It records the measured behavior without changing the
 emission strategy, and it keeps PF-042 honest. The codegen rule itself (always
 emit `#line`) is unaffected either way.
 
+**Resolution (ruling D-1, 2026-09-18):** option B was accepted. Ch 17
+section 11 now records that GCC legs are debuggable and mapped while the SDK
+tools cannot decode vbcc's mapping. The emitter writes `#line` before every
+statement; the host codegen tests exercise the mapping through the `stage` and
+`codegen_run` suites.
+
 ---
 
 ## S2 - generated-C FFI ABI (PF-002)
@@ -180,6 +186,11 @@ Recommendation: **B**. On m68k both are 32-bit and the cast is a no-op, so B
 produces less code and removes a conversion the checker would otherwise have to
 track. It requires a small Ch 17 section 3/7 wording change, so it waits for the
 checkpoint ruling together with PF-047.
+
+**Resolution (ruling D-2, 2026-09-18):** option B was accepted. Ch 17
+section 3 now maps a contract-table handle to its ABI type directly. The ABI
+table lives in `compiler/src/abi.rs` and is exercised by the `stage` and
+`codegen_run` spec suites and the hosted-amiga corpus legs.
 
 ---
 
@@ -324,6 +335,13 @@ captured output contains a cleanup marker for the five trapping cases.
    a library the spikes proved unreliable, and it makes the always-on safety
    promise testable on every leg.
 
+   **Resolution (ruling D-3, 2026-09-18):** option B was accepted. The shims
+   define `cl_isnan` as an IEEE bit test, and the emitter guards the conversion
+   with `cl_isnan(f) || !(f >= lo && f <= hi)` (see `compiler/runtime/shim_*.c`
+   and `compiler/src/codegen/guards.rs`). The NaN case now passes on the
+   hosted-amiga leg under `vamos`, verified by `make run-fault-amiga`; the
+   pre-fix observation above stands as the spike record.
+
 2. **Compile matrix update.** Ch 17 section 13 lists GCC as `... -lamiga` and
    vbcc as `... -lamiga`. Float programs need `-lm` (GCC) and `-lmieee`
    (vbcc). Either add the flags only for float-using programs or always.
@@ -335,3 +353,8 @@ captured output contains a cleanup marker for the five trapping cases.
 
    Recommendation: **A**. The flags are harmless when unused, and always-on
    keeps the emitted command line deterministic and the matrix simple.
+
+   **Resolution (ruling D-4, 2026-09-18):** option A was accepted. The compile
+   matrix appends `-lm` (GCC) and `-lmieee` (vbcc) on every Amiga leg
+   (`spec/17-codegen.md` section 13). The corpus and run-fault legs in
+   `docker/scripts/` carry the flags and build warning-free.
