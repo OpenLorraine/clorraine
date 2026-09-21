@@ -14,10 +14,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece};
-use crate::types::{Ty, TyKind};
+use crate::types::{resolve_ty, Ty, TyKind};
 
 use super::types::declarator;
-use super::{sanitize_identifier, Emitter, FuncInfo};
+use super::{
+    is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
+};
 
 impl<'a> Emitter<'a> {
     // -- function emission ---------------------------------------------------
@@ -37,6 +39,14 @@ impl<'a> Emitter<'a> {
             .unwrap_or_default();
         self.used_names.clear();
         self.local_names.clear();
+        self.pointer_params.clear();
+        for param in &info.decl.params {
+            let ty = resolve_ty(&param.ty, &type_param_names(info.decl), &self.sema.table);
+            let ty = substitute_in(&ty, &self.subst);
+            if is_pointer_param(&ty, param.mode, &self.sema.table) {
+                self.pointer_params.insert(param.name.clone());
+            }
+        }
         self.scope_actions.clear();
         self.rungs.clear();
         self.labels.clear();
@@ -302,7 +312,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// The declared parameter modes of a known user or `ffi` function.
-    fn callee_modes(&self, callee: &str) -> Option<Vec<crate::ast::Mode>> {
+    pub(super) fn callee_modes(&self, callee: &str) -> Option<Vec<crate::ast::Mode>> {
         if let Some(info) = self.resolve_function(callee) {
             return Some(info.decl.params.iter().map(|param| param.mode).collect());
         }

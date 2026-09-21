@@ -90,7 +90,7 @@ pub fn is_uncontracted(signature: &FuncSignature, table: &TypeTable) -> bool {
 
 /// True when one `ffi` parameter is uncontracted.
 pub fn is_uncontracted_param(mode: Mode, ty: &Ty) -> bool {
-    mode == Mode::None && matches!(ty.kind, crate::types::TyKind::Handle(_) | crate::types::TyKind::Struct(_))
+    mode == Mode::None && matches!(ty.kind, crate::types::TyKind::Handle(_) | crate::types::TyKind::Struct(..))
 }
 
 /// Resolves the declared type of an `ffi` parameter.

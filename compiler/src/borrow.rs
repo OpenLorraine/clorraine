@@ -165,17 +165,20 @@ pub fn is_elided_view(ty: &Ty) -> bool {
 /// True for a type that may be a lifetime-elision candidate.
 ///
 /// Views, handles, raw pointers, and `cstring` all borrow or reach storage, so
-/// each carries its own elided lifetime (EL-1).
+/// each carries its own elided lifetime (EL-1). The growable `Array` is a
+/// compiler-known container that owns storage a returned view may borrow, so it
+/// is a candidate too.
 pub fn is_lend_candidate(ty: &Ty) -> bool {
-    matches!(
-        ty.kind,
+    match &ty.kind {
         TyKind::Str
-            | TyKind::CString
-            | TyKind::StaticStr
-            | TyKind::Array { .. }
-            | TyKind::Raw(_)
-            | TyKind::Handle(_)
-    )
+        | TyKind::CString
+        | TyKind::StaticStr
+        | TyKind::Array { .. }
+        | TyKind::Raw(_)
+        | TyKind::Handle(_) => true,
+        TyKind::Struct(name, _) => name == "Array",
+        _ => false,
+    }
 }
 
 /// True for an owning handle type, whose value must be released.
@@ -186,7 +189,7 @@ pub fn is_handle(ty: &Ty) -> bool {
 /// True for an owned handle or aggregate, the two shapes an uncontracted
 /// extern parameter may not receive.
 pub fn is_handle_or_aggregate(ty: &Ty) -> bool {
-    matches!(ty.kind, TyKind::Handle(_) | TyKind::Struct(_))
+    matches!(ty.kind, TyKind::Handle(_) | TyKind::Struct(..))
 }
 
 /// True for a type that can carry the `?` empty state.

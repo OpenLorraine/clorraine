@@ -456,7 +456,7 @@ impl Parser<'_> {
         if !self.at_punct(Punct::RBrace) {
             loop {
                 let start = self.current_start();
-                let (name, name_span) = self.parse_declared_name(false);
+                let (name, name_span) = self.parse_field_name();
                 self.expect_punct(Punct::Colon);
                 let value = self.parse_expression();
                 fields.push(FieldInit {

@@ -255,6 +255,9 @@ pub struct FuncSignature {
     pub name: String,
     /// Span of the name.
     pub name_span: Span,
+    /// Generic parameters. Only a compiler-known `intrinsic func` may declare
+    /// them; an `ffi` signature always leaves this empty.
+    pub type_params: Vec<TypeParam>,
     /// Parameters in order.
     pub params: Vec<Param>,
     /// Return type.

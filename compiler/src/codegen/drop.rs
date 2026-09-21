@@ -37,7 +37,7 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    if ({c_name}) {{ {deleter}({c_name}); }}"));
                 self.push(&format!("    {c_name} = {null};"));
             }
-            TyKind::Struct(name) => {
+            TyKind::Struct(name, _) => {
                 let fields = self
                     .sema
                     .table
@@ -66,7 +66,7 @@ impl<'a> Emitter<'a> {
         }
         match &ty.kind {
             TyKind::Handle(_) => true,
-            TyKind::Struct(name) => self
+            TyKind::Struct(name, _) => self
                 .sema
                 .table
                 .struct_fields(name)

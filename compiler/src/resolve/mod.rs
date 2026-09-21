@@ -114,8 +114,12 @@ impl Resolver<'_, '_> {
     }
 
     /// Resolves a bodyless signature.
+    ///
+    /// An `intrinsic func` may declare generic parameters that its parameter
+    /// and return types name; an `ffi` signature never does.
     fn resolve_signature(&mut self, signature: &FuncSignature) {
         self.push_scope();
+        self.declare_type_params(&signature.type_params);
         for param in &signature.params {
             self.resolve_type(&param.ty);
             self.declare(&param.name);

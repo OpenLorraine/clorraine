@@ -73,7 +73,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// it as a whole is allowed. A non-struct, or one with an unknown field
     /// set, is never treated as complete this way.
     fn all_fields_initialized(&self, id: usize, state: &PlaceState) -> bool {
-        let TyKind::Struct(name) = &self.bindings[id].ty.kind else {
+        let TyKind::Struct(name, _) = &self.bindings[id].ty.kind else {
             return false;
         };
         match self.sema.table.struct_fields(name) {
@@ -257,6 +257,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .unwrap_or(Provenance::None),
             ExprKind::Str(_) => Provenance::Static,
             ExprKind::Unsafe(inner) => self.view_provenance(inner),
+            // A raw or scalar cast keeps the storage of its operand, so a view
+            // built from the cast still points into the same owner.
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.view_provenance(value)
+            }
             ExprKind::Call { callee, args, .. } => self.call_provenance(callee, args),
             // A projection points into the same storage as its base, so the
             // provenance of `h.f` or `xs[0]` is the provenance of `h` or `xs`.
@@ -355,7 +360,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// True when a value expression is a loan that would escape if stored.
+    ///
+    /// Only a view value carries a loan; a scalar or owner read from a place
+    /// copies or moves and never stores a reference to that place.
     pub(super) fn is_loan_value(&self, expr: &Expr) -> bool {
+        if !is_view(&self.ty(expr)) {
+            return false;
+        }
         matches!(
             self.view_provenance(expr),
             Provenance::Local(_) | Provenance::Param(_) | Provenance::Global(_)
@@ -462,7 +473,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// and a form the checker does not need to name explicitly becomes a fresh
     /// temporary whose type joins the function's temporary list.
     pub(super) fn lower_value(&mut self, expr: &Expr) -> Value {
-        let ty = self.ty(expr);
+        let mut ty = self.ty(expr);
         let kind = match &expr.kind {
             ExprKind::Int(value) => ValueKind::Int(*value as i128),
             ExprKind::Float(value) => ValueKind::Float(*value),
@@ -491,12 +502,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 type_args,
                 args,
             } => {
-                let type_args = type_args.iter().map(|arg| self.resolve(arg)).collect();
-                let lowered = args.iter().map(|arg| self.lower_value(&arg.value)).collect();
-                ValueKind::Call {
-                    callee: self.callee_name(callee).unwrap_or_default(),
-                    type_args,
-                    args: lowered,
+                if let Some((intrinsic_ty, intrinsic_kind)) =
+                    self.lower_intrinsic_call(callee, type_args, args)
+                {
+                    ty = intrinsic_ty;
+                    intrinsic_kind
+                } else {
+                    let (name, resolved, lowered) = self.lower_call(callee, type_args, args);
+                    ValueKind::Call {
+                        callee: name,
+                        type_args: resolved,
+                        args: lowered,
+                    }
                 }
             }
             ExprKind::Unary { op, operand } => ValueKind::Unary {
@@ -654,3 +671,4 @@ fn element_index(expr: &Expr) -> Option<usize> {
         _ => None,
     }
 }
+

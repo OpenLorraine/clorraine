@@ -79,9 +79,12 @@ impl<'a> Emitter<'a> {
                     }
                 }
             }
-            ValueKind::Intrinsic { args, .. } => {
+            ValueKind::Intrinsic { name, args, .. } => {
                 for arg in args {
                     self.emit_guards(arg);
+                }
+                if name == "slice" {
+                    self.emit_slice_guard(args);
                 }
             }
             _ => {}
@@ -274,11 +277,25 @@ impl<'a> Emitter<'a> {
     /// The C spelling of a place's root.
     fn place_base(&self, base: &PlaceBase) -> String {
         match base {
-            PlaceBase::Local(name) | PlaceBase::Param(name) => self
+            PlaceBase::Local(name) => self
                 .local_names
                 .get(name)
                 .cloned()
                 .unwrap_or_else(|| super::sanitize_identifier(name)),
+            PlaceBase::Param(name) => {
+                let c_name = self
+                    .local_names
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| super::sanitize_identifier(name));
+                if self.pointer_params.contains(name) {
+                    // A writable lend of a non-duplicable struct is a C
+                    // pointer, so a member access dereferences first.
+                    format!("(*{c_name})")
+                } else {
+                    c_name
+                }
+            }
             PlaceBase::Global(name) => self
                 .globals
                 .get(name)
@@ -320,7 +337,7 @@ impl<'a> Emitter<'a> {
     /// The type of a field selected from `base`, following a raw pointer.
     fn field_type(&self, base: &Ty, field: &str) -> Ty {
         match &base.kind {
-            TyKind::Struct(name) => self
+            TyKind::Struct(name, _) => self
                 .sema
                 .table
                 .struct_fields(name)
@@ -446,11 +463,7 @@ impl<'a> Emitter<'a> {
 
     /// Renders a call to a user function, an FFI function, or a helper.
     pub(super) fn call(&self, callee: &str, type_args: &[Ty], args: &[Value]) -> String {
-        let argument_list = args
-            .iter()
-            .map(|arg| self.value(arg))
-            .collect::<Vec<String>>()
-            .join(", ");
+        let argument_list = self.call_arguments(callee, args);
         if let Some(info) = self.resolve_function(callee) {
             let symbol = if type_args.is_empty() {
                 self.function_symbol(&info.module, callee)
@@ -472,44 +485,15 @@ impl<'a> Emitter<'a> {
                 format!("cl_text_{key}({argument_list})")
             }
             "toHex" | "toDecimal" => format!("cl_{callee}({argument_list})"),
-            "stringOf" | "clone" | "bytes" | "toCString" | "bufferNew" | "bufferFrom"
-            | "bufferBytes" | "bufferLen" | "slice" | "arrayNew" | "push" | "get" | "set"
-            | "reserve" | "spanOf" | "spanBytes" | "openFile" | "createFile" | "readFile"
-            | "writeBytes" | "print" | "println" | "delayTicks" | "addHandler"
-            | "removeHandler" | "padLeft" | "padRight" => format!("cl_{callee}({argument_list})"),
-            _ => format!("{callee}({argument_list})"),
-        }
-    }
-
-    /// Renders a reserved built-in call.
-    fn intrinsic(&self, name: &str, args: &[Value], type_arg: Option<&Ty>) -> String {
-        match name {
-            "len" => {
-                if let Some(inner) = args.first() {
-                    let ty = self.substitute(&inner.ty);
-                    let inner_c = self.value(inner);
-                    return match &ty.kind {
-                        TyKind::Str | TyKind::StaticStr => format!("({inner_c}).len"),
-                        TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
-                            format!("({inner_c}).len")
-                        }
-                        TyKind::Array { extents, .. } => {
-                            let extent = extents
-                                .iter()
-                                .filter_map(|size| *size)
-                                .fold(1usize, usize::saturating_mul);
-                            format!("{extent}")
-                        }
-                        _ => "0".to_owned(),
-                    };
-                }
-                "0".to_owned()
+            // The remaining unported modules still name their shim symbols
+            // here; a module with an embedded source resolves through
+            // `resolve_function` and never reaches this map.
+            "stringOf" | "clone" | "bytes" | "toCString" | "openFile" | "createFile"
+            | "readFile" | "writeBytes" | "print" | "println" | "delayTicks" | "addHandler"
+            | "removeHandler" | "padLeft" | "padRight" => {
+                format!("cl_{callee}({argument_list})")
             }
-            "sizeof" => match type_arg {
-                Some(ty) => format!("sizeof({})", c_type(&self.substitute(ty))),
-                None => "0".to_owned(),
-            },
-            _ => "0".to_owned(),
+            _ => format!("{callee}({argument_list})"),
         }
     }
 

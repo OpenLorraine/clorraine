@@ -6,6 +6,9 @@
 //! translation unit, so the command-line behavior and the diagnostic stream
 //! are already exercised end to end.
 
+use std::collections::BTreeSet;
+
+use crate::ast::Program;
 use crate::codegen;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load;
@@ -15,6 +18,7 @@ use crate::profile::Profile;
 use crate::resolve;
 use crate::sema;
 use crate::span::{FileId, SourceMap};
+use crate::stdlib;
 
 /// Exit code for command-line and input problems.
 const EXIT_USAGE: i32 = 2;
@@ -105,6 +109,47 @@ fn error_limit(raw: &str) -> Result<usize, String> {
         .map_err(|_| format!("--max-errors expects a number, got '{raw}'"))
 }
 
+/// Parses and adds every embedded standard-library module the program imports.
+///
+/// The standard library is ordinary Clorraine compiled with the program, so an
+/// imported module is loaded exactly like a user file. Only modules with an
+/// embedded source are injected; a module that still has only a declaration
+/// surface resolves its imports through the standard-library export table, so
+/// its callers keep compiling while the module body is ported.
+fn inject_stdlib(
+    programs: &mut Vec<(FileId, Program)>,
+    sources: &mut SourceMap,
+    diagnostics: &mut Diagnostics,
+) {
+    let mut imported: BTreeSet<String> = BTreeSet::new();
+    let mut present: BTreeSet<String> = BTreeSet::new();
+    for (_, program) in programs.iter() {
+        present.insert(program.module.name.to_dotted());
+        for import in &program.imports {
+            imported.insert(import.from.to_dotted());
+        }
+    }
+    let requested: Vec<String> = imported
+        .into_iter()
+        .filter(|name| !present.contains(name) && stdlib::source(name).is_some())
+        .collect();
+    for name in requested {
+        let Some(text) = stdlib::source(&name) else {
+            continue;
+        };
+        let path = format!("stdlib/{name}.clo");
+        let file = sources.add_file(path, text.to_owned());
+        let before = diagnostics.error_count();
+        let program = Parser::new(sources, file, diagnostics).parse_program();
+        if diagnostics.error_count() > before {
+            // A malformed embedded module would be a compiler defect; the
+            // parser already recorded the reason, so the stage stops here.
+            continue;
+        }
+        programs.push((file, program));
+    }
+}
+
 /// Runs the compiler and returns the process exit code.
 pub fn run(args: Vec<String>) -> i32 {
     let options = match Options::parse(&args) {
@@ -149,6 +194,7 @@ pub fn run(args: Vec<String>) -> i32 {
         }
         programs.push((file, program));
     }
+    inject_stdlib(&mut programs, &mut sources, &mut diagnostics);
     // The module and name stages consume the loaded program instead of
     // dropping it; the emitter lands later and will take the same value.
     let loaded = load::load(programs, &mut diagnostics);

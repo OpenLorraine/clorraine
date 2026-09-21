@@ -213,7 +213,7 @@ impl Parser<'_> {
         self.expect_punct(Punct::LBrace);
         while !self.at_punct(Punct::RBrace) && !self.at_eof() {
             let field_start = self.current_start();
-            let (field_name, field_name_span) = self.parse_declared_name(false);
+            let (field_name, field_name_span) = self.parse_field_name();
             self.expect_punct(Punct::Colon);
             let volatile = self.eat_keyword(Keyword::Volatile);
             let ty = self.parse_type();
@@ -330,6 +330,7 @@ impl Parser<'_> {
         FuncSignature {
             name,
             name_span,
+            type_params: Vec::new(),
             params,
             returns,
             span: self.span_from(start),
@@ -337,11 +338,16 @@ impl Parser<'_> {
     }
 
     /// Parses an `intrinsic func` declaration, whose name may be reserved.
+    ///
+    /// A compiler-known intrinsic may carry generic parameters so the helpers
+    /// that build views over caller storage can be declared. An ordinary `ffi`
+    /// or `func` declaration never has them.
     fn parse_intrinsic(&mut self) -> FuncSignature {
         let start = self.current_start();
         self.expect_keyword(Keyword::Intrinsic);
         self.expect_keyword(Keyword::Func);
         let (name, name_span) = self.parse_declared_name(true);
+        let type_params = self.parse_type_params();
         let params = self.parse_params();
         self.expect_punct(Punct::Colon);
         let returns = self.parse_return_type();
@@ -349,6 +355,7 @@ impl Parser<'_> {
         FuncSignature {
             name,
             name_span,
+            type_params,
             params,
             returns,
             span: self.span_from(start),

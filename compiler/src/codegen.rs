@@ -13,15 +13,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{EnumDecl, Expr, FuncDecl, Item, StructDecl, Type};
+use crate::ast::{EnumDecl, Expr, FuncDecl, Item, Mode, StructDecl, Type};
 use crate::ir;
 use crate::load::{Loaded, Module};
 use crate::own::OwnershipOutput;
 use crate::profile::Profile;
 use crate::sema::SemaOutput;
 use crate::span::{SourceMap, Span};
-use crate::types::{resolve_ty, Ty, TyKind};
+use crate::types::{resolve_ty, Ty, TyKind, TypeTable};
 
+mod calls;
 mod cleanup;
 mod control;
 mod drop;
@@ -92,6 +93,9 @@ pub(super) struct Emitter<'a> {
     pub(super) function: Option<&'a ir::Function>,
     /// C name assigned to each source local or parameter of the open function.
     pub(super) local_names: BTreeMap<String, String>,
+    /// Parameters rendered as a pointer because they are a writable lend of a
+    /// non-duplicable struct; a member access on one dereferences first.
+    pub(super) pointer_params: BTreeSet<String>,
     /// Cleanup actions of every scope of the open function, keyed by scope id.
     ///
     /// Each entry pairs an action with its registration order so a scope's
@@ -168,6 +172,7 @@ impl<'a> Emitter<'a> {
             used_names: BTreeSet::new(),
             function: None,
             local_names: BTreeMap::new(),
+            pointer_params: BTreeSet::new(),
             scope_actions: BTreeMap::new(),
             rungs: Vec::new(),
             labels: BTreeMap::new(),
@@ -386,7 +391,12 @@ impl<'a> Emitter<'a> {
         for param in &decl.params {
             let ty = resolve_ty(&param.ty, &type_param_names(decl), &self.sema.table);
             let ty = substitute_in(&ty, subst);
-            params.push(declarator(&ty, &sanitize_identifier(&param.name)));
+            let c_name = sanitize_identifier(&param.name);
+            if is_pointer_param(&ty, param.mode, &self.sema.table) {
+                params.push(declarator(&Ty::raw(ty), &c_name));
+            } else {
+                params.push(declarator(&ty, &c_name));
+            }
         }
         if params.is_empty() {
             params.push("void".to_owned());
@@ -486,24 +496,17 @@ impl<'a> Emitter<'a> {
 
 /// Applies a substitution to a type.
 fn substitute_in(ty: &Ty, subst: &BTreeMap<String, Ty>) -> Ty {
-    if subst.is_empty() {
-        return ty.clone();
-    }
-    match &ty.kind {
-        TyKind::Param(name) => subst.get(name).cloned().unwrap_or_else(|| ty.clone()),
-        TyKind::Array { element, extents } => Ty {
-            kind: TyKind::Array {
-                element: Box::new(substitute_in(element, subst)),
-                extents: extents.clone(),
-            },
-            nullable: ty.nullable,
-        },
-        TyKind::Raw(inner) => Ty {
-            kind: TyKind::Raw(Box::new(substitute_in(inner, subst))),
-            nullable: ty.nullable,
-        },
-        _ => ty.clone(),
-    }
+    crate::types::substitute(ty, subst)
+}
+
+/// True when a parameter lowers to a C pointer rather than a value.
+///
+/// A writable lend of a non-duplicable struct must reach the caller's storage,
+/// so it becomes a `T *`; a duplicable struct lend binds a copy and stays by
+/// value, matching the unnecessary-lend warning. A handle already is a pointer
+/// and a view is passed by value, so neither is affected.
+fn is_pointer_param(ty: &Ty, mode: Mode, table: &TypeTable) -> bool {
+    mode == Mode::Borrow && matches!(ty.kind, TyKind::Struct(..)) && !table.duplicable(ty)
 }
 
 /// The type-parameter names of a declaration.

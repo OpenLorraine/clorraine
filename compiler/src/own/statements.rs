@@ -79,15 +79,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 type_args,
                 args,
             } => {
-                let type_args = type_args.iter().map(|ty| self.resolve(ty)).collect();
-                let args = args
-                    .iter()
-                    .map(|arg| self.lower_value(&arg.value))
-                    .collect();
+                let (name, resolved, lowered) = self.lower_call(callee, type_args, args);
                 self.emit(Statement::Call {
-                    callee: self.callee_name(callee).unwrap_or_default(),
-                    type_args,
-                    args,
+                    callee: name,
+                    type_args: resolved,
+                    args: lowered,
                     result: None,
                 });
             }

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 11:55
-> **Progress**: 67/84 tasks (80%)
+> **Last Updated**: 2026-09-21 12:55
+> **Progress**: 68/84 tasks (81%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -496,7 +496,7 @@ loan decision explicit.
 **Objective**: the AR-15/AR-46/AR-47 slice compiles warning-free and supports
 the corpus.
 
-- [ ] 7.2.1 Implement the intrinsic helpers (`rawSlice`, `rawStr`, `slice`, `len` cases) plus `stdlib/std.mem.clo`
+- [x] 7.2.1 Implement the intrinsic helpers (`rawSlice`, `rawStr`, `slice`, `len` cases) plus `stdlib/std.mem.clo` ✅ (completed: 2026-09-21 12:55)
 - [ ] 7.2.2 Implement `stdlib/std.text.clo` and `stdlib/std.fmt.clo`
 - [ ] 7.2.3 Implement `stdlib/std.io.clo` and the shim IO/print additions
 - [ ] 7.2.4 Implement `stdlib/std.amiga.dos.clo`, `stdlib/std.amiga.interrupt.clo`, and the dispatcher shim

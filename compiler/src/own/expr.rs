@@ -181,7 +181,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The type of a field selected from `base`, following a raw pointer.
     pub(super) fn member_type(&self, base: &Ty, field: &str) -> Ty {
         match &base.kind {
-            TyKind::Struct(name) => self
+            TyKind::Struct(name, _) => self
                 .sema
                 .table
                 .struct_fields(name)
@@ -410,8 +410,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         )
                     })
                     .collect();
-                self.check_marker_matches(&name, args, &params);
-                self.check_arguments(args, &params, span);
+                // A dot-call's receiver is the first parameter; the written
+                // arguments line up with the parameters after it.
+                let skip = usize::from(self.is_dot_call(callee)).min(params.len());
+                let params = &params[skip..];
+                self.check_marker_matches(&name, args, params);
+                self.check_arguments(args, params, span);
             }
             Callee::Ffi(signature) => self.check_ffi_call(&name, signature, args, span),
             Callee::Stdlib { effect, .. } => self.check_stdlib_call(effect, args),

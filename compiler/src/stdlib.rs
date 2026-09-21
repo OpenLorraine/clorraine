@@ -1,11 +1,14 @@
-//! Embedded standard-library export surface.
+//! Embedded standard-library surface and sources.
 //!
 //! The standard library is ordinary Clorraine that the compiler compiles with
 //! every program. Loading and name resolution need one fact before those
 //! sources can be compiled: which modules exist and which names each one
-//! exports. This table carries exactly that surface. The module bodies are
-//! added later; when they land, this table stays the single place that names
-//! the modules and their exports.
+//! exports. The module bodies themselves are embedded in the binary with
+//! `include_str!`, so no install path or filesystem lookup is needed and the
+//! emitted translation unit is deterministic.
+//!
+//! A module that has not been ported yet still contributes its export surface
+//! here; the driver only injects the modules that have a source.
 
 /// One standard-library module and the names it exports.
 pub struct StdlibModule {
@@ -13,6 +16,55 @@ pub struct StdlibModule {
     pub name: &'static str,
     /// Names the module exports, in the order the library declares them.
     pub exports: &'static [&'static str],
+}
+
+/// One embedded standard-library module and its Clorraine source.
+pub struct StdlibSource {
+    /// Dotted module name, matching the module declaration in the source.
+    pub name: &'static str,
+    /// The module body, embedded at build time.
+    pub source: &'static str,
+}
+
+/// The standard-library modules whose Clorraine sources are embedded.
+///
+/// `include_str!` reads the file at build time relative to this module, so the
+/// path is `<repo>/stdlib/<name>.clo`. Adding a module here makes it available
+/// to the driver; a module without an entry stays a declarations-only surface
+/// described by [`MODULES`].
+pub const SOURCES: &[StdlibSource] = &[
+    StdlibSource {
+        name: "std.mem",
+        source: include_str!("../../stdlib/std.mem.clo"),
+    },
+];
+
+/// The compiler-known intrinsic helper names.
+///
+/// These helpers are implemented by the compiler and declared by the embedded
+/// standard library. A user module may not declare an `intrinsic func` with one
+/// of these names.
+pub const COMPILER_INTRINSICS: &[&str] = &["rawSlice", "rawStr", "slice", "len"];
+
+/// True when `name` is a compiler-known intrinsic helper.
+pub fn is_compiler_intrinsic(name: &str) -> bool {
+    COMPILER_INTRINSICS.contains(&name)
+}
+
+/// The embedded source of a standard-library module, when it has one.
+pub fn source(name: &str) -> Option<&'static str> {
+    SOURCES
+        .iter()
+        .find(|module| module.name == name)
+        .map(|module| module.source)
+}
+
+/// True when the module is a compiler-known standard-library module.
+///
+/// The visibility rules use this to grant the module's export surface even
+/// where a generic declaration omits `export`.
+pub fn is_standard_module(name: &str) -> bool {
+    lookup(name).is_some()
 }
 
 /// Every standard-library module the compiler provides.
@@ -103,6 +155,35 @@ mod tests {
         assert!(!exports("std.mem", "println"));
         assert!(!exports("std.mem", "Missing"));
         assert!(!exports("std.nope", "Buffer"));
+    }
+
+    #[test]
+    fn embedded_sources_match_their_export_table_entry() {
+        for module in SOURCES {
+            assert!(
+                lookup(module.name).is_some(),
+                "embedded module '{}' has no export table entry",
+                module.name
+            );
+            assert!(
+                module.source.contains("module "),
+                "embedded module '{}' has no module declaration",
+                module.name
+            );
+        }
+        assert!(source("std.mem").is_some());
+        assert!(source("std.nope").is_none());
+    }
+
+    #[test]
+    fn compiler_intrinsics_are_recognized() {
+        assert!(is_compiler_intrinsic("rawSlice"));
+        assert!(is_compiler_intrinsic("rawStr"));
+        assert!(is_compiler_intrinsic("slice"));
+        assert!(is_compiler_intrinsic("len"));
+        assert!(!is_compiler_intrinsic("sizeof"));
+        assert!(is_standard_module("std.mem"));
+        assert!(!is_standard_module("app.core"));
     }
 
     #[test]

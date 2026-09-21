@@ -29,6 +29,25 @@ import example in the specification (AR-52). The appendix's `module Std.Mem;`
 line is a known editorial defect; correcting it in the spec requires a ruling
 because the spec is frozen (AR-31).
 
+## Compiler-Known Surface (AR-68)
+
+The frozen grammar forbids exported generics (`grammar.ebnf.md:532`, G4;
+E10302) and gives `intrinsic_decl` no type parameters (`:158`), and `ffi_decl`
+no link-name (`:156`). The embedded standard library is therefore a
+**compiler-known surface**, not an ordinary user module:
+
+- Its generic declarations (`Array<T>`, `arrayNew<T>`, `push<T>`, `get<T>`,
+  `set<T>`, `reserve<T>`) are written **without** `export`; importers see them
+  through the AR-62 export table, and E10302/G4 still apply to user code.
+- `intrinsic func` accepts the optional type parameters that AR-46/AR-51 need
+  (`rawSlice<T>`, `rawStr`, `slice<T>`, `len`); the compiler implements these
+  names and rejects user declarations of them.
+- Standard-library `ffi` declarations name the shim C symbols directly (no
+  alias exists), so the emitter's name-verbatim rule binds them. The
+  compiler's hard-coded `cl_<name>` call map is retired for standard-library
+  names the sources now own; only the built-in `String`/`FreeString` and the
+  `cl_text_*` template lowering stay compiler-side.
+
 ## Compiler-Known Intrinsic Helpers (AR-46, AR-51)
 
 Declared as `intrinsic func` (GF23) inside the stdlib; the compiler implements

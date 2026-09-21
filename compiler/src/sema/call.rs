@@ -90,25 +90,25 @@ impl Checker<'_, '_> {
         args: &[Arg],
         span: Span,
     ) -> Ty {
-        let declared = &signature.type_params;
+        let declared = signature.type_params.clone();
         let arg_types: Vec<(Ty, Span)> = args
             .iter()
             .map(|arg| (self.check_value(&arg.value, None), arg.value.span))
             .collect();
 
+        let mut bindings: BTreeMap<String, Ty> = BTreeMap::new();
         if type_args.is_empty() {
-            let mut inferred: BTreeMap<String, Ty> = BTreeMap::new();
             for ((ty, _), param) in arg_types.iter().zip(&signature.params) {
-                match_param(param, ty, declared, &mut inferred);
+                match_param(param, ty, &declared, &mut bindings);
             }
-            if declared.iter().any(|param| !inferred.contains_key(param)) {
+            if declared.iter().any(|param| !bindings.contains_key(param)) {
                 self.error(
                     "E10301",
                     format!("cannot infer type arguments for '{name}'"),
                     "write the type arguments explicitly",
                     span,
                 );
-            } else if self.is_recursive_instantiation(name, declared, &inferred) {
+            } else if self.is_recursive_instantiation(name, &declared, &bindings) {
                 self.error(
                     "E10305",
                     format!("instantiation of '{name}' is recursive beyond the limit"),
@@ -117,8 +117,9 @@ impl Checker<'_, '_> {
                 );
             }
         } else {
+            let mut resolved = Vec::with_capacity(type_args.len());
             for ty in type_args {
-                self.resolve_type(ty);
+                resolved.push(self.resolve_type(ty));
             }
             if type_args.len() != declared.len() {
                 self.error(
@@ -132,12 +133,16 @@ impl Checker<'_, '_> {
                     span,
                 );
             }
+            for (param, ty) in declared.iter().zip(resolved) {
+                bindings.insert(param.clone(), ty);
+            }
         }
 
         for ((ty, arg_span), param) in arg_types.iter().zip(&signature.params) {
-            self.check_conversion(ty, param, *arg_span);
+            let expected = crate::types::substitute(param, &bindings);
+            self.check_conversion(ty, &expected, *arg_span);
         }
-        signature.returns.clone()
+        crate::types::substitute(&signature.returns, &bindings)
     }
 
     /// True when a generic call instantiates the function currently being
@@ -198,7 +203,7 @@ impl Checker<'_, '_> {
     /// field, a visible free function is a `Function` candidate, and the
     /// receiver-taking `len` intrinsic stands in as one so `xs.len()` works.
     fn dot_call(&self, base: &Ty, name: &str) -> Option<DotCall> {
-        if let TyKind::Struct(struct_name) = &base.kind {
+        if let TyKind::Struct(struct_name, _) = &base.kind {
             if let Some(field_ty) = self.table.struct_field(struct_name, name) {
                 return match &field_ty.kind {
                     TyKind::Func(signature) => Some(DotCall::Field(FuncSig {
@@ -208,6 +213,14 @@ impl Checker<'_, '_> {
                     })),
                     _ => None,
                 };
+            }
+            // The growable array's operations are compiler-known standard
+            // library functions; a caller reaches them through a dot-call
+            // without importing each method name.
+            if struct_name == "Array" {
+                if let Some(signature) = self.table.function("std.mem", name) {
+                    return Some(DotCall::Function(signature.clone()));
+                }
             }
         }
         if let Some(signature) = self.free_function(name) {
@@ -253,7 +266,7 @@ impl Checker<'_, '_> {
         let allowed = match &target.kind {
             // A struct is an aggregate, not a scalar; a call in cast position
             // cannot build one.
-            TyKind::Struct(_) => false,
+            TyKind::Struct(..) => false,
             TyKind::Enum(name) => {
                 arg_ty.is_integer()
                     || arg_ty.is_unknown()
@@ -303,10 +316,24 @@ fn call_name(callee: &Expr) -> Option<&str> {
 /// Only the shapes that carry a type parameter are walked; a struct type does
 /// not spell out its type arguments here, so a parameter nested in a struct is
 /// not recovered. The first binding for a parameter wins.
-fn match_param(param: &Ty, arg: &Ty, declared: &[String], inferred: &mut BTreeMap<String, Ty>) {
+pub(crate) fn match_param(
+    param: &Ty,
+    arg: &Ty,
+    declared: &[String],
+    inferred: &mut BTreeMap<String, Ty>,
+) {
     match &param.kind {
         TyKind::Param(name) if declared.iter().any(|known| known == name) => {
             inferred.entry(name.clone()).or_insert_with(|| arg.clone());
+        }
+        TyKind::Struct(name, args) => {
+            if let TyKind::Struct(arg_name, arg_args) = &arg.kind {
+                if name == arg_name {
+                    for (inner, arg_inner) in args.iter().zip(arg_args) {
+                        match_param(inner, arg_inner, declared, inferred);
+                    }
+                }
+            }
         }
         TyKind::Raw(inner) => {
             if let TyKind::Raw(arg_inner) = &arg.kind {

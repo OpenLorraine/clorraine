@@ -114,9 +114,16 @@ impl Loaded {
     }
 
     /// True when the module exports the name.
+    ///
+    /// A loaded module's own `export` markers decide, except for a
+    /// compiler-known standard-library module, whose export table also covers
+    /// the generic declarations that cannot carry `export`.
     pub fn module_exports(&self, module: &str, name: &str) -> bool {
         match self.modules.get(module) {
-            Some(user) => user.decls.get(name).is_some_and(|decl| decl.exported),
+            Some(user) => {
+                user.decls.get(name).is_some_and(|decl| decl.exported)
+                    || stdlib::exports(module, name)
+            }
             None => stdlib::exports(module, name),
         }
     }
@@ -273,6 +280,27 @@ fn collect_declarations(
     items: &[Item],
     diagnostics: &mut Diagnostics,
 ) -> BTreeMap<String, Decl> {
+    // The compiler implements the intrinsic helpers itself, so only an
+    // embedded standard-library module may declare one of them.
+    if !stdlib::is_standard_module(module) {
+        for item in items {
+            if let Item::Intrinsic(signature) = item {
+                if stdlib::is_compiler_intrinsic(&signature.name) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E20006",
+                            format!(
+                                "'{}' is a reserved built-in and cannot be redeclared",
+                                signature.name
+                            ),
+                            signature.name_span,
+                        )
+                        .with_help("the compiler provides this intrinsic; rename the declaration"),
+                    );
+                }
+            }
+        }
+    }
     let mut decls: BTreeMap<String, Decl> = BTreeMap::new();
     for decl in items.iter().flat_map(declarations_of) {
         if decls.contains_key(&decl.name) {
@@ -535,6 +563,14 @@ func main(): i32 {
 }
 "#]);
         assert_eq!(errors(&codes), ["E11101"]);
+    }
+
+    #[test]
+    fn a_user_cannot_declare_a_compiler_intrinsic() {
+        let (_, codes) = compile(&[
+            "module app;\nintrinsic func rawSlice<T>(p: raw T, n: usize): T[];\nfunc main(): i32 { return 0; }\n",
+        ]);
+        assert_eq!(errors(&codes), ["E20006"]);
     }
 
     #[test]

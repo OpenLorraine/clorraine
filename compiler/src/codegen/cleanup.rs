@@ -324,7 +324,11 @@ impl<'a> Emitter<'a> {
             TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString | TyKind::Func(_) => {
                 self.null_literal().to_owned()
             }
-            TyKind::Str | TyKind::Struct(_) => format!("({}){{0}}", super::types::c_type(&ret)),
+            // A view returns its pointer-and-length struct in its empty state.
+            TyKind::Str | TyKind::Struct(..) => format!("({}){{0}}", super::types::c_type(&ret)),
+            TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
+                format!("({}){{0}}", super::types::c_type(&ret))
+            }
             _ => "0".to_owned(),
         };
         self.push(&format!("    return {value};"));

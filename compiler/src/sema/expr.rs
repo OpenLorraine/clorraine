@@ -265,7 +265,7 @@ impl Checker<'_, '_> {
     /// field wins and only a name that is neither is reported.
     fn member_type(&mut self, base_ty: &Ty, name: &str, span: Span) -> Ty {
         match &base_ty.kind {
-            TyKind::Struct(struct_name) => {
+            TyKind::Struct(struct_name, _) => {
                 if let Some(field_ty) = self.table.struct_field(struct_name, name) {
                     return field_ty;
                 }
@@ -381,21 +381,23 @@ impl Checker<'_, '_> {
         fields: &[FieldInit],
         span: Span,
     ) -> Ty {
-        let target = match name.segments.last() {
-            Some(last) if self.table.is_struct(last) => Ty::struct_(last),
-            _ => Ty::unknown(),
-        };
-        let TyKind::Struct(struct_name) = &target.kind else {
+        let Some(struct_name) = name
+            .segments
+            .last()
+            .filter(|last| self.table.is_struct(last))
+            .cloned()
+        else {
             for field in fields {
                 self.check_value(&field.value, None);
             }
-            return target;
+            return Ty::unknown();
         };
-        let struct_name = struct_name.clone();
 
+        let mut resolved_args = Vec::with_capacity(type_args.len());
         for ty in type_args {
-            self.resolve_type(ty);
+            resolved_args.push(self.resolve_type(ty));
         }
+        let target = Ty::struct_with(&struct_name, resolved_args);
         if let Some(params) = self.table.struct_type_params(&struct_name) {
             if type_args.is_empty() && !params.is_empty() {
                 self.error(

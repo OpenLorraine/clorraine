@@ -25,7 +25,7 @@ pub(super) fn c_type(ty: &Ty) -> String {
         TyKind::CString => "char *".to_owned(),
         TyKind::Raw(inner) => format!("{} *", c_type(inner)),
         TyKind::Handle(name) => handle_type(name),
-        TyKind::Struct(name) | TyKind::Enum(name) => format!("Cl{name}"),
+        TyKind::Struct(name, _) | TyKind::Enum(name) => format!("Cl{name}"),
         TyKind::Array { element, extents } => {
             if extents.iter().all(Option::is_some) {
                 c_type(element)
@@ -90,7 +90,7 @@ pub(super) fn declarator(ty: &Ty, name: &str) -> String {
 pub(super) fn empty_state(ty: &Ty) -> String {
     match &ty.kind {
         TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString | TyKind::Func(_) => "NULL".to_owned(),
-        TyKind::Str | TyKind::StaticStr | TyKind::Struct(_) | TyKind::Enum(_) => "{0}".to_owned(),
+        TyKind::Str | TyKind::StaticStr | TyKind::Struct(..) | TyKind::Enum(_) => "{0}".to_owned(),
         TyKind::Array { .. } => "{0}".to_owned(),
         _ => "0".to_owned(),
     }
@@ -105,7 +105,7 @@ pub(super) fn type_key(ty: &Ty) -> String {
         TyKind::StaticStr => "static_str".to_owned(),
         TyKind::CString => "cstring".to_owned(),
         TyKind::Raw(inner) => format!("raw_{}", type_key(inner)),
-        TyKind::Handle(name) | TyKind::Struct(name) | TyKind::Enum(name) | TyKind::Param(name) => {
+        TyKind::Handle(name) | TyKind::Struct(name, _) | TyKind::Enum(name) | TyKind::Param(name) => {
             name.clone()
         }
         TyKind::Array { element, .. } => type_key(element),
@@ -126,7 +126,9 @@ pub(super) fn scalar_of(ty: &Ty) -> Option<ScalarType> {
 pub(super) fn collect_slice_types(ty: &Ty, found: &mut BTreeMap<String, Ty>) {
     match &ty.kind {
         TyKind::Array { element, extents } => {
-            if extents.iter().any(Option::is_none) {
+            // A slice over a generic parameter has no concrete element type to
+            // declare; its concrete instances add the typedefs they need.
+            if extents.iter().any(Option::is_none) && !element.is_param() {
                 found.entry(type_key(element)).or_insert_with(|| (**element).clone());
             }
             collect_slice_types(element, found);

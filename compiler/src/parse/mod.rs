@@ -339,6 +339,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parses a struct field or field-initializer name.
+    ///
+    /// A field name is a member label, not a binding of a callable built-in, so
+    /// a reserved built-in spelling is allowed there; `sizeof` stays a valid
+    /// function name to redeclare only if the declaration rule catches it
+    /// elsewhere.
+    fn parse_field_name(&mut self) -> (String, Span) {
+        self.parse_declared_name(true)
+    }
+
     /// Parses a dotted name.
     fn parse_qualified_name(&mut self) -> QualifiedName {
         let start = self.current_start();

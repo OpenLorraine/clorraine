@@ -499,7 +499,7 @@ impl<'a> ConstFolder<'a> {
                     return Err(ConstError::NotConstant(span));
                 };
                 let resolved = self.resolve_const_type(ty);
-                let TyKind::Struct(struct_name) = resolved.kind else {
+                let TyKind::Struct(struct_name, _) = resolved.kind else {
                     return Err(ConstError::NotConstant(span));
                 };
                 let Some(IntrinsicArg::Expr(field)) = args.get(1) else {

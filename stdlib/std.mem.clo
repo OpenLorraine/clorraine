@@ -1,0 +1,108 @@
+//! Memory: owned byte buffers, growable arrays, spans, and status carriers.
+//!
+//! This module is ordinary Clorraine that the compiler compiles with every
+//! program. It reaches the profile C shim through `ffi`, and it uses the
+//! compiler-known intrinsic helpers to turn raw storage into checked views.
+//! Generic declarations carry no `export`: the compiler exports the names in
+//! this module's table, and only the compiler may implement its intrinsics.
+
+module std.mem;
+
+export handle Buffer freedBy FreeBuffer;
+
+export struct Status {
+    ok: bool;
+    code: u32;
+}
+
+export struct Span {
+    start: usize;
+    len: usize;
+}
+
+struct Array<T> {
+    data: Buffer;
+    count: usize;
+}
+
+ffi stdmem {
+    func FreeBuffer(take b: Buffer): void;
+    func cl_buffer_new(size: usize): Buffer;
+    func cl_buffer_ptr(borrow b: Buffer): raw u8;
+    func cl_buffer_len(borrow b: Buffer): usize;
+    func cl_buffer_reserve(borrow b: Buffer, cap: usize): void;
+    func cl_buffer_append(borrow b: Buffer, src: raw u8, n: usize): void;
+    func cl_buffer_write(borrow b: Buffer, off: usize, src: raw u8, n: usize): void;
+}
+
+intrinsic func rawSlice<T>(p: raw T, n: usize): T[];
+intrinsic func rawStr(p: raw u8, n: usize): str;
+intrinsic func slice<T>(v: T[], lo: usize, hi: usize): T[];
+intrinsic func len(v: usize): usize;
+
+export func bufferNew(size: usize): Buffer? {
+    return cl_buffer_new(size);
+}
+
+export func bufferFrom(src: u8[]): Buffer? {
+    unsafe {
+        let b: Buffer = cl_buffer_new(len(src));
+        cl_buffer_write(b, 0, src.ptr, len(src));
+        return b;
+    }
+}
+
+export func bufferBytes(borrow b: Buffer): u8[] {
+    unsafe {
+        return rawSlice<u8>(cl_buffer_ptr(b), cl_buffer_len(b));
+    }
+}
+
+export func bufferLen(b: Buffer): usize {
+    return cl_buffer_len(b);
+}
+
+export func spanOf(src: u8[], at: usize, n: usize): Span {
+    let s: u8[] = slice<u8>(src, at, at + n);
+    return Span {
+        start: at,
+        len: len(s),
+    };
+}
+
+export func spanBytes(src: u8[], s: Span): u8[] {
+    return slice<u8>(src, s.start, s.start + s.len);
+}
+
+func arrayNew<T>(): Array<T> {
+    return Array<T> {
+        data: cl_buffer_new(0),
+        count: 0,
+    };
+}
+
+func push<T>(borrow xs: Array<T>, take v: T): void {
+    unsafe {
+        cl_buffer_append(xs.data, raw u8(&v), sizeof(T));
+    }
+    xs.count = xs.count + 1;
+}
+
+func get<T>(borrow xs: Array<T>, i: usize): T[] {
+    unsafe {
+        return slice<T>(rawSlice<T>(raw T(cl_buffer_ptr(xs.data)), xs.count), i, i + 1);
+    }
+}
+
+func set<T>(borrow xs: Array<T>, i: usize, take v: T): void {
+    unsafe {
+        let one: T[] = slice<T>(rawSlice<T>(raw T(cl_buffer_ptr(xs.data)), xs.count), i, i + 1);
+        one[0] = v;
+    }
+}
+
+func reserve<T>(borrow xs: Array<T>, n: usize): void {
+    unsafe {
+        cl_buffer_reserve(xs.data, n * sizeof(T));
+    }
+}

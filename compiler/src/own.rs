@@ -38,6 +38,7 @@ use crate::types::{resolve_ty, Ty, TyKind};
 
 pub mod program;
 
+mod call;
 mod expr;
 mod flow;
 mod generics;
@@ -94,9 +95,11 @@ pub fn check(
             }
         }
     }
+    let mut monomorphization = generics::collect(loaded, &program, sema);
+    generics::collect_ir_instances(&functions, &program, &mut monomorphization);
     OwnershipOutput {
         functions,
-        monomorphization: generics::collect(loaded, &program, sema),
+        monomorphization,
     }
 }
 

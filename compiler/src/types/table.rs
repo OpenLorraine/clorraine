@@ -334,7 +334,7 @@ impl TypeTable {
         }
         match &ty.kind {
             TyKind::Handle(_) => false,
-            TyKind::Struct(name) => self.struct_fields(name).is_none_or(|fields| {
+            TyKind::Struct(name, _) => self.struct_fields(name).is_none_or(|fields| {
                 fields
                     .iter()
                     .all(|(_, field)| self.duplicable_at(field, depth + 1))
@@ -362,7 +362,7 @@ impl TypeTable {
                 }
                 Some(total)
             }
-            TyKind::Struct(name) => {
+            TyKind::Struct(name, _) => {
                 let mut total = 0usize;
                 for (_, field) in self.struct_fields(name)? {
                     total = total.checked_add(self.size_of(field)?)?;
@@ -457,7 +457,13 @@ where
                 .collect(),
             returns: Box::new(resolve_ty_with(returns, type_params, table, fold)),
         }),
-        TypeKind::Named { name, .. } => resolve_named(name, type_params, table),
+        TypeKind::Named { name, args } => {
+            let mut resolved_args = Vec::with_capacity(args.len());
+            for arg in args {
+                resolved_args.push(resolve_ty_with(arg, type_params, table, fold));
+            }
+            resolve_named(name, resolved_args, type_params, table)
+        }
         TypeKind::Error => TyKind::Unknown,
     };
     Ty {
@@ -467,7 +473,15 @@ where
 }
 
 /// Resolves a named type to its kind.
-fn resolve_named(name: &QualifiedName, type_params: &[String], table: &TypeTable) -> TyKind {
+///
+/// A struct keeps its concrete type arguments so a generic consumer can infer
+/// its parameters; every other named type ignores them.
+fn resolve_named(
+    name: &QualifiedName,
+    args: Vec<Ty>,
+    type_params: &[String],
+    table: &TypeTable,
+) -> TyKind {
     let Some(last) = name.segments.last() else {
         return TyKind::Unknown;
     };
@@ -482,7 +496,7 @@ fn resolve_named(name: &QualifiedName, type_params: &[String], table: &TypeTable
             return TyKind::Handle(last.clone());
         }
         if table.is_struct(last) {
-            return TyKind::Struct(last.clone());
+            return TyKind::Struct(last.clone(), args);
         }
         if table.is_enum(last) {
             return TyKind::Enum(last.clone());

@@ -183,19 +183,25 @@ pub enum Callee<'a> {
 /// view and owns nothing, so it never triggers a false ownership diagnostic.
 pub fn stdlib_effect(name: &str) -> Option<StdlibEffect> {
     match name {
-        // Allocating constructors return an owned value.
+        // Allocating constructors of modules that still have no embedded
+        // source return an owned value. A module with a source resolves to its
+        // compiled function instead.
         "stringOf" | "clone" | "text" | "toHex" | "toDecimal" | "padLeft" | "padRight"
-        | "bufferNew" | "bufferFrom" | "arrayNew" | "openFile" | "createFile" | "addHandler" => {
-            Some(StdlibEffect::OwnsResult)
-        }
+        | "openFile" | "createFile" | "addHandler" => Some(StdlibEffect::OwnsResult),
         // Helpers that return a view or `cstring` over storage the caller
-        // still owns, so the call is a loan of their first argument.
-        "bytes" | "toCString" | "slice" => Some(StdlibEffect::ViewOf {
-            arg: 0,
-            kind: LoanKind::Shared,
-        }),
-        // `bufferBytes` derives a writable view, so a call through a writable
-        // borrow is an exclusive reborrow.
+        // still owns, so the call is a loan of their first argument. The
+        // unchecked view builders derive their storage from the same place as
+        // their first argument.
+        "bytes" | "toCString" | "slice" | "rawSlice" | "rawStr" => {
+            Some(StdlibEffect::ViewOf {
+                arg: 0,
+                kind: LoanKind::Shared,
+            })
+        }
+        // `bufferBytes` derives a writable view. Its body is an embedded
+        // source now, so a real compile resolves the function itself; this
+        // entry keeps the ownership model for a program checked without the
+        // standard-library module loaded.
         "bufferBytes" => Some(StdlibEffect::ViewOf {
             arg: 0,
             kind: LoanKind::Exclusive,

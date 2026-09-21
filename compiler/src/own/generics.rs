@@ -12,7 +12,9 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, Type};
-use crate::ir::{CopyObligation, Instance, Monomorphization};
+use crate::ir::{
+    CopyObligation, Function, Instance, Monomorphization, Statement, Terminator, Value, ValueKind,
+};
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
 use crate::types::{resolve_ty, Ty, TyKind};
@@ -296,6 +298,146 @@ fn type_bindings(
         bindings.insert(param.name.clone(), resolve_ty(written, &[], &sema.table));
     }
     bindings
+}
+
+/// Records the concrete generic instances named by the lowered IR.
+///
+/// Lowering fills a generic call's concrete type arguments, including an
+/// inferred instantiation of a dot-call, so walking the IR catches the
+/// instances that the AST-only pass cannot key. A call whose arguments still
+/// name a type parameter belongs to an uninstantiated generic template and is
+/// skipped.
+pub fn collect_ir_instances(functions: &[Function], program: &ProgramInfo, mono: &mut Monomorphization) {
+    for function in functions {
+        for block in &function.blocks {
+            for instr in &block.statements {
+                match &instr.statement {
+                    Statement::Assign { value, .. } => walk_value(value, program, mono),
+                    Statement::StorePointer { pointer, value } => {
+                        walk_value(pointer, program, mono);
+                        walk_value(value, program, mono);
+                    }
+                    Statement::Call { callee, type_args, args, .. } => {
+                        record_instance(callee, type_args, program, mono);
+                        for arg in args {
+                            walk_value(arg, program, mono);
+                        }
+                    }
+                    Statement::Move { .. }
+                    | Statement::Borrow { .. }
+                    | Statement::Drop { .. }
+                    | Statement::Defer { .. }
+                    | Statement::ScopeEnd { .. }
+                    | Statement::ScopeExit { .. }
+                    | Statement::Nop => {}
+                }
+            }
+            match &block.terminator {
+                Terminator::Branch { condition, .. } => walk_value(condition, program, mono),
+                Terminator::Switch { value, arms, .. } => {
+                    walk_value(value, program, mono);
+                    for (label, _) in arms {
+                        walk_value(label, program, mono);
+                    }
+                }
+                Terminator::Return(Some(value)) => walk_value(value, program, mono),
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Records an instance for one IR call with concrete type arguments.
+fn record_instance(
+    callee: &str,
+    type_args: &[Ty],
+    program: &ProgramInfo,
+    mono: &mut Monomorphization,
+) {
+    if type_args.is_empty()
+        || type_args
+            .iter()
+            .any(|ty| ty.is_param() || ty.is_unknown())
+    {
+        return;
+    }
+    let Some(Callee::User(decl)) = program.callee(callee) else {
+        return;
+    };
+    if decl.type_params.len() != type_args.len() {
+        return;
+    }
+    mono.record(Instance {
+        function: decl.name.clone(),
+        args: type_args.iter().map(Ty::display).collect(),
+    });
+}
+
+/// Walks a value, recording every generic call it contains.
+fn walk_value(value: &Value, program: &ProgramInfo, mono: &mut Monomorphization) {
+    match &value.kind {
+        ValueKind::Call { callee, type_args, args } => {
+            record_instance(callee, type_args, program, mono);
+            for arg in args {
+                walk_value(arg, program, mono);
+            }
+        }
+        ValueKind::Member { base, .. } => walk_value(base, program, mono),
+        ValueKind::Index { base, index } => {
+            walk_value(base, program, mono);
+            walk_value(index, program, mono);
+        }
+        ValueKind::Unary { operand, .. } => walk_value(operand, program, mono),
+        ValueKind::Binary { left, right, .. } => {
+            walk_value(left, program, mono);
+            walk_value(right, program, mono);
+        }
+        ValueKind::Cast { value, .. } => walk_value(value, program, mono),
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            walk_value(condition, program, mono);
+            walk_value(then_value, program, mono);
+            walk_value(else_value, program, mono);
+        }
+        ValueKind::StructLit { fields, .. } => {
+            for (_, field) in fields {
+                walk_value(field, program, mono);
+            }
+        }
+        ValueKind::ArrayLit { elements, fill } => {
+            for element in elements {
+                walk_value(element, program, mono);
+            }
+            if let Some(fill) = fill {
+                walk_value(fill, program, mono);
+            }
+        }
+        ValueKind::Template(pieces) => {
+            for piece in pieces {
+                if let crate::ir::ValuePiece::Placeholder(inner) = piece {
+                    walk_value(inner, program, mono);
+                }
+            }
+        }
+        ValueKind::Intrinsic { args, .. } => {
+            for arg in args {
+                walk_value(arg, program, mono);
+            }
+        }
+        ValueKind::Place(_)
+        | ValueKind::Int(_)
+        | ValueKind::Float(_)
+        | ValueKind::Char(_)
+        | ValueKind::Bool(_)
+        | ValueKind::Null
+        | ValueKind::Str(_)
+        | ValueKind::Path(_)
+        | ValueKind::Aggregate
+        | ValueKind::Temp(_) => {}
+    }
 }
 
 /// The simple name a callee expression carries.

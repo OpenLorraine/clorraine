@@ -154,6 +154,27 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        // A generic body's slice types become concrete only where it is
+        // instantiated, so collect the substituted parameter and return types
+        // of every emitted instance.
+        for instance in self.ownership.monomorphization.instances() {
+            let Some(info) = self.first_function_by_name(&instance.function) else {
+                continue;
+            };
+            let subst = self.instance_subst(info.decl, &instance.args);
+            let params: Vec<String> = info
+                .decl
+                .type_params
+                .iter()
+                .map(|param| param.name.clone())
+                .collect();
+            for param in &info.decl.params {
+                let ty = resolve_ty(&param.ty, &params, &self.sema.table);
+                collect_slice_types(&super::substitute_in(&ty, &subst), &mut found);
+            }
+            let ret = resolve_ty(&info.decl.returns, &params, &self.sema.table);
+            collect_slice_types(&super::substitute_in(&ret, &subst), &mut found);
+        }
         found.into_iter().collect()
     }
 

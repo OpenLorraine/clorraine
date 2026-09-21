@@ -49,7 +49,7 @@ pub fn ffi_type_with(ty: &Ty, enum_backing: Option<crate::ast::ScalarType>) -> S
         TyKind::Handle(name) => contract_handle(name)
             .map(str::to_owned)
             .unwrap_or_else(|| format!("Cl{name}")),
-        TyKind::Struct(name) => format!("Cl{name}"),
+        TyKind::Struct(name, _) => format!("Cl{name}"),
         TyKind::Enum(_) => enum_backing_c_type(enum_backing).to_owned(),
         TyKind::Scalar(scalar) => scalar_c_type(*scalar).to_owned(),
         TyKind::Array { .. } => "APTR".to_owned(),
