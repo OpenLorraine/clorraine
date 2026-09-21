@@ -537,3 +537,28 @@ func main(): i32 { return 0; }
         &["E10210"],
     );
 }
+
+/// The `Array<T>` element rule fires only for a known, move-only element.
+///
+/// The rule rejects a growable sequence of a resource-owning element because
+/// version 1 cannot drop such elements. It must stay quiet for a duplicable
+/// element, for a nested sequence of duplicable elements, and for an element
+/// type the table cannot resolve; those are ordinary programs or already
+/// reported elsewhere.
+#[test]
+fn the_array_element_rule_fires_only_for_a_known_move_only_element() {
+    assert_codes(
+        r#"module test;
+handle Buffer freedBy FreeBuffer;
+ffi lib { func FreeBuffer(take b: Buffer): void; }
+struct Owned { name: String; }
+func takesBuffer(xs: Array<Buffer>): void {}
+func takesOwned(xs: Array<Owned>): void {}
+func takesInt(xs: Array<i32>): void {}
+func takesNested(xs: Array<Array<i32>>): void {}
+func takesUnknown(xs: Array<Undeclared>): void {}
+func main(): i32 { return 0; }
+"#,
+        &["E90000", "E90000"],
+    );
+}

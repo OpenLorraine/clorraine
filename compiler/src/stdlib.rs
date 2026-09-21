@@ -158,7 +158,114 @@ pub fn exports(module: &str, name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
+    use crate::ast::{Item, Program};
+    use crate::diag::Diagnostics;
+    use crate::parse::Parser;
+    use crate::profile::Profile;
+    use crate::span::SourceMap;
+
+    /// The export names a module may leave to the compiler.
+    ///
+    /// The built-in `String` handle and the compiler-known `text` formatter are
+    /// exported by the table but declared by the compiler rather than by
+    /// Clorraine, so they do not appear as declarations in the source.
+    const COMPILER_KNOWN_EXPORTS: &[&str] = &["String", "text"];
+
+    /// Parses one embedded module and returns it with the codes of any
+    /// diagnostics the parser reported.
+    ///
+    /// This is the same parse the driver runs on an embedded source, so a
+    /// module that does not parse here would fail every program that imports
+    /// it.
+    fn parse_module(name: &str, source: &str) -> (Program, Vec<&'static str>) {
+        let mut sources = SourceMap::new();
+        let file = sources.add_file(format!("{name}.clo"), source.to_owned());
+        let mut diagnostics = Diagnostics::new(false, None);
+        let program = Parser::new(&sources, file, &mut diagnostics).parse_program();
+        let codes = diagnostics
+            .items()
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect();
+        (program, codes)
+    }
+
+    /// The names a parsed program declares at top level.
+    fn declared_names(program: &Program) -> BTreeSet<String> {
+        let mut names = BTreeSet::new();
+        for item in &program.items {
+            let name = match item {
+                Item::Func(decl) | Item::Comptime(decl) => &decl.name,
+                Item::Struct(decl) => &decl.name,
+                Item::Enum(decl) => &decl.name,
+                Item::Handle(decl) => &decl.name,
+                Item::Intrinsic(signature) => &signature.name,
+                Item::GlobalLet(decl) => &decl.name,
+                Item::GlobalConst(decl) => &decl.name,
+                Item::Ffi(_) => continue,
+            };
+            names.insert(name.clone());
+        }
+        names
+    }
+
+    /// The `ffi` symbols a parsed module binds.
+    fn ffi_symbols(program: &Program) -> BTreeSet<String> {
+        let mut names = BTreeSet::new();
+        for item in &program.items {
+            if let Item::Ffi(block) = item {
+                for signature in &block.decls {
+                    names.insert(signature.name.clone());
+                }
+            }
+        }
+        names
+    }
+
+    /// The names a parsed module declares with `intrinsic func`.
+    fn intrinsic_names(program: &Program) -> BTreeSet<String> {
+        let mut names = BTreeSet::new();
+        for item in &program.items {
+            if let Item::Intrinsic(signature) = item {
+                names.insert(signature.name.clone());
+            }
+        }
+        names
+    }
+
+    /// True when a module may be compiled on a profile.
+    ///
+    /// The two `std.amiga.*` modules need the AmigaOS scheduler and interrupt
+    /// dispatcher, which only the hosted-amiga shim provides; every other
+    /// module is portable.
+    fn module_available_on(profile: Profile, module: &str) -> bool {
+        match profile {
+            Profile::Host => !module.starts_with("std.amiga."),
+            Profile::HostedAmiga => true,
+        }
+    }
+
+    /// Loads the sources and returns the diagnostic codes of the load stage,
+    /// which owns the reserved-intrinsic check.
+    fn load_codes(files: &[String]) -> Vec<&'static str> {
+        let mut sources = SourceMap::new();
+        let mut diagnostics = Diagnostics::new(false, None);
+        let mut programs = Vec::new();
+        for (index, text) in files.iter().enumerate() {
+            let id = sources.add_file(format!("file{index}.clo"), text.clone());
+            let program = Parser::new(&sources, id, &mut diagnostics).parse_program();
+            programs.push((id, program));
+        }
+        let _loaded = crate::load::load(programs, &mut diagnostics);
+        diagnostics
+            .items()
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect()
+    }
 
     #[test]
     fn modules_are_found_by_their_dotted_name() {
@@ -260,5 +367,103 @@ mod tests {
             }
         }
         imports
+    }
+
+    #[test]
+    fn every_embedded_source_parses_and_names_its_table_module() {
+        for module in MODULES {
+            let text = source(module.name)
+                .unwrap_or_else(|| panic!("module '{}' has no embedded source", module.name));
+            let (program, codes) = parse_module(module.name, text);
+            assert!(
+                codes.is_empty(),
+                "embedded module '{}' does not parse: {codes:?}",
+                module.name
+            );
+            assert_eq!(
+                program.module.name.to_dotted(),
+                module.name,
+                "embedded module '{}' declares a different module name",
+                module.name
+            );
+        }
+    }
+
+    #[test]
+    fn every_export_is_declared_or_compiler_known() {
+        for module in MODULES {
+            let text = source(module.name).expect("module has an embedded source");
+            let (program, _) = parse_module(module.name, text);
+            let declared = declared_names(&program);
+            for export in module.exports {
+                assert!(
+                    declared.contains(*export) || COMPILER_KNOWN_EXPORTS.contains(export),
+                    "module '{}' exports '{export}', but the source declares neither it nor a compiler-known name",
+                    module.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn each_profile_shim_defines_every_ffi_symbol_its_modules_bind() {
+        for profile in [Profile::Host, Profile::HostedAmiga] {
+            let shim = profile.shim();
+            let mut checked = 0usize;
+            for module in SOURCES {
+                if !module_available_on(profile, module.name) {
+                    continue;
+                }
+                let (program, _) = parse_module(module.name, module.source);
+                for symbol in ffi_symbols(&program) {
+                    assert!(
+                        shim.contains(&format!("{symbol}(")),
+                        "the {} shim does not define '{symbol}', which '{}' binds",
+                        profile.name(),
+                        module.name
+                    );
+                    checked += 1;
+                }
+            }
+            assert!(
+                checked > 0,
+                "the {} profile checked no ffi symbols",
+                profile.name()
+            );
+        }
+    }
+
+    #[test]
+    fn the_compiler_intrinsic_set_matches_the_library_declarations() {
+        let mut declared = BTreeSet::new();
+        for module in SOURCES {
+            let (program, _) = parse_module(module.name, module.source);
+            declared.extend(intrinsic_names(&program));
+        }
+        let expected: BTreeSet<String> = COMPILER_INTRINSICS
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect();
+        assert_eq!(
+            declared, expected,
+            "the intrinsic names declared by the library and the recognized set differ"
+        );
+        for name in COMPILER_INTRINSICS {
+            assert!(is_compiler_intrinsic(name), "'{name}' must be recognized");
+        }
+    }
+
+    #[test]
+    fn a_user_module_cannot_redeclare_a_compiler_intrinsic() {
+        for name in COMPILER_INTRINSICS {
+            let text = format!(
+                "module app;\nintrinsic func {name}<T>(p: raw T, n: usize): T[];\nfunc main(): i32 {{ return 0; }}\n"
+            );
+            let codes = load_codes(&[text]);
+            assert!(
+                codes.contains(&"E20006"),
+                "declaring intrinsic '{name}' must be rejected, got {codes:?}"
+            );
+        }
     }
 }

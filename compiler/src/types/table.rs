@@ -655,4 +655,36 @@ mod tests {
         // The first field has a known offset; the one past the slice does not.
         assert_eq!(table.offset_of("Flexible", "tail"), None);
     }
+
+    #[test]
+    fn array_duplicability_follows_nested_elements_and_the_pointer_boundary() {
+        let table = TypeTable::default();
+        let owner = || Ty::handle("String");
+        assert!(table.duplicable(&Ty::array(Ty::i32_ty(), vec![Some(2)])));
+        assert!(!table.duplicable(&Ty::array(owner(), vec![None])));
+        // A nested array recurses to its innermost element.
+        assert!(table.duplicable(&Ty::array(
+            Ty::array(Ty::i32_ty(), vec![Some(2)]),
+            vec![Some(3)]
+        )));
+        assert!(!table.duplicable(&Ty::array(
+            Ty::array(owner(), vec![Some(2)]),
+            vec![Some(3)]
+        )));
+        // A raw pointer copies, so an array of pointers is duplicable even
+        // when the pointee owns a resource.
+        assert!(table.duplicable(&Ty::array(Ty::raw(owner()), vec![Some(1)])));
+    }
+
+    #[test]
+    fn duplicability_stops_recursing_at_the_depth_cap() {
+        let table = TypeTable::default();
+        let mut nested = Ty::handle("String");
+        for _ in 0..40 {
+            nested = Ty::array(nested, vec![Some(1)]);
+        }
+        // Past the cap the check assumes a copy instead of recursing without
+        // bound, so a pathologically deep type still terminates.
+        assert!(table.duplicable(&nested));
+    }
 }

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 13:38
-> **Progress**: 72/84 tasks (86%)
+> **Last Updated**: 2026-09-21 13:45
+> **Progress**: 73/84 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -512,7 +512,7 @@ the corpus.
 ### Step 7.3: Green phase and implementation tests
 
 - [x] 7.3.1 Run the stdlib/warning spec cases and golden files; fix until green (stdlib compiles warning-free under both profiles) ✅ (completed: 2026-09-21 13:38)
-- [ ] 7.3.2 Write stdlib impl tests (buffer/array/format/file/span behaviors) and run the full fast verify (`make check`)
+- [x] 7.3.2 Write stdlib impl tests (buffer/array/format/file/span behaviors) and run the full fast verify (`make check`) ✅ (completed: 2026-09-21 13:45)
 
 **Deliverables**:
 - Stdlib/warning goldens green

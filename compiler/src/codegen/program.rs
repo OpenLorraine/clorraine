@@ -169,9 +169,22 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        // A body can hold a slice local whose element type appears in no
+        // signature, so collect from every lowered body too. A generic body's
+        // element type is still a parameter here and is skipped; it becomes
+        // concrete only where the body is instantiated, below.
+        for function in &self.ownership.functions {
+            for local in &function.locals {
+                collect_slice_types(&local.ty, &mut found);
+            }
+            for temp in &function.temps {
+                collect_slice_types(temp, &mut found);
+            }
+        }
         // A generic body's slice types become concrete only where it is
         // instantiated, so collect the substituted parameter and return types
-        // of every emitted instance.
+        // of every emitted instance, plus the substituted locals and
+        // temporaries of its lowered body.
         for instance in self.ownership.monomorphization.instances() {
             let Some(info) = self.first_function_by_name(&instance.function) else {
                 continue;
@@ -189,6 +202,21 @@ impl<'a> Emitter<'a> {
             }
             let ret = resolve_ty(&info.decl.returns, &params, &self.sema.table);
             collect_slice_types(&super::substitute_in(&ret, &subst), &mut found);
+            let module = info.module.clone();
+            let Some(body) = self
+                .ownership
+                .functions
+                .iter()
+                .find(|function| function.name == instance.function && function.module == module)
+            else {
+                continue;
+            };
+            for local in &body.locals {
+                collect_slice_types(&super::substitute_in(&local.ty, &subst), &mut found);
+            }
+            for temp in &body.temps {
+                collect_slice_types(&super::substitute_in(temp, &subst), &mut found);
+            }
         }
         found.into_iter().collect()
     }

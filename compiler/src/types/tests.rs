@@ -221,6 +221,51 @@ fn integer_literal_value_reads_plain_and_negated_literals() {
 }
 
 #[test]
+fn substitution_replaces_parameters_inside_arrays_pointers_and_struct_args() {
+    use std::collections::BTreeMap;
+    let mut bindings = BTreeMap::new();
+    bindings.insert("T".to_owned(), Ty::i32_ty());
+    let param = || ty(TyKind::Param("T".to_owned()));
+
+    assert_eq!(substitute(&param(), &bindings), Ty::i32_ty());
+
+    // An array view substitutes its element and keeps both written extents.
+    assert_eq!(
+        substitute(&Ty::array(param(), vec![Some(2), None]), &bindings),
+        Ty::array(Ty::i32_ty(), vec![Some(2), None])
+    );
+
+    // The nullability flag survives the recursion.
+    let mut nullable = Ty::array(param(), vec![None]);
+    nullable.nullable = true;
+    let mut expected = Ty::array(Ty::i32_ty(), vec![None]);
+    expected.nullable = true;
+    assert_eq!(substitute(&nullable, &bindings), expected);
+
+    assert_eq!(
+        substitute(&Ty::raw(param()), &bindings),
+        Ty::raw(Ty::i32_ty())
+    );
+    assert_eq!(
+        substitute(&Ty::struct_with("Array", vec![param()]), &bindings),
+        Ty::struct_with("Array", vec![Ty::i32_ty()])
+    );
+}
+
+#[test]
+fn substitution_leaves_unbound_and_parameter_free_types_alone() {
+    use std::collections::BTreeMap;
+    let mut bindings = BTreeMap::new();
+    bindings.insert("T".to_owned(), Ty::i32_ty());
+    let unbound = ty(TyKind::Param("U".to_owned()));
+    assert_eq!(substitute(&unbound, &bindings), unbound);
+    assert_eq!(substitute(&Ty::i32_ty(), &bindings), Ty::i32_ty());
+    assert_eq!(substitute(&ty(TyKind::Str), &bindings), ty(TyKind::Str));
+    // An empty substitution is a no-op even for a parameter.
+    assert_eq!(substitute(&unbound, &BTreeMap::new()), unbound);
+}
+
+#[test]
 fn type_predicates_and_display_match_the_surface_spelling() {
     use ScalarType::*;
     assert!(Ty::scalar(I32).is_integer());
