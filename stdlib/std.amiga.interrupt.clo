@@ -1,0 +1,48 @@
+//! Amiga interrupts: token-based registration of a vertical-blank handler.
+//!
+//! This module belongs to the hosted-amiga profile; the host profile has no
+//! AmigaOS interrupt dispatcher, so the module is not available there. The
+//! wrappers reach the profile C shim through `ffi`, and the shim owns the C-side
+//! server, so application code never writes `ffi` and never touches `unsafe`.
+//!
+//! A handler is a capture-less `func(): void`. The dispatcher stores the plain
+//! C function pointer and calls it on every vertical blank, so the handler runs
+//! in an interrupt context. A handler must therefore stay allocation-free,
+//! drop-free, and panic-free. State shared with a handler belongs in a
+//! `volatile` module-level binding, or the polling code may read a stale copy.
+//!
+//! The dispatcher has one server slot, so registering a new handler replaces
+//! the current one. Removing a token is idempotent: removing it twice is safe.
+
+module std.amiga.interrupt;
+
+/// Identifies one registered handler so it can be removed later.
+///
+/// The value is opaque to callers; only `addHandler` produces one and only
+/// `removeHandler` consumes it.
+export struct HandlerToken {
+    id: u32;
+}
+
+ffi stdinterrupt {
+    func cl_add_handler(hook: func(): void): u32;
+    func cl_remove_handler(id: u32): void;
+}
+
+/// Registers `hook` as the vertical-blank handler.
+///
+/// A previously registered handler is replaced. The returned token names this
+/// registration and is required to remove it.
+export func addHandler(hook: func(): void): HandlerToken {
+    return HandlerToken {
+        id: cl_add_handler(hook),
+    };
+}
+
+/// Removes the handler named by `t`.
+///
+/// Removing a token that is not registered, or removing the same token twice,
+/// does nothing.
+export func removeHandler(t: HandlerToken): void {
+    cl_remove_handler(t.id);
+}

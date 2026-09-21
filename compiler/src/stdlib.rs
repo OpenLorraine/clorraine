@@ -49,6 +49,14 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.io",
         source: include_str!("../../stdlib/std.io.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.dos",
+        source: include_str!("../../stdlib/std.amiga.dos.clo"),
+    },
+    StdlibSource {
+        name: "std.amiga.interrupt",
+        source: include_str!("../../stdlib/std.amiga.interrupt.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.

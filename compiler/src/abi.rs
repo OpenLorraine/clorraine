@@ -23,9 +23,12 @@ pub fn contract_handle(name: &str) -> Option<&'static str> {
 /// The C ABI type of an `ffi` parameter or return value.
 ///
 /// Views cross the boundary as their pointer only: the length is a separate
-/// parameter supplied by the wrapper, so a view maps to `APTR`. An enum uses
-/// its declared backing scalar; the caller resolves that from the type table
-/// and passes it in.
+/// parameter supplied by the wrapper, so a view maps to `APTR`. A `cstring`
+/// maps to `char *`, the same spelling the Clorraine cstring lowers to; the
+/// AmigaOS `STRPTR` typedef is `unsigned char *`, so naming it here would make a
+/// wrapper's `char *` argument warn under `-Wpointer-sign`. An enum uses its
+/// declared backing scalar; the caller resolves that from the type table and
+/// passes it in.
 pub fn ffi_type(ty: &Ty) -> String {
     ffi_type_with(ty, None)
 }
@@ -40,7 +43,7 @@ pub fn ffi_type_with(ty: &Ty, enum_backing: Option<crate::ast::ScalarType>) -> S
         TyKind::Void => "void".to_owned(),
         TyKind::Str | TyKind::StaticStr | TyKind::CString => {
             if matches!(ty.kind, TyKind::CString) {
-                "STRPTR".to_owned()
+                "char *".to_owned()
             } else {
                 "APTR".to_owned()
             }
@@ -116,6 +119,13 @@ mod tests {
                 nullable: false,
             }),
             "APTR"
+        );
+        assert_eq!(
+            ffi_type(&Ty {
+                kind: TyKind::CString,
+                nullable: false,
+            }),
+            "char *"
         );
     }
 

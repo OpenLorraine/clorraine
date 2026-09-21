@@ -376,7 +376,7 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Renders a dotted name: an enum member, a global's field, or a local's.
+    /// Renders a dotted name: an enum member, a function value, or a field path.
     fn path(&self, segments: &[String]) -> String {
         let Some(first) = segments.first() else {
             return "0".to_owned();
@@ -384,6 +384,18 @@ impl<'a> Emitter<'a> {
         let rest = segments[1..].join(".");
         if self.enums.contains_key(first) {
             return format!("{first}_{rest}");
+        }
+        // A single-segment name that resolves to a function is a function
+        // value: a bare identifier names the function (there is no `&`), so it
+        // lowers to the emitted symbol, which decays to the C function pointer
+        // the declared `func(...)` signature expects. A generic template is not
+        // a value on its own, so an uninstantiated name keeps its spelling.
+        if rest.is_empty() {
+            if let Some(info) = self.resolve_function(first) {
+                if info.decl.type_params.is_empty() {
+                    return self.function_symbol(&info.module, &info.decl.name);
+                }
+            }
         }
         let base = self
             .local_names
@@ -482,13 +494,6 @@ impl<'a> Emitter<'a> {
         }
         match callee {
             "text" => self.text_call(args.first()),
-            // The two Amiga modules have no embedded source yet, so their
-            // names still map to the shim symbols directly. Every other
-            // standard-library name now resolves through the module source in
-            // `resolve_function` above and never reaches this map.
-            "delayTicks" | "addHandler" | "removeHandler" => {
-                format!("cl_{callee}({argument_list})")
-            }
             _ => format!("{callee}({argument_list})"),
         }
     }
