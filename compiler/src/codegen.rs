@@ -22,13 +22,16 @@ use crate::sema::SemaOutput;
 use crate::span::{SourceMap, Span};
 use crate::types::{resolve_ty, Ty, TyKind};
 
+mod cleanup;
 mod control;
+mod drop;
 mod expr;
 mod function;
+mod init;
 mod program;
 mod types;
 
-use function::Action;
+use cleanup::Action;
 use types::{c_type, declarator, mangle_module};
 
 /// Everything the emitter needs about one function with a body.
@@ -69,8 +72,12 @@ pub(super) struct Emitter<'a> {
     profile: Profile,
     /// The output buffer.
     out: String,
-    /// User functions keyed by simple name.
-    functions: BTreeMap<String, FuncInfo<'a>>,
+    /// User functions keyed by `(module, name)`.
+    functions: BTreeMap<(String, String), FuncInfo<'a>>,
+    /// `ffi` signatures keyed by simple name, for call-site ABI handling.
+    ffi_functions: BTreeMap<String, &'a crate::ast::FuncSignature>,
+    /// The module of the body currently being emitted, for call resolution.
+    pub(super) current_module: String,
     /// Module-level bindings keyed by simple name.
     globals: BTreeMap<String, GlobalInfo>,
     /// User structs keyed by name.
@@ -86,7 +93,10 @@ pub(super) struct Emitter<'a> {
     /// C name assigned to each source local or parameter of the open function.
     pub(super) local_names: BTreeMap<String, String>,
     /// Cleanup actions of every scope of the open function, keyed by scope id.
-    pub(super) scope_actions: BTreeMap<usize, Vec<Action>>,
+    ///
+    /// Each entry pairs an action with its registration order so a scope's
+    /// drops and `defer` entries can be run in one reverse registration order.
+    pub(super) scope_actions: BTreeMap<usize, Vec<(u32, Action)>>,
     /// The owning scopes that take a function-end ladder rung, innermost first.
     pub(super) rungs: Vec<usize>,
     /// The cleanup label number assigned to each rung scope.
@@ -149,6 +159,8 @@ impl<'a> Emitter<'a> {
             profile,
             out: String::new(),
             functions: BTreeMap::new(),
+            ffi_functions: BTreeMap::new(),
+            current_module: String::new(),
             globals: BTreeMap::new(),
             structs: BTreeMap::new(),
             enums: BTreeMap::new(),
@@ -185,10 +197,12 @@ impl<'a> Emitter<'a> {
             for item in &module.items {
                 match item {
                     Item::Func(decl) => {
-                        self.functions.entry(decl.name.clone()).or_insert(FuncInfo {
-                            module: module.name.clone(),
-                            decl,
-                        });
+                        self.functions
+                            .entry((module.name.clone(), decl.name.clone()))
+                            .or_insert(FuncInfo {
+                                module: module.name.clone(),
+                                decl,
+                            });
                     }
                     Item::Struct(decl) => {
                         self.structs.entry(decl.name.clone()).or_insert(decl);
@@ -201,6 +215,13 @@ impl<'a> Emitter<'a> {
                     }
                     Item::GlobalConst(decl) => {
                         self.record_global(module, &decl.name, Some(&decl.ty), &decl.value);
+                    }
+                    Item::Ffi(block) => {
+                        for signature in &block.decls {
+                            self.ffi_functions
+                                .entry(signature.name.clone())
+                                .or_insert(signature);
+                        }
                     }
                     _ => {}
                 }
@@ -229,6 +250,7 @@ impl<'a> Emitter<'a> {
 
     /// Runs the emission phases in order.
     fn run(mut self) -> String {
+        self.report_generic_collisions();
         self.emit_header();
         self.out.push_str(self.profile.shim());
         self.emit_typedefs();
@@ -268,6 +290,35 @@ impl<'a> Emitter<'a> {
     /// Applies the active generic substitution to a type.
     pub(super) fn substitute(&self, ty: &Ty) -> Ty {
         substitute_in(ty, &self.subst)
+    }
+
+    /// The empty-state initializer of a type under the selected profile.
+    ///
+    /// The hosted-amiga ABI declares `BPTR`, the file/lock handle type, as an
+    /// integer, so a pointer constant would not convert to it. The integer
+    /// constant `0` is the null value for both an integer and a pointer handle,
+    /// so the hosted profile replaces the `NULL` empty state with it; every
+    /// other type keeps its fixed empty state.
+    pub(super) fn empty_state(&self, ty: &Ty) -> String {
+        let base = types::empty_state(ty);
+        if self.profile == Profile::HostedAmiga && base == "NULL" {
+            "0".to_owned()
+        } else {
+            base
+        }
+    }
+
+    /// The null literal under the selected profile.
+    ///
+    /// See [`Self::empty_state`]: the hosted-amiga `BPTR` is an integer, so the
+    /// null spelling there is the integer constant `0`. The host profile keeps
+    /// `NULL`, which the emitted C and its tests pin.
+    pub(super) fn null_literal(&self) -> &'static str {
+        if self.profile == Profile::HostedAmiga {
+            "0"
+        } else {
+            "NULL"
+        }
     }
 
     /// The source line a span maps to.
@@ -311,9 +362,8 @@ impl<'a> Emitter<'a> {
     }
 
     /// The signature of a non-generic function.
-    fn function_signature(&self, decl: &FuncDecl) -> String {
-        let module = self.module_of(decl);
-        let symbol = self.function_symbol(&module, &decl.name);
+    fn function_signature(&self, module: &str, decl: &FuncDecl) -> String {
+        let symbol = self.function_symbol(module, &decl.name);
         self.signature_with_symbol(decl, &BTreeMap::new(), &symbol)
     }
 
@@ -344,12 +394,56 @@ impl<'a> Emitter<'a> {
         format!("{storage}{ret_c} {symbol}({})", params.join(", "))
     }
 
-    /// The module a function is declared in.
-    fn module_of(&self, decl: &FuncDecl) -> String {
+    /// Resolves a called function name against the emitting module.
+    ///
+    /// The caller's own module wins, so two modules with a same-named function
+    /// each call their own. When the caller declares no such function, a name
+    /// bound by one of the caller's imports resolves to that module's function,
+    /// so an imported same-named function is not mistaken for ambiguous. Only
+    /// then is a unique function of that name elsewhere used; an ambiguous name
+    /// resolves to `None` rather than guessing.
+    pub(super) fn resolve_function(&self, name: &str) -> Option<&FuncInfo<'a>> {
+        if let Some(info) = self
+            .functions
+            .get(&(self.current_module.clone(), name.to_owned()))
+        {
+            return Some(info);
+        }
+        // The caller's import table disambiguates a name declared in more than
+        // one module. The binding's local name may be an alias, so the lookup
+        // uses the original imported name in the target module.
+        if let Some(module) = self.loaded.module(&self.current_module) {
+            if let Some(binding) = module.import(name) {
+                if let Some(info) = self
+                    .functions
+                    .get(&(binding.module.clone(), binding.original.clone()))
+                {
+                    return Some(info);
+                }
+            }
+        }
+        let mut found: Option<&FuncInfo<'a>> = None;
+        for ((_, simple), info) in &self.functions {
+            if simple != name {
+                continue;
+            }
+            if found.is_some() {
+                return None;
+            }
+            found = Some(info);
+        }
+        found
+    }
+
+    /// The first declared function with a simple name.
+    ///
+    /// A generic instance records only the simple name, so this lookup keeps
+    /// the instance emission working; generic instances dedupe by name alone.
+    pub(super) fn first_function_by_name(&self, name: &str) -> Option<&FuncInfo<'a>> {
         self.functions
-            .get(&decl.name)
-            .map(|info| info.module.clone())
-            .unwrap_or_default()
+            .iter()
+            .find(|((_, simple), _)| simple == name)
+            .map(|(_, info)| info)
     }
 
     /// The substitution for a generic instantiation.

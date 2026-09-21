@@ -237,6 +237,27 @@ fn run_source_emitting(tag: &str, source: &str) -> (Output, String) {
     (run, read_emitted(&output_path))
 }
 
+/// Compiles one source snippet with the hosted-amiga profile and returns its C.
+///
+/// The hosted-amiga translation unit cannot be compiled on the host, but its
+/// declaration surface (the ABI typedefs and the shim includes) can be asserted
+/// as text.
+fn run_source_emitting_hosted_amiga(tag: &str, source: &str) -> (Output, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("cannot write snippet: {err}"));
+    let output_path = scratch.path().join("out.c");
+    let run = run_clc(&[
+        "--profile".to_owned(),
+        "hosted-amiga".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    (run, read_emitted(&output_path))
+}
+
 /// Compiles several source files and returns the process output and emitted C.
 fn run_sources_emitting(tag: &str, files: &[(&str, &str)]) -> (Output, String) {
     let scratch = ScratchDir::new(tag);
@@ -1532,6 +1553,126 @@ func main(): i32 {
     assert!(c.contains("E11212"), "the float guard reaches E11212:\n{c}");
 }
 
+/// An `ffi` declaration emits a prototype built from the ABI mapping.
+///
+/// A parameter mode never shapes the prototype: the declared type alone fixes
+/// the C type. `File` maps to `BPTR`, a view to `APTR`, and `i32` to `LONG`, so
+/// the `Write` prototype is the fixed ABI spelling the specification pins.
+#[test]
+fn ffi_prototypes_use_the_abi_mapping() {
+    let source = r#"module spec.stage.cg_ffi_abi;
+
+handle File freedBy CloseFile;
+
+ffi dos {
+    func Write(borrow file: File, const buf: u8[], n: i32): i32;
+    func CloseFile(take f: File): void;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let (run, emitted) = run_source_emitting("cg-ffi-abi", source);
+    let c = assert_emitted("cg-ffi-abi", &run, emitted);
+    assert!(
+        c.contains("LONG Write(BPTR, APTR, LONG);"),
+        "the Write prototype is the ABI spelling:\n{c}"
+    );
+    assert!(
+        c.contains("void CloseFile(BPTR);"),
+        "the deleter prototype is the ABI spelling:\n{c}"
+    );
+}
+
+/// A slice view uses a mutable element pointer so a write through it compiles.
+///
+/// A `borrow T[]` parameter is writable, and the same slice typedef serves a
+/// read-only lend, so the element pointer cannot be `const` without rejecting
+/// the writable case.
+#[test]
+fn a_slice_view_uses_a_mutable_element_pointer() {
+    let source = r#"module spec.stage.cg_slice_mut;
+
+func fill(borrow xs: u8[]): void {
+    xs[0] = 1;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let (run, emitted) = run_source_emitting("cg-slice-mut", source);
+    let c = assert_emitted("cg-slice-mut", &run, emitted);
+    assert!(
+        c.contains("typedef struct { u8 *ptr; usize len; } ClSlice_u8;"),
+        "the slice element pointer is mutable:\n{c}"
+    );
+}
+
+/// The hosted-amiga unit relies on the NDK headers for the AmigaOS ABI types.
+///
+/// The shim includes `exec/types.h` and `dos/dos.h`, which already declare
+/// `BPTR`, `LONG`, `ULONG`, `STRPTR`, and `BOOL`; redeclaring them under
+/// `-std=c99` is an error. The Clorraine fixed-width scalars are still emitted
+/// because no target header provides them.
+#[test]
+fn hosted_amiga_emits_no_clashing_abi_typedefs() {
+    let source = r#"module spec.stage.cg_hosted_typedefs;
+
+handle File freedBy CloseFile;
+
+ffi dos {
+    func OpenFile(): File?;
+    func CloseFile(take f: File): void;
+}
+
+func demo(): void {
+    let f: File? = OpenFile();
+    if (f == null) {
+        return;
+    }
+    CloseFile(f);
+}
+
+func main(): i32 {
+    demo();
+    return 0;
+}
+"#;
+    let (run, emitted) = run_source_emitting_hosted_amiga("cg-hosted-typedefs", source);
+    let c = assert_emitted("cg-hosted-typedefs", &run, emitted);
+    for clash in [
+        "typedef int LONG;",
+        "typedef unsigned int ULONG;",
+        "typedef char *STRPTR;",
+        "typedef int BOOL;",
+    ] {
+        assert!(
+            !c.contains(clash),
+            "the hosted-amiga unit does not redeclare `{clash}`:\n{c}"
+        );
+    }
+    assert!(
+        c.contains("typedef int i32;"),
+        "the fixed-width scalars are still emitted:\n{c}"
+    );
+    assert!(
+        c.contains("#include <dos/dos.h>"),
+        "the shim includes the header that declares BPTR:\n{c}"
+    );
+    // `BPTR` is an integer on the target, so the file handle's empty state and
+    // null comparison use the integer constant rather than `NULL`.
+    assert!(
+        c.contains("BPTR f = 0;"),
+        "an integer handle is initialized with the integer null:\n{c}"
+    );
+    assert!(
+        c.contains("(f == 0)"),
+        "an integer handle compares against the integer null:\n{c}"
+    );
+}
+
 /// Module initializers are generated as `cl_init_*` functions and the entry
 /// stub runs them in topological order before the user's `main`.
 ///
@@ -1631,6 +1772,51 @@ func main(): i32 {
         definition_count(&c, "cl_identity__u8"),
         1,
         "the distinct key emits one body under its type key:\n{c}"
+    );
+}
+
+/// Two modules with a same-named generic function report a duplicate
+/// declaration instead of silently sharing one emitted symbol.
+///
+/// A generic instance is named `cl_<name>__<typekey>` without a module
+/// qualifier, so the two declarations cannot both be represented. A
+/// single-module program is unaffected and still dedupes its instances.
+#[test]
+fn same_named_generics_in_two_modules_report_a_duplicate_declaration() {
+    let files = [
+        (
+            "a.clo",
+            "module Dup.A;
+
+func identity<T>(x: T): T { return x; }
+
+export func useA(): i32 { return identity<i32>(1); }
+",
+        ),
+        (
+            "b.clo",
+            "module Dup.B;
+
+func identity<T>(x: T): T { return x + 100; }
+
+export func useB(): i32 { return identity<i32>(2); }
+",
+        ),
+        (
+            "main.clo",
+            "module Dup.Main;
+
+import { useA } from Dup.A;
+import { useB } from Dup.B;
+
+func main(): i32 { return useA() + useB(); }
+",
+        ),
+    ];
+    assert_reports_across_files(
+        "rv434",
+        &files,
+        &["error E11101: duplicate declaration of 'identity' in module 'Dup.B'"],
     );
 }
 

@@ -27,6 +27,7 @@ fn a_straight_line_function_keeps_one_block_with_an_explicit_exit() {
     builder.emit(Statement::Drop {
         place: local.clone(),
         scope: 0,
+        order: 0,
     });
     builder.terminate(Terminator::Return(None));
     let function = builder.finish();

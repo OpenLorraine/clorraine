@@ -91,7 +91,7 @@ impl<'a> Emitter<'a> {
 
     /// Records the reachable blocks and the entry of every structured loop.
     fn prepare_regions(&mut self, function: &'a ir::Function) {
-        self.reachable = super::function::reachable_blocks(function);
+        self.reachable = super::cleanup::reachable_blocks(function);
         self.loop_entry.clear();
         for block in &function.blocks {
             if let Terminator::Branch {
@@ -134,7 +134,7 @@ impl<'a> Emitter<'a> {
     /// A deferred block is reached only through the ladder, not from the
     /// function entry, so its closure becomes the reachable set for the walk.
     pub(super) fn emit_closure(&mut self, function: &'a ir::Function, root: BlockId) {
-        let closure = super::function::closure_from(function, root);
+        let closure = super::cleanup::closure_from(function, root);
         let saved = std::mem::replace(&mut self.reachable, closure.clone());
         let empty = BTreeSet::new();
         let ctx = FlowContext::default();
@@ -167,7 +167,14 @@ impl<'a> Emitter<'a> {
                 return;
             }
             self.emit_block_label(function.entry, current);
-            let jump = self.emit_block_body(function, current);
+            let jump_out = match &function.blocks[current].terminator {
+                Terminator::Goto(target) => matches!(
+                    self.classify_jump(*target, stop, ctx),
+                    Jump::Break | Jump::Continue
+                ),
+                _ => false,
+            };
+            let jump = self.emit_block_body(function, current, jump_out);
             let (terminator, span) = {
                 let block = &function.blocks[current];
                 (&block.terminator, block.terminator_span)
@@ -330,9 +337,18 @@ impl<'a> Emitter<'a> {
         match kind {
             LoopKind::While => {
                 self.emit_line_directive(span);
-                self.emit_guards(condition);
-                let condition_c = self.value(condition);
-                self.push(&format!("    while ({condition_c}) {{"));
+                if ir::value_needs_guards(condition) {
+                    // The guard has to run before every test, so the test moves
+                    // into the body and the header becomes unconditional.
+                    self.push("    while (1) {");
+                    self.emit_guards(condition);
+                    let condition_c = self.value(condition);
+                    self.push(&format!("    if (!({condition_c})) break;"));
+                } else {
+                    self.emit_guards(condition);
+                    let condition_c = self.value(condition);
+                    self.push(&format!("    while ({condition_c}) {{"));
+                }
                 let inner = ctx.in_loop(branch, exit);
                 self.emit_flow(function, body, &body_stop, inner);
                 self.push("    }");
@@ -354,13 +370,22 @@ impl<'a> Emitter<'a> {
             LoopKind::For => {
                 let step = self.for_step_block(function, body, branch);
                 self.emit_line_directive(span);
-                self.emit_guards(condition);
-                let condition_c = self.value(condition);
                 let step_c = match step {
                     Some(step) => self.for_step_text(function, step),
                     None => String::new(),
                 };
-                self.push(&format!("    for (; {condition_c}; {step_c}) {{"));
+                if ir::value_needs_guards(condition) {
+                    // As with `while`, a guarded test moves into the body; the
+                    // step still runs before each test in the C `for` header.
+                    self.push(&format!("    for (; ; {step_c}) {{"));
+                    self.emit_guards(condition);
+                    let condition_c = self.value(condition);
+                    self.push(&format!("    if (!({condition_c})) break;"));
+                } else {
+                    self.emit_guards(condition);
+                    let condition_c = self.value(condition);
+                    self.push(&format!("    for (; {condition_c}; {step_c}) {{"));
+                }
                 let continue_target = step.unwrap_or(branch);
                 let inner = ctx.in_loop(continue_target, exit);
                 self.emit_flow(function, body, &body_stop, inner);
@@ -385,7 +410,7 @@ impl<'a> Emitter<'a> {
         body: BlockId,
         head: BlockId,
     ) -> Option<BlockId> {
-        let region = super::function::closure_from(function, body);
+        let region = super::cleanup::closure_from(function, body);
         function.blocks.iter().find_map(|block| match &block.terminator {
             Terminator::Goto(target) if *target == head && region.contains(&block.id) => {
                 Some(block.id)
@@ -436,7 +461,8 @@ impl<'a> Emitter<'a> {
         let mut stop: BTreeSet<BlockId> = clauses.iter().map(|(_, block)| *block).collect();
         stop.insert(join);
         let inner = ctx.in_switch(join);
-        for (label, block) in clauses {
+        let last = clauses.len().saturating_sub(1);
+        for (index, (label, block)) in clauses.into_iter().enumerate() {
             match label {
                 Some(label) => self.push(&format!("    case {}: {{", self.value(label))),
                 None => self.push("    default: {"),
@@ -447,6 +473,12 @@ impl<'a> Emitter<'a> {
             arm_stop.remove(&block);
             self.emit_flow(function, block, &arm_stop, inner);
             self.push("    }");
+            // GCC and Clang recognize this comment as an intentional
+            // fallthrough. It silences `-Werror=implicit-fallthrough` when an
+            // arm reaches the next clause and is inert when the arm exited.
+            if index < last {
+                self.push("    /* fallthrough */");
+            }
         }
         self.push("    }");
     }

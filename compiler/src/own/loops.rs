@@ -6,6 +6,7 @@
 //! walk lowers the loop into the typed control-flow IR.
 
 use super::*;
+use crate::ir::value_needs_guards;
 
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Checks a `while` loop.
@@ -22,7 +23,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let body_block = self.new_block();
         let exit = self.new_block();
         let condition = self.lower_value(&decl.condition);
-        let shape = self.loop_shape(LoopKind::While, body_block, exit, &condition, head);
+        let shape = self.loop_shape(LoopKind::While, body_block, exit, head);
         self.terminate(Terminator::Branch {
             condition,
             on_true: body_block,
@@ -102,7 +103,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             LoopKind::DoWhile,
             body_block,
             exit,
-            &condition,
             condition_block,
         );
         self.terminate(Terminator::Branch {
@@ -148,7 +148,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(condition) => self.lower_value(condition),
             None => Value::bool(Ty::boolean(), true),
         };
-        let condition_ok = !value_needs_guards(&condition) && !self.block_has_statements(head);
+        let condition_ok = !self.block_has_statements(head);
         self.terminate(Terminator::Branch {
             condition,
             on_true: body_block,
@@ -215,22 +215,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.pop_scope();
     }
 
-    /// Declares the loop element in its own scope and returns its binding.
+    /// Binds the loop element to the element at the current index.
     ///
     /// The element is bound fresh on every iteration, so the declaration and
-    /// its initial state live inside the loop's speculative body and are re-run
-    /// on each fixpoint pass.
-    fn declare_for_in_element(&mut self, decl: &'a ForInStmt, element: &Ty) -> usize {
+    /// its initial state live inside the loop body. The element scope is pushed
+    /// here and popped by the caller after the body, which gives the element
+    /// its own per-iteration cleanup.
+    fn bind_for_in_element(
+        &mut self,
+        decl: &'a ForInStmt,
+        element: &Ty,
+        iterable: &Value,
+        index: &Value,
+    ) -> usize {
         self.push_scope(decl.span);
-        let kind = if decl.borrow {
-            BindingKind::OutSlot
-        } else {
-            BindingKind::Local
-        };
         let id = self.declare(
             &decl.name,
             element.clone(),
-            kind,
+            BindingKind::Local,
             if decl.borrow { Mode::Borrow } else { Mode::None },
             false,
             false,
@@ -242,15 +244,87 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ..PlaceState::default()
             },
         );
+        let read = Value::new(
+            element.clone(),
+            ValueKind::Index {
+                base: Box::new(iterable.clone()),
+                index: Box::new(index.clone()),
+            },
+        );
+        let target = self.binding_place(id);
+        self.emit(Statement::Assign {
+            target,
+            value: read,
+        });
         id
+    }
+
+    /// Attaches the element write-back to the innermost exit frame.
+    ///
+    /// Only a `borrow` element is written back; a copied element has no view to
+    /// flush. A `break` or `continue` reads this from the frame so it can run
+    /// the write-back before the loop is left.
+    fn set_for_in_write(
+        &mut self,
+        borrow: bool,
+        id: usize,
+        element: &Ty,
+        iterable: &Value,
+        index: &Value,
+    ) {
+        if !borrow {
+            return;
+        }
+        if let Some(frame) = self.exits.last_mut() {
+            frame.for_in = Some(ForInWrite {
+                element: element.clone(),
+                iterable: iterable.clone(),
+                index: index.clone(),
+                id,
+            });
+        }
+    }
+
+    /// Copies a `borrow` element's final value back into the iterable.
+    ///
+    /// A `borrow` element is an exclusive view of the element, so a write
+    /// through it must reach the array. The binding is copied in at the top of
+    /// the iteration and copied back here, at its end and on any early edge a
+    /// `break` or `continue` takes.
+    pub(super) fn store_for_in_element(
+        &mut self,
+        element: &Ty,
+        iterable: &Value,
+        index: &Value,
+        id: usize,
+    ) {
+        let selected = Value::new(
+            element.clone(),
+            ValueKind::Index {
+                base: Box::new(iterable.clone()),
+                index: Box::new(index.clone()),
+            },
+        );
+        let pointer = Value::new(
+            element.clone(),
+            ValueKind::Unary {
+                op: UnaryOp::AddressOf,
+                operand: Box::new(selected),
+            },
+        );
+        let value = Value::new(element.clone(), ValueKind::Place(self.binding_place(id)));
+        self.emit(Statement::StorePointer { pointer, value });
     }
 
     /// Checks an element loop, requiring `borrow` for non-duplicable elements.
     ///
-    /// The element binding and the body are analyzed to a fixed point just like
-    /// the other loops, so a value moved in one iteration is seen as moved in
-    /// the next. The loop may run zero times, so the head also joins the
-    /// pre-loop state.
+    /// The loop lowers to an index loop: a hidden counter runs from zero to the
+    /// length of the iterable, the element binds to the element at that index,
+    /// and the body runs. `continue` advances the counter, so an element view
+    /// is created and ended once per iteration. The element binding and the body
+    /// are analyzed to a fixed point like the other loops, so a value moved in
+    /// one iteration is seen as moved in the next. The loop may run zero times,
+    /// so the exit joins the pre-loop state.
     pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
         let iterable_ty = self.eval(&decl.iterable);
         let element = match &iterable_ty.kind {
@@ -268,36 +342,126 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 decl.span,
             );
         }
-        let pre = self.state.clone();
-        let floor = self.scopes.len();
-        let body_block = self.new_block();
-        let exit = self.new_block();
-        self.terminate(Terminator::Goto(body_block));
 
+        let floor = self.scopes.len();
+        self.push_scope(decl.span);
+        let index_temp = self.new_temp(Ty::usize_ty());
+        let index_place = Place {
+            base: ir::PlaceBase::Temp(index_temp),
+            projections: Vec::new(),
+            ty: Ty::usize_ty(),
+        };
+        let index_value = Value::new(Ty::usize_ty(), ValueKind::Temp(index_temp));
+        let iterable = self.lower_value(&decl.iterable);
+        self.emit(Statement::Assign {
+            target: index_place.clone(),
+            value: Value::new(Ty::usize_ty(), ValueKind::Int(0)),
+        });
+
+        let head = self.new_block();
+        self.terminate(Terminator::Goto(head));
+        self.switch_to(head);
+        let condition = self.for_in_condition(&iterable, &index_value);
+        let body_block = self.new_block();
+        let step_block = self.new_block();
+        let exit = self.new_block();
+        let shape = if self.block_has_statements(head) {
+            BranchShape::Plain
+        } else {
+            BranchShape::Loop {
+                kind: LoopKind::For,
+                body: body_block,
+                exit,
+            }
+        };
+        self.terminate(Terminator::Branch {
+            condition,
+            on_true: body_block,
+            on_false: exit,
+            shape,
+        });
+
+        let pre = self.state.clone();
+        let continue_floor = floor + 1;
         let (entry, _post) = self.loop_entry_state(pre.clone(), |checker| {
-            checker.declare_for_in_element(decl, &element);
-            checker
-                .exits
-                .push(ExitFrame::new(exit, Some(body_block), floor, floor));
             checker.switch_to(body_block);
+            checker.exits.push(ExitFrame::new(
+                exit,
+                Some(step_block),
+                floor,
+                continue_floor,
+            ));
+            let id = checker.bind_for_in_element(decl, &element, &iterable, &index_value);
+            checker.set_for_in_write(decl.borrow, id, &element, &iterable, &index_value);
             checker.check_block(&decl.body);
             checker.exits.pop();
             checker.pop_scope();
         });
 
         self.state = entry.clone();
-        self.declare_for_in_element(decl, &element);
-        self.exits
-            .push(ExitFrame::new(exit, Some(body_block), floor, floor));
+        self.exits.push(ExitFrame::new(
+            exit,
+            Some(step_block),
+            floor,
+            continue_floor,
+        ));
         self.switch_to(body_block);
+        let id = self.bind_for_in_element(decl, &element, &iterable, &index_value);
+        self.set_for_in_write(decl.borrow, id, &element, &iterable, &index_value);
         self.check_block(&decl.body);
         if !self.is_terminated() {
-            self.terminate(Terminator::Goto(body_block));
+            if decl.borrow {
+                self.store_for_in_element(&element, &iterable, &index_value, id);
+            }
+            self.terminate(Terminator::Goto(step_block));
+        }
+        self.pop_scope();
+        self.switch_to(step_block);
+        self.emit_index_step(&index_place, &index_value);
+        if !self.is_terminated() {
+            self.terminate(Terminator::Goto(head));
         }
         let frame = self.exits.pop().expect("loop frame");
-        self.pop_scope();
         self.state = join_breaks(entry, &frame);
         self.switch_to(exit);
+        self.pop_scope();
+    }
+
+    /// The `index < len(iterable)` condition of an element loop.
+    fn for_in_condition(&self, iterable: &Value, index: &Value) -> Value {
+        let length = Value::new(
+            Ty::usize_ty(),
+            ValueKind::Intrinsic {
+                name: "len".to_owned(),
+                args: vec![iterable.clone()],
+                type_arg: None,
+            },
+        );
+        Value::new(
+            Ty::boolean(),
+            ValueKind::Binary {
+                op: BinaryOp::Lt,
+                left: Box::new(index.clone()),
+                right: Box::new(length),
+            },
+        )
+    }
+
+    /// Emits `index = index + 1` in the loop's step block.
+    fn emit_index_step(&mut self, index_place: &Place, index: &Value) {
+        let one = Value::new(Ty::usize_ty(), ValueKind::Int(1));
+        let next = Value::new(
+            Ty::usize_ty(),
+            ValueKind::Binary {
+                op: BinaryOp::Add,
+                left: Box::new(index.clone()),
+                right: Box::new(one),
+            },
+        );
+        self.emit(Statement::Assign {
+            target: index_place.clone(),
+            value: next,
+        });
     }
 
     /// True when a block already holds at least one statement.
@@ -310,19 +474,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// The structured shape of a loop, or `Plain` when C cannot print it.
     ///
-    /// A loop whose test needs a runtime guard cannot put that test in a C
-    /// `while`/`for` header, because the guard must run before every test; the
-    /// same is true when the header block carries statements. Such a loop keeps
-    /// the flat label-and-`goto` form.
+    /// A loop whose condition needs a runtime guard is still structured: the
+    /// emitter prints a `while (1)` header and moves the guard and the test
+    /// into the body. Only a loop whose header block carries statements, which
+    /// a C loop header cannot hold, keeps the flat label-and-`goto` form.
     fn loop_shape(
         &self,
         kind: LoopKind,
         body: BlockId,
         exit: BlockId,
-        condition: &Value,
         header: BlockId,
     ) -> BranchShape {
-        if value_needs_guards(condition) || self.block_has_statements(header) {
+        if self.block_has_statements(header) {
             BranchShape::Plain
         } else {
             BranchShape::Loop { kind, body, exit }
@@ -350,74 +513,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 }
 
-/// True when evaluating a value emits a runtime guard before it can run.
-///
-/// A structured C loop evaluates its condition and step in the loop header, so
-/// a condition or step that needs a guard (a division, a bounds check, or a
-/// float-to-integer range check) cannot be printed there: the guard would have
-/// to run before every test. The checker keeps such a loop in the flat
-/// label-and-`goto` form instead. The walk mirrors the emitter's guard
-/// placement exactly, and errs toward reporting a guard when it is unsure, so
-/// a value that is wrongly called unguarded would be the only way to drop one.
-fn value_needs_guards(value: &Value) -> bool {
-    match &value.kind {
-        ValueKind::Binary { op, left, right } => {
-            let division = matches!(op, BinaryOp::Div | BinaryOp::Rem) && left.ty.is_integer();
-            division || value_needs_guards(left) || value_needs_guards(right)
-        }
-        ValueKind::Index { base, index } => {
-            let bounds = matches!(
-                base.ty.kind,
-                TyKind::Array { .. } | TyKind::Str | TyKind::StaticStr
-            );
-            bounds || value_needs_guards(base) || value_needs_guards(index)
-        }
-        ValueKind::Cast { value: inner, .. } => {
-            let target = &value.ty;
-            let source = &inner.ty;
-            let range = target.is_integer() && source.is_numeric() && !source.is_integer();
-            range || value_needs_guards(inner)
-        }
-        ValueKind::Unary { operand, .. } => value_needs_guards(operand),
-        ValueKind::Conditional {
-            condition,
-            then_value,
-            else_value,
-        } => {
-            value_needs_guards(condition)
-                || value_needs_guards(then_value)
-                || value_needs_guards(else_value)
-        }
-        ValueKind::Member { base, .. } => value_needs_guards(base),
-        ValueKind::Call { args, .. } | ValueKind::Intrinsic { args, .. } => {
-            args.iter().any(value_needs_guards)
-        }
-        ValueKind::StructLit { fields, .. } => {
-            fields.iter().any(|(_, field)| value_needs_guards(field))
-        }
-        ValueKind::ArrayLit { elements, fill } => {
-            elements.iter().any(value_needs_guards)
-                || fill.as_deref().is_some_and(value_needs_guards)
-        }
-        ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
-            ValuePiece::Literal(_) => false,
-            ValuePiece::Placeholder(inner) => value_needs_guards(inner),
-        }),
-        ValueKind::Place(_)
-        | ValueKind::Int(_)
-        | ValueKind::Float(_)
-        | ValueKind::Char(_)
-        | ValueKind::Bool(_)
-        | ValueKind::Null
-        | ValueKind::Str(_)
-        | ValueKind::Path(_)
-        | ValueKind::Aggregate
-        | ValueKind::Temp(_) => false,
-    }
-}
-
 /// Joins the loop-entry state with the state of every `break` edge.
-fn join_breaks(entry: FlowState, frame: &ExitFrame) -> FlowState {    if frame.saw_break {
+fn join_breaks(entry: FlowState, frame: &ExitFrame) -> FlowState {
+    if frame.saw_break {
         FunctionChecker::merge(entry, frame.break_state.clone())
     } else {
         entry

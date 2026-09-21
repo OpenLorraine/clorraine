@@ -14,7 +14,7 @@ use crate::ir::{
 };
 use crate::types::{is_signed_scalar, scalar_bits, Ty, TyKind};
 
-use super::types::{c_type, scalar_c_type, type_key};
+use super::types::{c_type, scalar_c_type, scalar_of, type_key};
 use super::Emitter;
 
 impl<'a> Emitter<'a> {
@@ -115,9 +115,16 @@ impl<'a> Emitter<'a> {
     }
 
     /// Emits the index bounds check for a fixed array, slice, or string view.
+    ///
+    /// A signed index also has to be non-negative: the upper-bound comparison
+    /// alone lets `xs[-1]` through. The comparison casts both sides to the
+    /// unsigned `usize` so a signed index does not trigger
+    /// `-Werror=sign-compare`; the negative check runs first, so the cast
+    /// never sees a value that wrapped.
     fn emit_bounds_guard(&mut self, base: &Value, index: &Value) {
         let ty = self.substitute(&base.ty);
         let index_c = self.value(index);
+        let signed = scalar_of(&self.substitute(&index.ty)).is_some_and(is_signed_scalar);
         match &ty.kind {
             TyKind::Array { extents, .. } => {
                 if extents.iter().all(Option::is_some) {
@@ -125,20 +132,25 @@ impl<'a> Emitter<'a> {
                         .iter()
                         .filter_map(|size| *size)
                         .fold(1usize, usize::saturating_mul);
+                    let condition = bounds_condition(&index_c, signed, &extent.to_string());
                     self.push(&format!(
-                        "    if ({index_c} >= {extent}) cl_trap(\"E11211\", \"index out of range\");"
+                        "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
                     ));
                 } else {
                     let base_c = self.value(base);
+                    let bound = format!("({base_c}).len");
+                    let condition = bounds_condition(&index_c, signed, &bound);
                     self.push(&format!(
-                        "    if ({index_c} >= ({base_c}).len) cl_trap(\"E11211\", \"index out of range\");"
+                        "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
                     ));
                 }
             }
             TyKind::Str | TyKind::StaticStr => {
                 let base_c = self.value(base);
+                let bound = format!("({base_c}).len");
+                let condition = bounds_condition(&index_c, signed, &bound);
                 self.push(&format!(
-                    "    if ({index_c} >= ({base_c}).len) cl_trap(\"E11211\", \"index out of range\");"
+                    "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
                 ));
             }
             _ => {}
@@ -172,7 +184,7 @@ impl<'a> Emitter<'a> {
             ValueKind::Float(number) => float_literal(*number),
             ValueKind::Char(byte) => format!("{byte}"),
             ValueKind::Bool(flag) => if *flag { "1" } else { "0" }.to_owned(),
-            ValueKind::Null => "NULL".to_owned(),
+            ValueKind::Null => self.null_literal().to_owned(),
             ValueKind::Str(text) => format!("cl_str({})", escape_c_string(text.as_bytes())),
             ValueKind::Path(segments) => self.path(segments),
             ValueKind::Member { base, name } => {
@@ -397,8 +409,17 @@ impl<'a> Emitter<'a> {
         if matches!(op, BinaryOp::Shl | BinaryOp::Shr) {
             if let Some(scalar) = scalar_of(&ty) {
                 let mask = scalar_bits(scalar).saturating_sub(1);
+                let count = format!("({right_c} & {mask})");
+                // A signed left shift into the sign bit is undefined, so `<<`
+                // runs on an unsigned operand and is cast back. A signed `>>`
+                // stays signed: the specification defines it as arithmetic, and
+                // masking the count already keeps the shift well-defined.
+                if matches!(op, BinaryOp::Shl) && is_signed_scalar(scalar) {
+                    let unsigned = unsigned_c(unsigned_scalar(scalar));
+                    return format!("({})(({}){left_c} << {count})", c_type(&ty), unsigned);
+                }
                 let operator = if matches!(op, BinaryOp::Shl) { "<<" } else { ">>" };
-                return format!("({left_c} {operator} ({right_c} & {mask}))");
+                return format!("({left_c} {operator} {count})");
             }
         }
         if matches!(op, BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul) {
@@ -430,7 +451,7 @@ impl<'a> Emitter<'a> {
             .map(|arg| self.value(arg))
             .collect::<Vec<String>>()
             .join(", ");
-        if let Some(info) = self.functions.get(callee) {
+        if let Some(info) = self.resolve_function(callee) {
             let symbol = if type_args.is_empty() {
                 self.function_symbol(&info.module, callee)
             } else {
@@ -538,7 +559,10 @@ impl<'a> Emitter<'a> {
         for (field, field_ty) in &declared {
             match fields.iter().find(|(written, _)| written == field) {
                 Some((_, value)) => values.push(self.value(value)),
-                None => values.push(super::types::empty_state(field_ty)),
+                None => {
+                    let empty = self.empty_state(field_ty);
+                    values.push(empty);
+                }
             }
         }
         if declared.is_empty() {
@@ -547,6 +571,20 @@ impl<'a> Emitter<'a> {
             }
         }
         format!("(Cl{name}){{ {} }}", values.join(", "))
+    }
+}
+
+/// The C condition of an index bounds guard.
+///
+/// A signed index is first checked against zero so a negative value never
+/// reaches the unsigned comparison. Both sides are cast to `usize`, the type
+/// of a view's length, so a signed index does not raise a sign-compare
+/// warning under `-Werror`.
+fn bounds_condition(index_c: &str, signed: bool, bound: &str) -> String {
+    if signed {
+        format!("({index_c} < 0) || ((usize)({index_c}) >= (usize)({bound}))")
+    } else {
+        format!("(usize)({index_c}) >= (usize)({bound})")
     }
 }
 
@@ -567,14 +605,6 @@ fn element_type(ty: &Ty) -> Ty {
         TyKind::Array { element, .. } => (**element).clone(),
         TyKind::Str | TyKind::StaticStr => Ty::scalar(ScalarType::U8),
         _ => Ty::unknown(),
-    }
-}
-
-/// The scalar a type denotes, when it is a scalar.
-fn scalar_of(ty: &Ty) -> Option<ScalarType> {
-    match ty.kind {
-        TyKind::Scalar(scalar) => Some(scalar),
-        _ => None,
     }
 }
 

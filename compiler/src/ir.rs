@@ -3,8 +3,8 @@
 //! The checker lowers each function body into this representation so the
 //! ownership and borrow decisions become explicit statements rather than
 //! something the emitter has to rediscover. The statement set is fixed by the
-//! codegen contract: `assign`, `move`, `borrow`, `call`, `drop`, `return`,
-//! `branch`, `switch`, and `defer`. Every owned place is released by an
+//! codegen contract: `assign`, `store`, `move`, `borrow`, `call`, `drop`,
+//! `return`, `branch`, `switch`, and `defer`. Every owned place is released by an
 //! explicit [`Statement::Drop`] on each path that leaves its scope, and a
 //! moved value is zeroed so its later drop is a no-op.
 //!
@@ -12,9 +12,10 @@
 //! the body outwards, in [`Function::scopes`]; every drop and `defer` names the
 //! scope whose exit emits it, and a [`Statement::ScopeEnd`] marks the normal
 //! fall-through end of a scope. An edge that leaves through `return`, `break`,
-//! or `continue` carries its cleanup without a marker. This is enough for the
-//! emitter to build one cleanup label per owning scope, innermost first, and to
-//! run the cleanup of a scope inside a loop on each iteration.
+//! or `continue` emits a [`Statement::ScopeExit`] for each scope it leaves and
+//! carries the drops itself. This is enough for the emitter to build one
+//! cleanup label per owning scope, innermost first, and to run the cleanup of a
+//! scope inside a loop on each iteration.
 //!
 //! Every place and value carries its checked type, and every statement and
 //! terminator carries the source span it came from. The type lets the emitter
@@ -32,9 +33,11 @@ use crate::span::Span;
 use crate::types::Ty;
 
 mod control;
+mod guards;
 mod mono;
 
 pub use control::{BranchShape, LoopKind};
+pub use guards::value_needs_guards;
 pub use mono::{CopyObligation, Instance, Monomorphization};
 
 /// Index of a block inside a [`Function`].
@@ -298,6 +301,18 @@ pub enum Statement {
         /// The value stored.
         value: Value,
     },
+    /// Store a value through a pointer-derived lvalue.
+    ///
+    /// A store target with a run-time index is lowered as the address of the
+    /// element plus a store through it. The address carries the index and its
+    /// bounds check, so the element selection is preserved instead of being
+    /// reduced to a fixed element.
+    StorePointer {
+        /// The address of the destination.
+        pointer: Value,
+        /// The value stored.
+        value: Value,
+    },
     /// Transfer an owned value: copy into `target`, then zero `source`.
     Move {
         /// The place written.
@@ -330,6 +345,9 @@ pub enum Statement {
         place: Place,
         /// The scope whose exit emits this drop.
         scope: ScopeId,
+        /// Registration order of the dropped binding within the function,
+        /// shared with `defer` entries so a scope's cleanup can interleave.
+        order: u32,
     },
     /// A registered cleanup entry. The referenced block holds the deferred
     /// statements and joins the scope's ladder in registration order.
@@ -338,6 +356,9 @@ pub enum Statement {
         block: BlockId,
         /// The scope whose exit runs the deferred block.
         scope: ScopeId,
+        /// Registration order of the `defer` within the function, shared with
+        /// drops so a scope's cleanup can interleave.
+        order: u32,
     },
     /// The normal fall-through end of a scope, emitted just before the scope's
     /// cleanup.
@@ -347,6 +368,18 @@ pub enum Statement {
     /// ends normally from one that is jumped out of.
     ScopeEnd {
         /// The scope that ends here.
+        scope: ScopeId,
+    },
+    /// A control-flow edge that leaves a scope before its normal end.
+    ///
+    /// A `return`, `break`, or `continue` inside a scope jumps out before the
+    /// scope's closing brace, so it emits one marker per scope it leaves, on
+    /// the edge. The marker has no runtime effect of its own; it tells the
+    /// emitter which scopes' cleanup the edge runs, so a scope whose only
+    /// cleanup is a `defer` is not skipped. The explicit drops that follow
+    /// carry the actual work.
+    ScopeExit {
+        /// The scope the edge leaves.
         scope: ScopeId,
     },
     /// A placeholder with no effect, used where a statement was elided.
@@ -452,6 +485,8 @@ pub struct ScopeInfo {
 pub struct Function {
     /// The function's declared name.
     pub name: String,
+    /// The dotted module the function is declared in.
+    pub module: String,
     /// Parameters in declaration order.
     pub params: Vec<Param>,
     /// The declared return type.
@@ -497,6 +532,7 @@ impl Builder {
         Self {
             function: Function {
                 name: name.into(),
+                module: String::new(),
                 params,
                 ret,
                 locals: Vec::new(),
@@ -621,6 +657,7 @@ impl Builder {
         self.function
     }
 }
+
 
 #[cfg(test)]
 mod tests;

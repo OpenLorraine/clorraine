@@ -114,6 +114,14 @@ pub(super) fn type_key(ty: &Ty) -> String {
     }
 }
 
+/// The scalar a type denotes, when it is a scalar.
+pub(super) fn scalar_of(ty: &Ty) -> Option<ScalarType> {
+    match ty.kind {
+        TyKind::Scalar(scalar) => Some(scalar),
+        _ => None,
+    }
+}
+
 /// Records every slice element type reachable from `ty`.
 pub(super) fn collect_slice_types(ty: &Ty, found: &mut BTreeMap<String, Ty>) {
     match &ty.kind {

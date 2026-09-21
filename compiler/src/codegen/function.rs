@@ -1,34 +1,23 @@
 //! Function-body emission from the typed control-flow IR.
 //!
-//! This module owns statements, drops, defers, the cleanup ladder, and the
-//! source mapping; the structured control-flow walk lives in the sibling
-//! [`super::control`] module. Locals are hoisted to the top of the function
-//! with their empty-state initializer, so a cleanup path may reference any of
-//! them. A scope that owns a droppable value or registers a `defer` gets one
-//! cleanup label; the labels form a single ladder at the end of the function,
-//! innermost first. An early return jumps to the label of the innermost scope
-//! it leaves and the ladder runs the remaining scopes on the way out. A scope
-//! inside a loop body runs its cleanup inline, once per iteration, because the
-//! ladder runs only once. Generated cleanup is attributed to the scope's
-//! closing source line, so a debugger stepping it stays on the closing line.
+//! This module owns the function prologue, the hoisted local declarations, the
+//! statements with a run-time effect, and the local-read analysis used to mark
+//! an unused local. The cleanup ladder and the block walk live in the sibling
+//! [`super::cleanup`] module, the drop lowering in [`super::drop`], and the
+//! structured control-flow walk in [`super::control`].
+//!
+//! Locals are hoisted to the top of the function with their empty-state
+//! initializer, so a cleanup path may reference any of them. The type of every
+//! place and value is read from the typed IR rather than re-inferred, and every
+//! statement is attributed to its source line with a `#line` directive.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::borrow::is_view;
-use crate::ir::{self, BlockId, Place, Projection, Statement, Terminator, ValueKind};
+use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::types::{Ty, TyKind};
 
-use super::types::{declarator, empty_state};
+use super::types::declarator;
 use super::{sanitize_identifier, Emitter, FuncInfo};
-
-/// One cleanup entry of a scope, in registration order.
-#[derive(Clone)]
-pub(crate) enum Action {
-    /// Drop a place through its type's deleter.
-    Drop(Place),
-    /// Run a deferred block's statements.
-    Defer(BlockId),
-}
 
 impl<'a> Emitter<'a> {
     // -- function emission ---------------------------------------------------
@@ -62,7 +51,7 @@ impl<'a> Emitter<'a> {
             .ownership
             .functions
             .iter()
-            .find(|function| function.name == info.decl.name)
+            .find(|function| function.name == info.decl.name && function.module == info.module)
         else {
             // Every clean compile lowers a body for each declared function; a
             // miss means an earlier stage rejected the program, so there is
@@ -70,6 +59,7 @@ impl<'a> Emitter<'a> {
             return;
         };
         self.function = Some(function);
+        self.current_module = info.module.clone();
         self.return_ty = self.substitute(&function.ret);
 
         for param in &function.params {
@@ -111,6 +101,7 @@ impl<'a> Emitter<'a> {
 
     /// Writes the hoisted local declarations, the temporaries, and the result.
     fn emit_local_declarations(&mut self, function: &'a ir::Function) {
+        let unread = unread_locals(function);
         let mut written: BTreeSet<String> = BTreeSet::new();
         for local in &function.locals {
             if !written.insert(local.name.clone()) {
@@ -122,27 +113,41 @@ impl<'a> Emitter<'a> {
                 .cloned()
                 .unwrap_or_else(|| sanitize_identifier(&local.name));
             let ty = self.substitute(&local.ty);
-            self.push(&format!(
-                "    {} = {};",
-                declarator(&ty, &c_name),
-                empty_state(&ty)
-            ));
+            let empty = self.empty_state(&ty);
+            self.push(&format!("    {} = {};", declarator(&ty, &c_name), empty));
+            // A local the emitted code never reads would otherwise fail
+            // `-Wunused-but-set-variable` under `-Werror`, because the hoisted
+            // declaration initializes it. A `(void)` cast marks the value as
+            // deliberately unused; a read local is unaffected.
+            if unread.contains(&local.name) {
+                self.push(&format!("    (void){c_name};"));
+            }
         }
         for (index, ty) in function.temps.iter().enumerate() {
             let ty = self.substitute(ty);
+            let empty = self.empty_state(&ty);
             self.push(&format!(
                 "    {} = {};",
                 declarator(&ty, &format!("__cl_tmp{index}")),
-                empty_state(&ty)
+                empty
             ));
         }
         if let Some(result) = self.result_var.clone() {
             let ret = self.return_ty.clone();
-            self.push(&format!(
-                "    {} = {};",
-                declarator(&ret, &result),
-                empty_state(&ret)
-            ));
+            let empty = self.empty_state(&ret);
+            self.push(&format!("    {} = {};", declarator(&ret, &result), empty));
+        }
+        // Reference every parameter so an unused one does not fail the
+        // `-Wunused-parameter` check the emitted C must pass. The cast to
+        // `void` is the portable C99 way to mark a value as deliberately
+        // unused; a used parameter is unaffected by the extra statement.
+        for param in &function.params {
+            let c_name = self
+                .local_names
+                .get(&param.name)
+                .cloned()
+                .unwrap_or_else(|| sanitize_identifier(&param.name));
+            self.push(&format!("    (void){c_name};"));
         }
     }
 
@@ -174,267 +179,10 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    // -- cleanup collection ---------------------------------------------------
-
-    /// Collects the cleanup actions and ladder rungs of one body.
-    fn collect_cleanup(&mut self, function: &'a ir::Function) {
-        for block in &function.blocks {
-            for instr in &block.statements {
-                match &instr.statement {
-                    Statement::Drop { place, scope } => {
-                        self.push_action(*scope, Action::Drop(place.clone()));
-                    }
-                    Statement::Defer { block, scope } => {
-                        self.push_action(*scope, Action::Defer(*block));
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let reachable = reachable_blocks(function);
-        let mut normal_scopes: BTreeSet<usize> = BTreeSet::new();
-        for block in &function.blocks {
-            if !reachable.contains(&block.id) {
-                continue;
-            }
-            for instr in &block.statements {
-                match &instr.statement {
-                    Statement::Drop { scope, .. }
-                    | Statement::Defer { scope, .. }
-                    | Statement::ScopeEnd { scope } => {
-                        normal_scopes.insert(*scope);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        let mut rungs: Vec<usize> = self
-            .scope_actions
-            .iter()
-            .filter(|(scope, actions)| {
-                !actions.is_empty()
-                    && !function.scopes[**scope].in_loop
-                    && normal_scopes.contains(scope)
-            })
-            .map(|(scope, _)| *scope)
-            .collect();
-        rungs.sort_by(|left, right| {
-            scope_depth(function, *right)
-                .cmp(&scope_depth(function, *left))
-                .then(left.cmp(right))
-        });
-        for (index, scope) in rungs.iter().enumerate() {
-            self.labels.insert(*scope, index + 1);
-        }
-        self.rungs = rungs;
-    }
-
-    /// Records a cleanup action for a scope, skipping an exact duplicate.
-    fn push_action(&mut self, scope: usize, action: Action) {
-        let actions = self.scope_actions.entry(scope).or_default();
-        let duplicate = actions.iter().any(|known| match (known, &action) {
-            (Action::Drop(a), Action::Drop(b)) => a == b,
-            (Action::Defer(a), Action::Defer(b)) => a == b,
-            _ => false,
-        });
-        if !duplicate {
-            actions.push(action);
-        }
-    }
-
-    /// True when a scope's cleanup runs inline rather than from the ladder.
-    fn scope_is_inline(&self, function: &'a ir::Function, scope: usize) -> bool {
-        function.scopes[scope].in_loop || !self.labels.contains_key(&scope)
-    }
-
-    // -- block emission -------------------------------------------------------
-
-    /// Emits one block's statements and returns the ladder entry for its exit.
-    ///
-    /// A `return` in the block jumps to the label of the innermost scope it
-    /// leaves, so the returned value is that scope's ladder number when the
-    /// block leaves through a non-inline scope. The caller emits the block's
-    /// terminator, because the structured emitter turns most terminators into
-    /// C control flow rather than a `goto`.
-    pub(super) fn emit_block_body(
-        &mut self,
-        function: &'a ir::Function,
-        id: BlockId,
-    ) -> Option<usize> {
-        let block = &function.blocks[id];
-        let mut pending_scope: Option<usize> = None;
-        let mut inlined_edge: BTreeSet<usize> = BTreeSet::new();
-        let mut edge_scopes: Vec<usize> = Vec::new();
-        for instr in &block.statements {
-            match &instr.statement {
-                Statement::ScopeEnd { scope } => {
-                    pending_scope = Some(*scope);
-                    if function.scopes[*scope].in_loop {
-                        self.emit_scope_inline(*scope);
-                    }
-                }
-                Statement::Drop { scope, .. } => {
-                    if pending_scope == Some(*scope) {
-                        // The fall-through cleanup of a scope end was already
-                        // handled at the scope end (loop) or the ladder
-                        // (function scope), so a matching drop is a no-op here.
-                        continue;
-                    }
-                    if self.scope_is_inline(function, *scope) {
-                        if inlined_edge.insert(*scope) {
-                            self.emit_scope_inline(*scope);
-                        }
-                    } else if edge_scopes.first() != Some(scope) {
-                        edge_scopes.push(*scope);
-                    }
-                }
-                Statement::Defer { .. } => {
-                    // Deferred bodies run from the ladder rung, never at the
-                    // registration site.
-                    pending_scope = None;
-                }
-                other => {
-                    pending_scope = None;
-                    self.emit_statement(instr.span, other);
-                }
-            }
-        }
-        edge_scopes
-            .first()
-            .and_then(|scope| self.labels.get(scope).copied())
-    }
-
-    /// Emits one deferred block and its closure at a ladder rung.
-    fn emit_defer(&mut self, root: BlockId) {
-        let Some(function) = self.function else {
-            return;
-        };
-        self.emit_closure(function, root);
-    }
-
-    /// Emits a scope's cleanup actions inline, once.
-    fn emit_scope_inline(&mut self, scope: usize) {
-        self.emit_line_for_scope(scope);
-        let actions = self.scope_actions.get(&scope).cloned().unwrap_or_default();
-        self.emit_actions(&actions);
-    }
-
-    /// Writes a `#line` mapping for generated cleanup to the scope's close.
-    ///
-    /// Inserted cleanup belongs to the scope's closing source line, so a
-    /// debugger stepping the generated drop stays on the closing line of the
-    /// scope rather than entering a generated statement.
-    fn emit_line_for_scope(&mut self, scope: usize) {
-        let Some(function) = self.function else {
-            return;
-        };
-        let Some(info) = function.scopes.get(scope) else {
-            return;
-        };
-        let span = info.close_span;
-        self.emit_close_line(span);
-    }
-
-    /// Writes a `#line` directive for the last line of a span.
-    ///
-    /// A scope's close span covers its closing brace, so the closing line is
-    /// the line of the span's last covered byte.
-    pub(super) fn emit_close_line(&mut self, span: crate::span::Span) {
-        let last = span.end.saturating_sub(1);
-        if span.is_empty() && last == 0 {
-            return;
-        }
-        let line = self.sources.location(span.file, last as usize).line;
-        let path = self.path_of(span).to_owned();
-        self.push(&format!("#line {line} \"{path}\""));
-    }
-
-    /// Runs a list of cleanup actions in their collected order.
-    fn emit_actions(&mut self, actions: &[Action]) {
-        for action in actions {
-            match action {
-                Action::Drop(place) => self.emit_drop(place),
-                Action::Defer(block) => self.emit_defer(*block),
-            }
-        }
-    }
-
-    /// Emits a null-safe drop of a place, recursing into owned struct fields.
-    fn emit_drop(&mut self, place: &Place) {
-        let c_name = self.place(place);
-        let ty = self.substitute(&place.ty);
-        match &ty.kind {
-            TyKind::Handle(name) => {
-                let deleter = self.deleter_symbol(name);
-                self.push(&format!("    if ({c_name}) {{ {deleter}({c_name}); }}"));
-            }
-            TyKind::Struct(name) => {
-                let fields = self
-                    .sema
-                    .table
-                    .struct_fields(name)
-                    .map(<[(String, Ty)]>::to_vec)
-                    .unwrap_or_default();
-                for (field, field_ty) in fields {
-                    if !self.needs_drop(&field_ty) {
-                        continue;
-                    }
-                    let mut projections = place.projections.clone();
-                    projections.push(Projection::Field(field));
-                    let place = Place {
-                        base: place.base.clone(),
-                        projections,
-                        ty: field_ty,
-                    };
-                    self.emit_drop(&place);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// True when a value of this type needs a drop.
-    pub(super) fn needs_drop(&self, ty: &Ty) -> bool {
-        !self.sema.table.duplicable(ty)
-            && !is_view(ty)
-            && !ty.is_unknown()
-            && !ty.is_param()
-            && !ty.is_void()
-    }
-
-    /// The C symbol of a handle's deleter.
-    fn deleter_symbol(&self, handle: &str) -> String {
-        if handle == "String" {
-            return "FreeString".to_owned();
-        }
-        let deleter = self.handle_deleter(handle).unwrap_or_else(|| handle.to_owned());
-        if let Some(info) = self.functions.get(&deleter) {
-            self.function_symbol(&info.module, &deleter)
-        } else {
-            deleter
-        }
-    }
-
-    /// Finds the `freedBy` deleter name of a handle declaration.
-    fn handle_deleter(&self, handle: &str) -> Option<String> {
-        for module in self.loaded.modules.values() {
-            for item in &module.items {
-                if let crate::ast::Item::Handle(decl) = item {
-                    if decl.name == handle {
-                        return Some(decl.freed_by.segments.join("_"));
-                    }
-                }
-            }
-        }
-        None
-    }
-
     // -- statements -----------------------------------------------------------
 
     /// Emits one IR statement that has a run-time effect.
-    fn emit_statement(&mut self, span: crate::span::Span, statement: &Statement) {
+    pub(super) fn emit_statement(&mut self, span: crate::span::Span, statement: &Statement) {
         match statement {
             Statement::Assign { target, value } => {
                 if let ValueKind::ArrayLit { elements, fill } = &value.kind {
@@ -442,23 +190,31 @@ impl<'a> Emitter<'a> {
                     if matches!(&ty.kind, TyKind::Array { extents, .. } if extents.iter().all(Option::is_some))
                     {
                         self.emit_line_directive(span);
+                        self.emit_reassigned_target_drop(target);
                         self.emit_array_assign(target, &ty, elements, fill);
                         return;
                     }
                 }
-                self.emit_line_directive(span);
-                self.emit_guards(value);
-                let target_c = self.place(target);
-                let lowered = self.value(value);
-                self.push(&format!("    {target_c} = {lowered};"));
+                self.emit_assign(span, target, value);
             }
             Statement::Move { target, source } => {
                 self.emit_line_directive(span);
+                self.emit_reassigned_target_drop(target);
                 let target_c = self.place(target);
                 let source_c = self.place(source);
                 self.push(&format!("    {target_c} = {source_c};"));
                 let source_ty = self.substitute(&source.ty);
                 self.emit_move_zero(&source_c, &source_ty);
+            }
+            Statement::StorePointer { pointer, value } => {
+                self.emit_line_directive(span);
+                // The pointer expression carries the element's run-time index,
+                // so its guards (including the bounds check) must run first.
+                self.emit_guards(pointer);
+                self.emit_guards(value);
+                let pointer_c = self.value(pointer);
+                let value_c = self.value(value);
+                self.push(&format!("    *({pointer_c}) = {value_c};"));
             }
             Statement::Call {
                 callee,
@@ -471,7 +227,8 @@ impl<'a> Emitter<'a> {
             Statement::Borrow { .. }
             | Statement::Drop { .. }
             | Statement::Defer { .. }
-            | Statement::ScopeEnd { .. } => {}
+            | Statement::ScopeEnd { .. }
+            | Statement::ScopeExit { .. } => {}
             Statement::Nop => self.emit_line_directive(span),
         }
     }
@@ -515,8 +272,100 @@ impl<'a> Emitter<'a> {
                     None => String::new(),
                 };
                 self.push(&format!("    {prefix}{call};"));
+                self.emit_moved_argument_zeros(callee, args);
             }
         }
+    }
+
+    /// Zeroes every `take` argument source after a call.
+    ///
+    /// A `take` parameter moves ownership into the call, so the caller's
+    /// binding is empty afterward. Zeroing the source makes the scope's later
+    /// drop a no-op instead of a second release.
+    fn emit_moved_argument_zeros(&mut self, callee: &str, args: &[ir::Value]) {
+        let Some(modes) = self.callee_modes(callee) else {
+            return;
+        };
+        for (arg, mode) in args.iter().zip(modes) {
+            if mode != crate::ast::Mode::Take {
+                continue;
+            }
+            let ValueKind::Place(place) = &arg.kind else {
+                continue;
+            };
+            let ty = self.substitute(&place.ty);
+            if self.needs_drop(&ty) {
+                let source = self.place(place);
+                self.emit_move_zero(&source, &ty);
+            }
+        }
+    }
+
+    /// The declared parameter modes of a known user or `ffi` function.
+    fn callee_modes(&self, callee: &str) -> Option<Vec<crate::ast::Mode>> {
+        if let Some(info) = self.resolve_function(callee) {
+            return Some(info.decl.params.iter().map(|param| param.mode).collect());
+        }
+        self.ffi_functions
+            .get(callee)
+            .map(|signature| signature.params.iter().map(|param| param.mode).collect())
+    }
+
+    /// Drops the previous value of an assignment target before it is overwritten.
+    ///
+    /// An assignment to a live owned place must release the old value first, or
+    /// it leaks. The drop is null-safe, so writing a fresh (empty) target is
+    /// unaffected; a scalar target owns nothing and is skipped.
+    fn emit_reassigned_target_drop(&mut self, target: &Place) {
+        let ty = self.substitute(&target.ty);
+        if self.needs_drop(&ty) {
+            self.emit_drop(target);
+        }
+    }
+
+    /// Emits an assignment, releasing the old owned value without a use-after-free.
+    ///
+    /// The right-hand side may read the target, as in `f = dup(borrow f)`, so
+    /// the old value cannot be released before the right-hand side is
+    /// evaluated. An owned target is therefore handled through a scratch local:
+    /// the old value is saved, the right-hand side is stored into the target,
+    /// and only then is the saved value released. A target that owns nothing is
+    /// overwritten directly.
+    fn emit_assign(&mut self, span: crate::span::Span, target: &Place, value: &Value) {
+        let ty = self.substitute(&target.ty);
+        self.emit_line_directive(span);
+        if !self.emits_drop(&ty) {
+            self.emit_guards(value);
+            let target_c = self.place(target);
+            let lowered = self.value(value);
+            self.push(&format!("    {target_c} = {lowered};"));
+            return;
+        }
+        let target_c = self.place(target);
+        if !value_reads_base(value, target) {
+            // The right-hand side does not read the target, so the old value
+            // is released before the right-hand side is evaluated.
+            self.emit_drop(target);
+            self.emit_guards(value);
+            let lowered = self.value(value);
+            self.push(&format!("    {target_c} = {lowered};"));
+            return;
+        }
+        // The right-hand side reads the target (`f = dup(borrow f)`), so the old
+        // value must survive until the right-hand side has been evaluated. Save
+        // it, store the new value, then release the saved old value.
+        let save = self.unique_local("__cl_save");
+        self.push("    {");
+        self.push(&format!(
+            "        {} = {};",
+            declarator(&ty, &save),
+            target_c
+        ));
+        self.emit_guards(value);
+        let lowered = self.value(value);
+        self.push(&format!("        {target_c} = {lowered};"));
+        self.emit_drop_expr(&save, &ty);
+        self.push("    }");
     }
 
     /// Emits an array literal as element-by-element assignments.
@@ -550,137 +399,185 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Zeroes a moved-out source: `NULL` for a handle, `cl_zero` otherwise.
-    fn emit_move_zero(&mut self, source: &str, ty: &Ty) {
+    /// Zeroes a moved-out source: the null literal for a handle, `cl_zero`
+    /// otherwise.
+    pub(super) fn emit_move_zero(&mut self, source: &str, ty: &Ty) {
         match &ty.kind {
             TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString => {
-                self.push(&format!("    {source} = NULL;"));
+                let null = self.null_literal();
+                self.push(&format!("    {source} = {null};"));
             }
             _ => self.push(&format!("    cl_zero(&{source});")),
         }
     }
+}
 
-    // -- terminators ----------------------------------------------------------
-
-    /// Emits a `return`, using `jump` as the ladder entry for a cleanup exit.
-    ///
-    /// A function with a cleanup ladder stores the value in the result variable
-    /// and jumps to the innermost scope label it leaves, so the ladder can drop
-    /// the scopes on the way out. A function without one returns directly.
-    pub(super) fn emit_return(
-        &mut self,
-        span: crate::span::Span,
-        value: Option<&ir::Value>,
-        jump: Option<usize>,
-    ) {
-        self.emit_line_directive(span);
-        if let Some(value) = value {
-            self.emit_guards(value);
-            let lowered = self.value(value);
-            if let Some(result) = self.result_var.clone() {
-                self.push(&format!("    {result} = {lowered};"));
-            } else {
-                self.push(&format!("    return {lowered};"));
-                return;
+/// The declared locals the emitted C never reads as a value.
+///
+/// A declaration target and a `(void)` marker already use a local, so only the
+/// value positions count: a right-hand side, a call argument, a store, a move
+/// source, a dropped place, and a terminator's condition or return. A local
+/// reached only from a write is absent from the result, so the emitter can mark
+/// it unused and keep the generated C free of `-Wunused-but-set-variable`.
+fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
+    let mut read: BTreeSet<String> = BTreeSet::new();
+    for block in &function.blocks {
+        for instr in &block.statements {
+            match &instr.statement {
+                Statement::Assign { value, .. } => note_value(value, &mut read),
+                Statement::Move { source, .. } => note_place(source, &mut read),
+                Statement::StorePointer { pointer, value } => {
+                    note_value(pointer, &mut read);
+                    note_value(value, &mut read);
+                }
+                Statement::Call { args, .. } => {
+                    for arg in args {
+                        note_value(arg, &mut read);
+                    }
+                }
+                Statement::Drop { place, .. } => note_place(place, &mut read),
+                _ => {}
             }
         }
-        if let Some(label) = jump {
-            self.push(&format!("    goto __cl_c{label};"));
-        } else if let Some(result) = self.result_var.clone() {
-            self.push(&format!("    return {result};"));
-        } else {
-            self.push("    return;");
+        match &block.terminator {
+            Terminator::Branch { condition, .. } => note_value(condition, &mut read),
+            Terminator::Switch { value, arms, .. } => {
+                note_value(value, &mut read);
+                for (label, _) in arms {
+                    note_value(label, &mut read);
+                }
+            }
+            Terminator::Return(Some(value)) => note_value(value, &mut read),
+            _ => {}
         }
     }
+    function
+        .locals
+        .iter()
+        .map(|local| local.name.clone())
+        .filter(|name| !read.contains(name))
+        .collect()
+}
 
-    /// Writes the function-end cleanup ladder.
-    pub(super) fn emit_ladder(&mut self) {
-        let rungs = self.rungs.clone();
-        for (index, scope) in rungs.iter().enumerate() {
-            let label = self.labels[scope];
-            self.emit_line_for_scope(*scope);
-            self.push(&format!("__cl_c{label}:"));
-            let actions = self.scope_actions.get(scope).cloned().unwrap_or_default();
-            self.emit_actions(&actions);
-            if index + 1 < rungs.len() {
-                let next = self.labels[&rungs[index + 1]];
-                self.push(&format!("    goto __cl_c{next};"));
-            } else if let Some(result) = self.result_var.clone() {
-                self.push(&format!("    return {result};"));
-            } else {
-                self.push("    return;");
+/// True when a value reads any part of the place rooted at `target`'s base.
+///
+/// The check is deliberately broad: any projection of the same base counts,
+/// because releasing the target would invalidate every projection of it.
+fn value_reads_base(value: &Value, target: &Place) -> bool {
+    match &value.kind {
+        ValueKind::Place(place) => place.base == target.base,
+        ValueKind::Member { base, .. } => value_reads_base(base, target),
+        ValueKind::Index { base, index } => {
+            value_reads_base(base, target) || value_reads_base(index, target)
+        }
+        ValueKind::Unary { operand, .. } => value_reads_base(operand, target),
+        ValueKind::Binary { left, right, .. } => {
+            value_reads_base(left, target) || value_reads_base(right, target)
+        }
+        ValueKind::Cast { value: inner, .. } => value_reads_base(inner, target),
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            value_reads_base(condition, target)
+                || value_reads_base(then_value, target)
+                || value_reads_base(else_value, target)
+        }
+        ValueKind::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, field)| value_reads_base(field, target)),
+        ValueKind::ArrayLit { elements, fill } => {
+            elements
+                .iter()
+                .any(|element| value_reads_base(element, target))
+                || fill
+                    .as_deref()
+                    .is_some_and(|fill| value_reads_base(fill, target))
+        }
+        ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            ValuePiece::Literal(_) => false,
+            ValuePiece::Placeholder(inner) => value_reads_base(inner, target),
+        }),
+        ValueKind::Call { args, .. } | ValueKind::Intrinsic { args, .. } => {
+            args.iter().any(|arg| value_reads_base(arg, target))
+        }
+        ValueKind::Int(_)
+        | ValueKind::Float(_)
+        | ValueKind::Char(_)
+        | ValueKind::Bool(_)
+        | ValueKind::Null
+        | ValueKind::Str(_)
+        | ValueKind::Path(_)
+        | ValueKind::Aggregate
+        | ValueKind::Temp(_) => false,
+    }
+}
+
+/// Records the local a place names, if any.
+fn note_place(place: &Place, read: &mut BTreeSet<String>) {
+    if let ir::PlaceBase::Local(name) = &place.base {
+        read.insert(name.clone());
+    }
+}
+
+/// Records every local named anywhere inside a value.
+fn note_value(value: &Value, read: &mut BTreeSet<String>) {
+    match &value.kind {
+        ValueKind::Place(place) => note_place(place, read),
+        ValueKind::Member { base, .. } => note_value(base, read),
+        ValueKind::Index { base, index } => {
+            note_value(base, read);
+            note_value(index, read);
+        }
+        ValueKind::Unary { operand, .. } => note_value(operand, read),
+        ValueKind::Binary { left, right, .. } => {
+            note_value(left, read);
+            note_value(right, read);
+        }
+        ValueKind::Cast { value: inner, .. } => note_value(inner, read),
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            note_value(condition, read);
+            note_value(then_value, read);
+            note_value(else_value, read);
+        }
+        ValueKind::StructLit { fields, .. } => {
+            for (_, field) in fields {
+                note_value(field, read);
             }
         }
-    }
-
-    /// Writes a final return so a non-void function never falls off its end.
-    ///
-    /// Every reachable path already returns; this line only satisfies the C
-    /// compiler's return-type analysis when the last emitted block ends with a
-    /// `goto` into the ladder.
-    fn emit_closing_return(&mut self) {
-        if self.return_ty.is_void() {
-            return;
-        }
-        if let Some(result) = self.result_var.clone() {
-            self.push(&format!("    return {result};"));
-            return;
-        }
-        let ret = self.return_ty.clone();
-        let value = match &ret.kind {
-            TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString | TyKind::Func(_) => {
-                "NULL".to_owned()
+        ValueKind::ArrayLit { elements, fill } => {
+            for element in elements {
+                note_value(element, read);
             }
-            TyKind::Str | TyKind::Struct(_) => format!("({}){{0}}", super::types::c_type(&ret)),
-            _ => "0".to_owned(),
-        };
-        self.push(&format!("    return {value};"));
-    }
-}
-
-/// The block ids reachable from a function's entry through its terminators.
-pub(super) fn reachable_blocks(function: &ir::Function) -> BTreeSet<BlockId> {
-    closure_from(function, function.entry)
-}
-
-/// The block ids reachable from `root` through terminators.
-pub(super) fn closure_from(function: &ir::Function, root: BlockId) -> BTreeSet<BlockId> {
-    let mut seen: BTreeSet<BlockId> = BTreeSet::new();
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        if !seen.insert(id) {
-            continue;
+            if let Some(fill) = fill {
+                note_value(fill, read);
+            }
         }
-        for successor in successors(&function.blocks[id].terminator) {
-            stack.push(successor);
+        ValueKind::Template(pieces) => {
+            for piece in pieces {
+                if let ValuePiece::Placeholder(inner) = piece {
+                    note_value(inner, read);
+                }
+            }
         }
-    }
-    seen
-}
-
-/// The blocks a terminator can transfer control to.
-fn successors(terminator: &Terminator) -> Vec<BlockId> {
-    match terminator {
-        Terminator::Goto(target) => vec![*target],
-        Terminator::Branch {
-            on_true, on_false, ..
-        } => vec![*on_true, *on_false],
-        Terminator::Switch { arms, default, .. } => {
-            let mut targets: Vec<BlockId> = arms.iter().map(|(_, block)| *block).collect();
-            targets.push(*default);
-            targets
+        ValueKind::Call { args, .. } | ValueKind::Intrinsic { args, .. } => {
+            for arg in args {
+                note_value(arg, read);
+            }
         }
-        Terminator::Return(_) | Terminator::Unreachable => Vec::new(),
+        ValueKind::Int(_)
+        | ValueKind::Float(_)
+        | ValueKind::Char(_)
+        | ValueKind::Bool(_)
+        | ValueKind::Null
+        | ValueKind::Str(_)
+        | ValueKind::Path(_)
+        | ValueKind::Aggregate
+        | ValueKind::Temp(_) => {}
     }
-}
-
-/// The lexical depth of a scope, counted from the function body scope.
-fn scope_depth(function: &ir::Function, scope: usize) -> usize {
-    let mut depth = 0;
-    let mut current = scope;
-    while let Some(parent) = function.scopes[current].parent {
-        depth += 1;
-        current = parent;
-    }
-    depth
 }

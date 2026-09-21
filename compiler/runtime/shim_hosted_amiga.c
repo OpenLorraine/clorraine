@@ -12,6 +12,11 @@
 #include <exec/interrupts.h>
 #include <hardware/intbits.h>
 #include <proto/exec.h>
+/* `dos/dos.h` declares the `BPTR` file-handle type the ABI mapping uses; the
+ * generated code emits no AmigaOS typedef of its own, so the shim must supply
+ * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
+#include <dos/dos.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

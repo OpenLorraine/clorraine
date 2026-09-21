@@ -9,11 +9,12 @@
 use std::collections::BTreeMap;
 
 use crate::ast::{FfiBlock, FuncDecl, FuncSignature, Item, StructDecl};
-use crate::load::Loaded;
+use crate::borrow::{is_nullable_capable, LoanKind};
+use crate::diag::{Diagnostic, Diagnostics};
+use crate::load::{Loaded, Module};
+use crate::sema::SemaOutput;
 use crate::span::Span;
-use crate::types::Ty;
-
-use crate::borrow::LoanKind;
+use crate::types::{resolve_ty, Ty};
 
 /// A user-declared function with a body.
 pub type UserFunc<'a> = &'a FuncDecl;
@@ -212,4 +213,70 @@ pub fn type_name_matches(ty: &crate::ast::Type, name: &str) -> bool {
         }
         _ => false,
     }
+}
+
+/// Rejects a module-level `let` whose declared type needs a drop.
+///
+/// There are no drops at process exit, so a global must be duplicable; a
+/// `const` is exempt because it cannot own a released resource.
+pub(super) fn check_globals(module: &Module, sema: &SemaOutput, diagnostics: &mut Diagnostics) {
+    for item in &module.items {
+        match item {
+            Item::GlobalLet(decl) => {
+                let ty = resolve_ty(&decl.ty, &[], &sema.table);
+                report_illegal_nullable(&ty, decl.name_span, diagnostics);
+                if !sema.table.duplicable(&ty) && !ty.is_unknown() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E11106",
+                            "module-level 'let' must be duplicable or 'const'",
+                            decl.name_span,
+                        )
+                        .with_help("use `const`, or initialize inside an explicit `init()`"),
+                    );
+                }
+            }
+            Item::GlobalConst(decl) => {
+                let ty = resolve_ty(&decl.ty, &[], &sema.table);
+                report_illegal_nullable(&ty, decl.name_span, diagnostics);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Rejects a `?` suffix on a struct field whose type cannot be empty.
+pub(super) fn check_struct_declarations(
+    module: &Module,
+    sema: &SemaOutput,
+    diagnostics: &mut Diagnostics,
+) {
+    for item in &module.items {
+        if let Item::Struct(decl) = item {
+            let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
+            for field in &decl.fields {
+                let ty = resolve_ty(&field.ty, &params, &sema.table);
+                report_illegal_nullable(&ty, field.name_span, diagnostics);
+            }
+        }
+    }
+}
+
+/// Reports `E10011` when a type carries `?` but cannot be empty.
+fn report_illegal_nullable(ty: &Ty, span: Span, diagnostics: &mut Diagnostics) {
+    if !ty.nullable || is_nullable_capable(ty) {
+        return;
+    }
+    let base = Ty {
+        kind: ty.kind.clone(),
+        nullable: false,
+    };
+    diagnostics.push(
+        Diagnostic::error(
+            "E10011",
+            format!("nullable type is not allowed on '{}'", base.display()),
+            span,
+        )
+        .with_help("`?` applies to handles, `raw`, `cstring`, and views"),
+    );
 }

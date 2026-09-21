@@ -413,9 +413,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_block = self.builder.current();
         let scope = self.current_scope();
         let defer_block = self.new_block();
+        let registration = self.register_cleanup();
         self.emit(Statement::Defer {
             block: defer_block,
             scope,
+            order: registration,
         });
 
         let saved_state = self.state.clone();
@@ -440,6 +442,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks a `break`, recording the edge and running the scopes it leaves.
+    ///
+    /// A `for (borrow e in xs)` loop being broken writes its element back before
+    /// the jump, so the last write through the element view is not lost.
     pub(super) fn check_break(&mut self, _span: Span) {
         let state = self.state.clone();
         let Some(frame) = self.exits.last_mut() else {
@@ -447,32 +452,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let break_block = frame.break_block;
         let floor = frame.scope_floor;
+        let write = frame.for_in.clone();
         frame.record_break(state);
+        self.run_for_in_write(write);
         self.emit_exit_cleanup(floor);
         self.terminate(Terminator::Goto(break_block));
     }
 
     /// Checks a `continue`, recording the edge and running the scopes it
     /// leaves on the way back to the loop head.
+    ///
+    /// As with `break`, a `borrow` element loop writes its element back before
+    /// continuing so the iteration's write reaches the iterable.
     pub(super) fn check_continue(&mut self, _span: Span) {
-        let found = self
-            .exits
-            .iter()
-            .rev()
-            .find_map(|frame| frame.continue_block.map(|block| (block, frame.continue_floor)));
-        let Some((continue_block, floor)) = found else {
+        let found = self.exits.iter().rev().find_map(|frame| {
+            frame
+                .continue_block
+                .map(|block| (block, frame.continue_floor, frame.for_in.clone()))
+        });
+        let Some((continue_block, floor, write)) = found else {
             return;
         };
+        self.run_for_in_write(write);
         self.emit_exit_cleanup(floor);
         self.terminate(Terminator::Goto(continue_block));
     }
 
+    /// Runs a recorded element write-back, when there is one.
+    fn run_for_in_write(&mut self, write: Option<ForInWrite>) {
+        let Some(write) = write else {
+            return;
+        };
+        self.store_for_in_element(&write.element, &write.iterable, &write.index, write.id);
+    }
+
     /// Emits the defers and drops for the scopes deeper than `floor`.
+    ///
+    /// A `ScopeExit` marker precedes each scope's drops, so the emitter routes
+    /// the edge through that scope's cleanup even when the scope owns only a
+    /// `defer`.
     fn emit_exit_cleanup(&mut self, floor: usize) {
         self.run_defers_from(floor + 1);
         let depth = self.scopes.len();
         for index in (floor..depth).rev() {
             let scope_id = self.scopes[index].id;
+            self.emit(Statement::ScopeExit { scope: scope_id });
             let ids: Vec<usize> = self.scopes[index]
                 .order
                 .iter()
@@ -482,9 +506,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             for id in ids {
                 if self.bindings[id].needs_drop {
                     let place = self.binding_place(id);
+                    let order = self.bindings[id].registration;
                     self.emit(Statement::Drop {
                         place,
                         scope: scope_id,
+                        order,
                     });
                 }
             }

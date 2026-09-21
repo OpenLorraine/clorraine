@@ -31,7 +31,7 @@ use crate::ir::{
     self, BlockId, BranchShape, Builder, LoopKind, Place, Statement, Terminator, Value, ValueKind,
     ValuePiece,
 };
-use crate::load::{Loaded, Module};
+use crate::load::Loaded;
 use crate::sema::SemaOutput;
 use crate::span::Span;
 use crate::types::{resolve_ty, Ty, TyKind};
@@ -45,7 +45,10 @@ mod loops;
 mod place;
 mod statements;
 
-use flow::{Binding, BindingKind, DeferEntry, ExitFrame, FlowState, PlaceState, PlaceTarget, Scope};
+use flow::{
+    Binding, BindingKind, DeferEntry, ExitFrame, FlowState, ForInWrite, PlaceState, PlaceTarget,
+    Scope,
+};
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -77,15 +80,17 @@ pub fn check(
     let program = ProgramInfo::collect(loaded, &sema.table);
     ffi::check_items(&program, diagnostics);
     for module in loaded.modules.values() {
-        check_globals(module, sema, diagnostics);
-        check_struct_declarations(module, sema, diagnostics);
+        program::check_globals(module, sema, diagnostics);
+        program::check_struct_declarations(module, sema, diagnostics);
     }
     let mut functions = Vec::new();
     for module in loaded.modules.values() {
         for item in &module.items {
             if let Item::Func(decl) = item {
                 let checker = FunctionChecker::new(&program, sema, decl, diagnostics);
-                functions.push(checker.check());
+                let mut function = checker.check();
+                function.module = module.name.clone();
+                functions.push(function);
             }
         }
     }
@@ -93,68 +98,6 @@ pub fn check(
         functions,
         monomorphization: generics::collect(loaded, &program, sema),
     }
-}
-
-/// Rejects a module-level `let` whose declared type needs a drop.
-///
-/// There are no drops at process exit, so a global must be duplicable; a
-/// `const` is exempt because it cannot own a released resource.
-fn check_globals(module: &Module, sema: &SemaOutput, diagnostics: &mut Diagnostics) {
-    for item in &module.items {
-        match item {
-            Item::GlobalLet(decl) => {
-                let ty = resolve_ty(&decl.ty, &[], &sema.table);
-                report_illegal_nullable(&ty, decl.name_span, diagnostics);
-                if !sema.table.duplicable(&ty) && !ty.is_unknown() {
-                    diagnostics.push(
-                        Diagnostic::error(
-                            "E11106",
-                            "module-level 'let' must be duplicable or 'const'",
-                            decl.name_span,
-                        )
-                        .with_help("use `const`, or initialize inside an explicit `init()`"),
-                    );
-                }
-            }
-            Item::GlobalConst(decl) => {
-                let ty = resolve_ty(&decl.ty, &[], &sema.table);
-                report_illegal_nullable(&ty, decl.name_span, diagnostics);
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Rejects a `?` suffix on a struct field whose type cannot be empty.
-fn check_struct_declarations(module: &Module, sema: &SemaOutput, diagnostics: &mut Diagnostics) {
-    for item in &module.items {
-        if let Item::Struct(decl) = item {
-            let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
-            for field in &decl.fields {
-                let ty = resolve_ty(&field.ty, &params, &sema.table);
-                report_illegal_nullable(&ty, field.name_span, diagnostics);
-            }
-        }
-    }
-}
-
-/// Reports `E10011` when a type carries `?` but cannot be empty.
-fn report_illegal_nullable(ty: &Ty, span: Span, diagnostics: &mut Diagnostics) {
-    if !ty.nullable || is_nullable_capable(ty) {
-        return;
-    }
-    let base = Ty {
-        kind: ty.kind.clone(),
-        nullable: false,
-    };
-    diagnostics.push(
-        Diagnostic::error(
-            "E10011",
-            format!("nullable type is not allowed on '{}'", base.display()),
-            span,
-        )
-        .with_help("`?` applies to handles, `raw`, `cstring`, and views"),
-    );
 }
 
 /// Checks one function body and lowers it to the typed control-flow IR.
@@ -193,6 +136,9 @@ struct FunctionChecker<'a, 'd> {
     exits: Vec<ExitFrame>,
     /// Deferred blocks registered by the open scopes, in registration order.
     defer_entries: Vec<DeferEntry<'a>>,
+    /// Next cleanup registration number, shared by bindings and `defer`
+    /// entries so a scope's cleanup can interleave them in one reverse order.
+    next_registration: u32,
     /// False during a speculative pass, which computes state without reporting.
     report_diagnostics: bool,
     /// Diagnostic sink.
@@ -235,6 +181,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             current_span: Span::default(),
             exits: Vec::new(),
             defer_entries: Vec::new(),
+            next_registration: 0,
             report_diagnostics: true,
             diagnostics,
         }
@@ -321,9 +268,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for id in scope.order.iter().rev() {
             if self.bindings[*id].needs_drop {
                 let place = self.binding_place(*id);
+                let order = self.bindings[*id].registration;
                 self.emit(Statement::Drop {
                     place,
                     scope: scope_id,
+                    order,
                 });
             }
         }
@@ -472,6 +421,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ) -> usize {
         let id = self.bindings.len();
         let scope = self.scopes.len();
+        let registration = self.register_cleanup();
         let provenance = if kind == BindingKind::Param && is_lend_candidate(&ty) {
             Provenance::Param(id)
         } else {
@@ -485,6 +435,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             mode,
             is_const,
             needs_drop,
+            registration,
             provenance,
         });
         if let Some(scope) = self.scopes.last_mut() {
@@ -623,6 +574,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.builder.new_block()
     }
 
+    /// Allocates the next cleanup registration number.
+    ///
+    /// Bindings and `defer` entries take one number in the order the walk
+    /// reaches them, so the emitter can interleave a scope's drops and defers
+    /// in a single reverse registration order.
+    fn register_cleanup(&mut self) -> u32 {
+        let registration = self.next_registration;
+        self.next_registration += 1;
+        registration
+    }
+
+    /// Records a compiler-created temporary and returns its id.
+    ///
+    /// A temporary is declared with the locals and named `__cl_tmp<N>` by the
+    /// emitter. It has no binding, so it takes no part in the ownership walk.
+    fn new_temp(&mut self, ty: Ty) -> ir::TempId {
+        let id = self.temps.len() as ir::TempId;
+        self.temps.push(ty);
+        id
+    }
+
     /// Makes a block the current one.
     fn switch_to(&mut self, block: BlockId) {
         self.builder.switch_to(block);
@@ -646,7 +618,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// Deferred blocks run first, in reverse registration order, followed by
     /// the drops. The deferred effects are checked but do not change the
-    /// return value, which was already evaluated.
+    /// return value, which was already evaluated. Each scope the edge leaves
+    /// gets a `ScopeExit` marker so the emitter runs that scope's cleanup even
+    /// when the scope owns only a `defer`.
     fn emit_return_cleanup(&mut self) {
         self.run_defers_from(1);
         let depths: Vec<usize> = (1..=self.scopes.len()).rev().collect();
@@ -656,12 +630,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
             let scope_id = scope.id;
             let ids: Vec<usize> = scope.order.iter().rev().copied().collect();
+            self.emit(Statement::ScopeExit { scope: scope_id });
             for id in ids {
                 if self.bindings[id].needs_drop {
                     let place = self.binding_place(id);
+                    let order = self.bindings[id].registration;
                     self.emit(Statement::Drop {
                         place,
                         scope: scope_id,
+                        order,
                     });
                 }
             }

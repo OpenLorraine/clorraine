@@ -9,14 +9,52 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
 use crate::ir::{Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
-use crate::load::Module;
-use crate::types::{resolve_ty, Ty};
+use crate::profile::Profile;
+use crate::types::{resolve_ty, Ty, TyKind};
 
-use super::types::{c_type, collect_slice_types, declarator, empty_state, mangle_module};
+use super::types::{c_type, collect_slice_types, declarator, mangle_module, scalar_of};
 use super::{Emitter, FuncInfo};
 
 impl<'a> Emitter<'a> {
     // -- top-level sections --------------------------------------------------
+
+    /// Reports a same-named generic function declared in more than one module.
+    ///
+    /// A generic instance is named `cl_<name>__<typekey>` without a module
+    /// qualifier, so two modules that declare a generic of the same name would
+    /// bind one emitted symbol and silently miscompile. The collision is not
+    /// guessed away: it is reported as a duplicate declaration, which stops the
+    /// build before any C is written. A name declared once is unaffected.
+    pub(super) fn report_generic_collisions(&mut self) {
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        for instance in self.ownership.monomorphization.instances() {
+            names.insert(instance.function.clone());
+        }
+        for name in names {
+            let mut matches: Vec<&FuncInfo<'a>> = self
+                .functions
+                .values()
+                .filter(|info| info.decl.name == name)
+                .collect();
+            if matches.len() < 2 {
+                continue;
+            }
+            // The function table is ordered by module name, so the second entry
+            // is the later module; reporting on it is deterministic.
+            let colliding = matches.remove(1);
+            self.diagnostics.push(
+                crate::diag::Diagnostic::error(
+                    "E11101",
+                    format!(
+                        "duplicate declaration of '{name}' in module '{}'",
+                        colliding.module
+                    ),
+                    colliding.decl.name_span,
+                )
+                .with_help("rename one declaration; generic instances share one symbol"),
+            );
+        }
+    }
 
     /// Writes the comment header. No timestamp or host path appears.
     pub(super) fn emit_header(&mut self) {
@@ -25,6 +63,12 @@ impl<'a> Emitter<'a> {
     }
 
     /// Writes the fixed-width typedefs and the built-in view structs.
+    ///
+    /// The Clorraine fixed-width scalars are always declared because no target
+    /// header provides them. The AmigaOS ABI typedefs (`BPTR`, `LONG`, and the
+    /// rest) are declared only for the host profile: the hosted-amiga shim
+    /// includes `exec/types.h`, which already declares them, and re-declaring a
+    /// typedef with a different underlying type is an error under `-std=c99`.
     pub(super) fn emit_typedefs(&mut self) {
         self.push("typedef signed char i8;");
         self.push("typedef short i16;");
@@ -35,16 +79,19 @@ impl<'a> Emitter<'a> {
         self.push("typedef unsigned int usize;");
         self.push("typedef int isize;");
         self.push("");
-        self.push("typedef void *BPTR;");
-        self.push("typedef void *APTR;");
-        self.push("typedef char *STRPTR;");
-        self.push("typedef signed char BYTE;");
-        self.push("typedef short WORD;");
-        self.push("typedef int LONG;");
-        self.push("typedef unsigned char UBYTE;");
-        self.push("typedef unsigned short UWORD;");
-        self.push("typedef unsigned int ULONG;");
-        self.push("typedef int BOOL;");
+        if self.profile == Profile::Host {
+            self.push("typedef void *BPTR;");
+            self.push("typedef void *APTR;");
+            self.push("typedef char *STRPTR;");
+            self.push("typedef signed char BYTE;");
+            self.push("typedef short WORD;");
+            self.push("typedef int LONG;");
+            self.push("typedef unsigned char UBYTE;");
+            self.push("typedef unsigned short UWORD;");
+            self.push("typedef unsigned int ULONG;");
+            self.push("typedef int BOOL;");
+            self.push("");
+        }
         self.push("typedef void *ClString;");
         self.push("");
         self.push("typedef struct { const u8 *ptr; usize len; } ClStr;");
@@ -61,6 +108,10 @@ impl<'a> Emitter<'a> {
     }
 
     /// Writes one `ClSlice_<key>` typedef per slice element type used.
+    ///
+    /// The element pointer is mutable so a store through a writable view
+    /// compiles. A read-only view is protected by the ownership checks, not by
+    /// C `const`, because the same typedef is shared by both lend kinds.
     pub(super) fn emit_slice_typedefs(&mut self) {
         let keys = self.slice_element_types();
         if keys.is_empty() {
@@ -69,7 +120,7 @@ impl<'a> Emitter<'a> {
         for (key, element) in &keys {
             let element_c = c_type(element);
             self.push(&format!(
-                "typedef struct {{ const {element_c} *ptr; usize len; }} ClSlice_{key};"
+                "typedef struct {{ {element_c} *ptr; usize len; }} ClSlice_{key};"
             ));
         }
         self.push("");
@@ -177,17 +228,17 @@ impl<'a> Emitter<'a> {
         self.push("");
     }
 
-    /// Writes a prototype for every emitted function.
+    /// Writes a prototype for every emitted function and `ffi` declaration.
     pub(super) fn emit_prototypes(&mut self) {
         let mut lines: Vec<String> = Vec::new();
         for info in self.functions.values() {
             if !info.decl.type_params.is_empty() {
                 continue;
             }
-            lines.push(format!("{};", self.function_signature(info.decl)));
+            lines.push(format!("{};", self.function_signature(&info.module, info.decl)));
         }
         for instance in self.ownership.monomorphization.instances() {
-            let Some(info) = self.functions.get(&instance.function) else {
+            let Some(info) = self.first_function_by_name(&instance.function) else {
                 continue;
             };
             let subst = self.instance_subst(info.decl, &instance.args);
@@ -197,6 +248,15 @@ impl<'a> Emitter<'a> {
                 self.signature_with_symbol(info.decl, &subst, &symbol)
             ));
         }
+        for module in self.loaded.modules.values() {
+            for item in &module.items {
+                if let Item::Ffi(block) = item {
+                    for signature in &block.decls {
+                        lines.push(format!("{};", self.ffi_signature(signature)));
+                    }
+                }
+            }
+        }
         if lines.is_empty() {
             return;
         }
@@ -204,6 +264,35 @@ impl<'a> Emitter<'a> {
             self.push(&line);
         }
         self.push("");
+    }
+
+    /// Builds the C prototype of one `ffi` declaration.
+    ///
+    /// An `ffi` signature lowers through the ABI mapping, so a parameter mode
+    /// never shapes it: the declared type alone fixes the C type. The
+    /// parameters are unnamed because the prototype only declares the ABI.
+    fn ffi_signature(&self, signature: &crate::ast::FuncSignature) -> String {
+        let ret = resolve_ty(&signature.returns, &[], &self.sema.table);
+        let ret_c = self.ffi_c_type(&ret);
+        let mut params: Vec<String> = Vec::new();
+        for param in &signature.params {
+            let ty = resolve_ty(&param.ty, &[], &self.sema.table);
+            params.push(self.ffi_c_type(&ty));
+        }
+        if params.is_empty() {
+            params.push("void".to_owned());
+        }
+        format!("{ret_c} {}({})", signature.name, params.join(", "))
+    }
+
+    /// The C ABI type of an `ffi` type, resolving an enum's backing scalar.
+    fn ffi_c_type(&self, ty: &Ty) -> String {
+        let ty = self.substitute(ty);
+        let backing = match &ty.kind {
+            TyKind::Enum(name) => self.sema.table.enum_backing(name).and_then(scalar_of),
+            _ => None,
+        };
+        crate::abi::ffi_type_with(&ty, backing)
     }
 
     /// Writes the module-level variables with empty-state initializers.
@@ -217,10 +306,12 @@ impl<'a> Emitter<'a> {
             .map(|global| (global.name.clone(), global.module.clone(), global.ty.clone()))
             .collect();
         for (name, module, ty) in globals {
+            let symbol = self.global_symbol(&module, &name);
+            let empty = self.empty_state(&ty);
             self.push(&format!(
                 "static {} = {};",
-                declarator(&ty, &self.global_symbol(&module, &name)),
-                empty_state(&ty)
+                declarator(&ty, &symbol),
+                empty
             ));
         }
         self.push("");
@@ -266,6 +357,11 @@ impl<'a> Emitter<'a> {
             }
         }
         let rendered = self.value(&lowered);
+        // A module initializer runs at startup, so it carries the same
+        // arithmetic guards a function statement would: a division by zero,
+        // an out-of-range index, or a bad float conversion must fault with its
+        // diagnostic instead of trapping on undefined behavior.
+        self.emit_guards(&lowered);
         self.push(&format!("    {target} = {rendered};"));
     }
 
@@ -411,7 +507,7 @@ impl<'a> Emitter<'a> {
             }
         }
         for instance in self.ownership.monomorphization.instances() {
-            let Some(info) = self.functions.get(&instance.function) else {
+            let Some(info) = self.first_function_by_name(&instance.function) else {
                 continue;
             };
             let subst = self.instance_subst(info.decl, &instance.args);
@@ -437,13 +533,20 @@ impl<'a> Emitter<'a> {
             .map(|module| format!("    cl_init_{}();", mangle_module(&module)))
             .collect();
         let main = self
-            .functions
-            .get("main")
+            .resolve_function("main")
             .map(|info| self.function_symbol(&info.module, "main"));
+        // A module-private function is emitted `static`, so a helper no caller
+        // reaches would fail `-Wunused-function`. Referencing each private
+        // function once from the entry stub keeps the definition used without
+        // a compiler extension.
+        let references = self.private_function_references();
         self.push("int main(void)");
         self.push("{");
         for line in inits {
             self.push(&line);
+        }
+        for symbol in references {
+            self.push(&format!("    (void){symbol};"));
         }
         match main {
             Some(symbol) => self.push(&format!("    return {symbol}();")),
@@ -453,162 +556,23 @@ impl<'a> Emitter<'a> {
         self.push("");
     }
 
-    // -- module initialization order ----------------------------------------
-
-    /// The user modules in initialization order.
+    /// The C symbols of every module-private function and generic instance.
     ///
-    /// A module is initialized after every module it imports or names in a
-    /// global initializer, transitively; independent modules break ties on the
-    /// dotted name compared byte-wise, so the order is deterministic.
-    pub(super) fn init_order(&self) -> Vec<String> {
-        let modules: Vec<String> = self.loaded.modules.keys().cloned().collect();
-        let known: BTreeSet<String> = modules.iter().cloned().collect();
-        let mut prereqs: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-        for name in &modules {
-            let mut deps: BTreeSet<String> = BTreeSet::new();
-            if let Some(module) = self.loaded.module(name) {
-                for import in &module.imports {
-                    if known.contains(&import.module) && &import.module != name {
-                        deps.insert(import.module.clone());
-                    }
-                }
-                for item in &module.items {
-                    let init = match item {
-                        Item::GlobalLet(decl) => Some(&decl.value),
-                        Item::GlobalConst(decl) => Some(&decl.value),
-                        _ => None,
-                    };
-                    if let Some(init) = init {
-                        self.collect_name_modules(module, init, &known, &mut deps);
-                    }
-                }
+    /// A generic template is not defined on its own, so only its concrete
+    /// instances are referenced. An exported function already has external
+    /// linkage and never triggers the unused-function warning.
+    fn private_function_references(&self) -> Vec<String> {
+        let mut symbols: Vec<String> = Vec::new();
+        for info in self.functions.values() {
+            if info.decl.exported || !info.decl.type_params.is_empty() {
+                continue;
             }
-            prereqs.insert(name.clone(), deps);
+            symbols.push(self.function_symbol(&info.module, &info.decl.name));
         }
-
-        let mut order: Vec<String> = Vec::new();
-        let mut done: BTreeSet<String> = BTreeSet::new();
-        while order.len() < modules.len() {
-            let ready = modules
-                .iter()
-                .filter(|name| !done.contains(*name))
-                .filter(|name| {
-                    prereqs
-                        .get(*name)
-                        .is_none_or(|deps| deps.iter().all(|dep| done.contains(dep)))
-                })
-                .min()
-                .cloned();
-            match ready {
-                Some(name) => {
-                    done.insert(name.clone());
-                    order.push(name);
-                }
-                None => {
-                    // A dependency cycle is E11100 before codegen; keep the
-                    // emitter total by appending the rest in name order.
-                    for name in &modules {
-                        if !done.contains(name) {
-                            done.insert(name.clone());
-                            order.push(name.clone());
-                        }
-                    }
-                }
-            }
+        for instance in self.ownership.monomorphization.instances() {
+            symbols.push(format!("cl_{}__{}", instance.function, instance.args.join("_")));
         }
-        order
-    }
-
-    /// Adds the user modules an initializer expression names through imports.
-    pub(super) fn collect_name_modules(
-        &self,
-        module: &Module,
-        expr: &Expr,
-        known: &BTreeSet<String>,
-        deps: &mut BTreeSet<String>,
-    ) {
-        use crate::ast::ExprKind;
-        match &expr.kind {
-            ExprKind::Name(name) => {
-                if let Some(binding) = module.import(name) {
-                    if known.contains(&binding.module) && binding.module != module.name {
-                        deps.insert(binding.module.clone());
-                    }
-                }
-            }
-            ExprKind::Qualified(name) => {
-                if let Some(first) = name.segments.first() {
-                    if let Some(binding) = module.import(first) {
-                        if known.contains(&binding.module) && binding.module != module.name {
-                            deps.insert(binding.module.clone());
-                        }
-                    }
-                }
-            }
-            ExprKind::Call { callee, args, .. } => {
-                self.collect_name_modules(module, callee, known, deps);
-                for arg in args {
-                    self.collect_name_modules(module, &arg.value, known, deps);
-                }
-            }
-            ExprKind::Index { base, index } => {
-                self.collect_name_modules(module, base, known, deps);
-                self.collect_name_modules(module, index, known, deps);
-            }
-            ExprKind::Member { base, .. } => self.collect_name_modules(module, base, known, deps),
-            ExprKind::Unary { operand, .. } => {
-                self.collect_name_modules(module, operand, known, deps)
-            }
-            ExprKind::Binary { left, right, .. } => {
-                self.collect_name_modules(module, left, known, deps);
-                self.collect_name_modules(module, right, known, deps);
-            }
-            ExprKind::Assign { target, value, .. } => {
-                self.collect_name_modules(module, target, known, deps);
-                self.collect_name_modules(module, value, known, deps);
-            }
-            ExprKind::Conditional {
-                condition,
-                then_value,
-                else_value,
-            } => {
-                self.collect_name_modules(module, condition, known, deps);
-                self.collect_name_modules(module, then_value, known, deps);
-                self.collect_name_modules(module, else_value, known, deps);
-            }
-            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-                self.collect_name_modules(module, value, known, deps)
-            }
-            ExprKind::StructLiteral { fields, .. } => {
-                for field in fields {
-                    self.collect_name_modules(module, &field.value, known, deps);
-                }
-            }
-            ExprKind::ArrayLiteral { elements, fill } => {
-                for element in elements {
-                    self.collect_name_modules(module, element, known, deps);
-                }
-                if let Some(fill) = fill {
-                    self.collect_name_modules(module, fill, known, deps);
-                }
-            }
-            ExprKind::Unsafe(inner) => self.collect_name_modules(module, inner, known, deps),
-            ExprKind::IntrinsicCall { args, .. } => {
-                for arg in args {
-                    if let crate::ast::IntrinsicArg::Expr(inner) = arg {
-                        self.collect_name_modules(module, inner, known, deps);
-                    }
-                }
-            }
-            ExprKind::Template(pieces) => {
-                for piece in pieces {
-                    if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
-                        self.collect_name_modules(module, inner, known, deps);
-                    }
-                }
-            }
-            _ => {}
-        }
+        symbols
     }
 
 }

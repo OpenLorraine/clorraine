@@ -41,6 +41,9 @@ pub(super) struct Binding {
     pub(super) is_const: bool,
     /// True when the binding owns a value that needs a drop.
     pub(super) needs_drop: bool,
+    /// Registration order of the binding, so its drop interleaves with the
+    /// scope's `defer` entries in one reverse cleanup order.
+    pub(super) registration: u32,
     /// For a view binding, where its storage comes from.
     pub(super) provenance: Provenance,
 }
@@ -113,6 +116,24 @@ pub(super) enum PlaceTarget {
     Global(String, Vec<ir::Projection>),
 }
 
+/// The write-back of one `for (borrow e in xs)` element loop.
+///
+/// A `borrow` element is an exclusive view of an iterable element, so its final
+/// value is copied back into the iterable at the end of the iteration. Recording
+/// the write-back on the loop's exit frame lets a `break` or `continue` run it
+/// too, instead of silently losing the element's last write.
+#[derive(Clone)]
+pub(super) struct ForInWrite {
+    /// The element type.
+    pub(super) element: Ty,
+    /// The iterable being walked.
+    pub(super) iterable: ir::Value,
+    /// The current index into the iterable.
+    pub(super) index: ir::Value,
+    /// The element binding whose value is copied back.
+    pub(super) id: usize,
+}
+
 /// One open `break`/`continue` target: a loop or a `switch`.
 ///
 /// The frame joins the state of every edge seen so far, so the loop exit or
@@ -131,6 +152,8 @@ pub(super) struct ExitFrame {
     pub(super) break_state: FlowState,
     /// True once a `break` edge was seen.
     pub(super) saw_break: bool,
+    /// The element write-back of an element loop, when this frame is one.
+    pub(super) for_in: Option<ForInWrite>,
 }
 
 impl ExitFrame {
@@ -148,6 +171,7 @@ impl ExitFrame {
             continue_floor,
             break_state: FlowState::default(),
             saw_break: false,
+            for_in: None,
         }
     }
 

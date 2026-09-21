@@ -264,8 +264,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     );
                 }
                 self.write_place(id, &projections, target.span);
-                let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
-                self.emit_store(place, &target_ty, value);
+                if has_runtime_element(&projections) {
+                    self.emit_indexed_store(target, value);
+                } else {
+                    let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
+                    self.emit_store(place, &target_ty, value);
+                }
                 if projections.is_empty() {
                     self.bind_value(id, &target_ty, value, target.span);
                 }
@@ -294,8 +298,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     );
                 }
                 if !is_const {
-                    let place = self.target_place(&PlaceTarget::Global(name, projections));
-                    self.emit_store(place, &target_ty, value);
+                    if has_runtime_element(&projections) {
+                        self.emit_indexed_store(target, value);
+                    } else {
+                        let place = self.target_place(&PlaceTarget::Global(name, projections));
+                        self.emit_store(place, &target_ty, value);
+                    }
                 }
             }
             None => {
@@ -304,6 +312,44 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         self.check_value_into(value, &target_ty, value.span);
+    }
+
+    /// Lowers an assignment whose target has a run-time index.
+    ///
+    /// The target is lowered as the address of the selected element plus a
+    /// store through it. The address keeps the index, so the emitter can emit
+    /// the element's bounds check; a plain element projection would have lost
+    /// the index and hardcoded element zero.
+    fn emit_indexed_store(&mut self, target: &Expr, value: &Expr) {
+        let target = match &target.kind {
+            ExprKind::Unsafe(inner) => inner,
+            _ => target,
+        };
+        let ExprKind::Index { base, index } = &target.kind else {
+            return;
+        };
+        let element_ty = self.ty(target);
+        let base_value = self.lower_value(base);
+        let index_value = self.lower_value(index);
+        let element = Value::new(
+            element_ty.clone(),
+            ValueKind::Index {
+                base: Box::new(base_value),
+                index: Box::new(index_value),
+            },
+        );
+        let pointer = Value::new(
+            element_ty,
+            ValueKind::Unary {
+                op: UnaryOp::AddressOf,
+                operand: Box::new(element),
+            },
+        );
+        let lowered = self.lower_value(value);
+        self.emit(Statement::StorePointer {
+            pointer,
+            value: lowered,
+        });
     }
 
     /// Reports raw operations implied by an assignment target's projections.
@@ -625,6 +671,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+}
+
+/// True when a projection chain selects an element with a run-time index.
+fn has_runtime_element(projections: &[ir::Projection]) -> bool {
+    projections
+        .iter()
+        .any(|projection| matches!(projection, ir::Projection::Element(None)))
 }
 
 /// The exclusive/shared class a call-site or declaration marker denotes.
