@@ -85,3 +85,19 @@ make the profile check agree with `inject_stdlib` when a user module shadows a
 stdlib name (RV-605r); skip staged items in the profile scan so E90001 wins
 (RV-702). The single permitted re-review is spent, so this follow-up is verified
 by `make check` plus `make verify`, with no further independent review.
+
+## Outcome
+
+The residuals are fixed in commit `ea9ce7d`: `GlobalId` carries the module
+through every global place (completing SA-603/RV-607), the profile-surface
+check treats a program-provided module as user code (RV-605r), and the profile
+scan ignores staged bodies so a `comptime` reference reports E90001 (RV-702).
+`ir.rs` was split (`ir/place.rs`) to stay under the size limit. `make check` and
+`make verify` are green: spec check; 269 unit, 47 codegen-run, 3 compile-fail,
+4 corpus, 1 determinism, 6 run-fault, 48 stage, 8 stdlib; the hosted-amiga GCC +
+`vamos`, vbcc build-only, FS-UAE, and six run-fault legs all match.
+
+All Phase 8 review findings are closed. Per the quality profile, the phase's
+single scoped re-review was spent on the first fix batch; the residual fixes
+were verified by the full acceptance run and were not independently re-reviewed
+again.
