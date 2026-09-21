@@ -84,3 +84,34 @@ without changing the naming scheme or the `identical_generic_instantiations_shar
 oracle; RV-435 by emitting the fixed-width ABI typedefs for the host profile
 only. This is the final fix pass — no further independent review runs; the fix
 is verified by `make check` plus targeted ASan probes and regression tests.
+
+### Closure
+
+All nine residuals are fixed and verified. The M2 regressions are gone: a
+cleanup drop now empties the place (no per-iteration double free, RV-430) and a
+self-reading assignment saves the old target before evaluating the RHS (no
+use-after-free, RV-431). The generic collision is detected and reported as
+E11101 (RV-434); the hosted-amiga unit compiles against `exec/types.h` (RV-435);
+element-loop write-back survives `break`/`continue` (RV-432); imported
+same-named calls resolve through the import table (RV-433); unused locals are
+silenced (RV-436); defers and drops run in one reverse registration order
+(RV-438); and the formatting is restored (RV-437).
+
+Verification: `make check` green — 242 unit, 23 codegen-run (compile and run the
+emitted C), 2 compile-fail, 1 determinism, 6 run-fault, 35 stage; a full
+hosted-amiga unit compiles under `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000
+-fwrapv -Wall -Wextra -Werror -c`; ASan probes are clean.
+
+## Phase outcome
+
+The host and hosted-amiga C emitters, the FFI ABI mapping, the profile tables,
+and both runtime shims are implemented. Two independent reviews, one scoped
+re-review, and two fix passes produced findings RV-400..RV-438; every accepted
+finding is fixed with a regression test that compiles and runs the emitted C.
+The green suite is now backed by tests that exercise the generated code for
+FFI, element loops, nested-scope cleanup, `defer`, `take`, owned returns, and
+reassignment.
+
+Known deliberate narrowing: cross-module same-named generic functions are
+rejected (E11101) rather than module-qualified; signed `>>` stays arithmetic
+shift per Ch 04.
