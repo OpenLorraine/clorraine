@@ -341,6 +341,62 @@ fn compile_fail_goldens() {
     );
 }
 
+/// Every warning golden escalates to a failed build under `--deny-warnings`,
+/// and its message stays a `warning CODE:` line rather than becoming an error.
+///
+/// The default-mode warning goldens already prove the warning is reported and
+/// the build succeeds; this case proves the same warnings are fatal under the
+/// escalation flag without changing their rendered severity.
+#[test]
+fn every_warning_escalates_under_deny_warnings() {
+    let spec = spec_root();
+    let goldens = discover(&spec.join("tests/compile-fail"));
+    let scratch = ScratchDir::new("deny");
+    let mut checked = 0;
+    let mut failures = Vec::new();
+    for golden in goldens.iter().filter(|golden| golden.warning) {
+        if golden.cli.iter().any(|arg| arg == "--deny-warnings") {
+            // The dedicated deny golden already asserts this behavior.
+            continue;
+        }
+        let output_file = scratch.path().join(format!("deny-{}.c", golden.name));
+        let run = run_clc(&[
+            "--profile".to_owned(),
+            golden.profile.clone(),
+            "--deny-warnings".to_owned(),
+            "-o".to_owned(),
+            output_file.display().to_string(),
+            golden.path.display().to_string(),
+        ]);
+        if run.status.code() != Some(1) {
+            failures.push(format!(
+                "{}: exit {:?}, expected 1",
+                golden.name,
+                run.status.code()
+            ));
+            continue;
+        }
+        let stderr = String::from_utf8_lossy(&run.stderr);
+        let head = format!("warning {}: ", golden.code);
+        let first = stderr.lines().next().unwrap_or_default();
+        if !first.starts_with(&head) {
+            failures.push(format!(
+                "{}: first line {first:?} is not `{head}...`",
+                golden.name
+            ));
+            continue;
+        }
+        checked += 1;
+    }
+    assert!(checked >= 5, "only {checked} warning goldens were checked");
+    assert!(
+        failures.is_empty(),
+        "{} warning goldens did not escalate:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
+
 /// Prints the skip report: which goldens are asserted and which are skipped
 /// with what reason, plus the aggregate counts.
 #[test]

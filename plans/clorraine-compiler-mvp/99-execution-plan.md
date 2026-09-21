@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 20:53
-> **Progress**: 79/84 tasks (94%)
+> **Last Updated**: 2026-09-21 20:54
+> **Progress**: 80/84 tasks (95%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -566,7 +566,7 @@ the corpus.
 **Objective**: the whole in-scope golden set is green and the skips are honest.
 
 - [x] 8.3.1 Run the full compile-fail scope; fix residual failures; confirm the skip report lists each excluded file with its reason and the aggregate count ✅ (completed: 2026-09-21 20:53)
-- [ ] 8.3.2 Confirm the warning-escalation case and all ST-WARN cases pass in the default and `--deny-warnings` modes
+- [x] 8.3.2 Confirm the warning-escalation case and all ST-WARN cases pass in the default and `--deny-warnings` modes ✅ (completed: 2026-09-21 20:54)
 
 **Deliverables**:
 - Full in-scope suite green with skip report
