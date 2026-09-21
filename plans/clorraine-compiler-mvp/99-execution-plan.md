@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 13:45
-> **Progress**: 73/84 tasks (87%)
+> **Last Updated**: 2026-09-21 20:23
+> **Progress**: 74/84 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -524,14 +524,16 @@ the corpus.
 
 ## Phase 8: Cross-Toolchain Suites, Corpus E2E, Packaging
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: e7d8f37639f944eb6b2ce4a9117051c8dfe71345
+> **Expected modification set**: `compiler/**` (including `compiler/runtime/*.c` and `compiler/tests/**`); `Makefile`; `docker/**` (the corpus cross-leg targets and scripts); `AGENTS.md`; `README.md`; `docs/**` (the cross-reference finalization); `spec/tests/corpus/**` only if a program needs a corrective fix (a corpus program is an oracle and must not be weakened); `plans/clorraine-compiler-mvp/{99-execution-plan.md,00-ambiguity-register.md,01-requirements.md,03-01-corpus.md,03-07-stdlib.md,07-testing-strategy.md}`; `plans/00-roadmap.md`; the `16-phase8-review.md` post-phase review artifact and its `00-index.md` row
+> **Scope mode**: strict
 
 ### Step 8.1: Corpus host leg
 
 **Reference**: 03-01 "Corpus Runner Interface" · ST-CORPUS-1..4
 **Objective**: the corpus passes end to end on the fast profile.
 
-- [ ] 8.1.1 Wire `corpus_spec_test.rs` to compile and run the three host programs and assert the interrupt-counter E11200 diagnostic; fix until green
+- [x] 8.1.1 Wire `corpus_spec_test.rs` to compile and run the three host programs and assert the interrupt-counter E11200 diagnostic; fix until green ✅ (completed: 2026-09-21 20:23)
 
 **Deliverables**:
 - Corpus host leg green (including the E11200 assertion)

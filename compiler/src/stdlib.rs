@@ -236,18 +236,6 @@ mod tests {
         names
     }
 
-    /// True when a module may be compiled on a profile.
-    ///
-    /// The two `std.amiga.*` modules need the AmigaOS scheduler and interrupt
-    /// dispatcher, which only the hosted-amiga shim provides; every other
-    /// module is portable.
-    fn module_available_on(profile: Profile, module: &str) -> bool {
-        match profile {
-            Profile::Host => !module.starts_with("std.amiga."),
-            Profile::HostedAmiga => true,
-        }
-    }
-
     /// Loads the sources and returns the diagnostic codes of the load stage,
     /// which owns the reserved-intrinsic check.
     fn load_codes(files: &[String]) -> Vec<&'static str> {
@@ -411,7 +399,7 @@ mod tests {
             let shim = profile.shim();
             let mut checked = 0usize;
             for module in SOURCES {
-                if !module_available_on(profile, module.name) {
+                if !profile.supports_module(module.name) {
                     continue;
                 }
                 let (program, _) = parse_module(module.name, module.source);

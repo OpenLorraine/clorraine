@@ -155,6 +155,35 @@ fn inject_stdlib(
     }
 }
 
+/// Reports an import from a standard-library module the profile does not
+/// provide, returning false when at least one was reported.
+///
+/// A profile names its own API surface, so a module outside it is a
+/// profile-surface error rather than a missing-module error. Reporting it
+/// before the load stage keeps the diagnostic single instead of letting the
+/// import cascade into unresolved-name errors.
+fn report_unavailable_profile_imports(
+    profile: Profile,
+    programs: &[(FileId, Program)],
+    diagnostics: &mut Diagnostics,
+) -> bool {
+    let mut available = true;
+    for (_, program) in programs {
+        for import in &program.imports {
+            let module = import.from.to_dotted();
+            if !profile.supports_module(&module) {
+                diagnostics.push(Diagnostic::error(
+                    "E11200",
+                    format!("'{module}' is not available on profile '{}'", profile.name()),
+                    import.span,
+                ));
+                available = false;
+            }
+        }
+    }
+    available
+}
+
 /// Runs the compiler and returns the process exit code.
 pub fn run(args: Vec<String>) -> i32 {
     let options = match Options::parse(&args) {
@@ -199,6 +228,13 @@ pub fn run(args: Vec<String>) -> i32 {
         }
         programs.push((file, program));
     }
+    let Some(kind) = Profile::parse(profile) else {
+        return EXIT_USAGE;
+    };
+    if !report_unavailable_profile_imports(kind, &programs, &mut diagnostics) {
+        eprint!("{}", diagnostics.render(&sources));
+        return diagnostics.exit_code();
+    }
     inject_stdlib(&mut programs, &mut sources, &mut diagnostics);
     // The module and name stages consume the loaded program instead of
     // dropping it; the emitter lands later and will take the same value.
@@ -223,9 +259,6 @@ pub fn run(args: Vec<String>) -> i32 {
         eprint!("{}", diagnostics.render(&sources));
         return diagnostics.exit_code();
     }
-    let Some(kind) = Profile::parse(profile) else {
-        return EXIT_USAGE;
-    };
     // A successful compile emits the translation unit; an absent `-o` keeps the
     // compiler silent, matching the command-line contract. The analysis is
     // present whenever code generation runs, because a diagnostics-clean

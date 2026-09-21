@@ -43,6 +43,19 @@ impl Profile {
         }
     }
 
+    /// True when the profile provides a standard-library module.
+    ///
+    /// A profile names its own API surface, so a module outside it cannot be
+    /// lowered on that profile. The AmigaOS scheduler and interrupt dispatcher
+    /// belong to the hosted-amiga runtime, so `std.amiga.*` is available there
+    /// and rejected on the host test profile; every other module is portable.
+    pub fn supports_module(self, module: &str) -> bool {
+        match self {
+            Profile::Host => !module.starts_with("std.amiga."),
+            Profile::HostedAmiga => true,
+        }
+    }
+
     /// The runtime shim embedded at the top of the emitted translation unit.
     pub fn shim(self) -> &'static str {
         match self {
@@ -99,5 +112,14 @@ mod tests {
     fn stack_frame_thresholds_match_the_profiles() {
         assert_eq!(Profile::Host.stack_frame_limit(), 16_384);
         assert_eq!(Profile::HostedAmiga.stack_frame_limit(), 1_024);
+    }
+
+    #[test]
+    fn only_the_hosted_amiga_profile_provides_the_amiga_modules() {
+        assert!(Profile::Host.supports_module("std.mem"));
+        assert!(Profile::Host.supports_module("std.amiga.dos") == false);
+        assert!(Profile::HostedAmiga.supports_module("std.amiga.dos"));
+        assert!(Profile::HostedAmiga.supports_module("std.amiga.interrupt"));
+        assert!(Profile::HostedAmiga.supports_module("std.mem"));
     }
 }
