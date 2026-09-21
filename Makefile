@@ -15,10 +15,14 @@
 #
 # `make run-fault-amiga` runs the six runtime-fault programs under `vamos` and
 # asserts the exact fault line and a nonzero exit.
+#
+# `make verify` is the full acceptance run: the fast check plus every
+# hosted-amiga cross-toolchain leg. It requires the SDK X display for the
+# FS-UAE leg.
 
 DOCKER_MAKE ?= $(MAKE) -C docker
 
-.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga
+.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify
 
 check:
 	./spec/check.sh
@@ -34,3 +38,9 @@ corpus-fs-uae: corpus-amiga
 run-fault-amiga:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet"
 	$(DOCKER_MAKE) exec CMD="docker/scripts/run-fault-amiga.sh"
+
+verify:
+	$(MAKE) check
+	$(MAKE) corpus-fs-uae
+	$(MAKE) run-fault-amiga
+	@echo "verify: all legs passed"
