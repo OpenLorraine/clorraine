@@ -85,3 +85,23 @@ User ruling (2026-09-21): **fix all six** — RV-603, RV-602, RV-601, SA-504r,
 SA-506r, RV-501r — each with a regression case. The single permitted scoped
 re-review is spent, so this follow-up is verified by `make check` plus targeted
 ASan/UBSan probes, with no further independent review.
+
+## Phase outcome
+
+All 18 accepted findings are fixed, and the six residuals the re-review found
+are fixed in a follow-up (commit `7dcec7e`): the owned-temporary UAF, the
+short-circuit operand hoist, the field-call `take` leak, the store-index
+re-evaluation, the template-placeholder leak, and the `comptime` reserved
+name. Two adjacent pre-existing gaps were recorded and left alone: a local
+`func` value that shares a global's name resolves to the global symbol, and
+`text()`/`text(struct)` arity emits invalid C. SA-508's profile-availability
+diagnostic stays with Phase 8 task 8.1.1.
+
+Verification: `make check` fully green — 255 unit, 44 codegen-run (six new
+compile-and-run regressions), 2 compile-fail, 1 determinism, 6 run-fault,
+44 stage, 8 stdlib impl. The corpus `string-parser`, `buffer-container`, and
+`file-copier` host legs match their expected output, and every corpus program
+cross-compiles warning-free for m68k. The test container's ASan runtime is
+intermittently flaky, so the durable regressions are the deterministic Rust
+run tests; the sanitizer probes are supporting evidence.
+
