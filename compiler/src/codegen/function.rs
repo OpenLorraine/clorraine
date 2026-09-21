@@ -127,10 +127,13 @@ impl<'a> Emitter<'a> {
             self.push(&format!("    {} = {};", declarator(&ty, &c_name), empty));
             // A local the emitted code never reads would otherwise fail
             // `-Wunused-but-set-variable` under `-Werror`, because the hoisted
-            // declaration initializes it. A `(void)` cast marks the value as
-            // deliberately unused; a read local is unaffected.
+            // declaration initializes it. A `sizeof` test marks the value as
+            // deliberately unused without an effect; a read local is
+            // unaffected. The test is portable: both the host and m68k GCC
+            // accept a bare `(void)` cast, but vbcc reports it as a
+            // no-effect statement, so the standard cast is not used here.
             if unread.contains(&local.name) {
-                self.push(&format!("    (void){c_name};"));
+                self.push(&format!("    if (sizeof({c_name})) {{ }}"));
             }
         }
         for (index, ty) in function.temps.iter().enumerate() {
@@ -143,8 +146,10 @@ impl<'a> Emitter<'a> {
             ));
             // A compiler temporary may only be written on a path that never
             // reads it, so mark it deliberately used to keep the emitted C
-            // free of `-Wunused-but-set-variable`.
-            self.push(&format!("    (void)__cl_tmp{index};"));
+            // free of `-Wunused-but-set-variable`. A `sizeof` test is used
+            // instead of a `(void)` cast because vbcc flags the cast as a
+            // no-effect statement.
+            self.push(&format!("    if (sizeof(__cl_tmp{index})) {{ }}"));
         }
         if let Some(result) = self.result_var.clone() {
             let ret = self.return_ty.clone();
@@ -152,16 +157,18 @@ impl<'a> Emitter<'a> {
             self.push(&format!("    {} = {};", declarator(&ret, &result), empty));
         }
         // Reference every parameter so an unused one does not fail the
-        // `-Wunused-parameter` check the emitted C must pass. The cast to
-        // `void` is the portable C99 way to mark a value as deliberately
-        // unused; a used parameter is unaffected by the extra statement.
+        // `-Wunused-parameter` check the emitted C must pass. A `sizeof` test
+        // on the parameter's address names it without reading it, which
+        // satisfies both the host and m68k GCC and vbcc; the address form also
+        // avoids `-Wsizeof-array-argument` for an array parameter. A used
+        // parameter is unaffected by the extra statement.
         for param in &function.params {
             let c_name = self
                 .local_names
                 .get(&param.name)
                 .cloned()
                 .unwrap_or_else(|| sanitize_identifier(&param.name));
-            self.push(&format!("    (void){c_name};"));
+            self.push(&format!("    if (sizeof(&{c_name})) {{ }}"));
         }
     }
 
@@ -447,11 +454,12 @@ impl<'a> Emitter<'a> {
 
 /// The declared locals the emitted C never reads as a value.
 ///
-/// A declaration target and a `(void)` marker already use a local, so only the
-/// value positions count: a right-hand side, a call argument, a store, a move
-/// source, a dropped place, and a terminator's condition or return. A local
-/// reached only from a write is absent from the result, so the emitter can mark
-/// it unused and keep the generated C free of `-Wunused-but-set-variable`.
+/// A declaration target and a `sizeof` unused marker already use a local, so
+/// only the value positions count: a right-hand side, a call argument, a store,
+/// a move source, a dropped place, and a terminator's condition or return. A
+/// local reached only from a write is absent from the result, so the emitter
+/// can mark it unused and keep the generated C free of
+/// `-Wunused-but-set-variable`.
 fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
     let mut read: BTreeSet<String> = BTreeSet::new();
     for block in &function.blocks {

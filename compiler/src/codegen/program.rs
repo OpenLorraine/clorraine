@@ -603,7 +603,9 @@ impl<'a> Emitter<'a> {
         // A module-private function is emitted `static`, so a helper no caller
         // reaches would fail `-Wunused-function`. Referencing each private
         // function once from the entry stub keeps the definition used without
-        // a compiler extension.
+        // a compiler extension. The reference is an address read inside a
+        // `sizeof`, which is portable: both GCC and vbcc accept it, whereas a
+        // bare `(void)fn;` cast is flagged by vbcc as a no-effect statement.
         let references = self.private_function_references();
         self.push("int main(void)");
         self.push("{");
@@ -611,7 +613,7 @@ impl<'a> Emitter<'a> {
             self.push(&line);
         }
         for symbol in references {
-            self.push(&format!("    (void){symbol};"));
+            self.push(&format!("    if (sizeof(&{symbol})) {{ }}"));
         }
         match main {
             Some(symbol) => self.push(&format!("    return {symbol}();")),

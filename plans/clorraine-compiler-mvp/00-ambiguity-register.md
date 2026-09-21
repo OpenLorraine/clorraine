@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Compiler MVP
 
-> **Status**: ✅ GATE PASSED — all 69 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution; AR-65 raised and resolved during Phase 5 execution on 2026-09-19; AR-66, AR-66a, and AR-67 raised and resolved during Phase 6 execution on 2026-09-20; AR-68 raised and resolved during Phase 7 execution on 2026-09-21)
-> **Last Updated**: 2026-09-21 12:10
+> **Status**: ✅ GATE PASSED — all 70 items resolved (AR-1..AR-62; AR-63/AR-64 raised and resolved during Phase 4 execution; AR-65 raised and resolved during Phase 5 execution on 2026-09-19; AR-66, AR-66a, and AR-67 raised and resolved during Phase 6 execution on 2026-09-20; AR-68 raised and resolved during Phase 7 execution on 2026-09-21; AR-69 raised and resolved during Phase 8 execution on 2026-09-21)
+> **Last Updated**: 2026-09-21 20:30
 > **CodeOps Artifact Schema**: 1
 
 Scope of this gate: the implementation plan for the Clorraine compiler MVP
@@ -156,6 +156,14 @@ Surfaced while starting the standard-library slice (task 7.2.1). Ruled on by the
 | # | Category | Ambiguity / Gap | Options Presented | Status |
 |---|----------|-----------------|-------------------|--------|
 | AR-68 | Technical (runtime) | The plan's standard-library surface cannot be written in the frozen language. `03-07-stdlib.md` declares `export struct Array<T>` and `export func arrayNew<T>`/`push<T>`/`get<T>`/`set<T>`/`reserve<T>`, but the grammar forbids exported generics (`grammar.ebnf.md:532`, G4; E10302) and its `intrinsic_decl` has no type parameters (`:158`), so AR-46's `rawSlice<T>`/`rawStr` and AR-51's generic `slice` are unparseable and undeclarable. `ffi_decl` also has no link-name (`:156`), so a stdlib `ffi` function can only bind a C symbol of the same name. Meanwhile AR-62 requires real `stdlib/*.clo` sources and the appendix counts the library as ordinary Clorraine | **A**: treat the embedded standard library as a compiler-known surface — real `stdlib/*.clo` bodies whose generic declarations need no `export` (visibility comes from the AR-62 export table), `intrinsic func` gains optional type parameters for the four compiler-known helpers, and stdlib `ffi` declarations name the shim C symbols directly, retiring the hard-coded `cl_<name>` call map for stdlib-owned names; no frozen-spec text or golden changes and E10302/G4 still apply to user code. **B**: amend the frozen grammar and chapters for exported generics, generic intrinsic declarations, and an `ffi` link-name, updating E10302/G4 and their goldens. **C**: keep a declarations-only stdlib and define the emitted `cl_*` symbols in the shim, without compiling bodies | ✅ Resolved — user chose A (compiler-known stdlib surface) |
+
+## Batch 11 — runtime item during Phase 8 execution (2026-09-21)
+
+Surfaced while adding the hosted-amiga vbcc leg (task 8.2.2). Ruled on by the user on 2026-09-21.
+
+| # | Category | Ambiguity / Gap | Options Presented | Status |
+|---|----------|-----------------|-------------------|--------|
+| AR-69 | Technical (runtime) | The emitted C marks unused parameters, unread hoisted locals and temporaries, and private-function references with `(void)x;`. That idiom is silent under GCC `-Wall -Wextra -Werror` and host `cc`, but vbcc 0.9 reports `warning 153: statement has no effect` for every occurrence, so the vbcc leg is not warning-free as `03-01-corpus.md` requires (R17). The normative vbcc command line is frozen (`spec/17-codegen.md:360`) and carries no `-Werror`, so the fix must be in the emitted C | **A**: replace every marker with `if (sizeof(x)) { }`, and private functions with `if (sizeof(&fn)) { }` — uniform, type-agnostic, silent under m68k GCC 16.2, host cc 12.2, and vbcc 0.9, with no casts and no self-assignment. **B**: use `x = x;` for variables and a same-typed local function pointer self-assigned in the entry stub for functions — portable but more emitter code and less uniform. **C**: keep `(void)x;` and accept the vbcc warnings, ruling that the `warning-free` phrasing is not binding for the vbcc leg | ✅ Resolved — user chose A (`if (sizeof(x)) { }`) |
 
 ## Complexity Escalation packet (AR-24)
 
