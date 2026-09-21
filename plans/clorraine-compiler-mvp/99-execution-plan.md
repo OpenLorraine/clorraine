@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 20:59
-> **Progress**: 83/84 tasks (99%)
+> **Last Updated**: 2026-09-21 21:01
+> **Progress**: 84/84 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -598,7 +598,7 @@ the corpus.
 **Reference**: [01-requirements.md](01-requirements.md) "Acceptance Criteria" · AR-31
 **Objective**: hand the finished MVP to the user.
 
-- [ ] 8.5.1 Run the full `make verify` and present the acceptance summary (corpus outputs, suite counts, spike results, known limitations) for the user's ruling
+- [x] 8.5.1 Run the full `make verify` and present the acceptance summary (corpus outputs, suite counts, spike results, known limitations) for the user's ruling ✅ (completed: 2026-09-21 21:01)
 
 **Deliverables**:
 - Final evidence bundle

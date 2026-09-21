@@ -111,15 +111,27 @@ this plan (AR-24 keeps CI/CD out of scope).
 
 ## Acceptance Criteria
 
-1. [ ] The user has accepted the corpus and spike findings (AR-31).
-2. [ ] Every in-scope compile-fail golden file passes; skipped files are
+1. [x] The user has accepted the corpus and spike findings (AR-31).
+2. [x] Every in-scope compile-fail golden file passes; skipped files are
        reported by name and reason (AR-10, AR-23).
-3. [ ] All six run-fault cases pass on `host` and on `hosted-amiga`/vamos.
-4. [ ] All four corpus programs compile with zero diagnostics and match their
+3. [x] All six run-fault cases pass on `host` and on `hosted-amiga`/vamos.
+4. [x] All four corpus programs compile with zero diagnostics and match their
        expected output (host for three; hosted-amiga for all; FS-UAE for the
        interrupt counter).
-5. [ ] Same source and flags produce byte-identical C (AR-35).
-6. [ ] The stdlib slice compiles warning-free (AR-42).
-7. [ ] `make verify` passes end to end in the SDK container.
-8. [ ] `docs/findings-phase2.md` records all four spike results; `AGENTS.md`
+5. [x] Same source and flags produce byte-identical C (AR-35).
+6. [x] The stdlib slice compiles warning-free (AR-42).
+7. [x] `make verify` passes end to end in the SDK container.
+8. [x] `docs/findings-phase2.md` records all four spike results; `AGENTS.md`
        and `plans/00-roadmap.md` are current (AR-38, AR-40, AR-41).
+
+**Acceptance ruling (2026-09-21):** the user accepted the MVP against all eight
+criteria after the full `make verify` run (spec check; 370 Rust tests across the
+unit, codegen-run, compile-fail, corpus, determinism, run-fault, stage, and
+stdlib suites; the hosted-amiga GCC + `vamos`, vbcc build-only, FS-UAE, and
+run-fault legs). The recorded known limitations are the deferred `freestanding`
+profile, the staged-out surfaces (data inclusion, lambda semantics, callable
+bounds, `stores`/`transfers`, pools, user contract tables, nested templates,
+`comptime`), vbcc debug decoding (D-1), and the planned `-m68881` FPU leg. Two
+adjacent pre-existing minor gaps remain open for later triage: a local `func`
+value that shares a global's name resolves to the global symbol, and `text()`
+with zero arguments or a non-formattable argument emits invalid C.
