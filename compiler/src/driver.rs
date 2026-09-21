@@ -172,17 +172,24 @@ fn report_unavailable_profile_imports(
     programs: &[(FileId, Program)],
     diagnostics: &mut Diagnostics,
 ) -> bool {
+    // A module the program itself declares is user code, even when its name
+    // matches an embedded library module. `inject_stdlib` prefers the user
+    // module, so the profile check must agree and not reject it.
+    let provided: BTreeSet<String> = programs
+        .iter()
+        .map(|(_, program)| program.module.name.to_dotted())
+        .collect();
     let mut unavailable: BTreeMap<String, crate::span::Span> = BTreeMap::new();
     for (_, program) in programs {
         for import in &program.imports {
             let module = import.from.to_dotted();
-            if is_unavailable_stdlib(profile, &module) {
+            if is_unavailable_stdlib(profile, &module, &provided) {
                 unavailable.entry(module).or_insert(import.span);
             }
         }
     }
-    for (module, span) in load::referenced_modules(programs) {
-        if is_unavailable_stdlib(profile, &module) {
+    for (module, span) in load::referenced_modules_outside_staged(programs) {
+        if is_unavailable_stdlib(profile, &module, &provided) {
             unavailable.entry(module).or_insert(span);
         }
     }
@@ -198,10 +205,12 @@ fn report_unavailable_profile_imports(
     available
 }
 
-/// True when the module is an embedded standard-library module the profile
-/// does not provide.
-fn is_unavailable_stdlib(profile: Profile, module: &str) -> bool {
-    stdlib::source(module).is_some() && !profile.supports_module(module)
+/// True when the module is an embedded standard-library module the profile does
+/// not provide and that the program did not supply itself.
+fn is_unavailable_stdlib(profile: Profile, module: &str, provided: &BTreeSet<String>) -> bool {
+    stdlib::source(module).is_some()
+        && !provided.contains(module)
+        && !profile.supports_module(module)
 }
 
 /// Runs the compiler and returns the process exit code.

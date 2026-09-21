@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
-use crate::ir::{Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
+use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
 use crate::types::{resolve_ty, Ty, TyKind};
@@ -443,17 +443,21 @@ impl<'a> Emitter<'a> {
             ExprKind::Str(bytes) => ValueKind::Str(String::from_utf8_lossy(bytes).into_owned()),
             ExprKind::Name(name) => {
                 match crate::init_graph::resolve_name_global(self.loaded, module, name) {
-                    Some(global) => ValueKind::Place(Place::global(global.name).with_type(ty.clone())),
+                    Some(global) => ValueKind::Place(
+                        Place::global(GlobalId::new(global.module, global.name))
+                            .with_type(ty.clone()),
+                    ),
                     None => ValueKind::Path(vec![name.clone()]),
                 }
             }
             ExprKind::Qualified(name) => {
                 match crate::init_graph::resolve_global(self.loaded, module, name) {
                     Some(global) => {
+                        let identity = GlobalId::new(global.module, global.name);
                         let projections =
                             global.fields.into_iter().map(Projection::Field).collect();
                         ValueKind::Place(Place {
-                            base: PlaceBase::Global(global.name),
+                            base: PlaceBase::Global(identity),
                             projections,
                             ty: ty.clone(),
                         })

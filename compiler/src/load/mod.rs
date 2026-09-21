@@ -207,12 +207,33 @@ pub fn load(programs: Vec<(FileId, Program)>, diagnostics: &mut Diagnostics) -> 
 /// module carries the span of the first reference to it, so a profile-surface
 /// diagnostic can point at the reference.
 pub fn referenced_modules(programs: &[(FileId, Program)]) -> BTreeMap<String, Span> {
+    referenced_modules_with(programs, true)
+}
+
+/// Like [`referenced_modules`], but ignores references inside staged constructs.
+///
+/// A `comptime` body is rejected by the semantic stage as a staged feature, so
+/// its references must not pre-empt that diagnostic with a profile-surface
+/// error. Scanning the body for injection still happens when the program is
+/// otherwise acceptable; only the profile-surface decision leaves it out.
+pub fn referenced_modules_outside_staged(
+    programs: &[(FileId, Program)],
+) -> BTreeMap<String, Span> {
+    referenced_modules_with(programs, false)
+}
+
+/// Collects the named standard-library modules, optionally walking staged
+/// bodies.
+fn referenced_modules_with(
+    programs: &[(FileId, Program)],
+    include_staged: bool,
+) -> BTreeMap<String, Span> {
     let mut modules = BTreeMap::new();
     for (_, program) in programs {
         if program.embedded {
             continue;
         }
-        for (module, span) in collect_name_mentions(&program.items).modules {
+        for (module, span) in collect_name_mentions(&program.items, include_staged).modules {
             modules.entry(module).or_insert(span);
         }
     }
@@ -358,7 +379,7 @@ fn resolve_imports(
     exports: &BTreeMap<String, BTreeSet<String>>,
     diagnostics: &mut Diagnostics,
 ) -> Vec<ImportBinding> {
-    let used = collect_name_mentions(&group.items);
+    let used = collect_name_mentions(&group.items, true);
     let mut bindings: Vec<ImportBinding> = Vec::new();
     let used = &used.names;
     for import in &group.imports {

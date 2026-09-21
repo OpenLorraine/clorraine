@@ -22,7 +22,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Qualified(name) => {
                 name.segments.len() >= 2
                     && (self.lookup(&name.segments[0]).is_some()
-                        || self.program.globals.contains_key(&name.segments[0]))
+                        || self.resolve_global_id(&name.segments[0]).is_some())
             }
             _ => false,
         }
@@ -50,18 +50,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         ty,
                     }));
                 }
-                if self.program.globals.contains_key(head) {
+                if let Some(id) = self.resolve_global_id(head) {
                     let mut ty = self
                         .program
                         .globals
-                        .get(head)
+                        .get(&id)
                         .map(|global| global.ty.clone())
                         .unwrap_or_else(Ty::unknown);
                     for segment in &name.segments[1..method] {
                         ty = self.member_type(&ty, segment);
                     }
                     return Some(Value::place(Place {
-                        base: ir::PlaceBase::Global(head.clone()),
+                        base: ir::PlaceBase::Global(id),
                         projections,
                         ty,
                     }));
@@ -88,7 +88,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let mut ty = if let Some(id) = self.lookup(head) {
                     self.bindings[id].ty.clone()
                 } else {
-                    self.program.globals.get(head)?.ty.clone()
+                    self.global_type(head)?
                 };
                 let last = name.segments.len() - 1;
                 for segment in &name.segments[1..last] {

@@ -328,6 +328,28 @@ fn run_sources_emitting(tag: &str, files: &[(&str, &str)]) -> (Output, String) {
     (run_clc(&args), read_emitted(&output_path))
 }
 
+/// Compiles several source files with the hosted-amiga profile and returns its C.
+///
+/// Mirrors [`run_sources_emitting`] for the hosted profile, so a multi-file
+/// case can assert that the hosted toolchain accepts it and emits C.
+fn run_sources_emitting_hosted_amiga(tag: &str, files: &[(&str, &str)]) -> (Output, String) {
+    let scratch = ScratchDir::new(tag);
+    let output_path = scratch.path().join("out.c");
+    let mut args = vec![
+        "--profile".to_owned(),
+        "hosted-amiga".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+    ];
+    for (name, source) in files {
+        let source_path = scratch.path().join(name);
+        std::fs::write(&source_path, source)
+            .unwrap_or_else(|err| panic!("cannot write snippet {name}: {err}"));
+        args.push(source_path.display().to_string());
+    }
+    (run_clc(&args), read_emitted(&output_path))
+}
+
 /// Compiles one snippet whose path on the command line is relative.
 ///
 /// The command runs with the scratch directory as its working directory, so
@@ -2050,6 +2072,76 @@ fn a_user_module_with_the_amiga_prefix_is_not_a_profile_error() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert!(!emitted.trim().is_empty(), "the program must emit C");
+}
+
+/// A user module named exactly `std.amiga.dos` is user code, not the library.
+///
+/// `inject_stdlib` prefers a module the program provides and never injects the
+/// embedded one, so the profile check must agree and accept the program on both
+/// profiles. The real embedded `std.amiga.dos` stays unavailable on host, which
+/// the qualified-reference case pins.
+#[test]
+fn a_user_module_named_std_amiga_dos_is_user_code() {
+    let files = [
+        (
+            "main.clo",
+            "module spec.stage.user_dos;\n\nimport { delayTicks } from std.amiga.dos;\n\nfunc main(): i32 {\n    return delayTicks(7);\n}\n",
+        ),
+        (
+            "dos.clo",
+            "module std.amiga.dos;\n\nexport func delayTicks(ticks: i32): i32 {\n    return ticks;\n}\n",
+        ),
+    ];
+    let (host, host_c) = run_sources_emitting("user-dos", &files);
+    assert_eq!(
+        host.status.code(),
+        Some(0),
+        "a user module named std.amiga.dos must compile on host; stderr:\n{}",
+        String::from_utf8_lossy(&host.stderr)
+    );
+    assert!(!host_c.trim().is_empty(), "the host program must emit C");
+
+    let (amiga, amiga_c) = run_sources_emitting_hosted_amiga("user-dos-hosted", &files);
+    assert_eq!(
+        amiga.status.code(),
+        Some(0),
+        "a user module named std.amiga.dos must compile on hosted-amiga; stderr:\n{}",
+        String::from_utf8_lossy(&amiga.stderr)
+    );
+    assert!(
+        !amiga_c.trim().is_empty(),
+        "the hosted-amiga program must emit C"
+    );
+}
+
+/// A `std.amiga.dos` reference inside a `comptime` body is staged out.
+///
+/// The profile-surface scan ignores staged bodies, so the semantic stage's
+/// staged-feature diagnostic is reported instead of E11200.
+#[test]
+fn a_staged_amiga_reference_reports_the_staged_feature() {
+    let source = r#"module spec.stage.staged_amiga;
+
+comptime func helper(): i32 {
+    std.amiga.dos.delayTicks(1);
+    return 0;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let run = run_source("staged-amiga", source);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.lines().any(|line| line.starts_with("error E90001: ")),
+        "expected E90001 for the staged body, got:\n{stderr}"
+    );
+    assert!(
+        !stderr.lines().any(|line| line.starts_with("error E11200: ")),
+        "the staged body must not be a profile-surface error, got:\n{stderr}"
+    );
+    assert_eq!(run.status.code(), Some(1), "a staged feature exits 1");
 }
 
 /// Independent errors are all reported, and the error cap trims the report to

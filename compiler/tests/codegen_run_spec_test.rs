@@ -1533,3 +1533,23 @@ func main(): i32 {
     let output = build_and_run("m10", source, None);
     assert_eq!(output.status.code(), Some(52), "m10: expected 42 + 10");
 }
+
+/// A module-path global read resolves to the named module's global even when
+/// another module declares a global with the same simple name.
+///
+/// Both `codegen.CA` and `codegen.CB` declare `y`. `CA` reads `codegen.CB.y` in
+/// its initializer and in a body; each read must emit `CB`'s symbol, not `CA`'s,
+/// and both globals must be declared. The exit code proves the values: `CA.y`
+/// (5) plus `CB.y + 1` (42) plus a body read of `CB.y` (41) is 88.
+#[test]
+fn same_named_globals_in_two_modules_resolve_by_module() {
+    let files = [
+        (
+            "alpha.clo",
+            "module codegen.CA;\n\nexport let y: i32 = 5;\nexport let a: i32 = codegen.CB.y + 1;\n\nfunc read(): i32 {\n    return codegen.CB.y;\n}\n\nfunc main(): i32 {\n    return y + a + read();\n}\n",
+        ),
+        ("beta.clo", "module codegen.CB;\n\nexport let y: i32 = 41;\n"),
+    ];
+    let output = build_and_run_files("m11", &files, None);
+    assert_eq!(output.status.code(), Some(88), "m11: expected 5 + 42 + 41");
+}

@@ -158,11 +158,7 @@ impl<'a> Emitter<'a> {
                     c_name
                 }
             }
-            PlaceBase::Global(name) => self
-                .globals
-                .get(name)
-                .map(|global| self.global_symbol(&global.module, &global.name))
-                .unwrap_or_else(|| name.clone()),
+            PlaceBase::Global(id) => self.global_symbol(&id.module, &id.name),
             PlaceBase::Temp(id) => format!("__cl_tmp{id}"),
         }
     }
@@ -184,9 +180,9 @@ impl<'a> Emitter<'a> {
                 })
                 .map(|param| param.ty.clone())
                 .unwrap_or_else(Ty::unknown),
-            PlaceBase::Global(name) => self
+            PlaceBase::Global(id) => self
                 .globals
-                .get(name)
+                .get(id)
                 .map(|global| global.ty.clone())
                 .unwrap_or_else(Ty::unknown),
             PlaceBase::Temp(id) => self

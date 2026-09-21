@@ -54,3 +54,34 @@ User ruling (2026-09-21): **fix all eight** — the critical module-path global
 lowering, the E11200 qualified-reference check, the E11100 graph
 (module-path/qualified/import edges), same-module global ordering, and the four
 minors. Verify, then run the one permitted scoped re-review of the fix diff.
+
+## Fix batch (commit `fed4857`)
+
+All eight were fixed; `make check` and `make verify` are green (269 unit,
+46 codegen-run, 3 compile-fail, 4 corpus, 1 determinism, 6 run-fault, 46 stage,
+8 stdlib). A shared `compiler/src/init_graph.rs` now backs both the E11100 check
+and the codegen ordering, and the sema init-cycle tests moved to
+`sema/init_tests.rs`.
+
+## Re-review of the fix diff
+
+The single permitted re-review confirmed RV-601/SA-604, RV-602/SA-601/SA-602,
+RV-603, RV-604, RV-606, and SA-605 resolved. It rejected SA-603/RV-607 and
+RV-605 as only partially resolved and found one new major:
+
+| ID | Severity | Title | Location | Evidence |
+|---|---|---|---|---|
+| RV-701 | 🟠 MAJOR | The module-path global fix discards the module, so a same-named global in another module resolves to the wrong one | `codegen/program.rs:451-459`, `own/place.rs:434-440`, `codegen/expr.rs:161-165`, `codegen.rs:85,251` | Two modules each `export let y`; `let a: i32 = test.PB.y + 1` emits `cl_test_PA_y` and never declares `cl_test_PB_y` (`cc`: undeclared identifier). `resolve_global` returns the module but the fix drops it and re-resolves by simple name through `Emitter.globals`, which is keyed by name only. SA-603 is therefore not fixed at the root for a name collision. |
+| RV-605r | 🟠 MAJOR | A user module named exactly `std.amiga.dos`/`std.amiga.interrupt` is still rejected on host while `hosted-amiga` accepts it | `driver.rs:203-205`, `inject_stdlib` at `:137` | `inject_stdlib` prefers a user-provided module of that name (treats it as present), but the profile check keys on `stdlib::source(name).is_some()` and rejects it, so the two decisions disagree. |
+| RV-702 | 🟡 MINOR | The profile scan walks staged `comptime` bodies, masking E90001 with E11200 | `driver.rs:184-188`, `load/scan.rs:45` | A staged `comptime` body referencing `std.amiga.dos` on host reports E11200 instead of the expected E90001. Both reject the program, so only the diagnostic is wrong. |
+
+No new critical findings. `sema/tests.rs` is 564 lines and all moved tests run.
+
+### Residual ruling
+
+User ruling (2026-09-21): **fix all three** — carry the module through the
+global place and key the emitter's global table by `(module, name)` (RV-701);
+make the profile check agree with `inject_stdlib` when a user module shadows a
+stdlib name (RV-605r); skip staged items in the profile scan so E90001 wins
+(RV-702). The single permitted re-review is spent, so this follow-up is verified
+by `make check` plus `make verify`, with no further independent review.

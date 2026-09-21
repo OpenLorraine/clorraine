@@ -118,8 +118,8 @@ impl FlowState {
 pub(super) enum PlaceTarget {
     /// A local or parameter with its projections.
     Local(usize, Vec<ir::Projection>),
-    /// A module-level binding with its projections.
-    Global(String, Vec<ir::Projection>),
+    /// A module-level binding with its identity and projections.
+    Global(ir::GlobalId, Vec<ir::Projection>),
 }
 
 /// The write-back of one `for (borrow e in xs)` element loop.

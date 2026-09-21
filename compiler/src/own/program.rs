@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use crate::ast::{FfiBlock, FuncDecl, FuncSignature, Item, StructDecl};
 use crate::borrow::{is_nullable_capable, LoanKind};
 use crate::diag::{Diagnostic, Diagnostics};
+use crate::ir::GlobalId;
 use crate::load::{Loaded, Module};
 use crate::sema::SemaOutput;
 use crate::span::Span;
@@ -75,8 +76,8 @@ pub struct ProgramInfo<'a> {
     pub handles: BTreeMap<String, HandleInfo<'a>>,
     /// Struct declarations, for the `freedBy` check.
     pub structs: BTreeMap<String, &'a StructDecl>,
-    /// Module-level bindings.
-    pub globals: BTreeMap<String, GlobalInfo>,
+    /// Module-level bindings, keyed by their module and simple name.
+    pub globals: BTreeMap<GlobalId, GlobalInfo>,
 }
 
 impl<'a> ProgramInfo<'a> {
@@ -113,7 +114,7 @@ impl<'a> ProgramInfo<'a> {
                     }
                     Item::GlobalLet(decl) => {
                         info.globals.insert(
-                            decl.name.clone(),
+                            GlobalId::new(&module.name, &decl.name),
                             GlobalInfo {
                                 name: decl.name.clone(),
                                 ty: table
@@ -127,7 +128,7 @@ impl<'a> ProgramInfo<'a> {
                     }
                     Item::GlobalConst(decl) => {
                         info.globals.insert(
-                            decl.name.clone(),
+                            GlobalId::new(&module.name, &decl.name),
                             GlobalInfo {
                                 name: decl.name.clone(),
                                 ty: table

@@ -37,18 +37,20 @@ pub(super) struct Mentions {
 /// Only a plain identifier counts as a name. A dotted name such as
 /// `std.mem.Buffer` is qualified access, which is available without an import,
 /// so it does not mark an import used; its longest standard-library prefix is
-/// recorded as a module reference instead.
-pub(super) fn collect_name_mentions(items: &[Item]) -> Mentions {
+/// recorded as a module reference instead. `include_staged` controls whether a
+/// staged `comptime` body is walked: the profile-surface check leaves it out so
+/// the semantic stage's staged-feature diagnostic is the one reported.
+pub(super) fn collect_name_mentions(items: &[Item], include_staged: bool) -> Mentions {
     let mut mentions = Mentions::default();
     for item in items {
         match item {
-            Item::Func(decl) | Item::Comptime(decl) => {
-                for param in &decl.params {
-                    mention_type(&param.ty, &mut mentions);
-                }
-                mention_type(&decl.returns, &mut mentions);
-                mention_block(&decl.body, &mut mentions);
+            Item::Func(decl) => {
+                mention_signature(decl, &mut mentions);
             }
+            Item::Comptime(decl) if include_staged => {
+                mention_signature(decl, &mut mentions);
+            }
+            Item::Comptime(_) => {}
             Item::Struct(decl) => {
                 for field in &decl.fields {
                     mention_type(&field.ty, &mut mentions);
@@ -92,6 +94,18 @@ pub(super) fn collect_name_mentions(items: &[Item]) -> Mentions {
         }
     }
     mentions
+}
+
+/// Records the names and module references of a function declaration.
+///
+/// A `func` body and a staged `comptime` body share this walk, so the two
+/// callers stay in step about which parts of a body are scanned.
+fn mention_signature(decl: &FuncDecl, mentions: &mut Mentions) {
+    for param in &decl.params {
+        mention_type(&param.ty, mentions);
+    }
+    mention_type(&decl.returns, mentions);
+    mention_block(&decl.body, mentions);
 }
 
 /// Records the longest standard-library module prefix of a dotted path.

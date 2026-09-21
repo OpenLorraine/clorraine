@@ -81,8 +81,8 @@ pub(super) struct Emitter<'a> {
     ffi_functions: BTreeMap<String, &'a crate::ast::FuncSignature>,
     /// The module of the body currently being emitted, for call resolution.
     pub(super) current_module: String,
-    /// Module-level bindings keyed by simple name.
-    globals: BTreeMap<String, GlobalInfo>,
+    /// Module-level bindings keyed by their module and simple name.
+    globals: BTreeMap<ir::GlobalId, GlobalInfo>,
     /// User structs keyed by name.
     structs: BTreeMap<String, &'a StructDecl>,
     /// User enums keyed by name.
@@ -248,11 +248,13 @@ impl<'a> Emitter<'a> {
             .map(|ty| resolve_ty(ty, &[], &self.sema.table))
             .or_else(|| self.expr_type(init))
             .unwrap_or_else(Ty::unknown);
-        self.globals.entry(name.to_owned()).or_insert(GlobalInfo {
-            module: module.name.clone(),
-            name: name.to_owned(),
-            ty,
-        });
+        self.globals
+            .entry(ir::GlobalId::new(&module.name, name))
+            .or_insert(GlobalInfo {
+                module: module.name.clone(),
+                name: name.to_owned(),
+                ty,
+            });
     }
 
     /// Runs the emission phases in order.

@@ -521,13 +521,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 projections: projections.clone(),
                 ty: self.projected_type(*id, projections),
             },
-            PlaceTarget::Global(name, projections) => Place {
-                base: ir::PlaceBase::Global(name.clone()),
+            PlaceTarget::Global(id, projections) => Place {
+                base: ir::PlaceBase::Global(id.clone()),
                 projections: projections.clone(),
                 ty: self
                     .program
                     .globals
-                    .get(name)
+                    .get(id)
                     .map(|global| global.ty.clone())
                     .unwrap_or_else(Ty::unknown),
             },
@@ -690,7 +690,7 @@ impl PlaceTarget {
     fn with_projections(self, projections: Vec<ir::Projection>) -> Self {
         match self {
             Self::Local(id, _) => Self::Local(id, projections),
-            Self::Global(name, _) => Self::Global(name, projections),
+            Self::Global(id, _) => Self::Global(id, projections),
         }
     }
 }

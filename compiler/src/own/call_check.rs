@@ -237,8 +237,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 };
                 let mut ty = if let Some(id) = self.lookup(head) {
                     self.bindings[id].ty.clone()
-                } else if let Some(global) = self.program.globals.get(head) {
-                    global.ty.clone()
+                } else if let Some(ty) = self.global_type(head) {
+                    ty
                 } else {
                     return Ty::unknown();
                 };
@@ -272,11 +272,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             Mode::Borrow => {
-                if let Some(PlaceTarget::Global(name, _)) = &target {
-                    if !self.global_is_const(name) {
+                if let Some(PlaceTarget::Global(id, _)) = &target {
+                    if !self.global_is_const(id) {
                         self.error(
                             "E10038",
-                            format!("cannot borrow global '{name}'"),
+                            format!("cannot borrow global '{}'", id.name),
                             "borrow from a local owner",
                             span,
                         );
@@ -339,11 +339,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             Mode::None | Mode::Const => {
-                if let Some(PlaceTarget::Global(name, _)) = &target {
-                    if !self.global_is_const(name) {
+                if let Some(PlaceTarget::Global(id, _)) = &target {
+                    if !self.global_is_const(id) {
                         self.error(
                             "E10038",
-                            format!("cannot borrow global '{name}'"),
+                            format!("cannot borrow global '{}'", id.name),
                             "borrow from a local owner",
                             span,
                         );
@@ -362,10 +362,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// True when the module-level binding is a `const`.
-    pub(super) fn global_is_const(&self, name: &str) -> bool {
+    pub(super) fn global_is_const(&self, id: &ir::GlobalId) -> bool {
         self.program
             .globals
-            .get(name)
+            .get(id)
             .is_some_and(|global| global.is_const)
     }
 
@@ -444,11 +444,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             for (index, written) in args.iter().enumerate() {
                 self.eval(&written.value);
                 if index == arg {
-                    if let Some(PlaceTarget::Global(name, _)) = self.place_target(&written.value) {
-                        if !self.global_is_const(&name) {
+                    if let Some(PlaceTarget::Global(id, _)) = self.place_target(&written.value) {
+                        if !self.global_is_const(&id) {
                             self.error(
                                 "E10038",
-                                format!("cannot borrow global '{name}'"),
+                                format!("cannot borrow global '{}'", id.name),
                                 "borrow from a local owner",
                                 written.span,
                             );

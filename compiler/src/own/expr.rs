@@ -274,16 +274,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.bind_value(id, &target_ty, value, target.span);
                 }
             }
-            Some(PlaceTarget::Global(name, projections)) => {
+            Some(PlaceTarget::Global(id, projections)) => {
                 let is_const = self
                     .program
                     .globals
-                    .get(&name)
+                    .get(&id)
                     .is_some_and(|global| global.is_const);
                 if is_const {
                     self.error(
                         "E10023",
-                        format!("cannot assign to immutable '{name}'"),
+                        format!("cannot assign to immutable '{}'", id.name),
                         "declare it with `let` (mutable)",
                         target.span,
                     );
@@ -292,7 +292,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if self.is_loan_value(value) {
                     self.error(
                         "E10033",
-                        format!("borrow of '{name}' escapes its scope"),
+                        format!("borrow of '{}' escapes its scope", id.name),
                         "derive the view from a parameter or take ownership",
                         target.span,
                     );
@@ -301,7 +301,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     if has_runtime_element(&projections) {
                         self.emit_indexed_store(target, value);
                     } else {
-                        let place = self.target_place(&PlaceTarget::Global(name, projections));
+                        let place = self.target_place(&PlaceTarget::Global(id, projections));
                         self.emit_store(place, &target_ty, value);
                     }
                 }

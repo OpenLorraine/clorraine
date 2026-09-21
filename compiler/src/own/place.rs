@@ -232,10 +232,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn move_target(&mut self, target: PlaceTarget, span: Span) {
         match target {
             PlaceTarget::Local(id, projections) => self.move_place(id, &projections, span),
-            PlaceTarget::Global(name, _) => {
+            PlaceTarget::Global(id, _) => {
                 self.error(
                     "E10033",
-                    format!("borrow of '{name}' escapes its scope"),
+                    format!("borrow of '{}' escapes its scope", id.name),
                     "derive the view from a parameter or take ownership",
                     span,
                 );
@@ -412,7 +412,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else if let Some(global) =
                     crate::init_graph::resolve_name_global(self.loaded, self.module, name)
                 {
-                    Some(PlaceTarget::Global(global.name, Vec::new()))
+                    Some(PlaceTarget::Global(global_id(global), Vec::new()))
                 } else {
                     None
                 }
@@ -437,7 +437,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .iter()
                     .map(|segment| ir::Projection::Field(segment.clone()))
                     .collect();
-                Some(PlaceTarget::Global(global.name, projections))
+                Some(PlaceTarget::Global(global_id(global), projections))
             }
             ExprKind::Member { base, name } => {
                 let (target, mut projections) = self.place_target_parts(base)?;
@@ -464,7 +464,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let base = match target {
             PlaceTarget::Local(id, _) => PlaceTarget::Local(id, Vec::new()),
-            PlaceTarget::Global(name, _) => PlaceTarget::Global(name, Vec::new()),
+            PlaceTarget::Global(id, _) => PlaceTarget::Global(id, Vec::new()),
         };
         Some((base, projections))
     }
@@ -475,6 +475,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             PlaceTarget::Local(id, projections) => Some((id, projections)),
             PlaceTarget::Global(_, _) => None,
         }
+    }
+
+    /// The identity of the module-level binding a bare name resolves to.
+    ///
+    /// A same-module declaration wins, then an imported binding, mirroring how
+    /// the name resolver reads a simple name. The module travels with the name,
+    /// so a same-named global in another module is never mistaken for the one
+    /// in scope.
+    pub(super) fn resolve_global_id(&self, name: &str) -> Option<ir::GlobalId> {
+        crate::init_graph::resolve_name_global(self.loaded, self.module, name).map(global_id)
+    }
+
+    /// The checked type of the module-level binding a bare name resolves to.
+    pub(super) fn global_type(&self, name: &str) -> Option<Ty> {
+        let id = self.resolve_global_id(name)?;
+        self.program.globals.get(&id).map(|global| global.ty.clone())
     }
 
     /// Detects an `== null` / `!= null` test that narrows a place path.
@@ -592,4 +608,9 @@ fn element_index(expr: &Expr) -> Option<usize> {
         ExprKind::Int(value) => usize::try_from(*value).ok(),
         _ => None,
     }
+}
+
+/// The identity of a module-level binding the name resolver resolved.
+fn global_id(global: crate::init_graph::GlobalRef) -> ir::GlobalId {
+    ir::GlobalId::new(global.module, global.name)
 }
