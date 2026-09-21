@@ -135,7 +135,8 @@ real shims. Test names state behavior (`should [expected] when [condition]`).
 | Test File | ST Cases Covered | Component |
 |---|---|---|
 | `compiler/tests/compile_fail_spec_test.rs` | ST-CF-*, ST-CF-DENY, ST-CF-SKIP | Diagnostics |
-| `compiler/tests/stage_spec_test.rs` | ST-LEX-*, ST-PARSE-*, ST-NAME-*, ST-TYPE-*, ST-CONST-1, ST-ENUM-1, ST-OWN-*, ST-FFI-*, ST-CG-1..6, ST-CG-8, ST-CLI-1..3, ST-STDLIB-* | Stage behavior |
+| `compiler/tests/stage_spec_test.rs` | ST-LEX-*, ST-PARSE-*, ST-NAME-*, ST-TYPE-*, ST-CONST-1, ST-ENUM-1, ST-OWN-*, ST-FFI-*, ST-CG-1..6, ST-CG-8, ST-CLI-1..3, ST-STDLIB-1, ST-STDLIB-5, ST-WARN-1 | Stage behavior |
+| `compiler/tests/codegen_run_spec_test.rs` | ST-STDLIB-2, ST-STDLIB-3, ST-STDLIB-4, ST-STDLIB-6 | Host codegen compile-and-run |
 | `compiler/tests/run_fault_spec_test.rs` | ST-RUN-1..7 (host leg; Amiga leg driven by `make verify`) | Runtime |
 | `compiler/tests/corpus_spec_test.rs` | ST-CORPUS-1,3,4, ST-CORPUS-2 (host E11200) | End to end |
 | `compiler/tests/determinism_spec_test.rs` | ST-CG-7 | Codegen |

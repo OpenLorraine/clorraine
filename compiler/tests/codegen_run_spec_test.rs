@@ -65,7 +65,36 @@ fn build_and_run(tag: &str, source: &str, stub: Option<&str>) -> Output {
 /// Like [`build_and_run`] but with several source files in one invocation.
 fn build_and_run_files(tag: &str, files: &[(&str, &str)], stub: Option<&str>) -> Output {
     let scratch = ScratchDir::new(tag);
-    let c_path = scratch.path().join("out.c");
+    let program = compile_and_build(tag, files, stub, scratch.path());
+    run_program(tag, &program, None)
+}
+
+/// Like [`build_and_run`] but the program runs with the scratch directory as
+/// its working directory.
+///
+/// A file round-trip case opens paths relative to the working directory, so it
+/// must run inside a private scratch directory instead of the repository tree.
+/// The scratch directory is removed, with every file the program created in it,
+/// when the call returns.
+fn build_and_run_in_scratch(tag: &str, source: &str, stub: Option<&str>) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let program = compile_and_build(tag, &[("main.clo", source)], stub, scratch.path());
+    run_program(tag, &program, Some(scratch.path()))
+}
+
+/// Compiles `files`, builds the emitted C plus the optional stub, and returns
+/// the built program path.
+///
+/// `scratch` is the working directory of the build: the emitted C, the stub,
+/// and the program binary all live there. The front end and the host C compiler
+/// must both accept the input, so a rejection panics instead of returning.
+fn compile_and_build(
+    tag: &str,
+    files: &[(&str, &str)],
+    stub: Option<&str>,
+    scratch: &Path,
+) -> PathBuf {
+    let c_path = scratch.join("out.c");
     let mut args = vec![
         "--profile".to_owned(),
         "host".to_owned(),
@@ -73,7 +102,7 @@ fn build_and_run_files(tag: &str, files: &[(&str, &str)], stub: Option<&str>) ->
         c_path.display().to_string(),
     ];
     for (name, source) in files {
-        let source_path = scratch.path().join(name);
+        let source_path = scratch.join(name);
         std::fs::write(&source_path, source)
             .unwrap_or_else(|err| panic!("cannot write snippet {name}: {err}"));
         args.push(source_path.display().to_string());
@@ -91,7 +120,7 @@ fn build_and_run_files(tag: &str, files: &[(&str, &str)], stub: Option<&str>) ->
         "{tag}: the emitted C is empty, so the emitter is not implemented yet"
     );
 
-    let program = scratch.path().join("prog");
+    let program = scratch.join("prog");
     let mut cc_args = vec![
         "-std=c99".to_owned(),
         "-O0".to_owned(),
@@ -104,7 +133,7 @@ fn build_and_run_files(tag: &str, files: &[(&str, &str)], stub: Option<&str>) ->
         c_path.display().to_string(),
     ];
     if let Some(stub) = stub {
-        let stub_path = scratch.path().join("stub.c");
+        let stub_path = scratch.join("stub.c");
         std::fs::write(&stub_path, stub).expect("write the stub");
         cc_args.push(stub_path.display().to_string());
     }
@@ -117,8 +146,17 @@ fn build_and_run_files(tag: &str, files: &[(&str, &str)], stub: Option<&str>) ->
         "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
         String::from_utf8_lossy(&built.stderr)
     );
+    program
+}
 
-    Command::new(&program)
+/// Runs a built program, optionally from a working directory, and returns its
+/// output.
+fn run_program(tag: &str, program: &Path, cwd: Option<&Path>) -> Output {
+    let mut command = Command::new(program);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    command
         .output()
         .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"))
 }
@@ -822,4 +860,194 @@ func main(): i32 {
 "#;
     let output = build_and_run("rv438", source, Some(OPEN_CLOSE_EMIT_STUB));
     assert_stdout("rv438", &output, "open\nclose\n1\n");
+}
+
+/// A buffer round-trip through `bufferNew`, `bufferBytes`, `slice`, and
+/// `println` prints the expected bytes.
+///
+/// The program writes a four-byte tag through the buffer's byte view, slices
+/// the middle two bytes out of that view, and prints them. The expected output
+/// pins both the slice offsets and the printed values.
+#[test]
+fn a_buffer_slice_prints_the_expected_bytes() {
+    let source = r#"module codegen.sl_buffer;
+
+import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
+import { println } from std.io;
+
+func writeTag(borrow buf: Buffer): void {
+    let bytes: u8[] = bufferBytes(buf);
+    bytes[0] = 65;
+    bytes[1] = 66;
+    bytes[2] = 67;
+    bytes[3] = 68;
+}
+
+func main(): i32 {
+    let buf: Buffer? = bufferNew(8);
+    if (buf == null) {
+        return 1;
+    }
+    writeTag(buf);
+    let head: u8[] = slice(bufferBytes(buf), 1, 3);
+    let a: i32 = i32(head[0]);
+    let b: i32 = i32(head[1]);
+    println($"stdlib-buffer: head={a},{b}");
+    return 0;
+}
+"#;
+    let output = build_and_run("sl-buffer", source, None);
+    assert_stdout("sl-buffer", &output, "stdlib-buffer: head=66,67\n");
+}
+
+/// Slicing a buffer view past its length traps at run time.
+///
+/// The buffer holds eight bytes and the slice asks for nine, so the bounds
+/// guard must fire before the view is built.
+#[test]
+fn slicing_a_buffer_view_out_of_range_traps() {
+    let source = r#"module codegen.sl_buffer_bounds;
+
+import { Buffer, bufferNew, bufferBytes, slice } from std.mem;
+
+func main(): i32 {
+    let buf: Buffer? = bufferNew(8);
+    if (buf == null) {
+        return 1;
+    }
+    let head: u8[] = slice(bufferBytes(buf), 0, 9);
+    return i32(len(head));
+}
+"#;
+    let output = build_and_run("sl-buffer-bounds", source, None);
+    assert_traps(
+        "sl-buffer-bounds",
+        &output,
+        "error E11211: index out of range",
+    );
+}
+
+/// A file round-trip writes a payload and reads the same bytes back.
+///
+/// The program creates the file, writes the payload, reopens it after the
+/// writer's handle is released, and reads it into a buffer. It prints the
+/// written and read counts and succeeds only when they match. The program runs
+/// inside its own scratch directory, so its scratch file never touches the
+/// repository tree.
+#[test]
+fn a_file_round_trip_reads_back_the_written_bytes() {
+    let source = r#"module codegen.sl_file;
+
+import { File, openFile, createFile, readFile, writeBytes, println, MODE_OLDFILE } from std.io;
+import { Buffer, bufferNew, bufferBytes } from std.mem;
+import { String, stringOf, bytes, toCString } from std.text;
+
+const PATH: static str = "stdlib-round-trip.txt";
+const PAYLOAD: static str = "round-trip";
+
+func writePayload(path: str, data: u8[]): i32 {
+    let out: File? = createFile(toCString(stringOf(path)));
+    if (out == null) {
+        return -1;
+    }
+    return writeBytes(out, data);
+}
+
+func main(): i32 {
+    let payloadString: String = stringOf(PAYLOAD);
+    let payload: u8[] = bytes(payloadString);
+    let written: i32 = writePayload(PATH, payload);
+    if (written != i32(len(payload))) {
+        return 1;
+    }
+    let input: File? = openFile(toCString(stringOf(PATH)), MODE_OLDFILE);
+    if (input == null) {
+        return 2;
+    }
+    let buf: Buffer? = bufferNew(64);
+    if (buf == null) {
+        return 3;
+    }
+    let got: i32 = readFile(input, borrow bufferBytes(buf));
+    println($"stdlib-file: written={written} read={got}");
+    if (got == written) {
+        println("stdlib-file: ok");
+        return 0;
+    }
+    return 4;
+}
+"#;
+    let output = build_and_run_in_scratch("sl-file", source, None);
+    assert_stdout(
+        "sl-file",
+        &output,
+        "stdlib-file: written=10 read=10\nstdlib-file: ok\n",
+    );
+}
+
+/// An integer array supports `push`, `get`, `set`, and both length spellings.
+///
+/// The program builds one `Array<i32>` with three elements, replaces the middle
+/// element, then reads each element through a one-element view. A second
+/// `Array<i32>` is built in another function, so the same generic type is
+/// instantiated at more than one site: a missing instantiation dedupe would
+/// emit two bodies for one key and fail the host C build. `len(xs)` and
+/// `xs.len()` must both report the element count.
+#[test]
+fn an_integer_array_supports_push_get_set_and_len() {
+    let source = r#"module codegen.sl_array;
+
+import { Array, arrayNew } from std.mem;
+
+func make(): Array<i32> {
+    let ys: Array<i32> = arrayNew<i32>();
+    ys.push(5);
+    return ys;
+}
+
+func main(): i32 {
+    let xs: Array<i32> = arrayNew<i32>();
+    xs.push(10);
+    xs.push(20);
+    xs.push(30);
+    xs.set(1, 99);
+    let ys: Array<i32> = make();
+    let e0: i32 = xs.get(0)[0];
+    let e1: i32 = xs.get(1)[0];
+    let e2: i32 = xs.get(2)[0];
+    let y0: i32 = ys.get(0)[0];
+    let sizes: i32 = i32(xs.len()) + i32(len(xs)) + i32(len(ys));
+    return e0 + e1 + e2 + sizes + y0;
+}
+"#;
+    let output = build_and_run("sl-array", source, None);
+    assert_eq!(
+        output.status.code(),
+        Some(151),
+        "sl-array: ten plus ninety-nine plus thirty, seven lengths, and five"
+    );
+}
+
+/// A span requested past the source length traps at run time.
+///
+/// The byte view holds eight bytes, and the span asks for five bytes starting
+/// at offset ten, so the underlying slice bounds guard must fire.
+#[test]
+fn a_span_past_the_source_length_traps() {
+    let source = r#"module codegen.sl_span;
+
+import { Buffer, bufferNew, bufferBytes, Span, spanOf } from std.mem;
+
+func main(): i32 {
+    let buf: Buffer? = bufferNew(8);
+    if (buf == null) {
+        return 1;
+    }
+    let src: u8[] = bufferBytes(buf);
+    let s: Span = spanOf(src, 10, 5);
+    return i32(s.start + s.len);
+}
+"#;
+    let output = build_and_run("sl-span", source, None);
+    assert_traps("sl-span", &output, "error E11211: index out of range");
 }

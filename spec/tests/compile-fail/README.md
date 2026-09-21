@@ -38,6 +38,7 @@ feature or harness exists). See `docs/findings-phase1.md` for the Phase D
 report.
 
 > **Note:** a `// expect-warning` test asserts the warning is reported in the
-> default build. Under `--deny-warnings` every warning becomes fatal, so the
-> same file then exits nonzero. Warning tests and their escalation are covered
-> by the warning-escalation case planned for the run suite.
+> default build and that the build exits zero. Under `--deny-warnings` every
+> warning becomes fatal, so the same trigger then exits nonzero while its first
+> line stays `warning CODE: ...`. The file `W10000_deny_warnings.clo` carries
+> the `// cli: --deny-warnings` annotation and pins that escalation.

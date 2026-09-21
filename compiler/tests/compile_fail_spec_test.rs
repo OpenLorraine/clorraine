@@ -26,7 +26,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 /// and unsafe codes come first; the type, constant, enum, and template codes
 /// follow, grouped with the front-end codes they build on: `E10213`/`E10214`
 /// stay out because data inclusion is staged out, and the retired `E10225` has
-/// no trigger and no golden.
+/// no trigger and no golden. The warning codes come last; a warning golden
+/// exits zero in the default build and nonzero once `--deny-warnings` is set.
 const ASSERTED_CODES: &[&str] = &[
     "E10010", "E10011", "E10012", "E10020", "E10021", "E10022", "E10023", "E10024", "E10025",
     "E10026", "E10030", "E10031", "E10032", "E10033", "E10034", "E10035", "E10036", "E10038",
@@ -37,7 +38,8 @@ const ASSERTED_CODES: &[&str] = &[
     "E10500", "E10501", "E10503", "E10600", "E10601", "E10602", "E10603", "E10604", "E11101",
     "E11102", "E11103", "E11104", "E11105", "E11106", "E20000", "E20001", "E20002", "E20003",
     "E20004",
-    "E20005", "E20006", "E20007", "E20008", "E90005", "W10006",
+    "E20005", "E20006", "E20007", "E20008", "E90005", "W10000", "W10001", "W10002", "W10003",
+    "W10004", "W10006",
 ];
 
 /// Golden codes excluded from the suite because the language feature is staged

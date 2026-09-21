@@ -1,0 +1,9 @@
+// expect-warning W10000
+// cli: --deny-warnings
+// trigger: an unused local in a build that escalates warnings to errors
+module tests.compile_fail.W10000_deny;
+
+func main(): i32 {
+    let unused = 42;
+    return 0;
+}

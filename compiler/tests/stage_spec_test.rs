@@ -215,6 +215,57 @@ fn assert_reports_across_files(tag: &str, files: &[(&str, &str)], expected_lines
     assert_run_reports(tag, run_sources(tag, files), expected_lines);
 }
 
+/// Asserts that a compile produced no diagnostics at all and exited zero.
+///
+/// A warning is a diagnostic, so this rejects warnings too. It is the stricter
+/// sibling of [`assert_front_end_accepts`], which tolerates the diagnostics a
+/// later stage may add but accepts a program the in-scope stages understand.
+fn assert_no_diagnostics(tag: &str, run: Output) {
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.trim().is_empty(),
+        "{tag}: expected no diagnostics; stderr:\n{stderr}"
+    );
+    assert_eq!(run.status.code(), Some(0), "{tag}: a clean compile exits 0");
+}
+
+/// Asserts that one compile reported the exact warning first line and exited 0.
+///
+/// Warnings are deniable by default, so the default build still exits 0; the
+/// case pins both the first line and that exit code.
+fn assert_warning_first_line(tag: &str, run: Output, expected: &str) {
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.lines().any(|line| line == expected),
+        "{tag}: missing warning `{expected}`; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{tag}: warnings are deniable by default"
+    );
+}
+
+/// Asserts that compiling one snippet reports the exact warning first line.
+fn assert_reports_warning(tag: &str, source: &str, expected: &str) {
+    assert_warning_first_line(tag, run_source(tag, source), expected);
+}
+
+/// Asserts that a compile did not report a warning with the given code and
+/// exited zero.
+///
+/// The warning-free half of a profile-threshold case uses this: a frame below
+/// the profile's limit must not draw the large-frame warning.
+fn assert_omits_warning(tag: &str, run: Output, code: &str) {
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    let head = format!("warning {code}: ");
+    assert!(
+        !stderr.lines().any(|line| line.starts_with(&head)),
+        "{tag}: unexpected `{head}...` warning; stderr:\n{stderr}"
+    );
+    assert_eq!(run.status.code(), Some(0), "{tag}: a clean compile exits 0");
+}
+
 /// Compiles one source snippet and returns the process output and emitted C.
 ///
 /// The plain `run_source` leaves the emitted file inside a scratch directory
@@ -1995,4 +2046,289 @@ func main(): i32 {
         "the second line is `  --> path:line:col`, got {location:?}"
     );
     assert_eq!(run.status.code(), Some(1), "a failing compile exits 1");
+}
+
+/// The standard-library slice compiles with zero diagnostics under the host
+/// profile.
+///
+/// The library has no command-line mode of its own, so "compiles the slice
+/// alone" is observed through the smallest program that imports a declaration
+/// from each host module and uses it. The host profile provides `std.mem`,
+/// `std.text`, `std.fmt`, and `std.io`; the two Amiga modules are rejected on
+/// this profile. Zero diagnostics includes warnings: a warning here would mean
+/// the library is not clean. `Buffer` is a move-only handle, so lending it to a
+/// `borrow` parameter is required rather than needless.
+#[test]
+fn stdlib_slice_compiles_with_no_diagnostics_under_host() {
+    let source = r#"module spec.stage.stdlib_host;
+
+import { Buffer, bufferNew, bufferBytes, bufferLen } from std.mem;
+import { String, stringOf } from std.text;
+import { toHex } from std.fmt;
+import { print, println } from std.io;
+
+func loadTag(borrow buf: Buffer): void {
+    let bytes: u8[] = bufferBytes(buf);
+    bytes[0] = 65;
+}
+
+func main(): i32 {
+    let buf: Buffer? = bufferNew(4);
+    if (buf == null) {
+        return 1;
+    }
+    loadTag(buf);
+    let s: String = stringOf("ok");
+    print(toHex(u32(bufferLen(buf))));
+    println(s);
+    return 0;
+}
+"#;
+    assert_no_diagnostics("stdlib-host", run_source("stdlib-host", source));
+}
+
+/// The standard-library slice compiles with zero diagnostics under the
+/// hosted-amiga profile.
+///
+/// This profile provides all six modules, so the program adds `std.amiga.dos`
+/// and `std.amiga.interrupt` to the host set and uses them: it waits one tick
+/// and registers then removes a capture-less handler. Every imported name is
+/// used, so an unused-import warning would fail the case.
+#[test]
+fn stdlib_slice_compiles_with_no_diagnostics_under_hosted_amiga() {
+    let source = r#"module spec.stage.stdlib_hosted_amiga;
+
+import { Buffer, bufferNew, bufferBytes, bufferLen } from std.mem;
+import { String, stringOf } from std.text;
+import { toHex } from std.fmt;
+import { print, println } from std.io;
+import { delayTicks } from std.amiga.dos;
+import { HandlerToken, addHandler, removeHandler } from std.amiga.interrupt;
+
+func loadTag(borrow buf: Buffer): void {
+    let bytes: u8[] = bufferBytes(buf);
+    bytes[0] = 65;
+}
+
+func onTick(): void {
+}
+
+func main(): i32 {
+    let buf: Buffer? = bufferNew(4);
+    if (buf == null) {
+        return 1;
+    }
+    loadTag(buf);
+    let s: String = stringOf("ok");
+    print(toHex(u32(bufferLen(buf))));
+    println(s);
+    delayTicks(0);
+    let token: HandlerToken = addHandler(onTick);
+    removeHandler(token);
+    return 0;
+}
+"#;
+    let (run, _emitted) = run_source_emitting_hosted_amiga("stdlib-hosted", source);
+    assert_no_diagnostics("stdlib-hosted", run);
+}
+
+/// A non-duplicable element type in an `Array` instantiation is rejected.
+///
+/// The growable sequence accepts duplicable element types only, because v1
+/// cannot generate the drop glue a move-only element would need. Instantiating
+/// it with the move-only `Buffer` handle is therefore a staged-feature error
+/// rather than a type error.
+#[test]
+fn a_non_duplicable_array_element_reports_its_code() {
+    let source = r#"module spec.stage.stdlib_array_buffer;
+
+import { Buffer, Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let xs: Array<Buffer> = arrayNew<Buffer>();
+    return 0;
+}
+"#;
+    assert_reports_code("stdlib-array-buffer", source, "E90000");
+}
+
+/// A local that is declared and never used reports W10000.
+#[test]
+fn an_unused_local_reports_a_warning() {
+    let source = r#"module spec.stage.warn_unused_local;
+
+func main(): i32 {
+    let unused = 42;
+    return 0;
+}
+"#;
+    assert_reports_warning(
+        "warn-unused-local",
+        source,
+        "warning W10000: unused local 'unused'",
+    );
+}
+
+/// A writable lend of a duplicable value reports W10001.
+///
+/// A duplicable value is passed by copy, so a `borrow` parameter would let the
+/// callee write only the copy. The case pins the rendered first line.
+#[test]
+fn a_needless_lend_reports_a_warning() {
+    let source = r#"module spec.stage.warn_needless_lend;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func bump(borrow p: Point): void {
+    p.x = p.x + 1;
+}
+
+func main(): i32 {
+    let p = Point { x: 1, y: 2 };
+    bump(p);
+    return p.x;
+}
+"#;
+    assert_reports_warning(
+        "warn-needless-lend",
+        source,
+        "warning W10001: unnecessary lend of duplicable 'p'",
+    );
+}
+
+/// A `switch` case body that falls through to the next label reports W10002.
+#[test]
+fn a_switch_fallthrough_reports_a_warning() {
+    let source = r#"module spec.stage.warn_fallthrough;
+
+func start(): void { }
+func run(): void { }
+
+func main(): i32 {
+    let state = 0;
+    switch (state) {
+        case 0:
+            start();
+        case 1:
+            run();
+            break;
+        default:
+            break;
+    }
+    return 0;
+}
+"#;
+    assert_reports_warning(
+        "warn-fallthrough",
+        source,
+        "warning W10002: case falls through to the next label",
+    );
+}
+
+/// A statement after an unconditional return reports W10003.
+#[test]
+fn unreachable_code_reports_a_warning() {
+    let source = r#"module spec.stage.warn_unreachable;
+
+func tail(): void { }
+
+func f(): i32 {
+    return 1;
+    tail();
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    assert_reports_warning(
+        "warn-unreachable",
+        source,
+        "warning W10003: unreachable code",
+    );
+}
+
+/// The large-frame warning honors each profile's threshold.
+///
+/// A frame below the host limit draws no warning. A frame above the host limit
+/// draws W10004, and the same frame also draws W10004 under hosted-amiga, whose
+/// limit is smaller. The first line names the function and its frame size in
+/// bytes, so both warned cases pin the exact size.
+#[test]
+fn a_large_stack_frame_reports_a_warning_at_each_profile_threshold() {
+    let host_below = r#"module spec.stage.warn_frame_host_below;
+
+func small(): void {
+    let page: u8[4096] = [; 0];
+    page[0] = 1;
+}
+
+func main(): i32 {
+    small();
+    return 0;
+}
+"#;
+    assert_omits_warning(
+        "warn-frame-host-below",
+        run_source("warn-frame-host-below", host_below),
+        "W10004",
+    );
+
+    let host_above = r#"module spec.stage.warn_frame_host_above;
+
+func large(): void {
+    let page: u8[20000] = [; 0];
+    page[0] = 1;
+}
+
+func main(): i32 {
+    large();
+    return 0;
+}
+"#;
+    assert_reports_warning(
+        "warn-frame-host-above",
+        host_above,
+        "warning W10004: stack frame of 'large' is 20000 bytes",
+    );
+
+    let hosted = r#"module spec.stage.warn_frame_hosted;
+
+func large(): void {
+    let page: u8[4096] = [; 0];
+    page[0] = 1;
+}
+
+func main(): i32 {
+    large();
+    return 0;
+}
+"#;
+    let (run, _emitted) = run_source_emitting_hosted_amiga("warn-frame-hosted", hosted);
+    assert_warning_first_line(
+        "warn-frame-hosted",
+        run,
+        "warning W10004: stack frame of 'large' is 4096 bytes",
+    );
+}
+
+/// An imported name that is never used reports W10006.
+#[test]
+fn an_unused_import_reports_a_warning() {
+    let source = r#"module spec.stage.warn_unused_import;
+
+import { Buffer } from std.mem;
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_reports_warning(
+        "warn-unused-import",
+        source,
+        "warning W10006: unused import 'Buffer'",
+    );
 }

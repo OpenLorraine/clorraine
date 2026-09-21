@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-20 22:45
-> **Progress**: 66/84 tasks (79%)
+> **Last Updated**: 2026-09-21 11:55
+> **Progress**: 67/84 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -471,14 +471,16 @@ loan decision explicit.
 
 ## Phase 7: Standard-Library Slice
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: ebcb3a7c44a4001ea1ddcc020b050b97f91d4c3b
+> **Expected modification set**: `stdlib/**` (the six standard-library sources); `compiler/**` (including `compiler/runtime/*.c`); `compiler/tests/**` (the stage and warning spec drivers); `spec/tests/compile-fail/**` (the AR-34 denial golden and its README); `Makefile`/`docker/**` only if the shims require build wiring; `plans/clorraine-compiler-mvp/{99-execution-plan.md,00-ambiguity-register.md,03-07-stdlib.md,07-testing-strategy.md}`; `plans/00-roadmap.md`; the `15-phase7-review.md` post-phase review artifact and the `00-index.md` row for it
+> **Scope mode**: strict
 
 ### Step 7.1: Specification tests first
 
 **Reference**: [03-07-stdlib.md](03-07-stdlib.md) · ST-STDLIB-1..6, ST-WARN-1, ST-CF-WARN, ST-CF-DENY
 **Objective**: write the stdlib and warning spec cases before implementing.
 
-- [ ] 7.1.1 [spec-author] Add the ST-STDLIB cases to `stage_spec_test.rs` and the warning cases; add `spec/tests/compile-fail/W10000_deny_warnings.clo` and update the suite README (AR-34); run and record the red phase
+- [x] 7.1.1 [spec-author] Add the ST-STDLIB cases to `stage_spec_test.rs` and the warning cases; add `spec/tests/compile-fail/W10000_deny_warnings.clo` and update the suite README (AR-34); run and record the red phase ✅ (completed: 2026-09-21 11:55)
 
 **Deliverables**:
 - Stdlib/warning spec cases and recorded red phase
