@@ -37,6 +37,14 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.mem",
         source: include_str!("../../stdlib/std.mem.clo"),
     },
+    StdlibSource {
+        name: "std.text",
+        source: include_str!("../../stdlib/std.text.clo"),
+    },
+    StdlibSource {
+        name: "std.fmt",
+        source: include_str!("../../stdlib/std.fmt.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.

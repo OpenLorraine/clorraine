@@ -1,0 +1,40 @@
+//! Formatting: value-to-text conversions that build owned `String`s.
+//!
+//! This module is ordinary Clorraine compiled with every program. `text` is
+//! compiler-known: the compiler selects the conversion for the argument's type
+//! and lowers it to the same `cl_text_*` shim function a template uses, so this
+//! module does not declare it. The remaining helpers bind the profile shim
+//! through `ffi` and forward to it, which keeps explicit formatting and
+//! template formatting identical.
+//!
+//! Every helper returns a plain `String` and panics through the shim on an
+//! allocation failure.
+
+module std.fmt;
+
+ffi stdfmt {
+    func cl_text_i32(v: i32): String;
+    func cl_text_hex_u32(v: u32): String;
+    func cl_text_pad_left(src: raw u8, n: usize, width: usize, fill: u8): String;
+    func cl_text_pad_right(src: raw u8, n: usize, width: usize, fill: u8): String;
+}
+
+export func toHex(v: u32): String {
+    return cl_text_hex_u32(v);
+}
+
+export func toDecimal(v: i32): String {
+    return cl_text_i32(v);
+}
+
+export func padLeft(s: str, width: usize, fill: u8): String {
+    unsafe {
+        return cl_text_pad_left(raw u8(s.ptr), len(s), width, fill);
+    }
+}
+
+export func padRight(s: str, width: usize, fill: u8): String {
+    unsafe {
+        return cl_text_pad_right(raw u8(s.ptr), len(s), width, fill);
+    }
+}

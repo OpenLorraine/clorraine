@@ -168,3 +168,172 @@ void cl_buffer_write(void *handle, unsigned int off, void *src, unsigned int n)
         buffer->len = needed;
     }
 }
+
+/* A String is one heap block laid out as `[len: u32][cap: u32][bytes][NUL]`.
+ * The handle points at the block start, so the payload bytes begin right after
+ * the two counts and a trailing NUL keeps them usable as a C string.
+ *
+ * In-place growth is deferred, and growing the block would move the handle, so
+ * a builder reserves the final size in `cl_string_new` and its appends fit.
+ * `cl_string_append` therefore refuses to grow rather than leave the caller
+ * with a stale handle. */
+typedef struct cl_string_block {
+    unsigned int len;
+    unsigned int cap;
+} cl_string_block;
+
+/* The first payload byte of a string block. */
+static unsigned char *cl_string_bytes(cl_string_block *string)
+{
+    return (unsigned char *)(string + 1);
+}
+
+/* Allocate an empty string with room for `cap` payload bytes. */
+void *cl_string_new(unsigned int cap)
+{
+    cl_string_block *string = (cl_string_block *)cl_alloc(sizeof *string + cap + 1);
+    string->len = 0;
+    string->cap = cap;
+    cl_string_bytes(string)[0] = '\0';
+    return string;
+}
+
+/* Append `n` bytes from `src`. The caller must have reserved the capacity. */
+void cl_string_append(void *handle, void *src, unsigned int n)
+{
+    cl_string_block *string = (cl_string_block *)handle;
+    if (n > string->cap - string->len) {
+        cl_trap("E1", "string capacity exceeded");
+    }
+    memcpy(cl_string_bytes(string) + string->len, src, n);
+    string->len += n;
+    cl_string_bytes(string)[string->len] = '\0';
+}
+
+/* The first payload byte of a string; the trailing NUL makes it a C string. */
+void *cl_string_ptr(void *handle)
+{
+    return cl_string_bytes((cl_string_block *)handle);
+}
+
+/* The number of live payload bytes in a string. */
+unsigned int cl_string_len(void *handle)
+{
+    return ((cl_string_block *)handle)->len;
+}
+
+/* Release a string block. Null-safe. */
+void FreeString(void *handle)
+{
+    if (handle != NULL) {
+        cl_free(handle);
+    }
+}
+
+/* Copy `n` bytes into a fresh string of exactly that size. */
+static void *cl_string_from(const void *bytes, unsigned int n)
+{
+    void *string = cl_string_new(n);
+    cl_string_append(string, (void *)bytes, n);
+    return string;
+}
+
+/* The text converters build the same String layout the templates desugar to,
+ * so a template and an explicit `text` call format a value identically. */
+void *cl_text_i32(int value)
+{
+    char buffer[24];
+    int written = snprintf(buffer, sizeof buffer, "%d", value);
+    if (written < 0) {
+        cl_trap("E1", "text formatting failed");
+    }
+    return cl_string_from(buffer, (unsigned int)written);
+}
+
+void *cl_text_u32(unsigned int value)
+{
+    char buffer[24];
+    int written = snprintf(buffer, sizeof buffer, "%u", value);
+    if (written < 0) {
+        cl_trap("E1", "text formatting failed");
+    }
+    return cl_string_from(buffer, (unsigned int)written);
+}
+
+/* Six significant digits: `%g` is the C default-precision spelling of that. */
+void *cl_text_f64(double value)
+{
+    char buffer[32];
+    int written = snprintf(buffer, sizeof buffer, "%g", value);
+    if (written < 0) {
+        cl_trap("E1", "text formatting failed");
+    }
+    return cl_string_from(buffer, (unsigned int)written);
+}
+
+void *cl_text_bool(int value)
+{
+    static const char truth[] = "true";
+    static const char falsehood[] = "false";
+    if (value) {
+        return cl_string_from(truth, sizeof truth - 1);
+    }
+    return cl_string_from(falsehood, sizeof falsehood - 1);
+}
+
+/* Build a string from a borrowed byte range; the compiler passes a `str` as
+ * its pointer and length so no view struct crosses the shim boundary. */
+void *cl_text_str(const void *bytes, unsigned int n)
+{
+    return cl_string_from(bytes, n);
+}
+
+/* `0x`-prefixed uppercase hex, with no leading zeros beyond the value. */
+void *cl_text_hex_u32(unsigned int value)
+{
+    static const char digits[] = "0123456789ABCDEF";
+    char buffer[10];
+    unsigned int count = 1;
+    unsigned int remaining = value;
+    while (remaining >= 16) {
+        remaining >>= 4;
+        count++;
+    }
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    unsigned int index = 0;
+    while (index < count) {
+        unsigned int shift = 4 * (count - 1 - index);
+        buffer[2 + index] = digits[(value >> shift) & 0x0f];
+        index++;
+    }
+    return cl_string_from(buffer, 2 + count);
+}
+
+/* Pad `src` on the left to `width` bytes with `fill`. */
+void *cl_text_pad_left(void *src, unsigned int n, unsigned int width, unsigned char fill)
+{
+    unsigned int total = width > n ? width : n;
+    void *string = cl_string_new(total);
+    unsigned int pad = total - n;
+    while (pad > 0) {
+        cl_string_append(string, &fill, 1);
+        pad--;
+    }
+    cl_string_append(string, (void *)src, n);
+    return string;
+}
+
+/* Pad `src` on the right to `width` bytes with `fill`. */
+void *cl_text_pad_right(void *src, unsigned int n, unsigned int width, unsigned char fill)
+{
+    unsigned int total = width > n ? width : n;
+    void *string = cl_string_new(total);
+    unsigned int pad = total - n;
+    cl_string_append(string, (void *)src, n);
+    while (pad > 0) {
+        cl_string_append(string, &fill, 1);
+        pad--;
+    }
+    return string;
+}

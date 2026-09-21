@@ -1,0 +1,49 @@
+//! Text: the owned `String` handle and its conversions.
+//!
+//! This module is ordinary Clorraine compiled with every program. It reaches
+//! the profile C shim through `ffi`, so the names it declares are the shim
+//! symbols themselves. `String` and its `FreeString` deleter are
+//! compiler-predeclared, so this module never redeclares them.
+//!
+//! A `String` block is `[len: u32][cap: u32][bytes][NUL]` and its handle
+//! points at the block start. `bytes` and `toCString` borrow the argument's
+//! bytes instead of copying them, so the returned view is a loan of `s`.
+
+module std.text;
+
+ffi stdtext {
+    func cl_string_new(size: usize): String;
+    func cl_string_append(borrow s: String, src: raw u8, n: usize): void;
+    func cl_string_ptr(borrow s: String): raw u8;
+    func cl_string_len(borrow s: String): usize;
+}
+
+intrinsic func rawSlice<T>(p: raw T, n: usize): T[];
+
+export func stringOf(v: str): String {
+    unsafe {
+        let s: String = cl_string_new(len(v));
+        cl_string_append(s, raw u8(v.ptr), len(v));
+        return s;
+    }
+}
+
+export func clone(s: String): String {
+    unsafe {
+        let copy: String = cl_string_new(cl_string_len(s));
+        cl_string_append(copy, cl_string_ptr(s), cl_string_len(s));
+        return copy;
+    }
+}
+
+export func bytes(s: String): u8[] {
+    unsafe {
+        return rawSlice<u8>(cl_string_ptr(s), cl_string_len(s));
+    }
+}
+
+export func toCString(s: String): cstring {
+    unsafe {
+        return cl_string_ptr(s);
+    }
+}

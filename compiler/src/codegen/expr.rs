@@ -477,13 +477,7 @@ impl<'a> Emitter<'a> {
             return format!("{symbol}({argument_list})");
         }
         match callee {
-            "text" => {
-                let key = args
-                    .first()
-                    .map(|arg| type_key(&self.substitute(&arg.ty)))
-                    .unwrap_or_else(|| "i32".to_owned());
-                format!("cl_text_{key}({argument_list})")
-            }
+            "text" => self.text_call(args.first()),
             "toHex" | "toDecimal" => format!("cl_{callee}({argument_list})"),
             // The remaining unported modules still name their shim symbols
             // here; a module with an embedded source resolves through
@@ -494,6 +488,26 @@ impl<'a> Emitter<'a> {
                 format!("cl_{callee}({argument_list})")
             }
             _ => format!("{callee}({argument_list})"),
+        }
+    }
+
+    /// Renders a call to the compiler-known `text` conversion.
+    ///
+    /// The compiler chooses the shim conversion from the argument type. A `str`
+    /// or `static str` passes its pointer and length, because a view is a
+    /// pointer-and-length struct that the shim cannot receive by value; a
+    /// scalar passes its value directly. This is the same conversion a template
+    /// placeholder lowers to, so both spellings agree.
+    fn text_call(&self, arg: Option<&Value>) -> String {
+        let Some(arg) = arg else {
+            return "cl_text_i32()".to_owned();
+        };
+        let ty = self.substitute(&arg.ty);
+        let value = self.value(arg);
+        if matches!(ty.kind, TyKind::Str | TyKind::StaticStr) {
+            format!("cl_text_str(({value}).ptr, ({value}).len)")
+        } else {
+            format!("cl_text_{}({value})", type_key(&ty))
         }
     }
 
@@ -512,10 +526,7 @@ impl<'a> Emitter<'a> {
             }
         }
         match placeholder {
-            Some(inner) => {
-                let key = type_key(&self.substitute(&inner.ty));
-                format!("cl_text_{key}({})", self.value(inner))
-            }
+            Some(inner) => self.text_call(Some(inner)),
             None => format!("cl_str({})", escape_c_string(&literal)),
         }
     }
