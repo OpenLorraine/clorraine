@@ -50,3 +50,38 @@ five majors (RV-502/503/504/505/506, SA-505/506/507), and the five minors
 (RV-507/508/509, SA-509/510), each with a regression case. SA-508 stays with
 Phase 8 task 8.1.1 (the profile-availability diagnostic). After the fixes
 verify, the single permitted scoped re-review runs on the fix diff.
+
+## Fix batch (commit `fae1664`)
+
+All 18 findings were fixed; `make check` green (255 unit, 38 codegen-run,
+2 compile-fail, 1 determinism, 6 run-fault, 44 stage, 8 stdlib impl), and the
+corpus `string-parser`/`buffer-container`/`file-copier` host legs match their
+expected output. SA-510's server-return check was reported impossible because
+the pinned NDK declares `AddIntServer`/`RemIntServer` as returning `void`.
+
+## Re-review of the fix diff
+
+The single permitted re-review confirmed RV-504, RV-505, RV-506, SA-501,
+SA-502, SA-503 (guard placement), SA-505, SA-507, RV-502, RV-503, RV-507,
+RV-508, SA-509, SA-510, and RV-509 resolved. It rejected the batch on three
+defects introduced by the fix and three partial residuals:
+
+| ID | Severity | Title | Location | Evidence |
+|---|---|---|---|---|
+| RV-603 | 🔴 CRITICAL | An owned temporary is declared in an inner block, so a view stored in an outer struct dangles after the block ends | `own/lower.rs:234-263` | `struct S { v: u8[]; }`; `{ s = S{ v: bytes(stringOf("hi")) }; }` then use `s.v[0]` → ASan heap-use-after-free. Pre-fix it leaked (the view stayed valid), so this is a SA-506 regression. |
+| RV-602 | 🟠 MAJOR | Materialized operands are hoisted out of `&&`/`||`/`?:`, so a side effect on an unevaluated operand still runs | `own/lower.rs:38-51,96-100,125-133`, `codegen/guards.rs:953-994` | `x = flag && (a[next()]==99)` with `flag=false` calls `next()` once. Partially re-opens SA-504. |
+| RV-601 | 🟠 MAJOR | A call through a `func`-typed field applies the same-named global function's `take` move-out, leaking the argument | `own/call.rs:168-174,304-318`, `own/lower.rs:63-82` | A field call `c.f(s)` where a global `func f(take s: String)` exists emits `s = NULL` although the field callee took nothing → LSan leak. |
+| SA-504r | 🟠 MAJOR | The assignment-target index is still re-evaluated (the read path was materialized, the store path was not) | `own/expr.rs:332-340`, `codegen` indexed store | `a[next()] = 99` emits `if (next() >= 4) trap; ... a[next()] ...`; a `next()` returning `1` then `100` passes the guard and writes out of bounds (UBSan). |
+| SA-506r | 🟠 MAJOR | Owned results in template placeholders still leak | `own/lower.rs:163-175`, `codegen/expr.rs:389,453` | `$"{text(7)}-{stringOf("abc")}"` leaks both source Strings because `text_call` copies an owned String and never drops the source. |
+| RV-501r | 🟡 MINOR | A `comptime func` named a reserved intrinsic is not rejected | `load/mod.rs:305-309` | `comptime func slice<T>(…)` is accepted and a call emits the intrinsic. `check_reserved_declarations` covers `Item::Func`/`Item::Intrinsic`, not `Item::Comptime`. |
+
+Adjacent pre-existing gaps noted by the re-review but not caused by this diff:
+a local `func` value with a global's name resolves to the global symbol;
+`text()` with zero args and `text(struct)` emit invalid C.
+
+### Residual ruling
+
+User ruling (2026-09-21): **fix all six** — RV-603, RV-602, RV-601, SA-504r,
+SA-506r, RV-501r — each with a regression case. The single permitted scoped
+re-review is spent, so this follow-up is verified by `make check` plus targeted
+ASan/UBSan probes, with no further independent review.

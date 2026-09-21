@@ -319,7 +319,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The target is lowered as the address of the selected element plus a
     /// store through it. The address keeps the index, so the emitter can emit
     /// the element's bounds check; a plain element projection would have lost
-    /// the index and hardcoded element zero.
+    /// the index and hardcoded element zero. The base and the index are
+    /// materialized first, exactly as the read path does, so the bounds guard
+    /// and the store read the same evaluation: a side-effecting index such as
+    /// `a[next()]` cannot pass the guard for one value and store through
+    /// another.
     fn emit_indexed_store(&mut self, target: &Expr, value: &Expr) {
         let target = match &target.kind {
             ExprKind::Unsafe(inner) => inner,
@@ -331,6 +335,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let element_ty = self.ty(target);
         let base_value = self.lower_value(base);
         let index_value = self.lower_value(index);
+        let base_value = self.materialize_guard_operand(base_value);
+        let index_value = self.materialize_guard_operand(index_value);
         let element = Value::new(
             element_ty.clone(),
             ValueKind::Index {

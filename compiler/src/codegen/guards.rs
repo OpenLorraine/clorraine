@@ -95,6 +95,13 @@ impl<'a> Emitter<'a> {
                     self.emit_slice_guard(args);
                 }
             }
+            // A materialized operand is always evaluated where it stands, so
+            // its assignment runs as a statement before the guarded construct.
+            ValueKind::Materialize { temp, value: inner } => {
+                self.emit_guards(inner);
+                let rendered = self.value(inner);
+                self.push(&format!("    __cl_tmp{temp} = {rendered};"));
+            }
             _ => {}
         }
     }
@@ -237,6 +244,13 @@ impl<'a> Emitter<'a> {
                         out.push(trap_expression(&condition, "E11211", "index out of range"));
                     }
                 }
+            }
+            // A materialized operand inside a conditionally evaluated value
+            // (a short-circuit operand or a `?:` arm) carries its assignment
+            // as an expression, so the side effect runs only on that path.
+            ValueKind::Materialize { temp, value: inner } => {
+                self.guard_expressions(inner, out);
+                out.push(format!("(__cl_tmp{temp} = {})", self.value(inner)));
             }
             _ => {}
         }

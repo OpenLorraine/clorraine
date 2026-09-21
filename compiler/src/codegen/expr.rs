@@ -98,6 +98,9 @@ impl<'a> Emitter<'a> {
             // keeps the renderer total.
             ValueKind::Aggregate => "0".to_owned(),
             ValueKind::Temp(id) => format!("__cl_tmp{id}"),
+            // The temporary is written where the value's guards are emitted;
+            // reading it here reuses the single evaluation.
+            ValueKind::Materialize { temp, .. } => format!("__cl_tmp{temp}"),
         }
     }
 

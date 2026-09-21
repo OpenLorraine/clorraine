@@ -544,6 +544,7 @@ fn value_reads_base(value: &Value, target: &Place) -> bool {
                 || args.iter().any(|arg| value_reads_base(arg, target))
         }
         ValueKind::Intrinsic { args, .. } => args.iter().any(|arg| value_reads_base(arg, target)),
+        ValueKind::Materialize { value: inner, .. } => value_reads_base(inner, target),
         ValueKind::Int(_)
         | ValueKind::Float(_)
         | ValueKind::Char(_)
@@ -622,6 +623,7 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>) {
                 note_value(arg, read);
             }
         }
+        ValueKind::Materialize { value: inner, .. } => note_value(inner, read),
         ValueKind::Int(_)
         | ValueKind::Float(_)
         | ValueKind::Char(_)

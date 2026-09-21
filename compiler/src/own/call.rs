@@ -164,12 +164,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A call result the callee only borrows stays owned by the caller; an
         // unnamed one is bound to a scope local so the cleanup drops it, since
         // the callee never does. A `take` argument is skipped: the callee owns
-        // it, and the move-out empties the caller's binding.
-        if let Some(modes) = self.callee_modes(&name) {
-            for (value, mode) in values.iter_mut().zip(modes) {
-                let pending =
-                    std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
-                *value = self.materialize_owned_argument(pending, mode == Mode::Take);
+        // it, and the move-out empties the caller's binding. A call through a
+        // `func`-typed field has no declared parameter modes, so the same-named
+        // global function's modes must not be applied to it.
+        if receiver.is_none() {
+            if let Some(modes) = self.callee_modes(&name) {
+                for (value, mode) in values.iter_mut().zip(modes) {
+                    let pending =
+                        std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                    *value = self.materialize_owned_argument(pending, mode == Mode::Take);
+                }
             }
         }
         LoweredCall {

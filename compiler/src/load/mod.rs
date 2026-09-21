@@ -305,6 +305,7 @@ fn check_reserved_declarations(items: &[Item], diagnostics: &mut Diagnostics) {
         let (name, span) = match item {
             Item::Intrinsic(signature) => (&signature.name, signature.name_span),
             Item::Func(decl) => (&decl.name, decl.name_span),
+            Item::Comptime(decl) => (&decl.name, decl.name_span),
             _ => continue,
         };
         if stdlib::is_compiler_intrinsic(name) {

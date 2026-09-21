@@ -61,7 +61,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     intrinsic_kind
                 } else {
                     let call = self.lower_call(callee, type_args, args);
-                    let move_outs = self.take_move_out_places(&call.name, &call.args);
+                    // A call through a `func`-typed field has no declared
+                    // parameter modes, so it never moves an argument out even
+                    // when a same-named global function would.
+                    let move_outs = if call.receiver.is_none() {
+                        self.take_move_out_places(&call.name, &call.args)
+                    } else {
+                        Vec::new()
+                    };
                     let kind = ValueKind::Call {
                         callee: call.name,
                         type_args: call.type_args,
@@ -168,7 +175,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             String::from_utf8_lossy(bytes).into_owned(),
                         ),
                         TemplatePiece::Placeholder(inner) => {
-                            ValuePiece::Placeholder(self.lower_value(inner))
+                            // An owned placeholder is copied into the template
+                            // builder, so the source is released by the scope
+                            // cleanup; otherwise it leaks. A view or scalar
+                            // placeholder owns nothing and is left inline.
+                            let value = self.lower_value(inner);
+                            ValuePiece::Placeholder(self.materialize_owned_argument(value, false))
                         }
                     })
                     .collect(),
@@ -178,13 +190,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value { ty, kind }
     }
 
-    /// Stores a side-effecting guarded operand in a temporary, once.
+    /// Defers a side-effecting guarded operand into a temporary, evaluated once.
     ///
     /// A runtime guard and the operation it protects both read the operand. An
     /// operand with no side effect is safe to render twice, so it is returned
     /// unchanged. A side-effecting one (a call such as `a[next()]` or
-    /// `10/d()`) is stored in a compiler temporary so both reads see the same
-    /// value and the call runs once. A fixed array cannot be assigned to a
+    /// `10/d()`) is wrapped in a [`ValueKind::Materialize`] so both reads see
+    /// the same value and the call runs once. The assignment that fills the
+    /// temporary is emitted by the guard, which keeps it on the path where the
+    /// operand is actually evaluated. A fixed array cannot be assigned to a
     /// temporary in C, so it is left alone as well.
     pub(super) fn materialize_guard_operand(&mut self, value: Value) -> Value {
         if is_pure_value(&value) {
@@ -202,7 +216,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if mentions_type_param(&value.ty) {
             return value;
         }
-        self.materialize_value(value)
+        // The value is assigned to the temporary where the guard runs, not
+        // here: an operand inside `&&`/`||`/`?:` is evaluated only on the path
+        // that reaches it, so a statement emitted now would run it even when
+        // the left operand short-circuits.
+        let ty = value.ty.clone();
+        let temp = self.new_temp(ty.clone());
+        Value::new(
+            ty,
+            ValueKind::Materialize {
+                temp,
+                value: Box::new(value),
+            },
+        )
     }
 
     /// Stores a value in a compiler temporary and returns the temporary value.
@@ -226,11 +252,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A call result the callee only borrows is owned by the caller, but an
     /// unnamed temporary has no binding to drop, so it leaks. The value is
-    /// bound to a compiler-created local in the current scope; the scope's
-    /// normal cleanup releases it. A `take` argument is skipped because the
-    /// callee owns it, and a duplicable or view value owns nothing to release.
-    /// The speculative passes and a deferred block are skipped: their bindings
-    /// do not survive into the function's local list.
+    /// bound to a compiler-created local; the scope's normal cleanup releases
+    /// it. A `take` argument is skipped because the callee owns it, and a
+    /// duplicable or view value owns nothing to release. The speculative passes
+    /// and a deferred block are skipped: their bindings do not survive into the
+    /// function's local list.
+    ///
+    /// The binding is placed in the function body scope rather than the scope
+    /// of the statement that produced it. A view derived from the value (for
+    /// example a slice or byte view stored in an outer struct) can outlive the
+    /// block that produced it, and a drop at the block's end would free the
+    /// storage while the view still points at it. The body scope's cleanup
+    /// outlives every such view. A loop still assigns the one temporary each
+    /// iteration, and the assignment releases the previous value, so the wider
+    /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
         if take
             || self.sema.table.duplicable(&value.ty)
@@ -246,6 +281,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let name = format!("__cl_owned{}", self.next_owned_temp);
         self.next_owned_temp += 1;
         let id = self.declare_local(&name, value.ty.clone(), false, self.current_span);
+        self.move_binding_to_body_scope(id, &name);
         self.set_place(
             id,
             PlaceState {
@@ -260,6 +296,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             value,
         });
         Value::new(place.ty.clone(), ValueKind::Place(place))
+    }
+
+    /// Moves a just-declared local into the function body scope.
+    ///
+    /// The binding is removed from the innermost scope's name map and drop
+    /// order and recorded in the body scope instead, so its cleanup runs at the
+    /// end of the function rather than at the end of the block that declared
+    /// it. The body scope is the first scope and has depth one; a binding
+    /// already declared there is left alone.
+    fn move_binding_to_body_scope(&mut self, id: usize, name: &str) {
+        if self.scopes.len() <= 1 {
+            return;
+        }
+        let innermost = self.scopes.len() - 1;
+        if let Some(scope) = self.scopes.get_mut(innermost) {
+            scope.order.retain(|entry| *entry != id);
+            scope.names.remove(name);
+        }
+        self.bindings[id].scope = 1;
+        if let Some(scope) = self.scopes.get_mut(0) {
+            scope.order.push(id);
+        }
     }
 }
 
@@ -289,7 +347,10 @@ fn mentions_type_param(ty: &Ty) -> bool {
 /// operator over pure operands.
 fn is_pure_value(value: &Value) -> bool {
     match &value.kind {
-        ValueKind::Call { .. } | ValueKind::Intrinsic { .. } | ValueKind::Template(_) => false,
+        ValueKind::Call { .. }
+        | ValueKind::Intrinsic { .. }
+        | ValueKind::Template(_)
+        | ValueKind::Materialize { .. } => false,
         ValueKind::Unary { operand, .. } => is_pure_value(operand),
         ValueKind::Binary { left, right, .. } => is_pure_value(left) && is_pure_value(right),
         ValueKind::Cast { value: inner, .. } => is_pure_value(inner),

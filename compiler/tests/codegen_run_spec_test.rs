@@ -1327,3 +1327,169 @@ func main(): i32 {
         "fix503b: expected a borrow error, got:\n{stderr}"
     );
 }
+
+/// An owned temporary outlives a view stored into an outer struct.
+///
+/// The byte view derives from the `stringOf` result, which the callee only
+/// borrows. The result must be released, but not before the view that reads it
+/// is done; the temporary lives to the end of the function, so the read after
+/// the nested block sees the bytes the view selected.
+#[test]
+fn an_owned_temporary_outlives_a_view_stored_in_an_outer_struct() {
+    let source = r#"module codegen.fix603;
+
+import { stringOf, bytes } from std.text;
+import { println } from std.io;
+
+struct S { v: u8[]; }
+
+func main(): i32 {
+    let s: S = S{ v: bytes(stringOf("hi")) };
+    {
+        s = S{ v: bytes(stringOf("bye")) };
+    }
+    println($"c={i32(s.v[0])}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix603", source, None);
+    assert_stdout("fix603", &output, "c=98\n");
+}
+
+/// The right operand of `&&`/`||` and the unused `?:` arm are not evaluated.
+///
+/// Each side-effecting operand increments `calls`. Only the `?:` else arm runs,
+/// so a materialized operand hoisted out of its conditional position would show
+/// a higher count.
+#[test]
+fn a_short_circuit_operand_is_not_evaluated() {
+    let source = r#"module codegen.fix602;
+
+import { println } from std.io;
+
+let calls: i32 = 0;
+
+func tick(): usize {
+    calls = calls + 1;
+    return 1;
+}
+
+func main(): i32 {
+    let a: u8[4] = [10, 20, 30, 40];
+    let flag: bool = false;
+    let yes: bool = true;
+    let and_bad: bool = flag && (a[tick()] == 99);
+    let or_bad: bool = yes || (a[tick()] == 99);
+    let then_arm: u8 = flag ? a[tick()] : u8(7);
+    let else_arm: u8 = flag ? u8(7) : a[tick()];
+    println($"and={and_bad} or={or_bad} calls={calls} then={i32(then_arm)} else={i32(else_arm)}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix602", source, None);
+    assert_stdout("fix602", &output, "and=false or=true calls=1 then=7 else=20\n");
+}
+
+/// A `func`-typed field call does not apply a same-named global's `take` mode.
+///
+/// The global `f` takes ownership of its argument; the field `c.f` is a
+/// different callable and takes nothing. If the global's mode were applied, the
+/// caller's `s` would be emptied and the template that reads it would fail.
+#[test]
+fn a_func_field_call_does_not_apply_a_same_named_global_take_mode() {
+    let source = r#"module codegen.fix601;
+
+import { String, stringOf } from std.text;
+import { println } from std.io;
+
+struct Cb { f: func(String): i32; }
+
+func f(take s: String): i32 {
+    return 1;
+}
+
+func g(s: String): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    let c: Cb = Cb{ f: g };
+    let s: String = stringOf("abc");
+    let n: i32 = c.f(s);
+    println($"n={n} s={s}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix601", source, None);
+    assert_stdout("fix601", &output, "n=2 s=abc\n");
+}
+
+/// A side-effecting store index is evaluated once, guard included.
+///
+/// `next` returns a legal index on the first call and an out-of-range one on the
+/// second. The bounds guard and the store must share one evaluation, or the
+/// guard passes for the first value while the store uses the second.
+#[test]
+fn a_side_effecting_store_index_is_evaluated_once() {
+    let source = r#"module codegen.fix504c;
+
+import { println } from std.io;
+
+let calls: i32 = 0;
+
+func next(): usize {
+    calls = calls + 1;
+    if (calls == 1) {
+        return 1;
+    }
+    return 100;
+}
+
+func main(): i32 {
+    let a: u8[4] = [0, 0, 0, 0];
+    a[next()] = 99;
+    println($"calls={calls} a1={i32(a[1])}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix504c", source, None);
+    assert_stdout("fix504c", &output, "calls=1 a1=99\n");
+}
+
+/// An owned template placeholder is copied and its source is then released.
+///
+/// The template builder frees only the copies it receives, so the source
+/// `String` that `text`/`stringOf` returned must be released by the scope
+/// cleanup; the output proves the source was read before that.
+#[test]
+fn an_owned_template_placeholder_is_released() {
+    let source = r#"module codegen.fix506r;
+
+import { println } from std.io;
+import { text } from std.fmt;
+import { stringOf } from std.text;
+
+func main(): i32 {
+    println($"{text(7)}-{stringOf("abc")}");
+    return 0;
+}
+"#;
+    let output = build_and_run("fix506r", source, None);
+    assert_stdout("fix506r", &output, "7-abc\n");
+}
+
+/// A `comptime func` named a reserved intrinsic is rejected.
+#[test]
+fn a_comptime_func_cannot_take_a_reserved_intrinsic_name() {
+    let source = r#"module codegen.fix501r;
+
+comptime func slice<T>(v: T[], lo: usize, hi: usize): T[] {
+    return v;
+}
+"#;
+    let stderr = compile_expecting_rejection("fix501r", source);
+    assert!(
+        stderr.contains("E20006"),
+        "fix501r: expected E20006, got:\n{stderr}"
+    );
+}

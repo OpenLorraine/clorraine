@@ -283,6 +283,24 @@ pub enum ValueKind {
     Aggregate,
     /// A reference to a compiler-created temporary.
     Temp(TempId),
+    /// A value stored into a compiler temporary as a side effect of evaluating
+    /// it, yielding the temporary afterward.
+    ///
+    /// A guarded operand (an index, a divisor, or a float-to-integer operand)
+    /// must be evaluated once so the guard and the operation read the same
+    /// value. An operand that always evaluates is assigned by a statement
+    /// before the guarded construct. An operand that is evaluated only
+    /// sometimes (the right side of `&&`/`||`, or an arm of `?:`) is assigned
+    /// inside that conditional position instead, so the side effect does not
+    /// run on a path the program never takes. The assignment is emitted where
+    /// the guarded value's guards are emitted, and the value itself reads the
+    /// temporary.
+    Materialize {
+        /// The compiler temporary that receives the value.
+        temp: TempId,
+        /// The value assigned to the temporary.
+        value: Box<Value>,
+    },
 }
 
 /// One piece of a template string.

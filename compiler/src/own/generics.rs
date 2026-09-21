@@ -436,6 +436,7 @@ fn walk_value(value: &Value, program: &ProgramInfo, mono: &mut Monomorphization)
                 walk_value(arg, program, mono);
             }
         }
+        ValueKind::Materialize { value, .. } => walk_value(value, program, mono),
         ValueKind::Place(_)
         | ValueKind::Int(_)
         | ValueKind::Float(_)
