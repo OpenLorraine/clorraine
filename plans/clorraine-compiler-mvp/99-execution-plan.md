@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-21 13:05
-> **Progress**: 69/84 tasks (82%)
+> **Last Updated**: 2026-09-21 13:15
+> **Progress**: 70/84 tasks (83%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -498,7 +498,7 @@ the corpus.
 
 - [x] 7.2.1 Implement the intrinsic helpers (`rawSlice`, `rawStr`, `slice`, `len` cases) plus `stdlib/std.mem.clo` ✅ (completed: 2026-09-21 12:55)
 - [x] 7.2.2 Implement `stdlib/std.text.clo` and `stdlib/std.fmt.clo` ✅ (completed: 2026-09-21 13:05)
-- [ ] 7.2.3 Implement `stdlib/std.io.clo` and the shim IO/print additions
+- [x] 7.2.3 Implement `stdlib/std.io.clo` and the shim IO/print additions ✅ (completed: 2026-09-21 13:15)
 - [ ] 7.2.4 Implement `stdlib/std.amiga.dos.clo`, `stdlib/std.amiga.interrupt.clo`, and the dispatcher shim
 
 **Deliverables**:

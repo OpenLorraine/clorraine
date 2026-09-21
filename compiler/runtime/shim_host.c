@@ -238,6 +238,57 @@ static void *cl_string_from(const void *bytes, unsigned int n)
     return string;
 }
 
+/* Copy a whole string block into a fresh, independent block. The caller owns
+ * the copy and releases it through the string deleter. */
+void *cl_string_copy(void *handle)
+{
+    cl_string_block *string = (cl_string_block *)handle;
+    return cl_string_from(cl_string_bytes(string), string->len);
+}
+
+/* One piece of a template. A literal piece borrows static bytes and has no
+ * `owned` handle; a converted placeholder piece owns a freshly built string
+ * that the builder releases once the bytes are appended. */
+typedef struct cl_str_part {
+    const unsigned char *ptr;
+    unsigned int len;
+    void *owned;
+} ClStrPart;
+
+/* Wrap an owned string as a template piece. The builder takes the string over
+ * and releases it, so the caller must not use the handle afterwards. */
+static inline ClStrPart cl_str_part_owned(void *string)
+{
+    ClStrPart part;
+    part.ptr = (const unsigned char *)cl_string_ptr(string);
+    part.len = cl_string_len(string);
+    part.owned = string;
+    return part;
+}
+
+/* Concatenate template pieces into one owned string.
+ *
+ * The total length is the sum of the piece lengths, so the builder reserves
+ * exactly that size once and every append fits. Each owned piece is released
+ * after its bytes are copied, which keeps a placeholder's converted string
+ * from leaking: the compiler does not drop unnamed temporaries. */
+void *cl_string_concat(const ClStrPart *parts, unsigned int count)
+{
+    unsigned int index;
+    unsigned int total = 0;
+    for (index = 0; index < count; index++) {
+        total += parts[index].len;
+    }
+    void *string = cl_string_new(total);
+    for (index = 0; index < count; index++) {
+        cl_string_append(string, (void *)parts[index].ptr, parts[index].len);
+        if (parts[index].owned != NULL) {
+            cl_free(parts[index].owned);
+        }
+    }
+    return string;
+}
+
 /* The text converters build the same String layout the templates desugar to,
  * so a template and an explicit `text` call format a value identically. */
 void *cl_text_i32(int value)
@@ -336,4 +387,60 @@ void *cl_text_pad_right(void *src, unsigned int n, unsigned int width, unsigned 
         pad--;
     }
     return string;
+}
+
+/* A file handle on the host is a libc stream. The generated code spells the
+ * `File` contract handle as its ABI type `BPTR` (an opaque pointer), so the
+ * definitions below take and return that primitive pointer and cast to the
+ * libc stream type internally. The Clorraine wrapper adds the mode constants
+ * and the `File?` result. */
+typedef FILE *ClFile;
+
+/* The two Clorraine file modes, mapped to the libc open spelling. */
+#define CL_MODE_OLDFILE 1005
+#define CL_MODE_NEWFILE 1006
+
+/* Open `path` for reading or writing; a failure returns `NULL`. */
+void *Open(char *path, int mode)
+{
+    const char *spelling = (mode == CL_MODE_NEWFILE) ? "wb" : "rb";
+    return (void *)fopen(path, spelling);
+}
+
+/* Close a file handle. Null-safe, because the generated drop is null-safe but
+ * a caller may also close an already-empty handle. */
+void Close(void *file)
+{
+    if (file != NULL) {
+        fclose((ClFile)file);
+    }
+}
+
+/* Read up to `len` bytes into `buf` and return the count moved. */
+int Read(void *file, void *buf, int len)
+{
+    return (int)fread(buf, 1, (size_t)len, (ClFile)file);
+}
+
+/* Write `len` bytes from `buf` and return the count moved. */
+int Write(void *file, void *buf, int len)
+{
+    return (int)fwrite(buf, 1, (size_t)len, (ClFile)file);
+}
+
+/* Write `n` bytes to standard output without a trailing newline. */
+void cl_write(void *buf, unsigned int n)
+{
+    if (n > 0) {
+        fwrite(buf, 1, n, stdout);
+    }
+}
+
+/* Write `n` bytes to standard output followed by a newline. */
+void cl_write_line(void *buf, unsigned int n)
+{
+    if (n > 0) {
+        fwrite(buf, 1, n, stdout);
+    }
+    fputc('\n', stdout);
 }

@@ -321,6 +321,35 @@ impl<'a> Emitter<'a> {
             .map(|signature| signature.params.iter().map(|param| param.mode).collect())
     }
 
+    /// The declared parameter types of a known user or `ffi` function.
+    ///
+    /// A user signature resolves through the emitter's current generic
+    /// substitution, so a call inside a generic body sees the concrete
+    /// parameter types. The call-site renderer uses this to widen a `String`
+    /// argument to the `str` view a parameter expects.
+    pub(super) fn callee_param_types(&self, callee: &str) -> Option<Vec<Ty>> {
+        if let Some(info) = self.resolve_function(callee) {
+            let names = type_param_names(info.decl);
+            return Some(
+                info.decl
+                    .params
+                    .iter()
+                    .map(|param| {
+                        let ty = resolve_ty(&param.ty, &names, &self.sema.table);
+                        substitute_in(&ty, &self.subst)
+                    })
+                    .collect(),
+            );
+        }
+        self.ffi_functions.get(callee).map(|signature| {
+            signature
+                .params
+                .iter()
+                .map(|param| resolve_ty(&param.ty, &[], &self.sema.table))
+                .collect()
+        })
+    }
+
     /// Drops the previous value of an assignment target before it is overwritten.
     ///
     /// An assignment to a live owned place must release the old value first, or

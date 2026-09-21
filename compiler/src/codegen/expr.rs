@@ -14,7 +14,11 @@ use crate::ir::{
 };
 use crate::types::{is_signed_scalar, scalar_bits, Ty, TyKind};
 
-use super::types::{c_type, scalar_c_type, scalar_of, type_key};
+use super::render::{
+    binary_token, bounds_condition, element_type, escape_c_string, float_literal, index_text,
+    signed_min, unsigned_c, unsigned_scalar,
+};
+use super::types::{c_type, scalar_of, type_key};
 use super::Emitter;
 
 impl<'a> Emitter<'a> {
@@ -478,13 +482,11 @@ impl<'a> Emitter<'a> {
         }
         match callee {
             "text" => self.text_call(args.first()),
-            "toHex" | "toDecimal" => format!("cl_{callee}({argument_list})"),
-            // The remaining unported modules still name their shim symbols
-            // here; a module with an embedded source resolves through
-            // `resolve_function` and never reaches this map.
-            "stringOf" | "clone" | "bytes" | "toCString" | "openFile" | "createFile"
-            | "readFile" | "writeBytes" | "print" | "println" | "delayTicks" | "addHandler"
-            | "removeHandler" | "padLeft" | "padRight" => {
+            // The two Amiga modules have no embedded source yet, so their
+            // names still map to the shim symbols directly. Every other
+            // standard-library name now resolves through the module source in
+            // `resolve_function` above and never reaches this map.
+            "delayTicks" | "addHandler" | "removeHandler" => {
                 format!("cl_{callee}({argument_list})")
             }
             _ => format!("{callee}({argument_list})"),
@@ -496,39 +498,64 @@ impl<'a> Emitter<'a> {
     /// The compiler chooses the shim conversion from the argument type. A `str`
     /// or `static str` passes its pointer and length, because a view is a
     /// pointer-and-length struct that the shim cannot receive by value; a
-    /// scalar passes its value directly. This is the same conversion a template
-    /// placeholder lowers to, so both spellings agree.
+    /// `String` is copied so the caller owns a fresh handle; a scalar passes
+    /// its value directly. This is the same conversion a template placeholder
+    /// lowers to, so both spellings agree.
     fn text_call(&self, arg: Option<&Value>) -> String {
         let Some(arg) = arg else {
             return "cl_text_i32()".to_owned();
         };
         let ty = self.substitute(&arg.ty);
         let value = self.value(arg);
-        if matches!(ty.kind, TyKind::Str | TyKind::StaticStr) {
-            format!("cl_text_str(({value}).ptr, ({value}).len)")
-        } else {
-            format!("cl_text_{}({value})", type_key(&ty))
+        match &ty.kind {
+            TyKind::Str | TyKind::StaticStr => {
+                format!("cl_text_str(({value}).ptr, ({value}).len)")
+            }
+            TyKind::Handle(name) if name == "String" => format!("cl_string_copy({value})"),
+            _ => format!("cl_text_{}({value})", type_key(&ty)),
         }
     }
 
-    /// Renders a template as a text-helper call, or a plain literal.
+    /// Renders a template as a string builder call, or a plain literal.
+    ///
+    /// A template with no placeholder is a `str` view of its literal bytes and
+    /// allocates nothing. A template with a placeholder is an owned `String`,
+    /// so its literal segments and converted placeholders become pieces for the
+    /// shim builder, which concatenates them and takes over the owned pieces.
+    /// Placeholders convert through [`Self::text_call`], the same conversion an
+    /// explicit `text` call uses.
     fn template(&self, pieces: &[ValuePiece]) -> String {
-        let mut literal = Vec::new();
-        let mut placeholder: Option<&Value> = None;
+        let has_placeholder = pieces
+            .iter()
+            .any(|piece| matches!(piece, ValuePiece::Placeholder(_)));
+        if !has_placeholder {
+            let mut literal = Vec::new();
+            for piece in pieces {
+                if let ValuePiece::Literal(text) = piece {
+                    literal.extend_from_slice(text.as_bytes());
+                }
+            }
+            return format!("cl_str({})", escape_c_string(&literal));
+        }
+        let mut parts: Vec<String> = Vec::new();
         for piece in pieces {
             match piece {
-                ValuePiece::Literal(text) => literal.extend_from_slice(text.as_bytes()),
+                ValuePiece::Literal(text) if text.is_empty() => {}
+                ValuePiece::Literal(text) => parts.push(format!(
+                    "{{ (const u8 *){}, {}u, NULL }}",
+                    escape_c_string(text.as_bytes()),
+                    text.len()
+                )),
                 ValuePiece::Placeholder(inner) => {
-                    if placeholder.is_none() {
-                        placeholder = Some(inner);
-                    }
+                    parts.push(format!("cl_str_part_owned({})", self.text_call(Some(inner))));
                 }
             }
         }
-        match placeholder {
-            Some(inner) => self.text_call(Some(inner)),
-            None => format!("cl_str({})", escape_c_string(&literal)),
-        }
+        format!(
+            "cl_string_concat((ClStrPart[]){{ {} }}, {}u)",
+            parts.join(", "),
+            parts.len()
+        )
     }
 
     /// Renders an array literal as a compound initializer.
@@ -567,116 +594,4 @@ impl<'a> Emitter<'a> {
         }
         format!("(Cl{name}){{ {} }}", values.join(", "))
     }
-}
-
-/// The C condition of an index bounds guard.
-///
-/// A signed index is first checked against zero so a negative value never
-/// reaches the unsigned comparison. Both sides are cast to `usize`, the type
-/// of a view's length, so a signed index does not raise a sign-compare
-/// warning under `-Werror`.
-fn bounds_condition(index_c: &str, signed: bool, bound: &str) -> String {
-    if signed {
-        format!("({index_c} < 0) || ((usize)({index_c}) >= (usize)({bound}))")
-    } else {
-        format!("(usize)({index_c}) >= (usize)({bound})")
-    }
-}
-
-/// The C text of an indexed access, spelling the pointer of a view.
-fn index_text(ty: &Ty, base: &str, index: &str) -> String {
-    match &ty.kind {
-        TyKind::Str | TyKind::StaticStr => format!("({base}).ptr[{index}]"),
-        TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
-            format!("({base}).ptr[{index}]")
-        }
-        _ => format!("{base}[{index}]"),
-    }
-}
-
-/// The element type of an array, slice, or string view.
-fn element_type(ty: &Ty) -> Ty {
-    match &ty.kind {
-        TyKind::Array { element, .. } => (**element).clone(),
-        TyKind::Str | TyKind::StaticStr => Ty::scalar(ScalarType::U8),
-        _ => Ty::unknown(),
-    }
-}
-
-/// The unsigned scalar of the same width as a signed scalar.
-fn unsigned_scalar(scalar: ScalarType) -> ScalarType {
-    match scalar {
-        ScalarType::I8 => ScalarType::U8,
-        ScalarType::I16 => ScalarType::U16,
-        ScalarType::I32 => ScalarType::U32,
-        ScalarType::Isize => ScalarType::Usize,
-        other => other,
-    }
-}
-
-/// The C typedef of an unsigned scalar.
-fn unsigned_c(scalar: ScalarType) -> &'static str {
-    scalar_c_type(scalar)
-}
-
-/// The most negative value of a signed scalar, as a C literal.
-fn signed_min(scalar: ScalarType) -> &'static str {
-    match scalar {
-        ScalarType::I8 => "-128",
-        ScalarType::I16 => "-32768",
-        ScalarType::I32 | ScalarType::Isize => "-2147483648",
-        _ => "0",
-    }
-}
-
-/// The C token of a binary operator.
-fn binary_token(op: BinaryOp) -> &'static str {
-    match op {
-        BinaryOp::LogicalOr => "||",
-        BinaryOp::LogicalAnd => "&&",
-        BinaryOp::BitOr => "|",
-        BinaryOp::BitXor => "^",
-        BinaryOp::BitAnd => "&",
-        BinaryOp::Eq => "==",
-        BinaryOp::Ne => "!=",
-        BinaryOp::Lt => "<",
-        BinaryOp::Le => "<=",
-        BinaryOp::Gt => ">",
-        BinaryOp::Ge => ">=",
-        BinaryOp::Shl => "<<",
-        BinaryOp::Shr => ">>",
-        BinaryOp::Add => "+",
-        BinaryOp::Sub => "-",
-        BinaryOp::Mul => "*",
-        BinaryOp::Div => "/",
-        BinaryOp::Rem => "%",
-    }
-}
-
-/// Formats a float literal with a decimal point.
-fn float_literal(value: f64) -> String {
-    let text = format!("{value}");
-    if text.contains('.') || text.contains('e') || text.contains('E') {
-        text
-    } else {
-        format!("{text}.0")
-    }
-}
-
-/// Escapes bytes into a C string literal.
-fn escape_c_string(bytes: &[u8]) -> String {
-    let mut text = String::from("\"");
-    for byte in bytes {
-        match *byte {
-            b'\\' => text.push_str("\\\\"),
-            b'"' => text.push_str("\\\""),
-            b'\n' => text.push_str("\\n"),
-            b'\r' => text.push_str("\\r"),
-            b'\t' => text.push_str("\\t"),
-            0x20..=0x7e => text.push(*byte as char),
-            other => text.push_str(&format!("\\{other:03o}")),
-        }
-    }
-    text.push('"');
-    text
 }

@@ -1,0 +1,75 @@
+//! Input and output: file handles, byte transfers, and console printing.
+//!
+//! This module is ordinary Clorraine compiled with every program. It reaches
+//! the profile C shim through `ffi`, so the names it declares are the shim
+//! symbols themselves (`Open`, `Close`, `Read`, `Write`, and the `cl_write`
+//! helpers). The public wrappers keep the `unsafe` raw-pointer work here so
+//! application code never writes `ffi` and never touches `unsafe`.
+//!
+//! `readFile` and `writeBytes` return the number of bytes moved; a short count
+//! is not an error, so a caller loops when it needs the whole request. A
+//! returned `File` is owned by the caller and released by `Close`.
+//!
+//! The print helpers write the bytes of a `str` view directly. They do not
+//! require a NUL terminator and do not allocate, so printing a slice of a
+//! larger buffer is cheap.
+
+module std.io;
+
+export handle File freedBy Close;
+
+/// Open an existing file for reading.
+export const MODE_OLDFILE: i32 = 1005;
+
+/// Create or truncate a file for writing.
+export const MODE_NEWFILE: i32 = 1006;
+
+ffi stdio {
+    func Open(name: cstring, mode: i32): File?;
+    func Close(take file: File): void;
+    func Read(borrow file: File, buf: raw u8, n: i32): i32;
+    func Write(borrow file: File, buf: raw u8, n: i32): i32;
+    func cl_write(buf: raw u8, n: usize): void;
+    func cl_write_line(buf: raw u8, n: usize): void;
+}
+
+/// Opens `path` with the given mode, or returns `null` on failure.
+export func openFile(path: cstring, mode: i32): File? {
+    return Open(path, mode);
+}
+
+/// Creates `path` for writing, truncating an existing file.
+export func createFile(path: cstring): File? {
+    return Open(path, MODE_NEWFILE);
+}
+
+/// Reads up to `buf.len` bytes into `buf` and returns the count moved.
+///
+/// A count of zero or less means end of file or an error; a positive count
+/// below the buffer length is a short read the caller may repeat.
+export func readFile(borrow f: File, borrow buf: u8[]): i32 {
+    unsafe {
+        return Read(f, raw u8(buf.ptr), i32(len(buf)));
+    }
+}
+
+/// Writes `buf` to `f` and returns the number of bytes written.
+export func writeBytes(borrow f: File, const buf: u8[]): i32 {
+    unsafe {
+        return Write(f, raw u8(buf.ptr), i32(len(buf)));
+    }
+}
+
+/// Writes the bytes of `s` to standard output without a trailing newline.
+export func print(s: str): void {
+    unsafe {
+        cl_write(raw u8(s.ptr), len(s));
+    }
+}
+
+/// Writes the bytes of `s` to standard output followed by a newline.
+export func println(s: str): void {
+    unsafe {
+        cl_write_line(raw u8(s.ptr), len(s));
+    }
+}

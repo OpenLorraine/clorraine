@@ -45,6 +45,10 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.fmt",
         source: include_str!("../../stdlib/std.fmt.clo"),
     },
+    StdlibSource {
+        name: "std.io",
+        source: include_str!("../../stdlib/std.io.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.

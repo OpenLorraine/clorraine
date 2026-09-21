@@ -103,6 +103,21 @@ impl<'a> Emitter<'a> {
         self.push("    return value;");
         self.push("}");
         self.push("");
+        // The implicit `String`-to-`str` widening views an owned string's
+        // bytes through the shim accessors. The emitter declares both here so
+        // the helper is self-contained: a program can format a `String` with
+        // the compiler-known `text` without importing the text module, and a
+        // duplicate compatible prototype is legal C when it does import it.
+        self.push("APTR cl_string_ptr(ClString);");
+        self.push("ULONG cl_string_len(ClString);");
+        self.push("static inline ClStr cl_string_view(ClString string)");
+        self.push("{");
+        self.push("    ClStr view;");
+        self.push("    view.ptr = (const u8 *)cl_string_ptr(string);");
+        self.push("    view.len = (usize)cl_string_len(string);");
+        self.push("    return view;");
+        self.push("}");
+        self.push("");
         self.emit_slice_typedefs();
         self.emit_handle_typedefs();
     }

@@ -30,6 +30,7 @@ mod expr;
 mod function;
 mod init;
 mod program;
+mod render;
 mod types;
 
 use cleanup::Action;

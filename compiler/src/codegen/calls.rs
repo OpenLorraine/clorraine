@@ -37,19 +37,23 @@ impl Emitter<'_> {
     }
 
     /// Renders a call's argument list, taking the address of pointer-lowered
-    /// writable lends.
+    /// writable lends and widening a `String` to a `str` view where required.
     ///
     /// A `borrow` parameter of a non-duplicable struct lowers to `T *`, so the
-    /// caller passes the address of its place. Every other argument, and every
-    /// `ffi` argument, is passed as its value.
+    /// caller passes the address of its place. A `str` parameter accepts a
+    /// `String` argument through the implicit widening, which lowers to a view
+    /// over the owned bytes. Every other argument, and every `ffi` argument, is
+    /// passed as its value.
     pub(super) fn call_arguments(&self, callee: &str, args: &[Value]) -> String {
         let modes = self.callee_modes(callee);
+        let param_types = self.callee_param_types(callee);
         let user_call = self.resolve_function(callee).is_some();
         let rendered: Vec<String> = args
             .iter()
             .enumerate()
             .map(|(index, arg)| {
-                let text = self.value(arg);
+                let expected = param_types.as_ref().and_then(|types| types.get(index));
+                let text = self.argument_text(arg, expected);
                 let pointer = user_call
                     && modes
                         .as_ref()
@@ -67,6 +71,28 @@ impl Emitter<'_> {
             })
             .collect();
         rendered.join(", ")
+    }
+
+    /// Renders one argument, widening an owned `String` to the `str` view a
+    /// parameter expects.
+    ///
+    /// The view reads the owned bytes through the shim helpers, so it allocates
+    /// nothing and stays valid for the call. The conversion is emitted as a
+    /// single shim call so a complex argument such as a template builder is
+    /// evaluated exactly once.
+    fn argument_text(&self, arg: &Value, expected: Option<&Ty>) -> String {
+        let text = self.value(arg);
+        let arg_ty = self.substitute(&arg.ty);
+        let wants_str = expected.is_some_and(|expected| {
+            matches!(
+                self.substitute(expected).kind,
+                TyKind::Str | TyKind::StaticStr
+            )
+        });
+        if wants_str && matches!(&arg_ty.kind, TyKind::Handle(name) if name == "String") {
+            return format!("cl_string_view({text})");
+        }
+        text
     }
 
     /// Renders a reserved built-in call or a compiler-known view builder.
