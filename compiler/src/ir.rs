@@ -301,6 +301,18 @@ pub enum Statement {
         /// The place that receives an owned result, when there is one.
         result: Option<Place>,
     },
+    /// Evaluate a value for its side effect and discard the result.
+    ///
+    /// An expression statement whose value is not a plain call still has to run
+    /// any side effect nested inside it, such as the call in `f() + 1;` or the
+    /// update in `j++ + 1;`. Evaluating the whole value at once preserves the
+    /// short-circuit behavior of `&&`, `||`, and `?:` instead of hoisting an
+    /// embedded effect ahead of its guard. The result is ignored, and the
+    /// emitted C casts it to `void` so an unused result is not a warning.
+    Discard {
+        /// The value evaluated for its effect.
+        value: Value,
+    },
     /// Release an owned place, null-safely and exactly once.
     Drop {
         /// The place released.

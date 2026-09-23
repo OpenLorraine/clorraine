@@ -233,6 +233,19 @@ pub enum UnaryOp {
     PostDecrement,
 }
 
+impl UnaryOp {
+    /// True for the increment and decrement operators.
+    ///
+    /// These read and write their operand, so they carry a side effect while
+    /// the other unary operators are pure.
+    pub fn is_update(self) -> bool {
+        matches!(
+            self,
+            Self::PreIncrement | Self::PreDecrement | Self::PostIncrement | Self::PostDecrement
+        )
+    }
+}
+
 /// Binary operators in precedence order from loosest to tightest.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BinaryOp {

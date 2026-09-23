@@ -323,6 +323,7 @@ pub fn collect_ir_instances(functions: &[Function], program: &ProgramInfo, mono:
                             walk_value(arg, program, mono);
                         }
                     }
+                    Statement::Discard { value } => walk_value(value, program, mono),
                     Statement::Move { .. }
                     | Statement::MoveOut { .. }
                     | Statement::Borrow { .. }

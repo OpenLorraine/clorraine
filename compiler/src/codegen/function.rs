@@ -259,6 +259,12 @@ impl<'a> Emitter<'a> {
                     result.as_ref(),
                 );
             }
+            Statement::Discard { value } => {
+                self.emit_line_directive(span);
+                self.emit_guards(value);
+                let value_c = self.value(value);
+                self.push(&format!("    (void)({value_c});"));
+            }
             Statement::Borrow { .. }
             | Statement::Drop { .. }
             | Statement::Defer { .. }
@@ -479,6 +485,7 @@ fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
                         note_value(arg, &mut read);
                     }
                 }
+                Statement::Discard { value } => note_value(value, &mut read),
                 Statement::Drop { place, .. } => note_place(place, &mut read),
                 _ => {}
             }

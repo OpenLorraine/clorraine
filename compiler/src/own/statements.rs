@@ -74,15 +74,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.eval(expr);
         match &expr.kind {
             ExprKind::Assign { .. } => {}
-            ExprKind::Unary { op, operand }
-                if matches!(
-                    op,
-                    UnaryOp::PreIncrement
-                        | UnaryOp::PostIncrement
-                        | UnaryOp::PreDecrement
-                        | UnaryOp::PostDecrement
-                ) =>
-            {
+            ExprKind::Unary { op, operand } if op.is_update() => {
                 let op = match op {
                     UnaryOp::PreIncrement | UnaryOp::PostIncrement => AssignOp::Add,
                     _ => AssignOp::Sub,
@@ -95,10 +87,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Lowers an expression statement whose result is discarded.
     ///
-    /// Only calls and the `assert`/`panic` intrinsics have a run-time effect;
-    /// any other bare expression lowers to nothing. The callee keeps its simple
-    /// name, so the emitter resolves the C symbol from the collected tables at
-    /// render time.
+    /// A bare call and the `assert`/`panic` intrinsics lower to a discarded
+    /// call. Any other value expression still has to run an effect nested inside
+    /// it — the call in `f() + 1;` or the update in `j++ + 1;` — so it lowers to
+    /// a discarded value, which is skipped when the value is pure. The callee
+    /// keeps its simple name, so the emitter resolves the C symbol from the
+    /// collected tables at render time.
     fn emit_expr_statement(&mut self, expr: &'a Expr) {
         match &expr.kind {
             ExprKind::Call {
@@ -136,7 +130,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     result: None,
                 });
             }
-            _ => {}
+            _ => self.lower_discarded(expr),
         }
     }
 

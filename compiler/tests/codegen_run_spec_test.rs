@@ -1250,6 +1250,30 @@ func main(): i32 {
     assert_stdout("fix504b", &output, "v=20 q=5 calls=2\n");
 }
 
+/// An increment used as an index runs once, guard included.
+///
+/// `a[i++]` reads the element at `i` and advances `i` exactly one time. The
+/// guard and the access share one compiler temporary, so the increment is not
+/// run twice; the final `i` proves it.
+#[test]
+fn an_increment_index_is_evaluated_once() {
+    let source = r#"module codegen.def8;
+
+func main(): i32 {
+    let a: i32[3] = [10, 20, 30];
+    let i: i32 = 0;
+    let v: i32 = a[i++];
+    return i * 100 + v;
+}
+"#;
+    let output = build_and_run("def8", source, None);
+    assert_eq!(
+        output.status.code(),
+        Some(110),
+        "def8: the index increment must run once"
+    );
+}
+
 /// `slice` over a fixed array builds a view from its address and extent.
 #[test]
 fn slicing_a_fixed_array_returns_the_selected_elements() {
@@ -1656,4 +1680,82 @@ func main(): i32 {
 /// An `ffi` stub that reports every index evaluation to stdout.
 const NEXT_INDEX_STUB: &str = r#"#include <stdio.h>
 int nextIndex(void) { puts("index"); return 0; }
+"#;
+
+/// A discarded expression statement still runs a side effect nested inside it.
+///
+/// An expression statement is normally written for its effect (Ch 05 §4), so a
+/// call or update embedded in a wider expression must run even though the
+/// result is dropped: `note() + 1;` must call `note`, and `j++ + 1;` must
+/// increment `j`. The stub reports the call on stdout and the increment in the
+/// returned count.
+#[test]
+fn a_discarded_expression_still_runs_its_side_effects() {
+    let source = r#"module codegen.def6;
+
+ffi probe {
+    func note(): i32;
+}
+
+func main(): i32 {
+    let j: i32 = 0;
+    note() + 1;
+    j++ + 1;
+    return j;
+}
+"#;
+    let output = build_and_run("def6", source, Some(DISCARD_EFFECT_STUB));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "note\n",
+        "def6: the embedded call must run"
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "def6: the embedded increment must run"
+    );
+}
+
+/// A discarded `&&`/`||` expression keeps its short-circuit behavior.
+///
+/// Lowering a discarded expression must not turn a guarded call into an
+/// unconditional one: `gate() && mark()` calls `mark` only when `gate` is true,
+/// and `gateTrue() || mark()` calls `mark` only when `gateTrue` is false. The
+/// stub denies both, so `mark` must not print. The runtime gates keep the
+/// compiler from folding the expression away.
+#[test]
+fn a_discarded_short_circuit_keeps_its_guard() {
+    let source = r#"module codegen.def7;
+
+ffi probe {
+    func gate(): bool;
+    func gateTrue(): bool;
+    func mark(): bool;
+}
+
+func main(): i32 {
+    gate() && mark();
+    gateTrue() || mark();
+    return 0;
+}
+"#;
+    let output = build_and_run("def7", source, Some(SHORT_CIRCUIT_STUB));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "",
+        "def7: the guard must skip the call"
+    );
+}
+
+/// An `ffi` stub whose `note` reports a call and whose `gate` denies `mark`.
+const DISCARD_EFFECT_STUB: &str = r#"#include <stdio.h>
+int note(void) { puts("note"); return 0; }
+"#;
+
+/// An `ffi` stub that lets a short-circuited call be observed.
+const SHORT_CIRCUIT_STUB: &str = r#"#include <stdio.h>
+int gate(void) { return 0; }
+int gateTrue(void) { return 1; }
+int mark(void) { puts("mark"); return 1; }
 "#;

@@ -190,6 +190,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value { ty, kind }
     }
 
+    /// Lowers a discarded expression statement, keeping any side effect it has.
+    ///
+    /// An expression statement is normally written for its side effect (Ch 05
+    /// §4), so a call or update embedded in a wider expression must still run
+    /// even though the result is dropped (`f() + 1;` calls `f`). The whole value
+    /// is lowered and emitted as a discard, which preserves the short-circuit
+    /// behavior of `&&`, `||`, and `?:` instead of running an embedded effect
+    /// ahead of its guard. A value with no side effect lowers to nothing.
+    pub(super) fn lower_discarded(&mut self, expr: &Expr) {
+        let value = self.lower_value(expr);
+        if is_pure_value(&value) {
+            return;
+        }
+        self.emit(Statement::Discard { value });
+    }
+
     /// Defers a side-effecting guarded operand into a temporary, evaluated once.
     ///
     /// A runtime guard and the operation it protects both read the operand. An
@@ -375,7 +391,7 @@ fn is_pure_value(value: &Value) -> bool {
         | ValueKind::Intrinsic { .. }
         | ValueKind::Template(_)
         | ValueKind::Materialize { .. } => false,
-        ValueKind::Unary { operand, .. } => is_pure_value(operand),
+        ValueKind::Unary { op, operand } => !op.is_update() && is_pure_value(operand),
         ValueKind::Binary { left, right, .. } => is_pure_value(left) && is_pure_value(right),
         ValueKind::Cast { value: inner, .. } => is_pure_value(inner),
         ValueKind::Conditional {
