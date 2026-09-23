@@ -67,8 +67,8 @@ fn is_executable_file(path: &Path) -> bool {
 /// The guidance printed when the driver runs outside the SDK container.
 pub fn sdk_guidance() -> String {
     "clorraine: this driver must run inside the pinned SDK container.\n\
-     Run it via: make -C docker exec CMD=\"clorraine run FILE.clo\"\n\
-     or open a shell with: make -C docker shell"
+     From the repository root, run: make run FILE=FILE.clo\n\
+     or open a shell (make -C docker shell), then: ./target/debug/clorraine run FILE.clo"
         .to_owned()
 }
 
