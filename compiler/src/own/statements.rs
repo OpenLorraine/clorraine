@@ -43,14 +43,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match stmt {
             Stmt::Let(decl) => self.check_let(decl),
             Stmt::Const(decl) => self.check_const(decl),
-            Stmt::Expr(expr) => {
-                self.eval(expr);
-                // An assignment already emitted its store while it was walked;
-                // every other effectful expression lowers to a discarded call.
-                if !matches!(expr.kind, ExprKind::Assign { .. }) {
-                    self.emit_expr_statement(expr);
-                }
-            }
+            Stmt::Expr(expr) => self.check_expr_statement(expr),
             Stmt::If(decl) => self.check_if(decl),
             Stmt::While(decl) => self.check_while(decl),
             Stmt::DoWhile(decl) => self.check_do_while(decl),
@@ -67,6 +60,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.unsafe_depth -= 1;
             }
             Stmt::Block(block) => self.check_block(block),
+        }
+    }
+
+    /// Checks an expression used as a statement and emits its run-time effect.
+    ///
+    /// An assignment emitted its store while it was walked; an increment or
+    /// decrement emits the same read-modify-write as the equivalent compound
+    /// assignment; every other effectful expression lowers to a discarded call.
+    /// This is the statement path, so a `j++` here increments `j` even though
+    /// the same expression in value position yields the old value.
+    pub(super) fn check_expr_statement(&mut self, expr: &'a Expr) {
+        self.eval(expr);
+        match &expr.kind {
+            ExprKind::Assign { .. } => {}
+            ExprKind::Unary { op, operand }
+                if matches!(
+                    op,
+                    UnaryOp::PreIncrement
+                        | UnaryOp::PostIncrement
+                        | UnaryOp::PreDecrement
+                        | UnaryOp::PostDecrement
+                ) =>
+            {
+                let op = match op {
+                    UnaryOp::PreIncrement | UnaryOp::PostIncrement => AssignOp::Add,
+                    _ => AssignOp::Sub,
+                };
+                self.check_update(op, operand);
+            }
+            _ => self.emit_expr_statement(expr),
         }
     }
 

@@ -318,3 +318,26 @@ pub enum AssignOp {
     /// `>>=`
     Shr,
 }
+
+impl AssignOp {
+    /// The binary operator a compound assignment applies, or `None` for `=`.
+    ///
+    /// `x op= y` is equivalent to `x = x op y`, so the operator stage and the
+    /// code generator both need the same mapping from the assignment spelling
+    /// to the binary operation it performs.
+    pub fn binary_op(self) -> Option<BinaryOp> {
+        match self {
+            Self::Assign => None,
+            Self::Add => Some(BinaryOp::Add),
+            Self::Sub => Some(BinaryOp::Sub),
+            Self::Mul => Some(BinaryOp::Mul),
+            Self::Div => Some(BinaryOp::Div),
+            Self::Rem => Some(BinaryOp::Rem),
+            Self::BitAnd => Some(BinaryOp::BitAnd),
+            Self::BitOr => Some(BinaryOp::BitOr),
+            Self::BitXor => Some(BinaryOp::BitXor),
+            Self::Shl => Some(BinaryOp::Shl),
+            Self::Shr => Some(BinaryOp::Shr),
+        }
+    }
+}

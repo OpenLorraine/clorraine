@@ -242,16 +242,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks an assignment expression.
+    ///
+    /// A compound assignment `x op= y` is `x = x op y` (Ch 04 §4), so it emits
+    /// the same read-modify-write as the equivalent plain assignment: the
+    /// current value of the place is read, combined with the right-hand side,
+    /// and stored back. The place is lowered once, so a side-effecting element
+    /// index runs a single time.
     pub(super) fn check_assign(&mut self, op: AssignOp, target: &Expr, value: &Expr) {
         let target_ty = self.ty(target);
-        if op != AssignOp::Assign && matches!(target_ty.kind, TyKind::Raw(_)) {
+        let compound = op.binary_op();
+        if compound.is_some() && matches!(target_ty.kind, TyKind::Raw(_)) {
             self.report_unsafe(UnsafeOp::PointerArithmetic, target.span);
         }
         self.check_place_raw(target);
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
                 self.eval(value);
-                if op != AssignOp::Assign {
+                if compound.is_some() {
                     self.read_place(id, &projections, target.span);
                 }
                 if !projections.is_empty() && self.is_loan_value(value) {
@@ -265,10 +272,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 self.write_place(id, &projections, target.span);
                 if has_runtime_element(&projections) {
-                    self.emit_indexed_store(target, value);
+                    self.emit_indexed_store(target, value, compound);
                 } else {
                     let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
-                    self.emit_store(place, &target_ty, value);
+                    self.emit_assigned(place, &target_ty, value, compound);
                 }
                 if projections.is_empty() {
                     self.bind_value(id, &target_ty, value, target.span);
@@ -299,10 +306,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 if !is_const {
                     if has_runtime_element(&projections) {
-                        self.emit_indexed_store(target, value);
+                        self.emit_indexed_store(target, value, compound);
                     } else {
                         let place = self.target_place(&PlaceTarget::Global(id, projections));
-                        self.emit_store(place, &target_ty, value);
+                        self.emit_assigned(place, &target_ty, value, compound);
                     }
                 }
             }
@@ -314,29 +321,143 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.check_value_into(value, &target_ty, value.span);
     }
 
-    /// Lowers an assignment whose target has a run-time index.
+    /// Checks an increment or decrement used as a statement.
     ///
-    /// The target is lowered as the address of the selected element plus a
-    /// store through it. The address keeps the index, so the emitter can emit
-    /// the element's bounds check; a plain element projection would have lost
-    /// the index and hardcoded element zero. The base and the index are
-    /// materialized first, exactly as the read path does, so the bounds guard
-    /// and the store read the same evaluation: a side-effecting index such as
-    /// `a[next()]` cannot pass the guard for one value and store through
-    /// another.
-    fn emit_indexed_store(&mut self, target: &Expr, value: &Expr) {
+    /// `x++`, `++x`, `x--`, and `--x` all reduce to `x = x op 1` (Ch 04 §4), so
+    /// they emit the same read-modify-write as a compound assignment. The result
+    /// value is discarded, so a postfix and a prefix form lower identically
+    /// here; the value forms go through the unary value path instead.
+    pub(super) fn check_update(&mut self, op: AssignOp, operand: &Expr) {
+        let ty = self.ty(operand);
+        self.check_place_raw(operand);
+        let binary = op.binary_op().expect("the update operators are compound");
+        let one = Value::new(ty.clone(), ValueKind::Int(1));
+        match self.place_target(operand) {
+            Some(PlaceTarget::Local(id, projections)) => {
+                self.read_place(id, &projections, operand.span);
+                self.write_place(id, &projections, operand.span);
+                if has_runtime_element(&projections) {
+                    self.emit_indexed_update(operand, binary, one);
+                } else {
+                    let place = self.target_place(&PlaceTarget::Local(id, projections));
+                    self.emit_compound_store(binary, place, &ty, one);
+                }
+            }
+            Some(PlaceTarget::Global(id, projections)) => {
+                let is_const = self
+                    .program
+                    .globals
+                    .get(&id)
+                    .is_some_and(|global| global.is_const);
+                if is_const {
+                    self.error(
+                        "E10023",
+                        format!("cannot assign to immutable '{}'", id.name),
+                        "declare it with `let` (mutable)",
+                        operand.span,
+                    );
+                    return;
+                }
+                if has_runtime_element(&projections) {
+                    self.emit_indexed_update(operand, binary, one);
+                } else {
+                    let place = self.target_place(&PlaceTarget::Global(id, projections));
+                    self.emit_compound_store(binary, place, &ty, one);
+                }
+            }
+            None => {
+                self.eval(operand);
+            }
+        }
+    }
+
+    /// Emits the store for an assignment, plain or compound.
+    fn emit_assigned(
+        &mut self,
+        place: Place,
+        ty: &Ty,
+        value: &Expr,
+        compound: Option<BinaryOp>,
+    ) {
+        match compound {
+            Some(binary) => {
+                let right = self.lower_value(value);
+                self.emit_compound_store(binary, place, ty, right);
+            }
+            None => self.emit_store(place, ty, value),
+        }
+    }
+
+    /// Emits a read-modify-write `place = place op right`.
+    fn emit_compound_store(&mut self, op: BinaryOp, place: Place, ty: &Ty, right: Value) {
+        let left = Value::place(place.clone());
+        let value = self.combine(op, left, right, ty);
+        self.emit(Statement::Assign { target: place, value });
+    }
+
+    /// Builds a binary value, materializing a guarded operand once.
+    ///
+    /// The emitted guard for `/` and `%` re-reads both operands, so a
+    /// side-effecting operand is stored in a temporary the guard and the
+    /// operation share.
+    fn combine(&mut self, op: BinaryOp, left: Value, right: Value, ty: &Ty) -> Value {
+        let (left, right) = if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+            (
+                self.materialize_guard_operand(left),
+                self.materialize_guard_operand(right),
+            )
+        } else {
+            (left, right)
+        };
+        Value::new(
+            ty.clone(),
+            ValueKind::Binary {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+        )
+    }
+
+    /// Lowers an indexed target to its element read and its address.
+    ///
+    /// The base and the run-time index are materialized once so the element
+    /// read and the store address share one evaluation: a side-effecting index
+    /// such as `a[next()]` cannot pass a bounds guard for one value and store
+    /// through another. The address keeps the index, so the emitter still
+    /// emits the element's bounds check; a plain element projection would lose
+    /// the index and hardcode element zero.
+    ///
+    /// When `shared` is set the element value is used twice (read and address),
+    /// so an impure operand is computed into a real temporary to keep its side
+    /// effect to one run; a plain store passes `false` and leaves the operand
+    /// in its single guarded position.
+    fn indexed_target(&mut self, target: &Expr, shared: bool) -> Option<(Value, Value, Ty)> {
         let target = match &target.kind {
             ExprKind::Unsafe(inner) => inner,
             _ => target,
         };
         let ExprKind::Index { base, index } = &target.kind else {
-            return;
+            return None;
         };
         let element_ty = self.ty(target);
         let base_value = self.lower_value(base);
         let index_value = self.lower_value(index);
-        let base_value = self.materialize_guard_operand(base_value);
-        let index_value = self.materialize_guard_operand(index_value);
+        // A compound store reads the element and takes its address, so the
+        // index and base appear in two guarded positions. An impure operand is
+        // computed into a real temporary first so it runs once; the plain store
+        // leaves the operand inline, where its single guarded position suffices.
+        let (base_value, index_value) = if shared {
+            (
+                self.materialize_operand(base_value),
+                self.materialize_operand(index_value),
+            )
+        } else {
+            (
+                self.materialize_guard_operand(base_value),
+                self.materialize_guard_operand(index_value),
+            )
+        };
         let element = Value::new(
             element_ty.clone(),
             ValueKind::Index {
@@ -345,16 +466,43 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             },
         );
         let pointer = Value::new(
-            element_ty,
+            element_ty.clone(),
             ValueKind::Unary {
                 op: UnaryOp::AddressOf,
-                operand: Box::new(element),
+                operand: Box::new(element.clone()),
             },
         );
-        let lowered = self.lower_value(value);
+        Some((element, pointer, element_ty))
+    }
+
+    /// Lowers an indexed assignment, plain or compound.
+    fn emit_indexed_store(&mut self, target: &Expr, value: &Expr, compound: Option<BinaryOp>) {
+        let Some((element, pointer, element_ty)) = self.indexed_target(target, compound.is_some())
+        else {
+            return;
+        };
+        let stored = match compound {
+            Some(binary) => {
+                let right = self.lower_value(value);
+                self.combine(binary, element, right, &element_ty)
+            }
+            None => self.lower_value(value),
+        };
         self.emit(Statement::StorePointer {
             pointer,
-            value: lowered,
+            value: stored,
+        });
+    }
+
+    /// Lowers an indexed increment or decrement as a read-modify-write.
+    fn emit_indexed_update(&mut self, target: &Expr, binary: BinaryOp, one: Value) {
+        let Some((element, pointer, element_ty)) = self.indexed_target(target, true) else {
+            return;
+        };
+        let stored = self.combine(binary, element, one, &element_ty);
+        self.emit(Statement::StorePointer {
+            pointer,
+            value: stored,
         });
     }
 

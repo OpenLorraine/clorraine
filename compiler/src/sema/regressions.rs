@@ -294,3 +294,42 @@ func main(): i32 { return 0; }
         &["E10224"],
     );
 }
+
+#[test]
+fn a_bare_return_is_allowed_only_in_a_void_function() {
+    // `return;` in a value-returning function returns nothing where the return
+    // type requires a value, which is the implicit-conversion error.
+    assert_codes(
+        r#"module test;
+func demo(): i32 { return; }
+func main(): i32 { return 0; }
+"#,
+        &["E10200"],
+    );
+    // The same bare return is the normal exit of a `void` function.
+    assert_accepts(
+        r#"module test;
+func demo(): void { return; }
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
+
+#[test]
+fn an_increment_operand_must_be_a_place() {
+    // `x++` is `x = x + 1`, so a call result cannot be incremented.
+    assert_codes(
+        r#"module test;
+func make(): i32 { return 1; }
+func demo(): void { make()++; }
+func main(): i32 { return 0; }
+"#,
+        &["E10221"],
+    );
+    assert_accepts(
+        r#"module test;
+func demo(): i32 { let x: i32 = 0; x++; return x; }
+func main(): i32 { return 0; }
+"#,
+    );
+}

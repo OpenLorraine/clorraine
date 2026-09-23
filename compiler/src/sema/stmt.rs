@@ -39,14 +39,27 @@ impl Checker<'_, '_> {
             Stmt::DoWhile(decl) => self.check_do_while(decl),
             Stmt::ForC(decl) => self.check_for_c(decl),
             Stmt::ForIn(decl) => self.check_for_in(decl),
-            Stmt::Return { value, .. } => {
-                if let Some(value) = value {
-                    let returns = self.returns.clone();
-                    if returns.is_void() {
-                        self.check_value(value, None);
-                    } else {
-                        self.check_into(value, &returns);
+            Stmt::Return { value, span } => {
+                let returns = self.returns.clone();
+                match value {
+                    Some(value) => {
+                        if returns.is_void() {
+                            self.check_value(value, None);
+                        } else {
+                            self.check_into(value, &returns);
+                        }
                     }
+                    // A bare `return;` suits only a `void` function; anywhere
+                    // else it returns nothing where a value is required.
+                    None if !returns.is_void() => {
+                        self.error(
+                            "E10200",
+                            format!("cannot convert '()' to '{}' implicitly", returns.display()),
+                            "return a value of the declared type",
+                            *span,
+                        );
+                    }
+                    None => {}
                 }
             }
             Stmt::Break(_) | Stmt::Continue(_) => {}

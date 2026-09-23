@@ -1553,3 +1553,107 @@ fn same_named_globals_in_two_modules_resolve_by_module() {
     let output = build_and_run_files("m11", &files, None);
     assert_eq!(output.status.code(), Some(88), "m11: expected 5 + 42 + 41");
 }
+
+/// A C-style `for` runs its step, so a postfix `i++` advances the loop.
+///
+/// The step block of `for (let i = 0; i < n; i++)` lowers to an assignment and
+/// is emitted in the C `for` header. A dropped step reads as an infinite loop,
+/// so the fixed iteration count is the observable result.
+#[test]
+fn a_c_style_for_runs_its_step() {
+    let source = r#"module codegen.def2;
+
+func count(n: i32): i32 {
+    let total: i32 = 0;
+    for (let i = 0; i < n; i++) {
+        total = total + 1;
+    }
+    return total;
+}
+
+func main(): i32 {
+    return count(4);
+}
+"#;
+    let output = build_and_run("def2", source, None);
+    assert_eq!(output.status.code(), Some(4), "def2: expected four iterations");
+}
+
+/// A compound assignment reads its target before applying the operation.
+///
+/// `j += 2` must store `j + 2`, not `2`; the same rule covers the other
+/// compound operators, and the increments and decrements lower to `+= 1` and
+/// `-= 1`.
+#[test]
+fn compound_assignment_combines_with_the_current_value() {
+    let source = r#"module codegen.def3;
+
+func compute(): i32 {
+    let j: i32 = 0;
+    j += 2;
+    j++;
+    ++j;
+    j -= 1;
+    j--;
+    return j;
+}
+
+func main(): i32 {
+    return compute();
+}
+"#;
+    let output = build_and_run("def3", source, None);
+    assert_eq!(output.status.code(), Some(2), "def3: expected 0 +2 +1 +1 -1 -1");
+}
+
+/// A postfix increment yields the old value while still updating its target.
+///
+/// The value form is a different path from the statement form: `x = j++` must
+/// return `j`'s value before the increment, and `j` must be one larger
+/// afterward.
+#[test]
+fn a_postfix_increment_yields_the_old_value() {
+    let source = r#"module codegen.def4;
+
+func main(): i32 {
+    let j: i32 = 5;
+    let x: i32 = j++;
+    return x * 10 + j;
+}
+"#;
+    let output = build_and_run("def4", source, None);
+    assert_eq!(output.status.code(), Some(56), "def4: expected 5 * 10 + 6");
+}
+
+/// A side-effecting element index runs once for a compound store.
+///
+/// `a[nextIndex()] += 5` is a read-modify-write: the index must be evaluated
+/// once, and the emitted program proves it by printing on each call and by the
+/// stored result.
+#[test]
+fn a_compound_element_store_evaluates_its_index_once() {
+    let source = r#"module codegen.def5;
+
+ffi probe {
+    func nextIndex(): i32;
+}
+
+func main(): i32 {
+    let a: i32[2] = [10, 20];
+    a[nextIndex()] += 5;
+    return a[0];
+}
+"#;
+    let output = build_and_run("def5", source, Some(NEXT_INDEX_STUB));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "index\n",
+        "def5: the index must be evaluated exactly once"
+    );
+    assert_eq!(output.status.code(), Some(15), "def5: expected 10 + 5");
+}
+
+/// An `ffi` stub that reports every index evaluation to stdout.
+const NEXT_INDEX_STUB: &str = r#"#include <stdio.h>
+int nextIndex(void) { puts("index"); return 0; }
+"#;

@@ -42,6 +42,16 @@ impl Checker<'_, '_> {
             | UnaryOp::PostIncrement
             | UnaryOp::PostDecrement => {
                 self.require_numeric(&ty, unary_spelling(op), operand.span);
+                // `x++` is `x = x + 1`, so its operand must be a place just as
+                // an assignment's left side must be.
+                if !self.is_place(operand) {
+                    self.error(
+                        "E10221",
+                        "left side of an assignment must be a place",
+                        "increment a variable, field, or element",
+                        operand.span,
+                    );
+                }
                 ty
             }
         }
@@ -346,7 +356,7 @@ impl Checker<'_, '_> {
                 // operand takes the target's type exactly as it would in the
                 // equivalent binary operator.
                 let value_ty = self.adapt_literal(value, &target_ty).unwrap_or(value_ty);
-                if let Some(binary) = assign_binary(op) {
+                if let Some(binary) = op.binary_op() {
                     // `x op= y` is `x = x op y`, so the operator result must
                     // convert back to the target exactly as the equivalent
                     // assignment would.
@@ -475,19 +485,3 @@ fn unary_spelling(op: UnaryOp) -> &'static str {
     }
 }
 
-/// The binary operator a compound assignment applies.
-fn assign_binary(op: AssignOp) -> Option<BinaryOp> {
-    match op {
-        AssignOp::Assign => None,
-        AssignOp::Add => Some(BinaryOp::Add),
-        AssignOp::Sub => Some(BinaryOp::Sub),
-        AssignOp::Mul => Some(BinaryOp::Mul),
-        AssignOp::Div => Some(BinaryOp::Div),
-        AssignOp::Rem => Some(BinaryOp::Rem),
-        AssignOp::BitAnd => Some(BinaryOp::BitAnd),
-        AssignOp::BitOr => Some(BinaryOp::BitOr),
-        AssignOp::BitXor => Some(BinaryOp::BitXor),
-        AssignOp::Shl => Some(BinaryOp::Shl),
-        AssignOp::Shr => Some(BinaryOp::Shr),
-    }
-}

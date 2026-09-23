@@ -169,7 +169,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             checker.check_block(&decl.body);
             if !checker.is_terminated() {
                 for step in &decl.step {
-                    checker.eval(step);
+                    checker.check_expr_statement(step);
                 }
             }
             checker.exits.pop();
@@ -190,7 +190,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.switch_to(step_block);
         for step in &decl.step {
-            self.eval(step);
+            self.check_expr_statement(step);
         }
         if !self.is_terminated() {
             self.terminate(Terminator::Goto(head));

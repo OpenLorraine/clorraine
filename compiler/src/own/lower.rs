@@ -248,6 +248,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(ty, ValueKind::Temp(id))
     }
 
+    /// Stores an impure operand in a compiler temporary before it is used twice.
+    ///
+    /// Unlike [`Self::materialize_guard_operand`], which defers the assignment
+    /// to the guarded construct, this emits the assignment immediately. Use it
+    /// for an operand that appears in two places of one statement (the element
+    /// read and the element address of a compound store): each appearance is
+    /// guarded separately, so an operand left inline would run its side effect
+    /// twice.
+    pub(super) fn materialize_operand(&mut self, value: Value) -> Value {
+        if is_pure_value(&value) {
+            return value;
+        }
+        if matches!(
+            &value.ty.kind,
+            TyKind::Array { extents, .. } if extents.iter().all(Option::is_some)
+        ) {
+            return value;
+        }
+        if mentions_type_param(&value.ty) {
+            return value;
+        }
+        self.materialize_value(value)
+    }
+
     /// Binds an unnamed owned call result so the scope cleanup can release it.
     ///
     /// A call result the callee only borrows is owned by the caller, but an
