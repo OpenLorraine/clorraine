@@ -9,6 +9,7 @@
 pub mod abi;
 pub mod ast;
 pub mod borrow;
+pub mod clorraine;
 pub mod codegen;
 pub mod consts;
 pub mod diag;

@@ -1,4 +1,5 @@
-# The `clc` compiler: a library plus a thin command-line binary.
+# The `clc` compiler and the `clorraine` developer driver: one library with
+# two thin command-line binaries.
 [package]
 name = "clc"
 version = "0.1.0"
@@ -12,3 +13,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "clc"
 path = "src/main.rs"
+
+[[bin]]
+name = "clorraine"
+path = "src/clorraine_main.rs"
