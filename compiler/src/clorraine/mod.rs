@@ -42,7 +42,7 @@ pub fn run(args: Vec<String>) -> i32 {
 fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
     match cli::parse(&args) {
         Err(message) => {
-            eprintln!("usage error: {message}");
+            eprintln!("usage error: {}", display::sanitize(&message));
             EXIT_USAGE
         }
         Ok(Action::Help) => {

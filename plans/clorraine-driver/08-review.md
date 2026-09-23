@@ -50,6 +50,42 @@ collision (RV-804) and the Make passthrough's trusted-input assumption (SA-802);
 record SA-805/SA-807 as accepted. Then run the one permitted scoped re-review of
 the fix diff.
 
+## Accepted findings (not fixed)
+
+- **SA-805** — the driver has no timeout and `--capture`/`vamos` buffer all
+  stdout in memory. Accepted for an interactive developer tool; a runaway or
+  unbounded-output program is the developer's own program. Revisit if the
+  driver is used in automation.
+- **SA-807** — `sdk_present` trusts any regular file at the marker path. Low
+  impact: it gates guidance only, not a privilege, and the path is root-owned
+  in the image.
+- **RV-902** — the tool preflight uses the file mode bits rather than the
+  caller's identity (`access(X_OK)`); PATH tools are normally world-executable.
+
+## Re-review of the fix diff
+
+The single permitted scoped re-review (`3dd4ac1..b21c2e3`) confirmed **every
+accepted finding resolved** and found **no new critical or major** issue:
+
+- SA-801 — the handoff path is single-quoted and escaped; an end-to-end probe
+  with a name containing `$(touch PWNED)`, `;`, a space, and `'` produced a
+  safe literal argument.
+- RV-801 — debug keeps `-Wall -Wextra -Werror`, release matches the §13 line.
+- RV-802/SA-803 — messages end with a newline and control bytes are sanitized;
+  normal paths are unchanged.
+- RV-803/SA-804 — the `emit` scratch C lives in a private `build/` directory
+  created with `create_new`; no `/tmp` path remains.
+- RV-805, RV-806, RV-807, SA-806 — resolved with tests.
+- RV-804, SA-802 — documented; SA-805, SA-807 — accepted.
+
+It raised one residual minor, RV-901 (the `usage error:` message was not
+sanitized), which was then fixed; and the low RV-902, accepted above.
+
+**Compliance note:** Phases 1–3 were reviewed together rather than per-phase
+(the feature is small and tightly coupled), and the phase's single scoped
+re-review was spent on the fix batch, so the RV-901 follow-up was verified by
+`make check` rather than a further independent review.
+
 ### Accepted findings (not fixed)
 
 | ID | Severity | Title | Reason accepted |
