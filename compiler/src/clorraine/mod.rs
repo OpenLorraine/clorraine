@@ -14,12 +14,12 @@
 mod artifacts;
 mod build;
 mod cli;
+mod display;
 mod environment;
 mod run;
 mod toolchain;
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::ffi::OsStr;
 
 use crate::profile::Profile;
 
@@ -32,6 +32,14 @@ const EXIT_USAGE: i32 = 2;
 ///
 /// Returns the process exit code.
 pub fn run(args: Vec<String>) -> i32 {
+    run_with_marker(args, environment::SDK_MARKER)
+}
+
+/// Like [`run`] but with an explicit SDK marker path.
+///
+/// The marker is a parameter so tests can exercise the outside-the-container
+/// exit path without changing the filesystem layout.
+fn run_with_marker(args: Vec<String>, marker: &str) -> i32 {
     match cli::parse(&args) {
         Err(message) => {
             eprintln!("usage error: {message}");
@@ -45,26 +53,41 @@ pub fn run(args: Vec<String>) -> i32 {
             println!("{}", cli::version_text());
             0
         }
-        Ok(Action::Invoke(options)) => invoke(options),
+        Ok(Action::Invoke(options)) => {
+            let search_path = std::env::var_os("PATH").unwrap_or_default();
+            invoke(options, marker, &search_path)
+        }
     }
 }
 
 /// Checks the environment, then performs the selected command.
-fn invoke(options: Options) -> i32 {
-    if !environment::sdk_present(environment::SDK_MARKER) {
-        eprintln!("{}", environment::sdk_guidance());
-        return EXIT_USAGE;
-    }
-    let tools = required_tools(&options);
-    if let Some(tool) = environment::missing_tool(&tools) {
-        eprintln!("{}", environment::missing_tool_message(&tool));
-        return 1;
+///
+/// The marker path and the `PATH` value are parameters so the two environment
+/// gates can be exercised with synthetic inputs.
+fn invoke(options: Options, marker: &str, search_path: &OsStr) -> i32 {
+    if let Some((code, message)) = environment_exit(&options, marker, search_path) {
+        eprintln!("{message}");
+        return code;
     }
     match options.command {
         Command::Emit => emit(&options),
         Command::Build => build_command(&options),
         Command::Run => run_command(options),
     }
+}
+
+/// The environment gate: `Some((code, message))` when the driver must stop.
+///
+/// A missing SDK marker is a usage/environment error (exit 2); a required tool
+/// that is missing or not executable on `PATH` is reported by name (exit 1).
+/// Both inputs are parameters so unit tests need not touch the process
+/// environment.
+fn environment_exit(options: &Options, marker: &str, search_path: &OsStr) -> Option<(i32, String)> {
+    if !environment::sdk_present(marker) {
+        return Some((EXIT_USAGE, environment::sdk_guidance()));
+    }
+    environment::missing_tool_in(&required_tools(options), search_path)
+        .map(|tool| (1, environment::missing_tool_message(&tool)))
 }
 
 /// The external tools a command needs before it can run.
@@ -88,25 +111,50 @@ fn required_tools(options: &Options) -> Vec<&'static str> {
 }
 
 /// Emits the C and prints it, or writes it to `-o`.
+///
+/// The translation unit lands in a private scratch directory under the build
+/// tree (see [`artifacts::create_scratch_c`]), which is removed before this
+/// function returns.
 fn emit(options: &Options) -> i32 {
-    let temp = temp_c_path();
-    let code = build::emit_c(options.profile, &options.files, &temp);
+    let (scratch_dir, temp) = match artifacts::create_scratch_c() {
+        Ok(scratch) => scratch,
+        Err(error) => {
+            eprintln!(
+                "clorraine: cannot create a scratch file: {}",
+                display::sanitize(&error.to_string())
+            );
+            return 1;
+        }
+    };
+    let result = emit_scratch(options, &temp);
+    let _ = std::fs::remove_dir_all(&scratch_dir);
+    result
+}
+
+/// Emits the C into `temp`, then prints it or copies it to the output path.
+fn emit_scratch(options: &Options, temp: &std::path::Path) -> i32 {
+    let code = build::emit_c(options.profile, &options.files, temp);
     if code != 0 {
         // The compiler already reported its diagnostics to stderr.
         return code;
     }
-    let c = match std::fs::read_to_string(&temp) {
+    let c = match std::fs::read_to_string(temp) {
         Ok(c) => c,
         Err(error) => {
-            eprintln!("clorraine: cannot read the emitted C: {error}");
+            eprintln!(
+                "clorraine: cannot read the emitted C: {}",
+                display::sanitize(&error.to_string())
+            );
             return 1;
         }
     };
-    let _ = std::fs::remove_file(&temp);
     match &options.output {
         Some(path) => {
             if let Err(error) = std::fs::write(path, &c) {
-                eprintln!("clorraine: cannot write '{path}': {error}");
+                eprintln!(
+                    "clorraine: cannot write '{}': {error}",
+                    display::sanitize(path)
+                );
                 return 1;
             }
             0
@@ -128,7 +176,10 @@ fn build_command(options: &Options) -> i32 {
             return 1;
         }
     };
-    println!("built {}", built.bin.display());
+    println!(
+        "built {}",
+        display::sanitize(&built.bin.display().to_string())
+    );
     if options.emit_c {
         print_c(&built.c);
     }
@@ -159,11 +210,13 @@ fn run_command(options: Options) -> i32 {
     } else {
         None
     };
-    let code = run::run_program(&runner, &built.bin, capture.as_deref());
-    if let Some(path) = &capture {
-        println!("captured {}", path.display());
+    let result = run::run_program(&runner, &built.bin, capture.as_deref());
+    if result.captured {
+        if let Some(path) = &capture {
+            println!("captured {}", display::sanitize(&path.display().to_string()));
+        }
     }
-    code
+    result.code
 }
 
 /// Prints an emitted translation unit to stdout, ignoring a read failure.
@@ -173,12 +226,77 @@ fn print_c(c_path: &std::path::Path) {
     }
 }
 
-/// A unique temporary path for the `emit` command's C file.
-///
-/// `emit` does not need the artifact directory; it writes the C somewhere
-/// neutral and either prints or copies it, then removes it.
-fn temp_c_path() -> PathBuf {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("clorraine-{}-{sequence}.c", std::process::id()))
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    /// Builds an argument vector from string literals.
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|item| (*item).to_owned()).collect()
+    }
+
+    /// The parsed invocation, panicking when the line is rejected.
+    fn invoke_options(list: &[&str]) -> Options {
+        match cli::parse(&args(list)) {
+            Ok(Action::Invoke(options)) => options,
+            other => panic!("expected an invocation, got {other:?}"),
+        }
+    }
+
+    /// A marker path that exists on every host, so the environment gate passes
+    /// and the tool check is the one under test.
+    const PRESENT_MARKER: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+
+    #[test]
+    fn an_absent_sdk_marker_exits_two_and_prints_guidance() {
+        let options = invoke_options(&["run", "hello.clo"]);
+        let (code, message) = environment_exit(&options, "/no/such/sdk-marker", &OsString::new())
+            .expect("an absent marker must stop the driver");
+        assert_eq!(code, EXIT_USAGE);
+        assert!(
+            message.contains("SDK container"),
+            "the guidance names the SDK container, got:\n{message}"
+        );
+        // The whole run entry point returns the same code.
+        assert_eq!(
+            run_with_marker(args(&["run", "hello.clo"]), "/no/such/sdk-marker"),
+            EXIT_USAGE
+        );
+    }
+
+    #[test]
+    fn a_missing_required_tool_is_named_and_exits_one() {
+        let options = invoke_options(&["run", "hello.clo"]);
+        // The host profile needs `cc`; an empty search path finds nothing.
+        let (code, message) = environment_exit(&options, PRESENT_MARKER, &OsString::new())
+            .expect("a missing tool must stop the driver");
+        assert_eq!(code, 1);
+        assert!(
+            message.contains("'cc'"),
+            "the report names the missing tool, got:\n{message}"
+        );
+    }
+
+    #[test]
+    fn a_present_marker_and_an_executable_tool_proceed() {
+        let dir = std::env::temp_dir().join(format!("clorraine-gate-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create the search directory");
+        let tool = dir.join("cc");
+        std::fs::write(&tool, b"").expect("write the tool file");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&tool)
+                .expect("the tool file exists")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(&tool, permissions).expect("set the execute bit");
+        }
+
+        let options = invoke_options(&["build", "hello.clo"]);
+        let gate = environment_exit(&options, PRESENT_MARKER, &OsString::from(dir.as_os_str()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(gate.is_none(), "a ready tool must let the command through");
+    }
 }

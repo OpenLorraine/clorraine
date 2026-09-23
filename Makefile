@@ -31,6 +31,11 @@ check:
 # Developer convenience: build the driver, then run one program in the
 # container. `FILE` is the Clorraine source path, relative to the repository
 # root; the emitted C and the program land under `build/clorraine/`.
+#
+# `FILE` is trusted developer input, never a forwarded untrusted value: it is
+# interpolated into the container command, so only pass a path you typed
+# yourself. (The driver itself spawns the compiler without a shell; this
+# passthrough is the one place where the value reaches one.)
 run:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine run $(FILE)"
 

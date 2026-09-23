@@ -130,7 +130,7 @@ clorraine run hello.clo
 clorraine run --profile hosted-amiga --emulator hello.clo
 # prints (and exits 0):
 # FS-UAE must run on the host. From the repository root:
-#   make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello
+#   make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'
 ```
 
 ## Error Handling

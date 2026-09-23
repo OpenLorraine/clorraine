@@ -11,6 +11,7 @@
 
 use std::path::Path;
 
+use super::display;
 use crate::profile::Profile;
 
 /// A C compiler with its fixed flags for one profile.
@@ -43,7 +44,10 @@ const DEBUG_FLAGS: &[&str] = &["-O0", "-g"];
 /// Release optimization flags.
 const RELEASE_FLAGS: &[&str] = &["-O2"];
 
-/// Warning flags shared by every build; warnings are errors.
+/// Warning flags for a debug build; warnings are errors.
+///
+/// The release line of the compile matrix omits warnings, so these are
+/// appended in debug only.
 const WARNINGS: &[&str] = &["-Wall", "-Wextra", "-Werror"];
 
 /// The Amiga link libraries appended on every hosted-amiga build.
@@ -67,14 +71,18 @@ pub fn tool(profile: Profile) -> Tool {
 
 /// Assembles the C compiler argument vector for one build.
 ///
-/// The shape is `<compiler> <base> <mode> <warnings> -o <bin> <c> <libs>`,
+/// The shape is `<compiler> <base> <mode> [warnings] -o <bin> <c> <libs>`,
 /// which is exactly the compile matrix line with the artifact paths filled in.
+/// The warning flags appear in debug only, because the matrix's release line
+/// has none.
 pub fn command(tool: &Tool, release: bool, c_path: &Path, bin_path: &Path) -> Vec<String> {
     let mut args = vec![tool.program.to_owned()];
     args.extend(tool.base.iter().map(|flag| (*flag).to_owned()));
     let mode = if release { RELEASE_FLAGS } else { DEBUG_FLAGS };
     args.extend(mode.iter().map(|flag| (*flag).to_owned()));
-    args.extend(WARNINGS.iter().map(|flag| (*flag).to_owned()));
+    if !release {
+        args.extend(WARNINGS.iter().map(|flag| (*flag).to_owned()));
+    }
     args.push("-o".to_owned());
     args.push(bin_path.display().to_string());
     args.push(c_path.display().to_string());
@@ -104,12 +112,38 @@ pub fn runner_command(runner: &Runner, bin: &Path) -> Vec<String> {
 /// emulator run is handed off: the driver prints this command and exits zero.
 /// With `capture` the host wrapper is asked to record the output instead of
 /// opening a display.
+///
+/// The built path is derived from the source file's name, so it is printed
+/// single-quoted: a developer who pastes the line cannot have a byte in the
+/// name interpreted by the shell. Control bytes are stripped first, so a name
+/// cannot drive terminal escapes either.
 pub fn fs_uae_handoff(bin: &Path, capture: bool) -> String {
     let prefix = if capture { "RUN_CAPTURE=1 " } else { "" };
+    let raw = bin.display().to_string();
+    let path = display::sanitize(&raw);
     format!(
         "FS-UAE must run on the host. From the repository root:\n  {prefix}make -C docker run PROG={}\n",
-        bin.display()
+        shell_single_quote(&path)
     )
+}
+
+/// Wraps `text` in single quotes for a POSIX shell.
+///
+/// Inside single quotes every byte is literal, so only the quote character
+/// needs escaping: `'\''` closes the quote, emits a literal quote, and opens a
+/// new one. The result is safe to paste as one shell word.
+fn shell_single_quote(text: &str) -> String {
+    let mut quoted = String::with_capacity(text.len() + 2);
+    quoted.push('\'');
+    for character in text.chars() {
+        if character == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(character);
+        }
+    }
+    quoted.push('\'');
+    quoted
 }
 
 #[cfg(test)]
@@ -125,7 +159,7 @@ mod tests {
         );
         assert_eq!(
             command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
-            "cc -std=c99 -O2 -Wall -Wextra -Werror -o prog out.c"
+            "cc -std=c99 -O2 -o prog out.c"
         );
     }
 
@@ -135,6 +169,15 @@ mod tests {
         assert_eq!(
             command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
             "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lamiga -lm"
+        );
+    }
+
+    #[test]
+    fn the_amiga_release_command_omits_the_warning_flags() {
+        let tool = tool(Profile::HostedAmiga);
+        assert_eq!(
+            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -o prog out.c -lamiga -lm"
         );
     }
 
@@ -152,9 +195,26 @@ mod tests {
         assert_eq!(
             fs_uae_handoff(bin, false),
             "FS-UAE must run on the host. From the repository root:\n  \
-             make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello\n"
+             make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'\n"
         );
-        assert!(fs_uae_handoff(bin, true)
-            .contains("  RUN_CAPTURE=1 make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello\n"));
+        assert!(fs_uae_handoff(bin, true).contains(
+            "  RUN_CAPTURE=1 make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'\n"
+        ));
+    }
+
+    #[test]
+    fn the_handoff_quotes_a_path_so_a_pasted_command_cannot_inject() {
+        // A stem with a quote, a substitution, and a control byte must be one
+        // inert shell word: the quote is escaped and the control byte removed.
+        let bin = Path::new("build/clorraine/a$(touch PWNED)'b\x1b/hosted-amiga/x");
+        let text = fs_uae_handoff(bin, false);
+        assert!(
+            text.contains("PROG='build/clorraine/a$(touch PWNED)'\\''b\u{FFFD}/hosted-amiga/x'"),
+            "the path must be one single-quoted word, got:\n{text}"
+        );
+        assert!(
+            !text.contains('\x1b'),
+            "a control byte must not survive into the printed command, got:\n{text}"
+        );
     }
 }

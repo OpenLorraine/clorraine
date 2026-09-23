@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::artifacts;
+use super::display;
 use super::toolchain::{self, Tool};
 use crate::profile::Profile;
 
@@ -34,8 +35,8 @@ impl fmt::Display for IceError {
         write!(
             formatter,
             "error: internal compiler error: the emitted C failed to compile\n  note: emitted C kept at {}\n  first error: {}\n",
-            self.c_path.display(),
-            self.first_error,
+            display::sanitize(&self.c_path.display().to_string()),
+            display::sanitize(&self.first_error),
         )
     }
 }
@@ -106,11 +107,11 @@ pub fn build(
     files: &[String],
 ) -> Result<BuildOutput, BuildFailure> {
     let stem = artifacts::program_stem(files).ok_or_else(|| {
-        BuildFailure::Error("clorraine: an input file name has no file stem".to_owned())
+        BuildFailure::Error("clorraine: an input file name has no file stem\n".to_owned())
     })?;
     artifacts::reset_program_dir(profile, &stem).map_err(|error| {
         BuildFailure::Error(format!(
-            "clorraine: cannot prepare the artifact directory: {error}"
+            "clorraine: cannot prepare the artifact directory: {error}\n"
         ))
     })?;
     let c_path = artifacts::c_path(profile, &stem);

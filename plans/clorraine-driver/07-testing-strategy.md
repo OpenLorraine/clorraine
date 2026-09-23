@@ -37,7 +37,7 @@ inside the SDK container (where `cc`, `m68k-amigaos-gcc`, and `vamos` exist) via
 | ST-DRV-5 | `clorraine run --profile hosted-amiga hello.clo` (SDK container) | the program prints `Hello, Clorraine!` via `vamos`; exit 0 | R2, R4 / AR-5 |
 | ST-DRV-6 | `clorraine run --capture hello.clo` | `build/clorraine/hello/host/out.txt` contains the program output; its path is printed; the output is not streamed | R8 / AR-25 |
 | ST-DRV-7 | `clorraine run exit7.clo`, whose `main` returns 7 | `clorraine` exits 7 | R8 / AR-11 |
-| ST-DRV-8 | `clorraine run --profile hosted-amiga --emulator hello.clo` | prints the exact host command `make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello`; exit 0; with `--capture` the command is prefixed `RUN_CAPTURE=1 ` | R5 / AR-6, AR-25 |
+| ST-DRV-8 | `clorraine run --profile hosted-amiga --emulator hello.clo` | prints the exact host command `make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'` (the path single-quoted); exit 0; with `--capture` the command is prefixed `RUN_CAPTURE=1 ` | R5 / AR-6, AR-25 |
 | ST-DRV-9 | `clorraine run bad.clo` with a Clorraine syntax error | the compiler's `error …` diagnostic on stderr; exit 1; no artifact produced | R7 / AR-22 |
 | ST-DRV-10 | `clorraine frobnicate hello.clo`; `clorraine run --nope hello.clo`; `clorraine run`; `clorraine run -o x.c hello.clo`; `clorraine run --emulator hello.clo` | each is a usage error on stderr; exit 2 | R10 / AR-26 |
 | ST-DRV-11 | `clorraine --help`; `clorraine --version` | help/version text on stdout; exit 0 | R10 / AR-26 |

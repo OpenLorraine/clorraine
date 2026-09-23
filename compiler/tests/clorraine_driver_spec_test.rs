@@ -324,7 +324,7 @@ fn hosted_amiga_emulator_prints_the_fs_uae_handoff() {
     assert_eq!(
         stdout(&plain),
         "FS-UAE must run on the host. From the repository root:\n  \
-         make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello\n",
+         make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'\n",
         "emulator-handoff: the printed command must be exact"
     );
 
@@ -343,7 +343,7 @@ fn hosted_amiga_emulator_prints_the_fs_uae_handoff() {
     assert_eq!(
         stdout(&captured),
         "FS-UAE must run on the host. From the repository root:\n  \
-         RUN_CAPTURE=1 make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello\n",
+         RUN_CAPTURE=1 make -C docker run PROG='build/clorraine/hello/hosted-amiga/hello'\n",
         "emulator-handoff-capture: capture prefixes the printed command"
     );
 }

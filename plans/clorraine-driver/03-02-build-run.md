@@ -39,8 +39,9 @@ established host build.
 | `host` | `cc` | `-std=c99` | `-O0 -g` | `-O2` | — |
 | `hosted-amiga` | `m68k-amigaos-gcc` | `-std=c99 -mcrt=nix20 -m68000 -fwrapv` | `-O0 -g` | `-O2` | `-lamiga -lm` |
 
-Every build also appends `-Wall -Wextra -Werror`. The command is assembled as an
-argument array; no shell is involved (AR-16, AR-22).
+A debug build also appends `-Wall -Wextra -Werror`; a release build omits them,
+matching the §13 release line. The command is assembled as an argument array;
+no shell is involved (AR-16, AR-22).
 
 Runners:
 
@@ -72,8 +73,9 @@ fn emit_c(profile: Profile, files: &[String], c_path: &Path) -> i32;
 /// Builds `c_path` into `bin_path`; `Err` carries the compiler's first error.
 fn compile(tool: &Tool, release: bool, c_path: &Path, bin_path: &Path) -> Result<(), IceError>;
 
-/// Runs the built program, streaming or capturing stdout; returns its exit code.
-fn run_program(runner: &Runner, bin: &Path, capture: Option<&Path>) -> i32;
+/// Runs the built program, streaming or capturing stdout; returns its code and
+/// whether a requested capture was written.
+fn run_program(runner: &Runner, bin: &Path, capture: Option<&Path>) -> RunResult;
 
 /// The exact host command that boots FS-UAE, without executing it.
 fn fs_uae_handoff(bin: &Path, capture: bool) -> String;
@@ -81,8 +83,9 @@ fn fs_uae_handoff(bin: &Path, capture: bool) -> String;
 
 ### Pipelines
 
-- **emit** — call `emit_c` into a temporary path, then print the C to stdout
-  (`--emit-c` semantics) or write it to `-o`. Exit `clc`'s code (AR-12).
+- **emit** — call `emit_c` into a private scratch file under the gitignored
+  build tree, then print the C to stdout (`--emit-c` semantics) or write it to
+  `-o`; the scratch file is removed afterwards. Exit `clc`'s code (AR-12).
 - **build** — `emit_c` → `compile`. Print `built <bin path>`. Exit 0 or the
   step's failure code (AR-3, AR-10).
 - **run** — `build`, then `run_program`; exit the program's code (AR-11).
@@ -98,11 +101,13 @@ The `dev` container cannot launch a sibling container, so the driver prints:
 
 ```text
 FS-UAE must run on the host. From the repository root:
-  make -C docker run PROG=build/clorraine/<stem>/hosted-amiga/<stem>
+  make -C docker run PROG='build/clorraine/<stem>/hosted-amiga/<stem>'
 ```
 
-With `--capture`, the printed command is prefixed `RUN_CAPTURE=1 `. The driver
-exits 0: the handoff is the successful outcome.
+The path is single-quoted (and control bytes stripped) because the `<stem>` is
+derived from the source file's name, so a pasted line cannot have a byte in the
+name interpreted by the shell. With `--capture`, the printed command is prefixed
+`RUN_CAPTURE=1 `. The driver exits 0: the handoff is the successful outcome.
 
 ### Capture and output (per AR-11, AR-25)
 

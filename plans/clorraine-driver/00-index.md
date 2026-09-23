@@ -54,6 +54,7 @@ socket so it can launch FS-UAE; converting `clc` into a multi-command toolchain
 | 03-01 | [Driver CLI](03-01-driver-cli.md)            | Commands, flags, dispatch, exit codes       |
 | 03-02 | [Build and Run](03-02-build-run.md)          | Toolchain table, artifacts, runner, ICE      |
 | 07  | [Testing Strategy](07-testing-strategy.md)     | ST cases and verification                   |
+| 08  | [Phase Review](08-review.md)                   | Independent correctness/security review      |
 | 99  | [Execution Plan](99-execution-plan.md)         | Phases, sessions, and task checklist        |
 
 ## Quick Reference

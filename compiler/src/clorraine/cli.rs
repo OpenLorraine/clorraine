@@ -76,6 +76,14 @@ Options:
   -o FILE                             emit only: write C to FILE (default: stdout)
   -h, --help                          Print this help
   -V, --version                       Print the version
+
+Exit codes:
+  0  success (including help, version, and the FS-UAE handoff)
+  1  Clorraine diagnostic, missing tool, or C compiler failure
+  2  usage error, or the driver is not inside the SDK container
+
+A run exits with the program's own code, so a program that exits 2 is
+indistinguishable from a usage or environment error.
 ";
 
 /// Returns the help text printed for `-h` and `--help`.
