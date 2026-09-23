@@ -22,26 +22,56 @@
 
 DOCKER_MAKE ?= $(MAKE) -C docker
 
+# Driver passthrough options.
+#   PROFILE   host (default) or hosted-amiga
+#   EMULATOR  1 to boot the built program in FS-UAE on the host
+#   CAPTURE   1 to write the program output to build/run/out.txt instead of streaming
+PROFILE ?= host
+EMULATOR ?= 0
+CAPTURE ?= 0
+
+# Driver flags derived from the options above.
+PROFILE_ARG = $(if $(filter hosted-amiga,$(PROFILE)),--profile hosted-amiga,)
+CAPTURE_ARG = $(if $(filter 1,$(CAPTURE)),--capture,)
+# The artifact name the driver derives: the first source file's stem.
+STEM = $(basename $(notdir $(FILE)))
+# Prefix for the host FS-UAE wrapper when capturing.
+CAPTURE_ENV = $(if $(filter 1,$(CAPTURE)),RUN_CAPTURE=1 ,)
+
 .PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build
 
 check:
 	./spec/check.sh
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
 
-# Developer convenience: build the driver, then run one program in the
-# container. `FILE` is the Clorraine source path, relative to the repository
-# root; the emitted C and the program land under `build/clorraine/`.
+# Developer convenience: build the driver, then run one program.
+#   make run FILE=hello.clo                                  host, streamed
+#   make run FILE=hello.clo PROFILE=hosted-amiga             Amiga, under vamos
+#   make run FILE=hello.clo EMULATOR=1                       Amiga, boot FS-UAE
+#   make run FILE=hello.clo EMULATOR=1 CAPTURE=1             Amiga, capture FS-UAE output
+#
+# FS-UAE runs on the host (the SDK container cannot launch it), so EMULATOR=1
+# builds the program in the container and then boots the emulator here.
 #
 # `FILE` is trusted developer input, never a forwarded untrusted value: it is
 # interpolated into the container command, so only pass a path you typed
 # yourself. (The driver itself spawns the compiler without a shell; this
 # passthrough is the one place where the value reaches one.)
+ifeq ($(EMULATOR),1)
 run:
-	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine run $(FILE)"
+	@test -n "$(FILE)" || { echo 'usage: make run FILE=<source.clo> [PROFILE=hosted-amiga] [EMULATOR=1] [CAPTURE=1]'; exit 2; }
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build --profile hosted-amiga $(FILE)"
+	$(CAPTURE_ENV)$(DOCKER_MAKE) run PROG=build/clorraine/$(STEM)/hosted-amiga/$(STEM)
+else
+run:
+	@test -n "$(FILE)" || { echo 'usage: make run FILE=<source.clo> [PROFILE=hosted-amiga] [CAPTURE=1]'; exit 2; }
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine run $(PROFILE_ARG) $(CAPTURE_ARG) $(FILE)"
+endif
 
 # Like `run`, but only builds the program (no execution).
 build:
-	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build $(FILE)"
+	@test -n "$(FILE)" || { echo 'usage: make build FILE=<source.clo> [PROFILE=hosted-amiga]'; exit 2; }
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build $(PROFILE_ARG) $(FILE)"
 
 corpus-amiga:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet"

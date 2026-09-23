@@ -26,7 +26,7 @@ in `CMD`).
 | `make corpus-amiga` | Build and run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`), the vbcc build-only leg, and build the interrupt-counter |
 | `make corpus-fs-uae` | Boot the interrupt-counter in FS-UAE and diff its captured output (needs the SDK X display) |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
-| `make run FILE=…` / `make build FILE=…` | Build (and run) a Clorraine program with the `clorraine` driver inside the container |
+| `make run FILE=…` / `make build FILE=…` | Build (and run) a Clorraine program with the `clorraine` driver inside the container; add `PROFILE=hosted-amiga`, `EMULATOR=1` (boot FS-UAE on the host), and `CAPTURE=1` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | The driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga`, `--release`, `--capture`, `--emulator`, `--emit-c`) |
 | `cargo test --workspace` | Rust tests; run in the container via `make check` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` at `target/debug/clc` |
