@@ -1,8 +1,0 @@
-module hello;
-
-import { println } from std.io;
-
-func main(): i32 {
-    println("Hello, Clorraine!");
-    return 0;
-}
