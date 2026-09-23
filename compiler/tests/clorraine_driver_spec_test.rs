@@ -146,7 +146,8 @@ func main(): i32 {
 const BAD_SOURCE: &str = r#"module bad;
 
 func main(): i32 {
-    return ;
+    let = 5;
+    return 0;
 }
 "#;
 

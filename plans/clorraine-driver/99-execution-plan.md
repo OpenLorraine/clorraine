@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-23 08:11
-> **Progress**: 3/14 tasks (21%)
+> **Last Updated**: 2026-09-23 08:20
+> **Progress**: 10/14 tasks (71%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -62,8 +62,8 @@ phase, unit tests, and full verification.
 
 ## Phase 2: Implement the driver
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
-> **Expected modification set**: `compiler/Cargo.toml`, `compiler/src/lib.rs`, `compiler/src/clorraine/**`, `compiler/src/clorraine_main.rs`, `Makefile`, `plans/clorraine-driver/99-execution-plan.md`
+> **Phase baseline tree**: aa577b73b53938a6ed5367aa0eab327e1e70e7b4
+> **Expected modification set**: `compiler/src/clorraine/**`, `compiler/src/clorraine_main.rs`, `Makefile`, `plans/clorraine-driver/99-execution-plan.md`
 > **Scope mode**: strict
 
 ### Step 2.1: CLI and environment
@@ -71,25 +71,25 @@ phase, unit tests, and full verification.
 **Reference**: [03-01 §Command surface, §Dispatch, §Environment](03-01-driver-cli.md) · AR-3, AR-7, AR-8, AR-12, AR-19, AR-23, AR-24, AR-26, AR-27
 **Objective**: parse, validate, help/version, and the SDK/missing-tool checks.
 
-- [ ] 2.1.1 Implement `cli` (commands, flags, defaults, usage errors, help, version) — `compiler/src/clorraine/cli.rs`
-- [ ] 2.1.2 Implement `environment` (`sdk_present`, `missing_tool`, parameterised for tests) — `compiler/src/clorraine/environment.rs`
+- [x] 2.1.1 Implement `cli` (commands, flags, defaults, usage errors, help, version) — `compiler/src/clorraine/cli.rs` ✅ (completed: 2026-09-23 08:20)
+- [x] 2.1.2 Implement `environment` (`sdk_present`, `missing_tool`, parameterised for tests) — `compiler/src/clorraine/environment.rs` ✅ (completed: 2026-09-23 08:20)
 
 ### Step 2.2: Toolchain, build, run, emit
 
 **Reference**: [03-02 §Toolchain table, §Artifact layout, §Pipelines, §Handoff, §Capture](03-02-build-run.md) · AR-5, AR-6, AR-9, AR-10, AR-11, AR-16, AR-17, AR-18, AR-25
 **Objective**: emit C in process, build, run, capture, and the FS-UAE handoff.
 
-- [ ] 2.2.1 Implement `toolchain` (profile→C command table, runner, handoff text) — `compiler/src/clorraine/toolchain.rs`
-- [ ] 2.2.2 Implement `build` (`emit_c` via `clc::driver::run`, `compile`, the ICE report) — `compiler/src/clorraine/build.rs`
-- [ ] 2.2.3 Implement `run` (host exec, `vamos`, capture, exit-code propagation) — `compiler/src/clorraine/run.rs`
-- [ ] 2.2.4 Implement `emit` (stdout / `-o`) and the artifact-path helper — `compiler/src/clorraine/mod.rs`, `compiler/src/clorraine/artifacts.rs`
+- [x] 2.2.1 Implement `toolchain` (profile→C command table, runner, handoff text) — `compiler/src/clorraine/toolchain.rs` ✅ (completed: 2026-09-23 08:20)
+- [x] 2.2.2 Implement `build` (`emit_c` via `clc::driver::run`, `compile`, the ICE report) — `compiler/src/clorraine/build.rs` ✅ (completed: 2026-09-23 08:20)
+- [x] 2.2.3 Implement `run` (host exec, `vamos`, capture, exit-code propagation) — `compiler/src/clorraine/run.rs` ✅ (completed: 2026-09-23 08:20)
+- [x] 2.2.4 Implement `emit` (stdout / `-o`) and the artifact-path helper — `compiler/src/clorraine/mod.rs`, `compiler/src/clorraine/artifacts.rs` ✅ (completed: 2026-09-23 08:20)
 
 ### Step 2.3: Make passthrough
 
 **Reference**: [01-requirements.md](01-requirements.md) R11 · AR-14
 **Objective**: one-command use from the repository root.
 
-- [ ] 2.3.1 Add `make run FILE=…` and `make build FILE=…` targets that call `clorraine` in the container — `Makefile`
+- [x] 2.3.1 Add `make run FILE=…` and `make build FILE=…` targets that call `clorraine` in the container — `Makefile` ✅ (completed: 2026-09-23 08:20)
 
 **Deliverables**:
 - A working `clorraine` binary for `host` and `hosted-amiga`

@@ -22,11 +22,21 @@
 
 DOCKER_MAKE ?= $(MAKE) -C docker
 
-.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify
+.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build
 
 check:
 	./spec/check.sh
 	$(DOCKER_MAKE) exec CMD="cargo test --workspace"
+
+# Developer convenience: build the driver, then run one program in the
+# container. `FILE` is the Clorraine source path, relative to the repository
+# root; the emitted C and the program land under `build/clorraine/`.
+run:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine run $(FILE)"
+
+# Like `run`, but only builds the program (no execution).
+build:
+	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet && ./target/debug/clorraine build $(FILE)"
 
 corpus-amiga:
 	$(DOCKER_MAKE) exec CMD="cargo build --workspace --quiet"
