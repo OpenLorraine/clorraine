@@ -137,3 +137,47 @@ fn first_error_line(stderr: &[u8]) -> String {
         .unwrap_or("(the C compiler produced no error output)")
         .to_owned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_failing_c_compiler_is_an_internal_compiler_error() {
+        // `false` always exits non-zero, so it stands in for a rejected build.
+        let tool = Tool {
+            program: "false",
+            base: &[],
+            libs: &[],
+        };
+        let error = compile(&tool, false, Path::new("emitted.c"), Path::new("prog"))
+            .expect_err("a failing compiler must not succeed");
+
+        assert_eq!(error.c_path, Path::new("emitted.c"));
+        let message = error.to_string();
+        assert!(
+            message.contains("internal compiler error"),
+            "the report names the failure, got:\n{message}"
+        );
+        assert!(
+            message.contains("emitted.c"),
+            "the report names the emitted C, got:\n{message}"
+        );
+    }
+
+    #[test]
+    fn a_missing_compiler_is_reported_by_name() {
+        let tool = Tool {
+            program: "clorraine-no-such-compiler",
+            base: &[],
+            libs: &[],
+        };
+        let error = compile(&tool, false, Path::new("emitted.c"), Path::new("prog"))
+            .expect_err("a missing compiler must not succeed");
+        assert!(
+            error.first_error.contains("clorraine-no-such-compiler"),
+            "the report names the tool, got:\n{}",
+            error.first_error
+        );
+    }
+}

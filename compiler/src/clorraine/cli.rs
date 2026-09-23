@@ -214,3 +214,78 @@ fn validate(options: &Options) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds an argument vector from string literals.
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|item| (*item).to_owned()).collect()
+    }
+
+    /// The parsed invocation, panicking when the line is rejected.
+    fn invoke(list: &[&str]) -> Options {
+        match parse(&args(list)) {
+            Ok(Action::Invoke(options)) => options,
+            other => panic!("expected an invocation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_command_or_a_help_flag_asks_for_help() {
+        assert_eq!(parse(&args(&[])), Ok(Action::Help));
+        assert_eq!(parse(&args(&["-h"])), Ok(Action::Help));
+        assert_eq!(parse(&args(&["--help"])), Ok(Action::Help));
+    }
+
+    #[test]
+    fn a_version_flag_asks_for_the_version() {
+        assert_eq!(parse(&args(&["-V"])), Ok(Action::Version));
+        assert_eq!(parse(&args(&["--version"])), Ok(Action::Version));
+    }
+
+    #[test]
+    fn defaults_are_the_host_profile_and_no_flags() {
+        let options = invoke(&["run", "hello.clo"]);
+        assert_eq!(options.command, Command::Run);
+        assert_eq!(options.profile, Profile::Host);
+        assert!(!options.release && !options.emit_c && !options.emulator && !options.capture);
+        assert_eq!(options.output, None);
+        assert_eq!(options.files, ["hello.clo"]);
+    }
+
+    #[test]
+    fn a_profile_and_output_are_read_from_their_flags() {
+        assert_eq!(invoke(&["emit", "-o", "out.c", "a.clo"]).output, Some("out.c".to_owned()));
+        assert_eq!(
+            invoke(&["run", "--profile", "hosted-amiga", "a.clo"]).profile,
+            Profile::HostedAmiga
+        );
+        assert_eq!(invoke(&["run", "--profile=hosted-amiga", "a.clo"]).profile, Profile::HostedAmiga);
+    }
+
+    #[test]
+    fn several_input_files_are_kept_in_order() {
+        assert_eq!(invoke(&["build", "a.clo", "b.clo"]).files, ["a.clo", "b.clo"]);
+    }
+
+    #[test]
+    fn an_inapplicable_or_malformed_line_is_a_usage_error() {
+        for line in [
+            vec!["frobnicate", "a.clo"],
+            vec!["run"],
+            vec!["run", "--nope", "a.clo"],
+            vec!["run", "-o", "out.c", "a.clo"],
+            vec!["run", "--emulator", "a.clo"],
+            vec!["build", "--capture", "a.clo"],
+            vec!["build", "--emulator", "a.clo"],
+            vec!["emit", "--release", "a.clo"],
+            vec!["emit", "--emit-c", "a.clo"],
+            vec!["run", "--profile", "nope", "a.clo"],
+            vec!["--profile"],
+        ] {
+            assert!(parse(&args(&line)).is_err(), "{line:?} must be rejected");
+        }
+    }
+}

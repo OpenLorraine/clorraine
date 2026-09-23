@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-23 08:20
-> **Progress**: 10/14 tasks (71%)
+> **Last Updated**: 2026-09-23 08:22
+> **Progress**: 14/14 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -105,10 +105,10 @@ phase, unit tests, and full verification.
 > **Expected modification set**: `compiler/src/clorraine/**` (unit tests), `AGENTS.md`, `plans/00-roadmap.md`, `plans/clorraine-driver/99-execution-plan.md`
 > **Scope mode**: strict
 
-- [ ] 3.1.1 Run the driver spec tests; fix until green
-- [ ] 3.2.1 Write the in-module unit tests (ST-DRV-13..16: environment, toolchain assembly, ICE shape) — `compiler/src/clorraine/*.rs`
-- [ ] 3.3.1 Run the full fast verify (`make check`)
-- [ ] 3.4.1 Document the driver in `AGENTS.md`, add the `PLAN-02` roadmap row, and run `make verify` — `AGENTS.md`, `plans/00-roadmap.md`
+- [x] 3.1.1 Run the driver spec tests; fix until green ✅ (completed: 2026-09-23 08:22)
+- [x] 3.2.1 Write the in-module unit tests (ST-DRV-13..16: environment, toolchain assembly, ICE shape) — `compiler/src/clorraine/*.rs` ✅ (completed: 2026-09-23 08:22)
+- [x] 3.3.1 Run the full fast verify (`make check`) ✅ (completed: 2026-09-23 08:22)
+- [x] 3.4.1 Document the driver in `AGENTS.md`, add the `PLAN-02` roadmap row, and run `make verify` — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-23 08:22)
 
 **Deliverables**:
 - Driver spec tests green

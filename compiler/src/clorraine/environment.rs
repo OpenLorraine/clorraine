@@ -67,3 +67,47 @@ pub fn missing_tool_message(tool: &str) -> String {
          install the SDK toolchain or run inside the container (make -C docker shell)"
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
+
+    use super::*;
+
+    #[test]
+    fn the_marker_counts_only_when_it_is_a_file() {
+        let existing = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
+        assert!(sdk_present(existing));
+        assert!(!sdk_present("/no/such/clorraine/sdk-marker.txt"));
+    }
+
+    #[test]
+    fn a_tool_is_missing_unless_a_search_directory_contains_it() {
+        let dir = std::env::temp_dir().join(format!("clorraine-env-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create the search directory");
+        std::fs::write(dir.join("present-tool"), b"").expect("write the tool file");
+
+        let path = OsString::from(dir.as_os_str());
+        assert_eq!(missing_tool_in(&["present-tool"], &path), None);
+        assert_eq!(
+            missing_tool_in(&["absent-tool"], &path),
+            Some("absent-tool".to_owned())
+        );
+        // The first absent tool wins when several are checked.
+        assert_eq!(
+            missing_tool_in(&["present-tool", "absent-tool"], &path),
+            Some("absent-tool".to_owned())
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_search_path_finds_every_tool_missing() {
+        let empty = OsString::new();
+        assert_eq!(
+            missing_tool_in(&["cc", "m68k-amigaos-gcc"], &empty),
+            Some("cc".to_owned())
+        );
+    }
+}

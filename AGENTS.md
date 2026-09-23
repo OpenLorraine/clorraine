@@ -26,6 +26,8 @@ in `CMD`).
 | `make corpus-amiga` | Build and run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`), the vbcc build-only leg, and build the interrupt-counter |
 | `make corpus-fs-uae` | Boot the interrupt-counter in FS-UAE and diff its captured output (needs the SDK X display) |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
+| `make run FILE=…` / `make build FILE=…` | Build (and run) a Clorraine program with the `clorraine` driver inside the container |
+| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | The driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga`, `--release`, `--capture`, `--emulator`, `--emit-c`) |
 | `cargo test --workspace` | Rust tests; run in the container via `make check` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` at `target/debug/clc` |
 
@@ -35,7 +37,7 @@ in `CMD`).
 |------|----------|
 | `spec/` | The frozen specification: chapters, the grammar, the diagnostics registry, and the golden test data (`spec/tests/{compile-fail,run,staged,corpus}`) |
 | `stdlib/` | The embedded standard-library sources (`std.*.clo`) |
-| `compiler/src/` | The compiler crate: stage modules (`lex`, `parse`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token` |
+| `compiler/src/` | The compiler crate: stage modules (`lex`, `parse`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, and the `clorraine` build/run driver |
 | `compiler/runtime/` | The host and hosted-amiga C runtime shims (`shim_host.c`, `shim_hosted_amiga.c`) |
 | `compiler/tests/` | The Rust integration test drivers |
 | `docker/` | The pinned Amiga SDK: toolchain config, scripts, and the emulator wrappers |
@@ -52,6 +54,8 @@ in `CMD`).
   test.
 - `compiler/tests/stdlib_impl_test.rs` holds **implementation tests** for the
   standard-library slice.
+- `compiler/tests/clorraine_driver_spec_test.rs` holds the **specification
+  tests** for the `clorraine` build/run driver.
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 

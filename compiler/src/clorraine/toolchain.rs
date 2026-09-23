@@ -111,3 +111,50 @@ pub fn fs_uae_handoff(bin: &Path, capture: bool) -> String {
         bin.display()
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_host_command_is_the_cc_line_with_artifact_paths() {
+        let tool = tool(Profile::Host);
+        assert_eq!(
+            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -O0 -g -Wall -Wextra -Werror -o prog out.c"
+        );
+        assert_eq!(
+            command(&tool, true, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -O2 -Wall -Wextra -Werror -o prog out.c"
+        );
+    }
+
+    #[test]
+    fn the_amiga_command_is_the_gcc_matrix_line_with_float_libraries() {
+        let tool = tool(Profile::HostedAmiga);
+        assert_eq!(
+            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lamiga -lm"
+        );
+    }
+
+    #[test]
+    fn each_profile_has_its_runner() {
+        assert!(matches!(runner(Profile::Host), Runner::Native));
+        assert!(matches!(runner(Profile::HostedAmiga), Runner::Vamos));
+        assert_eq!(runner_command(&Runner::Native, Path::new("p")).join(" "), "p");
+        assert_eq!(runner_command(&Runner::Vamos, Path::new("p")).join(" "), "vamos p");
+    }
+
+    #[test]
+    fn the_handoff_prints_the_host_command_and_capture_prefix() {
+        let bin = Path::new("build/clorraine/hello/hosted-amiga/hello");
+        assert_eq!(
+            fs_uae_handoff(bin, false),
+            "FS-UAE must run on the host. From the repository root:\n  \
+             make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello\n"
+        );
+        assert!(fs_uae_handoff(bin, true)
+            .contains("  RUN_CAPTURE=1 make -C docker run PROG=build/clorraine/hello/hosted-amiga/hello\n"));
+    }
+}
