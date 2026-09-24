@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { FrameSource, FrameSpec } from "../renderer/env.ts";
-import { messageOf } from "./log.ts";
+import { messageOf, warn } from "./log.ts";
 import { run } from "./proc.ts";
 
 /** The Chrome executable to use: `CHROME_BIN` when set, else `google-chrome`. */
@@ -165,9 +165,12 @@ function waitForExit(child: ChildProcess): Promise<void> {
     return Promise.resolve();
   }
   return new Promise((resolvePromise) => {
-    const done = (): void => resolvePromise();
+    const done = (): void => {
+      clearTimeout(timer);
+      resolvePromise();
+    };
+    const timer = setTimeout(done, 3000);
     child.once("close", done);
-    setTimeout(done, 3000);
   });
 }
 
@@ -184,6 +187,7 @@ async function removeProfile(dir: string): Promise<void> {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
     }
   }
+  warn(`could not remove the temporary Chrome profile ${dir}`);
 }
 
 /** Options for {@link ChromeFrameSource}. */

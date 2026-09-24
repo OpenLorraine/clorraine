@@ -33,9 +33,29 @@ export interface EmulatorRecorder {
   record(options: EmulatorCaptureOptions & { output: string }): Promise<void>;
 }
 
+/** Builds the ffmpeg arguments that composite a capture into the frame's screen area. */
+export function buildFrameOverlayArgs(capture: string, frame: string, out: string, fps: number): string[] {
+  const screen = FRAME_SCREEN;
+  const filter =
+    `[1:v]scale=${screen.width}:${screen.height}:force_original_aspect_ratio=decrease,` +
+    `pad=${screen.width}:${screen.height}:(ow-iw)/2:(oh-ih)/2:color=black[c];` +
+    `[0:v][c]overlay=${screen.x}:${screen.y}:shortest=1`;
+  // The still frame is a single image; without `-loop 1 -framerate` it defaults to
+  // 25 fps and throttles the overlay, discarding half of a 50 fps capture.
+  return [
+    "-v", "error", "-y",
+    "-loop", "1", "-framerate", String(fps), "-i", frame,
+    "-i", capture,
+    "-filter_complex", filter,
+    "-r", String(fps),
+    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "20", "-an",
+    out,
+  ];
+}
+
 /** Composites a raw emulator capture into a rendered frame PNG. */
 export interface FrameOverlay {
-  apply(capture: string, frame: string, out: string): Promise<void>;
+  apply(capture: string, frame: string, out: string, options: { fps: number }): Promise<void>;
 }
 
 /** Records with the repository's `demo/record-emulator.sh`, which drives FS-UAE. */
@@ -57,17 +77,8 @@ export class ScriptEmulatorRecorder implements EmulatorRecorder {
 
 /** Scales the capture into the frame's screen area with ffmpeg. */
 export class FfmpegFrameOverlay implements FrameOverlay {
-  async apply(capture: string, frame: string, out: string): Promise<void> {
-    const screen = FRAME_SCREEN;
-    const filter =
-      `[1:v]scale=${screen.width}:${screen.height}:force_original_aspect_ratio=decrease,` +
-      `pad=${screen.width}:${screen.height}:(ow-iw)/2:(oh-ih)/2:color=black[c];` +
-      `[0:v][c]overlay=${screen.x}:${screen.y}`;
-    await runOrThrow(
-      "ffmpeg",
-      ["-v", "error", "-y", "-i", frame, "-i", capture, "-filter_complex", filter, "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "20", "-an", out],
-      { stdio: "ignore" },
-    );
+  async apply(capture: string, frame: string, out: string, options: { fps: number }): Promise<void> {
+    await runOrThrow("ffmpeg", buildFrameOverlayArgs(capture, frame, out, options.fps), { stdio: "ignore" });
   }
 }
 
@@ -116,6 +127,6 @@ export async function renderEmulator(
     throw new Error("the branded frame produced no image");
   }
   const overlay = deps.overlay ?? new FfmpegFrameOverlay();
-  await overlay.apply(raw, frame, out);
+  await overlay.apply(raw, frame, out, { fps: env.fps });
   return out;
 }

@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import type { TerminalScene } from "../scenes.ts";
-import { CAPTION_STRIP } from "../renderer/env.ts";
+import { contentHeight } from "../renderer/env.ts";
 import { run } from "./proc.ts";
 
 /** Options for {@link buildTape}. */
@@ -22,7 +22,7 @@ export interface TapeOptions {
  * well-formed; it is not a security boundary.
  */
 export function escapeTapeValue(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r?\n/g, " ");
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r\n?|\n/g, " ");
 }
 
 /**
@@ -40,7 +40,7 @@ export function buildTape(scene: TerminalScene, options: TapeOptions): string {
     'Set Shell "bash"',
     "Set FontSize 16",
     `Set Width ${options.width}`,
-    `Set Height ${options.height - CAPTION_STRIP}`,
+    `Set Height ${contentHeight(options.height)}`,
     "Set Padding 20",
     'Set Theme "Dracula"',
     "Set TypingSpeed 80ms",

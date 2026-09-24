@@ -3,9 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { sceneDuration } from "../scenes.ts";
 import type { DemoConfig, Scene } from "../scenes.ts";
+import { ffprobeDuration } from "../util/ffmpeg.ts";
+import { resolveRepoPath } from "../util/paths.ts";
 import { runOrThrow } from "../util/proc.ts";
 import type { VhsRecorder } from "../util/vhs.ts";
-import { CAPTION_STRIP } from "./env.ts";
+import { CAPTION_STRIP, contentHeight } from "./env.ts";
 import type { RenderEnv } from "./env.ts";
 import { renderCard } from "./card.ts";
 import { renderCode } from "./code.ts";
@@ -20,12 +22,15 @@ export const BG_COLOR = "0x1e1e2e";
 /** The font used for terminal captions. */
 export const CAPTION_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 
+/** How far the composed length may differ from the expected length, in seconds. */
+const DURATION_TOLERANCE = 0.25;
+
 /** Rounds to milliseconds so xfade offsets do not carry float noise. */
 function round(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-/** Formats a number of seconds for an ffmpeg argument, keeping one decimal. */
+/** Formats a number of seconds for an ffmpeg argument, keeping up to three decimals. */
 export function formatSeconds(value: number): string {
   const fixed = value.toFixed(3).replace(/0+$/, "");
   return fixed.endsWith(".") ? `${fixed}0` : fixed;
@@ -112,8 +117,10 @@ export interface NormalizeOptions {
   captionTextFile?: string;
 }
 
-function captionDrawtext(textFile: string): string {
-  return `drawtext=fontfile=${CAPTION_FONT}:textfile=${textFile}:fontsize=26:fontcolor=white:x=(w-text_w)/2:y=h-52`;
+function captionDrawtext(textFile: string, height: number): string {
+  const fontSize = 26;
+  const y = height - CAPTION_STRIP + Math.round((CAPTION_STRIP - fontSize) / 2);
+  return `drawtext=fontfile=${CAPTION_FONT}:textfile=${textFile}:fontsize=${fontSize}:fontcolor=white:x=(w-text_w)/2:y=${y}`;
 }
 
 /**
@@ -123,7 +130,7 @@ function captionDrawtext(textFile: string): string {
  * are only re-encoded and trimmed, so they are not scaled a second time.
  */
 export function buildNormalizeArgs(input: string, output: string, options: NormalizeOptions): string[] {
-  const content = options.height - CAPTION_STRIP;
+  const content = contentHeight(options.height);
   const filters = [`fps=${options.fps}`];
   if (!options.canvasReady) {
     filters.push(`scale=${options.width}:${content}:force_original_aspect_ratio=decrease`);
@@ -132,7 +139,7 @@ export function buildNormalizeArgs(input: string, output: string, options: Norma
   }
   filters.push("setsar=1");
   if (options.captionTextFile !== undefined) {
-    filters.push(captionDrawtext(options.captionTextFile));
+    filters.push(captionDrawtext(options.captionTextFile, options.height));
   }
   return [
     "-v", "error", "-y",
@@ -214,21 +221,42 @@ async function renderScene(scene: Scene, env: RenderEnv, deps: ComposeDeps): Pro
   }
 }
 
+/** True when a renderer already produced a clip on the common canvas. */
+function isCanvasReady(scene: Scene): boolean {
+  if (scene.kind === "terminal") {
+    return false;
+  }
+  if (scene.kind === "emulator") {
+    return scene.frame !== false;
+  }
+  return true;
+}
+
 /**
  * Renders every scene, brings each clip onto the common canvas, crossfades them, and
  * writes the output. When the config declares a gif or a poster, those are written too.
  *
  * @returns the resolved output path.
- * @throws {Error} when a caption is requested but the caption font is missing.
+ * @throws {Error} when the caption font is missing or the composed length is wrong.
  */
 export async function compose(config: DemoConfig, env: RenderEnv, options: ComposeOptions = {}): Promise<string> {
   const deps = options.deps ?? {};
   const transition = config.transition ?? 0.5;
-  const out = join(env.root, options.out ?? config.out);
+  const out = options.out === undefined ? join(env.root, config.out) : resolveRepoPath(env.root, options.out, "out");
+
+  if (options.only !== undefined) {
+    const unknown = options.only.filter((id) => !config.scenes.some((scene) => scene.id === id));
+    if (unknown.length > 0) {
+      throw new Error(`unknown scene id(s): ${unknown.join(", ")}`);
+    }
+  }
   const selected =
     options.only === undefined ? config.scenes : config.scenes.filter((scene) => options.only?.includes(scene.id));
 
-  if (selected.some((scene) => scene.caption !== undefined) && !existsSync(CAPTION_FONT)) {
+  if (
+    selected.some((scene) => scene.kind === "terminal" && scene.caption !== undefined) &&
+    !existsSync(CAPTION_FONT)
+  ) {
     throw new Error(`the caption font is missing: ${CAPTION_FONT}`);
   }
 
@@ -255,7 +283,7 @@ export async function compose(config: DemoConfig, env: RenderEnv, options: Compo
         height: env.height,
         fps: env.fps,
         duration: sceneDuration(scene),
-        canvasReady: scene.kind !== "terminal",
+        canvasReady: isCanvasReady(scene),
         captionTextFile,
       }),
       { stdio: "ignore" },
@@ -265,6 +293,12 @@ export async function compose(config: DemoConfig, env: RenderEnv, options: Compo
   }
 
   await runOrThrow("ffmpeg", buildComposeArgs(clips, out, durations, transition), { stdio: "ignore" });
+
+  const expected = expectedTotal(durations, transition);
+  const actual = await ffprobeDuration(out);
+  if (Math.abs(actual - expected) > DURATION_TOLERANCE) {
+    throw new Error(`the composed length is ${actual.toFixed(2)}s but the scenes expect ${expected.toFixed(2)}s`);
+  }
 
   if (options.only === undefined && config.gif !== undefined) {
     const gifInputs = config.gif.sceneIds.map((id) => join(normalizedDir, `${id}.mp4`));

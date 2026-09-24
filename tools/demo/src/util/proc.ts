@@ -52,7 +52,7 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
       }
     });
     child.on("error", reject);
-    child.on("close", (code) => resolvePromise({ code: code ?? 0, stdout, stderr }));
+    child.on("close", (code, signal) => resolvePromise({ code: code ?? (signal === null ? 0 : 1), stdout, stderr }));
   });
 }
 

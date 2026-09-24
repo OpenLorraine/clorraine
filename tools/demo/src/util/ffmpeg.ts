@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import type { Encoder } from "../renderer/env.ts";
-import { runOrThrow } from "./proc.ts";
+import { run, runOrThrow } from "./proc.ts";
 
 /**
  * Builds the ffmpeg arguments that encode a zero-padded PNG sequence into an H.264 MP4.
@@ -24,4 +24,25 @@ export class FfmpegEncoder implements Encoder {
   async encodeFrames(frames: string[], out: string, options: { fps: number }): Promise<void> {
     await runOrThrow("ffmpeg", encodeFramesArgs(frames, out, options.fps), { stdio: "ignore" });
   }
+}
+
+/**
+ * Reads a media file's duration in seconds with ffprobe.
+ *
+ * @throws {Error} when ffprobe fails or reports a non-numeric duration.
+ */
+export async function ffprobeDuration(file: string): Promise<number> {
+  const result = await run(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file],
+    { stdio: "ignore" },
+  );
+  if (result.code !== 0) {
+    throw new Error(`ffprobe failed for ${file}: ${result.stderr.trim()}`);
+  }
+  const duration = Number(result.stdout.trim());
+  if (!Number.isFinite(duration)) {
+    throw new Error(`ffprobe reported no duration for ${file}`);
+  }
+  return duration;
 }

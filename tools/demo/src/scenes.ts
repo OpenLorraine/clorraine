@@ -147,6 +147,8 @@ export function validateConfig(config: unknown): asserts config is DemoConfig {
       const where = id.length > 0 ? `scene "${id}"` : "scene (missing id)";
       if (id.length === 0) {
         problems.push("scene: id must be a non-empty string");
+      } else if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+        problems.push(`${where}: id may only contain letters, digits, "_" and "-"`);
       } else if (seen.has(id)) {
         problems.push(`duplicate scene id "${id}"`);
       } else {
