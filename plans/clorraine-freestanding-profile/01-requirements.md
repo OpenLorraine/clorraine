@@ -51,7 +51,9 @@ runtime. Float types and operations are supported.
   `std.mem`, `std.text`, `std.fmt`, and `std.amiga.*` are rejected with
   `E11200` (AR-11).
 - [ ] R9 — `std.io`'s `Open`, `Close`, `Read`, and `Write` compile but trap at
-  runtime with the new `E11214` (AR-12, AR-28).
+  runtime with the new `E11214` (AR-12, AR-28). Reaching them needs the
+  `static str` literal to `cstring` widening (AR-31), because `std.text`, the
+  only `toCString` producer, is rejected on freestanding.
 - [ ] R10 — Float types and operations are allowed; the m68k link appends `-lg`
   and the host run uses native floats (AR-10).
 - [ ] R11 — The runtime fault and panic helpers write their whole message to

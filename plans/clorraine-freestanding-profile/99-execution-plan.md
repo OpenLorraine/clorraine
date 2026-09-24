@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-23 18:43
-> **Progress**: 0/18 tasks (0%)
+> **Last Updated**: 2026-09-24 08:24
+> **Progress**: 4/18 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -50,10 +50,10 @@ implementation tests, documentation, and full verification.
 **Objective**: write the specification tests, including the m68k link check and
 the host no-libc run, and record the red phase.
 
-- [ ] 1.1.1 [spec-author] Write `compiler/tests/freestanding_spec_test.rs`: the harness runs the built `clc` and then `cc`/`m68k-amigaos-gcc` directly, asserts the m68k link exits 0, and asserts the ST-1, ST-3..ST-7, and ST-11..ST-21 expectations — `compiler/tests/freestanding_spec_test.rs`
-- [ ] 1.1.2 [spec-author] Update the freestanding branch of the profile-selection test to expect acceptance instead of `E11200` — `compiler/tests/stage_spec_test.rs`
-- [ ] 1.1.3 Add the freestanding console corpus inputs and recorded output — `spec/tests/corpus/freestanding/program.clo`, `spec/tests/corpus/freestanding/expected-output.txt`
-- [ ] 1.1.4 Run the suite and record the red phase: every freestanding case fails because the profile is still rejected, and no `host`/`hosted-amiga` case regresses
+- [x] 1.1.1 [spec-author] Write `compiler/tests/freestanding_spec_test.rs`: the harness runs the built `clc` and then `cc`/`m68k-amigaos-gcc` directly, asserts the m68k link exits 0, and asserts the ST-1, ST-3..ST-7, and ST-11..ST-21 expectations — `compiler/tests/freestanding_spec_test.rs` ✅ (completed: 2026-09-24 08:24)
+- [x] 1.1.2 [spec-author] Update the freestanding branch of the profile-selection test to expect acceptance instead of `E11200` — `compiler/tests/stage_spec_test.rs` ✅ (completed: 2026-09-24 08:24)
+- [x] 1.1.3 Add the freestanding console corpus inputs and recorded output — `spec/tests/corpus/freestanding/program.clo`, `spec/tests/corpus/freestanding/expected-output.txt` ✅ (completed: 2026-09-24 08:24)
+- [x] 1.1.4 Run the suite and record the red phase: every freestanding case fails because the profile is still rejected, and no `host`/`hosted-amiga` case regresses ✅ (completed: 2026-09-24 08:24)
 
 **Deliverables**:
 - The freestanding spec-test harness
@@ -68,7 +68,7 @@ the host no-libc run, and record the red phase.
 ## Phase 2: Profile and runtime
 
 > **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
-> **Expected modification set**: `compiler/runtime/shim_freestanding.c`, `compiler/src/profile.rs`, `compiler/src/driver.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/program.rs`, `plans/clorraine-freestanding-profile/99-execution-plan.md`
+> **Expected modification set**: `compiler/runtime/shim_freestanding.c`, `compiler/src/profile.rs`, `compiler/src/driver.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/program.rs`, `compiler/src/types/mod.rs`, `compiler/src/codegen/calls.rs`, `spec/02-types.md`, `plans/clorraine-freestanding-profile/99-execution-plan.md`
 > **Scope mode**: strict
 
 ### Step 2.1: Add the profile and the no-libc runtime
@@ -80,6 +80,7 @@ the host no-libc run, and record the red phase.
 - [ ] 2.1.2 Add `Profile::Freestanding` with `parse`, the `implemented` query, `supports_module`, `shim`, and the 1024-byte `stack_frame_limit` — `compiler/src/profile.rs`
 - [ ] 2.1.3 Make `Profile` the single source of truth for the name check; delete the duplicate `match` and keep the dormant unimplemented-profile `E11200` branch — `compiler/src/driver.rs`
 - [ ] 2.1.4 Add the freestanding arm to the null/empty-state spelling and emit the ABI typedefs for freestanding too — `compiler/src/codegen.rs`, `compiler/src/codegen/program.rs`
+- [ ] 2.1.5 Allow a `static str` literal where a `cstring` is expected and emit it as a C string literal, so `openFile("x", 1005)` compiles (AR-31 runtime) — `compiler/src/types/mod.rs`, `compiler/src/codegen/calls.rs`, `spec/02-types.md`
 
 ### Step 2.2: Green the profile and runtime tests
 

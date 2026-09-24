@@ -1942,9 +1942,8 @@ func main(): i32 {
     );
 }
 
-/// The profile selection has three fixed rejections: a missing flag is a usage
-/// error, an unknown name is E11201, and the designed but unimplemented
-/// `freestanding` profile is E11200.
+/// The profile selection: a missing flag is a usage error, an unknown name is
+/// E11201, and `freestanding` is now an implemented profile that emits C.
 #[test]
 fn profile_flag_errors_report_usage_and_codes() {
     let scratch = ScratchDir::new("cli-profile");
@@ -1960,9 +1959,10 @@ func main(): i32 {
     )
     .expect("write snippet");
     let source = source_path.display().to_string();
-    let output = scratch.path().join("out.c").display().to_string();
+    let output = scratch.path().join("out.c");
+    let output_path = output.display().to_string();
 
-    let missing = run_clc(&["-o".to_owned(), output.clone(), source.clone()]);
+    let missing = run_clc(&["-o".to_owned(), output_path.clone(), source.clone()]);
     assert_eq!(
         missing.status.code(),
         Some(2),
@@ -1977,7 +1977,7 @@ func main(): i32 {
         "--profile".to_owned(),
         "nope".to_owned(),
         "-o".to_owned(),
-        output.clone(),
+        output_path.clone(),
         source.clone(),
     ]);
     assert_eq!(unknown.status.code(), Some(1), "an unknown profile exits 1");
@@ -1991,18 +1991,42 @@ func main(): i32 {
         "--profile".to_owned(),
         "freestanding".to_owned(),
         "-o".to_owned(),
-        output,
+        output_path,
         source,
     ]);
     assert_eq!(
         freestanding.status.code(),
-        Some(1),
-        "an unimplemented profile exits 1"
+        Some(0),
+        "freestanding is an implemented profile; stderr:\n{}",
+        String::from_utf8_lossy(&freestanding.stderr)
     );
+    let emitted = std::fs::read_to_string(&output).expect("the compiler wrote the C");
+    assert!(
+        emitted.contains("void _start(void)"),
+        "the freestanding C embeds the entry point"
+    );
+}
+
+/// A `static str` literal converts to `cstring` implicitly; the emitted C
+/// passes the literal as a C string pointer.
+#[test]
+fn a_static_str_literal_converts_to_cstring() {
+    let source = r#"module spec.stage.cstring_literal;
+
+func wants(path: cstring): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    return wants("hello");
+}
+"#;
+    let run = run_source("cstring-literal", source);
     assert_eq!(
-        String::from_utf8_lossy(&freestanding.stderr).lines().next(),
-        Some("error E11200: 'freestanding' is not available on profile 'freestanding'"),
-        "freestanding is E11200 on the first line"
+        run.status.code(),
+        Some(0),
+        "a static str literal is accepted where cstring is expected; stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
     );
 }
 

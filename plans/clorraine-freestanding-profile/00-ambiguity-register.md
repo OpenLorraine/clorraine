@@ -1,7 +1,7 @@
 # Ambiguity Register: Freestanding profile
 
-> **Status**: ✅ GATE PASSED — 30 items: 28 resolved, 2 explicitly deferred
-> **Last Updated**: 2026-09-23 18:43
+> **Status**: ✅ GATE PASSED — 31 items: 29 resolved, 2 explicitly deferred
+> **Last Updated**: 2026-09-24 08:22
 > **CodeOps Artifact Schema**: 1
 
 Every row below was raised during the Phase 1 interview and resolved by the
@@ -9,6 +9,8 @@ user, or resolved by an agreed improvement, or explicitly deferred. The
 freestanding profile is a new, third profile that this project implements with a
 provisional, LorraineOS-adoptable ABI; it changes the frozen specification only
 where the user authorized it (AR-3, AR-21).
+
+> **Items added during execution** are tagged `(runtime)`.
 
 ## Register
 
@@ -44,6 +46,7 @@ where the user authorized it (AR-3, AR-21).
 | AR-28 | Behavioral | Runtime "not supported" needs a code | Reuse compile-time `E11200` / add a runtime code | Add the next free runtime fault code `E11214` ("feature not available on the selected profile"); file I/O traps with it. (`E11213` is already the assertion-failure fault) | ✅ Resolved |
 | AR-29 | Behavioral | Host-run output may be split across writes | Accept / single write | The runtime writes each message in one call so captured output is atomic | ✅ Resolved |
 | AR-30 | Technical | Unknown profile handling after freestanding is implemented | Keep `E11201` / change | Keep `E11201` for an unknown profile name. The obsolete `E11200_unimplemented_profile.clo` golden is removed and **replaced** by a new `E11200` golden for the still-live profile-surface rule (a `host` program importing `std.amiga.dos`), so `E11200` keeps a compile-fail test; `E11201_unknown_profile.clo` is unchanged. The stage expectation for the rejection is removed | ✅ Resolved |
+| AR-31 | Behavioral (runtime) | `std.io`'s file functions take a `cstring`, but freestanding rejects `std.text` (the only `toCString` producer), so `openFile("x", 1005)` does not compile and the planned runtime `E11214` trap is unreachable | Allow a `static str` literal where a `cstring` is expected / test the trap at the C level / make file I/O a compile-time `E11200` / allow `std.text` on freestanding | Allow the implicit widening `static str -> cstring` (a literal is a NUL-terminated C string), so `openFile("x", 1005)` compiles and the file functions trap at runtime with `E11214`. This is a language-rule change: it also edits `spec/02-types.md`'s widening table and the codegen that emits the literal | ✅ Resolved |
 
 ## Resolution Notes
 
@@ -99,11 +102,23 @@ expectation; `E11201_unknown_profile.clo` keeps the unknown-name coverage. The
 new runtime code `E11214` is registered in Ch 14 and added to the runtime-fault
 list in `spec/check.sh`.
 
+**AR-31 (runtime):** The plan's ST-18 wrote `openFile("x", 1005)`, but `openFile`
+takes a `cstring` and the only producer (`std.text.toCString`) is rejected on
+freestanding, so the planned `E11214` runtime trap was unreachable. The user
+chose to allow the `static str -> cstring` widening — a literal is a
+NUL-terminated C string, which is exactly what `cstring` denotes, and the
+specification's own examples pass literals directly (`spec/02-types.md:136`,
+`spec/03-ownership.md:95`, `spec/09-enums-unions.md:146`). This widens the
+authorized modification set to `compiler/src/types/mod.rs`,
+`compiler/src/codegen/calls.rs`, `compiler/src/types/tests.rs`, and
+`spec/02-types.md`, and is recorded as a language-rule change (TY-13's table).
+
 ## Gate Record
 
 - Systematic scan across all 12 categories completed.
-- 30 rows: 28 resolved by an explicit user decision or an agreed improvement;
+- 31 rows: 29 resolved by an explicit user decision or an agreed improvement;
   2 explicitly deferred (AR-25, AR-26) and excluded from executable plan content.
+  AR-31 was added during execution (tagged `(runtime)`).
 - No item introduces a material support surface beyond ordinary profile,
   runtime, and driver code. The one broader mechanism considered (a
   profile-scoped FFI contract table) was rejected in favour of the smaller

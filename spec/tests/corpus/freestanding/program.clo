@@ -1,0 +1,12 @@
+// The freestanding console corpus program: it prints two plain lines and
+// returns zero. It deliberately avoids templates and the heap, which the
+// freestanding profile does not provide, so the runtime stays console-only.
+module tests.corpus.Freestanding;
+
+import { println } from std.io;
+
+func main(): i32 {
+    println("freestanding: hello");
+    println("freestanding: ok");
+    return 0;
+}

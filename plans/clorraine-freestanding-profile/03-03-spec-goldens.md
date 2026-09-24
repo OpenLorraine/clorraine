@@ -44,6 +44,12 @@ an acceptance test.
 - `:68-70` and the §5 table (`:129`): freestanding status becomes "implemented
   (provisional, m68k)".
 
+### `spec/02-types.md`
+
+- The implicit-widening table (section 9, `:266-271`): add the
+  `static str -> cstring` row (a literal is a NUL-terminated C string). This is
+  the AR-31 runtime decision; it is the rule ST-18 depends on.
+
 ### `spec/17-codegen.md`
 
 - §12 (`:339-346`): fill the freestanding column — acquire/drop are the
