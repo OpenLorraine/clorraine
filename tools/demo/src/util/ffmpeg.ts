@@ -40,7 +40,11 @@ export async function ffprobeDuration(file: string): Promise<number> {
   if (result.code !== 0) {
     throw new Error(`ffprobe failed for ${file}: ${result.stderr.trim()}`);
   }
-  const duration = Number(result.stdout.trim());
+  const text = result.stdout.trim();
+  if (text === "") {
+    throw new Error(`ffprobe reported no duration for ${file}`);
+  }
+  const duration = Number(text);
   if (!Number.isFinite(duration)) {
     throw new Error(`ffprobe reported no duration for ${file}`);
   }

@@ -36,8 +36,19 @@ all findings are resolved and the smoke test is green.
 ## Fix verification
 
 `make demo-check` — tsc clean, 48 tests (1 skipped); `DEMO_E2E=1` smoke green
-(1100x700, 50 fps, 6.5s, no audio). The four MAJOR fixes were re-reviewed once on the fix
-diff; see the re-review note.
+(1100x700, 50 fps, 6.5s, no audio).
+
+## Re-review (fix diff)
+
+One re-review pass on the fix diff confirmed RV-301–RV-313 and raised two LOW items, both
+fixed in the follow-up commit:
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| RV-314 | 🔵 Low | `ffprobeDuration` treated empty output as `0` | Guard empty stdout before `Number` |
+| RV-315 | 🔵 Low | The review doc referenced a non-existent re-review note | This section |
+
+No further review pass is taken on the recovery fixes.
 
 ## Security audit
 
