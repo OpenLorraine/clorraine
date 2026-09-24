@@ -12,6 +12,26 @@ Like C and Unix — and later Oberon — the language and the OS are co-designed
 LorraineOS requirements drive Clorraine's feature set, and Clorraine exists to
 make LorraineOS (and Amiga programs) safe and pleasant to write.
 
+## Demo
+
+![Clorraine demo: a card introducing Clorraine, the hello program highlighted in Vim, and the same program running under FS-UAE, the Amiga emulator](demo/demo.gif)
+
+The GIF is the opening loop: a card introducing Clorraine, the smallest
+Clorraine program ([`examples/hello/hello.clo`](examples/hello/hello.clo))
+highlighted in Vim, a card explaining what it shows, and the same program
+running under FS-UAE (the Amiga emulator).
+
+[`demo/demo-full.mp4`](demo/demo-full.mp4) is the full story. It continues with
+a real program: `string-parser` shown in Vim, a card on the ownership checker
+and the move-then-use it rejects
+([`examples/ownership-fail.clo`](examples/ownership-fail.clo)), a card on the
+one-command build, the `hosted-amiga` run, and that program under FS-UAE
+([`demo/emulator.mp4`](demo/emulator.mp4) on its own). It closes with a card on
+LorraineOS — the project Clorraine belongs to — and contact links.
+
+Regenerate everything with `./demo/story.sh`; the story text and chapter tapes
+live in that script and in `demo/tape/`.
+
 ## Status
 
 Early development. The reproducible Docker toolchain, the frozen specification,

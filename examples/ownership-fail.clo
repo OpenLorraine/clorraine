@@ -1,0 +1,15 @@
+// A move-then-use program: the compiler rejects it with E10020, which is the
+// safety a plain C compiler cannot give.
+module demo.OwnershipFail;
+
+func observe(s: String): void {
+}
+
+func main(): i32 {
+    let n: u32 = 1;
+    let s: String = $"n={n}";
+    let t: String = s;      // move: s is invalid from here
+    observe(s);             // E10020: use after move
+    observe(t);
+    return 0;
+}

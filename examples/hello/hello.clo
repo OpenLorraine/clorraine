@@ -1,0 +1,10 @@
+// The smallest Clorraine program: print one templated line.
+module demo.Hello;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let who: str = "Amiga";
+    println($"Hello, {who}, from Clorraine!");
+    return 0;
+}
