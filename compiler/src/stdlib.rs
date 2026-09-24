@@ -58,6 +58,10 @@ pub const SOURCES: &[StdlibSource] = &[
         source: include_str!("../../stdlib/std.amiga.interrupt.clo"),
     },
     StdlibSource {
+        name: "std.amiga.intuition",
+        source: include_str!("../../stdlib/std.amiga.intuition.clo"),
+    },
+    StdlibSource {
         name: "std.amiga.graphics",
         source: include_str!("../../stdlib/std.amiga.graphics.clo"),
     },
@@ -149,8 +153,12 @@ pub const MODULES: &[StdlibModule] = &[
         exports: &["HandlerToken", "addHandler", "removeHandler"],
     },
     StdlibModule {
+        name: "std.amiga.intuition",
+        exports: &["Screen", "openScreen"],
+    },
+    StdlibModule {
         name: "std.amiga.graphics",
-        exports: &["Screen", "openScreen", "setColor", "fill"],
+        exports: &["setColor", "fill", "draw", "clear"],
     },
 ];
 

@@ -1,0 +1,36 @@
+//! Amiga Intuition: the custom-screen lifecycle.
+//!
+//! This module belongs to the hosted-amiga profile; the host profile has no
+//! AmigaOS `intuition.library`, so the module is not available there. It owns
+//! the opaque `Screen` handle: opening a custom screen and releasing it. The
+//! drawing calls live in the companion `std.amiga.graphics` module, which
+//! borrows the screen.
+//!
+//! The wrappers reach the profile C shim through `ffi`, so application code
+//! never writes `ffi` and never touches `unsafe`. The `Screen` handle is owned
+//! by the caller and released through the generated drop, which calls the
+//! null-safe `cl_close_screen` deleter exactly once.
+
+module std.amiga.intuition;
+
+/// An owned custom screen. The caller releases it through the generated drop.
+export handle Screen freedBy cl_close_screen;
+
+ffi stdintuition {
+    func cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
+    func cl_close_screen(take screen: Screen): void;
+}
+
+/// Opens a custom screen, or returns `null` on failure.
+///
+/// `width` and `height` are pixels; `depth` is the bitplane count (1-5 on the
+/// base chipset). `title` names the screen and must stay valid for as long as
+/// the screen is open: the shim passes the pointer straight to `OpenScreen`
+/// without copying it, so a title that is freed early would leave the screen
+/// pointing at released memory.
+///
+/// A failure (no chip memory or no display) returns `null`, which the caller
+/// must check before using the screen.
+export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Screen? {
+    return cl_open_screen(width, height, depth, title);
+}

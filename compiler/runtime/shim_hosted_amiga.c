@@ -562,15 +562,12 @@ void cl_write_line(APTR buffer, ULONG n)
     fputc('\n', stdout);
 }
 
-/* --- Amiga graphics: a custom screen and filled rectangles. ---------------
+/* --- Amiga graphics: a custom screen and drawing calls. -------------------
  *
  * The `Screen` contract handle is an opaque pointer; `cl_open_screen` returns
  * the `intuition.library` screen or NULL. The drawing helpers take that handle
  * back and drive the `graphics.library` RastPort calls. The two library bases
- * are opened on the first screen open and stay open for the life of the task.
- *
- * This is a provisional surface: it is the smallest set of calls that proves
- * the compiler's `ffi` path and the screen ownership contract. */
+ * are opened on the first screen open and stay open for the life of the task. */
 
 struct GfxBase *GfxBase = NULL;
 struct IntuitionBase *IntuitionBase = NULL;
@@ -623,6 +620,28 @@ void cl_fill(void *screen_handle, LONG x1, LONG y1, LONG x2, LONG y2, UBYTE pen)
     if (screen != NULL) {
         SetAPen(&screen->RastPort, (ULONG)pen);
         RectFill(&screen->RastPort, x1, y1, x2, y2);
+    }
+}
+
+/* Draw the line (`x1`,`y1`)-(`x2`,`y2`) with color `pen`: Move then Draw. */
+void cl_draw(void *screen_handle, LONG x1, LONG y1, LONG x2, LONG y2, UBYTE pen)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    if (screen != NULL) {
+        SetAPen(&screen->RastPort, (ULONG)pen);
+        Move(&screen->RastPort, x1, y1);
+        Draw(&screen->RastPort, x2, y2);
+    }
+}
+
+/* Fill the whole screen with color `pen`. */
+void cl_clear(void *screen_handle, UBYTE pen)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    if (screen != NULL) {
+        SetAPen(&screen->RastPort, (ULONG)pen);
+        RectFill(&screen->RastPort, 0, 0, (LONG)screen->Width - 1,
+                 (LONG)screen->Height - 1);
     }
 }
 

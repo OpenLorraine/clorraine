@@ -1,42 +1,50 @@
-//! Amiga graphics: a custom screen and filled rectangles.
+//! Amiga graphics: drawing into a custom screen.
 //!
 //! This module belongs to the hosted-amiga profile; the host profile has no
-//! AmigaOS graphics library, so the module is not available there. It opens a
-//! screen through `intuition.library` and draws into its `RastPort` through
-//! `graphics.library`. The wrappers reach the profile C shim through `ffi`, so
-//! application code never writes `ffi` and never touches `unsafe`.
+//! AmigaOS `graphics.library`, so the module is not available there. The
+//! drawing calls reach the profile C shim through `ffi`, so application code
+//! never writes `ffi` and never touches `unsafe`.
 //!
-//! The `Screen` handle is owned by the caller and released through the
-//! generated drop, which calls the `cl_close_screen` deleter. The surface here
-//! is provisional: it is the smallest set of calls that proves the compiler's
-//! `ffi` path and the screen ownership contract on real AmigaOS.
+//! Every call takes `borrow screen: Screen`, so the caller keeps ownership of
+//! the screen (its lifecycle lives in `std.amiga.intuition`) and the raw
+//! `RastPort` stays hidden inside the shim.
 
 module std.amiga.graphics;
 
-/// An owned custom screen. The caller releases it through the generated drop.
-export handle Screen freedBy cl_close_screen;
+import { Screen } from std.amiga.intuition;
 
 ffi stdgraphics {
-    func cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
     func cl_set_color(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void;
     func cl_fill(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
-    func cl_close_screen(take screen: Screen): void;
-}
-
-/// Opens a custom screen, or returns `null` on failure.
-///
-/// `width` and `height` are pixels; `depth` is the bitplane count (1-5 on the
-/// base chipset). `title` names the screen.
-export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Screen? {
-    return cl_open_screen(width, height, depth, title);
+    func cl_draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_clear(borrow screen: Screen, pen: u8): void;
 }
 
 /// Sets screen color `pen` (0-31) from `r`, `g`, and `b` (0-255 each).
+///
+/// The 8-bit components are reduced to the Amiga 4-bit palette. `pen` indexes
+/// the screen's color map; an index outside it is a caller error.
 export func setColor(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void {
     cl_set_color(screen, pen, r, g, b);
 }
 
 /// Fills the rectangle from (`x1`,`y1`) to (`x2`,`y2`) with color `pen`.
+///
+/// Coordinates are pixels and inclusive; `graphics.library` clips anything
+/// outside the screen.
 export func fill(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void {
     cl_fill(screen, x1, y1, x2, y2, pen);
+}
+
+/// Draws the line from (`x1`,`y1`) to (`x2`,`y2`) with color `pen`.
+///
+/// The line may run at any angle; `graphics.library` clips coordinates outside
+/// the screen.
+export func draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void {
+    cl_draw(screen, x1, y1, x2, y2, pen);
+}
+
+/// Fills the whole screen with color `pen`.
+export func clear(borrow screen: Screen, pen: u8): void {
+    cl_clear(screen, pen);
 }

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 14:53
-> **Progress**: 2/27 tasks (7%)
+> **Last Updated**: 2026-09-24 14:55
+> **Progress**: 6/27 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -86,16 +86,24 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [02](02-current-state.md) §What Exists · [03-01](03-01-screen-lifecycle.md) §Implementation · [03-02](03-02-drawing.md) §Implementation · AR-5, AR-6, AR-7, AR-8, AR-35 · PF-001, PF-007
 **Objective**: Relocate the spike's `Screen` into the split design, extend the drawing module, and prove the cross-module import resolves.
 
-- [ ] 1.2.1 Create `stdlib/std.amiga.intuition.clo` (`Screen`, `openScreen`) — `stdlib/std.amiga.intuition.clo`
-- [ ] 1.2.2 Rewrite the existing spike module `stdlib/std.amiga.graphics.clo` to import `Screen` from `std.amiga.intuition` and export `setColor`, `fill`, `draw`, `clear` (the spike currently owns `Screen` and lacks `draw`/`clear`)
-- [ ] 1.2.3 Update the existing registration in `compiler/src/stdlib.rs`: add the `std.amiga.intuition` entry and move `Screen`/`openScreen` out of the `std.amiga.graphics` export list
-- [ ] 1.2.4 Cross-import probe (AR-35): run the hosted-amiga stdlib-slice test `stdlib_slice_compiles_with_no_diagnostics_under_hosted_amiga` and compile a program importing both modules; if the embedded `std.amiga.graphics` import of `Screen` does not resolve, apply the transitive `inject_stdlib` fix — `compiler/src/driver.rs`
-- [ ] 1.2.5 Green phase: ST-2 and ST-5 pass; the existing `stdlib` unit tests (ST-3, ST-6) pass
+- [~] 1.2.1 Create `stdlib/std.amiga.intuition.clo` (`Screen`, `openScreen`) — `stdlib/std.amiga.intuition.clo` ⏳ (implemented: 2026-09-24 14:54)
+- [~] 1.2.2 Rewrite the existing spike module `stdlib/std.amiga.graphics.clo` to import `Screen` from `std.amiga.intuition` and export `setColor`, `fill`, `draw`, `clear` (the spike currently owns `Screen` and lacks `draw`/`clear`) ⏳ (implemented: 2026-09-24 14:54)
+- [~] 1.2.3 Update the existing registration in `compiler/src/stdlib.rs`: add the `std.amiga.intuition` entry and move `Screen`/`openScreen` out of the `std.amiga.graphics` export list ⏳ (implemented: 2026-09-24 14:54)
+- [x] 1.2.4 Cross-import probe (AR-35): run the hosted-amiga stdlib-slice test `stdlib_slice_compiles_with_no_diagnostics_under_hosted_amiga` and compile a program importing both modules; if the embedded `std.amiga.graphics` import of `Screen` does not resolve, apply the transitive `inject_stdlib` fix — `compiler/src/driver.rs` ✅ (completed: 2026-09-24 14:55; probe passed — single-pass injection resolves the cross-module import, so no `driver.rs` change was needed)
+- [x] 1.2.5 Green phase: ST-2 and ST-5 pass; the existing `stdlib` unit tests (ST-3, ST-6) pass ✅ (completed: 2026-09-24 14:55)
 
 **Deliverables**:
 - [ ] Both modules registered; spec tests green
 
 **Verify**: `make check`
+
+> **Ordering note (execution):** tasks 1.3.1 and 1.3.2 (the four NDK includes and
+> the `cl_draw`/`cl_clear` shim functions) were reconciled during this step. The
+> `stdlib` shim-symbol test asserts every `ffi` symbol the graphics module binds,
+> so it cannot pass while `cl_draw`/`cl_clear` are absent; adding them here lets
+> task 1.2.5 reach its green phase. The probe found that the single-pass injection
+> already resolves the embedded cross-module import, so no `driver.rs` change was
+> needed.
 
 ---
 
@@ -104,8 +112,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-03](03-03-runtime-shim.md) §Implementation · AR-9, AR-23, AR-24
 **Objective**: Implement the six shim functions cleanly under the profile flags.
 
-- [ ] 1.3.1 Add the four NDK includes to `compiler/runtime/shim_hosted_amiga.c`
-- [ ] 1.3.2 Reconcile the shim: the spike already defines `cl_open_screen`, `cl_set_color`, `cl_fill`, and `cl_close_screen`; add `cl_draw` and `cl_clear` and keep the two library bases — `compiler/runtime/shim_hosted_amiga.c`
+- [x] 1.3.1 Add the four NDK includes to `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-09-24 14:55; the includes were already present from the spike)
+- [x] 1.3.2 Reconcile the shim: the spike already defines `cl_open_screen`, `cl_set_color`, `cl_fill`, and `cl_close_screen`; add `cl_draw` and `cl_clear` and keep the two library bases — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-09-24 14:55)
 - [ ] 1.3.3 Build a small inline probe program (or the spike program) that imports both modules, for hosted-amiga, and confirm zero warnings (`-Wall -Wextra -Werror`) — the graphics corpus program does not exist until Phase 2 (PF-002)
 - [ ] 1.3.4 Verify the `title` lifetime contract (PF-004): confirm whether `OpenScreen` copies or retains `DefaultTitle`, then document in the module/requirements that the caller's `title` must outlive the screen
 
