@@ -108,8 +108,9 @@ func main(): i32 {
 - The graphics chapter is **emulator-only** (no terminal tape): the visual is
   the screen, not a command line. (PF-009)
 - `demo/story.sh`: record the graphics program under FS-UAE with the existing
-  `demo/record-emulator.sh` path, add a caption card ("Drawing on a real Amiga"),
-  and place the chapter after the existing emulator chapter. (AR-28)
+  `demo/record-emulator.sh` path, add an intro card and an FS-UAE caption
+  ("Drawing on an Amiga screen — under FS-UAE (Amiga emulator)"), and place the
+  chapter after the existing emulator chapter. (AR-28)
 
 ## Error Handling
 
