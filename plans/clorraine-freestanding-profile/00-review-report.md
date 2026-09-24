@@ -29,3 +29,17 @@
 - RV-03/RV-04: the shim and the argument gate are asserted by the suites.
 
 No finding was waived and no optional remediation was accepted as scope.
+
+## Re-review of the fix (second pass)
+
+Scoped to the fix commit `263db0f`. Two completeness gaps remained; both were
+ruled on and fixed.
+
+| # | Severity | Finding | Ruling |
+|---|----------|---------|--------|
+| RV-05 | 🟠 MAJOR | The literal gate also accepted an indirect call through a `func(cstring)` value, where codegen cannot recover the parameter type, so it emitted `f(cl_str("abc"))` | User accepted: allow the literal only at a **direct** named call; the indirect form keeps `E10200` |
+| RV-06 | 🟠 MAJOR | The built-in `String` type was reachable under freestanding without importing `std.text`; a `String` parameter or drop emitted `cl_string_view`/`FreeString` and failed to link | User accepted: reject the `String` type under freestanding with compile-time `E11200` |
+
+Verification after the fixes: `make check` green (300 unit, 16 freestanding,
+51 stage, and every other suite), with two new specification tests covering the
+indirect-call rejection and the `String` rejection. No third review pass is run.

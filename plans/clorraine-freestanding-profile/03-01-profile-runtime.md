@@ -164,6 +164,7 @@ in and the link self-contained.
 | Declared-but-unimplemented profile | `E11200`; no such profile exists today, so the branch is dormant | AR-30 |
 | Import of a rejected module under freestanding | `E11200` at the import site | AR-11 |
 | Template placeholder under freestanding | compile-time `E11200`; the heap formatter is not in the runtime | AR-11, RV-02 |
+| Use of the heap-backed `String` type under freestanding | compile-time `E11200` at the type annotation | AR-11, RV-06 |
 | Use of a `std.io` file function | runtime `E11214` trap, non-zero exit | AR-12, AR-28 |
 | Runtime fault (bounds, division, conversion) | existing `E11210`-`E11212`, printed by `cl_trap` | AR-14 |
 | Float arithmetic on m68k | resolves through `libg.a` from `-lg` | AR-10 |

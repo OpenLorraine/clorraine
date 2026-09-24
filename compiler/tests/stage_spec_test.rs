@@ -2049,6 +2049,29 @@ func main(): i32 {
     );
 }
 
+/// A `cstring` literal is accepted only at a direct call: through a
+/// function-typed value the expected type cannot be recovered, so E10200.
+#[test]
+fn an_indirect_cstring_call_does_not_take_a_literal() {
+    let source = r#"module spec.stage.cstring_indirect;
+
+func apply(f: func(cstring): void): void {
+    f("abc");
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let run = run_source("cstring-indirect", source);
+    assert_eq!(run.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("E10200"),
+        "an indirect cstring call must be E10200; stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+}
+
 /// A qualified `std.amiga.dos` reference is a profile-surface reference.
 ///
 /// The reference loads the module like an import does, so the host profile

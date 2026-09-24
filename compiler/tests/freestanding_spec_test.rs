@@ -320,6 +320,36 @@ func main(): i32 {
     );
 }
 
+/// The heap-backed `String` handle is not part of the freestanding runtime, so
+/// a `String` type is rejected before it can emit undefined helpers.
+#[test]
+fn the_string_type_is_e11200_on_freestanding() {
+    let source = r#"module spec.freestanding.string;
+
+import { println } from std.io;
+
+func show(s: String): void {
+    println(s);
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let scratch = ScratchDir::new("string");
+    let (_, output) = emit_freestanding(&scratch, source);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a String type must be rejected; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        first_stderr_line(&output),
+        "error E11200: 'String' is not available on profile 'freestanding'"
+    );
+}
+
 /// ST-11: the m68k artifact compiles and links against the soft-float archive.
 #[test]
 fn the_m68k_artifact_links_with_the_soft_float_archive() {

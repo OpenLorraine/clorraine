@@ -59,7 +59,7 @@ impl Checker<'_, '_> {
                     if !signature.type_params.is_empty() {
                         return self.check_generic_call(name, &signature, type_args, args, span);
                     }
-                    self.check_args(args, &signature.params);
+                    self.check_args_direct(args, &signature.params);
                     return signature.returns;
                 }
                 // The compiler-known `text(v)` formatter is not declared in
@@ -262,9 +262,24 @@ impl Checker<'_, '_> {
     ///
     /// An arity mismatch is left alone: no diagnostic in this phase owns it.
     fn check_args(&mut self, args: &[Arg], params: &[Ty]) {
+        self.check_args_impl(args, params, false);
+    }
+
+    /// Like [`Self::check_args`] for a direct call of a named function.
+    ///
+    /// Only a direct call lets the `static str` literal to `cstring` allowance
+    /// apply: the emitter can see the named callee's parameter type there. A
+    /// call through a function-typed value keeps `E10200`, because the emitter
+    /// cannot recover the expected type for the argument.
+    fn check_args_direct(&mut self, args: &[Arg], params: &[Ty]) {
+        self.check_args_impl(args, params, true);
+    }
+
+    /// Checks call arguments, optionally allowing a `cstring` literal argument.
+    fn check_args_impl(&mut self, args: &[Arg], params: &[Ty], allow_cstring_literal: bool) {
         if args.len() == params.len() {
             for (arg, param) in args.iter().zip(params) {
-                if is_cstring_literal_argument(&arg.value, param) {
+                if allow_cstring_literal && is_cstring_literal_argument(&arg.value, param) {
                     // A `static str` literal is a NUL-terminated C string, so
                     // it is accepted where a `cstring` is expected and emitted
                     // directly. A non-literal `static str` keeps E10200.

@@ -193,9 +193,22 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.check_sequence_element(ty);
         let table = self.table;
         let type_params = &self.type_params;
-        resolve_ty_with(ty, type_params, table, &mut |expr| {
+        let resolved = resolve_ty_with(ty, type_params, table, &mut |expr| {
             self.folder.integer_at(expr, Some(ScalarType::Usize))
-        })
+        });
+        // The built-in `String` handle is heap-backed: its drop and view use
+        // `FreeString`/`cl_string_ptr`/`cl_string_len`, which the freestanding
+        // runtime does not provide. Reject the type there rather than emit C
+        // that cannot link.
+        if self.profile == Profile::Freestanding && mentions_heap_string(&resolved) {
+            self.error(
+                "E11200",
+                "'String' is not available on profile 'freestanding'",
+                "the freestanding profile has no heap; use a plain string",
+                ty.span,
+            );
+        }
+        resolved
     }
 
     /// Rejects a growable sequence whose element type owns a resource.
@@ -403,5 +416,23 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.table
             .function(&binding.module, &binding.original)
             .cloned()
+    }
+}
+
+/// True when a type mentions the heap-backed `String` handle anywhere.
+///
+/// Used to make the freestanding profile reject `String`, whose runtime
+/// helpers live only in the host and hosted-amiga shims.
+fn mentions_heap_string(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Handle(name) => name == "String",
+        TyKind::Array { element, .. } => mentions_heap_string(element),
+        TyKind::Raw(inner) => mentions_heap_string(inner),
+        TyKind::Struct(_, args) => args.iter().any(mentions_heap_string),
+        TyKind::Func(signature) => {
+            signature.params.iter().any(mentions_heap_string)
+                || mentions_heap_string(&signature.returns)
+        }
+        _ => false,
     }
 }
