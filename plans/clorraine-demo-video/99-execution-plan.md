@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 22:15
-> **Progress**: 18/48 tasks (38%)
+> **Last Updated**: 2026-09-24 22:18
+> **Progress**: 20/48 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -154,8 +154,8 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [07](07-testing-strategy.md) §Implementation Tests
 **Objective**: Cover ffmpeg argument construction and capture error paths.
 
-- [ ] 2.3.1 ffmpeg argument and stderr impl tests — `tools/demo/test/ffmpeg.impl.test.ts`
-- [ ] 2.3.2 Full verification of Phase 2
+- [x] 2.3.1 ffmpeg argument and stderr impl tests — `tools/demo/test/ffmpeg.impl.test.ts` ✅ (completed: 2026-09-24 22:18)
+- [x] 2.3.2 Full verification of Phase 2 ✅ (completed: 2026-09-24 22:18)
 
 **Deliverables**:
 - [ ] All verification passing
