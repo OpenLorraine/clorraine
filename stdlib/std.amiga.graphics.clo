@@ -20,10 +20,12 @@ ffi stdgraphics {
     func cl_clear(borrow screen: Screen, pen: u8): void;
 }
 
-/// Sets screen color `pen` (0-31) from `r`, `g`, and `b` (0-255 each).
+/// Sets screen color `pen` from `r`, `g`, and `b` (0-255 each).
 ///
 /// The 8-bit components are reduced to the Amiga 4-bit palette. `pen` indexes
-/// the screen's color map; an index outside it is a caller error.
+/// the screen's color map: its valid range is `0..(1 << depth) - 1`, so a
+/// depth-4 screen accepts 0-15 and a depth-5 screen accepts 0-31. An index
+/// outside that range is a caller error.
 export func setColor(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void {
     cl_set_color(screen, pen, r, g, b);
 }

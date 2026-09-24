@@ -78,7 +78,7 @@ echo "corpus-amiga: file-copier: vbcc build-only"
 vbcc_log="${OUTDIR}/file-copier/vbcc.log"
 "${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/file-copier/program-vbcc" \
     "${OUTDIR}/file-copier/program.c" -lamiga -lmieee 2>&1 | tee "${vbcc_log}"
-if grep -qE 'warning [0-9]+ in line [0-9]+ of ".*program\.c"' "${vbcc_log}"; then
+if grep -i 'warning' "${vbcc_log}" | grep -q 'program\.c'; then
     echo "corpus-amiga: file-copier: vbcc emitted warnings in the emitted C" >&2
     status=1
 else

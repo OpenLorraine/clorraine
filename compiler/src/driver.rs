@@ -118,13 +118,48 @@ fn error_limit(raw: &str) -> Result<usize, String> {
 /// embedded source are injected; a module that still has only a declaration
 /// surface resolves its imports through the standard-library export table, so
 /// its callers keep compiling while the module body is ported.
+///
+/// An embedded module may itself import another embedded module (for example the
+/// graphics module borrows the screen handle from intuition). Injection
+/// therefore runs to a fixpoint: each pass requests every module the current
+/// programs reference, and a pass that injects nothing ends the loop.
 fn inject_stdlib(
     programs: &mut Vec<(FileId, Program)>,
     sources: &mut SourceMap,
     diagnostics: &mut Diagnostics,
 ) {
-    // A qualified reference to a standard-library module is as good as an
-    // import for loading it, so both kinds of request are collected.
+    loop {
+        let requested = requested_modules(programs);
+        if requested.is_empty() {
+            break;
+        }
+        for name in requested {
+            let Some(text) = stdlib::source(&name) else {
+                continue;
+            };
+            let path = format!("stdlib/{name}.clo");
+            let file = sources.add_file(path, text.to_owned());
+            let before = diagnostics.error_count();
+            let mut program = Parser::new(sources, file, diagnostics).parse_program();
+            if diagnostics.error_count() > before {
+                // A malformed embedded module would be a compiler defect; the
+                // parser already recorded the reason, so the stage stops here.
+                continue;
+            }
+            // Mark the item as embedded so the reserved-intrinsic check allows
+            // the library to declare the compiler-known helpers.
+            program.embedded = true;
+            programs.push((file, program));
+        }
+    }
+}
+
+/// The embedded standard-library modules the programs reference but do not yet
+/// include, for which an embedded source exists.
+///
+/// A qualified reference to a standard-library module is as good as an import
+/// for loading it, so both kinds of request are collected.
+fn requested_modules(programs: &[(FileId, Program)]) -> Vec<String> {
     let mut imported: BTreeSet<String> =
         load::referenced_modules(programs).into_keys().collect();
     let mut present: BTreeSet<String> = BTreeSet::new();
@@ -134,28 +169,10 @@ fn inject_stdlib(
             imported.insert(import.from.to_dotted());
         }
     }
-    let requested: Vec<String> = imported
+    imported
         .into_iter()
         .filter(|name| !present.contains(name) && stdlib::source(name).is_some())
-        .collect();
-    for name in requested {
-        let Some(text) = stdlib::source(&name) else {
-            continue;
-        };
-        let path = format!("stdlib/{name}.clo");
-        let file = sources.add_file(path, text.to_owned());
-        let before = diagnostics.error_count();
-        let mut program = Parser::new(sources, file, diagnostics).parse_program();
-        if diagnostics.error_count() > before {
-            // A malformed embedded module would be a compiler defect; the
-            // parser already recorded the reason, so the stage stops here.
-            continue;
-        }
-        // Mark the item as embedded so the reserved-intrinsic check allows the
-        // library to declare the compiler-known helpers.
-        program.embedded = true;
-        programs.push((file, program));
-    }
+        .collect()
 }
 
 /// Reports a reference to an embedded standard-library module the profile does

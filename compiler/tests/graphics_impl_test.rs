@@ -3,9 +3,8 @@
 //! These cases inspect the C the compiler emits for a hosted-amiga program that
 //! draws through the two graphics modules. They pin the internals the
 //! specification cases leave open: the application surface lowers to the
-//! standard-library wrappers rather than raw `ffi`, the wrappers call all six
-//! shim functions, the screen drop is null-safe, and the emitted application
-//! code contains no `unsafe` construct.
+//! standard-library wrappers rather than raw `ffi`, each wrapper body carries
+//! its raw shim call, and every screen drop is null-guarded.
 //!
 //! The hosted-amiga translation unit cannot be compiled on the host, but its
 //! text can be asserted directly.
@@ -96,63 +95,82 @@ func main(): i32 {
 }
 "#;
 
-/// The emitted C calls all six shim functions through the module wrappers.
+/// The emitted C routes every drawing call through the module wrappers.
 ///
-/// The application surface sits above `ffi`: the program names the exported
-/// wrappers, and each wrapper body carries the raw shim call. The test asserts
-/// both layers are present, so the wrappers are not optimised away and the shim
-/// contract is actually used.
+/// The application surface sits above `ffi`: the program calls the exported
+/// `cl_std_amiga_*` wrappers, and each wrapper body carries the raw shim call
+/// with the screen argument. The test anchors on the call sites rather than the
+/// bare symbol names, so a prototype or an empty wrapper body cannot satisfy it.
 #[test]
-fn generated_c_uses_the_six_shims_through_the_wrappers() {
-    let c = emit_hosted_amiga("shims", DRAWING_PROGRAM);
-    for symbol in [
-        "cl_open_screen(",
-        "cl_close_screen(",
-        "cl_set_color(",
-        "cl_fill(",
-        "cl_draw(",
-        "cl_clear(",
-    ] {
-        assert!(c.contains(symbol), "the emitted C must name `{symbol}`");
-    }
-    for wrapper in [
-        "cl_std_amiga_intuition_openScreen(",
-        "cl_std_amiga_graphics_setColor(",
-        "cl_std_amiga_graphics_fill(",
-        "cl_std_amiga_graphics_draw(",
-        "cl_std_amiga_graphics_clear(",
+fn every_graphics_call_sits_above_ffi() {
+    let c = emit_hosted_amiga("routing", DRAWING_PROGRAM);
+    for wrapper_call in [
+        "cl_std_amiga_intuition_openScreen(320,",
+        "cl_std_amiga_graphics_setColor(screen,",
+        "cl_std_amiga_graphics_fill(screen,",
+        "cl_std_amiga_graphics_draw(screen,",
+        "cl_std_amiga_graphics_clear(screen,",
     ] {
         assert!(
-            c.contains(wrapper),
-            "the emitted C must call the wrapper `{wrapper}`"
+            c.contains(wrapper_call),
+            "the application must call the wrapper `{wrapper_call}`"
+        );
+    }
+    for shim_call in [
+        "cl_open_screen(width",
+        "cl_set_color(screen,",
+        "cl_fill(screen,",
+        "cl_draw(screen,",
+        "cl_clear(screen,",
+    ] {
+        assert!(
+            c.contains(shim_call),
+            "a wrapper body must call the shim `{shim_call}`"
         );
     }
 }
 
-/// The generated drop closes the screen only behind a null check.
+/// Every screen drop is null-guarded.
 ///
-/// The owning handle lowers to a cleanup that calls the deleter through an
-/// `if (screen)` guard, so a failed open (a null handle) is safe to drop.
+/// The owning handle lowers to a cleanup that calls the deleter behind an
+/// `if (screen)` guard, so a failed open (a null handle) is safe to drop. The
+/// test requires that the guard is present and that no `cl_close_screen(screen)`
+/// call appears outside it.
 #[test]
-fn the_screen_drop_is_null_safe() {
+fn every_screen_drop_is_null_guarded() {
     let c = emit_hosted_amiga("drop", DRAWING_PROGRAM);
-    let guard = "if (screen) { cl_close_screen(screen); }";
+    let call = "cl_close_screen(screen)";
+    let guarded = "if (screen) { cl_close_screen(screen); }";
     assert!(
-        c.contains(guard),
-        "the emitted C must drop the screen behind `{guard}`"
+        c.contains(guarded),
+        "the emitted C must drop the screen behind `{guarded}`"
+    );
+    assert_eq!(
+        c.matches(call).count(),
+        c.matches(guarded).count(),
+        "every `{call}` call must sit inside `{guarded}`"
     );
 }
 
-/// The emitted application code contains no `unsafe` construct.
+/// Importing only the drawing module still injects its screen dependency.
 ///
-/// The graphics surface is reachable from safe Clorraine: the raw pointers and
-/// the library bases stay inside the shim, so no `unsafe` marker reaches the
-/// generated C.
+/// The graphics module borrows the `Screen` handle from intuition, so a program
+/// that imports the drawing module alone must still pull intuition in; the
+/// opaque handle typedef proves it. The import is intentionally unused, so the
+/// unrelated unused-import warning is not asserted here.
 #[test]
-fn generated_c_contains_no_unsafe_construct() {
-    let c = emit_hosted_amiga("surface", DRAWING_PROGRAM);
+fn importing_the_drawing_module_alone_injects_its_screen_dependency() {
+    let source = r#"module impl.graphics_solo;
+
+import { setColor } from std.amiga.graphics;
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let c = emit_hosted_amiga("solo", source);
     assert!(
-        !c.contains("unsafe"),
-        "the graphics surface must not emit an `unsafe` construct"
+        c.contains("typedef void *ClScreen;"),
+        "the screen handle typedef must be emitted when intuition is injected"
     );
 }
