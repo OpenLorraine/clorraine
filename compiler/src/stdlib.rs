@@ -57,6 +57,10 @@ pub const SOURCES: &[StdlibSource] = &[
         name: "std.amiga.interrupt",
         source: include_str!("../../stdlib/std.amiga.interrupt.clo"),
     },
+    StdlibSource {
+        name: "std.amiga.graphics",
+        source: include_str!("../../stdlib/std.amiga.graphics.clo"),
+    },
 ];
 
 /// The compiler-known intrinsic helper names.
@@ -143,6 +147,10 @@ pub const MODULES: &[StdlibModule] = &[
     StdlibModule {
         name: "std.amiga.interrupt",
         exports: &["HandlerToken", "addHandler", "removeHandler"],
+    },
+    StdlibModule {
+        name: "std.amiga.graphics",
+        exports: &["Screen", "openScreen", "setColor", "fill"],
     },
 ];
 

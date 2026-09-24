@@ -1,0 +1,53 @@
+Graphics spike (05) results
+===========================
+
+Goal
+----
+Prove that a Clorraine program can draw on a real Amiga screen through the
+compiler's `ffi` surface, before committing to a graphics feature plan.
+
+What was built
+--------------
+* A provisional standard-library module, `stdlib/std.amiga.graphics.clo`:
+    export handle Screen freedBy cl_close_screen;
+    ffi stdgraphics {
+        cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
+        cl_set_color(borrow screen: Screen, pen, r, g, b: u8): void;
+        cl_fill(borrow screen: Screen, x1, y1, x2, y2: i32, pen: u8): void;
+        cl_close_screen(take screen: Screen): void;
+    }
+* Hosted-amiga shim functions in `compiler/runtime/shim_hosted_amiga.c` that
+  open `graphics.library`/`intuition.library`, `OpenScreen`, `SetRGB4`,
+  `SetAPen`, `RectFill`, and `CloseScreen`.
+* `spikes/05-graphics/demo.clo`: opens a 320x256x4 custom screen, sets five
+  colors, fills sixteen vertical bars, waits, and lets the screen drop.
+
+Result
+------
+PASS. The program built for hosted-amiga with no warnings under the driver's
+`-Wall -Wextra -Werror`, and the screen rendered in FS-UAE with a real
+Kickstart 3.1. See `screen.png`.
+
+What this validates
+-------------------
+* A new embedded stdlib module registers and compiles with every program.
+* `ffi` handles (opaque pointer), `borrow`/`take` handle parameters, and a
+  `freedBy` deleter lower to the ABI the C shim expects.
+* `intuition.library`/`graphics.library` are reachable and usable from the
+  hosted-amiga shim; the library bases open on first use.
+* The generated drop closes the screen exactly once (the screen disappears when
+  main returns).
+
+Reproduce
+---------
+  make -s build FILE=spikes/05-graphics/demo.clo PROFILE=hosted-amiga
+  make -s run  FILE=spikes/05-graphics/demo.clo EMULATOR=1
+
+Open items for the real feature
+-------------------------------
+* The module surface is provisional; it needs ownership/contract design, a
+  window (not only a full screen) path, drawing primitives beyond `RectFill`,
+  and a decision on how much of `graphics.library` v1 wraps.
+* `-Werror` cleanliness must hold for every shim path.
+* The appendix-amiga "later" entry for intuition/graphics moves to v1 when the
+  real module lands.

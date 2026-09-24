@@ -1,0 +1,31 @@
+// Graphics spike: open a custom screen and fill colored bars.
+module spike.Graphics;
+
+import { Screen, openScreen, setColor, fill } from std.amiga.graphics;
+import { String, stringOf, toCString } from std.text;
+import { delayTicks } from std.amiga.dos;
+
+func main(): i32 {
+    let title: String = stringOf("Clorraine graphics spike");
+    let screen: Screen? = openScreen(320, 256, 4, toCString(title));
+    if (screen == null) {
+        return 1;
+    }
+
+    setColor(screen, 0, 0, 0, 0);
+    setColor(screen, 1, 255, 32, 32);
+    setColor(screen, 2, 32, 255, 32);
+    setColor(screen, 3, 32, 32, 255);
+    setColor(screen, 4, 255, 255, 32);
+
+    fill(screen, 0, 0, 319, 255, 0);
+
+    let i: i32 = 0;
+    while (i < 16) {
+        fill(screen, i * 20, 0, i * 20 + 19, 255, u8(i % 4 + 1));
+        i = i + 1;
+    }
+
+    delayTicks(1500);
+    return 0;
+}

@@ -19,6 +19,10 @@
 #include <exec/interrupts.h>
 #include <hardware/intbits.h>
 #include <proto/exec.h>
+#include <proto/graphics.h>
+#include <proto/intuition.h>
+#include <intuition/screens.h>
+#include <graphics/rastport.h>
 /* `dos/dos.h` declares the `BPTR` file-handle type the ABI mapping uses; the
  * generated code emits no AmigaOS typedef of its own, so the shim must supply
  * it. `stdbool.h` supplies the C99 `bool` the Clorraine boolean lowers to. */
@@ -556,4 +560,77 @@ void cl_write_line(APTR buffer, ULONG n)
         fwrite(buffer, 1, (size_t)n, stdout);
     }
     fputc('\n', stdout);
+}
+
+/* --- Amiga graphics: a custom screen and filled rectangles. ---------------
+ *
+ * The `Screen` contract handle is an opaque pointer; `cl_open_screen` returns
+ * the `intuition.library` screen or NULL. The drawing helpers take that handle
+ * back and drive the `graphics.library` RastPort calls. The two library bases
+ * are opened on the first screen open and stay open for the life of the task.
+ *
+ * This is a provisional surface: it is the smallest set of calls that proves
+ * the compiler's `ffi` path and the screen ownership contract. */
+
+struct GfxBase *GfxBase = NULL;
+struct IntuitionBase *IntuitionBase = NULL;
+
+/* Open a custom screen; NULL on failure. */
+void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
+{
+    if (GfxBase == NULL) {
+        GfxBase = (struct GfxBase *)OpenLibrary((STRPTR) "graphics.library", 37);
+    }
+    if (IntuitionBase == NULL) {
+        IntuitionBase =
+            (struct IntuitionBase *)OpenLibrary((STRPTR) "intuition.library", 37);
+    }
+    if (GfxBase == NULL || IntuitionBase == NULL) {
+        return NULL;
+    }
+
+    struct NewScreen screen;
+    memset(&screen, 0, sizeof screen);
+    screen.LeftEdge = 0;
+    screen.TopEdge = 0;
+    screen.Width = (WORD)width;
+    screen.Height = (WORD)height;
+    screen.Depth = depth;
+    screen.DetailPen = 0;
+    screen.BlockPen = 1;
+    screen.ViewModes = 0;
+    screen.Type = CUSTOMSCREEN;
+    screen.Font = NULL;
+    screen.DefaultTitle = (STRPTR)title;
+    screen.Gadgets = NULL;
+    screen.CustomBitMap = NULL;
+    return (void *)OpenScreen(&screen);
+}
+
+/* Set screen color `pen` from 4-bit R/G/B components. */
+void cl_set_color(void *screen_handle, UBYTE pen, UBYTE r, UBYTE g, UBYTE b)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    if (screen != NULL) {
+        SetRGB4(&screen->ViewPort, (LONG)pen, r >> 4, g >> 4, b >> 4);
+    }
+}
+
+/* Fill the rectangle (`x1`,`y1`)-(`x2`,`y2`) with color `pen`. */
+void cl_fill(void *screen_handle, LONG x1, LONG y1, LONG x2, LONG y2, UBYTE pen)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    if (screen != NULL) {
+        SetAPen(&screen->RastPort, (ULONG)pen);
+        RectFill(&screen->RastPort, x1, y1, x2, y2);
+    }
+}
+
+/* Close a screen. Null-safe. */
+void cl_close_screen(void *screen_handle)
+{
+    struct Screen *screen = (struct Screen *)screen_handle;
+    if (screen != NULL) {
+        CloseScreen(screen);
+    }
 }
