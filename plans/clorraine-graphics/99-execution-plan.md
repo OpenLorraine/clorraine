@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 15:01
-> **Progress**: 10/27 tasks (37%)
+> **Last Updated**: 2026-09-24 15:16
+> **Progress**: 12/27 tasks (44%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -141,7 +141,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 
 ## Phase 2: Corpus program and CI legs
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 1ed1162917ac16afb0489fdc2dc29d75f42942cc
+> **Scope mode**: strict
 > **Lenses**: semantics, security — informational
 
 ### Step 2.1: Corpus program
@@ -149,8 +150,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-spec-corpus-video.md) §Corpus · AR-10, AR-27
 **Objective**: Add the graphics corpus program, its golden, and its README.
 
-- [ ] 2.1.1 Create `spec/tests/corpus/graphics/program.clo` and `expected-output.txt` (`graphics: ok`)
-- [ ] 2.1.2 Create `spec/tests/corpus/graphics/README.md` (coverage, warning audit, hand-check record)
+- [x] 2.1.1 Create `spec/tests/corpus/graphics/program.clo` and `expected-output.txt` (`graphics: ok`) ✅ (completed: 2026-09-24 15:16)
+- [x] 2.1.2 Create `spec/tests/corpus/graphics/README.md` (coverage, warning audit, hand-check record) ✅ (completed: 2026-09-24 15:16)
 
 **Deliverables**:
 - [ ] The corpus program builds for hosted-amiga and prints the golden

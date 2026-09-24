@@ -1,0 +1,36 @@
+// Opens a custom screen, draws colored bars and a diagonal, holds it briefly,
+// and reports the result. It is the acceptance target for the screen lifecycle
+// and the drawing calls on real AmigaOS.
+module tests.corpus.Graphics;
+
+import { Screen, openScreen } from std.amiga.intuition;
+import { setColor, fill, draw, clear } from std.amiga.graphics;
+import { String, stringOf, toCString } from std.text;
+import { println } from std.io;
+import { delayTicks } from std.amiga.dos;
+
+func main(): i32 {
+    let title: String = stringOf("Clorraine graphics");
+    let screen: Screen? = openScreen(320, 256, 4, toCString(title));
+    if (screen == null) {
+        println("graphics: failed");
+        return 1;
+    }
+
+    setColor(screen, 0, 0, 0, 0);
+    setColor(screen, 1, 255, 32, 32);
+    setColor(screen, 2, 32, 255, 32);
+    setColor(screen, 3, 32, 32, 255);
+    clear(screen, 0);
+
+    let i: i32 = 0;
+    while (i < 8) {
+        fill(screen, i * 40, 0, i * 40 + 39, 255, u8(i % 3 + 1));
+        i = i + 1;
+    }
+    draw(screen, 0, 0, 319, 255, 3);
+
+    println("graphics: ok");
+    delayTicks(1500);
+    return 0;
+}
