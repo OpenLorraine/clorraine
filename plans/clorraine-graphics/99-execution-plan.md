@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 14:48
-> **Progress**: 0/27 tasks (0%)
+> **Last Updated**: 2026-09-24 14:53
+> **Progress**: 2/27 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -62,7 +62,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 
 ## Phase 1: Standard-library modules and shim
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot)_
+> **Phase baseline tree**: 8e4723e51b70b00e3379d0801b3cbbe7dc3fd865
+> **Scope mode**: strict
 > **Lenses**: semantics, concurrency — informational; activation stays profile-driven
 
 ### Step 1.1: Specification tests (red phase)
@@ -70,8 +71,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-01](03-01-screen-lifecycle.md) · [03-02](03-02-drawing.md) · [07](07-testing-strategy.md) · AR-11, AR-22
 **Objective**: Write the hosted-amiga compile and nullable-use spec tests before the modules exist, and confirm they fail.
 
-- [ ] 1.1.1 [spec-author] Write `compiler/tests/graphics_spec_test.rs` with ST-2 (importing both modules compiles clean for hosted-amiga) and ST-5 (an unchecked `Screen?` is rejected with `E10010`, a green-only regression — the rule already exists)
-- [ ] 1.1.2 Confirm the red phase for ST-2 only: the test fails because the modules are unresolved (ST-5 cannot demonstrate red before the module exists)
+- [x] 1.1.1 [spec-author] Write `compiler/tests/graphics_spec_test.rs` with ST-2 (importing both modules compiles clean for hosted-amiga) and ST-5 (an unchecked `Screen?` is rejected with `E10010`, a green-only regression — the rule already exists) ✅ (completed: 2026-09-24 14:53)
+- [x] 1.1.2 Confirm the red phase for ST-2 only: the test fails because the modules are unresolved (ST-5 cannot demonstrate red before the module exists) ✅ (completed: 2026-09-24 14:53)
 
 **Deliverables**:
 - [ ] `graphics_spec_test.rs` exists and fails for the expected reason
