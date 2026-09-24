@@ -262,7 +262,7 @@ the plan's task-size criteria: one reviewable change per task)
 
 ### Step 4.3: Implementation tests and hardening
 
-- [ ] 4.3.1 Story config impl test (chapter ids, kinds, captions) — `tools/demo/test/story.impl.test.ts`
+- [x] 4.3.1 Story config impl test (chapter ids, kinds, captions) — `tools/demo/test/story.impl.test.ts`
 - [ ] 4.3.2 Full verification of Phase 4
 
 **Deliverables**:
