@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Clorraine source</title>
+    <style>{{CSS}}</style>
+  </head>
+  <body>
+    <header class="code-header">{{FILENAME}}</header>
+    <div class="code-viewport">
+      <div class="code-content" id="content">{{LINES}}</div>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      const duration = Number(params.get("duration") || "10");
+      const scroll = params.get("scroll") === "true";
+      const highlight = JSON.parse(params.get("highlight") || "[]");
+      const content = document.getElementById("content");
+
+      if (highlight.length > 0) {
+        for (const line of content.querySelectorAll(".line")) {
+          if (!highlight.includes(Number(line.dataset.line))) {
+            line.classList.add("dim");
+          }
+        }
+      }
+
+      const distance = Math.max(0, content.scrollHeight - content.parentElement.clientHeight);
+
+      window.render = function (t) {
+        if (!scroll || distance === 0) {
+          content.style.transform = "translateY(0)";
+          return;
+        }
+        const progress = Math.max(0, Math.min(1, t / duration));
+        content.style.transform = "translateY(-" + progress * distance + "px)";
+      };
+
+      window.render(0);
+      window.__ready = true;
+    </script>
+  </body>
+</html>

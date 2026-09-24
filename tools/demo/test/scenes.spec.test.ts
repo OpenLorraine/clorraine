@@ -72,3 +72,24 @@ test("rejects a gif that names an unknown scene", () => {
     /gif/i,
   );
 });
+
+import { renderCard } from "../src/renderer/card.ts";
+import type { RenderEnv } from "../src/renderer/env.ts";
+
+test("a card scene requests one frame per output frame", async () => {
+  const specs: Array<{ page: string; count: number }> = [];
+  const frames = {
+    capture: async (spec: { page: string; count: number }): Promise<string[]> => {
+      specs.push(spec);
+      return Array.from({ length: spec.count }, (_, i) => `frame-${i}.png`);
+    },
+  };
+  const encode = { encodeFrames: async (): Promise<void> => {} };
+  const env: RenderEnv = { frames, encode, root: "/tmp/clorraine-demo-spec", width: 1100, height: 700, fps: 50, outDir: "/tmp/clorraine-demo-spec", workDir: "/tmp/clorraine-demo-spec/work" };
+
+  await renderCard({ id: "intro", kind: "card", title: "Title", duration: 6 }, env);
+
+  assert.equal(specs.length, 1);
+  assert.equal(specs[0]?.page, "card.html");
+  assert.equal(specs[0]?.count, 300);
+});

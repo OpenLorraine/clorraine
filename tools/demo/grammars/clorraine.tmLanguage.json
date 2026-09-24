@@ -1,0 +1,112 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Clorraine",
+  "scopeName": "source.clorraine",
+  "fileTypes": ["clo"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#template" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#handles" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#functions" },
+    { "include": "#operators" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.clorraine",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.clorraine",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "template": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.template.clorraine",
+          "match": "\\$"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "storage.modifier.clorraine",
+          "match": "\\b(module|import|export|func|let|take|borrow|handle|deleter|ffi|intrinsic|unsafe|raw|volatile|enum|struct|union|const|static|comptime|defer)\\b"
+        },
+        {
+          "name": "keyword.control.clorraine",
+          "match": "\\b(if|else|while|for|switch|case|default|break|continue|return|true|false|null)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.clorraine",
+          "match": "\\b(i8|i16|i32|i64|u8|u16|u32|u64|usize|isize|f32|f64|bool|void|str|cstring)\\b"
+        }
+      ]
+    },
+    "handles": {
+      "patterns": [
+        {
+          "name": "support.type.clorraine",
+          "match": "\\b(String|File|Buffer|HandlerToken|Screen)\\b"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.clorraine",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.clorraine",
+              "match": "\\\\."
+            },
+            {
+              "name": "punctuation.section.interpolation.clorraine",
+              "begin": "\\{",
+              "end": "\\}"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.clorraine",
+          "match": "\\b(0x[0-9a-fA-F]+|0b[01]+|\\d+)\\b"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.clorraine",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.clorraine",
+          "match": "[-+*/%=!<>&|^~?]+"
+        }
+      ]
+    }
+  }
+}

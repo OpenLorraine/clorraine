@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 21:57
-> **Progress**: 7/48 tasks (15%)
+> **Last Updated**: 2026-09-24 22:15
+> **Progress**: 18/48 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -38,7 +38,7 @@ the plan's task-size criteria: one reviewable change per task)
 > MUST:
 >
 > 1. **On implementation:** mark the task `[~]` with a timestamp —
->    `- [~] 1.1.1 Task description ⏳ (implemented: YYYY-MM-DD HH:MM)`
+>    `- [~] 1.1.1 Task description ✅ (completed: 2026-09-24 22:15)`
 > 2. **On verify pass:** promote it to `[x]` —
 >    `- [x] 1.1.1 Task description ✅ (completed: YYYY-MM-DD HH:MM)`
 > 3. **Update the Progress header** (`> **Progress**: X/Y tasks (Z%)`) and the Last
@@ -97,8 +97,8 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-01](03-01-tool-architecture.md) §Error Handling · [07](07-testing-strategy.md) §Implementation Tests
 **Objective**: Cover path/escape and logging internals, and add the `demo-check` target.
 
-- [ ] 1.3.1 Path/escape and logging impl tests, using the `--root` temp-tree seam — `tools/demo/test/paths.impl.test.ts`, `tools/demo/test/log.impl.test.ts`
-- [ ] 1.3.2 Full verification of Phase 1
+- [x] 1.3.1 Path/escape and logging impl tests, using the `--root` temp-tree seam — `tools/demo/test/paths.impl.test.ts`, `tools/demo/test/log.impl.test.ts` ✅ (completed: 2026-09-24 22:00)
+- [x] 1.3.2 Full verification of Phase 1 ✅ (completed: 2026-09-24 22:00)
 
 **Deliverables**:
 - [ ] `make demo-check` runs `tsc --noEmit` and `node --test`
@@ -110,7 +110,7 @@ the plan's task-size criteria: one reviewable change per task)
 
 ## Phase 2: HTML renderer and Shiki viewer
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 0fbbb6ef913f1c62b0af3fb1194e878c9e6ac355
 > **Lenses**: api-surface — informational
 
 ### Step 2.1: Specification tests (red phase)
@@ -118,8 +118,8 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-02](03-02-renderers.md) §card, §Chrome · [03-03](03-03-clorraine-grammar.md) · [07](07-testing-strategy.md) ST-2, ST-3, ST-8 · AR-2, AR-9, AR-20, AR-27
 **Objective**: Write the card-render, grammar, and Chrome-failure spec tests before the renderers exist.
 
-- [ ] 2.1.1 [spec-author] Write `tools/demo/test/scenes.spec.test.ts` card case (ST-2), `tools/demo/test/grammar.spec.test.ts` (ST-3), and `tools/demo/test/chrome.spec.test.ts` (ST-8)
-- [ ] 2.1.2 Confirm the red phase: the tests fail because the grammar, Shiki wrapper, and Chrome wrapper do not exist
+- [x] 2.1.1 [spec-author] Write `tools/demo/test/scenes.spec.test.ts` card case (ST-2), `tools/demo/test/grammar.spec.test.ts` (ST-3), and `tools/demo/test/chrome.spec.test.ts` (ST-8) ✅ (completed: 2026-09-24 22:07)
+- [x] 2.1.2 Confirm the red phase: the tests fail because the grammar, Shiki wrapper, and Chrome wrapper do not exist ✅ (completed: 2026-09-24 22:07)
 
 **Deliverables**:
 - [ ] The three spec-test files exist and fail for the expected reason
@@ -133,13 +133,13 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-02](03-02-renderers.md) · [03-03](03-03-clorraine-grammar.md) · AR-2, AR-9, AR-10, AR-18, AR-20, AR-26
 **Objective**: Build the Clorraine grammar, the Shiki/Chrome/ffmpeg wrappers, and the card/code/poster renderers.
 
-- [ ] 2.2.1 Clorraine TextMate grammar and the Shiki theme — `tools/demo/grammars/clorraine.tmLanguage.json`, `tools/demo/assets/theme.json`, `tools/demo/assets/demo.css`
-- [ ] 2.2.2 Shiki wrapper with grammar registration — `tools/demo/src/util/shiki.ts`
-- [ ] 2.2.3 Headless Chrome CDP frame capture — `tools/demo/src/util/chrome.ts`
-- [ ] 2.2.4 ffmpeg/ffprobe wrapper — `tools/demo/src/util/ffmpeg.ts`
-- [ ] 2.2.5 Card renderer (and poster frame) — `tools/demo/src/renderer/card.ts`, `tools/demo/assets/card.html`, `tools/demo/src/renderer/poster.ts`
-- [ ] 2.2.6 Code renderer with scroll/highlight — `tools/demo/src/renderer/code.ts`, `tools/demo/assets/code.html`
-- [ ] 2.2.7 Green phase: the Step 2.1 spec tests pass
+- [x] 2.2.1 Clorraine TextMate grammar and the Shiki theme — `tools/demo/grammars/clorraine.tmLanguage.json`, `tools/demo/assets/theme.json`, `tools/demo/assets/demo.css` ✅ (completed: 2026-09-24 22:15)
+- [x] 2.2.2 Shiki wrapper with grammar registration — `tools/demo/src/util/shiki.ts` ✅ (completed: 2026-09-24 22:15)
+- [x] 2.2.3 Headless Chrome CDP frame capture — `tools/demo/src/util/chrome.ts` ✅ (completed: 2026-09-24 22:15)
+- [x] 2.2.4 ffmpeg/ffprobe wrapper — `tools/demo/src/util/ffmpeg.ts` ✅ (completed: 2026-09-24 22:15)
+- [x] 2.2.5 Card renderer (and poster frame) — `tools/demo/src/renderer/card.ts`, `tools/demo/assets/card.html`, `tools/demo/src/renderer/poster.ts` ✅ (completed: 2026-09-24 22:15)
+- [x] 2.2.6 Code renderer with scroll/highlight — `tools/demo/src/renderer/code.ts`, `tools/demo/assets/code.html` ✅ (completed: 2026-09-24 22:15)
+- [x] 2.2.7 Green phase: the Step 2.1 spec tests pass ✅ (completed: 2026-09-24 22:15)
 
 **Deliverables**:
 - [ ] A `code` scene renders a highlighted clip from `examples/hello/hello.clo`

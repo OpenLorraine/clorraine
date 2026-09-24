@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Clorraine</title>
+    <link rel="stylesheet" href="demo.css" />
+  </head>
+  <body class="card-body">
+    <main class="card">
+      <h1 id="title"></h1>
+      <p id="subtitle"></p>
+      <ul id="lines"></ul>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.search);
+      document.getElementById("title").textContent = params.get("title") || "";
+      const subtitle = params.get("subtitle") || "";
+      if (subtitle.length > 0) {
+        document.getElementById("subtitle").textContent = subtitle;
+      }
+      const lines = JSON.parse(params.get("lines") || "[]");
+      const list = document.getElementById("lines");
+      for (const line of lines) {
+        const item = document.createElement("li");
+        item.textContent = line;
+        list.appendChild(item);
+      }
+      window.render = function () { /* cards are static */ };
+      window.__ready = true;
+    </script>
+  </body>
+</html>
