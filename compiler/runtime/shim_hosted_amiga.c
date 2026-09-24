@@ -598,6 +598,9 @@ void *cl_open_screen(LONG width, LONG height, UBYTE depth, char *title)
     screen.ViewModes = 0;
     screen.Type = CUSTOMSCREEN;
     screen.Font = NULL;
+    /* Intuition keeps the `DefaultTitle` pointer in the opened screen's
+     * `Screen.Title` field; it does not copy the text. The caller must
+     * therefore keep the title string alive for as long as the screen is open. */
     screen.DefaultTitle = (STRPTR)title;
     screen.Gadgets = NULL;
     screen.CustomBitMap = NULL;

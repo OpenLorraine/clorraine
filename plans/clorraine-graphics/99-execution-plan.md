@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 14:55
-> **Progress**: 6/27 tasks (22%)
+> **Last Updated**: 2026-09-24 14:56
+> **Progress**: 8/27 tasks (30%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -114,8 +114,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 
 - [x] 1.3.1 Add the four NDK includes to `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-09-24 14:55; the includes were already present from the spike)
 - [x] 1.3.2 Reconcile the shim: the spike already defines `cl_open_screen`, `cl_set_color`, `cl_fill`, and `cl_close_screen`; add `cl_draw` and `cl_clear` and keep the two library bases — `compiler/runtime/shim_hosted_amiga.c` ✅ (completed: 2026-09-24 14:55)
-- [ ] 1.3.3 Build a small inline probe program (or the spike program) that imports both modules, for hosted-amiga, and confirm zero warnings (`-Wall -Wextra -Werror`) — the graphics corpus program does not exist until Phase 2 (PF-002)
-- [ ] 1.3.4 Verify the `title` lifetime contract (PF-004): confirm whether `OpenScreen` copies or retains `DefaultTitle`, then document in the module/requirements that the caller's `title` must outlive the screen
+- [x] 1.3.3 Build a small inline probe program (or the spike program) that imports both modules, for hosted-amiga, and confirm zero warnings (`-Wall -Wextra -Werror`) — the graphics corpus program does not exist until Phase 2 (PF-002) ✅ (completed: 2026-09-24 14:56; a throwaway probe compiled clean with the exact toolchain flags)
+- [x] 1.3.4 Verify the `title` lifetime contract (PF-004): confirm whether `OpenScreen` copies or retains `DefaultTitle`, then document in the module/requirements that the caller's `title` must outlive the screen ✅ (completed: 2026-09-24 14:56; `Screen.Title` is a `STRPTR`, so Intuition retains the pointer, not a copy)
 
 **Deliverables**:
 - [ ] Shim compiles warning-free; a hosted-amiga program links and builds
