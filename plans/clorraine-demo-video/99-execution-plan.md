@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 00:35
-> **Progress**: 40/49 tasks (82%)
+> **Last Updated**: 2026-09-25 00:52
+> **Progress**: 42/49 tasks (86%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -274,7 +274,7 @@ the plan's task-size criteria: one reviewable change per task)
 
 ## Phase 5: Per-file scaffold and documentation
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `83162083a60a7a87a6cac3b60995258067b0af04` (recorded at phase start)
 > **Lenses**: api-surface — informational
 
 ### Step 5.1: Specification tests (red phase)
@@ -282,11 +282,11 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-story-and-scaffold.md) §scaffold · [07](07-testing-strategy.md) ST-9 · AR-14
 **Objective**: Write the scaffold spec test before the scaffold exists.
 
-- [ ] 5.1.1 [spec-author] Write `tools/demo/test/scaffold.spec.test.ts` (ST-9): title from a comment, title from the stem, overwrite guard
-- [ ] 5.1.2 Confirm the red phase: `src/scaffold.ts` does not exist
+- [x] 5.1.1 [spec-author] Write `tools/demo/test/scaffold.spec.test.ts` (ST-9): title from a comment, title from the stem, overwrite guard
+- [x] 5.1.2 Confirm the red phase: `src/scaffold.ts` does not exist
 
 **Deliverables**:
-- [ ] The spec-test file exists and fails for the expected reason
+- [x] The spec-test file exists and fails for the expected reason
 
 **Verify**: `make demo-check`
 
