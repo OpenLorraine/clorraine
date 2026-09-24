@@ -245,14 +245,15 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-story-and-scaffold.md) · AR-8, AR-11, AR-12, AR-13, AR-17
 **Objective**: Port the story, wire the Makefile, delete the old pipeline, and regenerate the media.
 
+- [x] 4.2.0 [gap] Wire the `render` subcommand: build the `RenderEnv` (Chrome/ffmpeg) and call `compose` with `--only`/`--out` — `tools/demo/src/cli.ts`
 - [x] 4.2.1 Port the story to `demo/story.ts` (15 chapters; see 03-04 table)
 - [x] 4.2.2 Add the `demo` target (with the `npm ci` guard and the second `render demo/story.ts --only emulator --out demo/emulator.mp4` invocation) — `Makefile`
 - [x] 4.2.3 Delete `demo/story.sh`, `demo/show-source.sh`, `demo/tape/*.tape`; untrack `demo/*.mp4` and `demo/demo.gif`; update `.gitignore`
-- [ ] 4.2.4 Render the story; commit `demo/poster.png`; validate chapter order and total duration
+- [x] 4.2.4 Render the story; commit `demo/poster.png`; validate chapter order and total duration
 - [x] 4.2.5 Green phase: the Step 4.1 spec tests pass
 
 **Deliverables**:
-- [ ] `make demo` writes `demo/demo-full.mp4`, `demo/demo.gif`, `demo/emulator.mp4`, `demo/poster.png`
+- [x] `make demo` writes `demo/demo-full.mp4`, `demo/demo.gif`, `demo/emulator.mp4`, `demo/poster.png`
 - [x] Old scripts/tapes removed; result media untracked
 
 **Verify**: `make demo` then `make demo-check`

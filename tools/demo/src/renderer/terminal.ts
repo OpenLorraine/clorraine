@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { sceneDuration } from "../scenes.ts";
 import type { TerminalScene } from "../scenes.ts";
 import { buildTape, VhsRunner } from "../util/vhs.ts";
@@ -25,12 +25,12 @@ export async function renderTerminal(
   await mkdir(dirname(output), { recursive: true });
 
   const tape = buildTape(scene, {
-    output,
+    output: relative(env.root, output),
     width: env.width,
     height: env.height,
     duration: sceneDuration(scene),
   });
   await writeFile(tapePath, tape, "utf8");
-  await recorder.record(tapePath, output);
+  await recorder.record(tapePath, output, env.root);
   return output;
 }

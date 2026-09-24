@@ -54,7 +54,8 @@ export function buildTape(scene: TerminalScene, options: TapeOptions): string {
 
 /** Records a VHS tape to a clip. */
 export interface VhsRecorder {
-  record(tapePath: string, output: string): Promise<void>;
+  /** Runs the tape; `cwd` is where a relative `Output` path resolves. */
+  record(tapePath: string, output: string, cwd?: string): Promise<void>;
 }
 
 /**
@@ -85,8 +86,8 @@ export async function ensureVhsOutput(output: string): Promise<void> {
 
 /** Runs the real `vhs` binary and checks that it wrote the clip. */
 export class VhsRunner implements VhsRecorder {
-  async record(tapePath: string, output: string): Promise<void> {
-    const result = await run("vhs", [tapePath], { stdio: "inherit", env: vhsEnv() });
+  async record(tapePath: string, output: string, cwd?: string): Promise<void> {
+    const result = await run("vhs", [tapePath], { stdio: "inherit", env: vhsEnv(), cwd });
     if (result.code !== 0) {
       throw new Error(`vhs exited with code ${result.code}`);
     }

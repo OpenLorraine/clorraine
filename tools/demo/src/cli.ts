@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.ts";
+import { compose } from "./renderer/compose.ts";
+import type { RenderEnv } from "./renderer/env.ts";
 import { ConfigError, sceneDuration } from "./scenes.ts";
-import { PathError } from "./util/paths.ts";
+import type { DemoConfig } from "./scenes.ts";
+import { ChromeFrameSource } from "./util/chrome.ts";
+import { FfmpegEncoder } from "./util/ffmpeg.ts";
+import { defaultRepoRoot, PathError } from "./util/paths.ts";
 import { error, info, messageOf } from "./util/log.ts";
 
 const USAGE = `Usage: clorraine-demo <command> [options]
@@ -67,7 +73,17 @@ export async function main(argv: string[]): Promise<number> {
         }
         return 0;
       }
-      case "render":
+      case "render": {
+        const file = requireConfig(positionals[1]);
+        const root = values.root ?? process.env.CLORRAINE_DEMO_ROOT ?? defaultRepoRoot();
+        const config = await loadConfig(file, { root });
+        const out = await compose(config, buildRenderEnv(config, root), {
+          out: values.out,
+          only: parseOnly(values.only),
+        });
+        info(`wrote ${out}`);
+        return 0;
+      }
       case "new":
         error(`"${command}" is not implemented yet`);
         return 1;
@@ -87,6 +103,42 @@ function requireConfig(value: string | undefined): string {
     throw new ConfigError("a config path is required");
   }
   return value;
+}
+
+/** Splits `--only a,b` (repeatable) into scene ids, rejecting an empty selection. */
+function parseOnly(values: string[] | undefined): string[] | undefined {
+  if (values === undefined) {
+    return undefined;
+  }
+  const ids = values
+    .flatMap((value) => value.split(","))
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+  if (ids.length === 0) {
+    throw new ConfigError("--only needs at least one scene id");
+  }
+  return ids;
+}
+
+/**
+ * Builds the real renderer environment: headless Chrome for HTML frames, ffmpeg for
+ * encoding, and the repository's `build/demo/` tree for intermediates.
+ */
+function buildRenderEnv(config: DemoConfig, root: string): RenderEnv {
+  const base = join(root, "build", "demo");
+  return {
+    frames: new ChromeFrameSource({
+      assetsDir: join(root, "tools", "demo", "assets"),
+      framesDir: join(base, "frames"),
+    }),
+    encode: new FfmpegEncoder(),
+    root,
+    width: config.width ?? 1100,
+    height: config.height ?? 700,
+    fps: config.fps ?? 50,
+    outDir: join(base, "raw"),
+    workDir: join(base, "work"),
+  };
 }
 
 async function runAsEntryPoint(): Promise<void> {

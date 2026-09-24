@@ -289,7 +289,10 @@ export async function compose(config: DemoConfig, env: RenderEnv, options: Compo
       { stdio: "ignore" },
     );
     clips.push(normalized);
-    durations.push(sceneDuration(scene));
+    // Trim only shortens a clip, and VHS can deliver less than the requested hold, so
+    // read the real length: the xfade offsets and the length check must use it, or an
+    // offset can run past the accumulated clip and truncate the whole chain.
+    durations.push(await ffprobeDuration(normalized));
   }
 
   await runOrThrow("ffmpeg", buildComposeArgs(clips, out, durations, transition), { stdio: "ignore" });
