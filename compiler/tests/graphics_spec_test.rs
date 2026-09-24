@@ -142,3 +142,34 @@ func main(): i32 {
         "expected an E10010 first line, got:\n{stderr}"
     );
 }
+
+/// The graphics corpus program compiles clean for hosted-amiga.
+///
+/// The golden corpus is the acceptance target, so its zero-diagnostic contract
+/// is asserted here directly rather than inferred from the Amiga build leg,
+/// which only enforces the C compiler's warnings.
+#[test]
+fn the_graphics_corpus_compiles_with_zero_diagnostics() {
+    let corpus =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/tests/corpus/graphics/program.clo");
+    let scratch = ScratchDir::new("corpus");
+    let output_path = scratch.path().join("out.c");
+    let run = run_clc(&[
+        "--profile".to_owned(),
+        "hosted-amiga".to_owned(),
+        "-o".to_owned(),
+        output_path.display().to_string(),
+        corpus.display().to_string(),
+    ]);
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "the graphics corpus must compile for hosted-amiga; stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(
+        run.stderr.is_empty(),
+        "the graphics corpus must compile with zero diagnostics; stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+}

@@ -1,9 +1,12 @@
 # Corpus: graphics
 
-`program.clo` opens a 320x256x4 custom screen, sets four colors, fills eight
-color bars, draws a diagonal line, reports success, and holds the screen briefly
-before it drops. It is the acceptance target for the screen lifecycle, the
-drawing calls, and the owned-handle cleanup on real AmigaOS.
+`program.clo` opens a 320x256x4 custom screen in a helper that owns the screen,
+sets four colors, fills eight color bars, draws a diagonal line, holds the screen
+for about thirty seconds (1500 display ticks), and returns so the screen is
+released. The program then reports success. It is the acceptance target for the
+screen lifecycle, the drawing calls, and the owned-handle cleanup on real
+AmigaOS: because the screen is released before the program prints its final
+line, the cleanup runs before the FS-UAE leg stops the emulator.
 
 * Module: `tests.corpus.Graphics`
 * Entry: `func main(): i32` (M8, MOD-28)
@@ -25,7 +28,8 @@ drawing calls, and the owned-handle cleanup on real AmigaOS.
 | `while` loop over the bar count | Ch 05 §7 (B3) |
 | `u8(i % 3 + 1)` explicit conversion from `i32` | TY-11 (Ch 02 §9); B8 cast form (Ch 04 §14) |
 | Borrowing the owned screen into the drawing calls (`borrow screen`) | V5 modes (Ch 03 §2); O12 (Ch 16 §3) |
-| Owned `Screen` handle released exactly once by the generated drop | O2, O7 (Ch 03 §3, §5); OW-11..OW-13 |
+| `func drawScene(): i32` owns the screen and returns a status | FN-1, FN-2 (Ch 06 §1); V5 modes (Ch 03 §2) |
+| Owned `Screen` handle released exactly once by the generated drop before the sentinel prints | O2, O7 (Ch 03 §3, §5); OW-11..OW-13; Ch 17 §4 |
 | Screen lifecycle and drawing wrappers | appendix-amiga.md §1; the `std.amiga.intuition` and `std.amiga.graphics` sections of appendix-stdlib.md |
 | `delayTicks(1500)` FFI-backed wrapper call | X6 (Ch 12 §1); appendix §7 (Amiga) |
 

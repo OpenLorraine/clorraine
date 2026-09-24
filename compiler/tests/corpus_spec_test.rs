@@ -5,10 +5,11 @@
 //! compiler under the fixed warning flags, and the program runs in a private
 //! working directory. The three portable programs must compile with zero
 //! diagnostics and print their recorded output byte for byte. The
-//! interrupt-counter program needs the AmigaOS scheduler and interrupt
-//! dispatcher, which the host profile does not provide, so under `--profile
-//! host` it must be rejected with the profile-surface diagnostic `E11200`
-//! instead of being compiled.
+//! interrupt-counter needs the AmigaOS scheduler and interrupt dispatcher, and
+//! the graphics program needs the AmigaOS screen and graphics libraries; the
+//! host profile provides neither, so under `--profile host` both must be
+//! rejected with the profile-surface diagnostic `E11200` instead of being
+//! compiled.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

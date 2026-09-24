@@ -7,10 +7,10 @@
 # `make corpus-amiga` builds and runs the portable validation corpus on the
 # hosted-amiga profile with the m68k GCC toolchain and the `vamos` emulator,
 # diffing each program's output against its recorded output, and builds the
-# interrupt-counter for the emulator leg.
+# FS-UAE-only programs (interrupt-counter and graphics) for the emulator leg.
 #
-# `make corpus-fs-uae` boots the interrupt-counter in FS-UAE and diffs its
-# captured output; it depends on `corpus-amiga` for the binary and runs on the
+# `make corpus-fs-uae` boots the FS-UAE-only programs in FS-UAE and diffs their
+# captured output; it depends on `corpus-amiga` for the binaries and runs on the
 # host, because FS-UAE needs the X display and the local SDK settings.
 #
 # `make run-fault-amiga` runs the six runtime-fault programs under `vamos` and

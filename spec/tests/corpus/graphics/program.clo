@@ -1,6 +1,8 @@
-// Opens a custom screen, draws colored bars and a diagonal, holds it briefly,
-// and reports the result. It is the acceptance target for the screen lifecycle
-// and the drawing calls on real AmigaOS.
+// Opens a custom screen, draws colored bars and a diagonal, holds it for about
+// thirty seconds, and reports the result. It is the acceptance target for the
+// screen lifecycle and the drawing calls on real AmigaOS: the scene is drawn in
+// a helper that owns the screen, so the screen is released before the program
+// reports success.
 module tests.corpus.Graphics;
 
 import { Screen, openScreen } from std.amiga.intuition;
@@ -9,11 +11,15 @@ import { String, stringOf, toCString } from std.text;
 import { println } from std.io;
 import { delayTicks } from std.amiga.dos;
 
-func main(): i32 {
+/// Draws the scene and holds the screen, then releases it on return.
+///
+/// Returns zero on success and one when the screen cannot be opened. The screen
+/// and the title drop when this function returns, before the caller reports the
+/// result.
+func drawScene(): i32 {
     let title: String = stringOf("Clorraine graphics");
     let screen: Screen? = openScreen(320, 256, 4, toCString(title));
     if (screen == null) {
-        println("graphics: failed");
         return 1;
     }
 
@@ -30,7 +36,16 @@ func main(): i32 {
     }
     draw(screen, 0, 0, 319, 255, 3);
 
-    println("graphics: ok");
     delayTicks(1500);
+    return 0;
+}
+
+func main(): i32 {
+    let rc: i32 = drawScene();
+    if (rc != 0) {
+        println("graphics: failed");
+        return rc;
+    }
+    println("graphics: ok");
     return 0;
 }
