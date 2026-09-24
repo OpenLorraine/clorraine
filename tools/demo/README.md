@@ -26,6 +26,9 @@ node src/cli.ts list ../../demo/story.ts
 The Clorraine story lives in `demo/story.ts`; `make demo` renders it, and `make demo-check`
 runs the type check and the tests.
 
+`new` writes `demo/<stem>.demo.ts` for the source file's stem, so two sources with the same
+stem share one scaffold target.
+
 ## Layout
 
 | Path | Contents |

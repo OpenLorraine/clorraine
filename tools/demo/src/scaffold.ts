@@ -29,7 +29,7 @@ export interface ScaffoldResult {
  * file has no leading comment (or the comment is empty).
  */
 export function deriveTitle(contents: string, stem: string): string {
-  const firstLine = contents.split("\n", 1)[0] ?? "";
+  const firstLine = (contents.split("\n", 1)[0] ?? "").replace(/\r$/, "");
   const comment = /^\s*\/\/\s?(.*)$/.exec(firstLine)?.[1]?.trim() ?? "";
   const title = comment.replace(/\.$/, "");
   return title.length > 0 ? title : stem;
@@ -79,19 +79,35 @@ export async function writeScaffold(options: ScaffoldOptions): Promise<ScaffoldR
   const target = resolveRepoPath(options.root, join("demo", `${stem}.demo.ts`), "scaffold");
   const relativePath = relative(options.root, target).split("\\").join("/");
 
-  await mkdir(dirname(target), { recursive: true });
+  try {
+    await mkdir(dirname(target), { recursive: true });
+  } catch (thrown) {
+    throw new ConfigError(`could not write ${relativePath}: ${reasonOf(thrown)}`);
+  }
   try {
     await writeFile(target, scaffoldSource(relativeFile, stem, title), {
       encoding: "utf8",
       flag: options.force === true ? "w" : "wx",
     });
   } catch (thrown) {
-    const code = thrown instanceof Error && "code" in thrown ? thrown.code : undefined;
-    if (!options.force && code === "EEXIST") {
+    if (!options.force && isErrno(thrown, "EEXIST")) {
       throw new ConfigError(`${relativePath} already exists; pass --force to overwrite`);
     }
-    throw thrown;
+    throw new ConfigError(`could not write ${relativePath}: ${reasonOf(thrown)}`);
   }
 
   return { path: target, relativePath, title };
+}
+
+/** True when `error` is an `Error` carrying the given `code` (e.g. `"EEXIST"`). */
+function isErrno(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
+/** A short, path-free description of a filesystem error: its errno code or name. */
+function reasonOf(error: unknown): string {
+  if (error instanceof Error && "code" in error && typeof error.code === "string") {
+    return error.code;
+  }
+  return error instanceof Error ? error.name : "unknown error";
 }

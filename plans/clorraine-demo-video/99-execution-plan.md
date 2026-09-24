@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 01:18
-> **Progress**: 47/49 tasks (96%)
+> **Last Updated**: 2026-09-25 01:30
+> **Progress**: 49/49 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -313,11 +313,11 @@ the plan's task-size criteria: one reviewable change per task)
 ### Step 5.3: Implementation tests and hardening
 
 - [x] 5.3.1 Scaffold title-derivation and overwrite edge-case impl tests — `tools/demo/test/scaffold.impl.test.ts`
-- [ ] 5.3.2 Confirm the strict-profile phase reviews cover the input-validation and edge cases in `01-requirements.md` (AC-8)
-- [ ] 5.3.3 Full verification of Phase 5
+- [x] 5.3.2 Confirm the strict-profile phase reviews cover the input-validation and edge cases in `01-requirements.md` (AC-8)
+- [x] 5.3.3 Full verification of Phase 5
 
 **Deliverables**:
-- [ ] All verification passing
+- [x] All verification passing
 
 **Verify**: `make demo-check`
 

@@ -17,6 +17,10 @@ test("deriveTitle strips the marker and a trailing period", () => {
   assert.equal(deriveTitle("// No period here\n", "stem"), "No period here");
 });
 
+test("deriveTitle handles Windows line endings", () => {
+  assert.equal(deriveTitle("// Windows title.\r\nfn main() {}\r\n", "hello"), "Windows title");
+});
+
 test("deriveTitle falls back to the stem for a missing or empty comment", () => {
   assert.equal(deriveTitle("fn main() {}\n", "hello"), "hello");
   assert.equal(deriveTitle("//\n", "hello"), "hello");
