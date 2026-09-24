@@ -22,7 +22,7 @@
 | PLAN-05 | Developer tooling and install path | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-04 |
 | PLAN-06 | LorraineOS bring-up (downstream) | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-03; separate repository |
 | PLAN-07 | ARM64 port | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-06 |
-| PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Plan Preflighted | 🔬 | 2026-09-24 | depends on PLAN-01 |
+| PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Executing | 🔄 | 2026-09-24 | depends on PLAN-01 |
 
 ## Backlog / Known defects
 
