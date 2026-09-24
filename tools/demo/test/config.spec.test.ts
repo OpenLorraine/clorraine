@@ -63,3 +63,19 @@ test("rejects a .ts config with no default export", async () => {
   const file = await writeTemp("config.ts", "export const notDefault = 1;\n");
   await assert.rejects(() => loadConfig(file, { root: repoRoot }), /default export/i);
 });
+
+test("uses CLORRAINE_DEMO_ROOT when no root option is given", async () => {
+  const file = await writeTemp("config.json", JSON.stringify({ out: "demo/out/x.mp4", scenes }));
+  const previous = process.env.CLORRAINE_DEMO_ROOT;
+  process.env.CLORRAINE_DEMO_ROOT = repoRoot;
+  try {
+    const config = await loadConfig(file);
+    assert.equal(config.scenes.length, 2);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CLORRAINE_DEMO_ROOT;
+    } else {
+      process.env.CLORRAINE_DEMO_ROOT = previous;
+    }
+  }
+});

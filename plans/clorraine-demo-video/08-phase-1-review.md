@@ -35,3 +35,18 @@ scalar validation) is accepted without change.
 
 After the fixes: `make demo-check` — `tsc --noEmit` clean, 21/21 tests. The 🔴/🟠 fixes
 (RV-101, RV-102) were re-reviewed on the fix diff; see the re-review note below.
+
+## Re-review (fix diff, commit 9b0d1b8)
+
+The scoped re-review confirmed RV-101–RV-108 and found one regression the RV-102 fix
+introduced:
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| RV-113 | 🟠 Major | The RV-102 `try/catch` wrapped `await main(...)`, so a thrown usage error was swallowed and the CLI exited 0 | Narrowed the try to the `realpathSync`/URL comparison; `parseArgs` errors now print usage and exit 2 |
+| RV-114 | 🟡 Minor | The env-root fallback was untested | Added a `CLORRAINE_DEMO_ROOT` test |
+| RV-115 | 🟡 Minor | The CLI entry guard was untested | Added `test/cli.impl.test.ts` (help, unknown option, missing config) |
+
+After the re-review fixes: `make demo-check` — `tsc --noEmit` clean, 25/25 tests. Per the
+quality profile, no third review pass was run.
+

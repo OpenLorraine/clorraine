@@ -24,17 +24,31 @@ Options:
 
 /** Parses arguments and runs the requested command. Returns the process exit code. */
 export async function main(argv: string[]): Promise<number> {
-  const { values, positionals } = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      only: { type: "string", multiple: true },
-      out: { type: "string" },
-      root: { type: "string" },
-      force: { type: "boolean" },
-      help: { type: "boolean", short: "h" },
-    },
-  });
+  let values: {
+    only?: string[];
+    out?: string;
+    root?: string;
+    force?: boolean;
+    help?: boolean;
+  };
+  let positionals: string[];
+  try {
+    ({ values, positionals } = parseArgs({
+      args: argv,
+      allowPositionals: true,
+      options: {
+        only: { type: "string", multiple: true },
+        out: { type: "string" },
+        root: { type: "string" },
+        force: { type: "boolean" },
+        help: { type: "boolean", short: "h" },
+      },
+    }));
+  } catch (thrown) {
+    error(messageOf(thrown));
+    info(USAGE);
+    return 2;
+  }
 
   const command = positionals[0];
   if (values.help === true || command === undefined) {
@@ -70,7 +84,7 @@ export async function main(argv: string[]): Promise<number> {
 
 function requireConfig(value: string | undefined): string {
   if (value === undefined) {
-    throw new Error("a config path is required");
+    throw new ConfigError("a config path is required");
   }
   return value;
 }
@@ -80,12 +94,15 @@ async function runAsEntryPoint(): Promise<void> {
   if (entry === undefined) {
     return;
   }
+  let entryUrl: string;
   try {
-    if (import.meta.url === pathToFileURL(realpathSync(entry)).href) {
-      process.exitCode = await main(process.argv.slice(2));
-    }
+    entryUrl = pathToFileURL(realpathSync(entry)).href;
   } catch {
     // `entry` is not a resolvable path; this module was imported, not run.
+    return;
+  }
+  if (import.meta.url === entryUrl) {
+    process.exitCode = await main(process.argv.slice(2));
   }
 }
 
