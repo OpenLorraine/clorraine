@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 22:18
-> **Progress**: 20/48 tasks (42%)
+> **Last Updated**: 2026-09-24 23:14
+> **Progress**: 22/48 tasks (46%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -166,7 +166,7 @@ the plan's task-size criteria: one reviewable change per task)
 
 ## Phase 3: Terminal, emulator, and composition
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 48a7fb6bdc08dbb37ba508336188194955c9bda1
 > **Lenses**: api-surface — informational
 
 ### Step 3.1: Specification tests (red phase)
@@ -174,8 +174,8 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-02](03-02-renderers.md) §terminal, §emulator, §compose · [07](07-testing-strategy.md) ST-4, ST-5, ST-10 · AR-3, AR-7, AR-12, AR-16
 **Objective**: Write the tape, emulator, and composition spec tests before the renderers exist.
 
-- [ ] 3.1.1 [spec-author] Write `tools/demo/test/tape.spec.test.ts` (ST-4), `tools/demo/test/emulator.spec.test.ts` (ST-5: 50 fps, default 7s), and `tools/demo/test/compose.spec.test.ts` (ST-10: trim, chained xfade, n=1 guard; ST-11: gif id, poster fallback)
-- [ ] 3.1.2 Confirm the red phase for the tape, emulator, and composition tests
+- [x] 3.1.1 [spec-author] Write `tools/demo/test/tape.spec.test.ts` (ST-4), `tools/demo/test/emulator.spec.test.ts` (ST-5: 50 fps, default 7s), and `tools/demo/test/compose.spec.test.ts` (ST-10: trim, chained xfade, n=1 guard; ST-11: gif id, poster fallback) ✅ (completed: 2026-09-24 23:14)
+- [x] 3.1.2 Confirm the red phase for the tape, emulator, and composition tests ✅ (completed: 2026-09-24 23:14)
 
 **Deliverables**:
 - [ ] The three spec-test files exist and fail for the expected reason

@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Demo Video Toolkit
 
-> **Status**: ✅ GATE PASSED — all 29 items resolved
-> **Last Updated**: 2026-09-24 21:30
+> **Status**: ✅ GATE PASSED — all 30 items resolved
+> **Last Updated**: 2026-09-24 23:14
 > **CodeOps Artifact Schema**: 1
 
 This register records every decision with semantic weight for the `clorraine-demo-video`
@@ -41,6 +41,7 @@ its owner, and its revisit trigger. No item is deferred.
 | AR-27 | Behavioral | Missing Chrome or headless failure | Fail fast with a clear error / degrade to Pygments | User accepted recommendation: require Chrome; fail fast with a clear error | ✅ Resolved |
 | AR-28 | Technical | Branded emulator frame method | Chrome-rendered PNG frame + ffmpeg overlay / ffmpeg drawbox / animated device | User accepted recommendation: Chrome-rendered PNG frame overlaid with ffmpeg (static bezel) | ✅ Resolved |
 | AR-29 | UX / Technical | Emulator capture frame rate and length | 25 fps whole clip / 50 fps + native crop / customizable | User: capture at a high frame rate for animations (50 fps, PAL) and make the emulator length customizable with a **7s default** | ✅ Resolved |
+| AR-30 | Technical (runtime) | `xfade` offset for the 2nd of 3 clips: ST-10 says `8.5`, but 03-02's algorithm ("offset = running output length − transition") and ST-10's own total (`14.0`) both require `8.0`. A specification test cannot pass as written | A: use `8.0` (chain offset), fix ST-10's typo / B: use `8.5` (prefix-sum offset) and trim the final output to `14.0` | User chose A: chain offset `8.0`; ST-10's `8.5` was a typo. Corrected `07-testing-strategy.md` ST-10 | ✅ Resolved |
 
 ## Complexity Escalation — approval evidence (AR-15)
 
