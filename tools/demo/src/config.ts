@@ -42,10 +42,10 @@ async function assertFileExists(root: string, candidate: string, label: string):
  * @throws {PathError} when a path is absolute, escapes the root, or a required input is missing.
  */
 export async function loadConfig(file: string, options: LoadOptions = {}): Promise<DemoConfig> {
-  const root = options.root ?? defaultRepoRoot();
+  const root = options.root ?? process.env.CLORRAINE_DEMO_ROOT ?? defaultRepoRoot();
   const raw = await readRaw(file);
   validateConfig(raw);
-  const config = raw as DemoConfig;
+  const config = raw;
 
   resolveRepoPath(root, config.out, "out");
   if (config.poster !== undefined) {

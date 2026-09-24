@@ -50,3 +50,16 @@ test("rejects an absolute output path", async () => {
   );
   await assert.rejects(() => loadConfig(file, { root: repoRoot }), /absolute|root|outside/i);
 });
+
+test("rejects a scene file that does not exist", async () => {
+  const file = await writeTemp(
+    "config.json",
+    JSON.stringify({ out: "demo/out/x.mp4", scenes: [{ id: "one", kind: "code", file: "examples/does-not-exist.clo", duration: 5 }] }),
+  );
+  await assert.rejects(() => loadConfig(file, { root: repoRoot }), /not found|unreadable/i);
+});
+
+test("rejects a .ts config with no default export", async () => {
+  const file = await writeTemp("config.ts", "export const notDefault = 1;\n");
+  await assert.rejects(() => loadConfig(file, { root: repoRoot }), /default export/i);
+});

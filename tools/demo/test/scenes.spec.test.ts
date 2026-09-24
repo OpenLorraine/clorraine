@@ -47,8 +47,28 @@ test("reports every problem at once, each tied to its scene", () => {
   }
   assert.match(message, /duration/i);
   assert.match(message, /duplicate/i);
+  assert.match(message, /"a"/);
 });
 
 test("accepts a minimal valid config", () => {
   assert.doesNotThrow(() => validateConfig({ out: "demo/out/x.mp4", scenes: [baseScene] }));
+});
+
+test("rejects a non-string poster path", () => {
+  assert.throws(
+    () => validateConfig({ out: "demo/out/x.mp4", poster: 123, scenes: [baseScene] }),
+    /poster/i,
+  );
+});
+
+test("rejects a gif that names an unknown scene", () => {
+  assert.throws(
+    () =>
+      validateConfig({
+        out: "demo/out/x.mp4",
+        gif: { out: "demo/out/x.gif", sceneIds: ["missing"] },
+        scenes: [baseScene],
+      }),
+    /gif/i,
+  );
 });

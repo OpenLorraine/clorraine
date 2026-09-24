@@ -44,7 +44,9 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
     });
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
-      process.stderr.write(chunk);
+      if (echo) {
+        process.stderr.write(chunk);
+      }
     });
     child.on("error", reject);
     child.on("close", (code) => resolvePromise({ code: code ?? 0, stdout, stderr }));
@@ -62,7 +64,5 @@ export async function runOrThrow(command: string, args: string[], options: RunOp
 
 /** True when the command can be found on PATH. */
 export function commandExists(command: string): Promise<boolean> {
-  return run("sh", ["-c", `command -v "${command}" >/dev/null 2>&1`], { stdio: "ignore" }).then(
-    (result) => result.code === 0,
-  );
+  return run("which", [command], { stdio: "ignore" }).then((result) => result.code === 0);
 }

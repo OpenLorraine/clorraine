@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.ts";
-import { sceneDuration } from "./scenes.ts";
+import { ConfigError, sceneDuration } from "./scenes.ts";
+import { PathError } from "./util/paths.ts";
 import { error, info, messageOf } from "./util/log.ts";
 
 const USAGE = `Usage: clorraine-demo <command> [options]
@@ -13,9 +15,9 @@ Commands:
   list <config>     Print the scenes in a config
 
 Options:
-  --only <id>       With render: render only these scenes (repeatable)
+  --only <ids>      With render: render only these scenes (comma-separated or repeatable)
   --out <path>      With render: override the config's output path
-  --root <path>     Repository root for path resolution
+  --root <path>     Repository root for path resolution (also CLORRAINE_DEMO_ROOT)
   --force           With new: overwrite an existing scaffold
   -h, --help        Show this help
 `;
@@ -62,7 +64,7 @@ export async function main(argv: string[]): Promise<number> {
     }
   } catch (thrown) {
     error(messageOf(thrown));
-    return 1;
+    return thrown instanceof ConfigError || thrown instanceof PathError ? 2 : 1;
   }
 }
 
@@ -73,7 +75,18 @@ function requireConfig(value: string | undefined): string {
   return value;
 }
 
-const entry = process.argv[1];
-if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
-  process.exitCode = await main(process.argv.slice(2));
+async function runAsEntryPoint(): Promise<void> {
+  const entry = process.argv[1];
+  if (entry === undefined) {
+    return;
+  }
+  try {
+    if (import.meta.url === pathToFileURL(realpathSync(entry)).href) {
+      process.exitCode = await main(process.argv.slice(2));
+    }
+  } catch {
+    // `entry` is not a resolvable path; this module was imported, not run.
+  }
 }
+
+await runAsEntryPoint();

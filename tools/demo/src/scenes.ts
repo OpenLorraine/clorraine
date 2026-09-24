@@ -100,7 +100,11 @@ export class ConfigError extends Error {
   }
 }
 
-const SCENE_KINDS: readonly Scene["kind"][] = ["card", "outro", "code", "terminal", "emulator"];
+const SCENE_KINDS: ReadonlySet<string> = new Set(["card", "outro", "code", "terminal", "emulator"]);
+
+function isSceneKind(value: unknown): value is Scene["kind"] {
+  return typeof value === "string" && SCENE_KINDS.has(value);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -124,6 +128,9 @@ export function validateConfig(config: unknown): asserts config is DemoConfig {
   }
   if (typeof config.out !== "string" || config.out.length === 0) {
     problems.push('missing "out" path');
+  }
+  if (config.poster !== undefined && (typeof config.poster !== "string" || config.poster.length === 0)) {
+    problems.push('"poster" must be a non-empty string path');
   }
   if (!Array.isArray(config.scenes) || config.scenes.length === 0) {
     problems.push("at least one scene is required");
@@ -150,11 +157,12 @@ export function validateConfig(config: unknown): asserts config is DemoConfig {
           problems.push(`${where}: duration must be a positive number`);
         }
       }
-      if (typeof raw.kind !== "string" || !SCENE_KINDS.includes(raw.kind as Scene["kind"])) {
-        problems.push(`${where}: unknown kind ${JSON.stringify(raw.kind)}`);
+      const kind = raw.kind;
+      if (!isSceneKind(kind)) {
+        problems.push(`${where}: unknown kind ${JSON.stringify(kind)}`);
         continue;
       }
-      switch (raw.kind as Scene["kind"]) {
+      switch (kind) {
         case "card":
           if (typeof raw.title !== "string" || raw.title.length === 0) {
             problems.push(`${where}: card needs a title`);
