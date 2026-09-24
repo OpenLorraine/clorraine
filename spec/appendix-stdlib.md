@@ -144,7 +144,84 @@ A token is `struct HandlerToken { id: u32; }`. The handler rules are enforced by
 audit in v1; effect-marker enforcement is a Phase 2 follow-up. State
 shared with a handler is a `volatile` module-level `let` (T7).
 
-## 8. `Span` - offset-based parsing
+## 8. Screen lifecycle (`std.amiga.intuition`)
+
+The module owns a custom screen. `openScreen` returns an owned `Screen?`; the
+caller null-checks it (T8, E10010), and the generated drop closes the screen once
+through the null-safe deleter (P5). The `RastPort` is never exposed; the drawing
+calls live in the companion module (§9).
+
+```clorraine
+module std.amiga.intuition;
+
+export handle Screen freedBy cl_close_screen;
+
+ffi stdintuition {
+    func cl_open_screen(width: i32, height: i32, depth: u8, title: cstring): Screen?;
+    func cl_close_screen(take screen: Screen): void;
+}
+
+export func openScreen(width: i32, height: i32, depth: u8, title: cstring): Screen? {
+    return cl_open_screen(width, height, depth, title);
+}
+```
+
+| API | Returns | Ownership and rules |
+|---|---|---|
+| `openScreen(width: i32, height: i32, depth: u8, title: cstring)` | `Screen?` | opens a custom screen; `null` on failure. `width`/`height` are pixels; `depth` is the bitplane count (1-5 on the base chipset) |
+| drop (generated) | `void` | `cl_close_screen(take screen)` runs exactly once; it is null-safe |
+
+`title` names the screen and must stay alive for as long as the screen is open:
+Intuition keeps the pointer and does not copy the string. `Screen` is move-only;
+windows, text, bitmaps, sprites, and palettes beyond four bits are outside v1.
+
+## 9. Drawing (`std.amiga.graphics`)
+
+The module draws into a screen borrowed from `std.amiga.intuition`. Coordinates
+are pixels and `pen` indexes the screen's color map; the `RastPort` calls stay
+inside the shim (X6).
+
+```clorraine
+module std.amiga.graphics;
+
+import { Screen } from std.amiga.intuition;
+
+ffi stdgraphics {
+    func cl_set_color(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void;
+    func cl_fill(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void;
+    func cl_clear(borrow screen: Screen, pen: u8): void;
+}
+
+export func setColor(borrow screen: Screen, pen: u8, r: u8, g: u8, b: u8): void {
+    cl_set_color(screen, pen, r, g, b);
+}
+
+export func fill(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void {
+    cl_fill(screen, x1, y1, x2, y2, pen);
+}
+
+export func draw(borrow screen: Screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8): void {
+    cl_draw(screen, x1, y1, x2, y2, pen);
+}
+
+export func clear(borrow screen: Screen, pen: u8): void {
+    cl_clear(screen, pen);
+}
+```
+
+| API | Returns | Rule |
+|---|---|---|
+| `setColor(borrow screen, pen: u8, r: u8, g: u8, b: u8)` | `void` | maps 8-bit components to the Amiga 4-bit palette (`SetRGB4`); `pen` is valid in `0..(1 << depth) - 1` |
+| `fill(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | fills the inclusive rectangle (`RectFill`) |
+| `draw(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | draws the arbitrary line between the two points (`Draw`) |
+| `clear(borrow screen, pen: u8)` | `void` | fills the whole screen with `pen` |
+
+Every call takes the screen by `borrow`, so the caller keeps ownership; the
+screen's depth bounds `pen`, and an out-of-range pen is a caller contract.
+`graphics.library` clips coordinates outside the screen.
+
+## 10. `Span` - offset-based parsing
 
 `Span` is an offset pair into bytes the caller still owns. View fields are banned
 (T4, E10205), so it stores no pointer; the source view is passed on each use:
@@ -158,7 +235,7 @@ shared with a handler is a `volatile` module-level `let` (T7).
 Because a `Span` holds no view, it may outlive one expression while the caller
 holds `src`; a different `src` is a caller contract, not a compiler check.
 
-## 9. `String` and `str` helpers
+## 11. `String` and `str` helpers
 
 `String` is the owned handle and `str` the immutable view (T2); direction and
 allocation are fixed (T5).
@@ -181,7 +258,7 @@ returns a view or `cstring` over owned storage — `bytes`, `toCString`, `slice`
 and `bufferBytes` — for the result's origin
 ([Ch 16](16-borrow-rules.md) section 2).
 
-## 10. Staged for v1.1 and v2
+## 12. Staged for v1.1 and v2
 
 | Item | Target | Reason |
 |---|---|---|
@@ -189,7 +266,7 @@ and `bufferBytes` — for the result's origin
 | `Box<T>` with generated drop glue | v1.1 | needs the X1 amendment allowing ordinary Clorraine `freedBy` functions (X1) |
 | C-hook trampolines for capturing lambdas | v1.1 | capturing closures cross synchronous C hooks only, via generated trampolines (L5) |
 
-## 11. Diagnostics
+## 13. Diagnostics
 
 | Code | Trigger |
 |---|---|

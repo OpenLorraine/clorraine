@@ -26,10 +26,34 @@ holds the FFI declaration.
 | `dos.library` | files | open, close, read, and write; `Seek` planned, not yet wrapped | `handle File` |
 | `dos.library` | locks | lock and unlock a path (planned; not yet wrapped) | `handle Lock` (planned) |
 | `dos.library` | output | write to standard output (planned; print helpers not yet wrapped) | `println` (planned) |
-| `intuition` / `graphics` | windows, drawing | later | same contract discipline |
+| `intuition` / `graphics` | custom screen, drawing | open and close a custom screen; set colors and fill, line, and clear | `handle Screen` |
 
 The library is written in copy, not in the surface. Application code imports
 wrappers and never writes an `ffi` block (X6).
+
+The `intuition`/`graphics` surface is the smallest that draws on a real screen:
+a custom screen owned by the caller and four drawing calls, with no windows. The
+`RastPort` stays inside the shim, and the screen's `title` is a `cstring` the
+caller must keep alive for the screen's lifetime.
+
+```clorraine
+import { Screen, openScreen } from std.amiga.intuition;
+import { setColor, fill, clear } from std.amiga.graphics;
+import { String, stringOf, toCString } from std.text;
+
+func draw(): i32 {
+    let title: String = stringOf("Clorraine graphics");
+    let screen: Screen? = openScreen(320, 256, 4, toCString(title));
+    if (screen == null) { return 1; }
+    setColor(screen, 1, 255, 32, 32);
+    clear(screen, 0);
+    fill(screen, 10, 10, 100, 100, 1);
+    return 0;   // the screen drops here, closing it on real AmigaOS
+}
+```
+
+Windows and their event loop, text and fonts, bitmaps and blit, sprites and
+copper, `SetRGB32`, and palettes beyond four bits are out of scope for v1.
 
 ## 2. Amiga boundary types
 

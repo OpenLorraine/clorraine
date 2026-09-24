@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 15:20
-> **Progress**: 16/27 tasks (59%)
+> **Last Updated**: 2026-09-24 19:16
+> **Progress**: 20/27 tasks (74%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -213,10 +213,10 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-spec-corpus-video.md) §Specification Edits · AR-3, AR-27
 **Objective**: Document the v1 surface and keep the spec check green.
 
-- [ ] 3.1.1 Update `spec/appendix-amiga.md` §1 (the `intuition`/`graphics` row from "later" to v1) and add the surface subsection
-- [ ] 3.1.2 Add the module sections to `spec/appendix-stdlib.md`
-- [ ] 3.1.3 Verify `spec/check.sh` stays green after the edits
-- [ ] 3.1.4 Update `AGENTS.md` for the new surface: the two test files in the test naming map, and the two stdlib modules plus shim in the layout notes (PF-006)
+- [x] 3.1.1 Update `spec/appendix-amiga.md` §1 (the `intuition`/`graphics` row from "later" to v1) and add the surface subsection ✅ (completed: 2026-09-24 19:16)
+- [x] 3.1.2 Add the module sections to `spec/appendix-stdlib.md` ✅ (completed: 2026-09-24 19:16; the new §8/§9 shift the later sections and the `16-borrow-rules.md` §9 reference is updated to §11)
+- [x] 3.1.3 Verify `spec/check.sh` stays green after the edits ✅ (completed: 2026-09-24 19:16; `spec check: OK (27 files, 102 compile-fail tests)`)
+- [x] 3.1.4 Update `AGENTS.md` for the new surface: the two test files in the test naming map, and the two stdlib modules plus shim in the layout notes (PF-006) ✅ (completed: 2026-09-24 19:16)
 
 **Deliverables**:
 - [ ] Both appendices document the surface; `./spec/check.sh` passes

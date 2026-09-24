@@ -25,8 +25,8 @@ in `CMD`).
 |---------|---------|
 | `make check` | Fast verification: `./spec/check.sh`, then `cargo test --workspace` in the container |
 | `make verify` | Full acceptance: `check` plus every hosted-amiga cross-toolchain leg |
-| `make corpus-amiga` | Build and run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`), the vbcc build-only leg, and build the interrupt-counter |
-| `make corpus-fs-uae` | Boot the interrupt-counter in FS-UAE and diff its captured output (needs the SDK X display) |
+| `make corpus-amiga` | Build and run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`), the vbcc build-only leg, and build the FS-UAE-only programs (interrupt-counter and graphics) |
+| `make corpus-fs-uae` | Boot the FS-UAE-only programs (interrupt-counter and graphics) in FS-UAE and diff their captured output (needs the SDK X display) |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
 | `make run FILE=…` / `make build FILE=…` | Build (and run) a Clorraine program with the `clorraine` driver inside the container; add `PROFILE=hosted-amiga` or `PROFILE=freestanding`, `EMULATOR=1` (boot FS-UAE on the host), and `CAPTURE=1` |
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | The driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`) |
@@ -38,9 +38,9 @@ in `CMD`).
 | Path | Contents |
 |------|----------|
 | `spec/` | The frozen specification: chapters, the grammar, the diagnostics registry, and the golden test data (`spec/tests/{compile-fail,run,staged,corpus}`) |
-| `stdlib/` | The embedded standard-library sources (`std.*.clo`) |
+| `stdlib/` | The embedded standard-library sources (`std.*.clo`), including the Amiga modules (`std.amiga.dos`, `std.amiga.interrupt`, `std.amiga.intuition`, `std.amiga.graphics`) |
 | `compiler/src/` | The compiler crate: stage modules (`lex`, `parse`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, and the `clorraine` build/run driver |
-| `compiler/runtime/` | The host, hosted-amiga, and freestanding C runtime shims (`shim_host.c`, `shim_hosted_amiga.c`, `shim_freestanding.c`) |
+| `compiler/runtime/` | The host, hosted-amiga, and freestanding C runtime shims (`shim_host.c`, `shim_hosted_amiga.c`, `shim_freestanding.c`); the hosted-amiga shim carries the screen and drawing calls |
 | `compiler/tests/` | The Rust integration test drivers |
 | `docker/` | The pinned Amiga SDK: toolchain config, scripts, and the emulator wrappers |
 | `plans/` | CodeOps artifacts: the feature plan (`plans/clorraine-compiler-mvp/`) and `plans/00-roadmap.md` (flat layout, no `codeops/` directory) |
@@ -51,10 +51,11 @@ in `CMD`).
 - `compiler/tests/*_spec_test.rs` are **specification tests** derived from
   `spec/`: `stage_spec_test.rs`, `compile_fail_spec_test.rs`,
   `codegen_run_spec_test.rs`, `run_fault_spec_test.rs`,
-  `determinism_spec_test.rs`, `corpus_spec_test.rs`. They are an immutable
-  oracle: a failing spec test means the implementation is wrong, never the
-  test.
-- `compiler/tests/stdlib_impl_test.rs` holds **implementation tests** for the
+  `determinism_spec_test.rs`, `corpus_spec_test.rs`, `graphics_spec_test.rs`.
+  They are an immutable oracle: a failing spec test means the implementation is
+  wrong, never the test.
+- `compiler/tests/stdlib_impl_test.rs` and
+  `compiler/tests/graphics_impl_test.rs` hold **implementation tests** for the
   standard-library slice.
 - `compiler/tests/clorraine_driver_spec_test.rs` holds the **specification
   tests** for the `clorraine` build/run driver.

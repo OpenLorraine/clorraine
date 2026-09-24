@@ -61,7 +61,7 @@ standard-library helper such as `bytes`, `toCString`, `slice`, or `bufferBytes`
 returns a view or `cstring` into storage the owner still owns, so the call
 creates a shared loan of that owner for the result's origin. The same E10031
 and E10022 consequences apply while the result is live
-([appendix-stdlib.md](appendix-stdlib.md) section 9).
+([appendix-stdlib.md](appendix-stdlib.md) section 11).
 
 **There are no local view expressions** (O9). A binding holds a value; a view
 value exists only because it arrived from a view-typed parameter, a view-typed
