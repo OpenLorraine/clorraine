@@ -159,6 +159,33 @@ async function waitForReady(cdp: Cdp, url: string): Promise<void> {
   throw new Error(`the demo page did not finish preparing (no window.__ready): ${url}`);
 }
 
+/** Resolves once the child has exited, or after a short grace period. */
+function waitForExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve();
+  }
+  return new Promise((resolvePromise) => {
+    const done = (): void => resolvePromise();
+    child.once("close", done);
+    setTimeout(done, 3000);
+  });
+}
+
+/**
+ * Removes the temporary profile, retrying because Chrome may still be flushing files
+ * for a moment after it is killed (which makes the first `rm` fail with ENOTEMPTY).
+ */
+async function removeProfile(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+      return;
+    } catch {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+    }
+  }
+}
+
 /** Options for {@link ChromeFrameSource}. */
 export interface ChromeFrameSourceOptions {
   /** Directory holding the HTML pages (card.html, frame.html, …). */
@@ -243,7 +270,8 @@ export class ChromeFrameSource implements FrameSource {
     } finally {
       cdp?.close();
       child.kill("SIGKILL");
-      await rm(userDataDir, { recursive: true, force: true });
+      await waitForExit(child);
+      await removeProfile(userDataDir);
     }
   }
 }

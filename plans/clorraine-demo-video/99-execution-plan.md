@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 23:17
-> **Progress**: 27/48 tasks (56%)
+> **Last Updated**: 2026-09-24 23:20
+> **Progress**: 30/48 tasks (62%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -209,9 +209,9 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [07](07-testing-strategy.md) §Smoke Test, §Implementation Tests · ST-13
 **Objective**: Add the opt-in end-to-end smoke render and cover tape quoting.
 
-- [ ] 3.3.1 [spec-author] Write the opt-in smoke render test (ST-13) — `tools/demo/test/render.smoke.test.ts`
-- [ ] 3.3.2 VHS tape quoting and missing-output impl tests — `tools/demo/test/vhs.impl.test.ts`
-- [ ] 3.3.3 Full verification of Phase 3
+- [x] 3.3.1 [spec-author] Write the opt-in smoke render test (ST-13) — `tools/demo/test/render.smoke.test.ts` ✅ (completed: 2026-09-24 23:20)
+- [x] 3.3.2 VHS tape quoting and missing-output impl tests — `tools/demo/test/vhs.impl.test.ts` ✅ (completed: 2026-09-24 23:20)
+- [x] 3.3.3 Full verification of Phase 3 ✅ (completed: 2026-09-24 23:20)
 
 **Deliverables**:
 - [ ] All verification passing
