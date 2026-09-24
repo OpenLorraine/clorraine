@@ -8,10 +8,12 @@ routing belongs in configuration, not prose.
 
 The Clorraine compiler MVP: a Rust workspace whose binary `clc` compiles the
 corpus subset of the frozen specification under `spec/` to one C99 translation
-unit for the `host` and `hosted-amiga` profiles. The workspace is **std-only**:
-no crates, no build scripts. The primary languages are Rust (the compiler), C99
-(the emitted translation unit and the runtime shims), and Clorraine itself
-(`.clo` sources, including the embedded standard library).
+unit for the `host`, `hosted-amiga`, and `freestanding` profiles. The
+`freestanding` profile is a provisional, LorraineOS-adoptable ABI (m68k, 32-bit,
+big-endian, no libc) with a console-only standard-library surface. The workspace
+is **std-only**: no crates, no build scripts. The primary languages are Rust
+(the compiler), C99 (the emitted translation unit and the runtime shims), and
+Clorraine itself (`.clo` sources, including the embedded standard library).
 
 ## Commands
 
@@ -26,8 +28,8 @@ in `CMD`).
 | `make corpus-amiga` | Build and run the portable corpus on hosted-amiga (`m68k-amigaos-gcc` + `vamos`), the vbcc build-only leg, and build the interrupt-counter |
 | `make corpus-fs-uae` | Boot the interrupt-counter in FS-UAE and diff its captured output (needs the SDK X display) |
 | `make run-fault-amiga` | Run the six runtime-fault programs under `vamos` |
-| `make run FILE=…` / `make build FILE=…` | Build (and run) a Clorraine program with the `clorraine` driver inside the container; add `PROFILE=hosted-amiga`, `EMULATOR=1` (boot FS-UAE on the host), and `CAPTURE=1` |
-| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | The driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga`, `--release`, `--capture`, `--emulator`, `--emit-c`) |
+| `make run FILE=…` / `make build FILE=…` | Build (and run) a Clorraine program with the `clorraine` driver inside the container; add `PROFILE=hosted-amiga` or `PROFILE=freestanding`, `EMULATOR=1` (boot FS-UAE on the host), and `CAPTURE=1` |
+| `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | The driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`) |
 | `cargo test --workspace` | Rust tests; run in the container via `make check` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` at `target/debug/clc` |
 
@@ -38,7 +40,7 @@ in `CMD`).
 | `spec/` | The frozen specification: chapters, the grammar, the diagnostics registry, and the golden test data (`spec/tests/{compile-fail,run,staged,corpus}`) |
 | `stdlib/` | The embedded standard-library sources (`std.*.clo`) |
 | `compiler/src/` | The compiler crate: stage modules (`lex`, `parse`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, and the `clorraine` build/run driver |
-| `compiler/runtime/` | The host and hosted-amiga C runtime shims (`shim_host.c`, `shim_hosted_amiga.c`) |
+| `compiler/runtime/` | The host, hosted-amiga, and freestanding C runtime shims (`shim_host.c`, `shim_hosted_amiga.c`, `shim_freestanding.c`) |
 | `compiler/tests/` | The Rust integration test drivers |
 | `docker/` | The pinned Amiga SDK: toolchain config, scripts, and the emulator wrappers |
 | `plans/` | CodeOps artifacts: the feature plan (`plans/clorraine-compiler-mvp/`) and `plans/00-roadmap.md` (flat layout, no `codeops/` directory) |
@@ -56,6 +58,9 @@ in `CMD`).
   standard-library slice.
 - `compiler/tests/clorraine_driver_spec_test.rs` holds the **specification
   tests** for the `clorraine` build/run driver.
+- `compiler/tests/freestanding_spec_test.rs` holds the **specification tests**
+  for the `freestanding` profile: the m68k link-exit assertion and the host
+  no-libc run.
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 09:31
-> **Progress**: 15/19 tasks (79%)
+> **Last Updated**: 2026-09-24 09:33
+> **Progress**: 19/19 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -130,10 +130,10 @@ artifact; the specification and goldens reflect an implemented profile.
 > **Expected modification set**: `compiler/**` (unit tests), `AGENTS.md`, `plans/00-roadmap.md`, `plans/clorraine-freestanding-profile/99-execution-plan.md`
 > **Scope mode**: strict
 
-- [ ] 4.1.1 Run the full freestanding spec suite green, including the `-O2` m68k link and the link-exit assertion — `compiler/tests/freestanding_spec_test.rs`
-- [ ] 4.1.2 Write the in-module unit tests (profile facts, the shim's symbols and its no-libg-libc-symbol constraint, driver branches, toolchain command vectors, CLI text, and the `stdlib.rs` per-profile FFI-binding loop) — `compiler/src/profile.rs`, `compiler/src/driver.rs`, `compiler/src/stdlib.rs`, `compiler/src/clorraine/{toolchain,cli}.rs`
-- [ ] 4.1.3 Run the full fast gate (`make check`) — `./spec/check.sh` + `cargo test --workspace`
-- [ ] 4.1.4 Document the profile in `AGENTS.md`, update the `PLAN-03` roadmap row, and run the full acceptance gate (`make verify`)
+- [x] 4.1.1 Run the full freestanding spec suite green, including the `-O2` m68k link and the link-exit assertion — `compiler/tests/freestanding_spec_test.rs` ✅ (completed: 2026-09-24 09:33)
+- [x] 4.1.2 Write the in-module unit tests (profile facts, the shim's symbols and its no-libg-libc-symbol constraint, driver branches, toolchain command vectors, CLI text, and the `stdlib.rs` per-profile FFI-binding loop) — `compiler/src/profile.rs`, `compiler/src/driver.rs`, `compiler/src/stdlib.rs`, `compiler/src/clorraine/{toolchain,cli}.rs` ✅ (completed: 2026-09-24 09:33)
+- [x] 4.1.3 Run the full fast gate (`make check`) — `./spec/check.sh` + `cargo test --workspace` ✅ (completed: 2026-09-24 09:33)
+- [x] 4.1.4 Document the profile in `AGENTS.md`, update the `PLAN-03` roadmap row, and run the full acceptance gate (`make verify`) ✅ (completed: 2026-09-24 09:33)
 
 **Deliverables**:
 - All freestanding spec and implementation tests green

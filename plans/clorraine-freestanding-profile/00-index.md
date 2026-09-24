@@ -1,7 +1,7 @@
 # Freestanding profile Implementation Plan
 
 > **Feature**: Implement the `freestanding` platform profile with a provisional, LorraineOS-adoptable ABI
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-09-23 18:43
 > **Implements**: (none — standalone plan; no upstream RD exists)
 > **CodeOps Artifact Schema**: 1

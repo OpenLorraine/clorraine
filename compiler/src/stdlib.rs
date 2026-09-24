@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn each_profile_shim_defines_every_ffi_symbol_its_modules_bind() {
-        for profile in [Profile::Host, Profile::HostedAmiga] {
+        for profile in [Profile::Host, Profile::HostedAmiga, Profile::Freestanding] {
             let shim = profile.shim();
             let mut checked = 0usize;
             for module in SOURCES {

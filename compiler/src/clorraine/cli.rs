@@ -280,6 +280,18 @@ mod tests {
     }
 
     #[test]
+    fn the_freestanding_profile_is_accepted_and_documented() {
+        assert_eq!(
+            invoke(&["run", "--profile", "freestanding", "a.clo"]).profile,
+            Profile::Freestanding
+        );
+        assert!(
+            help_text().contains("host|hosted-amiga|freestanding"),
+            "the help text lists the freestanding profile"
+        );
+    }
+
+    #[test]
     fn an_inapplicable_or_malformed_line_is_a_usage_error() {
         for line in [
             vec!["frobnicate", "a.clo"],

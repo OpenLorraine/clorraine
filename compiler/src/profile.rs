@@ -159,6 +159,18 @@ mod tests {
     }
 
     #[test]
+    fn the_freestanding_shim_avoids_libc_symbols_that_break_the_m68k_link() {
+        // The m68k link reads libg.a for the soft-float helpers; that archive's
+        // exit and allocator objects reach the AmigaOS global `SysBase`. The
+        // runtime must reference none of them, so only the float objects are
+        // pulled in.
+        let shim = Profile::Freestanding.shim();
+        assert!(!shim.contains("malloc("));
+        assert!(!shim.contains("abort("));
+        assert!(shim.contains("LorraineOS will provide"));
+    }
+
+    #[test]
     fn stack_frame_thresholds_match_the_profiles() {
         assert_eq!(Profile::Host.stack_frame_limit(), 16_384);
         assert_eq!(Profile::HostedAmiga.stack_frame_limit(), 1_024);
