@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 15:16
-> **Progress**: 12/27 tasks (44%)
+> **Last Updated**: 2026-09-24 15:18
+> **Progress**: 14/27 tasks (52%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -165,8 +165,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-spec-corpus-video.md) §CI Legs · [07](07-testing-strategy.md) ST-1 · AR-20, AR-21
 **Objective**: Classify the program as Amiga-only and build it in the corpus leg.
 
-- [ ] 2.2.1 Add the host-rejection spec test (ST-1, `E11200`) to `compiler/tests/corpus_spec_test.rs`
-- [ ] 2.2.2 Add the graphics build-only section to `docker/scripts/corpus-amiga.sh`
+- [x] 2.2.1 Add the host-rejection spec test (ST-1, `E11200`) to `compiler/tests/corpus_spec_test.rs` ✅ (completed: 2026-09-24 15:18)
+- [x] 2.2.2 Add the graphics build-only section to `docker/scripts/corpus-amiga.sh` ✅ (completed: 2026-09-24 15:18)
 
 **Deliverables**:
 - [ ] `make corpus-amiga` builds the graphics binary; the host-rejection test passes

@@ -97,6 +97,18 @@ mkdir -p "${interrupt_dir}"
     "${interrupt_dir}/program.c" -lamiga -lm
 echo "corpus-amiga: interrupt-counter: built"
 
+# The graphics program is hosted-amiga only and opens a real screen, which
+# `vamos` cannot render; it is built here because the FS-UAE leg consumes the
+# binary.
+echo "corpus-amiga: graphics: build-only"
+graphics_dir="${OUTDIR}/graphics"
+mkdir -p "${graphics_dir}"
+"${CLC}" --profile hosted-amiga -o "${graphics_dir}/program.c" \
+    "${CORPUS}/graphics/program.clo"
+"${GCC}" "${GCC_FLAGS[@]}" -o "${graphics_dir}/program" \
+    "${graphics_dir}/program.c" -lamiga -lm
+echo "corpus-amiga: graphics: built"
+
 if [ "${status}" -ne 0 ]; then
     echo "corpus-amiga: FAILED" >&2
 else

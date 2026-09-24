@@ -180,3 +180,31 @@ fn interrupt_counter_is_rejected_on_the_host_profile() {
         "interrupt-counter: the diagnostic must name the host profile, got:\n{stderr}"
     );
 }
+
+/// `graphics` is hosted-amiga only, so the host profile rejects it.
+///
+/// The program imports the AmigaOS screen and graphics libraries, which the
+/// host profile does not provide; the compiler must report `E11200` as its first
+/// diagnostic and exit 1 rather than emit C that cannot link.
+#[test]
+fn graphics_is_rejected_on_the_host_profile() {
+    let scratch = ScratchDir::new("graphics");
+    let c_path = scratch.path().join("out.c");
+    let compile = compile_host("graphics", &c_path);
+    assert_eq!(
+        compile.status.code(),
+        Some(1),
+        "graphics: the host profile must reject the program with exit 1; stderr:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&compile.stderr);
+    let first_line = stderr.lines().next().unwrap_or_default();
+    assert!(
+        first_line.starts_with("error E11200:"),
+        "graphics: expected an E11200 first line, got:\n{stderr}"
+    );
+    assert!(
+        first_line.contains("is not available on profile 'host'"),
+        "graphics: the diagnostic must name the host profile, got:\n{stderr}"
+    );
+}
