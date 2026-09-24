@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 01:02
-> **Progress**: 43/49 tasks (88%)
+> **Last Updated**: 2026-09-25 01:12
+> **Progress**: 46/49 tasks (94%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -298,13 +298,13 @@ the plan's task-size criteria: one reviewable change per task)
 **Objective**: Implement `new <file.clo>` and update the README and AGENTS.md.
 
 - [x] 5.2.1 Scaffold generator and the `new` subcommand — `tools/demo/src/scaffold.ts`, `tools/demo/src/cli.ts`
-- [ ] 5.2.2 README: embed `demo/poster.png`; state that media is generated — `README.md`
-- [ ] 5.2.3 AGENTS.md: tool layout, `make demo`/`demo-check`, generated-media policy — `AGENTS.md`
-- [ ] 5.2.4 Green phase: the Step 5.1 spec test passes
+- [x] 5.2.2 README: embed `demo/poster.png`; state that media is generated — `README.md`
+- [x] 5.2.3 AGENTS.md: tool layout, `make demo`/`demo-check`, generated-media policy — `AGENTS.md`
+- [x] 5.2.4 Green phase: the Step 5.1 spec test passes
 
 **Deliverables**:
-- [ ] `new examples/hello/hello.clo` writes a renderable scaffold
-- [ ] README and AGENTS.md updated
+- [x] `new examples/hello/hello.clo` writes a renderable scaffold
+- [x] README and AGENTS.md updated
 
 **Verify**: `make demo-check`
 

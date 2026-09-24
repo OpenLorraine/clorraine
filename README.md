@@ -14,25 +14,26 @@ make LorraineOS (and Amiga programs) safe and pleasant to write.
 
 ## Demo
 
-![Clorraine demo: a card introducing Clorraine, the hello program highlighted in Vim, and the same program running under FS-UAE, the Amiga emulator](demo/demo.gif)
+![The Clorraine demo poster: the intro card](demo/poster.png)
 
-The GIF is the opening loop: a card introducing Clorraine, the smallest
-Clorraine program ([`examples/hello/hello.clo`](examples/hello/hello.clo))
-highlighted in Vim, a card explaining what it shows, and the same program
-running under FS-UAE (the Amiga emulator).
+The demo tells the Clorraine story in chapters: a card introducing Clorraine,
+the smallest Clorraine program
+([`examples/hello/hello.clo`](examples/hello/hello.clo)) highlighted with
+syntax coloring, a card explaining what it shows, and the same program running
+under FS-UAE (the Amiga emulator). It continues with a real program,
+`string-parser`: its source, a card on the ownership checker and the
+move-then-use it rejects
+([`examples/ownership-fail.clo`](examples/ownership-fail.clo)), the
+one-command build, the `hosted-amiga` run, and that program under FS-UAE. It
+then draws — a card on the graphics surface and the `graphics` corpus program
+painting colored bars and a line under FS-UAE — and closes with a card on
+LorraineOS, the project Clorraine belongs to.
 
-[`demo/demo-full.mp4`](demo/demo-full.mp4) is the full story. It continues with
-a real program: `string-parser` shown in Vim, a card on the ownership checker
-and the move-then-use it rejects
-([`examples/ownership-fail.clo`](examples/ownership-fail.clo)), a card on the
-one-command build, the `hosted-amiga` run, and that program under FS-UAE
-([`demo/emulator.mp4`](demo/emulator.mp4) on its own). It then draws: a card on
-the graphics surface and the `graphics` corpus program opening a custom screen
-and painting colored bars and a line under FS-UAE. It closes with a card on
-LorraineOS — the project Clorraine belongs to — and contact links.
-
-Regenerate everything with `./demo/story.sh`; the story text and chapter tapes
-live in that script and in `demo/tape/`.
+The full video (`demo/demo-full.mp4`), the opening loop (`demo/demo.gif`), and
+`demo/emulator.mp4` are generated from the story script `demo/story.ts` by the
+toolkit in `tools/demo/`. Run `make demo` to rebuild them (and
+`make demo-check` to type-check and test the toolkit). Generated media is not
+committed; `demo/poster.png` is the one checked-in still.
 
 ## Status
 
