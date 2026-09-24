@@ -70,13 +70,16 @@ done
 
 # The vbcc leg is build-only: it proves the same emitted C compiles with the
 # second toolchain from the compile matrix. Its output is captured and scanned
-# for warnings, because the leg must be warning-free, not merely successful.
+# for warnings in the generated translation unit, because the leg must be
+# warning-free, not merely successful. The scan is scoped to the emitted C: the
+# NDK system headers it includes carry warnings of their own under vbcc, which
+# are outside this leg's contract.
 echo "corpus-amiga: file-copier: vbcc build-only"
 vbcc_log="${OUTDIR}/file-copier/vbcc.log"
 "${VC}" "${VBCC_FLAGS[@]}" -o "${OUTDIR}/file-copier/program-vbcc" \
     "${OUTDIR}/file-copier/program.c" -lamiga -lmieee 2>&1 | tee "${vbcc_log}"
-if grep -qi 'warning' "${vbcc_log}"; then
-    echo "corpus-amiga: file-copier: vbcc emitted warnings" >&2
+if grep -qE 'warning [0-9]+ in line [0-9]+ of ".*program\.c"' "${vbcc_log}"; then
+    echo "corpus-amiga: file-copier: vbcc emitted warnings in the emitted C" >&2
     status=1
 else
     echo "corpus-amiga: file-copier: vbcc build is warning-free"

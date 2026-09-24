@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine Amiga graphics
 
-> **Status**: ✅ GATE PASSED — 35 items: 29 resolved, 6 explicitly deferred (confirmed; preflight iteration 2 passed)
-> **Last Updated**: 2026-09-24 14:37
+> **Status**: ✅ GATE PASSED — 36 items: 30 resolved, 6 explicitly deferred; AR-36 was opened and resolved during execution
+> **Last Updated**: 2026-09-24 15:01
 > **CodeOps Artifact Schema**: 1
 
 Every row below was raised during the Phase 1 interview and resolved by the
@@ -42,6 +42,7 @@ It edits the frozen specification only where the user authorized it (AR-3).
 | AR-25 | Technical | Profile gating | New rule / existing rule | The existing `Profile::supports_module` already rejects `std.amiga.*` on host and freestanding; no change is needed | ✅ Resolved |
 | AR-26 | Technical | Complexity escalation | None / new harness | No material support surface is introduced. The rejected larger mechanisms: a screenshot-golden diff harness (AR-34) and a `ScreenSpec` struct (AR-8). The Complexity Escalation Gate is not triggered | ✅ Resolved |
 | AR-35 | Technical | `std.amiga.graphics` must import `Screen` from `std.amiga.intuition`, and no embedded stdlib module imports another today; `inject_stdlib` injects in one pass | Verify first / transitive-injection fallback / merge modules / require both imports | Verify first: the program imports both modules (the API forces it, since only `intuition` makes a `Screen`). If the load stage does not resolve an embedded module's own import, make `inject_stdlib` transitive — a small compiler change, pre-approved as part of this plan's modification set. Merging the modules is the rejected smaller fallback | ✅ Resolved |
+| AR-36 | Technical (runtime) | The `vbcc` build-only leg (`make verify`) now fails: `<proto/intuition.h>` pulls in `devices/timer.h`, where vbcc warning 53 ("struct/union member needs identifier") fires on a system header. GCC `-Wall -Wextra -Werror` is clean; only the leg's crude `grep -qi warning` scan trips. Introduced by the committed spike's includes | (A) Scope the vbcc warning scan to the generated translation unit (`program.c`) / (B) Drop `<proto/intuition.h>` and call `OpenScreen`/`CloseScreen` through manual library vectors / (C) Suppress vbcc warning 53 in the shim around the include / (D) Leave `make verify` failing | (A) Scope the vbcc warning scan to warnings that reference the generated `program.c`; NDK system-header warnings are outside the leg's contract. The scan still fails on any warning in the emitted C | ✅ Resolved |
 | AR-27 | Documentation | Spec and corpus docs | Listed set / variants | Update the `intuition`/`graphics` row in `spec/appendix-amiga.md` from "later" to v1 with the wrapped surface, add the module sections to `spec/appendix-stdlib.md`, and add `spec/tests/corpus/graphics/README.md` | ✅ Resolved |
 | AR-28 | Documentation | Video integration | Add a chapter / plan only | Extend `demo/story.sh` with the graphics program and an emulator capture as a new chapter | ✅ Resolved |
 | AR-29 | Deferred | Intuition **windows** and the event loop | Include now / defer | Deferred to a later plan. Not implemented by this plan | ⏸ Deferred |
@@ -82,6 +83,13 @@ embedded standard library has not needed before. The plan verifies the current
 one-pass injection with a compile check first; the approved fallback is a small
 `inject_stdlib` change to follow an injected module's own imports. That compiler
 change is part of this plan's modification set only if the compile check fails.
+The probe passed, so no `inject_stdlib` change was made.
+
+**AR-36 (runtime):** The added graphics includes make every hosted-amiga
+translation unit pull `<proto/intuition.h>`, whose `devices/timer.h` fires vbcc
+warning 53 on a system struct. The leg's warning scan now keys on warnings that
+reference the generated `program.c`, so a real warning in the emitted C still
+fails the leg while third-party header noise does not.
 
 ## Gate Record
 

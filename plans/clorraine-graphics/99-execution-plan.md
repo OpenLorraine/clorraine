@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 14:56
-> **Progress**: 8/27 tasks (30%)
+> **Last Updated**: 2026-09-24 15:01
+> **Progress**: 10/27 tasks (37%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -129,8 +129,8 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [07](07-testing-strategy.md) · [03-03](03-03-runtime-shim.md) · AR-11, AR-19, AR-22
 **Objective**: Add the implementation tests and close the phase.
 
-- [ ] 1.4.1 Write `compiler/tests/graphics_impl_test.rs`: the generated C uses the six shim calls and no application-level `ffi`/`unsafe`; the drop calls `cl_close_screen` once
-- [ ] 1.4.2 Phase verification
+- [x] 1.4.1 Write `compiler/tests/graphics_impl_test.rs`: the generated C uses the six shim calls and no application-level `ffi`/`unsafe`; the drop calls `cl_close_screen` once ✅ (completed: 2026-09-24 14:59)
+- [x] 1.4.2 Phase verification ✅ (completed: 2026-09-24 15:01; `make check` 15/15 green and `make verify` all legs passed after AR-36 option A)
 
 **Deliverables**:
 - [ ] Impl tests pass; no regressions
