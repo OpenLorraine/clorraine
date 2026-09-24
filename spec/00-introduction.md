@@ -66,8 +66,8 @@ one lend parameter), it does, but the contract stays readable.
 The core language never mentions a chip, an address, or a library. Platform
 facts (toolchain flags, runtime, API contracts, package format) live in
 profiles ([Ch 15](15-profiles.md)). v1 ships the `hosted-amiga` profile;
-`host` is the test profile; `freestanding` is designed for LorraineOS and
-implemented later.
+`host` is the test profile; `freestanding` is implemented provisionally (m68k,
+no libc) for LorraineOS to adopt.
 
 ### A6 - The C common subset is the only backend
 
@@ -126,7 +126,7 @@ checks are the design. The full rules are in [Ch 03](03-ownership.md) and
 |---|---|---|---|
 | `hosted-amiga` | AmigaOS 2.0+/3.x programs, v1 flagship | libnix `-mcrt=nix20`, `-m68000` default | v1 |
 | `host` | Fast tests of emitted C on the development machine | small shim | v1 |
-| `freestanding` | LorraineOS kernel and native programs | defined by LorraineOS | designed, later |
+| `freestanding` | LorraineOS kernel and native programs | self-contained no-libc shim with `_start` | implemented (provisional, m68k) |
 
 ## 6. How to read this specification
 

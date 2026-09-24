@@ -316,7 +316,8 @@ the diagnostics registry follow them.
 | S3a | The public format helpers are `toHex` and `toDecimal` (S3). Fixed-width variants such as `toHex32` are library-internal, not surface API. |
 | P8a | Templates desugar to string-builder and `text` conversion calls; the exact helper names are codegen-internal. |
 | M7a | A module-level initializer expression that is nullable is a type error (E10200): globals are non-nullable values. |
-| W10004a | Stack-frame warning thresholds are profile facts with v1 defaults: `hosted-amiga` 1024 bytes, `host` 16384 bytes, `freestanding` profile-defined. |
+| W10004a | Stack-frame warning thresholds are profile facts with v1 defaults: `hosted-amiga` 1024 bytes, `host` 16384 bytes, `freestanding` 1024 bytes. |
+| A5a | The `freestanding` profile is implemented provisionally: m68k, 32-bit, big-endian, no libc, a thin entry/exit/console surface, and a raw m68k hunk. LorraineOS may adopt or replace it. ARM64 and the 64-bit `usize`/`isize` width are deferred to the future port. |
 
 ## 21. Preflight rulings
 

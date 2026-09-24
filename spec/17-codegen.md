@@ -336,14 +336,14 @@ The shim is small and profile-specific and contains **no ownership logic**. It
 only names the acquire and release functions for each handle type, the failure
 sentinel, the trap helper, the panic, and the debug output.
 
-| Piece | hosted-amiga | host (tests) | freestanding (later) |
+| Piece | hosted-amiga | host (tests) | freestanding |
 |---|---|---|---|
-| acquire/drop helpers | `cl_acquire_*` and deleter wrappers over exec/dos | the same names over libc | LorraineOS entry points |
-| null policy | zero handle / `NULL` | `NULL` | null |
-| panic | print then `exit`/`Exit` | `abort` | halt or reset |
+| acquire/drop helpers | `cl_acquire_*` and deleter wrappers over exec/dos | the same names over libc | `Open`/`Close`, the file contract (both trap with E11214) |
+| null policy | zero handle / `NULL` | `NULL` | the integer constant `0` |
+| panic | print then `exit`/`Exit` | `abort` | print, then `_exit(1)` on the host run and halt on m68k |
 | runtime trap (E11210-E11212) | print `error CODE: message`, then abort | same | same |
 | NaN test | `cl_isnan`: an IEEE bit-pattern test on the value | same | same |
-| debug output | `printf` (libnix) or serial | `fprintf(stderr, ...)` | serial/UART |
+| debug output | `printf` (libnix) or serial | `fprintf(stderr, ...)` | the console hook (`cl_write`) |
 
 Drops are emitted directly as `if (value) { Deleter(value); }` using the handle's
 deleter; the `cl_drop_*` helpers are null-safe wrappers with identical behavior.
@@ -358,6 +358,15 @@ Exact command lines (the input object is the generated single `.c` file):
 | GCC debug/development | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lamiga -lm` |
 | GCC release | `m68k-amigaos-gcc -std=c99 -mcrt=nix20 -m68000 -fwrapv -O2 -o demo demo.c -lamiga -lm` |
 | vbcc release | `vc +aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include -o demo demo.c -lamiga -lmieee` |
+| freestanding build/link (m68k) | `m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o demo demo.c -lg` |
+| freestanding release build/link (m68k) | the same line with `-O2` in place of `-O0 -g` |
+| freestanding host run | `cc -std=c99 -ffreestanding -fno-builtin -nostdlib -O0 -g -Wall -Wextra -Werror -o demo demo.c` |
+
+The freestanding lines link no C runtime. `-nostdlib` leaves the shim to
+supply `memcpy`/`memset`/`memcmp`/`strlen`; `-fno-builtin` keeps the optimizer
+from turning the shim's own definitions into self-calls at `-O2`; and `-lg`
+supplies the compiler's soft-float helpers. The runtime references no libc
+symbol, so the `exit`/`malloc` objects of `libg.a` stay out of the link.
 
 `-lm` (GCC) supplies the soft-float double helpers, and `-lmieee` (vbcc)
 supplies the IEEE double library; both are appended on every Amiga leg so the

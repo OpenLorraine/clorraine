@@ -170,6 +170,7 @@
 | E11211 | Runtime fault: index out of range | `index out of range` | check the index against `len` |
 | E11212 | Runtime fault: float-to-integer conversion out of range (including NaN) | `float-to-integer conversion out of range` | range-check the float before the cast |
 | E11213 | Runtime fault: assertion failed | `assertion failed` | fix the invariant or the input |
+| E11214 | Runtime fault: a feature the selected profile does not provide (a `std.io` file function under freestanding) | `file I/O is not available on the freestanding profile` | use a profile that provides the feature |
 
 Runtime faults are not compile errors. The inserted checks print
 `error CODE: message` to the diagnostic stream and abort without running the

@@ -1,7 +1,7 @@
 # The Clorraine Language Specification
 
 > **Status:** working draft (v0.4 — Phase C: chapters rewritten against the ledger and the grammar)
-> **Scope:** hosted AmigaOS profile first; freestanding (LorraineOS) designed-for, implemented later
+> **Scope:** hosted AmigaOS profile first; freestanding (LorraineOS) implemented provisionally (m68k, no libc)
 > **Decision ledger:** [decisions.md](decisions.md) — accepted decisions; the ledger wins on any conflict
 > **Grammar freeze:** [grammar.ebnf.md](grammar.ebnf.md) — the master EBNF; every delta from Blend65 is in [grammar-deltas.md](grammar-deltas.md); the Rust semantics pin is [lineage.md](lineage.md)
 
