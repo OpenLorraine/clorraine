@@ -38,7 +38,7 @@ STEM = $(basename $(notdir $(FILE)))
 # Prefix for the host FS-UAE wrapper when capturing.
 CAPTURE_ENV = $(if $(filter 1,$(CAPTURE)),RUN_CAPTURE=1 ,)
 
-.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo-check
+.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo demo-check
 
 check:
 	./spec/check.sh
@@ -96,3 +96,12 @@ verify:
 demo-check:
 	@test -d tools/demo/node_modules || (cd tools/demo && npm ci --silent)
 	cd tools/demo && npx tsc --noEmit && node --test --experimental-test-coverage test/*.test.ts
+
+# Render the story video, the README gif, and the poster, then re-render the
+# string-parser emulator chapter on its own as `demo/emulator.mp4`. Host-only: it needs
+# Chrome, VHS, ffmpeg, and the emulator (X display + Kickstart in docker/.env), so it is
+# kept out of `check`/`verify`.
+demo:
+	@test -d tools/demo/node_modules || (cd tools/demo && npm ci --silent)
+	node tools/demo/src/cli.ts render demo/story.ts
+	node tools/demo/src/cli.ts render demo/story.ts --only emulator --out demo/emulator.mp4
