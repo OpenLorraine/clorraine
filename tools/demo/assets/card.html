@@ -11,12 +11,17 @@
       <p id="subtitle"></p>
       <ul id="lines"></ul>
     </main>
+    <div class="caption" id="caption"></div>
     <script>
       const params = new URLSearchParams(location.search);
       document.getElementById("title").textContent = params.get("title") || "";
       const subtitle = params.get("subtitle") || "";
       if (subtitle.length > 0) {
         document.getElementById("subtitle").textContent = subtitle;
+      }
+      const caption = params.get("caption") || "";
+      if (caption.length > 0) {
+        document.getElementById("caption").textContent = caption;
       }
       const lines = JSON.parse(params.get("lines") || "[]");
       const list = document.getElementById("lines");

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Capture a hosted-amiga program running in FS-UAE (a real Kickstart) to a
-# normalized 1100x620 MP4. demo/story.sh calls this once per emulator chapter;
-# it also works on its own.
+# Capture a hosted-amiga program running in FS-UAE (a real Kickstart) to an MP4.
+# The tools/demo emulator renderer calls this once per emulator scene; it also
+# works on its own.
 #
 # Requirements:
 #   - Docker with the SDK image built: make -C docker image
@@ -10,7 +10,7 @@
 #   - An X display reachable from the host (docker/.env DISPLAY and XAUTHORITY)
 #   - A real Kickstart in docker/.env (otherwise AROS is shown)
 #
-# Usage: ./demo/record-emulator.sh SOURCE_FILE OUTPUT.mp4
+# Usage: ./demo/record-emulator.sh SOURCE_FILE OUTPUT.mp4 [DURATION_SECONDS] [FPS]
 
 set -euo pipefail
 
@@ -18,16 +18,22 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 if [ "$#" -lt 2 ]; then
-    echo "usage: $0 SOURCE_FILE OUTPUT.mp4" >&2
+    echo "usage: $0 SOURCE_FILE OUTPUT.mp4 [DURATION_SECONDS] [FPS]" >&2
     exit 2
 fi
 
 source_file="$1"
 output="$2"
+duration="${3:-7}"
+fps="${4:-50}"
 mkdir -p "$(dirname "$output")"
 
+# The build directory is keyed by the source stem, so two scenes that share a
+# stem (for example two files named program.clo) would launch the same binary.
+# Copy this build to a name derived from the output, which is unique per scene.
 stem="$(basename "$source_file" .clo)"
 program="build/clorraine/${stem}/hosted-amiga/${stem}"
+program_copy="build/demo/bin/$(basename "$output" .mp4)"
 
 env_file="docker/.env"
 if [ ! -f "$env_file" ]; then
@@ -54,12 +60,14 @@ log="${TMPDIR:-/tmp}/clorraine-emulator.log"
 
 echo "building $program..."
 make -s build FILE="$source_file" PROFILE=hosted-amiga
+mkdir -p "$(dirname "$program_copy")"
+cp "$program" "$program_copy"
 
 # Launch FS-UAE in the background and always tear it down on exit. The extra
 # options keep the on-screen messages out of the recording: the CPU governor
 # warning is a persistent warning, and the startup notifications are shortened
 # so they have faded before the capture starts.
-docker/scripts/run.sh "$program" \
+docker/scripts/run.sh "$program_copy" \
     --governor-warning=0 --notification-duration=500 >"$log" 2>&1 &
 emulator_pid=$!
 cleanup() {
@@ -125,10 +133,10 @@ case "$display_screen" in
     *) display_screen="$display_screen.0" ;;
 esac
 
-echo "capturing ${size} at +${x}+${y} for 9s..."
-ffmpeg -y -f x11grab -framerate 25 -video_size "$size" \
-    -i "${display_screen}+${x},${y}" -t 9 \
-    -vf "scale=1100:620:force_original_aspect_ratio=decrease,pad=1100:620:(ow-iw)/2:(oh-ih)/2:color=black" \
+echo "capturing ${size} at +${x}+${y} for ${duration}s at ${fps} fps..."
+ffmpeg -y -f x11grab -framerate "$fps" -video_size "$size" \
+    -i "${display_screen}+${x},${y}" -t "$duration" \
+    -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
     -pix_fmt yuv420p -an "$output" >/dev/null 2>&1
 
 cleanup

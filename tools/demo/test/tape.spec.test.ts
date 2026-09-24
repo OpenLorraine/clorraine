@@ -28,6 +28,6 @@ test("types each command in order, each followed by Enter and one Sleep", () => 
 
 test("declares the output and the caption-strip-aware terminal size", () => {
   const tape = buildTape(scene, options);
-  assert.match(tape, /Output "build\/demo\/raw\/run\.mp4"/);
+  assert.match(tape, /Output build\/demo\/raw\/run\.mp4/);
   assert.match(tape, /Set Height 620/);
 });

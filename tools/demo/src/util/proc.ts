@@ -13,6 +13,8 @@ export interface RunOptions {
   cwd?: string;
   /** Level of stdio when the output is not captured: "inherit" (default) or "ignore". */
   stdio?: "inherit" | "ignore";
+  /** Environment for the child. Defaults to the parent environment. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -29,6 +31,7 @@ export function run(command: string, args: string[], options: RunOptions = {}): 
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd,
+      env: options.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";

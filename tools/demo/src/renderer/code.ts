@@ -56,6 +56,7 @@ export async function renderCode(scene: CodeScene, env: RenderEnv): Promise<stri
       duration: String(duration),
       scroll: String(scene.scroll ?? false),
       highlight: JSON.stringify(scene.highlight ?? []),
+      caption: scene.caption ?? "",
     },
     width: env.width,
     height: env.height,

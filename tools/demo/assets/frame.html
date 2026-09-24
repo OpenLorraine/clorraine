@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Clorraine on AMIGA</title>
+    <link rel="stylesheet" href="demo.css" />
+    <style>
+      .bezel {
+        position: relative;
+        height: calc(100% - 80px);
+        margin: 0;
+        background: linear-gradient(180deg, #2a2a3c 0%, #1a1a26 100%);
+        border-bottom: 2px solid var(--accent);
+      }
+      .bezel-title {
+        position: absolute;
+        top: 18px;
+        left: 0;
+        right: 0;
+        text-align: center;
+        color: var(--accent);
+        font-size: 26px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+      }
+      .bezel-screen {
+        position: absolute;
+        left: 40px;
+        top: 70px;
+        width: 1020px;
+        height: 500px;
+        background: #000;
+        border: 2px solid var(--line);
+        box-shadow: 0 0 40px rgba(136, 204, 255, 0.15) inset;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bezel">
+      <div class="bezel-title" id="title"></div>
+      <div class="bezel-screen"></div>
+    </div>
+    <div class="caption" id="caption"></div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      document.getElementById("title").textContent = params.get("title") || "";
+      const caption = params.get("caption") || "";
+      if (caption.length > 0) {
+        document.getElementById("caption").textContent = caption;
+      }
+      window.render = function () { /* the frame is static */ };
+      window.__ready = true;
+    </script>
+  </body>
+</html>

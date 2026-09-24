@@ -7,7 +7,7 @@ import type { RenderEnv } from "./env.ts";
 export function cardQuery(scene: CardScene | OutroScene): Record<string, string> {
   const lines = "lines" in scene ? scene.lines ?? [] : [];
   const subtitle = "subtitle" in scene ? scene.subtitle ?? "" : "";
-  return { title: scene.title, subtitle, lines: JSON.stringify(lines) };
+  return { title: scene.title, subtitle, caption: scene.caption ?? "", lines: JSON.stringify(lines) };
 }
 
 /**

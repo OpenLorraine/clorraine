@@ -1,6 +1,14 @@
 /** The interfaces a scene renderer needs. Real implementations shell out to Chrome and
  * ffmpeg; tests inject fakes. */
 
+/** The bottom strip of the canvas reserved for the caption, in pixels. */
+export const CAPTION_STRIP = 80;
+
+/** The height of the content area: the canvas height minus the caption strip. */
+export function contentHeight(height: number): number {
+  return height - CAPTION_STRIP;
+}
+
 /** A request for a run of frames from one HTML page. */
 export interface FrameSpec {
   /** Scene id; frames are written under a directory named for it. */

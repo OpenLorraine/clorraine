@@ -22,6 +22,24 @@ body {
   overflow: hidden;
 }
 
+/* The bottom strip is reserved for the caption so it never covers content. */
+body {
+  padding-bottom: 80px;
+}
+
+.caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg);
+  font-size: 26px;
+}
+
 /* Cards */
 .card-body {
   display: flex;
@@ -70,7 +88,7 @@ body {
 }
 
 .code-viewport {
-  height: 636px;
+  height: calc(100% - 64px);
   overflow: hidden;
   padding: 20px 28px;
 }

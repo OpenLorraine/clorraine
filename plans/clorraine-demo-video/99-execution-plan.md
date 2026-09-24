@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 23:14
-> **Progress**: 22/48 tasks (46%)
+> **Last Updated**: 2026-09-24 23:17
+> **Progress**: 27/48 tasks (56%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -189,11 +189,11 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-02](03-02-renderers.md) · AR-3, AR-7, AR-12, AR-16, AR-17, AR-28
 **Objective**: Implement tape generation, the refactored recorder, the branded frame, and composition.
 
-- [ ] 3.2.1 VHS tape generation and the terminal renderer — `tools/demo/src/util/vhs.ts`, `tools/demo/src/renderer/terminal.ts`
-- [ ] 3.2.2 Refactor the emulator recorder into a callable with the stem-collision fix — `demo/record-emulator.sh`
-- [ ] 3.2.3 Emulator renderer (50 fps window capture) and branded frame — `tools/demo/src/renderer/emulator.ts`, `tools/demo/assets/frame.html`
-- [ ] 3.2.4 Composition: normalize, caption, trim to `duration`, chained `xfade` (+ n=1 guard), concat, GIF, poster fallback — `tools/demo/src/renderer/compose.ts`
-- [ ] 3.2.5 Green phase: the Step 3.1 spec tests pass
+- [x] 3.2.1 VHS tape generation and the terminal renderer — `tools/demo/src/util/vhs.ts`, `tools/demo/src/renderer/terminal.ts` ✅ (completed: 2026-09-24 23:17)
+- [x] 3.2.2 Refactor the emulator recorder into a callable with the stem-collision fix — `demo/record-emulator.sh` ✅ (completed: 2026-09-24 23:17)
+- [x] 3.2.3 Emulator renderer (50 fps window capture) and branded frame — `tools/demo/src/renderer/emulator.ts`, `tools/demo/assets/frame.html` ✅ (completed: 2026-09-24 23:17)
+- [x] 3.2.4 Composition: normalize, caption, trim to `duration`, chained `xfade` (+ n=1 guard), concat, GIF, poster fallback — `tools/demo/src/renderer/compose.ts` ✅ (completed: 2026-09-24 23:17)
+- [x] 3.2.5 Green phase: the Step 3.1 spec tests pass ✅ (completed: 2026-09-24 23:17)
 
 **Deliverables**:
 - [ ] A `terminal` scene records a real terminal clip

@@ -10,12 +10,18 @@
     <div class="code-viewport">
       <div class="code-content" id="content">{{LINES}}</div>
     </div>
+    <div class="caption" id="caption"></div>
     <script>
       const params = new URLSearchParams(location.search);
       const duration = Number(params.get("duration") || "10");
       const scroll = params.get("scroll") === "true";
       const highlight = JSON.parse(params.get("highlight") || "[]");
       const content = document.getElementById("content");
+
+      const caption = params.get("caption") || "";
+      if (caption.length > 0) {
+        document.getElementById("caption").textContent = caption;
+      }
 
       if (highlight.length > 0) {
         for (const line of content.querySelectorAll(".line")) {
