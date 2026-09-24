@@ -27,7 +27,7 @@ interrupt dispatcher boundary and shared interrupt state.
 | `while (ticks < 50 && i < 1000)` bounded wait | B3 (Ch 05 §7); `&&` short-circuit (Ch 04 §5) |
 | `u32` arithmetic and literals | Ch 02 §2, §10; literal typing Ch 04 §13 |
 | `if` / `else` result split, `rc` assignment | STMT-1, STMT-2 (Ch 05 §5-6) |
-| `delayTicks(1)` FFI-backed wrapper call | X6 (Ch 12 §1); appendix §7 |
+| `delayTicks(1)` FFI-backed wrapper call | X6 (Ch 12 §1) |
 | `removeHandler(token)` | appendix §7 |
 | Drops: token and scalars, no owned resources | O2 (Ch 03 §5); OW-11 |
 

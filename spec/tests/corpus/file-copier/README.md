@@ -23,9 +23,9 @@ cleanup ladder on nested failure paths.
 | `if` / early `return` in a `bool` condition | STMT-1, STMT-2 (Ch 05 §§5-6); F2 (Ch 06 §3) |
 | `while` loops over byte counts | Ch 05 §7 (B3) |
 | Nullable acquisition `File?` / `Buffer?` and narrowing | TY-5, TY-6, TY-7 (Ch 02 §5); T8; MR-2, MR-3 (Ch 11 §2); E10010 |
-| `toCString(stringOf(path))` for `cstring` parameters | T5 (Ch 08 §7); helper table appendix §9 |
-| `bytes(payloadString)` byte view of an owned `String` | T2, T5 (Ch 08 §7); appendix §9 |
-| `slice(src, lo, hi)` sub-views | appendix §9; SL-1 (Ch 08 §3) |
+| `toCString(stringOf(path))` for `cstring` parameters | T5 (Ch 08 §7); helper table appendix §11 |
+| `bytes(payloadString)` byte view of an owned `String` | T2, T5 (Ch 08 §7); appendix §11 |
+| `slice(src, lo, hi)` sub-views | appendix §11; SL-1 (Ch 08 §3) |
 | `readFile(borrow f, borrow bufferBytes(buf))` reborrow | O12 (Ch 16 §3); EL-5 (Ch 16 §4) |
 | `u8[]` views are copies of pointer and length | T9, SL-1 (Ch 08 §3); O9 no local view expressions (Ch 16 §2) |
 | Bounds-checked indexing `copy[i]`, `expected[i]` | T12, IX-1 (Ch 08 §4); E11211 |
@@ -65,7 +65,7 @@ ambiguous; the full list is reviewed at the phase checkpoint.
    without a named call. The program therefore spells the explicit path
    `toCString(stringOf(path))`. A spec ruling could add a `static str ->
    cstring` widening for literals; until then the explicit form is used.
-2. **`toCString` accepted types.** The appendix §9 table says `String` or `str`,
+2. **`toCString` accepted types.** The appendix §11 table says `String` or `str`,
    but a `str` carries no NUL guarantee and the call is documented as
    allocation-free; only the `String` form is sound. The program passes a
    `String`.

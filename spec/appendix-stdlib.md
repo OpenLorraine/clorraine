@@ -212,7 +212,7 @@ export func clear(borrow screen: Screen, pen: u8): void {
 
 | API | Returns | Rule |
 |---|---|---|
-| `setColor(borrow screen, pen: u8, r: u8, g: u8, b: u8)` | `void` | maps 8-bit components to the Amiga 4-bit palette (`SetRGB4`); `pen` is valid in `0..(1 << depth) - 1` |
+| `setColor(borrow screen, pen: u8, r: u8, g: u8, b: u8)` | `void` | maps 8-bit components to the Amiga 4-bit palette (`SetRGB4`); `pen` is valid in `0..(1 << depth)` |
 | `fill(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | fills the inclusive rectangle (`RectFill`) |
 | `draw(borrow screen, x1: i32, y1: i32, x2: i32, y2: i32, pen: u8)` | `void` | draws the arbitrary line between the two points (`Draw`) |
 | `clear(borrow screen, pen: u8)` | `void` | fills the whole screen with `pen` |

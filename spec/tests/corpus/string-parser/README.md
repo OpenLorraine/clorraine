@@ -56,7 +56,7 @@ templates, or library builds. The program uses `str` indexing rather than
 ## Friction log
 
 1. **No `str` slicing.** The tokenizer knows each token's bounds but cannot
-   materialize a `str` token view: the appendix §9 `slice` table says "view ->
+   materialize a `str` token view: the appendix §11 `slice` table says "view ->
    same view type", while the MVP signature `slice<T>(v: T[], lo, hi)` accepts
    only `T[]`. The program sidesteps this by passing `(start, end)` indices to
    the classifier and parser. A `slice` form for `str` would make the natural

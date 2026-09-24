@@ -24,14 +24,14 @@ line, the cleanup runs before the FS-UAE leg stops the emulator.
 | Imports from `std.amiga.intuition`, `std.amiga.graphics`, `std.text`, `std.io`, `std.amiga.dos` | MOD-9, MOD-11, MOD-12, MOD-17 (Ch 10 §4) |
 | `let` bindings and assignment | V1 (Ch 03 §2); STMT-3 (Ch 05 §3) |
 | Nullable acquisition `Screen?` and narrowing | TY-5, TY-6, TY-7 (Ch 02 §5); T8; MR-2, MR-3 (Ch 11 §2); E10010 |
-| `toCString(stringOf(title))` for the `cstring` title | T5 (Ch 08 §7); helper table appendix §9 |
+| `toCString(stringOf(title))` for the `cstring` title | T5 (Ch 08 §7); helper table appendix §11 |
 | `while` loop over the bar count | Ch 05 §7 (B3) |
 | `u8(i % 3 + 1)` explicit conversion from `i32` | TY-11 (Ch 02 §9); B8 cast form (Ch 04 §14) |
 | Borrowing the owned screen into the drawing calls (`borrow screen`) | V5 modes (Ch 03 §2); O12 (Ch 16 §3) |
 | `func drawScene(): i32` owns the screen and returns a status | FN-1, FN-2 (Ch 06 §1); V5 modes (Ch 03 §2) |
 | Owned `Screen` handle released exactly once by the generated drop before the sentinel prints | O2, O7 (Ch 03 §3, §5); OW-11..OW-13; Ch 17 §4 |
 | Screen lifecycle and drawing wrappers | appendix-amiga.md §1; the `std.amiga.intuition` and `std.amiga.graphics` sections of appendix-stdlib.md |
-| `delayTicks(1500)` FFI-backed wrapper call | X6 (Ch 12 §1); appendix §7 (Amiga) |
+| `delayTicks(1500)` FFI-backed wrapper call | X6 (Ch 12 §1) |
 
 ## Warning audit
 
