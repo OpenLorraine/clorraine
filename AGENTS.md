@@ -70,6 +70,10 @@ in `CMD`).
   no-libc run.
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
+- `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo
+  toolkit and `*.impl.test.ts` are its implementation tests; run both with
+  `make demo-check`. `render.smoke.test.ts` is an opt-in end-to-end render (set
+  `DEMO_E2E=1`; needs Chrome and ffmpeg).
 
 ## Generated files and the frozen spec
 
