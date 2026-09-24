@@ -35,6 +35,13 @@ test("the code and emulator chapters point at the expected sources", async () =>
   assert.equal(sourceFile(byId.get("graphics")), "spec/tests/corpus/graphics/program.clo");
 });
 
+test("the long source chapter scrolls so the whole program is shown", async () => {
+  const config = await loadConfig(story, { root });
+  const source = config.scenes.find((scene) => scene.id === "source");
+  assert.ok(source !== undefined && source.kind === "code");
+  assert.equal(source.scroll, true);
+});
+
 test("the story keeps the per-kind default durations (no per-scene override)", async () => {
   const config = await loadConfig(story, { root });
 

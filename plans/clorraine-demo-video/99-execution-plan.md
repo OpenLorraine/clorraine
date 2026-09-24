@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 23:20
-> **Progress**: 30/48 tasks (62%)
+> **Last Updated**: 2026-09-25 00:35
+> **Progress**: 40/48 tasks (83%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -263,10 +263,10 @@ the plan's task-size criteria: one reviewable change per task)
 ### Step 4.3: Implementation tests and hardening
 
 - [x] 4.3.1 Story config impl test (chapter ids, kinds, captions) — `tools/demo/test/story.impl.test.ts`
-- [ ] 4.3.2 Full verification of Phase 4
+- [x] 4.3.2 Full verification of Phase 4
 
 **Deliverables**:
-- [ ] All verification passing
+- [x] All verification passing
 
 **Verify**: `make demo-check`
 

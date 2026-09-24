@@ -50,6 +50,7 @@ export default defineDemo({
       id: "source",
       kind: "code",
       file: "spec/tests/corpus/string-parser/program.clo",
+      scroll: true,
       caption: "Real Clorraine source — C-like syntax, ownership checked at compile time",
     },
     {

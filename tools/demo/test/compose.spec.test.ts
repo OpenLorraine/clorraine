@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { compose, expectedTotal, posterScene, xfadeFilter, xfadeOffsets } from "../src/renderer/compose.ts";
+import type { RenderEnv } from "../src/renderer/env.ts";
 import type { DemoConfig } from "../src/scenes.ts";
-import { validateConfig } from "../src/scenes.ts";
-import { expectedTotal, posterScene, xfadeFilter, xfadeOffsets } from "../src/renderer/compose.ts";
+import { ConfigError, validateConfig } from "../src/scenes.ts";
 
 test("chains one xfade per boundary with the running-length offsets", () => {
   assert.deepEqual(xfadeOffsets([5, 4, 6], 0.5), [4.5, 8.0]);
@@ -47,4 +48,30 @@ test("the poster falls back to the first scene when there is no card", () => {
     scenes: [{ id: "src", kind: "code", file: "examples/hello/hello.clo", duration: 5 }],
   };
   assert.equal(posterScene(noCard).id, "src");
+});
+
+test("an unknown --only id is a config error and fails before any rendering", async () => {
+  const config: DemoConfig = {
+    out: "demo/out/x.mp4",
+    scenes: [{ id: "intro", kind: "card", title: "Intro" }],
+  };
+  let captured = false;
+  const env: RenderEnv = {
+    frames: {
+      capture: async () => {
+        captured = true;
+        return [];
+      },
+    },
+    encode: { encodeFrames: async () => {} },
+    root: "/tmp",
+    width: 1100,
+    height: 700,
+    fps: 50,
+    outDir: "/tmp/out",
+    workDir: "/tmp/work",
+  };
+
+  await assert.rejects(() => compose(config, env, { only: ["nope"] }), ConfigError);
+  assert.equal(captured, false);
 });

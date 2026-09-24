@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { sceneDuration } from "../scenes.ts";
+import { ConfigError, sceneDuration } from "../scenes.ts";
 import type { DemoConfig, Scene } from "../scenes.ts";
 import { ffprobeDuration } from "../util/ffmpeg.ts";
 import { resolveRepoPath } from "../util/paths.ts";
@@ -247,7 +247,7 @@ export async function compose(config: DemoConfig, env: RenderEnv, options: Compo
   if (options.only !== undefined) {
     const unknown = options.only.filter((id) => !config.scenes.some((scene) => scene.id === id));
     if (unknown.length > 0) {
-      throw new Error(`unknown scene id(s): ${unknown.join(", ")}`);
+      throw new ConfigError(`unknown scene id(s): ${unknown.join(", ")}`);
     }
   }
   const selected =
@@ -293,6 +293,16 @@ export async function compose(config: DemoConfig, env: RenderEnv, options: Compo
     // read the real length: the xfade offsets and the length check must use it, or an
     // offset can run past the accumulated clip and truncate the whole chain.
     durations.push(await ffprobeDuration(normalized));
+  }
+
+  if (clips.length > 1) {
+    const shortIndex = durations.findIndex((duration) => duration <= transition);
+    if (shortIndex !== -1) {
+      throw new Error(
+        `scene "${selected[shortIndex]?.id}" is ${durations[shortIndex]}s, not longer than the ` +
+          `${transition}s crossfade; shorten the transition or lengthen the scene`,
+      );
+    }
   }
 
   await runOrThrow("ffmpeg", buildComposeArgs(clips, out, durations, transition), { stdio: "ignore" });

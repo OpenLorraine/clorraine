@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.ts";
@@ -123,8 +123,12 @@ function parseOnly(values: string[] | undefined): string[] | undefined {
 /**
  * Builds the real renderer environment: headless Chrome for HTML frames, ffmpeg for
  * encoding, and the repository's `build/demo/` tree for intermediates.
+ *
+ * `rawRoot` is normalized to an absolute path so that a relative `--root` does not get
+ * combined twice when a child process is started with `cwd: root`.
  */
-function buildRenderEnv(config: DemoConfig, root: string): RenderEnv {
+function buildRenderEnv(config: DemoConfig, rawRoot: string): RenderEnv {
+  const root = resolve(rawRoot);
   const base = join(root, "build", "demo");
   return {
     frames: new ChromeFrameSource({
