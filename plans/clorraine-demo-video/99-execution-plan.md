@@ -67,7 +67,7 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 1.1.2 Confirm the red phase: both tests fail because `src/scenes.ts` and `src/config.ts` do not exist ✅ (completed: 2026-09-24 21:53)
 
 **Deliverables**:
-- [ ] The two spec-test files exist and fail for the expected reason
+- [x] The two spec-test files exist and fail for the expected reason
 
 **Verify**: `make demo-check`
 
@@ -85,8 +85,8 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 1.2.5 Green phase: the spec tests from Step 1.1 pass ✅ (completed: 2026-09-24 21:57)
 
 **Deliverables**:
-- [ ] `clorraine-demo list` prints scenes for a sample config
-- [ ] All Step 1.1 spec tests pass
+- [x] `clorraine-demo list` prints scenes for a sample config
+- [x] All Step 1.1 spec tests pass
 
 **Verify**: `make demo-check`
 
@@ -101,8 +101,8 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 1.3.2 Full verification of Phase 1 ✅ (completed: 2026-09-24 22:00)
 
 **Deliverables**:
-- [ ] `make demo-check` runs `tsc --noEmit` and `node --test`
-- [ ] All verification passing
+- [x] `make demo-check` runs `tsc --noEmit` and `node --test`
+- [x] All verification passing
 
 **Verify**: `make demo-check`
 
@@ -122,7 +122,7 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 2.1.2 Confirm the red phase: the tests fail because the grammar, Shiki wrapper, and Chrome wrapper do not exist ✅ (completed: 2026-09-24 22:07)
 
 **Deliverables**:
-- [ ] The three spec-test files exist and fail for the expected reason
+- [x] The three spec-test files exist and fail for the expected reason
 
 **Verify**: `make demo-check`
 
@@ -142,8 +142,8 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 2.2.7 Green phase: the Step 2.1 spec tests pass ✅ (completed: 2026-09-24 22:15)
 
 **Deliverables**:
-- [ ] A `code` scene renders a highlighted clip from `examples/hello/hello.clo`
-- [ ] A `card` scene renders a clip of the configured duration
+- [x] A `code` scene renders a highlighted clip from `examples/hello/hello.clo`
+- [x] A `card` scene renders a clip of the configured duration
 
 **Verify**: `make demo-check`
 
@@ -158,7 +158,7 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 2.3.2 Full verification of Phase 2 ✅ (completed: 2026-09-24 22:18)
 
 **Deliverables**:
-- [ ] All verification passing
+- [x] All verification passing
 
 **Verify**: `make demo-check`
 
@@ -178,7 +178,7 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 3.1.2 Confirm the red phase for the tape, emulator, and composition tests ✅ (completed: 2026-09-24 23:14)
 
 **Deliverables**:
-- [ ] The three spec-test files exist and fail for the expected reason
+- [x] The three spec-test files exist and fail for the expected reason
 
 **Verify**: `make demo-check`
 
@@ -196,9 +196,9 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 3.2.5 Green phase: the Step 3.1 spec tests pass ✅ (completed: 2026-09-24 23:17)
 
 **Deliverables**:
-- [ ] A `terminal` scene records a real terminal clip
-- [ ] An `emulator` scene composites the capture into the branded frame
-- [ ] Composition writes an MP4 with crossfades and the expected duration
+- [x] A `terminal` scene records a real terminal clip
+- [x] An `emulator` scene composites the capture into the branded frame
+- [x] Composition writes an MP4 with crossfades and the expected duration
 
 **Verify**: `make demo-check`
 
@@ -214,7 +214,7 @@ the plan's task-size criteria: one reviewable change per task)
 - [x] 3.3.3 Full verification of Phase 3 ✅ (completed: 2026-09-24 23:20)
 
 **Deliverables**:
-- [ ] All verification passing
+- [x] All verification passing
 
 **Verify**: `make demo-check`
 
