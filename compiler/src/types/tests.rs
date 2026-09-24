@@ -71,6 +71,7 @@ fn views_handles_and_aggregates_convert_only_where_allowed() {
     assert!(implicit_conversion(&Ty::handle("String"), &str_ty));
     assert!(!implicit_conversion(&Ty::handle("File"), &str_ty));
     assert!(!implicit_conversion(&str_ty, &cstring));
+    assert!(implicit_conversion(&static_str, &cstring));
     assert!(implicit_conversion(
         &Ty::struct_("Point"),
         &Ty::struct_("Point")

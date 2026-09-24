@@ -102,6 +102,11 @@ fn required_tools(options: &Options) -> Vec<&'static str> {
         Command::Build => tools.push(toolchain::tool(options.profile).program),
         Command::Run => {
             tools.push(toolchain::tool(options.profile).program);
+            if options.profile == Profile::Freestanding {
+                // The run leg compiles the same translation unit for the host
+                // with `cc`, on top of the m68k build the run also performs.
+                tools.push("cc");
+            }
             if options.profile == Profile::HostedAmiga && !options.emulator {
                 tools.push("vamos");
             }
@@ -188,6 +193,9 @@ fn build_command(options: &Options) -> i32 {
 
 /// Builds, then runs the program (or hands it off to FS-UAE).
 fn run_command(options: Options) -> i32 {
+    if options.profile == Profile::Freestanding {
+        return run_freestanding(options);
+    }
     let built = match build::build(options.profile, options.release, &options.files) {
         Ok(built) => built,
         Err(build::BuildFailure::Diagnostics(code)) => return code,
@@ -211,6 +219,54 @@ fn run_command(options: Options) -> i32 {
         None
     };
     let result = run::run_program(&runner, &built.bin, capture.as_deref());
+    if result.captured {
+        if let Some(path) = &capture {
+            println!("captured {}", display::sanitize(&path.display().to_string()));
+        }
+    }
+    result.code
+}
+
+/// Builds the m68k artifact, then compiles and runs the host no-libc artifact.
+///
+/// The freestanding profile has no operating system to run the m68k artifact
+/// on, so `run` proves the program's semantics with the same translation unit
+/// built for the host. The m68k build still runs first, so a `run` also proves
+/// the target link. `--capture` writes the host run's output as usual.
+fn run_freestanding(options: Options) -> i32 {
+    let built = match build::build(options.profile, options.release, &options.files) {
+        Ok(built) => built,
+        Err(build::BuildFailure::Diagnostics(code)) => return code,
+        Err(build::BuildFailure::Error(message)) => {
+            eprint!("{message}");
+            return 1;
+        }
+    };
+    if options.emit_c {
+        print_c(&built.c);
+    }
+    let stem = match artifacts::program_stem(&options.files) {
+        Some(stem) => stem,
+        None => {
+            eprintln!("clorraine: an input file name has no file stem");
+            return 1;
+        }
+    };
+    let Some(tool) = toolchain::run_tool(options.profile, toolchain::native_syscalls()) else {
+        eprintln!("clorraine: the freestanding profile has no host run tool");
+        return 1;
+    };
+    let host_bin = artifacts::host_bin_path(options.profile, &stem);
+    if let Err(ice) = build::compile(&tool, options.release, &built.c, &host_bin) {
+        eprint!("{ice}");
+        return 1;
+    }
+    let capture = if options.capture {
+        Some(artifacts::out_path(options.profile, &stem))
+    } else {
+        None
+    };
+    let result = run::run_program(&toolchain::Runner::Native, &host_bin, capture.as_deref());
     if result.captured {
         if let Some(path) = &capture {
             println!("captured {}", display::sanitize(&path.display().to_string()));

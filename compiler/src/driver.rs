@@ -87,7 +87,9 @@ impl Options {
             return Ok(options);
         }
         if options.profile.is_none() {
-            return Err("--profile <host|hosted-amiga> is required".to_owned());
+            return Err(
+                "--profile <host|hosted-amiga|freestanding> is required".to_owned(),
+            );
         }
         if options.files.is_empty() {
             return Err("at least one input file is required".to_owned());
@@ -228,7 +230,7 @@ pub fn run(args: Vec<String>) -> i32 {
     }
     let mut diagnostics = Diagnostics::new(options.deny_warnings, options.max_errors);
     let Some(profile) = options.profile.as_deref() else {
-        eprintln!("usage error: --profile <host|hosted-amiga> is required");
+        eprintln!("usage error: --profile <host|hosted-amiga|freestanding> is required");
         return EXIT_USAGE;
     };
     if !profile_available(profile, &mut diagnostics) {
@@ -314,25 +316,27 @@ pub fn run(args: Vec<String>) -> i32 {
 
 /// Checks the selected profile name.
 ///
-/// `freestanding` is designed but not implemented, which is rejected with its
-/// own code; any other unknown name is rejected as unknown.
+/// The profile facts live on [`Profile`], so this is the only place the name
+/// list is resolved. An unknown name is `E11201`; a known but unimplemented
+/// profile would be `E11200`. No profile is currently unimplemented, so that
+/// branch is dormant but preserved for a future one.
 fn profile_available(name: &str, diagnostics: &mut Diagnostics) -> bool {
-    match name {
-        "host" | "hosted-amiga" => true,
-        "freestanding" => {
-            diagnostics.push(Diagnostic::cli_error(
-                "E11200",
-                format!("'{name}' is not available on profile '{name}'"),
-            ));
-            false
-        }
-        _ => {
+    match Profile::parse(name) {
+        None => {
             diagnostics.push(
                 Diagnostic::cli_error("E11201", format!("unknown profile '{name}'"))
                     .with_help("use `hosted-amiga`, `host`, or `freestanding`"),
             );
             false
         }
+        Some(profile) if !profile.implemented() => {
+            diagnostics.push(Diagnostic::cli_error(
+                "E11200",
+                format!("'{name}' is not available on profile '{name}'"),
+            ));
+            false
+        }
+        Some(_) => true,
     }
 }
 
@@ -374,13 +378,13 @@ mod tests {
         let mut diagnostics = Diagnostics::new(false, None);
         assert!(profile_available("host", &mut diagnostics));
         assert!(profile_available("hosted-amiga", &mut diagnostics));
-        assert!(!profile_available("freestanding", &mut diagnostics));
+        assert!(profile_available("freestanding", &mut diagnostics));
         assert!(!profile_available("nope", &mut diagnostics));
         let codes: Vec<&str> = diagnostics
             .items()
             .iter()
             .map(|diagnostic| diagnostic.code)
             .collect();
-        assert_eq!(codes, ["E11200", "E11201"]);
+        assert_eq!(codes, ["E11201"]);
     }
 }

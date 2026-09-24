@@ -23,7 +23,7 @@
 DOCKER_MAKE ?= $(MAKE) -C docker
 
 # Driver passthrough options.
-#   PROFILE   host (default) or hosted-amiga
+#   PROFILE   host (default), hosted-amiga, or freestanding
 #   EMULATOR  1 to boot the built program in FS-UAE on the host
 #   CAPTURE   1 to write the program output to build/run/out.txt instead of streaming
 PROFILE ?= host
@@ -31,7 +31,7 @@ EMULATOR ?= 0
 CAPTURE ?= 0
 
 # Driver flags derived from the options above.
-PROFILE_ARG = $(if $(filter hosted-amiga,$(PROFILE)),--profile hosted-amiga,)
+PROFILE_ARG = $(if $(filter-out host,$(PROFILE)),--profile $(PROFILE),)
 CAPTURE_ARG = $(if $(filter 1,$(CAPTURE)),--capture,)
 # The artifact name the driver derives: the first source file's stem.
 STEM = $(basename $(notdir $(FILE)))

@@ -306,11 +306,14 @@ impl<'a> Emitter<'a> {
     /// The hosted-amiga ABI declares `BPTR`, the file/lock handle type, as an
     /// integer, so a pointer constant would not convert to it. The integer
     /// constant `0` is the null value for both an integer and a pointer handle,
-    /// so the hosted profile replaces the `NULL` empty state with it; every
-    /// other type keeps its fixed empty state.
+    /// so the hosted profile replaces the `NULL` empty state with it. The
+    /// freestanding profile keeps the same spelling for consistency with the
+    /// provisional ABI; every other type keeps its fixed empty state.
     pub(super) fn empty_state(&self, ty: &Ty) -> String {
         let base = types::empty_state(ty);
-        if self.profile == Profile::HostedAmiga && base == "NULL" {
+        if matches!(self.profile, Profile::HostedAmiga | Profile::Freestanding)
+            && base == "NULL"
+        {
             "0".to_owned()
         } else {
             base
@@ -319,11 +322,11 @@ impl<'a> Emitter<'a> {
 
     /// The null literal under the selected profile.
     ///
-    /// See [`Self::empty_state`]: the hosted-amiga `BPTR` is an integer, so the
-    /// null spelling there is the integer constant `0`. The host profile keeps
+    /// See [`Self::empty_state`]: the hosted-amiga and freestanding ABIs use the
+    /// integer constant `0` as the null spelling. The host profile keeps
     /// `NULL`, which the emitted C and its tests pin.
     pub(super) fn null_literal(&self) -> &'static str {
-        if self.profile == Profile::HostedAmiga {
+        if matches!(self.profile, Profile::HostedAmiga | Profile::Freestanding) {
             "0"
         } else {
             "NULL"

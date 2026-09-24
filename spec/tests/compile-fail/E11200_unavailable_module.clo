@@ -1,0 +1,9 @@
+// expect-error E11200
+// trigger: importing a standard-library module the host profile does not provide
+module tests.compile_fail.E11200;
+
+import { delayTicks } from std.amiga.dos;
+
+func main(): i32 {
+    return 0;
+}

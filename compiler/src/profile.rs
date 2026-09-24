@@ -12,6 +12,9 @@ const HOST_SHIM: &str = include_str!("../runtime/shim_host.c");
 /// The C runtime shim source of the hosted-amiga profile.
 const HOSTED_AMIGA_SHIM: &str = include_str!("../runtime/shim_hosted_amiga.c");
 
+/// The C runtime shim source of the freestanding profile.
+const FREESTANDING_SHIM: &str = include_str!("../runtime/shim_freestanding.c");
+
 /// A target profile.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Profile {
@@ -20,17 +23,20 @@ pub enum Profile {
     /// The v1 target profile. It shares the host emitter surface for now; the
     /// exec/dos shim is added with the hosted-amiga runtime.
     HostedAmiga,
+    /// A platform with no operating system: no libc, its own start-up.
+    Freestanding,
 }
 
 impl Profile {
     /// Resolves a validated profile name.
     ///
-    /// Returns `None` for `freestanding` and for unknown names; the driver
-    /// reports those before code generation runs.
+    /// Returns `None` for an unknown name; the driver reports that with
+    /// `E11201` before code generation runs.
     pub fn parse(name: &str) -> Option<Self> {
         match name {
             "host" => Some(Profile::Host),
             "hosted-amiga" => Some(Profile::HostedAmiga),
+            "freestanding" => Some(Profile::Freestanding),
             _ => None,
         }
     }
@@ -40,6 +46,20 @@ impl Profile {
         match self {
             Profile::Host => "host",
             Profile::HostedAmiga => "hosted-amiga",
+            Profile::Freestanding => "freestanding",
+        }
+    }
+
+    /// True when the profile is implemented and may be selected.
+    ///
+    /// A profile can be named by the specification but not yet implemented;
+    /// selecting it is a codegen error (`E11200`), not an unknown name. This is
+    /// the single place that answers the question, so the driver never repeats
+    /// the name list. Every profile is implemented today, so the driver's
+    /// not-implemented branch is dormant but preserved for a future profile.
+    pub fn implemented(self) -> bool {
+        match self {
+            Profile::Host | Profile::HostedAmiga | Profile::Freestanding => true,
         }
     }
 
@@ -48,11 +68,13 @@ impl Profile {
     /// A profile names its own API surface, so a module outside it cannot be
     /// lowered on that profile. The AmigaOS scheduler and interrupt dispatcher
     /// belong to the hosted-amiga runtime, so `std.amiga.*` is available there
-    /// and rejected on the host test profile; every other module is portable.
+    /// and rejected on the host test profile. The freestanding profile has no
+    /// filesystem, heap, or formatter, so it provides only the console module.
     pub fn supports_module(self, module: &str) -> bool {
         match self {
             Profile::Host => !module.starts_with("std.amiga."),
             Profile::HostedAmiga => true,
+            Profile::Freestanding => module == "std.io",
         }
     }
 
@@ -61,6 +83,7 @@ impl Profile {
         match self {
             Profile::Host => HOST_SHIM,
             Profile::HostedAmiga => HOSTED_AMIGA_SHIM,
+            Profile::Freestanding => FREESTANDING_SHIM,
         }
     }
 
@@ -69,6 +92,7 @@ impl Profile {
         match self {
             Profile::Host => 16_384,
             Profile::HostedAmiga => 1_024,
+            Profile::Freestanding => 1_024,
         }
     }
 }
@@ -81,10 +105,22 @@ mod tests {
     fn profile_names_round_trip_and_reject_unknown() {
         assert_eq!(Profile::parse("host"), Some(Profile::Host));
         assert_eq!(Profile::parse("hosted-amiga"), Some(Profile::HostedAmiga));
-        assert_eq!(Profile::parse("freestanding"), None);
+        assert_eq!(
+            Profile::parse("freestanding"),
+            Some(Profile::Freestanding)
+        );
         assert_eq!(Profile::parse("nope"), None);
         assert_eq!(Profile::Host.name(), "host");
         assert_eq!(Profile::HostedAmiga.name(), "hosted-amiga");
+        assert_eq!(Profile::Freestanding.name(), "freestanding");
+    }
+
+    #[test]
+    fn every_named_profile_is_implemented() {
+        for name in ["host", "hosted-amiga", "freestanding"] {
+            let profile = Profile::parse(name).expect("a known name parses");
+            assert!(profile.implemented(), "{name} must be implemented");
+        }
     }
 
     #[test]
@@ -109,9 +145,24 @@ mod tests {
     }
 
     #[test]
+    fn the_freestanding_shim_names_the_entry_point_and_console_surface() {
+        let shim = Profile::Freestanding.shim();
+        assert!(shim.contains("void _start(void)"));
+        assert!(shim.contains("memcpy"));
+        assert!(shim.contains("cl_trap"));
+        assert!(shim.contains("cl_write"));
+        assert!(shim.contains("cl_write_line"));
+        assert!(shim.contains("Open"));
+        assert!(shim.contains("Close"));
+        assert!(shim.contains("Read"));
+        assert!(shim.contains("Write"));
+    }
+
+    #[test]
     fn stack_frame_thresholds_match_the_profiles() {
         assert_eq!(Profile::Host.stack_frame_limit(), 16_384);
         assert_eq!(Profile::HostedAmiga.stack_frame_limit(), 1_024);
+        assert_eq!(Profile::Freestanding.stack_frame_limit(), 1_024);
     }
 
     #[test]
@@ -121,5 +172,14 @@ mod tests {
         assert!(Profile::HostedAmiga.supports_module("std.amiga.dos"));
         assert!(Profile::HostedAmiga.supports_module("std.amiga.interrupt"));
         assert!(Profile::HostedAmiga.supports_module("std.mem"));
+    }
+
+    #[test]
+    fn the_freestanding_profile_provides_only_the_console_module() {
+        assert!(Profile::Freestanding.supports_module("std.io"));
+        assert!(!Profile::Freestanding.supports_module("std.mem"));
+        assert!(!Profile::Freestanding.supports_module("std.text"));
+        assert!(!Profile::Freestanding.supports_module("std.fmt"));
+        assert!(!Profile::Freestanding.supports_module("std.amiga.dos"));
     }
 }

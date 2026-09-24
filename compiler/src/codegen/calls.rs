@@ -6,9 +6,10 @@
 //! `slice` here so the view struct and its bounds guard live in one place.
 
 use crate::ast::Mode;
-use crate::ir::Value;
+use crate::ir::{Value, ValueKind};
 use crate::types::{Ty, TyKind};
 
+use super::render::escape_c_string;
 use super::types::{c_type, type_key};
 use super::Emitter;
 
@@ -106,13 +107,24 @@ impl Emitter<'_> {
     }
 
     /// Renders one argument, widening an owned `String` to the `str` view a
-    /// parameter expects.
+    /// parameter expects, or a literal to the C string pointer a `cstring`
+    /// expects.
     ///
     /// The view reads the owned bytes through the shim helpers, so it allocates
     /// nothing and stays valid for the call. The conversion is emitted as a
     /// single shim call so a complex argument such as a template builder is
-    /// evaluated exactly once.
+    /// evaluated exactly once. A `static str` literal is already a
+    /// NUL-terminated C string, so a `cstring` parameter takes it directly
+    /// instead of a `ClStr` view.
     fn argument_text(&self, arg: &Value, expected: Option<&Ty>) -> String {
+        let wants_cstring = expected.is_some_and(|expected| {
+            matches!(self.substitute(expected).kind, TyKind::CString)
+        });
+        if wants_cstring {
+            if let ValueKind::Str(literal) = &arg.kind {
+                return escape_c_string(literal.as_bytes());
+            }
+        }
         let text = self.value(arg);
         let arg_ty = self.substitute(&arg.ty);
         let wants_str = expected.is_some_and(|expected| {

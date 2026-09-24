@@ -33,6 +33,16 @@ pub fn bin_path(profile: Profile, stem: &str) -> PathBuf {
     program_dir(profile, stem).join(stem)
 }
 
+/// The host-run artifact path of the freestanding profile.
+///
+/// The freestanding build produces the m68k artifact the target would run. The
+/// `run` command separately compiles the same translation unit for the host
+/// with the no-libc runtime, and names it `<stem>.host` so it sits beside the
+/// m68k artifact without colliding with it.
+pub fn host_bin_path(profile: Profile, stem: &str) -> PathBuf {
+    program_dir(profile, stem).join(format!("{stem}.host"))
+}
+
 /// The captured stdout path used by `--capture`.
 pub fn out_path(profile: Profile, stem: &str) -> PathBuf {
     program_dir(profile, stem).join("out.txt")

@@ -53,6 +53,27 @@ const WARNINGS: &[&str] = &["-Wall", "-Wextra", "-Werror"];
 /// The Amiga link libraries appended on every hosted-amiga build.
 const AMIGA_LIBS: &[&str] = &["-lamiga", "-lm"];
 
+/// Freestanding m68k build flags: no C runtime, its own start-up, soft floats.
+const FREESTANDING_BUILD_BASE: &[&str] = &[
+    "-std=c99",
+    "-ffreestanding",
+    "-fno-builtin",
+    "-nostdlib",
+    "-m68000",
+    "-fwrapv",
+];
+
+/// The freestanding host-run flags: the same no-libc stance on the host.
+const FREESTANDING_HOST_BASE: &[&str] = &["-std=c99", "-ffreestanding", "-fno-builtin", "-nostdlib"];
+
+/// The fallback host-run flags for a CPU with no shim syscall layer: the host
+/// C runtime supplies the console write and exit, so `-nostdlib` is dropped.
+const FREESTANDING_HOST_FALLBACK_BASE: &[&str] =
+    &["-std=c99", "-ffreestanding", "-fno-builtin"];
+
+/// The freestanding m68k link libraries (the self-contained soft-float runtime).
+const FREESTANDING_LIBS: &[&str] = &["-lg"];
+
 /// Returns the C compiler for a profile.
 pub fn tool(profile: Profile) -> Tool {
     match profile {
@@ -66,6 +87,43 @@ pub fn tool(profile: Profile) -> Tool {
             base: AMIGA_BASE,
             libs: AMIGA_LIBS,
         },
+        Profile::Freestanding => Tool {
+            program: "m68k-amigaos-gcc",
+            base: FREESTANDING_BUILD_BASE,
+            libs: FREESTANDING_LIBS,
+        },
+    }
+}
+
+/// True when the runtime shim has a hand-written syscall layer for this host.
+///
+/// The freestanding host run uses raw `write`/`exit` syscalls only on the
+/// architectures the shim covers; every other host falls back to the platform
+/// C runtime. Keeping the answer in one function makes the fallback a single
+/// branch instead of a scatter of `cfg!` checks.
+pub fn native_syscalls() -> bool {
+    cfg!(any(target_arch = "x86_64", target_arch = "aarch64"))
+}
+
+/// The C compiler that links a profile's host-run artifact, if it has one.
+///
+/// The host profile runs its build artifact directly. The hosted-amiga profile
+/// runs its build artifact under `vamos`, so it has no separate run tool. The
+/// freestanding profile builds an m68k artifact that cannot run here, so its
+/// run leg compiles the same translation unit for the host with `cc`.
+pub fn run_tool(profile: Profile, native_syscalls: bool) -> Option<Tool> {
+    match profile {
+        Profile::Host => Some(tool(Profile::Host)),
+        Profile::HostedAmiga => None,
+        Profile::Freestanding => Some(Tool {
+            program: "cc",
+            base: if native_syscalls {
+                FREESTANDING_HOST_BASE
+            } else {
+                FREESTANDING_HOST_FALLBACK_BASE
+            },
+            libs: &[],
+        }),
     }
 }
 
@@ -95,6 +153,7 @@ pub fn runner(profile: Profile) -> Runner {
     match profile {
         Profile::Host => Runner::Native,
         Profile::HostedAmiga => Runner::Vamos,
+        Profile::Freestanding => Runner::Native,
     }
 }
 
@@ -216,5 +275,36 @@ mod tests {
             !text.contains('\x1b'),
             "a control byte must not survive into the printed command, got:\n{text}"
         );
+    }
+
+    #[test]
+    fn the_freestanding_build_command_is_the_no_libc_matrix_line() {
+        let tool = tool(Profile::Freestanding);
+        assert_eq!(
+            command(&tool, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            "m68k-amigaos-gcc -std=c99 -ffreestanding -fno-builtin -nostdlib -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror -o prog out.c -lg"
+        );
+    }
+
+    #[test]
+    fn the_freestanding_host_run_command_keeps_or_drops_nostdlib() {
+        let syscalls = run_tool(Profile::Freestanding, true).expect("freestanding has a run tool");
+        assert_eq!(syscalls.program, "cc");
+        assert_eq!(
+            command(&syscalls, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -ffreestanding -fno-builtin -nostdlib -O0 -g -Wall -Wextra -Werror -o prog out.c"
+        );
+        let fallback = run_tool(Profile::Freestanding, false).expect("freestanding has a run tool");
+        assert_eq!(
+            command(&fallback, false, Path::new("out.c"), Path::new("prog")).join(" "),
+            "cc -std=c99 -ffreestanding -fno-builtin -O0 -g -Wall -Wextra -Werror -o prog out.c"
+        );
+    }
+
+    #[test]
+    fn only_profiles_with_a_host_run_have_a_run_tool() {
+        assert!(run_tool(Profile::HostedAmiga, true).is_none());
+        assert!(run_tool(Profile::Host, true).is_some());
+        assert!(matches!(runner(Profile::Freestanding), Runner::Native));
     }
 }

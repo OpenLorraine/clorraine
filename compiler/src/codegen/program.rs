@@ -67,9 +67,11 @@ impl<'a> Emitter<'a> {
     ///
     /// The Clorraine fixed-width scalars are always declared because no target
     /// header provides them. The AmigaOS ABI typedefs (`BPTR`, `LONG`, and the
-    /// rest) are declared only for the host profile: the hosted-amiga shim
-    /// includes `exec/types.h`, which already declares them, and re-declaring a
-    /// typedef with a different underlying type is an error under `-std=c99`.
+    /// rest) are declared for the host and freestanding profiles: the
+    /// hosted-amiga shim includes `exec/types.h`, which already declares them,
+    /// and re-declaring a typedef with a different underlying type is an error
+    /// under `-std=c99`. The freestanding shim includes no header, so the
+    /// emitted prototypes need these typedefs.
     pub(super) fn emit_typedefs(&mut self) {
         self.push("typedef signed char i8;");
         self.push("typedef short i16;");
@@ -80,7 +82,7 @@ impl<'a> Emitter<'a> {
         self.push("typedef unsigned int usize;");
         self.push("typedef int isize;");
         self.push("");
-        if self.profile == Profile::Host {
+        if matches!(self.profile, Profile::Host | Profile::Freestanding) {
             self.push("typedef void *BPTR;");
             self.push("typedef void *APTR;");
             self.push("typedef char *STRPTR;");

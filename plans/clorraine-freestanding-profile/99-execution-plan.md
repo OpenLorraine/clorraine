@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 08:24
-> **Progress**: 4/18 tasks (22%)
+> **Last Updated**: 2026-09-24 08:29
+> **Progress**: 15/19 tasks (79%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -24,11 +24,11 @@ implementation tests, documentation, and full verification.
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
 | 1 | Specification tests first | 4 |
-| 2 | Profile and runtime | 5 |
+| 2 | Profile and runtime | 6 |
 | 3 | Driver, specification, and goldens | 5 |
 | 4 | Green phase, implementation tests, docs | 4 |
 
-**Total: 18 tasks across 4 phases** (no fabricated hour estimates)
+**Total: 19 tasks across 4 phases** (no fabricated hour estimates)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
 > The task checkboxes below are the single source of truth for progress. Mark a
@@ -76,18 +76,18 @@ the host no-libc run, and record the red phase.
 **Reference**: [03-01](03-01-profile-runtime.md) §New Types, §The runtime shim, §Build flags · AR-3, AR-4, AR-5, AR-9, AR-10, AR-13, AR-14, AR-18, AR-19
 **Objective**: a real third profile with a self-contained runtime.
 
-- [ ] 2.1.1 Create the freestanding runtime shim: portable `memcpy`/`memset`/`memcmp`/`strlen`, the console and trap helpers, the file-I/O trap, the arch-guarded platform layer, and `_start` — `compiler/runtime/shim_freestanding.c`
-- [ ] 2.1.2 Add `Profile::Freestanding` with `parse`, the `implemented` query, `supports_module`, `shim`, and the 1024-byte `stack_frame_limit` — `compiler/src/profile.rs`
-- [ ] 2.1.3 Make `Profile` the single source of truth for the name check; delete the duplicate `match` and keep the dormant unimplemented-profile `E11200` branch — `compiler/src/driver.rs`
-- [ ] 2.1.4 Add the freestanding arm to the null/empty-state spelling and emit the ABI typedefs for freestanding too — `compiler/src/codegen.rs`, `compiler/src/codegen/program.rs`
-- [ ] 2.1.5 Allow a `static str` literal where a `cstring` is expected and emit it as a C string literal, so `openFile("x", 1005)` compiles (AR-31 runtime) — `compiler/src/types/mod.rs`, `compiler/src/codegen/calls.rs`, `spec/02-types.md`
+- [x] 2.1.1 Create the freestanding runtime shim: portable `memcpy`/`memset`/`memcmp`/`strlen`, the console and trap helpers, the file-I/O trap, the arch-guarded platform layer, and `_start` — `compiler/runtime/shim_freestanding.c` ✅ (completed: 2026-09-24 08:29)
+- [x] 2.1.2 Add `Profile::Freestanding` with `parse`, the `implemented` query, `supports_module`, `shim`, and the 1024-byte `stack_frame_limit` — `compiler/src/profile.rs` ✅ (completed: 2026-09-24 08:29)
+- [x] 2.1.3 Make `Profile` the single source of truth for the name check; delete the duplicate `match` and keep the dormant unimplemented-profile `E11200` branch — `compiler/src/driver.rs` ✅ (completed: 2026-09-24 08:29)
+- [x] 2.1.4 Add the freestanding arm to the null/empty-state spelling and emit the ABI typedefs for freestanding too — `compiler/src/codegen.rs`, `compiler/src/codegen/program.rs` ✅ (completed: 2026-09-24 08:29)
+- [x] 2.1.5 Allow a `static str` literal where a `cstring` is expected and emit it as a C string literal, so `openFile("x", 1005)` compiles (AR-31 runtime) — `compiler/src/types/mod.rs`, `compiler/src/codegen/calls.rs`, `spec/02-types.md` ✅ (completed: 2026-09-24 08:29)
 
 ### Step 2.2: Green the profile and runtime tests
 
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) ST-1, ST-3..ST-7, ST-11..ST-14, ST-16, ST-17
 **Objective**: the emitted C links and runs on both legs.
 
-- [ ] 2.2.1 Run the freestanding spec tests and fix until the compiler, gating, m68k link, and host no-libc run cases pass
+- [x] 2.2.1 Run the freestanding spec tests and fix until the compiler, gating, m68k link, and host no-libc run cases pass ✅ (completed: 2026-09-24 08:29)
 
 **Deliverables**:
 - A working `freestanding` profile and runtime
@@ -109,11 +109,11 @@ the host no-libc run, and record the red phase.
 **Objective**: the driver builds the m68k artifact and runs the host no-libc
 artifact; the specification and goldens reflect an implemented profile.
 
-- [ ] 3.1.1 Add the freestanding build and run tool rows and the `run_tool` lookup; accept the profile in the CLI and update the help, unknown-profile, and `clc` usage text — `compiler/src/clorraine/toolchain.rs`, `compiler/src/clorraine/cli.rs`, `compiler/src/driver.rs`
-- [ ] 3.1.2 Implement the two-artifact freestanding flow: route the run to the host artifact and require `cc` in `mod.rs`, own the `<stem>.host` path in `artifacts.rs`, and adapt `build`/`run` — `compiler/src/clorraine/mod.rs`, `compiler/src/clorraine/artifacts.rs`, `compiler/src/clorraine/build.rs`, `compiler/src/clorraine/run.rs`
-- [ ] 3.1.3 Apply the authorized specification edits: PR-6 reword, the profile tables, the codegen runtime/matrix rows, the introduction, the README, the decision record, and register the `E11214` runtime code (and add it to `spec/check.sh`'s runtime-fault list) — `spec/15-profiles.md`, `spec/00-introduction.md`, `spec/17-codegen.md`, `spec/14-diagnostics.md`, `spec/README.md`, `spec/decisions.md`, `spec/check.sh`
-- [ ] 3.1.4 Replace the obsolete rejection golden with the `E11200_unavailable_module.clo` golden (host + `std.amiga.dos`) and keep `E11200` in the compile-fail expectation set — `spec/tests/compile-fail/E11200_unimplemented_profile.clo` (removed), `spec/tests/compile-fail/E11200_unavailable_module.clo` (added), `compiler/tests/compile_fail_spec_test.rs`
-- [ ] 3.1.5 Update the root `Makefile` so `PROFILE_ARG` forwards any non-host profile, then run `./spec/check.sh` — `Makefile`
+- [x] 3.1.1 Add the freestanding build and run tool rows and the `run_tool` lookup; accept the profile in the CLI and update the help, unknown-profile, and `clc` usage text — `compiler/src/clorraine/toolchain.rs`, `compiler/src/clorraine/cli.rs`, `compiler/src/driver.rs` ✅ (completed: 2026-09-24 08:29)
+- [x] 3.1.2 Implement the two-artifact freestanding flow: route the run to the host artifact and require `cc` in `mod.rs`, own the `<stem>.host` path in `artifacts.rs`, and adapt `build`/`run` — `compiler/src/clorraine/mod.rs`, `compiler/src/clorraine/artifacts.rs`, `compiler/src/clorraine/build.rs`, `compiler/src/clorraine/run.rs` ✅ (completed: 2026-09-24 08:29)
+- [x] 3.1.3 Apply the authorized specification edits: PR-6 reword, the profile tables, the codegen runtime/matrix rows, the introduction, the README, the decision record, and register the `E11214` runtime code (and add it to `spec/check.sh`'s runtime-fault list) — `spec/15-profiles.md`, `spec/00-introduction.md`, `spec/17-codegen.md`, `spec/14-diagnostics.md`, `spec/README.md`, `spec/decisions.md`, `spec/check.sh` ✅ (completed: 2026-09-24 08:29)
+- [x] 3.1.4 Replace the obsolete rejection golden with the `E11200_unavailable_module.clo` golden (host + `std.amiga.dos`) and keep `E11200` in the compile-fail expectation set — `spec/tests/compile-fail/E11200_unimplemented_profile.clo` (removed), `spec/tests/compile-fail/E11200_unavailable_module.clo` (added), `compiler/tests/compile_fail_spec_test.rs` ✅ (completed: 2026-09-24 08:29)
+- [x] 3.1.5 Update the root `Makefile` so `PROFILE_ARG` forwards any non-host profile, then run `./spec/check.sh` — `Makefile` ✅ (completed: 2026-09-24 08:29)
 
 **Deliverables**:
 - Freestanding driver support

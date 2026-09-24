@@ -1,9 +1,0 @@
-// expect-error E11200
-// trigger: selecting the designed-but-unimplemented 'freestanding' profile
-// profile: freestanding
-// cli: --profile=freestanding
-module tests.compile_fail.E11200;
-
-func main(): i32 {
-    return 0;
-}

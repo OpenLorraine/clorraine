@@ -68,7 +68,7 @@ Commands:
   emit    Print the generated C (or write it with -o)
 
 Options:
-  -p, --profile <host|hosted-amiga>   Target profile (default: host)
+  -p, --profile <host|hosted-amiga|freestanding>   Target profile (default: host)
       --release                       Optimize (-O2) instead of debug (-O0 -g)
       --emit-c                        Print the generated C after building
       --emulator                      hosted-amiga run: use FS-UAE (host handoff)
@@ -170,8 +170,9 @@ fn parse_options(command: Command, rest: &[String]) -> Result<Options, String> {
         index += 1;
     }
     if let Some(name) = profile {
-        options.profile = Profile::parse(&name)
-            .ok_or_else(|| format!("unknown profile '{name}' (expected host or hosted-amiga)"))?;
+        options.profile = Profile::parse(&name).ok_or_else(|| {
+            format!("unknown profile '{name}' (expected host, hosted-amiga, or freestanding)")
+        })?;
     }
     Ok(options)
 }
