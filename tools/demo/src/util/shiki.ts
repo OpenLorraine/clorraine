@@ -9,10 +9,8 @@ const toolDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const grammarPath = join(toolDir, "grammars", "clorraine.tmLanguage.json");
 const themePath = join(toolDir, "assets", "theme.json");
 
-/** The Shiki language id for Clorraine. */
-export const LANG = "clorraine";
-/** The Shiki theme id for the demo palette. */
-export const THEME = "clorraine";
+const LANG = "clorraine";
+const THEME = "clorraine";
 
 /** One highlighted run of source text and the TextMate scopes it belongs to. */
 export interface Token {
@@ -24,11 +22,6 @@ export interface Token {
 export interface StyledToken {
   content: string;
   color: string;
-}
-
-interface ExplainedToken {
-  content: string;
-  explanation?: Array<{ scopes: Array<{ scopeName: string }> }>;
 }
 
 let highlighterPromise: Promise<HighlighterCore> | undefined;
@@ -43,7 +36,11 @@ async function getHighlighter(): Promise<HighlighterCore> {
         langs: [{ ...grammar, name: LANG }],
         engine: createOnigurumaEngine(() => import("shiki/wasm")),
       });
-    })();
+    })().catch((error: unknown) => {
+      // Do not cache a failed initialization; let the next call retry.
+      highlighterPromise = undefined;
+      throw error;
+    });
   }
   return highlighterPromise;
 }
@@ -55,8 +52,7 @@ async function getHighlighter(): Promise<HighlighterCore> {
 export async function tokenize(code: string): Promise<Token[]> {
   const highlighter = await getHighlighter();
   const result = highlighter.codeToTokens(code, { lang: LANG, theme: THEME, includeExplanation: true });
-  const tokens = result.tokens.flat() as unknown as ExplainedToken[];
-  return tokens.map((token) => ({
+  return result.tokens.flat().map((token) => ({
     content: token.content,
     scopes: (token.explanation ?? []).flatMap((entry) => entry.scopes.map((scope) => scope.scopeName)),
   }));

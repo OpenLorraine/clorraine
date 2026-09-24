@@ -41,9 +41,9 @@ export async function renderCode(scene: CodeScene, env: RenderEnv): Promise<stri
 
   const duration = sceneDuration(scene);
   const page = template
-    .replace("{{CSS}}", css)
-    .replace("{{FILENAME}}", escapeHtml(scene.file))
-    .replace("{{LINES}}", lineHtml);
+    .replace("{{CSS}}", () => css)
+    .replace("{{FILENAME}}", () => escapeHtml(scene.file))
+    .replace("{{LINES}}", () => lineHtml);
 
   const pagePath = join(env.workDir, `${scene.id}.html`);
   await writeFile(pagePath, page, "utf8");

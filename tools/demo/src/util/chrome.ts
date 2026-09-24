@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { FrameSource, FrameSpec } from "../renderer/env.ts";
+import { messageOf } from "./log.ts";
 import { run } from "./proc.ts";
 
 /** The Chrome executable to use: `CHROME_BIN` when set, else `google-chrome`. */
@@ -144,7 +145,7 @@ async function pageWebSocketUrl(port: number): Promise<string> {
   return page.webSocketDebuggerUrl;
 }
 
-async function waitForReady(cdp: Cdp): Promise<void> {
+async function waitForReady(cdp: Cdp, url: string): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt++) {
     const result = (await cdp.send("Runtime.evaluate", {
       expression: "window.__ready === true",
@@ -155,7 +156,7 @@ async function waitForReady(cdp: Cdp): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error("the demo page did not finish preparing (no window.__ready)");
+  throw new Error(`the demo page did not finish preparing (no window.__ready): ${url}`);
 }
 
 /** Options for {@link ChromeFrameSource}. */
@@ -192,12 +193,19 @@ export class ChromeFrameSource implements FrameSource {
         "--remote-debugging-port=0",
         `--window-size=${spec.width},${spec.height}`,
       ],
-      { stdio: ["ignore", "ignore", "ignore"] },
+      { stdio: ["ignore", "ignore", "pipe"] },
     );
+
+    let chromeStderr = "";
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      chromeStderr += chunk;
+    });
+    const spawnFailed = new Promise<never>((_, reject) => child.once("error", reject));
 
     let cdp: Cdp | undefined;
     try {
-      const port = await waitForPort(userDataDir);
+      const port = await Promise.race([waitForPort(userDataDir), spawnFailed]);
       cdp = await Cdp.connect(await pageWebSocketUrl(port));
       await cdp.send("Page.enable");
       await cdp.send("Runtime.enable");
@@ -212,9 +220,10 @@ export class ChromeFrameSource implements FrameSource {
       await mkdir(frameDir, { recursive: true });
 
       const loaded = cdp.once("Page.loadEventFired");
-      await cdp.send("Page.navigate", { url: pageUrl(this.options.assetsDir, spec) });
+      const url = pageUrl(this.options.assetsDir, spec);
+      await cdp.send("Page.navigate", { url });
       await loaded;
-      await waitForReady(cdp);
+      await waitForReady(cdp, url);
 
       const frames: string[] = [];
       for (let index = 0; index < spec.count; index++) {
@@ -228,6 +237,9 @@ export class ChromeFrameSource implements FrameSource {
         frames.push(frame);
       }
       return frames;
+    } catch (error) {
+      const tail = chromeStderr.trim().split("\n").slice(-3).join(" ");
+      throw new Error(`${messageOf(error)}${tail.length > 0 ? ` | Chrome: ${tail}` : ""}`);
     } finally {
       cdp?.close();
       child.kill("SIGKILL");

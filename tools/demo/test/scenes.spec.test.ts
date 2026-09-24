@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { renderCard } from "../src/renderer/card.ts";
+import type { RenderEnv } from "../src/renderer/env.ts";
 import { validateConfig } from "../src/scenes.ts";
 
 const baseScene = { id: "one", kind: "card", title: "Title", duration: 7 } as const;
@@ -72,9 +74,6 @@ test("rejects a gif that names an unknown scene", () => {
     /gif/i,
   );
 });
-
-import { renderCard } from "../src/renderer/card.ts";
-import type { RenderEnv } from "../src/renderer/env.ts";
 
 test("a card scene requests one frame per output frame", async () => {
   const specs: Array<{ page: string; count: number }> = [];

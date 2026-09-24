@@ -5,11 +5,13 @@
   "fileTypes": ["clo"],
   "patterns": [
     { "include": "#comments" },
-    { "include": "#template" },
+    { "include": "#moduleName" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#handles" },
-    { "include": "#strings" },
+    { "include": "#chars" },
+    { "include": "#templateString" },
+    { "include": "#plainString" },
     { "include": "#numbers" },
     { "include": "#functions" },
     { "include": "#operators" }
@@ -28,11 +30,11 @@
         }
       ]
     },
-    "template": {
+    "moduleName": {
       "patterns": [
         {
-          "name": "punctuation.definition.template.clorraine",
-          "match": "\\$"
+          "name": "entity.name.type.module.clorraine",
+          "match": "(?<=\\bmodule\\s+)[A-Za-z_][A-Za-z0-9_.]*"
         }
       ]
     },
@@ -64,22 +66,42 @@
         }
       ]
     },
-    "strings": {
+    "chars": {
+      "patterns": [
+        {
+          "name": "constant.character.clorraine",
+          "match": "'([^'\\\\]|\\\\.)'"
+        }
+      ]
+    },
+    "templateString": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.clorraine",
+          "begin": "\\$\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.template.clorraine" }
+          },
+          "patterns": [
+            { "name": "constant.character.escape.clorraine", "match": "\\\\." },
+            {
+              "name": "punctuation.section.interpolation.clorraine",
+              "begin": "\\{",
+              "end": "\\}"
+            }
+          ]
+        }
+      ]
+    },
+    "plainString": {
       "patterns": [
         {
           "name": "string.quoted.double.clorraine",
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            {
-              "name": "constant.character.escape.clorraine",
-              "match": "\\\\."
-            },
-            {
-              "name": "punctuation.section.interpolation.clorraine",
-              "begin": "\\{",
-              "end": "\\}"
-            }
+            { "name": "constant.character.escape.clorraine", "match": "\\\\." }
           ]
         }
       ]

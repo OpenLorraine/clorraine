@@ -25,7 +25,11 @@
         }
       }
 
-      const distance = Math.max(0, content.scrollHeight - content.parentElement.clientHeight);
+      const viewport = content.parentElement;
+      const style = getComputedStyle(viewport);
+      const innerHeight =
+        viewport.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      const distance = Math.max(0, content.scrollHeight - innerHeight);
 
       window.render = function (t) {
         if (!scroll || distance === 0) {
