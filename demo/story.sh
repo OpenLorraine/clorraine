@@ -53,6 +53,10 @@ BUILD_TITLE="One command"
 BUILD_SUB="Clorraine emits plain C99, then builds and runs it"
 BUILD_L1="Here for the hosted-amiga profile"
 
+# Introduces the graphics chapter.
+DRAW_TITLE="Now: draw"
+DRAW_SUB="A custom Amiga screen with colors, bars, and lines"
+
 # Closing: LorraineOS, the project Clorraine belongs to.
 LOS_TITLE="LorraineOS"
 LOS_SUB="Planned: a clean-room implementation for the m68k Amiga"
@@ -71,6 +75,7 @@ CAPTION_SOURCE="Real Clorraine source — C-like syntax, ownership checked at co
 CAPTION_OWNERSHIP="Use after move? The compiler rejects it (E10020) — C cannot do this"
 CAPTION_RUN="One command: build the m68k binary and run it (hosted-amiga profile)"
 CAPTION_EMULATOR="The same program under FS-UAE — 68k, Kickstart 3.1"
+CAPTION_GRAPHICS="Drawing on an Amiga screen — under FS-UAE (Amiga emulator)"
 
 # --- Paths and fonts -------------------------------------------------------
 raw_dir="build/demo/raw"
@@ -170,6 +175,8 @@ write_text own_l1 "$OWN_L1"
 write_text build_title "$BUILD_TITLE"
 write_text build_sub "$BUILD_SUB"
 write_text build_l1 "$BUILD_L1"
+write_text draw_title "$DRAW_TITLE"
+write_text draw_sub "$DRAW_SUB"
 write_text outro_title "$OUTRO_TITLE"
 write_text outro_l1 "$OUTRO_L1"
 write_text outro_l2 "$OUTRO_L2"
@@ -181,6 +188,7 @@ write_text cap_source "$CAPTION_SOURCE"
 write_text cap_ownership "$CAPTION_OWNERSHIP"
 write_text cap_run "$CAPTION_RUN"
 write_text cap_emulator "$CAPTION_EMULATOR"
+write_text cap_graphics "$CAPTION_GRAPHICS"
 
 # --- Record the terminal chapters ------------------------------------------
 record_tape demo/tape/hello-source.tape "${raw_dir}/hello-source.mp4"
@@ -195,6 +203,9 @@ echo "recording the hello emulator chapter ..."
 echo "recording the string-parser emulator chapter ..."
 ./demo/record-emulator.sh spec/tests/corpus/string-parser/program.clo "${raw_dir}/emulator.mp4"
 
+echo "recording the graphics emulator chapter ..."
+./demo/record-emulator.sh spec/tests/corpus/graphics/program.clo "${raw_dir}/graphics.mp4"
+
 # --- Caption the chapters --------------------------------------------------
 normalize "${raw_dir}/hello-source.mp4"  "${cap_dir}/hello-source.mp4"  "$(caption_filter "${text_dir}/cap_hello.txt")"
 normalize "${raw_dir}/hello-emulator.mp4" "${cap_dir}/hello-emulator.mp4" "$(caption_filter "${text_dir}/cap_hello_emu.txt")"
@@ -202,6 +213,7 @@ normalize "${raw_dir}/source.mp4"        "${cap_dir}/source.mp4"        "$(capti
 normalize "${raw_dir}/ownership.mp4"     "${cap_dir}/ownership.mp4"     "$(caption_filter "${text_dir}/cap_ownership.txt")"
 normalize "${raw_dir}/run.mp4"           "${cap_dir}/run.mp4"           "$(caption_filter "${text_dir}/cap_run.txt")"
 normalize "${raw_dir}/emulator.mp4"      "demo/emulator.mp4"            "$(caption_filter "${text_dir}/cap_emulator.txt")"
+normalize "${raw_dir}/graphics.mp4"      "${cap_dir}/graphics.mp4"      "$(caption_filter "${text_dir}/cap_graphics.txt")"
 
 # --- Cards -----------------------------------------------------------------
 card "${raw_dir}/los.mp4" \
@@ -229,6 +241,9 @@ card "${raw_dir}/build-explain.mp4" \
     "build_title:bold:48:white:220" \
     "build_sub:regular:24:0xcccccc:320" \
     "build_l1:regular:24:0xaaaaaa:370"
+card "${raw_dir}/draw-explain.mp4" \
+    "draw_title:bold:48:white:220" \
+    "draw_sub:regular:24:0xcccccc:320"
 card "${raw_dir}/outro.mp4" \
     "outro_title:bold:44:white:190" \
     "outro_l1:regular:26:0xcccccc:270" \
@@ -248,6 +263,8 @@ concat demo/demo-full.mp4 \
     "${raw_dir}/build-explain.mp4" \
     "${cap_dir}/run.mp4" \
     "demo/emulator.mp4" \
+    "${raw_dir}/draw-explain.mp4" \
+    "${cap_dir}/graphics.mp4" \
     "${raw_dir}/los.mp4" \
     "${raw_dir}/outro.mp4"
 

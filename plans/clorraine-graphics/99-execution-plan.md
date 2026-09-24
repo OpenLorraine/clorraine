@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 19:16
-> **Progress**: 20/27 tasks (74%)
+> **Last Updated**: 2026-09-24 20:55
+> **Progress**: 27/27 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -86,9 +86,9 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [02](02-current-state.md) §What Exists · [03-01](03-01-screen-lifecycle.md) §Implementation · [03-02](03-02-drawing.md) §Implementation · AR-5, AR-6, AR-7, AR-8, AR-35 · PF-001, PF-007
 **Objective**: Relocate the spike's `Screen` into the split design, extend the drawing module, and prove the cross-module import resolves.
 
-- [~] 1.2.1 Create `stdlib/std.amiga.intuition.clo` (`Screen`, `openScreen`) — `stdlib/std.amiga.intuition.clo` ⏳ (implemented: 2026-09-24 14:54)
-- [~] 1.2.2 Rewrite the existing spike module `stdlib/std.amiga.graphics.clo` to import `Screen` from `std.amiga.intuition` and export `setColor`, `fill`, `draw`, `clear` (the spike currently owns `Screen` and lacks `draw`/`clear`) ⏳ (implemented: 2026-09-24 14:54)
-- [~] 1.2.3 Update the existing registration in `compiler/src/stdlib.rs`: add the `std.amiga.intuition` entry and move `Screen`/`openScreen` out of the `std.amiga.graphics` export list ⏳ (implemented: 2026-09-24 14:54)
+- [x] 1.2.1 Create `stdlib/std.amiga.intuition.clo` (`Screen`, `openScreen`) — `stdlib/std.amiga.intuition.clo` ✅ (completed: 2026-09-24 14:55)
+- [x] 1.2.2 Rewrite the existing spike module `stdlib/std.amiga.graphics.clo` to import `Screen` from `std.amiga.intuition` and export `setColor`, `fill`, `draw`, `clear` (the spike currently owns `Screen` and lacks `draw`/`clear`) ✅ (completed: 2026-09-24 14:55)
+- [x] 1.2.3 Update the existing registration in `compiler/src/stdlib.rs`: add the `std.amiga.intuition` entry and move `Screen`/`openScreen` out of the `std.amiga.graphics` export list ✅ (completed: 2026-09-24 14:55)
 - [x] 1.2.4 Cross-import probe (AR-35): run the hosted-amiga stdlib-slice test `stdlib_slice_compiles_with_no_diagnostics_under_hosted_amiga` and compile a program importing both modules; if the embedded `std.amiga.graphics` import of `Screen` does not resolve, apply the transitive `inject_stdlib` fix — `compiler/src/driver.rs` ✅ (completed: 2026-09-24 14:55; probe passed — single-pass injection resolves the cross-module import, so no `driver.rs` change was needed)
 - [x] 1.2.5 Green phase: ST-2 and ST-5 pass; the existing `stdlib` unit tests (ST-3, ST-6) pass ✅ (completed: 2026-09-24 14:55)
 
@@ -235,10 +235,10 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-spec-corpus-video.md) §Video Chapter · AR-28
 **Objective**: Add the graphics program and an emulator capture to the story.
 
-- [ ] 4.1.1 Add the graphics chapter (program + caption card) to `demo/story.sh`
-- [ ] 4.1.2 Regenerate the story and confirm the graphics chapter renders the screen
-- [ ] 4.1.3 Update `README.md`'s demo section to mention the graphics chapter
-- [ ] 4.1.4 Final verification of the whole feature
+- [x] 4.1.1 Add the graphics chapter (program + caption card) to `demo/story.sh` ✅ (completed: 2026-09-24 20:54)
+- [x] 4.1.2 Regenerate the story and confirm the graphics chapter renders the screen ✅ (completed: 2026-09-24 20:54; a frame from the chapter shows the bars and diagonal on a custom screen)
+- [x] 4.1.3 Update `README.md`'s demo section to mention the graphics chapter ✅ (completed: 2026-09-24 20:54)
+- [x] 4.1.4 Final verification of the whole feature ✅ (completed: 2026-09-24 20:55; `make check` 15/15 and `make verify` all legs, graphics FS-UAE leg included)
 
 **Deliverables**:
 - [ ] `demo/demo-full.mp4` includes the graphics chapter

@@ -26,7 +26,9 @@ a real program: `string-parser` shown in Vim, a card on the ownership checker
 and the move-then-use it rejects
 ([`examples/ownership-fail.clo`](examples/ownership-fail.clo)), a card on the
 one-command build, the `hosted-amiga` run, and that program under FS-UAE
-([`demo/emulator.mp4`](demo/emulator.mp4) on its own). It closes with a card on
+([`demo/emulator.mp4`](demo/emulator.mp4) on its own). It then draws: a card on
+the graphics surface and the `graphics` corpus program opening a custom screen
+and painting colored bars and a line under FS-UAE. It closes with a card on
 LorraineOS — the project Clorraine belongs to — and contact links.
 
 Regenerate everything with `./demo/story.sh`; the story text and chapter tapes
