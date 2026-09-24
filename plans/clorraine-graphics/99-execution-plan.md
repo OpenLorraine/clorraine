@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 15:18
-> **Progress**: 14/27 tasks (52%)
+> **Last Updated**: 2026-09-24 15:20
+> **Progress**: 16/27 tasks (59%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -180,7 +180,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-spec-corpus-video.md) §CI Legs · [07](07-testing-strategy.md) ST-4 · AR-21
 **Objective**: Run and diff the graphics program under FS-UAE.
 
-- [ ] 2.3.1 Extend `docker/scripts/corpus-fs-uae.sh` to run the graphics program with `RUN_CAPTURE=1`, wait for the `graphics: ok` sentinel, and diff the golden (factor the shared sentinel/diff logic so interrupt-counter still works)
+- [x] 2.3.1 Extend `docker/scripts/corpus-fs-uae.sh` to run the graphics program with `RUN_CAPTURE=1`, wait for the `graphics: ok` sentinel, and diff the golden (factor the shared sentinel/diff logic so interrupt-counter still works) ✅ (completed: 2026-09-24 15:19; both legs match under FS-UAE)
 
 **Deliverables**:
 - [ ] `make corpus-fs-uae` passes both legs
@@ -194,7 +194,7 @@ bounded by the plan's task-size criteria: one reviewable change per task)
 **Reference**: AR-19
 **Objective**: Close the corpus phase.
 
-- [ ] 2.4.1 Phase verification
+- [x] 2.4.1 Phase verification ✅ (completed: 2026-09-24 15:20; `make check` 15/15 and `make verify` all legs, including the graphics FS-UAE leg)
 
 **Deliverables**:
 - [ ] All corpus and spec tests pass; no regressions
