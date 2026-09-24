@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { loadConfig } from "./config.ts";
 import { compose } from "./renderer/compose.ts";
 import type { RenderEnv } from "./renderer/env.ts";
+import { writeScaffold } from "./scaffold.ts";
 import { ConfigError, sceneDuration } from "./scenes.ts";
 import type { DemoConfig } from "./scenes.ts";
 import { ChromeFrameSource } from "./util/chrome.ts";
@@ -65,7 +66,7 @@ export async function main(argv: string[]): Promise<number> {
   try {
     switch (command) {
       case "list": {
-        const file = requireConfig(positionals[1]);
+        const file = requirePath(positionals[1], "a config path");
         const config = await loadConfig(file, { root: values.root });
         for (const scene of config.scenes) {
           const caption = scene.caption === undefined ? "" : `  # ${scene.caption}`;
@@ -74,7 +75,7 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
       case "render": {
-        const file = requireConfig(positionals[1]);
+        const file = requirePath(positionals[1], "a config path");
         const root = values.root ?? process.env.CLORRAINE_DEMO_ROOT ?? defaultRepoRoot();
         const config = await loadConfig(file, { root });
         const out = await compose(config, buildRenderEnv(config, root), {
@@ -84,9 +85,13 @@ export async function main(argv: string[]): Promise<number> {
         info(`wrote ${out}`);
         return 0;
       }
-      case "new":
-        error(`"${command}" is not implemented yet`);
-        return 1;
+      case "new": {
+        const file = requirePath(positionals[1], "a source file");
+        const root = values.root ?? process.env.CLORRAINE_DEMO_ROOT ?? defaultRepoRoot();
+        const result = await writeScaffold({ root, file, force: values.force === true });
+        info(`wrote ${result.relativePath}`);
+        return 0;
+      }
       default:
         error(`unknown command "${command}"`);
         info(USAGE);
@@ -98,9 +103,9 @@ export async function main(argv: string[]): Promise<number> {
   }
 }
 
-function requireConfig(value: string | undefined): string {
+function requirePath(value: string | undefined, label: string): string {
   if (value === undefined) {
-    throw new ConfigError("a config path is required");
+    throw new ConfigError(`${label} is required`);
   }
   return value;
 }

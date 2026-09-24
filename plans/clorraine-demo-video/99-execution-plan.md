@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 00:52
-> **Progress**: 42/49 tasks (86%)
+> **Last Updated**: 2026-09-25 01:02
+> **Progress**: 43/49 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -297,7 +297,7 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-story-and-scaffold.md) §scaffold, §README · AR-14, AR-27
 **Objective**: Implement `new <file.clo>` and update the README and AGENTS.md.
 
-- [ ] 5.2.1 Scaffold generator and the `new` subcommand — `tools/demo/src/scaffold.ts`, `tools/demo/src/cli.ts`
+- [x] 5.2.1 Scaffold generator and the `new` subcommand — `tools/demo/src/scaffold.ts`, `tools/demo/src/cli.ts`
 - [ ] 5.2.2 README: embed `demo/poster.png`; state that media is generated — `README.md`
 - [ ] 5.2.3 AGENTS.md: tool layout, `make demo`/`demo-check`, generated-media policy — `AGENTS.md`
 - [ ] 5.2.4 Green phase: the Step 5.1 spec test passes
