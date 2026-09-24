@@ -27,7 +27,7 @@ acceptance target for `str` scanning, enum dispatch, template formatting, and
 | `while` scans, nested token loops | B3 (Ch 05 §7) |
 | Digit parsing `value * 10 + i32(input[j] - '0')` | wrapping arithmetic Ch 02 §10; explicit cast Ch 04 §14 |
 | `if` / early return classification | STMT-1, STMT-2 (Ch 05 §§5-6); F2 |
-| Template placeholders `{tokens}`, `{sum}`, `{hex}` | S1, S4, S5, TP-1..TP-4 (Ch 04 §12, Ch 08 §8) |
+| Template placeholders `{input}`, `{tokens}`, `{sum}`, `{hex}` | S1, S4, S5, TP-1..TP-4 (Ch 04 §12, Ch 08 §8) |
 | `toHex(u32(sum))` | appendix §5; T5 named conversions |
 | `let hex: String` from a helper; `String` widens to `str` | T2, T5 (Ch 08 §7) |
 | Temporaries drop at the end of their statement | D5, OW-13 (Ch 03 §5); Ch 04 §3 |
@@ -76,3 +76,8 @@ Every line maps to a rule in the coverage table. The checkpoint ruling of the
 same date changed the hex line to `toHex(u32(sum))` and the expected output to
 `hex=0x3A`; the missing `str` slice remains open and is recorded above. No
 other program text changed during the pass.
+
+Amendment: one line was added to echo the parsed input
+(`string-parser: input=MOV 12 34 ADD 5 7`) so the program shows what it reads
+before reporting the result. The new line is a `str` template placeholder and
+is covered by the same rules as the existing output lines.

@@ -1,3 +1,4 @@
+string-parser: input=MOV 12 34 ADD 5 7
 string-parser: tokens=6 numbers=4 words=2
 string-parser: sum=58
 string-parser: hex=0x3A

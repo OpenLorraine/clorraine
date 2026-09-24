@@ -44,6 +44,7 @@ func parseNumber(input: str, start: usize, end: usize): i32 {
 
 func main(): i32 {
     let input: str = INPUT;
+    println($"string-parser: input={input}");
     let total: usize = len(input);
     let tokens: u32 = 0;
     let numbers: u32 = 0;
