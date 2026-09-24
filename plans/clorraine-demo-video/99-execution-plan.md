@@ -222,7 +222,7 @@ the plan's task-size criteria: one reviewable change per task)
 
 ## Phase 4: Migrate the Clorraine story
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `748e8b1ff31f2c35a1af3e9a04d03d136e259de5`
 > **Lenses**: api-surface — informational
 
 ### Step 4.1: Specification tests (red phase)
@@ -230,11 +230,11 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-04](03-04-story-and-scaffold.md) §story, §Makefile · [07](07-testing-strategy.md) ST-12
 **Objective**: Write the Makefile and story-shape spec tests before the story and targets exist.
 
-- [ ] 4.1.1 [spec-author] Write `tools/demo/test/makefile.spec.test.ts` (ST-12, `make -n` text) and a story-shape spec test asserting the 15 chapters, their kinds, and the gif/poster wiring
-- [ ] 4.1.2 Confirm the red phase: `demo/story.ts` and the `demo` target do not exist
+- [x] 4.1.1 [spec-author] Write `tools/demo/test/makefile.spec.test.ts` (ST-12, `make -n` text) and a story-shape spec test asserting the 15 chapters, their kinds, and the gif/poster wiring
+- [x] 4.1.2 Confirm the red phase: `demo/story.ts` and the `demo` target do not exist
 
 **Deliverables**:
-- [ ] The spec-test files exist and fail for the expected reason
+- [x] The spec-test files exist and fail for the expected reason
 
 **Verify**: `make demo-check`
 
