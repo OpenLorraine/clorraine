@@ -269,7 +269,7 @@ These implicit widenings are allowed and no others:
 |---|---|---|
 | `T` | `T?` | add the empty state |
 | `static str` | `str` | view of static bytes |
-| `static str` | `cstring` | a literal is a NUL-terminated C string |
+| `static str` literal | `cstring` | a literal call argument is a NUL-terminated C string |
 | `String` | `str` | view of owned bytes |
 | `u8` | `u16`, `u32` | same-signedness integer widening |
 | `u16` | `u32` | same-signedness integer widening |

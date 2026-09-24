@@ -275,7 +275,7 @@ pub fn run(args: Vec<String>) -> i32 {
     if diagnostics.error_count() == 0 {
         // A file that already failed resolution has no trustworthy names, so
         // the type stage would only produce dependent errors.
-        let sema = sema::check(&loaded, &mut diagnostics);
+        let sema = sema::check(&loaded, kind, &mut diagnostics);
         if diagnostics.error_count() == 0 {
             // The ownership stage consumes the types the type stage recorded,
             // so it runs only on a program that typed cleanly. Its output is

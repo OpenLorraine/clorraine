@@ -22,6 +22,7 @@ use crate::ast::{FuncDecl, Item, ScalarType, Type};
 use crate::consts::ConstFolder;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
+use crate::profile::Profile;
 use crate::span::Span;
 use crate::types::{resolve_ty_with, Ty, TyKind, TypeTable};
 
@@ -55,14 +56,14 @@ pub struct SemaOutput {
 }
 
 /// Checks every module of the loaded program and records the result.
-pub fn check(loaded: &Loaded, diagnostics: &mut Diagnostics) -> SemaOutput {
+pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -> SemaOutput {
     let table = TypeTable::build(loaded);
     // A global initializer cycle has no valid initialization order, so it is
     // reported before the per-module type checks that would consume the order.
     init_cycle::check(loaded, diagnostics);
     let mut expr_types: HashMap<usize, Ty> = HashMap::new();
     for module in loaded.modules.values() {
-        let mut checker = Checker::new(module, &table, loaded, diagnostics);
+        let mut checker = Checker::new(module, &table, loaded, profile, diagnostics);
         checker.check_module();
         expr_types.extend(checker.recorded.drain(..));
     }
@@ -96,6 +97,8 @@ struct Checker<'a, 'd> {
     recorded: Vec<(usize, Ty)>,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
+    /// The selected profile, so profile-surface rules can be reported here.
+    profile: Profile,
 }
 
 impl<'a, 'd> Checker<'a, 'd> {
@@ -104,6 +107,7 @@ impl<'a, 'd> Checker<'a, 'd> {
         module: &'a Module,
         table: &'a TypeTable,
         loaded: &'a Loaded,
+        profile: Profile,
         diagnostics: &'d mut Diagnostics,
     ) -> Self {
         Self {
@@ -116,6 +120,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             returns: Ty::void(),
             recorded: Vec::new(),
             diagnostics,
+            profile,
         }
     }
 

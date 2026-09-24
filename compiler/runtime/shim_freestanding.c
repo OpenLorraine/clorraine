@@ -198,7 +198,9 @@ static inline void cl_report(int fd, const char *prefix, const char *code, const
     unsigned long at = 0;
     at = cl_copy_into(buffer, at, limit, prefix);
     at = cl_copy_into(buffer, at, limit, code);
-    at = cl_copy_into(buffer, at, limit, ": ");
+    if (code[0] != '\0') {
+        at = cl_copy_into(buffer, at, limit, ": ");
+    }
     at = cl_copy_into(buffer, at, limit, message);
     at = cl_copy_into(buffer, at, limit, "\n");
     cl_write_bytes(fd, buffer, at);

@@ -264,6 +264,13 @@ impl Checker<'_, '_> {
     fn check_args(&mut self, args: &[Arg], params: &[Ty]) {
         if args.len() == params.len() {
             for (arg, param) in args.iter().zip(params) {
+                if is_cstring_literal_argument(&arg.value, param) {
+                    // A `static str` literal is a NUL-terminated C string, so
+                    // it is accepted where a `cstring` is expected and emitted
+                    // directly. A non-literal `static str` keeps E10200.
+                    self.check_value(&arg.value, None);
+                    continue;
+                }
                 self.check_into(&arg.value, param);
             }
         } else {
@@ -372,4 +379,18 @@ pub(crate) fn match_param(
         }
         _ => {}
     }
+}
+
+/// True when a string literal is passed where a `cstring` is expected.
+///
+/// A `static str` literal is a NUL-terminated C string, so it is a valid
+/// `cstring` at a call argument; the emitter passes the literal directly. A
+/// literal with an embedded NUL byte cannot be a faithful `cstring` (the NUL
+/// would truncate it) and a non-literal `static str` is not necessarily
+/// NUL-terminated, so both keep `E10200`.
+fn is_cstring_literal_argument(expr: &Expr, param: &Ty) -> bool {
+    if !matches!(param.kind, TyKind::CString) {
+        return false;
+    }
+    matches!(&expr.kind, ExprKind::Str(bytes) if !bytes.contains(&0))
 }

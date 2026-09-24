@@ -2030,6 +2030,25 @@ func main(): i32 {
     );
 }
 
+/// The `static str` to `cstring` conversion applies only to a literal call
+/// argument; a binding or return in `cstring` position keeps E10200.
+#[test]
+fn a_non_argument_static_str_does_not_convert_to_cstring() {
+    let source = r#"module spec.stage.cstring_nonliteral;
+
+func main(): i32 {
+    let p: cstring = "hello";
+    return 0;
+}
+"#;
+    let run = run_source("cstring-nonliteral", source);
+    assert_eq!(run.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&run.stderr).lines().next(),
+        Some("error E10200: cannot convert 'static str' to 'cstring' implicitly")
+    );
+}
+
 /// A qualified `std.amiga.dos` reference is a profile-surface reference.
 ///
 /// The reference loads the module like an import does, so the host profile

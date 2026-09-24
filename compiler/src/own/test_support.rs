@@ -24,7 +24,7 @@ pub(crate) fn compile(source: &str) -> (Diagnostics, Option<OwnershipOutput>) {
     if diagnostics.error_count() > 0 {
         return (diagnostics, None);
     }
-    let sema = crate::sema::check(&loaded, &mut diagnostics);
+    let sema = crate::sema::check(&loaded, crate::profile::Profile::Host, &mut diagnostics);
     if diagnostics.error_count() > 0 {
         return (diagnostics, None);
     }

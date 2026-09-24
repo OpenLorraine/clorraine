@@ -292,6 +292,34 @@ fn float_types_are_allowed_on_freestanding() {
     emit_ok("float_emit", &scratch, FLOAT_SOURCE);
 }
 
+/// A template placeholder lowers to the heap-backed formatter, which the
+/// freestanding runtime does not provide, so it is rejected at compile time.
+#[test]
+fn a_template_placeholder_is_e11200_on_freestanding() {
+    let source = r#"module spec.freestanding.template;
+
+import { println } from std.io;
+
+func main(): i32 {
+    let n: i32 = 3;
+    println($"n={n}");
+    return 0;
+}
+"#;
+    let scratch = ScratchDir::new("template");
+    let (_, output) = emit_freestanding(&scratch, source);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a template placeholder must be rejected; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        first_stderr_line(&output),
+        "error E11200: 'string formatting' is not available on profile 'freestanding'"
+    );
+}
+
 /// ST-11: the m68k artifact compiles and links against the soft-float archive.
 #[test]
 fn the_m68k_artifact_links_with_the_soft_float_archive() {

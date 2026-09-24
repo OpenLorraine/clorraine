@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 use crate::ast::{
     Expr, ExprKind, FieldInit, IntrinsicArg, QualifiedName, ScalarType, TemplatePiece, Type,
 };
+use crate::profile::Profile;
 use crate::span::Span;
 use crate::types::{implicit_conversion, int_fits, scalar_cast_allowed, Ty, TyKind};
 
@@ -622,9 +623,13 @@ impl Checker<'_, '_> {
     /// left alone because the layer cannot name it.
     fn check_template(&mut self, pieces: &[TemplatePiece]) -> Ty {
         let mut has_placeholder = false;
+        let mut first_placeholder = None;
         for piece in pieces {
             if let TemplatePiece::Placeholder(expr) = piece {
                 has_placeholder = true;
+                if first_placeholder.is_none() {
+                    first_placeholder = Some(expr.span);
+                }
                 let ty = self.check_value(expr, None);
                 if !ty.is_unknown() && !ty.is_param() && !formattable(&ty) {
                     self.error(
@@ -637,6 +642,19 @@ impl Checker<'_, '_> {
             }
         }
         if has_placeholder {
+            // A placeholder lowers to the heap-backed formatter, which the
+            // freestanding runtime does not provide. Reject it at compile time
+            // rather than emit C that cannot link.
+            if self.profile == Profile::Freestanding {
+                if let Some(span) = first_placeholder {
+                    self.error(
+                        "E11200",
+                        "'string formatting' is not available on profile 'freestanding'",
+                        "use a plain string, or a profile that provides formatting",
+                        span,
+                    );
+                }
+            }
             Ty::handle("String")
         } else {
             Ty {

@@ -375,9 +375,6 @@ pub fn implicit_conversion(from: &Ty, to: &Ty) -> bool {
     }
     match (&from.kind, &to.kind) {
         (TyKind::StaticStr, TyKind::Str) => true,
-        // A `static str` is a compile-time literal the emitter writes as a C
-        // string literal, so it is already NUL-terminated: a valid `cstring`.
-        (TyKind::StaticStr, TyKind::CString) => true,
         (TyKind::Handle(name), TyKind::Str) if name == "String" => true,
         (TyKind::Scalar(a), TyKind::Scalar(b)) => scalar_widens(*a, *b),
         _ => false,

@@ -28,7 +28,7 @@ pub(super) fn check_sources(files: &[&str]) -> Vec<(&'static str, String)> {
     }
     let loaded = load::load(programs, &mut parse_diagnostics);
     let mut diagnostics = Diagnostics::new(false, None);
-    check(&loaded, &mut diagnostics);
+    check(&loaded, Profile::Host, &mut diagnostics);
     diagnostics
         .items()
         .iter()

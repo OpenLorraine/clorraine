@@ -46,7 +46,7 @@ where the user authorized it (AR-3, AR-21).
 | AR-28 | Behavioral | Runtime "not supported" needs a code | Reuse compile-time `E11200` / add a runtime code | Add the next free runtime fault code `E11214` ("feature not available on the selected profile"); file I/O traps with it. (`E11213` is already the assertion-failure fault) | ✅ Resolved |
 | AR-29 | Behavioral | Host-run output may be split across writes | Accept / single write | The runtime writes each message in one call so captured output is atomic | ✅ Resolved |
 | AR-30 | Technical | Unknown profile handling after freestanding is implemented | Keep `E11201` / change | Keep `E11201` for an unknown profile name. The obsolete `E11200_unimplemented_profile.clo` golden is removed and **replaced** by a new `E11200` golden for the still-live profile-surface rule (a `host` program importing `std.amiga.dos`), so `E11200` keeps a compile-fail test; `E11201_unknown_profile.clo` is unchanged. The stage expectation for the rejection is removed | ✅ Resolved |
-| AR-31 | Behavioral (runtime) | `std.io`'s file functions take a `cstring`, but freestanding rejects `std.text` (the only `toCString` producer), so `openFile("x", 1005)` does not compile and the planned runtime `E11214` trap is unreachable | Allow a `static str` literal where a `cstring` is expected / test the trap at the C level / make file I/O a compile-time `E11200` / allow `std.text` on freestanding | Allow the implicit widening `static str -> cstring` (a literal is a NUL-terminated C string), so `openFile("x", 1005)` compiles and the file functions trap at runtime with `E11214`. This is a language-rule change: it also edits `spec/02-types.md`'s widening table and the codegen that emits the literal | ✅ Resolved |
+| AR-31 | Behavioral (runtime) | `std.io`'s file functions take a `cstring`, but freestanding rejects `std.text` (the only `toCString` producer), so `openFile("x", 1005)` does not compile and the planned runtime `E11214` trap is unreachable | Allow a `static str` literal where a `cstring` is expected / test the trap at the C level / make file I/O a compile-time `E11200` / allow `std.text` on freestanding | Allow a NUL-free `static str` literal in `cstring` **call-argument** position (a literal is a NUL-terminated C string), so `openFile("x", 1005)` compiles and the file functions trap at runtime with `E11214`. Every other `cstring` position keeps `E10200`. This is a language-rule change: it also edits `spec/02-types.md`'s widening table and the codegen that emits the literal | ✅ Resolved |
 
 ## Resolution Notes
 
@@ -112,6 +112,8 @@ specification's own examples pass literals directly (`spec/02-types.md:136`,
 authorized modification set to `compiler/src/types/mod.rs`,
 `compiler/src/codegen/calls.rs`, `compiler/src/types/tests.rs`, and
 `spec/02-types.md`, and is recorded as a language-rule change (TY-13's table).
+The post-phase review narrowed it to a NUL-free literal **call argument**
+(RV-01 in [00-review-report.md](00-review-report.md)).
 
 ## Gate Record
 

@@ -475,7 +475,7 @@ mod tests {
         let id = sources.add_file("test.clo".to_owned(), source.to_owned());
         let program = Parser::new(&sources, id, &mut diagnostics).parse_program();
         let loaded = crate::load::load(vec![(id, program)], &mut diagnostics);
-        let sema = crate::sema::check(&loaded, &mut diagnostics);
+        let sema = crate::sema::check(&loaded, crate::profile::Profile::Host, &mut diagnostics);
         let info = ProgramInfo::collect(&loaded, &sema.table);
         collect(&loaded, &info, &sema)
     }
