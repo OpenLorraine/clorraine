@@ -38,7 +38,7 @@ STEM = $(basename $(notdir $(FILE)))
 # Prefix for the host FS-UAE wrapper when capturing.
 CAPTURE_ENV = $(if $(filter 1,$(CAPTURE)),RUN_CAPTURE=1 ,)
 
-.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build
+.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo-check
 
 check:
 	./spec/check.sh
@@ -89,3 +89,10 @@ verify:
 	$(MAKE) corpus-fs-uae
 	$(MAKE) run-fault-amiga
 	@echo "verify: all legs passed"
+
+# Demo tool checks (host-only; not part of `check`/`verify`). The tool needs Node >= 22,
+# which runs TypeScript directly. `make demo-check` type-checks and runs the tool tests;
+# rendering the story (`make demo`) additionally needs Chrome, VHS, and the emulator.
+demo-check:
+	@test -d tools/demo/node_modules || (cd tools/demo && npm ci --silent)
+	cd tools/demo && npx tsc --noEmit && node --test --experimental-test-coverage test/*.test.ts

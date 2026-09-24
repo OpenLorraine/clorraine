@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-24 21:53
-> **Progress**: 2/48 tasks (4%)
+> **Last Updated**: 2026-09-24 21:57
+> **Progress**: 7/48 tasks (15%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -78,11 +78,11 @@ the plan's task-size criteria: one reviewable change per task)
 **Reference**: [03-01](03-01-tool-architecture.md) §Architecture, §Types, §Toolchain · AR-1, AR-19, AR-22, AR-23
 **Objective**: Create the package boundary, the scene model, the config loader, and the CLI skeleton.
 
-- [ ] 1.2.1 Create the package boundary and install — `tools/demo/package.json`, `tools/demo/tsconfig.json`, `tools/demo/README.md`, committed `tools/demo/package-lock.json`; add `node_modules` to `.gitignore`; run `npm install`; add the `make demo-check` target (PF-005)
-- [ ] 1.2.2 Scene model, `validateConfig`, and `defineDemo` — `tools/demo/src/scenes.ts`, `tools/demo/src/index.ts`
-- [ ] 1.2.3 Config loader (`.ts`/`.json`) and repo-root escape guard (`--root`/`CLORRAINE_DEMO_ROOT` seam) — `tools/demo/src/config.ts`, `tools/demo/src/util/paths.ts`
-- [ ] 1.2.4 CLI skeleton (`render`/`new`/`list`, with `--only`/`--out`/`--root`) and process/log helpers — `tools/demo/src/cli.ts`, `tools/demo/src/util/proc.ts`, `tools/demo/src/util/log.ts`
-- [ ] 1.2.5 Green phase: the spec tests from Step 1.1 pass
+- [x] 1.2.1 Create the package boundary and install — `tools/demo/package.json`, `tools/demo/tsconfig.json`, `tools/demo/README.md`, committed `tools/demo/package-lock.json`; add `node_modules` to `.gitignore`; run `npm install`; add the `make demo-check` target (PF-005) ✅ (completed: 2026-09-24 21:57)
+- [x] 1.2.2 Scene model, `validateConfig`, and `defineDemo` — `tools/demo/src/scenes.ts`, `tools/demo/src/index.ts` ✅ (completed: 2026-09-24 21:57)
+- [x] 1.2.3 Config loader (`.ts`/`.json`) and repo-root escape guard (`--root`/`CLORRAINE_DEMO_ROOT` seam) — `tools/demo/src/config.ts`, `tools/demo/src/util/paths.ts` ✅ (completed: 2026-09-24 21:57)
+- [x] 1.2.4 CLI skeleton (`render`/`new`/`list`, with `--only`/`--out`/`--root`) and process/log helpers — `tools/demo/src/cli.ts`, `tools/demo/src/util/proc.ts`, `tools/demo/src/util/log.ts` ✅ (completed: 2026-09-24 21:57)
+- [x] 1.2.5 Green phase: the spec tests from Step 1.1 pass ✅ (completed: 2026-09-24 21:57)
 
 **Deliverables**:
 - [ ] `clorraine-demo list` prints scenes for a sample config

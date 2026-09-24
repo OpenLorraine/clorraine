@@ -20,3 +20,11 @@
 .DS_Store
 *.swp
 *~
+
+# Demo tool dependencies
+node_modules/
+
+# Generated demo media (do not commit; the poster PNG is committed)
+/demo/*.mp4
+/demo/*.gif
+/demo/out/
