@@ -9,21 +9,26 @@
 
 | Code type | Target |
 | --------- | ------ |
-| Move lowering (`consume_place`) | 100% of the new branches (duplicable, owned, owned-and-nested) |
-| Assignment ordering | A moved-field reassignment and a borrow reassignment |
+| Ownership mark for a consumed literal field | 100% of the new branches (duplicable, owned place, type-parameter guard, deeper path, borrowed param) |
+| Lowering (`consume_place`) | 100% of the new branches (duplicable, owned, type-parameter guard) |
 | Memory safety | Every move-out form is ASan clean |
-| Non-move behavior | Byte-identical emitted C (existing suites) |
+| Non-move behavior | The assignment fast path is preserved |
 
-E2E: the run suite already compiles and runs emitted C; ASan is added as a
-stricter run oracle (AR-4).
+E2E: the run suite compiles and runs emitted C; ASan is added as a stricter run
+oracle in a dedicated implementation suite (AR-4).
 
 ### Test placement (AR-4)
 
 | Suite | Kind | ST cases |
 | ----- | ---- | -------- |
-| `compiler/tests/stage_spec_test.rs` | emitted-C assertions | ST-8, ST-9 |
-| `compiler/tests/codegen_run_spec_test.rs` | compile-and-run + ASan | ST-1..ST-7 |
-| `compiler/src/own/tests.rs` | lowered-IR / diagnostic unit | ST-10 |
+| `compiler/tests/stage_spec_test.rs` | emitted-C + diagnostics | ST-1, ST-2, ST-6, ST-7, ST-9, ST-10 |
+| `compiler/tests/codegen_run_spec_test.rs` | compile-and-run | ST-4, ST-8 |
+| `compiler/tests/partial_move_impl_test.rs` (new implementation suite) | ASan compile-and-run | ST-1, ST-2, ST-3, ST-5 |
+
+The ASan oracle lives in its own implementation suite, not the spec suite, so the
+immutable spec oracle stays sanitizer-independent. It sets `ASAN_OPTIONS=detect_leaks=0`
+(the oracle targets memory errors — double free and use-after-free — not leaks),
+and asserts exit 0 with no `AddressSanitizer` output.
 
 ## 🚨 Specification Test Cases (MANDATORY — NON-NEGOTIABLE)
 
@@ -33,16 +38,16 @@ stricter run oracle (AR-4).
 
 | # | Input / Scenario | Expected Behavior | Source |
 | --- | --- | --- | --- |
-| ST-1 | `let t = b.value; b = Box<String> { value: t };` (generic) | Frees once; ASan clean | `spec/17-codegen.md:182-199`, AR-1 |
-| ST-2 | `b = Box<String> { value: b.value };` (generic) | Frees once; ASan clean | `spec/17-codegen.md:182-199`, AR-1 |
-| ST-3 | `struct Label { name: String }` with the ST-2 form (non-generic) | Frees once; ASan clean | AR-11 |
-| ST-4 | `f = Dup(borrow f)` | Emits `open/dup/close/close`; frees once | AR-12 |
-| ST-5 | `let s = stringOf("x"); s = s;` | Frees once | AR-13 |
-| ST-6 | `p = Pair<String> { first: p.first, second: p.second };` | Moves both fields; frees each once | AR-14 |
-| ST-7 | `consume(b.value)` where `consume` is `take s: String` | `b.value` is zeroed after the call; frees once | AR-1 |
-| ST-8 | A program with no value-consuming move-out | Emitted C is byte-identical to the baseline | AR-8 |
-| ST-9 | The ST-2 form | Emitted C contains no `__cl_save` and zeroes the moved field | AR-3 |
-| ST-10 | `consume(b.value)` lowered IR | Contains a `Move`/`MoveOut` for the field | AR-1 |
+| ST-1 | `let t = b.value; b = Box<String> { value: t };` (generic) | The emitted C zeroes `b.value`/`t`; ASan clean | `spec/17-codegen.md:182-199`, AR-1 |
+| ST-2 | `b = Box<String> { value: b.value };` (generic) | The emitted C zeroes `b.value` and has no `__cl_save` for the handle; ASan clean | `spec/17-codegen.md:182-199`, AR-1 |
+| ST-3 | `struct Label { name: String }` with the ST-2 form (non-generic) | ASan clean | AR-11 |
+| ST-4 | `f = Dup(borrow f)` | Emits `open/dup/close/close` (control) | AR-12 |
+| ST-5 | `p = Pair<String> { first: p.first, second: p.second };` | Moves both fields; ASan clean | AR-14 |
+| ST-6 | `p = Pair<String> { first: p.first, second: p.first };` (an owned field) | Reports `E10020` on the second read | `spec/03-ownership.md:123-134`, AR-14 |
+| ST-7 | `Box { value: o.inner.s }` (a deeper path) | Reports `E10026` (v1 top-level limit) | `spec/03-ownership.md:123-134`, AR-15 |
+| ST-8 | `b = Box<String> { value: stringOf("y") };` (RHS does not read `b`) | The emitted assignment keeps the existing drop-then-store order (control) | AR-8 |
+| ST-9 | The ST-2 form | The emitted C zeroes the moved field and contains no `__cl_save` for it | AR-3 |
+| ST-10 | `Box { value: b.value }` where `b` is a `borrow` parameter | Reports `E10034` | `spec/16-borrow-rules.md`, AR-15 |
 
 ## Test Categories
 
@@ -50,24 +55,23 @@ stricter run oracle (AR-4).
 
 | Test File | ST Cases | Component |
 | --------- | -------- | --------- |
-| `compiler/tests/codegen_run_spec_test.rs` | ST-1..ST-7 | lowering + codegen |
-| `compiler/tests/stage_spec_test.rs` | ST-8, ST-9 | emitted C |
-| `compiler/src/own/tests.rs` | ST-10 | lowering IR |
+| `compiler/tests/stage_spec_test.rs` | ST-1, ST-2, ST-6, ST-7, ST-9, ST-10 | emitted C + diagnostics |
+| `compiler/tests/codegen_run_spec_test.rs` | ST-4, ST-8 | lowering + codegen |
+| `compiler/tests/partial_move_impl_test.rs` | ST-1, ST-2, ST-3, ST-5 | ASan runtime |
 
 ### ASan Oracle
 
-A helper compiles the emitted C with `cc -fsanitize=address -g` and runs it,
-asserting exit 0 and no `AddressSanitizer` output. It reuses the existing emit
-helpers in `codegen_run_spec_test.rs` and is applied to ST-1, ST-2, ST-3, ST-5,
-and ST-6. The headless host `cc` inside the SDK container provides ASan
-(confirmed).
+A helper in `compiler/tests/partial_move_impl_test.rs` compiles the emitted C with
+`cc -fsanitize=address -g`, runs it with `ASAN_OPTIONS=detect_leaks=0`, and asserts
+exit 0 and no `AddressSanitizer` output. It covers ST-1, ST-2, ST-3, and ST-5. The
+host `cc` inside the SDK container provides ASan (confirmed).
 
 ### Implementation Tests
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| `compiler/src/own/tests.rs` | The `take`-field projection is lowered as a move | High |
-| `compiler/tests/stage_spec_test.rs` | The moved field is zeroed in the emitted C | High |
+| `compiler/src/own/tests.rs` | A duplicable literal field is not moved; a type-parameter field is left untouched | High |
+| `compiler/tests/stage_spec_test.rs` | The moved field is zeroed and no stale save appears | High |
 
 ### Integration Tests
 
@@ -81,12 +85,12 @@ and ST-6. The headless host `cc` inside the SDK container provides ASan
 ### Fixtures Needed
 
 None beyond inline Clorraine snippets written into the existing Rust test
-helpers. A `Box<T>`/`Label` owning struct and a `String` value are enough.
+helpers. A `Box<T>`/`Label` owning struct, a `Pair<T>` owning struct, and a
+`String` value are enough.
 
 ### Mock Requirements
 
-None. The deleter is the real `FreeString`, observed through ASan and the
-existing run-output oracle.
+None. The deleter is the real `FreeString`, observed through ASan.
 
 ## Verification Checklist
 
@@ -97,5 +101,5 @@ existing run-output oracle.
 - [ ] All specification tests pass after implementation (green phase)
 - [ ] ASan is clean for every move-out form
 - [ ] Implementation tests written for internals
-- [ ] No regressions in existing tests (non-move emitted C unchanged)
+- [ ] No regressions in existing tests (assignment fast path preserved)
 - [ ] No `spec/` file modified

@@ -8,33 +8,36 @@
 ### What Exists
 
 The IR models a move explicitly. `Statement::Move` copies a source place into a
-target and then zeroes the source; `Statement::MoveOut` zeroes a place whose
-value moved into a call (`compiler/src/ir.rs:288-305`). Codegen realizes the
-zeroing in `emit_move_zero` (`compiler/src/codegen/function.rs:551-561`): a
-handle becomes `NULL`, an aggregate is `cl_zero(&place)`. The ownership stage
-emits these statements for a whole-place move (`emit_store`,
-`compiler/src/own/statements.rs:179-189`) and for a `take` argument through
-`take_move_out_places` (`compiler/src/own/call.rs:302-322`).
+target and then zeroes the source (`compiler/src/ir.rs:288-294`), and codegen
+realizes the zeroing in `emit_move_zero` (`compiler/src/codegen/function.rs:553-561`):
+a handle becomes `NULL`, an aggregate is `cl_zero(&place)`. The ownership stage
+emits these for a whole-place move (`emit_store`,
+`compiler/src/own/statements.rs:179-189`) and for a `take` argument
+(`take_move_out_places`, `compiler/src/own/call.rs:302-322`). A temporary
+mechanism already exists (`new_temp` in `compiler/src/own.rs`,
+`ir::PlaceBase::Temp` in `compiler/src/ir/place.rs`, `materialize_value` in
+`compiler/src/own/lower.rs:524-534`), so a lowering helper can materialize an
+owned place into a temporary.
 
 ### Relevant Files
 
 | File | Purpose | Changes Needed |
 | ---- | ------- | -------------- |
-| `compiler/src/own/lower.rs` | `lower_value`, including the `StructLit`/`ArrayLit` arms (`:158-170`) | Consume an owned place field/element as a move |
-| `compiler/src/own/call.rs` | `take_move_out_places` (`:302-322`) | Also move a nested `Member`/`Index` argument |
-| `compiler/src/own/statements.rs` | `emit_store` (`:179-189`) | Reuse the shared consume helper |
-| `compiler/src/codegen/function.rs` | `emit_assign` (`:483-518`) | Evaluate the RHS, release the old target, then store |
-| `compiler/tests/codegen_run_spec_test.rs` | Compile-and-run oracle | Add free-once cases |
+| `compiler/src/own/expr.rs` | `ExprKind::StructLiteral` check (`:133-137`) | Mark a consumed non-duplicable, non-type-parameter field moved |
+| `compiler/src/own/lower.rs` | `lower_value`, `StructLit` arm (`:158-164`) | Consume an owned place field as a move |
+| `compiler/src/own/place.rs` | `move_target`/`move_place` (`:170-244`) | Reused unchanged; enforces `E10020`/`E10026`/`E10034` |
+| `compiler/src/codegen/function.rs` | `emit_assign` (`:483-518`), `emit_move_zero` (`:553-561`) | Unchanged |
 | `compiler/tests/stage_spec_test.rs` | Emitted-C oracle | Add source-zero cases |
+| `compiler/tests/codegen_run_spec_test.rs` | Compile-and-run oracle | Add free-once cases |
+| `compiler/src/own/tests.rs` | Ownership diagnostics | Add `E10020`/`E10026` cases |
 
 ### Code Analysis
 
 A struct literal's field is lowered as a plain value, so a non-duplicable place
-field is copied without zeroing (`compiler/src/own/lower.rs:158-170`), and
-`take_move_out_places` matches only a whole `ValueKind::Place`, not a
-`ValueKind::Member` (`compiler/src/own/call.rs:317`). The assignment emitter then
-takes a save-copy when the RHS reads the target and drops that copy after
-storing (`compiler/src/codegen/function.rs:503-517`):
+field is copied without zeroing (`compiler/src/own/lower.rs:158-170`), and the
+ownership stage's literal check only recurses (`compiler/src/own/expr.rs:133-137`).
+The assignment emitter then sees a RHS that reads the target and takes the
+save/restore path (`compiler/src/codegen/function.rs:503-517`):
 
 ```rust
 let save = self.unique_local("__cl_save");
@@ -45,6 +48,14 @@ let lowered = self.value(value);
 self.push(&format!("        {target_c} = {lowered};"));
 self.emit_drop_expr(&save, &ty);
 ```
+
+The save path is the amplifier that produces the double free, but it is not the
+root: once the literal field is consumed into a temporary, the RHS no longer
+reads the target, `value_reads_base` is false
+(`compiler/src/codegen/function.rs:620-623`), and the existing fast path
+(`:494-501`) already drops the empty old target and stores correctly. **The fix
+is therefore an ownership mark plus the lowering change; the assignment emitter
+is untouched.**
 
 ## Gaps Identified
 
@@ -58,21 +69,16 @@ target is released without aliasing the new value; the handle is freed once.
 **Fix Required:** consume an owned place nested in an aggregate literal as a
 move (AR-1, AR-3).
 
-### Gap 2: The assignment save-copy can free a moved-out value
+### Gap 2: The ownership flow does not record a consumed literal field as moved
 
-**Current Behavior:** the save path copies the old target before the RHS and
-drops the copy afterward, which is wrong when the RHS moved a field out.
-**Required Behavior:** evaluate the RHS, release the old target, then store.
-**Fix Required:** reorder `emit_assign` and drop the save copy (AR-3).
-
-### Gap 3: A `take` argument that is a field projection is not emptied
-
-**Current Behavior:** `take_move_out_places` matches only a whole place, so
-`consume(b.value)` would not zero `b.value`.
-**Required Behavior:** a value-consuming `take` argument that is a non-duplicable
-place (including a field) moves and zeroes the source.
-**Fix Required:** route the `take` argument through the shared consume helper
-(AR-1).
+**Current Behavior:** `compiler/src/own/expr.rs:133-137` only recurses, so
+`p = Pair { first: p.first, second: p.first }` compiles with no `E10020` and
+`Box { value: o.inner.s }` compiles with no `E10026`, contrary to
+`spec/03-ownership.md:123-134`.
+**Required Behavior:** the consumed field is marked moved, so the second read is
+`E10020` and a deeper path is `E10026`.
+**Fix Required:** mark the consumed non-duplicable, non-type-parameter field
+through `move_target` (AR-14, AR-15).
 
 ## Dependencies
 
@@ -80,6 +86,7 @@ place (including a field) moves and zeroes the source.
 
 - `Statement::Move` / `emit_move_zero` (existing) — the copy-plus-zero mechanism.
 - `TypeTable::duplicable` — identifies an owned (non-duplicable) place.
+- `move_target`/`move_place` (existing) — the flow-state and partial-move rules.
 - The paused `generic-field-integrity` plan's Phase 4 depends on this plan.
 
 ### External Dependencies
@@ -90,7 +97,7 @@ place (including a field) moves and zeroes the source.
 
 | Risk | Likelihood | Impact | Mitigation |
 | ---- | ---------- | ------ | ---------- |
-| The assignment reorder changes emitted C for unrelated programs | Medium | High | The order for a non-reading RHS is unchanged (drop then store); the reading-RHS order is already drop-after-RHS in the existing test; the determinism suite pins byte identity |
-| A move is missed at a value-consuming site | Medium | Medium | Route every owned-place consumption through one helper; grep the sites in review |
-| An owned RHS value depends on the target after evaluation | Low | High | An owned RHS never holds a reference to the target; a view assigned to an owned target is a type error (AR-12) |
-| Moving a field twice | Low | Medium | The ownership stage already reports use-after-move `E10020`; the lowering moves only the first read (AR-14) |
+| A consumed field is not marked moved, so a second read is silently emptied | Medium | High | Mark the field in the same check that lowers it; add `E10020`/`E10026` regressions |
+| A generic body is lowered once with `Param` types | Medium | Medium | Reuse the `mentions_type_param` guard; state the generic-body boundary (AR-11, PF-007) |
+| A guarded/short-circuit field is mis-moved | Low | Medium | Scope it out; only a place field is consumed (AR-15, PF-011) |
+| Non-move emitted C changes | Low | High | The assignment emitter is untouched; the determinism/corpus suites pin the fast path |
