@@ -34,7 +34,9 @@ Excluded from the per-code rule: `E11210`-`E11213` (runtime faults, which are
 run-test cases under [`tests/run/`](../run/README.md)), `E90000` (the generic
 staged-feature fallback with no unique trigger), and `E90003`, `E90004`, and
 `W10005` (staged under [`tests/staged/`](../staged/README.md) until their
-feature or harness exists). See `docs/findings-phase1.md` for the Phase D
+feature or harness exists). `E90002` is retired in
+[Ch 14](../../14-diagnostics.md): its feature (lambda captures) is implemented,
+so it has no trigger and no test. See `docs/findings-phase1.md` for the Phase D
 report.
 
 > **Note:** a `// expect-warning` test asserts the warning is reported in the

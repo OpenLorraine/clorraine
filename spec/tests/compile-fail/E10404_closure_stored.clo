@@ -1,6 +1,5 @@
 // expect-error E10404
 // trigger: capturing closure stored in a local binding
-// stage: 2
 module tests.compile_fail.E10404;
 
 func main(): i32 {

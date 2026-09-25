@@ -1,6 +1,5 @@
 // expect-error E10403
 // trigger: a take capture, which v1 does not support
-// stage: 3
 module tests.compile_fail.E10403;
 
 func main(): i32 {

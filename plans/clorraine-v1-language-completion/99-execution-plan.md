@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 13:24
-> **Progress**: 17/49 tasks (35%; Phase 1 complete and reviewed)
+> **Last Updated**: 2026-09-25 14:00
+> **Progress**: 20/49 tasks (41%; Phase 2 red phase recorded)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -111,7 +111,7 @@ ran on the phase diff `119365d..HEAD`). Findings:
 
 ## Phase 2: Lambdas
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `e14fb1ee1bd5b2e2dc93575dba85bf58f0ff3c37` (Phase 2 start; the review diffs from this commit)
 > **Expected modification set**: `compiler/src/types/mod.rs`, `compiler/src/sema/{expr,call}.rs`, `compiler/src/ir.rs`/`compiler/src/ir/**`, `compiler/src/own/generics.rs`, `compiler/src/codegen/{expr,calls,types,program}.rs`, `compiler/tests/v1_language_{spec,impl}_test.rs`, `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/**`, `spec/tests/staged/README.md`, `spec/tests/compile-fail/README.md`, `spec/check.sh`, `spec/06-functions.md`, `spec/grammar.ebnf.md`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
 > **Scope mode**: strict
 
@@ -121,9 +121,9 @@ ran on the phase diff `119365d..HEAD`). Findings:
 **Objective**: write the runnable lambda spec tests, un-skip the lambda goldens,
 retire `E90002`, and record the red phase.
 
-- [ ] 2.1.1 [spec-author] Write the runnable lambda cases from ST-10..ST-14 — `compiler/tests/v1_language_spec_test.rs`
-- [ ] 2.1.2 [spec-author] Un-skip the lambda goldens: add `E10400`-`E10404` to `ASSERTED_CODES`, remove `E10400` from `EXCLUDED_CODES`, drop the `// stage:` annotations; retire `E90002` (remove its golden; add it to the excluded lists; update the staged and compile-fail READMEs) — `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/E1040*.clo`, `spec/check.sh`, `spec/tests/{staged,compile-fail}/README.md`, delete `E90002_lambda_capture_staged.clo`
-- [ ] 2.1.3 Run the suite and record the red phase: the lambda cases and un-skipped goldens fail; no existing case regresses
+- [x] 2.1.1 [spec-author] Write the runnable lambda cases from ST-10..ST-14 — `compiler/tests/v1_language_spec_test.rs` ✅ (completed: 2026-09-25 14:00; l10..l14: capture-less pointer, capture-less parameter, copy capture, read-only borrow of a non-duplicable, and `[borrow]` write-through)
+- [x] 2.1.2 [spec-author] Un-skip the lambda goldens: add `E10400`-`E10404` to `ASSERTED_CODES`, remove `E10400` from `EXCLUDED_CODES`, drop the `// stage:` annotations; retire `E90002` (remove its golden; add it to the excluded lists; update the staged and compile-fail READMEs) — `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/E1040*.clo`, `spec/check.sh`, `spec/tests/{staged,compile-fail}/README.md`, delete `E90002_lambda_capture_staged.clo` ✅ (completed: 2026-09-25 14:00; `E10306` also joined `ASSERTED_CODES`; `E90002` moved to the Ch 14 retired table, which the existing retired-code rule already excludes, so no inert `check.sh` entry was added)
+- [x] 2.1.3 Run the suite and record the red phase: the lambda cases and un-skipped goldens fail; no existing case regresses ✅ (completed: 2026-09-25 14:00) — red: l10..l14 fail (the front end still reports `E90000`/`E90002`), and `compile_fail_goldens` fails 6 goldens (E10306, E10400..E10404); the other 15 targets pass, so no existing case regresses
 
 **Deliverables**:
 - The lambda spec-test cases and the un-skipped goldens

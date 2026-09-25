@@ -287,3 +287,142 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A capture-less lambda is a plain function pointer: it binds to a concrete
+/// `func(...)` type and calls through it.
+#[test]
+fn a_captureless_lambda_is_a_function_pointer() {
+    let source = r#"module tests.v1.lambda_ptr;
+
+func demo(): i32 {
+    let inc: func(i32): i32 = (x: i32) => x + 1;
+    return inc(4);
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("l10", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "l10: unexpected exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A capture-less lambda fills a concrete `func(...)` parameter of a
+/// non-generic function.
+#[test]
+fn a_captureless_lambda_fills_a_func_parameter() {
+    let source = r#"module tests.v1.lambda_param;
+
+func apply2(x: i32, f: func(i32): i32): i32 {
+    return f(f(x));
+}
+
+func demo(): i32 {
+    return apply2(3, (x: i32) => x + 1);
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("l11", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "l11: unexpected exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A capturing closure fills a callable-bound parameter with the bound left to
+/// inference; a duplicable capture is copied, so changing the captured binding
+/// later does not change a closure that captured it earlier.
+#[test]
+fn a_capturing_closure_fills_a_callable_bound_by_copy() {
+    let source = r#"module tests.v1.lambda_copy;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func demo(): i32 {
+    let base: i32 = 10;
+    let first = apply(1, [base] (x: i32) => x + base);
+    base = base + 5;
+    let second = apply(1, [base] (x: i32) => x + base);
+    return first + second;
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("l12", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(27),
+        "l12: unexpected exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A non-duplicable capture is a read-only borrow: the captured owner is not
+/// moved, so it is still usable after the inline call.
+#[test]
+fn a_non_duplicable_capture_is_a_read_only_borrow() {
+    let source = r#"module tests.v1.lambda_borrow;
+
+import { String, stringOf, bytes } from std.text;
+
+func apply<T, F: func(T): i32>(x: T, f: F): i32 {
+    return f(x);
+}
+
+func demo(): i32 {
+    let s: String = stringOf("hello");
+    let n = apply(0, [s] (_x: i32) => i32(bytes(s)[0]));
+    return n + i32(bytes(s)[0]);
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("l13", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(208),
+        "l13: unexpected exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A `[borrow x]` capture is a writable borrow, so a directly invoked closure
+/// mutates the captured binding in the enclosing frame.
+#[test]
+fn a_borrow_capture_writes_through_to_the_owner() {
+    let source = r#"module tests.v1.lambda_write;
+
+func demo(): i32 {
+    let counter: i32 = 0;
+    ([borrow counter] (n: i32) => { counter = counter + n; })(5);
+    return counter;
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("l14", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(5),
+        "l14: unexpected exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

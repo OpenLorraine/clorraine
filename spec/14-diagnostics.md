@@ -202,7 +202,6 @@ semantic stage reports the code.
 |---|---|---|
 | E90000 | Generic staged feature has no dedicated code | `'{feature}' is not yet supported` |
 | E90001 | `comptime` bodies | `'comptime' semantics are not yet implemented` |
-| E90002 | Lambda captures beyond stage 1 | `lambda captures are not yet implemented` |
 | E90003 | `stores` and `transfers` contracts | `'stores' and 'transfers' contracts are deferred to v2` |
 | E90004 | Pools and arenas | `pools and arenas are deferred to v2` |
 | E90005 | Nested templates and extended formatting | `nested templates are not yet supported` |
@@ -240,3 +239,4 @@ does not treat these rows as active registrations.
 |---|---|
 | `E10037` retired | merged into E11106 |
 | `E10225` retired | no reachable trigger |
+| `E90002` retired | lambda capture semantics are implemented; no trigger remains |
