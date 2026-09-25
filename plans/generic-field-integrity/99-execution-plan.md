@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 19:50
-> **Progress**: 7/24 tasks (29%)
+> **Last Updated**: 2026-09-25 19:54
+> **Progress**: 9/24 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -103,7 +103,9 @@ Rust suites, written red before each fix (AR-4).
 
 ## Phase 2: Checker field reads
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 20b2329fa12b6601a3cb81a871b1374d30f89213
+> **Expected modification set**: `compiler/src/sema/mod.rs`, `compiler/src/sema/expr.rs`,
+> `compiler/src/sema/regressions.rs` (strict scope)
 > **Lenses**: correctness, security (unsafe/overlay boundary)
 
 ### Step 2.1: Specification tests (red)
@@ -111,8 +113,8 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-02](03-02-checker.md) · [07](07-testing-strategy.md) ST-1, ST-2, ST-10, ST-11 · [AR-9, AR-13, AR-14]
 **Objective**: Pin the overlay and raw-field expectations.
 
-- [ ] 2.1.1 [spec-author] Write checker regressions — ST-1 (`Outer<Regs>` parameter reports `E10207`), ST-2 (non-generic control), ST-10 (`raw Pair<u8>.second` is `u8`), ST-11 (a live parameter stays `T`) — in `compiler/src/sema/regressions.rs`
-- [ ] 2.1.2 Confirm ST-1 and ST-10 FAIL (red) — `cargo test --workspace --no-fail-fast`
+- [x] 2.1.1 [spec-author] Write checker regressions — ST-1 (`Outer<Regs>` parameter reports `E10207`), ST-2 (non-generic control), ST-10 (`raw Pair<u8>.second` is `u8`), ST-11 (a live parameter stays `T`) — in `compiler/src/sema/regressions.rs` ✅ (completed: 2026-09-25 19:54)
+- [x] 2.1.2 Confirm ST-1 and ST-10 FAIL (red) — `cargo test --workspace --no-fail-fast` ✅ (completed: 2026-09-25 19:54)
 
 **Deliverables**:
 - ST-1 red (generic overlay accepted today); ST-10 red (`r.second` is `Unknown`)

@@ -377,3 +377,62 @@ func main(): i32 {
         &["E10200"],
     );
 }
+
+#[test]
+fn an_overlay_reached_through_a_generic_field_is_rejected() {
+    // The instance's argument reaches the field before the overlay walk, so a
+    // generic wrapper is rejected exactly like the non-generic form.
+    assert_codes(
+        r#"module test;
+struct Regs { r: volatile u16; }
+struct Outer<T> { inner: T; }
+func takes(o: Outer<Regs>): void {}
+func main(): i32 { return 0; }
+"#,
+        &["E10207"],
+    );
+    // The non-generic control reports the same diagnostic.
+    assert_codes(
+        r#"module test;
+struct Regs { r: volatile u16; }
+struct Outer { inner: Regs; }
+func takes(o: Outer): void {}
+func main(): i32 { return 0; }
+"#,
+        &["E10207"],
+    );
+}
+
+#[test]
+fn a_field_reached_through_a_raw_pointer_is_typed() {
+    // `r.second` is the pointee's substituted field type (`u8`), so passing it
+    // where an `i32` is required is the conversion error rather than a silent
+    // unknown.
+    assert_codes(
+        r#"module test;
+struct Pair<T> { first: T; second: T; }
+func takesI32(x: i32): i32 { return x; }
+func demo(p: Pair<u8>): i32 {
+    unsafe {
+        let r: raw Pair<u8> = raw Pair<u8>(&p);
+        return takesI32(r.second);
+    }
+}
+func main(): i32 { return 0; }
+"#,
+        &["E10200"],
+    );
+}
+
+#[test]
+fn a_live_parameter_field_stays_generic() {
+    // Inside a generic body the field's argument is the live parameter `T`, so
+    // the field must stay `T` and returning it as `T` is accepted.
+    assert_accepts(
+        r#"module test;
+struct Pair<T> { first: T; second: T; }
+func firstOf<T>(p: Pair<T>): T { return p.first; }
+func main(): i32 { return 0; }
+"#,
+    );
+}
