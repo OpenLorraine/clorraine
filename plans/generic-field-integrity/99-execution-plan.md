@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 19:46
-> **Progress**: 2/24 tasks (8%)
+> **Last Updated**: 2026-09-25 19:48
+> **Progress**: 5/24 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -76,9 +76,9 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-01](03-01-types-substitution.md) §Implementation Details · [AR-3, AR-6, AR-7, AR-14, AR-15]
 **Objective**: Add the shared helper and apply it in the type table.
 
-- [ ] 1.2.1 Add `pub fn substitute_instance(declared, params, args)` to `compiler/src/types/mod.rs` (no-op on empty `params`/`args`) and route `sema/items.rs::embeds_by_value` through it
-- [ ] 1.2.2 Add `TypeTable::instance_field`; substitute in `duplicable_at` and `size_of_at`; change `offset_of` to take `&Ty` and update the `consts/mod.rs` caller and unit-test call sites — `compiler/src/types/table.rs`, `compiler/src/consts/mod.rs`
-- [ ] 1.2.3 Run the type-table tests and confirm the Step 1.1 cases PASS (green)
+- [x] 1.2.1 Add `pub fn substitute_instance(declared, params, args)` to `compiler/src/types/mod.rs` (no-op on empty `params`/`args`) and route `sema/items.rs::embeds_by_value` through it ✅ (completed: 2026-09-25 19:48)
+- [x] 1.2.2 Add `TypeTable::instance_field`; substitute in `duplicable_at` and `size_of_at`; change `offset_of` to take `&Ty` and update the `consts/mod.rs` caller and unit-test call sites — `compiler/src/types/table.rs`, `compiler/src/consts/mod.rs` ✅ (completed: 2026-09-25 19:48)
+- [x] 1.2.3 Run the type-table tests and confirm the Step 1.1 cases PASS (green) ✅ (completed: 2026-09-25 19:48)
 
 **Deliverables**:
 - ST-8, ST-9 pass; `duplicable_at(Box<String>)` is false; non-generic table tests unchanged

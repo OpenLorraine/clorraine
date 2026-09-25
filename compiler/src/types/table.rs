@@ -13,7 +13,7 @@ use crate::ast::{CallableBound, Expr, Item, QualifiedName, ScalarType, Type, Typ
 use crate::consts::ConstFolder;
 use crate::load::Loaded;
 
-use super::{int_literal_value, FuncTy, Ty, TyKind};
+use super::{int_literal_value, substitute_instance, FuncTy, Ty, TyKind};
 
 /// A function signature collected from a declaration.
 #[derive(Clone, Debug)]
@@ -315,6 +315,22 @@ impl TypeTable {
             .map(|(_, ty)| ty.clone())
     }
 
+    /// The declared type of a struct field with the instance's arguments
+    /// substituted.
+    ///
+    /// `base` is the struct instance type (`Pair<i32>`), so a field written in
+    /// terms of the declaration's parameters is resolved to the instance's
+    /// argument. Returns `None` when `base` is not a struct, or the struct or
+    /// field is unknown.
+    pub fn instance_field(&self, base: &Ty, field: &str) -> Option<Ty> {
+        let TyKind::Struct(name, args) = &base.kind else {
+            return None;
+        };
+        let declared = self.struct_field(name, field)?;
+        let params = self.struct_type_params(name).unwrap_or(&[]);
+        Some(substitute_instance(&declared, params, args))
+    }
+
     /// The backing integer type of an enum.
     pub fn enum_backing(&self, name: &str) -> Option<&Ty> {
         self.enums.get(name).map(|info| &info.backing)
@@ -357,10 +373,11 @@ impl TypeTable {
             // A capturing closure is ephemeral: it owns its environment for one
             // synchronous call and cannot be copied, stored, or captured.
             TyKind::Closure(_) => false,
-            TyKind::Struct(name, _) => self.struct_fields(name).is_none_or(|fields| {
-                fields
-                    .iter()
-                    .all(|(_, field)| self.duplicable_at(field, depth + 1))
+            TyKind::Struct(name, args) => self.struct_fields(name).is_none_or(|fields| {
+                let params = self.struct_type_params(name).unwrap_or(&[]);
+                fields.iter().all(|(_, field)| {
+                    self.duplicable_at(&substitute_instance(field, params, args), depth + 1)
+                })
             }),
             TyKind::Array { element, .. } => self.duplicable_at(element, depth + 1),
             _ => true,
@@ -396,10 +413,13 @@ impl TypeTable {
                 }
                 Some(total)
             }
-            TyKind::Struct(name, _) => {
+            TyKind::Struct(name, args) => {
+                let params = self.struct_type_params(name).unwrap_or(&[]);
                 let mut total = 0usize;
                 for (_, field) in self.struct_fields(name)? {
-                    total = total.checked_add(self.size_of_at(field, depth + 1)?)?;
+                    total = total.checked_add(
+                        self.size_of_at(&substitute_instance(field, params, args), depth + 1)?,
+                    )?;
                 }
                 Some(total)
             }
@@ -409,13 +429,21 @@ impl TypeTable {
 
     /// The byte offset of a struct field, when every earlier field's size is
     /// known.
-    pub fn offset_of(&self, struct_name: &str, field: &str) -> Option<usize> {
+    ///
+    /// `base` is the struct instance type, so a generic instance's arguments are
+    /// substituted into each preceding field's size before it is added.
+    pub fn offset_of(&self, base: &Ty, field: &str) -> Option<usize> {
+        let TyKind::Struct(name, args) = &base.kind else {
+            return None;
+        };
+        let params = self.struct_type_params(name).unwrap_or(&[]);
         let mut offset = 0usize;
-        for (name, ty) in self.struct_fields(struct_name)? {
-            if name == field {
+        for (field_name, field_ty) in self.struct_fields(name)? {
+            if field_name == field {
                 return Some(offset);
             }
-            offset = offset.checked_add(self.size_of(ty)?)?;
+            offset =
+                offset.checked_add(self.size_of(&substitute_instance(field_ty, params, args))?)?;
         }
         None
     }
@@ -693,7 +721,10 @@ mod tests {
             &["T"],
             vec![("first", param("T")), ("second", param("T"))],
         );
-        assert_eq!(table.offset_of("Pair", "second"), Some(4));
+        assert_eq!(
+            table.offset_of(&Ty::struct_with("Pair", vec![Ty::i32_ty()]), "second"),
+            Some(4)
+        );
     }
 
     #[test]
@@ -705,8 +736,8 @@ mod tests {
             vec![("x", Ty::i32_ty()), ("y", Ty::i32_ty())],
         );
         assert_eq!(table.size_of(&Ty::struct_("Point")), Some(8));
-        assert_eq!(table.offset_of("Point", "y"), Some(4));
-        assert_eq!(table.offset_of("Point", "missing"), None);
+        assert_eq!(table.offset_of(&Ty::struct_("Point"), "y"), Some(4));
+        assert_eq!(table.offset_of(&Ty::struct_("Point"), "missing"), None);
     }
 
     #[test]
@@ -723,11 +754,11 @@ mod tests {
             ],
         );
         assert_eq!(table.size_of(&Ty::struct_("Mixed")), Some(15));
-        assert_eq!(table.offset_of("Mixed", "tag"), Some(0));
-        assert_eq!(table.offset_of("Mixed", "count"), Some(1));
-        assert_eq!(table.offset_of("Mixed", "value"), Some(3));
-        assert_eq!(table.offset_of("Mixed", "scale"), Some(7));
-        assert_eq!(table.offset_of("Mixed", "missing"), None);
+        assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "tag"), Some(0));
+        assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "count"), Some(1));
+        assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "value"), Some(3));
+        assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "scale"), Some(7));
+        assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "missing"), None);
     }
 
     #[test]
@@ -778,9 +809,9 @@ mod tests {
             ],
         );
         assert_eq!(table.size_of(&Ty::struct_("Flexible")), None);
-        assert_eq!(table.offset_of("Flexible", "head"), Some(0));
+        assert_eq!(table.offset_of(&Ty::struct_("Flexible"), "head"), Some(0));
         // The first field has a known offset; the one past the slice does not.
-        assert_eq!(table.offset_of("Flexible", "tail"), None);
+        assert_eq!(table.offset_of(&Ty::struct_("Flexible"), "tail"), None);
     }
 
     #[test]

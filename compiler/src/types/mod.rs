@@ -407,6 +407,23 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
     }
 }
 
+/// Substitutes a generic instance's type arguments into a declared type.
+///
+/// `declared` is written in terms of `params`; `args` are the instance's
+/// arguments in the same order. This is the one place an instance's arguments
+/// are mapped onto a declaration, so every stage that inspects a field through
+/// an instance types it the same way. A missing argument leaves the parameter in
+/// place, so a partially written type is never corrupted; with no parameters or
+/// no arguments the declared type is returned unchanged.
+pub fn substitute_instance(declared: &Ty, params: &[String], args: &[Ty]) -> Ty {
+    if params.is_empty() || args.is_empty() {
+        return declared.clone();
+    }
+    let bindings: BTreeMap<String, Ty> =
+        params.iter().cloned().zip(args.iter().cloned()).collect();
+    substitute(declared, &bindings)
+}
+
 /// True for `i8`-`u32`, `usize`, and `isize`.
 pub fn is_integer_scalar(scalar: ScalarType) -> bool {
     !matches!(scalar, ScalarType::F32 | ScalarType::F64 | ScalarType::Bool)

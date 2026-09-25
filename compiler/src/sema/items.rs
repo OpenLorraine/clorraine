@@ -8,10 +8,8 @@
 //! constant-shaped parts of every type, such as array extents and the type
 //! arguments of a generic struct.
 
-use std::collections::BTreeMap;
-
 use crate::ast::{EnumDecl, Expr, ScalarType, StructDecl, Type, TypeKind};
-use crate::types::{int_fits, integer_scalar, Ty, TyKind, TypeTable};
+use crate::types::{int_fits, integer_scalar, substitute_instance, Ty, TyKind, TypeTable};
 
 use super::Checker;
 
@@ -238,17 +236,11 @@ fn embeds_by_value(table: &TypeTable, ty: &Ty, target: &str, depth: usize) -> bo
             let Some(fields) = table.struct_fields(name) else {
                 return false;
             };
-            let subst: BTreeMap<String, Ty> = table
-                .struct_type_params(name)
-                .unwrap_or(&[])
-                .iter()
-                .cloned()
-                .zip(args.iter().cloned())
-                .collect();
+            let params = table.struct_type_params(name).unwrap_or(&[]);
             fields.iter().any(|(_, field)| {
                 embeds_by_value(
                     table,
-                    &crate::types::substitute(field, &subst),
+                    &substitute_instance(field, params, args),
                     target,
                     depth + 1,
                 )

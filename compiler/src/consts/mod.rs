@@ -517,9 +517,9 @@ impl<'a> ConstFolder<'a> {
                     return Err(ConstError::NotConstant(span));
                 };
                 let resolved = self.resolve_const_type(ty);
-                let TyKind::Struct(struct_name, _) = resolved.kind else {
+                if !matches!(resolved.kind, TyKind::Struct(..)) {
                     return Err(ConstError::NotConstant(span));
-                };
+                }
                 let Some(IntrinsicArg::Expr(field)) = args.get(1) else {
                     return Err(ConstError::NotConstant(span));
                 };
@@ -528,7 +528,7 @@ impl<'a> ConstFolder<'a> {
                 };
                 let offset = self
                     .table
-                    .offset_of(&struct_name, field_name)
+                    .offset_of(&resolved, field_name)
                     .ok_or(ConstError::NotConstant(span))?;
                 Ok(usize_value(offset))
             }
