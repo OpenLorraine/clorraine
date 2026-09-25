@@ -259,3 +259,135 @@ func main(): i32 {
         "expected E10305, got:\n{stderr}"
     );
 }
+
+#[test]
+fn a_capturing_lambda_lifts_to_an_environment_function() {
+    let source = r#"module tests.v1.impl.lift;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    let base: i32 = 2;
+    return apply(1, [base] (x: i32) => x + base);
+}
+"#;
+    let emitted = emit("lift", source);
+    assert_eq!(
+        count(&emitted, "struct ClEnv_0 {"),
+        1,
+        "the capturing lambda must emit one environment struct"
+    );
+    assert!(
+        emitted.contains("cl_lambda_0"),
+        "the lambda must lift to a cl_lambda_0 function"
+    );
+    assert!(
+        emitted.contains("ClClosure_0"),
+        "the capturing value must be the two-word ClClosure_0 struct"
+    );
+    assert!(
+        emitted.contains("(f).fn((f).env,"),
+        "the callable-bound instance must call the closure through its two words"
+    );
+    assert!(
+        emitted.contains("cl_apply__i32_closure_0"),
+        "the closure must monomorphize the generic body to a closure-keyed instance"
+    );
+}
+
+#[test]
+fn a_borrow_capture_holds_a_pointer_and_writes_through() {
+    let source = r#"module tests.v1.impl.borrow_capture;
+
+func main(): i32 {
+    let counter: i32 = 0;
+    ([borrow counter] (n: i32) => { counter = counter + n; })(5);
+    return counter;
+}
+"#;
+    let emitted = emit("borrow-capture", source);
+    assert!(
+        emitted.contains("struct ClEnv_0 {"),
+        "the borrow capture must emit an environment struct"
+    );
+    assert!(
+        emitted.contains("i32 *counter;"),
+        "a [borrow] capture must store a pointer, not a copy"
+    );
+    assert!(
+        emitted.contains("(*__env->counter)"),
+        "the lifted body must write through the environment pointer"
+    );
+    assert!(
+        emitted.contains("cl_lambda_0(&"),
+        "a directly invoked closure must be called with the environment address"
+    );
+}
+
+#[test]
+fn distinct_lambda_sites_get_distinct_instances() {
+    let source = r#"module tests.v1.impl.sites;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    let a: i32 = 1;
+    let b: i32 = 2;
+    let first = apply(1, [a] (x: i32) => x + a);
+    let second = apply(1, [b] (x: i32) => x + b);
+    return first + second;
+}
+"#;
+    let emitted = emit("sites", source);
+    assert_eq!(
+        count(&emitted, "struct ClEnv_0 {"),
+        1,
+        "the first closure site must emit its own environment"
+    );
+    assert_eq!(
+        count(&emitted, "struct ClEnv_1 {"),
+        1,
+        "the second closure site must not share the first environment"
+    );
+    assert_eq!(
+        count(&emitted, "cl_apply__i32_closure_0("),
+        3,
+        "the first site must have one prototype, one definition, and one call"
+    );
+    assert_eq!(
+        count(&emitted, "cl_apply__i32_closure_1("),
+        3,
+        "the second site must have one prototype, one definition, and one call"
+    );
+}
+
+#[test]
+fn a_captureless_lambda_needs_no_environment() {
+    let source = r#"module tests.v1.impl.captureless;
+
+func apply2(x: i32, f: func(i32): i32): i32 {
+    return f(f(x));
+}
+
+func main(): i32 {
+    return apply2(3, (x: i32) => x + 1);
+}
+"#;
+    let emitted = emit("captureless", source);
+    assert!(
+        emitted.contains("cl_lambda_0"),
+        "a capture-less lambda must still lift to a callable function"
+    );
+    assert!(
+        !emitted.contains("ClEnv_"),
+        "a capture-less lambda is a plain function pointer with no environment"
+    );
+    assert!(
+        !emitted.contains("ClClosure_"),
+        "a capture-less lambda must not use the two-word closure struct"
+    );
+}

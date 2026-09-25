@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 15:20
-> **Progress**: 30/49 tasks (61%; Phase 2 implementation complete — lambdas stage 1-4 green; only Step 2.3 tests/prose remain)
+> **Last Updated**: 2026-09-25 15:23
+> **Progress**: 34/49 tasks (69%; Phase 2 complete — lambdas stages 1-4 implemented, tested, and documented; `make verify` green)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -153,10 +153,10 @@ rules.
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) ST-10..ST-19 · [03-04](03-04-spec-goldens.md) · AR-11, AR-32
 **Objective**: green the lambda phase and align the spec prose.
 
-- [ ] 2.3.1 Add lambda implementation and unit tests (lift/env naming, two-word call, callable-bound instantiation) — `compiler/tests/v1_language_impl_test.rs`, in-module tests
-- [ ] 2.3.2 Update the spec prose: Ch 06 §6.1 and L-7 and the diagnostics table, and the grammar §8 note — `spec/06-functions.md`, `spec/grammar.ebnf.md`
-- [ ] 2.3.3 Verify the lambda suite is green — `make check`
-- [ ] 2.3.4 Verify the lambda phase end to end — `make verify`
+- [x] 2.3.1 Add lambda implementation and unit tests (lift/env naming, two-word call, callable-bound instantiation) — `compiler/tests/v1_language_impl_test.rs`, in-module tests ✅ (completed: 2026-09-25 15:23; four impl tests: environment lifting and the two-word call, a borrow capture holding a pointer and writing through, distinct sites getting distinct instances, and a capture-less lambda needing no environment)
+- [x] 2.3.2 Update the spec prose: Ch 06 §6.1 and L-7 and the diagnostics table, and the grammar §8 note — `spec/06-functions.md`, `spec/grammar.ebnf.md` ✅ (completed: 2026-09-25 15:23; §6.1 now states lambda semantics are implemented, the capturing example is an inline call, L-7 and the `E90002` table row are removed, and the grammar §8 note and freeze checklist drop the staged-lambda wording)
+- [x] 2.3.3 Verify the lambda suite is green — `make check` ✅ (completed: 2026-09-25 15:23; `make check` exit 0 — spec check OK, all 17 Rust targets green)
+- [x] 2.3.4 Verify the lambda phase end to end — `make verify` ✅ (completed: 2026-09-25 15:23; `make verify` exit 0 — "verify: all legs passed")
 
 **Deliverables**:
 - Lambdas stages 1-4 working

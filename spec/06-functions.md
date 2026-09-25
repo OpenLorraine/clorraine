@@ -206,16 +206,18 @@ func demo(): i32 {
 
 ### 6.1 Lambdas
 
-Lambda syntax is frozen now; capture semantics are staged (L1, L4). A
-capture-less lambda is a plain function pointer and matches `func(...)`; a
-capturing lambda used where `func(...)` is required is E10400. A lambda
-expression is part of the expression grammar; see [Ch 04](04-expressions.md).
+Lambda semantics are implemented (L1-L6). A capture-less lambda is a plain
+function pointer and matches `func(...)`; a capturing lambda used where
+`func(...)` is required is E10400. A capturing closure is inline-only: it may
+be invoked immediately or passed to a generic callable-bound parameter, and
+storing, returning, or capturing it is E10404 (L-6). A lambda expression is part
+of the expression grammar; see [Ch 04](04-expressions.md).
 
 ```clorraine
 let inc: func(i32): i32 = (x: i32) => x + 1;   // capture-less: a function pointer
 
-// Frozen capture syntax; non-empty captures are staged (E90002)
-let bump = [borrow counter] (n: i32) => { counter = counter + n; };
+// A capturing closure is invoked inline; binding it to a name is E10404
+([borrow counter] (n: i32) => { counter = counter + n; })(1);
 
 let bad = [take s] () => s;                     // E10403: 'take' captures are rejected
 ```
@@ -228,7 +230,6 @@ let bad = [take s] () => s;                     // E10403: 'take' captures are r
 | L-4 | Writing a captured binding needs a `[borrow x]` capture | E10402 |
 | L-5 | `take` captures are rejected in v1 | E10403 |
 | L-6 | A capturing closure is ephemeral: it cannot be returned, stored, or captured | E10404 |
-| L-7 | Non-empty captures are staged; the semantic stage reports E90002 | E90002 |
 
 ## 7. `comptime func`
 
@@ -342,5 +343,4 @@ intrinsic func readVolatile16(addr: raw u16): u16;
 | E11104 | Entry-point problems |
 | E20006 | An ordinary declaration of a reserved built-in name |
 | E90001 | `comptime` semantics are staged |
-| E90002 | Lambda captures are staged |
 | W10001 | Writable lend of a duplicable value |

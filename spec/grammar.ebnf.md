@@ -508,10 +508,11 @@ lambda_params   = lambda_param , { "," , lambda_param } ;
 lambda_param    = identifier , ":" , value_type ;
 ```
 
-The full syntax is frozen now; semantics are staged (L1, L4). `take` captures
-parse and are rejected (staged diagnostic, L2). Capture-less lambdas are plain
-C function pointers and match `func(...)` types (L3, L5); capturing closures
-are ephemeral and cannot be stored or returned.
+Lambda semantics are implemented (L1-L6). `take` captures parse and are
+rejected (L2, E10403). Capture-less lambdas are plain C function pointers and
+match `func(...)` types (L3, L5); a capturing closure fills a generic
+callable-bound parameter and is inline-only, so it cannot be stored or
+returned (L6, E10404).
 
 ## 9. Generics
 
@@ -829,4 +830,4 @@ position and the conditional operator in expression position.
 | Dangling `else` resolved | Yes: mandatory blocks (B1) |
 | No tokenization ambiguities | Yes: quote kind, `$"`, `&`/`*` position, `?` position, `unsafe` lookahead |
 | Grammar freeze checklist resolved | Yes: see [grammar-deltas.md](grammar-deltas.md) section 8 |
-| Semantics staged without reopening syntax | Yes: `comptime`, lambda stages, and intrinsics stage behind stable syntax (R1) |
+| Semantics staged without reopening syntax | Yes: `comptime` and intrinsics stage behind stable syntax (R1) |
