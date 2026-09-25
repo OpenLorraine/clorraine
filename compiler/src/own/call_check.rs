@@ -14,7 +14,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A `func`-typed field call is not a method taking the receiver: the
     /// field's own signature (already checked by the type stage) types it, so
     /// the ownership walk only reads the field and its arguments.
-    pub(super) fn check_call_expr(&mut self, callee: &Expr, args: &[Arg], span: Span) {
+    pub(super) fn check_call_expr(&mut self, callee: &'a Expr, args: &'a [Arg], span: Span) {
         if self
             .callee_field_type(callee)
             .is_some_and(|ty| matches!(ty.kind, TyKind::Func(_)))
@@ -39,9 +39,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let Some(resolved) = self.program.callee(&name) else {
             // The callee may be an intrinsic reached as a dot-call, such as
             // `xs.len()`; its receiver is still read, so a local used only
-            // there must not be reported unused.
+            // there must not be reported unused. A `func`-typed local or a
+            // closure parameter used as the callee is marked read directly, so
+            // a variable used only as a callable is not reported unused.
             if self.is_dot_call(callee) {
                 self.eval_dot_receiver(callee);
+            } else if let Some(PlaceTarget::Local(id, _)) = self.place_target(callee) {
+                self.bindings[id].used = true;
             }
             for arg in args {
                 self.eval(&arg.value);
@@ -97,7 +101,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The receiver expression is not a written argument, so this only records
     /// the read; the borrow effect is applied by [`Self::check_dot_receiver`]
     /// for a resolved user function.
-    pub(super) fn eval_dot_receiver(&mut self, callee: &Expr) {
+    pub(super) fn eval_dot_receiver(&mut self, callee: &'a Expr) {
         match &callee.kind {
             ExprKind::Member { base, .. } => {
                 self.eval(base);
@@ -147,7 +151,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// separate calls are fine.
     pub(super) fn check_arguments(
         &mut self,
-        args: &[Arg],
+        args: &'a [Arg],
         params: &[(Mode, Ty)],
         _span: Span,
         lent: &mut BTreeSet<usize>,
@@ -171,7 +175,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// call is rejected even when the second lend is a written argument.
     pub(super) fn check_dot_receiver(
         &mut self,
-        callee: &Expr,
+        callee: &'a Expr,
         expected: Option<&(Mode, Ty)>,
         lent: &mut BTreeSet<usize>,
     ) {
@@ -391,7 +395,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &mut self,
         name: &str,
         signature: &crate::ast::FuncSignature,
-        args: &[Arg],
+        args: &'a [Arg],
         span: Span,
     ) {
         let uncontracted = ffi::is_uncontracted(signature, &self.sema.table);
@@ -439,7 +443,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Applies the ownership effect of a standard-library helper.
-    pub(super) fn check_stdlib_call(&mut self, effect: StdlibEffect, args: &[Arg]) {
+    pub(super) fn check_stdlib_call(&mut self, effect: StdlibEffect, args: &'a [Arg]) {
         if let StdlibEffect::ViewOf { arg, .. } = effect {
             for (index, written) in args.iter().enumerate() {
                 self.eval(&written.value);

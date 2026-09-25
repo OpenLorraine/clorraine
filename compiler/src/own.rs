@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     Arg, AssignOp, BinaryOp, Block, ConstStmt, ElseBranch, Expr, ExprKind, ForCStmt, ForInStmt,
-    ForInit, IfStmt, IntrinsicArg, Item, LetStmt, Mode, Param, Stmt, SwitchLabel, SwitchStmt,
-    TemplatePiece, UnaryOp,
+    ForInit, IfStmt, IntrinsicArg, Item, LambdaBody, LambdaParam, LetStmt, Mode, Param, Stmt,
+    SwitchLabel, SwitchStmt, TemplatePiece, UnaryOp,
 };
 use crate::borrow::{
     is_elided_view, is_handle_or_aggregate, is_lend_candidate, is_nullable_capable, is_view,
@@ -34,7 +34,7 @@ use crate::ir::{
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
 use crate::span::Span;
-use crate::types::{resolve_ty, Ty, TyKind};
+use crate::types::{resolve_ty, CaptureInfo, CaptureMode, Ty, TyKind};
 
 pub mod program;
 
@@ -87,13 +87,30 @@ pub fn check(
         program::check_struct_declarations(module, sema, diagnostics);
     }
     let mut functions = Vec::new();
+    // Capture-less lambda sites have no recorded semantic site, so the stage
+    // hands out ids above every recorded capturing site. The prefix keeps the
+    // lifted function names of the two kinds disjoint.
+    let mut next_lifted = sema
+        .closures
+        .keys()
+        .max()
+        .map_or(0usize, |highest| highest + 1);
     for module in loaded.modules.values() {
         for item in &module.items {
             if let Item::Func(decl) = item {
-                let checker = FunctionChecker::new(&program, loaded, module, sema, decl, diagnostics);
-                let mut function = checker.check();
+                let checker = FunctionChecker::new(
+                    &program,
+                    loaded,
+                    module,
+                    sema,
+                    decl,
+                    diagnostics,
+                    &mut next_lifted,
+                );
+                let (mut function, lifted) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
+                functions.extend(lifted);
             }
         }
     }
@@ -157,6 +174,15 @@ struct FunctionChecker<'a, 'd> {
     materialize_owned_temporaries: bool,
     /// False during a speculative pass, which computes state without reporting.
     report_diagnostics: bool,
+    /// The lifted functions of every lambda this function lowers.
+    ///
+    /// A lambda's body becomes a file-scope `static` C function, so it is
+    /// collected here and appended to the program's function list once the
+    /// enclosing body is checked.
+    lifted: Vec<ir::Function>,
+    /// Next lambda-site id for a capture-less lambda, shared with every other
+    /// function so one program never names two lifted functions the same.
+    next_lifted: &'a mut usize,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
 }
@@ -170,6 +196,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         sema: &'a SemaOutput,
         decl: &'a crate::ast::FuncDecl,
         diagnostics: &'d mut Diagnostics,
+        next_lifted: &'a mut usize,
     ) -> Self {
         let type_params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
         let returns = resolve_ty(&decl.returns, &type_params, &sema.table);
@@ -205,12 +232,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             next_owned_temp: 0,
             materialize_owned_temporaries: true,
             report_diagnostics: true,
+            lifted: Vec::new(),
+            next_lifted,
             diagnostics,
         }
     }
 
     /// Runs the whole function check and finishes the IR.
-    fn check(mut self) -> ir::Function {
+    ///
+    /// Returns the declared body together with every lambda lifted out of it.
+    fn check(mut self) -> (ir::Function, Vec<ir::Function>) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
         self.elision_prelude();
@@ -236,7 +267,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             })
             .collect();
         function.temps = self.temps.clone();
-        function
+        (function, self.lifted)
     }
 
     // -- scopes and bindings -------------------------------------------------
@@ -476,6 +507,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             needs_drop,
             registration,
             provenance,
+            base: None,
         });
         if let Some(scope) = self.scopes.last_mut() {
             scope.names.insert(name.to_owned(), id);
@@ -506,6 +538,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The IR place for a binding.
     fn binding_place(&self, id: usize) -> Place {
         let binding = &self.bindings[id];
+        // A lifted lambda's capture is rooted at its environment field rather
+        // than at a C local, so it never takes a name in the enclosing frame.
+        if let Some(base) = &binding.base {
+            return Place {
+                base: base.clone(),
+                projections: Vec::new(),
+                ty: binding.ty.clone(),
+            };
+        }
         let place = match binding.kind {
             BindingKind::Param | BindingKind::OutSlot => Place::param(&binding.name),
             BindingKind::Local => Place::local(&binding.name),

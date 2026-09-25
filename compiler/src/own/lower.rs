@@ -14,7 +14,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Every value records the type the type stage computed for its expression,
     /// and a form the checker does not need to name explicitly becomes a fresh
     /// temporary whose type joins the function's temporary list.
-    pub(super) fn lower_value(&mut self, expr: &Expr) -> Value {
+    pub(super) fn lower_value(&mut self, expr: &'a Expr) -> Value {
         let mut ty = self.ty(expr);
         let kind = match &expr.kind {
             ExprKind::Int(value) => ValueKind::Int(*value as i128),
@@ -54,7 +54,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 type_args,
                 args,
             } => {
-                if let Some((intrinsic_ty, intrinsic_kind)) =
+                // A callee that lowers to a closure value is the ephemeral
+                // two-word callable, not a named function: it is called through
+                // its function pointer with the environment as the first
+                // argument. A generic body's `f(x)` is typed by a parameter and
+                // reaches the same shape only after instantiation, so the
+                // emitter handles that case instead.
+                if self.is_closure_callee(callee) {
+                    let callable = self.lower_value(callee);
+                    let values: Vec<Value> = args
+                        .iter()
+                        .map(|arg| self.lower_value(&arg.value))
+                        .collect();
+                    ty = self.ty(expr);
+                    ValueKind::ClosureCall {
+                        callable: Box::new(callable),
+                        args: values,
+                    }
+                } else if let Some((intrinsic_ty, intrinsic_kind)) =
                     self.lower_intrinsic_call(callee, type_args, args)
                 {
                     ty = intrinsic_ty;
@@ -185,9 +202,261 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     })
                     .collect(),
             ),
+            ExprKind::Lambda { params, body, .. } => {
+                return self.lower_lambda(expr, &ty, params, body);
+            }
             _ => ValueKind::Aggregate,
         };
         Value { ty, kind }
+    }
+
+    /// Lowers a lambda expression to its lifted function and closure value.
+    ///
+    /// The body becomes a file-scope `static` C function. A capture-less lambda
+    /// is a plain function pointer, so its value is the lifted function's name.
+    /// A capturing lambda is a two-word value whose environment holds one
+    /// expression per capture; the value's captures are read or addressed in
+    /// the enclosing frame at the point the lambda is written.
+    fn lower_lambda(
+        &mut self,
+        expr: &Expr,
+        ty: &Ty,
+        params: &'a [LambdaParam],
+        body: &'a LambdaBody,
+    ) -> Value {
+        // A capturing lambda's site comes from the semantic layer, which also
+        // recorded its capture list. A capture-less lambda has no site there,
+        // so it takes the next free lifted id; the enclosing stage reserves ids
+        // above every recorded capturing site.
+        let (site, capturing) = match &ty.kind {
+            TyKind::Closure(closure) => (closure.id, true),
+            _ => {
+                let site = *self.next_lifted;
+                *self.next_lifted += 1;
+                (site, false)
+            }
+        };
+        // The lambda's own signature fixes the lifted function. A capturing
+        // closure carries it on its type; a capture-less one is a `func`.
+        let (param_tys, ret) = match &ty.kind {
+            TyKind::Closure(closure) => (closure.params.clone(), (*closure.returns).clone()),
+            TyKind::Func(signature) => (signature.params.clone(), (*signature.returns).clone()),
+            _ => (Vec::new(), Ty::void()),
+        };
+        self.lift_lambda(site, params, &param_tys, ret.clone(), body);
+
+        let captures = if capturing {
+            self.lower_captures(site, expr.span)
+        } else {
+            Vec::new()
+        };
+        Value::new(ty.clone(), ValueKind::Closure { site, captures })
+    }
+
+    /// Lowers one capture expression per recorded capture, in field order.
+    ///
+    /// A `Copy` capture reads the enclosing binding's value, so the environment
+    /// holds its own copy. A borrow capture takes the enclosing place's address,
+    /// so the lifted function reads or writes the original owner; a
+    /// non-duplicable capture is therefore never moved.
+    fn lower_captures(&mut self, site: usize, span: Span) -> Vec<Value> {
+        let Some(closure) = self.sema.closures.get(&site) else {
+            return Vec::new();
+        };
+        let infos = closure.captures.clone();
+        let mut captures = Vec::new();
+        for info in &infos {
+            let Some(id) = self.lookup(&info.name) else {
+                continue;
+            };
+            let place = self.binding_place(id);
+            match info.mode {
+                CaptureMode::Copy => {
+                    self.read_place(id, &[], span);
+                    captures.push(Value::place(place));
+                }
+                CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow => {
+                    self.bindings[id].used = true;
+                    captures.push(Value::new(
+                        Ty::raw(info.ty.clone()),
+                        ValueKind::Unary {
+                            op: UnaryOp::AddressOf,
+                            operand: Box::new(Value::place(place)),
+                        },
+                    ));
+                }
+            }
+        }
+        captures
+    }
+
+    /// Builds the lifted IR function for one lambda body and records it.
+    ///
+    /// The checker state is saved, replaced with a fresh function context, and
+    /// restored afterward, so the enclosing body's graph, scopes, and binding
+    /// table are untouched. Each captured name is bound to a place rooted at a
+    /// new [`ir::PlaceBase::EnvField`], so reads and writes render through the
+    /// environment and a `[borrow]` capture reaches the enclosing frame.
+    fn lift_lambda(
+        &mut self,
+        site: usize,
+        params: &'a [LambdaParam],
+        param_tys: &[Ty],
+        ret: Ty,
+        body: &'a LambdaBody,
+    ) {
+        let lambda_params: Vec<ir::Param> = params
+            .iter()
+            .zip(param_tys)
+            .map(|(param, ty)| ir::Param {
+                name: param.name.clone(),
+                ty: ty.clone(),
+                mode: Mode::None,
+            })
+            .collect();
+        let saved_builder = std::mem::replace(
+            &mut self.builder,
+            Builder::new(format!("cl_lambda_{site}"), lambda_params, ret.clone()),
+        );
+        let saved_scopes = std::mem::take(&mut self.scopes);
+        let saved_bindings = std::mem::take(&mut self.bindings);
+        let saved_state = std::mem::replace(&mut self.state, FlowState::default());
+        let saved_temps = std::mem::take(&mut self.temps);
+        let saved_exits = std::mem::take(&mut self.exits);
+        let saved_defers = std::mem::take(&mut self.defer_entries);
+        let saved_registration = self.next_registration;
+        let saved_owned_temp = self.next_owned_temp;
+        let saved_returns = self.returns.clone();
+        let saved_current_span = self.current_span;
+        self.next_registration = 0;
+        self.next_owned_temp = 0;
+        self.returns = ret.clone();
+
+        let body_span = match body {
+            LambdaBody::Expr(value) => value.span,
+            LambdaBody::Block(block) => block.span,
+        };
+        self.push_scope(body_span);
+        for (param, ty) in params.iter().zip(param_tys) {
+            self.declare_lambda_param(&param.name, ty.clone());
+        }
+        self.declare_captures(site);
+        let returned = match body {
+            LambdaBody::Expr(value) => Some(self.lower_value(value)),
+            LambdaBody::Block(block) => {
+                self.check_block(block);
+                None
+            }
+        };
+        self.pop_scope();
+        if !self.is_terminated() {
+            self.terminate(Terminator::Return(returned));
+        }
+
+        let lambda_builder = std::mem::replace(
+            &mut self.builder,
+            Builder::new("__cl_lifted_placeholder", Vec::new(), Ty::void()),
+        );
+        let mut function = lambda_builder.finish();
+        function.locals = self
+            .bindings
+            .iter()
+            .filter(|binding| binding.kind == BindingKind::Local)
+            .map(|binding| ir::Local {
+                name: binding.name.clone(),
+                ty: binding.ty.clone(),
+            })
+            .collect();
+        function.temps = self.temps.clone();
+        function.module = self.module.name.clone();
+        function.lambda_site = Some(site);
+        self.lifted.push(function);
+
+        self.builder = saved_builder;
+        self.scopes = saved_scopes;
+        self.bindings = saved_bindings;
+        self.state = saved_state;
+        self.temps = saved_temps;
+        self.exits = saved_exits;
+        self.defer_entries = saved_defers;
+        self.next_registration = saved_registration;
+        self.next_owned_temp = saved_owned_temp;
+        self.returns = saved_returns;
+        self.current_span = saved_current_span;
+    }
+
+    /// Declares one lambda parameter in the lifted function.
+    fn declare_lambda_param(&mut self, name: &str, ty: Ty) {
+        let id = self.declare(
+            name,
+            Span::default(),
+            ty,
+            BindingKind::Param,
+            Mode::None,
+            false,
+            false,
+        );
+        self.set_place(
+            id,
+            PlaceState {
+                initialized: true,
+                ..PlaceState::default()
+            },
+        );
+    }
+
+    /// Binds each recorded capture to its environment field.
+    ///
+    /// A `Copy` capture is a by-value field; a read-only or writable borrow is
+    /// a pointer field, and a writable borrow is declared `borrow` so the body
+    /// may assign through it.
+    fn declare_captures(&mut self, site: usize) {
+        let infos: Vec<CaptureInfo> = self
+            .sema
+            .closures
+            .get(&site)
+            .map(|closure| closure.captures.clone())
+            .unwrap_or_default();
+        for info in infos {
+            let by_pointer = !matches!(info.mode, CaptureMode::Copy);
+            let mode = match info.mode {
+                CaptureMode::WriteBorrow => Mode::Borrow,
+                _ => Mode::None,
+            };
+            let base = ir::PlaceBase::EnvField {
+                field: info.name.clone(),
+                by_pointer,
+                ty: info.ty.clone(),
+            };
+            let id = self.bindings.len();
+            let scope = self.scopes.len();
+            let registration = self.register_cleanup();
+            self.bindings.push(Binding {
+                name: info.name.clone(),
+                ty: info.ty.clone(),
+                span: Span::default(),
+                used: true,
+                scope,
+                kind: BindingKind::Param,
+                mode,
+                is_const: false,
+                needs_drop: false,
+                registration,
+                provenance: Provenance::None,
+                base: Some(base),
+            });
+            if let Some(scope) = self.scopes.last_mut() {
+                scope.names.insert(info.name.clone(), id);
+                scope.order.push(id);
+            }
+            self.set_place(
+                id,
+                PlaceState {
+                    initialized: true,
+                    ..PlaceState::default()
+                },
+            );
+        }
     }
 
     /// Lowers a discarded expression statement, keeping any side effect it has.
@@ -198,7 +467,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// is lowered and emitted as a discard, which preserves the short-circuit
     /// behavior of `&&`, `||`, and `?:` instead of running an embedded effect
     /// ahead of its guard. A value with no side effect lowers to nothing.
-    pub(super) fn lower_discarded(&mut self, expr: &Expr) {
+    pub(super) fn lower_discarded(&mut self, expr: &'a Expr) {
         let value = self.lower_value(expr);
         if is_pure_value(&value) {
             return;
@@ -217,7 +486,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// operand is actually evaluated. A fixed array cannot be assigned to a
     /// temporary in C, so it is left alone as well.
     pub(super) fn materialize_guard_operand(&mut self, value: Value) -> Value {
-        if is_pure_value(&value) {
+        if is_pure_value(&value) || value.ty.is_closure() {
             return value;
         }
         if matches!(
@@ -273,7 +542,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// guarded separately, so an operand left inline would run its side effect
     /// twice.
     pub(super) fn materialize_operand(&mut self, value: Value) -> Value {
-        if is_pure_value(&value) {
+        if is_pure_value(&value) || value.ty.is_closure() {
             return value;
         }
         if matches!(
@@ -308,6 +577,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
         if take
+            || value.ty.is_closure()
             || self.sema.table.duplicable(&value.ty)
             || is_view(&value.ty)
             || matches!(value.kind, ValueKind::Place(_))
@@ -376,6 +646,10 @@ fn mentions_type_param(ty: &Ty) -> bool {
             signature.params.iter().any(mentions_type_param)
                 || mentions_type_param(&signature.returns)
         }
+        TyKind::Closure(closure) => {
+            closure.params.iter().any(mentions_type_param)
+                || mentions_type_param(&closure.returns)
+        }
         _ => false,
     }
 }
@@ -390,7 +664,9 @@ fn is_pure_value(value: &Value) -> bool {
         ValueKind::Call { .. }
         | ValueKind::Intrinsic { .. }
         | ValueKind::Template(_)
+        | ValueKind::ClosureCall { .. }
         | ValueKind::Materialize { .. } => false,
+        ValueKind::Closure { captures, .. } => captures.iter().all(is_pure_value),
         ValueKind::Unary { op, operand } => !op.is_update() && is_pure_value(operand),
         ValueKind::Binary { left, right, .. } => is_pure_value(left) && is_pure_value(right),
         ValueKind::Cast { value: inner, .. } => is_pure_value(inner),

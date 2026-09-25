@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::types::{resolve_ty, Ty, TyKind};
 
-use super::types::declarator;
+use super::types::{c_type, declarator};
 use super::{
     is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
 };
@@ -107,6 +107,109 @@ impl<'a> Emitter<'a> {
         self.push("");
 
         self.function = None;
+    }
+
+    /// Emits one lambda's lifted function body.
+    ///
+    /// A lifted function has no source declaration, so its symbol comes from the
+    /// lambda site and its captures are read through the leading environment
+    /// parameter. A capture-less lambda's function takes only the lambda's own
+    /// parameters.
+    pub(super) fn emit_lifted_function(&mut self, function: &'a ir::Function) {
+        let Some(site) = function.lambda_site else {
+            return;
+        };
+        let capturing = self
+            .sema
+            .closures
+            .get(&site)
+            .is_some_and(|closure| !closure.captures.is_empty());
+
+        // A lifted function is never generic: its types were fixed when the
+        // enclosing body was lowered, so no substitution is active.
+        self.subst.clear();
+        self.used_names.clear();
+        self.local_names.clear();
+        self.pointer_params.clear();
+        self.scope_actions.clear();
+        self.rungs.clear();
+        self.labels.clear();
+        self.result_var = None;
+        self.reachable.clear();
+        self.emitted.clear();
+        self.pending_labels.clear();
+        self.loop_entry.clear();
+        self.suppress_output = false;
+
+        self.function = Some(function);
+        self.current_module = function.module.clone();
+        self.return_ty = function.ret.clone();
+
+        for param in &function.params {
+            let c_name = sanitize_identifier(&param.name);
+            self.used_names.insert(c_name.clone());
+            self.local_names.insert(param.name.clone(), c_name);
+        }
+        let mut declared: BTreeSet<String> = BTreeSet::new();
+        for local in &function.locals {
+            if !declared.insert(local.name.clone()) {
+                continue;
+            }
+            let c_name = self.unique_local(&local.name);
+            self.local_names.insert(local.name.clone(), c_name);
+        }
+
+        self.collect_cleanup(function);
+        let has_cleanup = self.scope_actions.values().any(|actions| !actions.is_empty());
+        if has_cleanup && !self.return_ty.is_void() {
+            self.result_var = Some("__cl_ret".to_owned());
+        }
+
+        let signature = self.lifted_signature(function, site, capturing);
+        self.push(&signature);
+        self.push("{");
+        self.emit_local_declarations(function);
+        if capturing {
+            // The environment parameter is only read when the body touches a
+            // capture, so name it to keep `-Wunused-parameter` quiet.
+            self.push("    if (sizeof(&__env)) { }");
+        }
+        self.emit_structured_body(function, has_cleanup);
+        self.emit_closing_return();
+        self.push("}");
+        self.push("");
+
+        self.function = None;
+    }
+
+    /// The C signature of one lifted lambda function.
+    ///
+    /// A capturing lambda's function takes a leading `struct ClEnv_<site> *`
+    /// named `__env`; a capture-less one has only the lambda parameters. The
+    /// function is always `static`, because a lifted lambda is reached only
+    /// through its value, never by name from another translation unit.
+    pub(super) fn lifted_signature(
+        &self,
+        function: &ir::Function,
+        site: usize,
+        capturing: bool,
+    ) -> String {
+        let ret = if function.ret.is_void() {
+            "void".to_owned()
+        } else {
+            c_type(&function.ret)
+        };
+        let mut params: Vec<String> = Vec::new();
+        if capturing {
+            params.push(format!("struct ClEnv_{site} *__env"));
+        }
+        for param in &function.params {
+            params.push(declarator(&param.ty, &sanitize_identifier(&param.name)));
+        }
+        if params.is_empty() {
+            params.push("void".to_owned());
+        }
+        format!("static {ret} cl_lambda_{site}({})", params.join(", "))
     }
 
     /// Writes the hoisted local declarations, the temporaries, and the result.
@@ -560,6 +663,13 @@ fn value_reads_base(value: &Value, target: &Place) -> bool {
         }
         ValueKind::Intrinsic { args, .. } => args.iter().any(|arg| value_reads_base(arg, target)),
         ValueKind::Materialize { value: inner, .. } => value_reads_base(inner, target),
+        ValueKind::Closure { captures, .. } => {
+            captures.iter().any(|capture| value_reads_base(capture, target))
+        }
+        ValueKind::ClosureCall { callable, args } => {
+            value_reads_base(callable, target)
+                || args.iter().any(|arg| value_reads_base(arg, target))
+        }
         ValueKind::Int(_)
         | ValueKind::Float(_)
         | ValueKind::Char(_)
@@ -639,6 +749,17 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>) {
             }
         }
         ValueKind::Materialize { value: inner, .. } => note_value(inner, read),
+        ValueKind::Closure { captures, .. } => {
+            for capture in captures {
+                note_value(capture, read);
+            }
+        }
+        ValueKind::ClosureCall { callable, args } => {
+            note_value(callable, read);
+            for arg in args {
+                note_value(arg, read);
+            }
+        }
         ValueKind::Int(_)
         | ValueKind::Float(_)
         | ValueKind::Char(_)

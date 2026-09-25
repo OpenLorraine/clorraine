@@ -102,6 +102,17 @@ impl<'a> Emitter<'a> {
                 let rendered = self.value(inner);
                 self.push(&format!("    __cl_tmp{temp} = {rendered};"));
             }
+            ValueKind::Closure { captures, .. } => {
+                for capture in captures {
+                    self.emit_guards(capture);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.emit_guards(callable);
+                for arg in args {
+                    self.emit_guards(arg);
+                }
+            }
             _ => {}
         }
     }
@@ -251,6 +262,17 @@ impl<'a> Emitter<'a> {
             ValueKind::Materialize { temp, value: inner } => {
                 self.guard_expressions(inner, out);
                 out.push(format!("(__cl_tmp{temp} = {})", self.value(inner)));
+            }
+            ValueKind::Closure { captures, .. } => {
+                for capture in captures {
+                    self.guard_expressions(capture, out);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.guard_expressions(callable, out);
+                for arg in args {
+                    self.guard_expressions(arg, out);
+                }
             }
             _ => {}
         }

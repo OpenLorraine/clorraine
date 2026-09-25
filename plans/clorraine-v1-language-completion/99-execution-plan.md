@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 15:05
-> **Progress**: 25/49 tasks (51%; Phase 2 sema complete — all six lambda goldens green; codegen remains)
+> **Last Updated**: 2026-09-25 15:20
+> **Progress**: 30/49 tasks (61%; Phase 2 implementation complete — lambdas stage 1-4 green; only Step 2.3 tests/prose remain)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -141,11 +141,11 @@ rules.
 - [x] 2.2.2 Type and scope-check a lambda, binding captures, and classify each capture (copy / read-only borrow / `[borrow]`) — `compiler/src/sema/expr.rs` ✅ (completed: 2026-09-25 15:05; `check_lambda` types the body in a child scope, records each `ClosureSite`, and classifies captures by duplicability; `Func` for capture-less, `Closure` for capturing)
 - [x] 2.2.3 Enforce `E10403`, `E10401`, and `E10402` — `compiler/src/sema/expr.rs` ✅ (completed: 2026-09-25 15:05; a `take` capture is E10403; moving a borrowed capture through a `take` argument or a return/expression body is E10401; writing a copy/read-only capture is E10402. `FuncSig` gained parameter modes so a call can tell a `take` argument)
 - [x] 2.2.4 Enforce `E10400` at a `func(...)` conversion and `E10404` at a storage, return, or capture — `compiler/src/sema/{expr,call}.rs` ✅ (completed: 2026-09-25 15:05; E10400 in `check_conversion`; E10404 at `let`/`const`/return/array-element storage; a callable-bound `F` now accepts a matching closure signature)
-- [ ] 2.2.5 Add the IR closure value and closure-call forms and thread them through lowering and the ownership pass — `compiler/src/ir/**`, `compiler/src/own/**`
-- [ ] 2.2.6 Lift each lambda to a `static` function and emit its environment struct — `compiler/src/codegen/{expr,program}.rs`
-- [ ] 2.2.7 Emit the capture-less function-pointer value and the capturing two-word value — `compiler/src/codegen/expr.rs`
-- [ ] 2.2.8 Emit the closure call and the monomorphized call form inside a generic body — `compiler/src/codegen/{calls,expr}.rs`
-- [ ] 2.2.9 Key closure instances in monomorphization (`closure_<N>`) — `compiler/src/own/generics.rs`, `compiler/src/codegen/types.rs`
+- [x] 2.2.5 Add the IR closure value and closure-call forms and thread them through lowering and the ownership pass — `compiler/src/ir/**`, `compiler/src/own/**` ✅ (completed: 2026-09-25 15:20; `ValueKind::Closure`/`ClosureCall`, `PlaceBase::EnvField`, a `Function::lambda_site` marker, and lowering of `ExprKind::Lambda` with a saved/restored nested checker)
+- [x] 2.2.6 Lift each lambda to a `static` function and emit its environment struct — `compiler/src/codegen/{expr,program}.rs` ✅ (completed: 2026-09-25 15:20; `cl_lambda_<N>` with a leading `struct ClEnv_<N>* __env`, the env struct emitted before its prototypes and body)
+- [x] 2.2.7 Emit the capture-less function-pointer value and the capturing two-word value — `compiler/src/codegen/expr.rs` ✅ (completed: 2026-09-25 15:20; a capture-less value is the lifted function name; a capturing value is `((ClClosure_<N>){ cl_lambda_<N>, &env })`; a copy capture stores the value, a borrow capture stores the address)
+- [x] 2.2.8 Emit the closure call and the monomorphized call form inside a generic body — `compiler/src/codegen/{calls,expr}.rs` ✅ (completed: 2026-09-25 15:20; a direct closure call is `cl_lambda_<N>(&env, args...)`; inside an instance the callable parameter emits `((f).fn((f).env, args...))`)
+- [x] 2.2.9 Key closure instances in monomorphization (`closure_<N>`) — `compiler/src/own/generics.rs`, `compiler/src/codegen/types.rs` ✅ (completed: 2026-09-25 15:20; `Instance::dedupe_key` renders a closure argument site-aware as `closure_<N>`, matching `type_key`, so two lambdas with the same signature stay distinct)
 - [x] 2.2.10 Enforce `E10306` when a resolved aggregate type contains an ephemeral closure argument, and un-stage its golden — `compiler/src/sema/{mod,call,expr}.rs`, `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/E10306_generic_ephemeral_arg.clo` (moved from Phase 1 by AR-42) ✅ (completed: 2026-09-25 15:05; a closure bound to an unbounded generic parameter, or used as a generic struct's type argument, is E10306; the golden is asserted and green)
 
 ### Step 2.3: Implementation tests, spec prose, and verification

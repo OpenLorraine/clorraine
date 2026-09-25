@@ -41,6 +41,22 @@ impl Place {
         Self::with_base(PlaceBase::Global(id))
     }
 
+    /// A place rooted at a lifted lambda's environment field.
+    ///
+    /// The type is carried on both the place and the base so the emitter can
+    /// spell a projected field without a separate environment lookup.
+    pub fn env(field: impl Into<String>, by_pointer: bool, ty: Ty) -> Self {
+        Self {
+            base: PlaceBase::EnvField {
+                field: field.into(),
+                by_pointer,
+                ty: ty.clone(),
+            },
+            projections: Vec::new(),
+            ty,
+        }
+    }
+
     /// A place with no projections and an unknown type.
     fn with_base(base: PlaceBase) -> Self {
         Self {
@@ -73,6 +89,20 @@ pub enum PlaceBase {
     Global(GlobalId),
     /// A compiler-created temporary.
     Temp(TempId),
+    /// A binding captured by a lifted lambda, reached through the environment.
+    ///
+    /// The lifted function receives the environment as a `struct ClEnv_<id> *`
+    /// parameter named `__env`. A by-value field is read as `(env->field)`; a
+    /// pointer field, used for a borrowed capture, is dereferenced as
+    /// `(*env->field)` so reads and writes reach the capturing frame.
+    EnvField {
+        /// The environment struct field name.
+        field: String,
+        /// True when the field holds a pointer to the captured place.
+        by_pointer: bool,
+        /// The captured value's checked type.
+        ty: Ty,
+    },
 }
 
 /// One selection applied to a place.

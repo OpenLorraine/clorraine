@@ -29,7 +29,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Lowers the receiver of a dot-call to a place value, when it has one.
-    fn lower_dot_receiver(&mut self, callee: &Expr) -> Option<Value> {
+    fn lower_dot_receiver(&mut self, callee: &'a Expr) -> Option<Value> {
         match &callee.kind {
             ExprKind::Member { base, .. } => Some(self.lower_value(base)),
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
@@ -106,7 +106,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the field, not a method taking the receiver: the field itself is the
     /// callable value. Returning `None` for a non-field callee keeps the
     /// ordinary dot-call path unchanged.
-    pub(super) fn func_field_receiver(&mut self, callee: &Expr) -> Option<Value> {
+    pub(super) fn func_field_receiver(&mut self, callee: &'a Expr) -> Option<Value> {
         let field_ty = self.callee_field_type(callee)?;
         if !matches!(field_ty.kind, TyKind::Func(_)) {
             return None;
@@ -136,9 +136,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// written.
     pub(super) fn lower_call(
         &mut self,
-        callee: &Expr,
-        type_args: &[crate::ast::Type],
-        args: &[Arg],
+        callee: &'a Expr,
+        type_args: &'a [crate::ast::Type],
+        args: &'a [Arg],
     ) -> LoweredCall {
         let name = self.callee_name(callee).unwrap_or_default();
         let receiver = self.func_field_receiver(callee);
@@ -221,9 +221,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Returns `None` for every other call, which stays an ordinary call.
     pub(super) fn lower_intrinsic_call(
         &mut self,
-        callee: &Expr,
-        type_args: &[crate::ast::Type],
-        args: &[Arg],
+        callee: &'a Expr,
+        type_args: &'a [crate::ast::Type],
+        args: &'a [Arg],
     ) -> Option<(Ty, ValueKind)> {
         let name = self.callee_name(callee)?;
         // Only the compiler-known helper lowers as an intrinsic. A user or

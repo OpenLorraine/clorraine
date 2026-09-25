@@ -100,6 +100,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 type_args,
                 args,
             } => {
+                // A directly invoked lambda is an ephemeral closure call, not a
+                // named function call. The whole expression lowers to the
+                // two-word call, whose result is discarded.
+                if self.is_closure_callee(callee) {
+                    let value = self.lower_value(expr);
+                    self.emit(Statement::Discard { value });
+                    return;
+                }
                 let call = self.lower_call(callee, type_args, args);
                 let move_outs = self.take_move_out_places(&call.name, &call.args);
                 self.emit(Statement::Call {
@@ -135,7 +143,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks a `let` binding and plans its initialization.
-    pub(super) fn check_let(&mut self, decl: &LetStmt) {
+    pub(super) fn check_let(&mut self, decl: &'a LetStmt) {
         self.current_span = decl.span;
         let declared = decl.ty.as_ref().map(|ty| self.resolve(ty));
         if let Some(ty) = &declared {
@@ -168,7 +176,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// transfer, so it lowers to a move that copies and then zeroes the
     /// source. Every other value lowers to an assign of the lowered value,
     /// which covers duplicable copies and fresh call results.
-    pub(super) fn emit_store(&mut self, target: Place, ty: &Ty, value: &Expr) {
+    pub(super) fn emit_store(&mut self, target: Place, ty: &Ty, value: &'a Expr) {
         if !self.sema.table.duplicable(ty) {
             if let Some(source) = self.place_target(value) {
                 let source = self.target_place(&source);
@@ -181,7 +189,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks a `const` binding.
-    pub(super) fn check_const(&mut self, decl: &ConstStmt) {
+    pub(super) fn check_const(&mut self, decl: &'a ConstStmt) {
         self.current_span = decl.span;
         let declared = decl.ty.as_ref().map(|ty| self.resolve(ty));
         if let Some(ty) = &declared {
@@ -581,7 +589,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A non-duplicable return value is an ownership transfer, so it runs the
     /// move rules: returning a lend parameter is `E10034`, and returning a
     /// moved value is `E10020`.
-    pub(super) fn check_return(&mut self, value: Option<&Expr>, span: Span) {
+    pub(super) fn check_return(&mut self, value: Option<&'a Expr>, span: Span) {
         if let Some(value) = value {
             self.eval(value);
             let returns = self.returns.clone();

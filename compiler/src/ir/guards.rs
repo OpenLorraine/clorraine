@@ -67,6 +67,10 @@ pub fn value_needs_guards(value: &Value) -> bool {
             ValuePiece::Placeholder(inner) => value_needs_guards(inner),
         }),
         ValueKind::Materialize { value, .. } => value_needs_guards(value),
+        ValueKind::Closure { captures, .. } => captures.iter().any(value_needs_guards),
+        ValueKind::ClosureCall { callable, args } => {
+            value_needs_guards(callable) || args.iter().any(value_needs_guards)
+        }
         ValueKind::Place(_)
         | ValueKind::Int(_)
         | ValueKind::Float(_)

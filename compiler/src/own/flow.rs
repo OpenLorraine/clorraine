@@ -52,6 +52,12 @@ pub(super) struct Binding {
     pub(super) registration: u32,
     /// For a view binding, where its storage comes from.
     pub(super) provenance: Provenance,
+    /// An explicit place base that overrides the binding's usual local or
+    /// parameter spelling.
+    ///
+    /// A lifted lambda binds its captures here, rooted at an environment field
+    /// instead of a C local. Every other binding leaves this `None`.
+    pub(super) base: Option<ir::PlaceBase>,
 }
 
 /// One lexical scope and the bindings declared in it.

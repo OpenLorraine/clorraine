@@ -96,6 +96,8 @@ impl<'a> Emitter<'a> {
                 args,
                 receiver,
             } => self.call(callee, type_args, args, receiver.as_deref()),
+            ValueKind::Closure { site, captures } => self.closure_value(*site, captures),
+            ValueKind::ClosureCall { callable, args } => self.closure_call(callable, args),
             // A staged-out form never reaches a valid compile; the fallback
             // keeps the renderer total.
             ValueKind::Aggregate => "0".to_owned(),
@@ -162,6 +164,18 @@ impl<'a> Emitter<'a> {
             }
             PlaceBase::Global(id) => self.global_symbol(&id.module, &id.name),
             PlaceBase::Temp(id) => format!("__cl_tmp{id}"),
+            // A capture is reached through the lifted function's environment
+            // parameter, which is always named `__env`. A pointer field is
+            // dereferenced so a read or write reaches the capturing frame.
+            PlaceBase::EnvField {
+                field, by_pointer, ..
+            } => {
+                if *by_pointer {
+                    format!("(*__env->{field})")
+                } else {
+                    format!("(__env->{field})")
+                }
+            }
         }
     }
 
@@ -191,6 +205,9 @@ impl<'a> Emitter<'a> {
                 .function
                 .and_then(|function| function.temps.get(*id as usize).cloned())
                 .unwrap_or_else(Ty::unknown),
+            // The environment field carries its own captured type, so the
+            // emitter spells a projected field without a site lookup.
+            PlaceBase::EnvField { ty, .. } => ty.clone(),
         }
     }
 
@@ -363,10 +380,83 @@ impl<'a> Emitter<'a> {
             };
             return format!("{symbol}({argument_list})");
         }
+        // Inside a monomorphized generic body, a callable parameter bound to a
+        // closure is called through its two-word value. A parameter bound to a
+        // plain `func` type stays a direct function-pointer call. A capture-less
+        // lambda in a non-generic caller is not a parameter, so it falls through
+        // to the named-function spelling below.
+        if let Some(closure) = self.closure_param_type(callee) {
+            let callable = self.place(&Place::param(callee).with_type(closure));
+            return format!("(({callable}).fn(({callable}).env, {argument_list}))");
+        }
         match callee {
             "text" => self.text_call(args.first()),
             _ => format!("{callee}({argument_list})"),
         }
+    }
+
+    /// The closure type of a callable parameter of the open function.
+    ///
+    /// A generic body's `f(x)` names no declared function; when the active
+    /// instance substitutes `f`'s parameter with a closure type, the call is a
+    /// two-word closure call. A `func`-typed parameter, and every non-parameter
+    /// callee, yields `None`.
+    fn closure_param_type(&self, callee: &str) -> Option<Ty> {
+        let function = self.function?;
+        let param = function.params.iter().find(|param| param.name == callee)?;
+        let ty = self.substitute(&param.ty);
+        ty.is_closure().then_some(ty)
+    }
+
+    /// Renders a lambda value.
+    ///
+    /// A capture-less lambda is a plain C function pointer, so it is the lifted
+    /// function's name. A capturing lambda is a two-word struct holding the
+    /// function pointer and the address of a stack environment built inline; the
+    /// environment is valid for the synchronous call that receives it.
+    fn closure_value(&self, site: usize, captures: &[Value]) -> String {
+        if captures.is_empty() {
+            return format!("cl_lambda_{site}");
+        }
+        let environment = self.environment_literal(site, captures);
+        format!("((ClClosure_{site}){{ cl_lambda_{site}, &({environment}) }})")
+    }
+
+    /// Renders a call of a value that is an ephemeral closure.
+    ///
+    /// A literal closure is called through its lifted function directly, so the
+    /// environment expression is evaluated once. Any other callable renders its
+    /// two-word value once into a C temporary expression and calls through the
+    /// pointer with the environment as the first argument.
+    fn closure_call(&self, callable: &Value, args: &[Value]) -> String {
+        let argument_list = args
+            .iter()
+            .map(|arg| self.value(arg))
+            .collect::<Vec<String>>()
+            .join(", ");
+        if let ValueKind::Closure { site, captures } = &callable.kind {
+            if captures.is_empty() {
+                return format!("cl_lambda_{site}({argument_list})");
+            }
+            let environment = self.environment_literal(*site, captures);
+            return if argument_list.is_empty() {
+                format!("cl_lambda_{site}(&({environment}))")
+            } else {
+                format!("cl_lambda_{site}(&({environment}), {argument_list})")
+            };
+        }
+        let callable_c = self.value(callable);
+        if argument_list.is_empty() {
+            format!("(({callable_c}).fn(({callable_c}).env))")
+        } else {
+            format!("(({callable_c}).fn(({callable_c}).env, {argument_list}))")
+        }
+    }
+
+    /// Renders an environment struct literal holding one capture per field.
+    fn environment_literal(&self, site: usize, captures: &[Value]) -> String {
+        let fields: Vec<String> = captures.iter().map(|capture| self.value(capture)).collect();
+        format!("((struct ClEnv_{site}){{ {} }})", fields.join(", "))
     }
 
     /// Renders a call to the compiler-known `text` conversion.

@@ -11,7 +11,7 @@ use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, Templ
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
-use crate::types::{resolve_ty, Ty, TyKind};
+use crate::types::{resolve_ty, CaptureMode, Ty, TyKind};
 
 use super::types::{c_type, collect_slice_types, declarator, mangle_module, scalar_of, type_key};
 use super::{Emitter, FuncInfo};
@@ -224,6 +224,67 @@ impl<'a> Emitter<'a> {
         found.into_iter().collect()
     }
 
+    /// Writes the environment and two-word callable structs of every capturing
+    /// lambda.
+    ///
+    /// The environment holds one field per recorded capture: the copied value
+    /// for a `Copy` capture, or a pointer to the captured place for a borrow.
+    /// The callable pairs the lifted function pointer with an environment
+    /// pointer. Both are emitted before the prototypes, because a generic
+    /// instance's `ClClosure_<id>` parameter type appears there.
+    pub(super) fn emit_closure_declarations(&mut self) {
+        let mut sites: Vec<usize> = Vec::new();
+        for function in &self.ownership.functions {
+            if let Some(site) = function.lambda_site {
+                if self
+                    .sema
+                    .closures
+                    .get(&site)
+                    .is_some_and(|closure| !closure.captures.is_empty())
+                {
+                    sites.push(site);
+                }
+            }
+        }
+        sites.sort_unstable();
+        sites.dedup();
+        for site in sites {
+            let Some(info) = self.sema.closures.get(&site) else {
+                continue;
+            };
+            self.push(&format!("struct ClEnv_{site} {{"));
+            for capture in &info.captures {
+                let field = &capture.name;
+                let ty = match capture.mode {
+                    CaptureMode::Copy => capture.ty.clone(),
+                    CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow => {
+                        Ty::raw(capture.ty.clone())
+                    }
+                };
+                self.push(&format!("    {};", declarator(&ty, field)));
+            }
+            self.push("};");
+            let ret = if info.returns.is_void() {
+                "void".to_owned()
+            } else {
+                c_type(&info.returns)
+            };
+            let params: Vec<String> = info.params.iter().map(c_type).collect();
+            let param_list = if params.is_empty() {
+                "void".to_owned()
+            } else {
+                params.join(", ")
+            };
+            self.push(&format!("typedef struct ClClosure_{site} {{"));
+            self.push(&format!(
+                "    {ret} (*fn)(struct ClEnv_{site} *, {param_list});"
+            ));
+            self.push(&format!("    struct ClEnv_{site} *env;"));
+            self.push(&format!("}} ClClosure_{site};"));
+            self.push("");
+        }
+    }
+
     /// Writes an opaque typedef for each user handle with no contract type.
     pub(super) fn emit_handle_typedefs(&mut self) {
         let mut names: BTreeSet<String> = BTreeSet::new();
@@ -378,6 +439,22 @@ impl<'a> Emitter<'a> {
                 "{};",
                 self.signature_with_symbol(info.decl, &subst, &symbol)
             ));
+        }
+        // A lifted lambda is used from the body that writes it, which is
+        // printed before the lifted function's own definition, so it needs a
+        // prototype too.
+        for function in &self.ownership.functions {
+            if let Some(site) = function.lambda_site {
+                let capturing = self
+                    .sema
+                    .closures
+                    .get(&site)
+                    .is_some_and(|closure| !closure.captures.is_empty());
+                lines.push(format!(
+                    "{};",
+                    self.lifted_signature(function, site, capturing)
+                ));
+            }
         }
         for module in self.loaded.modules.values() {
             for item in &module.items {
@@ -661,6 +738,17 @@ impl<'a> Emitter<'a> {
         for (info, instance) in tasks {
             self.emit_function(&info, instance);
         }
+        // A lifted lambda function is not a declared item, so it is emitted
+        // from the ownership stage's function list directly.
+        let lifted: Vec<&'a crate::ir::Function> = self
+            .ownership
+            .functions
+            .iter()
+            .filter(|function| function.lambda_site.is_some())
+            .collect();
+        for function in lifted {
+            self.emit_lifted_function(function);
+        }
     }
 
     /// Writes the `int main(void)` stub that runs inits then the user `main`.
@@ -715,6 +803,11 @@ impl<'a> Emitter<'a> {
                 instance.function,
                 self.instance_typekey(&instance.args)
             ));
+        }
+        for function in &self.ownership.functions {
+            if let Some(site) = function.lambda_site {
+                symbols.push(format!("cl_lambda_{site}"));
+            }
         }
         symbols
     }

@@ -25,13 +25,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .expect("internal error: the type stage recorded no type for this expression")
     }
 
+    /// The recorded type of an expression, when the type stage recorded one.
+    ///
+    /// Unlike [`Self::ty`], this never panics: a callee expression such as a
+    /// function name is not always recorded, so a caller that only asks whether
+    /// the callee is a closure reads it through this method.
+    pub(super) fn recorded_ty(&self, expr: &Expr) -> Option<Ty> {
+        self.sema
+            .expr_types
+            .get(&(expr as *const Expr as usize))
+            .cloned()
+    }
+
+    /// True when a call's callee expression lowers to a closure value.
+    ///
+    /// A capturing lambda's recorded type is a closure, but a capture-less
+    /// lambda is a `func`; its literal form is recognized by shape so a direct
+    /// `((x: i32) => x + 1)(4)` still becomes a closure call.
+    pub(super) fn is_closure_callee(&self, callee: &Expr) -> bool {
+        matches!(callee.kind, ExprKind::Lambda { .. })
+            || self.recorded_ty(callee).is_some_and(|ty| ty.is_closure())
+    }
+
     /// Resolves a written type in the current generic scope.
     pub(super) fn resolve(&self, ty: &crate::ast::Type) -> Ty {
         resolve_ty(ty, &self.type_params, &self.sema.table)
     }
 
     /// Checks and walks an expression, returning its type.
-    pub(super) fn eval(&mut self, expr: &Expr) -> Ty {
+    pub(super) fn eval(&mut self, expr: &'a Expr) -> Ty {
         let ty = self.ty(expr);
         match &expr.kind {
             ExprKind::Int(_)
@@ -248,7 +270,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// current value of the place is read, combined with the right-hand side,
     /// and stored back. The place is lowered once, so a side-effecting element
     /// index runs a single time.
-    pub(super) fn check_assign(&mut self, op: AssignOp, target: &Expr, value: &Expr) {
+    pub(super) fn check_assign(&mut self, op: AssignOp, target: &'a Expr, value: &'a Expr) {
         let target_ty = self.ty(target);
         let compound = op.binary_op();
         if compound.is_some() && matches!(target_ty.kind, TyKind::Raw(_)) {
@@ -327,7 +349,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// they emit the same read-modify-write as a compound assignment. The result
     /// value is discarded, so a postfix and a prefix form lower identically
     /// here; the value forms go through the unary value path instead.
-    pub(super) fn check_update(&mut self, op: AssignOp, operand: &Expr) {
+    pub(super) fn check_update(&mut self, op: AssignOp, operand: &'a Expr) {
         let ty = self.ty(operand);
         self.check_place_raw(operand);
         let binary = op.binary_op().expect("the update operators are compound");
@@ -376,7 +398,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &mut self,
         place: Place,
         ty: &Ty,
-        value: &Expr,
+        value: &'a Expr,
         compound: Option<BinaryOp>,
     ) {
         match compound {
@@ -432,7 +454,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so an impure operand is computed into a real temporary to keep its side
     /// effect to one run; a plain store passes `false` and leaves the operand
     /// in its single guarded position.
-    fn indexed_target(&mut self, target: &Expr, shared: bool) -> Option<(Value, Value, Ty)> {
+    fn indexed_target(&mut self, target: &'a Expr, shared: bool) -> Option<(Value, Value, Ty)> {
         let target = match &target.kind {
             ExprKind::Unsafe(inner) => inner,
             _ => target,
@@ -476,7 +498,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Lowers an indexed assignment, plain or compound.
-    fn emit_indexed_store(&mut self, target: &Expr, value: &Expr, compound: Option<BinaryOp>) {
+    fn emit_indexed_store(&mut self, target: &'a Expr, value: &'a Expr, compound: Option<BinaryOp>) {
         let Some((element, pointer, element_ty)) = self.indexed_target(target, compound.is_some())
         else {
             return;
@@ -495,7 +517,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Lowers an indexed increment or decrement as a read-modify-write.
-    fn emit_indexed_update(&mut self, target: &Expr, binary: BinaryOp, one: Value) {
+    fn emit_indexed_update(&mut self, target: &'a Expr, binary: BinaryOp, one: Value) {
         let Some((element, pointer, element_ty)) = self.indexed_target(target, true) else {
             return;
         };
@@ -511,7 +533,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Walking the projections rather than the whole expression keeps the
     /// target from being read as a value, which would be wrong for a field of
     /// a partially initialized or partially moved struct.
-    pub(super) fn check_place_raw(&mut self, target: &Expr) {
+    pub(super) fn check_place_raw(&mut self, target: &'a Expr) {
         let Some(PlaceTarget::Local(id, projections)) = self.place_target(target) else {
             return;
         };

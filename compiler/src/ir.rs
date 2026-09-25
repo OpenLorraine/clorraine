@@ -205,6 +205,30 @@ pub enum ValueKind {
         /// The type argument of `sizeof`, when one is written.
         type_arg: Option<Ty>,
     },
+    /// A lambda value: a capture-less function pointer or a two-word closure.
+    ///
+    /// A capture-less lambda is a plain C function pointer, so its only capture
+    /// list is empty and the emitter names the lifted function directly. A
+    /// capturing lambda carries one capture expression per environment field:
+    /// the copied value for a `Copy` capture, or the captured place's address
+    /// for a read-only or writable borrow.
+    Closure {
+        /// The lifted function's lambda-site index.
+        site: usize,
+        /// The capture expressions, in the environment's field order.
+        captures: Vec<Value>,
+    },
+    /// A call of a value whose callee is an ephemeral closure.
+    ///
+    /// The callable is either a two-word closure value or a lifted lambda
+    /// literal. The emitter passes the environment first, then the arguments,
+    /// so a direct literal call avoids materializing the closure struct.
+    ClosureCall {
+        /// The closure value being called.
+        callable: Box<Value>,
+        /// The call arguments in source order.
+        args: Vec<Value>,
+    },
     /// A struct or array literal the checker did not need to name explicitly.
     Aggregate,
     /// A reference to a compiler-created temporary.
@@ -476,6 +500,13 @@ pub struct Function {
     pub blocks: Vec<BasicBlock>,
     /// Index of the entry block.
     pub entry: BlockId,
+    /// The lambda site this function was lifted from, or `None` for a declared
+    /// function.
+    ///
+    /// A lifted function is emitted as a file-scope `static` function whose C
+    /// name is derived from the site. The marker tells the emitter to take the
+    /// lifted path rather than look the body up by a declaration name.
+    pub lambda_site: Option<usize>,
 }
 
 /// Builds a [`Function`] block by block.
@@ -514,6 +545,7 @@ impl Builder {
                 scopes: Vec::new(),
                 blocks: vec![entry],
                 entry: 0,
+                lambda_site: None,
             },
             current: 0,
             span: Span::default(),

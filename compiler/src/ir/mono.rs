@@ -5,7 +5,7 @@
 //! obligations a generic body owes, so codegen can consume them without reading
 //! the source tree again.
 
-use crate::types::Ty;
+use crate::types::{Ty, TyKind};
 
 /// One concrete instantiation of a generic function.
 ///
@@ -30,8 +30,20 @@ impl Instance {
     /// Two calls with the same function and the same type arguments share one
     /// emitted copy, so the key is the deduplication identity codegen uses.
     pub fn dedupe_key(&self) -> String {
-        let rendered: Vec<String> = self.args.iter().map(Ty::display).collect();
+        let rendered: Vec<String> = self.args.iter().map(dedupe_arg).collect();
         format!("{}<{}>", self.function, rendered.join(", "))
+    }
+}
+
+/// Renders a type argument so a closure site is part of the key.
+///
+/// A closure type's rendered signature alone does not identify its site, so two
+/// lambdas with the same signature would share a key. The site id is included
+/// here so distinct closures stay distinct.
+fn dedupe_arg(ty: &Ty) -> String {
+    match &ty.kind {
+        TyKind::Closure(closure) => format!("closure_{}", closure.id),
+        _ => ty.display(),
     }
 }
 

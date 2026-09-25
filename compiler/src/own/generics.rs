@@ -589,6 +589,17 @@ fn walk_value(value: &Value, program: &ProgramInfo, sema: &SemaOutput, mono: &mu
             }
         }
         ValueKind::Materialize { value, .. } => walk_value(value, program, sema, mono),
+        ValueKind::Closure { captures, .. } => {
+            for capture in captures {
+                walk_value(capture, program, sema, mono);
+            }
+        }
+        ValueKind::ClosureCall { callable, args } => {
+            walk_value(callable, program, sema, mono);
+            for arg in args {
+                walk_value(arg, program, sema, mono);
+            }
+        }
         ValueKind::Place(_)
         | ValueKind::Int(_)
         | ValueKind::Float(_)

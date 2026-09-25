@@ -264,6 +264,7 @@ impl<'a> Emitter<'a> {
         self.out.push_str(self.profile.shim());
         self.emit_typedefs();
         self.emit_aggregate_declarations();
+        self.emit_closure_declarations();
         self.emit_prototypes();
         self.emit_globals();
         self.emit_init_functions();
