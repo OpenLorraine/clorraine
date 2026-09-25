@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-25 16:25
+> **Last Updated**: 2026-09-25 18:39
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -24,6 +24,7 @@
 | PLAN-07 | ARM64 port | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-06 |
 | PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-09 | Clorraine demo video toolkit | — | [clorraine-demo-video](clorraine-demo-video/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
+| PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | Plan Created | 📋 | 2026-09-25 | depends on PLAN-04 |
 
 ## Backlog / Known defects
 
@@ -37,5 +38,5 @@
 | DEF-06 | Generic struct instance bypasses the by-value overlay ban | 2026-09-25 | Open | `overlay_reached` (`compiler/src/sema/mod.rs:315`) walks a struct's declared field types without substituting instance arguments, so `Outer<T> { inner: T }` used as `Outer<CustomRegs>` is accepted while the non-generic form is `E10207`. Found while reviewing the DEF-05 fix; pre-existing. |
 | DEF-07 | Generic struct duplicability ignores its type arguments | 2026-09-25 | Open | `TypeTable::duplicable_at` (`compiler/src/types/table.rs:360`) does not substitute, so `Box<T> { value: T }` used as `Box<String>` is treated as duplicable and its handle is copied without `E10020`. Ownership soundness hole; pre-existing. |
 | DEF-08 | Drop not emitted for a generic struct holding a handle | 2026-09-25 | Open | `codegen/drop.rs` reads declared field types without substituting, so `Box<String>` never emits the `String` drop and leaks. Pre-existing. |
-| DEF-09 | Empty generic struct literal emits C that fails `-Werror` | 2026-09-25 | Open | `codegen/expr.rs::struct_literal` fills an omitted field from the enclosing substitution only, so `Pair<Pair<i32>> {}` emits `(ClPair__Pair__i32){ 0, 0 }` and the driver reports a failed C compile. The checker's `E10203` uses `!fields.is_empty()`, so the empty literal slips through. Pre-existing. |
+| DEF-09 | Nested generic zero value emits C that fails `-Werror` | 2026-09-25 | Open | `codegen/expr.rs::struct_literal` fills an omitted field from the enclosing substitution only, so `Pair<Pair<i32>> {}` (a valid zero value, `spec/07-structs.md:44` STR-7) emits `(ClPair__Pair__i32){ 0, 0 }` and the driver reports a failed C compile. Pre-existing. |
 | DEF-10 | Remaining unsubstituted generic-field reads | 2026-09-25 | Open | The ownership `member_type` (`compiler/src/own/expr.rs`), raw-pointer member access (typed `Unknown`), and `size_of_at`/`offset_of` (`compiler/src/types/table.rs`) still read declared field types without the instance substitution. Minor; pre-existing. |
