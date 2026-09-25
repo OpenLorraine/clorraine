@@ -5,8 +5,18 @@ import type { EmulatorScene } from "../scenes.ts";
 import { runOrThrow } from "../util/proc.ts";
 import type { RenderEnv } from "./env.ts";
 
-/** The region of the branded frame the emulator capture is drawn into. */
+/** The region of the branded frame the emulator capture is drawn into, in design px. */
 export const FRAME_SCREEN = { x: 40, y: 70, width: 1020, height: 500 } as const;
+
+/** The {@link FRAME_SCREEN} region scaled onto a captured frame (`design * scale`). */
+export function frameScreenRect(scale: number): { x: number; y: number; width: number; height: number } {
+  return {
+    x: Math.round(FRAME_SCREEN.x * scale),
+    y: Math.round(FRAME_SCREEN.y * scale),
+    width: Math.round(FRAME_SCREEN.width * scale),
+    height: Math.round(FRAME_SCREEN.height * scale),
+  };
+}
 
 /** The capture parameters for one emulator scene. */
 export interface EmulatorCaptureOptions {
@@ -34,8 +44,8 @@ export interface EmulatorRecorder {
 }
 
 /** Builds the ffmpeg arguments that composite a capture into the frame's screen area. */
-export function buildFrameOverlayArgs(capture: string, frame: string, out: string, fps: number): string[] {
-  const screen = FRAME_SCREEN;
+export function buildFrameOverlayArgs(capture: string, frame: string, out: string, fps: number, scale = 1): string[] {
+  const screen = frameScreenRect(scale);
   const filter =
     `[1:v]scale=${screen.width}:${screen.height}:force_original_aspect_ratio=decrease,` +
     `pad=${screen.width}:${screen.height}:(ow-iw)/2:(oh-ih)/2:color=black[c];` +
@@ -55,7 +65,7 @@ export function buildFrameOverlayArgs(capture: string, frame: string, out: strin
 
 /** Composites a raw emulator capture into a rendered frame PNG. */
 export interface FrameOverlay {
-  apply(capture: string, frame: string, out: string, options: { fps: number }): Promise<void>;
+  apply(capture: string, frame: string, out: string, options: { fps: number; scale: number }): Promise<void>;
 }
 
 /** Records with the repository's `demo/record-emulator.sh`, which drives FS-UAE. */
@@ -77,8 +87,10 @@ export class ScriptEmulatorRecorder implements EmulatorRecorder {
 
 /** Scales the capture into the frame's screen area with ffmpeg. */
 export class FfmpegFrameOverlay implements FrameOverlay {
-  async apply(capture: string, frame: string, out: string, options: { fps: number }): Promise<void> {
-    await runOrThrow("ffmpeg", buildFrameOverlayArgs(capture, frame, out, options.fps), { stdio: "ignore" });
+  async apply(capture: string, frame: string, out: string, options: { fps: number; scale: number }): Promise<void> {
+    await runOrThrow("ffmpeg", buildFrameOverlayArgs(capture, frame, out, options.fps, options.scale), {
+      stdio: "ignore",
+    });
   }
 }
 
@@ -119,6 +131,7 @@ export async function renderEmulator(
     query: frameQuery(scene),
     width: env.width,
     height: env.height,
+    scale: env.scale,
     count: 1,
     fps: env.fps,
   });
@@ -127,6 +140,6 @@ export async function renderEmulator(
     throw new Error("the branded frame produced no image");
   }
   const overlay = deps.overlay ?? new FfmpegFrameOverlay();
-  await overlay.apply(raw, frame, out, { fps: env.fps });
+  await overlay.apply(raw, frame, out, { fps: env.fps, scale: env.scale });
   return out;
 }

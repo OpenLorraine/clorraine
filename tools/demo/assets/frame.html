@@ -9,7 +9,9 @@
         position: relative;
         height: 100%;
         margin: 0;
-        background: linear-gradient(180deg, #2a2a3c 0%, #1a1a26 100%);
+        /* The gradient fades to --bg at the edges, so a pillarboxed high-resolution
+           render has no visible seam against the side bars. */
+        background: radial-gradient(90% 120% at 50% 0%, #2a2a3c 0%, var(--bg) 70%);
         border-bottom: 2px solid var(--accent);
       }
       .bezel-title {

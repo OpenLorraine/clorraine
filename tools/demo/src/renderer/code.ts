@@ -60,6 +60,7 @@ export async function renderCode(scene: CodeScene, env: RenderEnv): Promise<stri
     },
     width: env.width,
     height: env.height,
+    scale: env.scale,
     count,
     fps: env.fps,
   });

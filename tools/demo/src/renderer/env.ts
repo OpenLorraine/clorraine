@@ -5,8 +5,8 @@
 export const CAPTION_STRIP = 80;
 
 /** The height of the content area: the canvas height minus the caption strip. */
-export function contentHeight(height: number): number {
-  return height - CAPTION_STRIP;
+export function contentHeight(height: number, captionStrip: number = CAPTION_STRIP): number {
+  return height - captionStrip;
 }
 
 /** A request for a run of frames from one HTML page. */
@@ -17,10 +17,12 @@ export interface FrameSpec {
   page: string;
   /** Query parameters passed to the page (read by its script). */
   query?: Record<string, string>;
-  /** Canvas width in pixels. */
+  /** Design (CSS layout) width in pixels. */
   width: number;
-  /** Canvas height in pixels. */
+  /** Design (CSS layout) height in pixels. */
   height: number;
+  /** Device pixel factor; the captured image is `width * scale` by `height * scale`. */
+  scale: number;
   /** Number of frames to capture. */
   count: number;
   /** Frame rate used to advance the page's time `t` between frames. */
@@ -48,10 +50,18 @@ export interface RenderEnv {
   encode: Encoder;
   /** Repository root; scene file paths are resolved against it. */
   root: string;
-  /** Canvas width in pixels. */
+  /** Design (CSS layout) width in pixels. */
   width: number;
-  /** Canvas height in pixels. */
+  /** Design (CSS layout) height in pixels. */
   height: number;
+  /** Device pixel factor: HTML is captured at `width * scale` by `height * scale`. */
+  scale: number;
+  /** Final video width in pixels (may be wider than the design, for pillarboxing). */
+  outputWidth: number;
+  /** Final video height in pixels. */
+  outputHeight: number;
+  /** Bottom strip reserved for captions, in output pixels. */
+  captionStrip: number;
   /** Output frame rate. */
   fps: number;
   /** Directory for finished clips. */

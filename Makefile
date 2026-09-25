@@ -38,7 +38,7 @@ STEM = $(basename $(notdir $(FILE)))
 # Prefix for the host FS-UAE wrapper when capturing.
 CAPTURE_ENV = $(if $(filter 1,$(CAPTURE)),RUN_CAPTURE=1 ,)
 
-.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo demo-check
+.PHONY: check corpus-amiga corpus-fs-uae run-fault-amiga verify run build demo demo-check channel-assets demo-youtube
 
 check:
 	./spec/check.sh
@@ -105,3 +105,16 @@ demo:
 	@test -d tools/demo/node_modules || (cd tools/demo && npm ci --silent)
 	node tools/demo/src/cli.ts render demo/story.ts
 	node tools/demo/src/cli.ts render demo/story.ts --only emulator --out demo/emulator.mp4
+
+# Render the YouTube channel branding images into build/channel/. Host-only: it needs
+# Chrome (headless), so it is kept out of `check`/`verify`.
+channel-assets:
+	@test -d tools/demo/node_modules || (cd tools/demo && npm ci --silent)
+	node tools/demo/src/cli.ts channel
+
+# Render the story at 1920x1080 for upload (the 1100x700 design pillarboxed). Host-only:
+# it needs Chrome, VHS, ffmpeg, and the emulator, so it is kept out of `check`/`verify`.
+demo-youtube:
+	@test -d tools/demo/node_modules || (cd tools/demo && npm ci --silent)
+	node tools/demo/src/cli.ts render demo/story.ts --size 1080 --out demo/demo-full-1080.mp4
+	node tools/demo/src/cli.ts render demo/story.ts --size 1080 --only emulator --out demo/emulator-1080.mp4

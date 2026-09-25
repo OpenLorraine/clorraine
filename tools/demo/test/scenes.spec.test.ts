@@ -84,7 +84,7 @@ test("a card scene requests one frame per output frame", async () => {
     },
   };
   const encode = { encodeFrames: async (): Promise<void> => {} };
-  const env: RenderEnv = { frames, encode, root: "/tmp/clorraine-demo-spec", width: 1100, height: 700, fps: 50, outDir: "/tmp/clorraine-demo-spec", workDir: "/tmp/clorraine-demo-spec/work" };
+  const env: RenderEnv = { frames, encode, root: "/tmp/clorraine-demo-spec", width: 1100, height: 700, scale: 1, outputWidth: 1100, outputHeight: 700, captionStrip: 80, fps: 50, outDir: "/tmp/clorraine-demo-spec", workDir: "/tmp/clorraine-demo-spec/work" };
 
   await renderCard({ id: "intro", kind: "card", title: "Title", duration: 6 }, env);
 

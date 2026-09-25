@@ -4,6 +4,7 @@ import { sceneDuration } from "../scenes.ts";
 import type { TerminalScene } from "../scenes.ts";
 import { buildTape, VhsRunner } from "../util/vhs.ts";
 import type { VhsRecorder } from "../util/vhs.ts";
+import { CAPTION_STRIP } from "./env.ts";
 import type { RenderEnv } from "./env.ts";
 
 /**
@@ -26,8 +27,10 @@ export async function renderTerminal(
 
   const tape = buildTape(scene, {
     output: relative(env.root, output),
-    width: env.width,
-    height: env.height,
+    width: env.width * env.scale,
+    height: env.height * env.scale,
+    captionStrip: CAPTION_STRIP * env.scale,
+    fontSize: 16 * env.scale,
     duration: sceneDuration(scene),
   });
   await writeFile(tapePath, tape, "utf8");

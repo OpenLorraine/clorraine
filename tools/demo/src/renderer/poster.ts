@@ -15,6 +15,7 @@ export async function renderPoster(scene: CardScene | OutroScene, env: RenderEnv
     query: cardQuery(scene),
     width: env.width,
     height: env.height,
+    scale: env.scale,
     count: 1,
     fps: env.fps,
   });

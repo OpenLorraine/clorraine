@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import type { TerminalScene } from "../scenes.ts";
-import { contentHeight } from "../renderer/env.ts";
+import { CAPTION_STRIP, contentHeight } from "../renderer/env.ts";
 import { run } from "./proc.ts";
 
 /** Options for {@link buildTape}. */
@@ -13,6 +13,10 @@ export interface TapeOptions {
   height: number;
   /** Seconds each command stays on screen after it is typed. */
   duration: number;
+  /** Height of the reserved caption strip, in pixels. Defaults to {@link CAPTION_STRIP}. */
+  captionStrip?: number;
+  /** Terminal font size, in pixels. Defaults to 16. */
+  fontSize?: number;
 }
 
 /**
@@ -35,12 +39,13 @@ export function escapeTapeValue(value: string): string {
  * ```
  */
 export function buildTape(scene: TerminalScene, options: TapeOptions): string {
+  const fontSize = options.fontSize ?? 16;
   const lines = [
     `Output ${options.output}`,
     'Set Shell "bash"',
-    "Set FontSize 16",
+    `Set FontSize ${fontSize}`,
     `Set Width ${options.width}`,
-    `Set Height ${contentHeight(options.height)}`,
+    `Set Height ${contentHeight(options.height, options.captionStrip)}`,
     "Set Padding 20",
     'Set Theme "Dracula"',
     "Set TypingSpeed 80ms",

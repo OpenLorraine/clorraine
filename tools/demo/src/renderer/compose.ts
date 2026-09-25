@@ -9,6 +9,8 @@ import { runOrThrow } from "../util/proc.ts";
 import type { VhsRecorder } from "../util/vhs.ts";
 import { CAPTION_STRIP, contentHeight } from "./env.ts";
 import type { RenderEnv } from "./env.ts";
+import { contentWidth } from "./profile.ts";
+import type { RenderProfile } from "./profile.ts";
 import { renderCard } from "./card.ts";
 import { renderCode } from "./code.ts";
 import { renderEmulator } from "./emulator.ts";
@@ -106,8 +108,8 @@ export function posterScene(config: DemoConfig): Scene {
 
 /** Options for {@link buildNormalizeArgs}. */
 export interface NormalizeOptions {
-  width: number;
-  height: number;
+  /** The profile that maps the design onto the output canvas. */
+  profile: RenderProfile;
   fps: number;
   /** Seconds to keep; the rest is trimmed. */
   duration: number;
@@ -117,29 +119,46 @@ export interface NormalizeOptions {
   captionTextFile?: string;
 }
 
-function captionDrawtext(textFile: string, height: number): string {
-  const fontSize = 26;
-  const y = height - CAPTION_STRIP + Math.round((CAPTION_STRIP - fontSize) / 2);
+function captionDrawtext(textFile: string, profile: RenderProfile): string {
+  // The caption font scales with the strip so it keeps its proportion on larger canvases.
+  const fontSize = Math.round((26 * profile.captionStrip) / CAPTION_STRIP);
+  const y = profile.outputHeight - profile.captionStrip + Math.round((profile.captionStrip - fontSize) / 2);
   return `drawtext=fontfile=${CAPTION_FONT}:textfile=${textFile}:fontsize=${fontSize}:fontcolor=white:x=(w-text_w)/2:y=${y}`;
 }
 
 /**
- * Builds the ffmpeg arguments that bring a clip onto the common canvas: the frame rate
- * and pixel format are fixed, a raw clip is scaled and padded into the content area,
- * and the clip is trimmed to its declared duration. Clips that are already on the canvas
- * are only re-encoded and trimmed, so they are not scaled a second time.
+ * Builds the ffmpeg arguments that bring a clip onto the output canvas: the frame rate
+ * and pixel format are fixed, a raw clip is scaled and padded into the content area, and
+ * the clip is trimmed to its declared duration. A clip that already includes the caption
+ * is only scaled to the output height and pillarboxed.
  */
 export function buildNormalizeArgs(input: string, output: string, options: NormalizeOptions): string[] {
-  const content = contentHeight(options.height);
+  const profile = options.profile;
+  const boxWidth = contentWidth(profile);
+  const boxHeight = contentHeight(profile.outputHeight, profile.captionStrip);
   const filters = [`fps=${options.fps}`];
-  if (!options.canvasReady) {
-    filters.push(`scale=${options.width}:${content}:force_original_aspect_ratio=decrease`);
-    filters.push(`pad=${options.width}:${content}:(ow-iw)/2:(oh-ih)/2:color=black`);
-    filters.push(`pad=${options.width}:${options.height}:0:0:color=${BG_COLOR}`);
+
+  if (options.canvasReady) {
+    if (profile.scale !== 1) {
+      filters.push(`scale=-2:${profile.outputHeight}`);
+    }
+    if (profile.outputWidth !== boxWidth) {
+      filters.push(`pad=${profile.outputWidth}:${profile.outputHeight}:(ow-iw)/2:0:color=${BG_COLOR}`);
+    }
+  } else {
+    filters.push(`scale=${boxWidth}:${boxHeight}:force_original_aspect_ratio=decrease`);
+    filters.push(`pad=${boxWidth}:${boxHeight}:(ow-iw)/2:(oh-ih)/2:color=black`);
+    if (profile.outputHeight !== boxHeight) {
+      filters.push(`pad=${boxWidth}:${profile.outputHeight}:0:0:color=${BG_COLOR}`);
+    }
+    if (profile.outputWidth !== boxWidth) {
+      filters.push(`pad=${profile.outputWidth}:${profile.outputHeight}:(ow-iw)/2:0:color=${BG_COLOR}`);
+    }
   }
+
   filters.push("setsar=1");
   if (options.captionTextFile !== undefined) {
-    filters.push(captionDrawtext(options.captionTextFile, options.height));
+    filters.push(captionDrawtext(options.captionTextFile, profile));
   }
   return [
     "-v", "error", "-y",
@@ -266,6 +285,15 @@ export async function compose(config: DemoConfig, env: RenderEnv, options: Compo
   await mkdir(textDir, { recursive: true });
   await mkdir(dirname(out), { recursive: true });
 
+  const profile: RenderProfile = {
+    designWidth: env.width,
+    designHeight: env.height,
+    scale: env.scale,
+    outputWidth: env.outputWidth,
+    outputHeight: env.outputHeight,
+    captionStrip: env.captionStrip,
+  };
+
   const clips: string[] = [];
   const durations: number[] = [];
   for (const scene of selected) {
@@ -279,8 +307,7 @@ export async function compose(config: DemoConfig, env: RenderEnv, options: Compo
     await runOrThrow(
       "ffmpeg",
       buildNormalizeArgs(raw, normalized, {
-        width: env.width,
-        height: env.height,
+        profile,
         fps: env.fps,
         duration: sceneDuration(scene),
         canvasReady: isCanvasReady(scene),

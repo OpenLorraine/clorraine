@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
+import { renderChannelAssets } from "./channel.ts";
 import { loadConfig } from "./config.ts";
 import { compose } from "./renderer/compose.ts";
 import type { RenderEnv } from "./renderer/env.ts";
+import { DEFAULT_PROFILE, profileForHeight } from "./renderer/profile.ts";
 import { writeScaffold } from "./scaffold.ts";
 import { ConfigError, sceneDuration } from "./scenes.ts";
 import type { DemoConfig } from "./scenes.ts";
@@ -20,10 +22,12 @@ Commands:
   render <config>   Render a demo config (a .ts or .json scene script)
   new <file.clo>    Write a scene-script scaffold for a Clorraine source file
   list <config>     Print the scenes in a config
+  channel           Render the YouTube banner, avatar, and thumbnail
 
 Options:
   --only <ids>      With render: render only these scenes (comma-separated or repeatable)
   --out <path>      With render: override the config's output path
+  --size <height>   With render: a 16:9 output height (e.g. 1080); default 700
   --root <path>     Repository root for path resolution (also CLORRAINE_DEMO_ROOT)
   --force           With new: overwrite an existing scaffold
   -h, --help        Show this help
@@ -34,6 +38,7 @@ export async function main(argv: string[]): Promise<number> {
   let values: {
     only?: string[];
     out?: string;
+    size?: string;
     root?: string;
     force?: boolean;
     help?: boolean;
@@ -46,6 +51,7 @@ export async function main(argv: string[]): Promise<number> {
       options: {
         only: { type: "string", multiple: true },
         out: { type: "string" },
+        size: { type: "string" },
         root: { type: "string" },
         force: { type: "boolean" },
         help: { type: "boolean", short: "h" },
@@ -77,8 +83,9 @@ export async function main(argv: string[]): Promise<number> {
       case "render": {
         const file = requirePath(positionals[1], "a config path");
         const root = values.root ?? process.env.CLORRAINE_DEMO_ROOT ?? defaultRepoRoot();
+        const size = values.size === undefined ? undefined : Number(values.size);
         const config = await loadConfig(file, { root });
-        const out = await compose(config, buildRenderEnv(config, root), {
+        const out = await compose(config, buildRenderEnv(config, root, size), {
           out: values.out,
           only: parseOnly(values.only),
         });
@@ -90,6 +97,19 @@ export async function main(argv: string[]): Promise<number> {
         const root = values.root ?? process.env.CLORRAINE_DEMO_ROOT ?? defaultRepoRoot();
         const result = await writeScaffold({ root, file, force: values.force === true });
         info(`wrote ${result.relativePath}`);
+        return 0;
+      }
+      case "channel": {
+        const root = values.root ?? process.env.CLORRAINE_DEMO_ROOT ?? defaultRepoRoot();
+        const outDir = join(root, "build", "channel");
+        const frames = new ChromeFrameSource({
+          assetsDir: join(root, "tools", "demo", "assets"),
+          framesDir: join(root, "build", "demo", "frames-channel"),
+        });
+        const written = await renderChannelAssets(frames, outDir);
+        for (const file of written) {
+          info(`wrote ${relative(root, file)}`);
+        }
         return 0;
       }
       default:
@@ -130,11 +150,13 @@ function parseOnly(values: string[] | undefined): string[] | undefined {
  * encoding, and the repository's `build/demo/` tree for intermediates.
  *
  * `rawRoot` is normalized to an absolute path so that a relative `--root` does not get
- * combined twice when a child process is started with `cwd: root`.
+ * combined twice when a child process is started with `cwd: root`. A `size` selects a
+ * 16:9 output profile; without one, the design is the output.
  */
-function buildRenderEnv(config: DemoConfig, rawRoot: string): RenderEnv {
+function buildRenderEnv(config: DemoConfig, rawRoot: string, size?: number): RenderEnv {
   const root = resolve(rawRoot);
   const base = join(root, "build", "demo");
+  const profile = size === undefined ? DEFAULT_PROFILE : profileForHeight(size);
   return {
     frames: new ChromeFrameSource({
       assetsDir: join(root, "tools", "demo", "assets"),
@@ -142,8 +164,12 @@ function buildRenderEnv(config: DemoConfig, rawRoot: string): RenderEnv {
     }),
     encode: new FfmpegEncoder(),
     root,
-    width: config.width ?? 1100,
-    height: config.height ?? 700,
+    width: config.width ?? profile.designWidth,
+    height: config.height ?? profile.designHeight,
+    scale: profile.scale,
+    outputWidth: profile.outputWidth,
+    outputHeight: profile.outputHeight,
+    captionStrip: profile.captionStrip,
     fps: config.fps ?? 50,
     outDir: join(base, "raw"),
     workDir: join(base, "work"),

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>LorraineOS thumbnail</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: "DejaVu Sans", sans-serif;
+        background: radial-gradient(120% 120% at 20% 0%, #2a2a3c 0%, #1e1e2e 50%, #11111a 100%);
+        color: #e6e6ee;
+      }
+      .grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(#88ccff14 1px, transparent 1px),
+          linear-gradient(90deg, #88ccff14 1px, transparent 1px);
+        background-size: 60px 60px;
+      }
+      .stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 70px 80px;
+      }
+      .text {
+        max-width: 720px;
+      }
+      .kick {
+        font-size: 30px;
+        letter-spacing: 8px;
+        text-transform: uppercase;
+        color: #88ccff;
+        margin: 0 0 16px;
+      }
+      h1 {
+        font-size: 104px;
+        line-height: 1.02;
+        margin: 0;
+        color: #ffffff;
+      }
+      .subtitle {
+        font-size: 38px;
+        color: #c9c9d6;
+        margin: 24px 0 0;
+      }
+      .cube {
+        width: 420px;
+        height: 420px;
+        color: #88ccff;
+        opacity: 0.9;
+        flex: 0 0 auto;
+      }
+      .glow {
+        position: absolute;
+        right: 60px;
+        top: 50%;
+        width: 620px;
+        height: 620px;
+        margin-top: -310px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(136, 204, 255, 0.16) 0%, transparent 62%);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grid"></div>
+    <div class="glow"></div>
+    <div class="stage">
+      <div class="text">
+        <p class="kick" id="kick"></p>
+        <h1 id="title"></h1>
+        <p class="subtitle" id="subtitle"></p>
+      </div>
+      <svg class="cube" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+        <polygon points="50,12 86,32 86,72 50,92 14,72 14,32" />
+        <polyline points="14,32 50,52 86,32" />
+        <line x1="50" y1="52" x2="50" y2="92" />
+      </svg>
+    </div>
+    <script>
+      const params = new URLSearchParams(location.search);
+      document.getElementById("kick").textContent = params.get("kick") || "LorraineOS";
+      document.getElementById("title").textContent = params.get("title") || "Clorraine";
+      document.getElementById("subtitle").textContent = params.get("subtitle") || "";
+      window.render = function () {
+        /* the thumbnail is static */
+      };
+      window.__ready = true;
+    </script>
+  </body>
+</html>

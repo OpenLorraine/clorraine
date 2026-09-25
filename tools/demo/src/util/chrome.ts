@@ -243,7 +243,7 @@ export class ChromeFrameSource implements FrameSource {
       await cdp.send("Emulation.setDeviceMetricsOverride", {
         width: spec.width,
         height: spec.height,
-        deviceScaleFactor: 1,
+        deviceScaleFactor: spec.scale,
         mobile: false,
       });
 

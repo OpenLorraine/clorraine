@@ -24,6 +24,7 @@ export async function renderCard(scene: CardScene | OutroScene, env: RenderEnv):
     query: cardQuery(scene),
     width: env.width,
     height: env.height,
+    scale: env.scale,
     count,
     fps: env.fps,
   });
