@@ -362,7 +362,11 @@ impl<'a> Emitter<'a> {
                 continue;
             };
             let subst = self.instance_subst(info.decl, &instance.args);
-            let symbol = format!("cl_{}__{}", instance.function, instance.args.join("_"));
+            let symbol = format!(
+                "cl_{}__{}",
+                instance.function,
+                self.instance_typekey(&instance.args)
+            );
             lines.push(format!(
                 "{};",
                 self.signature_with_symbol(info.decl, &subst, &symbol)
@@ -638,7 +642,7 @@ impl<'a> Emitter<'a> {
                 continue;
             };
             let subst = self.instance_subst(info.decl, &instance.args);
-            let typekey = instance.args.join("_");
+            let typekey = self.instance_typekey(&instance.args);
             tasks.push((
                 FuncInfo {
                     module: info.module.clone(),
@@ -699,7 +703,11 @@ impl<'a> Emitter<'a> {
             symbols.push(self.function_symbol(&info.module, &info.decl.name));
         }
         for instance in self.ownership.monomorphization.instances() {
-            symbols.push(format!("cl_{}__{}", instance.function, instance.args.join("_")));
+            symbols.push(format!(
+                "cl_{}__{}",
+                instance.function,
+                self.instance_typekey(&instance.args)
+            ));
         }
         symbols
     }

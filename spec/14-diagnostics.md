@@ -114,7 +114,7 @@
 |---|---|---|---|
 | E10300 | Wrong number of type arguments | `wrong number of type arguments for '{name}': expected {expected}, found {found}` | list all type arguments |
 | E10301 | Type arguments cannot be inferred | `cannot infer type arguments for '{name}'` | write the type arguments explicitly |
-| E10302 | `export` on a generic declaration | `generic '{name}' cannot be exported` | write a concrete exported wrapper |
+| E10302 | `export` on a generic function | `generic '{name}' cannot be exported` | write a concrete exported wrapper |
 | E10303 | Type argument does not satisfy a callable bound | `type argument '{type}' does not satisfy '{param}: func(...)'` | pass a matching function or lambda |
 | E10304 | Value of a callable-only type parameter stored or returned | `value of type parameter '{param}' cannot be stored or returned` | call it or pass it on |
 | E10305 | Instantiation recursion exceeds the cap | `instantiation of '{name}' is recursive beyond the limit` | break the generic recursion |

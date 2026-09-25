@@ -235,11 +235,15 @@ Instantiation is monomorphized (G3); the type arguments are part of the type,
 and each storable instantiation produces one concrete struct with a
 hash-deduped symbol. See [Ch 17](17-codegen.md).
 
+A generic struct may be `export`ed so another module can import the name and
+instantiate it (STR-21). Only a generic *function* remains non-exportable
+(G-5, E10302), because a generic function has no single symbol to export.
+
 | Rule | Statement | Diagnostic |
 |---|---|---|
 | STR-19 | The wrong number of type arguments | E10300 |
 | STR-20 | Type arguments that cannot be inferred; write them explicitly | E10301 |
-| STR-21 | `export` on a generic struct | E10302 |
+| STR-21 | A generic struct may be exported; only a generic function cannot | - |
 | STR-22 | A type argument that violates a declared callable bound | E10303 |
 | STR-23 | A callable-only type parameter stored in a field | E10304 |
 | STR-24 | Instantiation recursion beyond the cap | E10305 |

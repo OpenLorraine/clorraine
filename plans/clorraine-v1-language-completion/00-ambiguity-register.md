@@ -10,7 +10,9 @@ that the corpus-subset MVP staged out: **generics**, **lambdas (stages 1-4)**,
 and **volatile intrinsics with the per-chip MMIO wrappers**. It edits the frozen
 specification only where the user authorized it (AR-3).
 
-> **Items added during execution** are tagged `(runtime)`.
+> **Items added during execution** are tagged `(runtime)`. AR-40 and AR-41 were
+> raised during Phase 1 execution and resolved by the user on 2026-09-25; they
+> are implemented by tasks 1.2.10 and 1.2.11.
 
 ## Register
 
@@ -55,6 +57,8 @@ specification only where the user authorized it (AR-3).
 | AR-37 | Deferred | C-hook trampolines for capturing closures (stage 5) | Include now / defer | Deferred to v1.1 (L5). Not implemented by this plan | ⏸ Deferred |
 | AR-38 | Deferred | ARM64 profile and 64-bit `usize`/`isize` | Include now / defer | Deferred to the future ARM64 port (A5a). Not implemented by this plan | ⏸ Deferred |
 | AR-39 | Deferred | Broader MMIO coverage, `std.amiga.exec` message/signal APIs, and the library-build entry (MOD-29) | Include now / defer | Deferred to later plans. Not implemented by this plan | ⏸ Deferred |
+| AR-40 (runtime) | Technical | A function instance with a non-scalar type argument names an invalid C symbol: the call site keys the instance with `type_key` (`func(...)` -> `fn`), but prototype/body emission uses `Instance.args.join("_")` from `Ty::display()` (`func(i32): i32`), and `type_from_key` cannot rebuild a function signature. ST-4 (`apply<i32, func(i32): i32>`) surfaces it | Store `Instance.args` as `Ty` and derive every instance symbol from `type_key` (recommended) / keep display strings and add a parallel `Vec<Ty>` for substitution / sanitize display strings into identifiers and store each signature separately | ✅ Resolved (user, 2026-09-25): store `Instance.args` as `Ty`; every instance symbol comes from `type_key`; `type_from_key` is removed (task 1.2.10) |
+| AR-41 (runtime) | Behavioral | ST-3 imports `Pair` from another module, but the fixture does not `export` it; MOD-5/MOD-11 require export (E11102) while STR-21/G4 forbid exporting a generic struct (E10302). As written, ST-3 and R16's cross-module clause cannot both hold under the frozen spec | Amend STR-21/G4 so a generic struct may be exported, enabling the cross-module composition R16 requires (recommended) / rule the ST-3 fixture defective and remove its cross-module import / rule cross-module generic structs unsupported and drop R16's cross-module clause | ✅ Resolved (user, 2026-09-25): a generic struct may be exported; generic functions stay non-exportable (E10302). Authorizes spec edits to `spec/07-structs.md`, `spec/06-functions.md`, `spec/14-diagnostics.md`, `spec/grammar.ebnf.md`, `spec/decisions.md`, and `spec/17-codegen.md` (task 1.2.11) |
 
 ## Resolution Notes
 

@@ -464,31 +464,26 @@ impl<'a> Emitter<'a> {
     }
 
     /// The substitution for a generic instantiation.
-    fn instance_subst(&self, decl: &FuncDecl, args: &[String]) -> BTreeMap<String, Ty> {
+    ///
+    /// The instance carries the checked type arguments, so the substitution
+    /// binds each declared parameter to its concrete type directly and a
+    /// function-typed argument keeps its exact signature.
+    fn instance_subst(&self, decl: &FuncDecl, args: &[Ty]) -> BTreeMap<String, Ty> {
         let mut subst = BTreeMap::new();
-        for (param, key) in decl.type_params.iter().zip(args) {
-            subst.insert(param.name.clone(), self.type_from_key(key));
+        for (param, arg) in decl.type_params.iter().zip(args) {
+            subst.insert(param.name.clone(), arg.clone());
         }
         subst
     }
 
-    /// The type a generic instantiation key names.
-    fn type_from_key(&self, key: &str) -> Ty {
-        match key {
-            "i8" => Ty::scalar(crate::ast::ScalarType::I8),
-            "i16" => Ty::scalar(crate::ast::ScalarType::I16),
-            "i32" => Ty::i32_ty(),
-            "u8" => Ty::scalar(crate::ast::ScalarType::U8),
-            "u16" => Ty::scalar(crate::ast::ScalarType::U16),
-            "u32" => Ty::scalar(crate::ast::ScalarType::U32),
-            "usize" => Ty::usize_ty(),
-            "isize" => Ty::scalar(crate::ast::ScalarType::Isize),
-            "bool" => Ty::boolean(),
-            "f32" => Ty::scalar(crate::ast::ScalarType::F32),
-            "f64" => Ty::scalar(crate::ast::ScalarType::F64),
-            "String" => Ty::handle("String"),
-            name => Ty::struct_(name),
-        }
+    /// The symbol key of a function instance: its type arguments under the
+    /// canonical key scheme, joined with `_`.
+    ///
+    /// A call site and the instance prototype both derive the key here, so the
+    /// call and its emitted copy always name the same symbol.
+    fn instance_typekey(&self, args: &[Ty]) -> String {
+        let keys: Vec<String> = args.iter().map(|ty| types::type_key(ty)).collect();
+        keys.join("_")
     }
 
     // -- local type helpers --------------------------------------------------

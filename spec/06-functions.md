@@ -267,7 +267,7 @@ let b = identity(5);           // arguments-only inference: T = i32
 | G-2 | Inference is arguments-only; a constructor with no value argument needs explicit type arguments (`vecNew<i32>()`) | E10301 |
 | G-3 | The wrong number of type arguments | E10300 |
 | G-4 | A value of a callable-bound parameter is callable-only: call or pass, never store or return | E10304 |
-| G-5 | `export` on a generic declaration is an error; write a concrete wrapper | E10302 |
+| G-5 | `export` on a generic function is an error; write a concrete wrapper | E10302 |
 | G-6 | Instantiation is monomorphized with hash-deduped symbols | - (Ch 17) |
 | G-7 | Instantiation recursion has a cap | E10305 |
 | G-8 | A generic aggregate cannot use an ephemeral type argument | E10306 |
@@ -275,7 +275,7 @@ let b = identity(5);           // arguments-only inference: T = i32
 Monomorphization is a codegen concern; see [Ch 17](17-codegen.md).
 
 ```clorraine
-// E10302: a generic declaration cannot be exported
+// E10302: a generic function cannot be exported
 export func identity<T>(x: T): T { return x; }
 
 // E10304: the callable-bound value cannot be returned

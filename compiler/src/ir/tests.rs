@@ -152,13 +152,13 @@ fn instances_deduplicate_by_function_and_type_arguments() {
     let mut mono = Monomorphization::default();
     let first = Instance {
         function: "identity".to_owned(),
-        args: vec!["i32".to_owned()],
+        args: vec![crate::types::Ty::i32_ty()],
     };
     assert!(mono.record(first.clone()));
     assert!(!mono.record(first.clone()));
     assert!(mono.record(Instance {
         function: "identity".to_owned(),
-        args: vec!["u8".to_owned()],
+        args: vec![crate::types::Ty::scalar(crate::ast::ScalarType::U8)],
     }));
     assert_eq!(mono.instances().len(), 2);
     assert_eq!(first.dedupe_key(), "identity<i32>");

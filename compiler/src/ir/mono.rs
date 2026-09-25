@@ -11,12 +11,17 @@ use crate::types::Ty;
 ///
 /// A generic body is checked once; every call that instantiates it produces an
 /// instance, and codegen emits one copy per distinct instance.
+///
+/// The type arguments are checked types rather than rendered spellings so
+/// codegen can substitute them into the body's parameter and local types. A
+/// function-typed argument such as `func(i32): i32` is a signature that a
+/// string spelling alone cannot rebuild.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Instance {
     /// The generic function's name.
     pub function: String,
     /// The concrete type arguments, in declaration order.
-    pub args: Vec<String>,
+    pub args: Vec<Ty>,
 }
 
 impl Instance {
@@ -25,7 +30,8 @@ impl Instance {
     /// Two calls with the same function and the same type arguments share one
     /// emitted copy, so the key is the deduplication identity codegen uses.
     pub fn dedupe_key(&self) -> String {
-        format!("{}<{}>", self.function, self.args.join(", "))
+        let rendered: Vec<String> = self.args.iter().map(Ty::display).collect();
+        format!("{}<{}>", self.function, rendered.join(", "))
     }
 }
 
@@ -94,11 +100,7 @@ pub struct Monomorphization {
 impl Monomorphization {
     /// Records an instance, returning true when it was not already present.
     pub fn record(&mut self, instance: Instance) -> bool {
-        if self
-            .instances
-            .iter()
-            .any(|known| known.dedupe_key() == instance.dedupe_key())
-        {
+        if self.instances.iter().any(|known| known == &instance) {
             return false;
         }
         self.instances.push(instance);

@@ -529,7 +529,8 @@ type parameter can be called or passed, never stored or returned (G7).
 Explicit type arguments appear in type positions and, speculatively, in
 expression position (`vecNew<i32>()`, G2); the disambiguation rule is in
 section 11. Instantiation is monomorphized with hash-deduped symbols (G3);
-generic declarations cannot be exported (G4).
+generic functions cannot be exported (G4), while a generic struct may be
+exported so another module can instantiate it.
 
 ## 10. Lexical grammar
 

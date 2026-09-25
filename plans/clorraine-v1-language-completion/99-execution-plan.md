@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 09:24
-> **Progress**: 8/47 tasks (17%)
+> **Last Updated**: 2026-09-25 10:09
+> **Progress**: 10/49 tasks (20%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -23,12 +23,13 @@ stage 4 depends on the callable bound; volatile/MMIO is independent.
 
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
-| 1 | Generics | 16 |
+| 1 | Generics | 18 |
 | 2 | Lambdas | 16 |
 | 3 | Volatile and MMIO | 11 |
 | 4 | Closeout | 4 |
 
-**Total: 47 tasks across 4 phases** (no fabricated hour estimates)
+**Total: 49 tasks across 4 phases** (no fabricated hour estimates; 1.2.10 and
+1.2.11 were added during execution to resolve runtime ambiguities AR-40/AR-41)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
 > The task checkboxes below are the single source of truth for progress. Mark a
@@ -75,6 +76,8 @@ ephemeral-argument rule.
 - [ ] 1.2.7 Enforce `E10304` when a callable-only value is stored or returned — `compiler/src/sema/{call,expr}.rs`
 - [ ] 1.2.8 Enforce `E10306` when a resolved aggregate type contains a closure argument — `compiler/src/sema/{mod,call,expr}.rs`
 - [ ] 1.2.9 Extend the `E10305` recursion cap to cover generic-struct instantiation — `compiler/src/sema/call.rs`
+- [x] 1.2.10 Store `Instance.args` as `Ty` and key every function instance from `type_key`, removing `type_from_key` — `compiler/src/ir/mono.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/{program,function}.rs`, `compiler/src/ir/tests.rs` (AR-40) ✅ (completed: 2026-09-25 10:09; ST-4 green)
+- [x] 1.2.11 Allow `export` on a generic struct, export `Pair` in the ST-3 fixture, and update the spec rules `STR-21`/`G-5` and the `E10302` wording to functions only — `compiler/src/sema/items.rs`, `compiler/tests/v1_language_spec_test.rs`, `spec/07-structs.md`, `spec/06-functions.md`, `spec/14-diagnostics.md`, `spec/grammar.ebnf.md`, `spec/decisions.md`, `spec/17-codegen.md` (AR-41) ✅ (completed: 2026-09-25 10:09; ST-3 green, spec check OK)
 
 ### Step 1.3: Implementation tests, registry, and verification
 
@@ -83,8 +86,8 @@ ephemeral-argument rule.
 
 - [ ] 1.3.1 Add generics implementation and unit tests (instance dedupe, nested keys, all three diagnostics) — `compiler/tests/v1_language_impl_test.rs`, in-module tests
 - [ ] 1.3.2 Update the `E103xx` registry wording to the implemented status — `spec/14-diagnostics.md`
-- [ ] 1.3.3 Verify the generics suite is green — `make check`
-- [ ] 1.3.4 Verify the generics phase end to end — `make verify`
+- [!] 1.3.3 Verify the generics suite is green — `make check` — Blocked: needs 1.2.6–1.2.9
+- [!] 1.3.4 Verify the generics phase end to end — `make verify` — Blocked: needs 1.3.3
 
 **Deliverables**:
 - Generic structs and the three diagnostics working

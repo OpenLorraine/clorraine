@@ -240,6 +240,7 @@ linker never sees a name the program did not export.
 | Private func | `static ... cl_<module>_<name>` |
 | Exported func | `cl_<module>_<name>`, external |
 | Generic instantiation | `cl_<name>__<typekey>`, hash-deduped (G3) |
+| Generic struct instance | `Cl<name>__<typekey>`, hash-deduped (G3, Ch 07 section 9) |
 | Local | source name if it is a valid, unique C identifier; otherwise a stable suffix |
 | Generated helper | `cl_` prefix (`cl_zero`, `cl_acquire_*`, `cl_text_*`) |
 | Temporary | `__cl_tmp<N>`, a stable counter |

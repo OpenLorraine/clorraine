@@ -204,7 +204,7 @@ func main(): i32 {
 fn a_generic_struct_crosses_module_boundaries() {
     let declaration = r#"module tests.v1.generics_lib;
 
-struct Pair<T> {
+export struct Pair<T> {
     first: T;
     second: T;
 }

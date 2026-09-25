@@ -127,7 +127,7 @@ through the cleanup ladder.
 | G1 | Generics are **in v1**: TypeScript-like surface (`<T>` on functions and structs), explicit type arguments allowed |
 | G2 | Inference is **arguments-only**; constructors without arguments need explicit type arguments (`vecNew<i32>()`) |
 | G3 | Lowering is **monomorphization** with mangled symbols; identical instantiations are deduped by canonical type key; whole-program compilation |
-| G4 | `export` on a generic declaration is an error; write a concrete exported wrapper |
+| G4 | `export` on a generic function is an error; write a concrete exported wrapper. A generic struct may be exported so another module can instantiate it |
 | G5 | Instantiation recursion cap (error) and an opt-in instantiation size/count report |
 | G6 | No bounds except **`F: func(T, ...): R`** for callable parameters. Copy requirements are obligations (V9), not bounds |
 | G7 | Values of `func(...)`-bound type parameters are **callable-only**: call or pass, never store or return. Generic aggregates cannot be instantiated with ephemeral type arguments |

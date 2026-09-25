@@ -16,19 +16,12 @@ use super::Checker;
 impl Checker<'_, '_> {
     /// Checks a struct declaration.
     ///
-    /// A struct must declare at least one field, no field may be a plain `str`
-    /// view, and an `export` on a generic struct is rejected. A `volatile`
-    /// field is accepted here; the overlay ban is enforced where a value is
-    /// built.
+    /// A struct must declare at least one field and no field may be a plain
+    /// `str` view. A generic struct may be exported so another module can
+    /// instantiate it; only a generic function is rejected under `E10302`. A
+    /// `volatile` field is accepted here; the overlay ban is enforced where a
+    /// value is built.
     pub(super) fn check_struct(&mut self, decl: &StructDecl) {
-        if decl.exported && !decl.type_params.is_empty() {
-            self.error(
-                "E10302",
-                format!("generic '{}' cannot be exported", decl.name),
-                "write a concrete exported wrapper",
-                decl.name_span,
-            );
-        }
         if decl.fields.is_empty() {
             self.error(
                 "E10206",

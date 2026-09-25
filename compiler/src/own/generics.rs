@@ -348,9 +348,18 @@ fn record_call(
         function: decl.name.clone(),
         args: type_args
             .iter()
-            .map(|ty| resolve_ty(ty, &[], &sema.table).display())
+            .map(|ty| resolve_ty(ty, &[], &sema.table))
             .collect(),
     };
+    // A call written inside a generic body may name a type parameter. Only a
+    // concrete instantiation has an emitted copy and a stable symbol.
+    if instance
+        .args
+        .iter()
+        .any(|ty| ty.is_param() || ty.is_unknown())
+    {
+        return;
+    }
     let key = instance.dedupe_key();
     if !mono.record(instance) {
         return;
@@ -477,7 +486,7 @@ fn record_instance(
     }
     mono.record(Instance {
         function: decl.name.clone(),
-        args: type_args.iter().map(Ty::display).collect(),
+        args: type_args.to_vec(),
     });
 }
 
