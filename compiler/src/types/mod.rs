@@ -292,6 +292,19 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
             ),
             nullable: ty.nullable,
         },
+        // A function type can name the parameters it was declared with, as in a
+        // `F: func(T): T` bound, so its signature is substituted too.
+        TyKind::Func(signature) => Ty {
+            kind: TyKind::Func(FuncTy {
+                params: signature
+                    .params
+                    .iter()
+                    .map(|param| substitute(param, bindings))
+                    .collect(),
+                returns: Box::new(substitute(&signature.returns, bindings)),
+            }),
+            nullable: ty.nullable,
+        },
         _ => ty.clone(),
     }
 }

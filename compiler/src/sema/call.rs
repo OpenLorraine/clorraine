@@ -155,11 +155,50 @@ impl Checker<'_, '_> {
             }
         }
 
+        self.check_callable_bounds(&signature.type_params, &bindings, span);
         for ((ty, arg_span), param) in arg_types.iter().zip(&signature.params) {
             let expected = crate::types::substitute(param, &bindings);
             self.check_conversion(ty, &expected, *arg_span);
         }
         crate::types::substitute(&signature.returns, &bindings)
+    }
+
+    /// Checks every concrete type argument against a declared callable bound.
+    ///
+    /// A parameter declared `F: func(T): R` accepts only a function (or a
+    /// closure) whose signature matches the bound after the other arguments are
+    /// substituted. A scalar or any other type is `E10303`.
+    fn check_callable_bounds(
+        &mut self,
+        type_params: &[crate::types::TypeParamSig],
+        bindings: &BTreeMap<String, Ty>,
+        span: Span,
+    ) {
+        for param in type_params {
+            let Some(bound) = &param.bound else {
+                continue;
+            };
+            let Some(concrete) = bindings.get(&param.name) else {
+                continue;
+            };
+            let expected = crate::types::substitute(&Ty::func(bound.clone()), bindings);
+            let matches = match (&concrete.kind, &expected.kind) {
+                (TyKind::Func(found), TyKind::Func(want)) => found == want,
+                _ => false,
+            };
+            if !matches {
+                self.error(
+                    "E10303",
+                    format!(
+                        "type argument '{}' does not satisfy '{}: func(...)'",
+                        concrete.display(),
+                        param.name
+                    ),
+                    "pass a matching function or lambda",
+                    span,
+                );
+            }
+        }
     }
 
     /// True when a generic call instantiates the function currently being

@@ -88,6 +88,9 @@ struct Checker<'a, 'd> {
     scopes: Vec<BTreeMap<String, Binding>>,
     /// Type parameters of the function currently being checked.
     type_params: Vec<String>,
+    /// Names of the current function's type parameters that carry a callable
+    /// bound. Their values are callable-only: call or pass, never store.
+    callable_bound_params: Vec<String>,
     /// Name of the function currently being checked, for recursion checks.
     function_name: Option<String>,
     /// Return type of the function currently being checked.
@@ -116,6 +119,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             folder: ConstFolder::new(table, module, loaded),
             scopes: Vec::new(),
             type_params: Vec::new(),
+            callable_bound_params: Vec::new(),
             function_name: None,
             returns: Ty::void(),
             recorded: Vec::new(),
@@ -165,6 +169,12 @@ impl<'a, 'd> Checker<'a, 'd> {
         }
         self.push_scope();
         self.type_params = decl.type_params.iter().map(|p| p.name.clone()).collect();
+        self.callable_bound_params = decl
+            .type_params
+            .iter()
+            .filter(|param| param.bound.is_some())
+            .map(|param| param.name.clone())
+            .collect();
         self.function_name = Some(decl.name.clone());
         for param in &decl.params {
             let ty = self.resolve_type(&param.ty);
@@ -177,6 +187,7 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.check_block(&decl.body);
         self.function_name = None;
         self.type_params.clear();
+        self.callable_bound_params.clear();
         self.pop_scope();
     }
 

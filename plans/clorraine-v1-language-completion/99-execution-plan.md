@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 10:09
-> **Progress**: 10/49 tasks (20%)
+> **Last Updated**: 2026-09-25 10:11
+> **Progress**: 12/49 tasks (24%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -72,10 +72,10 @@ ephemeral-argument rule.
 - [x] 1.2.3 Collect struct instances from resolved declaration and IR types, recursing into nested arguments — `compiler/src/own/generics.rs` ✅ (completed: 2026-09-25 09:14)
 - [x] 1.2.4 Include a struct's type arguments in `type_key` and `c_type` (`Cl<Name>__<typekey>`) — `compiler/src/codegen/types.rs` ✅ (completed: 2026-09-25 09:24; landed with 1.2.5, plus `StructInstance.args` carries `Ty` and `struct_literal` casts to the concrete type)
 - [x] 1.2.5 Emit one concrete struct per recorded instance with substituted field types — `compiler/src/codegen/program.rs` ✅ (completed: 2026-09-25 09:24; landed with 1.2.4; ST-1/ST-2 green, Array regressions cleared)
-- [ ] 1.2.6 Enforce `E10303` when a bound argument is not a matching `func(...)` or closure — `compiler/src/sema/call.rs`
-- [ ] 1.2.7 Enforce `E10304` when a callable-only value is stored or returned — `compiler/src/sema/{call,expr}.rs`
+- [x] 1.2.6 Enforce `E10303` when a bound argument is not a matching `func(...)` or closure — `compiler/src/sema/call.rs` ✅ (completed: 2026-09-25 10:11; also fixed `types::substitute` to descend into function types so a bound's return/params substitute)
+- [x] 1.2.7 Enforce `E10304` when a callable-only value is stored or returned — `compiler/src/sema/{call,expr}.rs` ✅ (completed: 2026-09-25 10:11; implemented in `sema/{mod,stmt}.rs`)
 - [ ] 1.2.8 Enforce `E10306` when a resolved aggregate type contains a closure argument — `compiler/src/sema/{mod,call,expr}.rs`
-- [ ] 1.2.9 Extend the `E10305` recursion cap to cover generic-struct instantiation — `compiler/src/sema/call.rs`
+- [ ] 1.2.9 Extend the `E10305` recursion cap to cover generic-struct instantiation — `compiler/src/sema/call.rs` (+ `compiler/src/types/table.rs` size recursion guard)
 - [x] 1.2.10 Store `Instance.args` as `Ty` and key every function instance from `type_key`, removing `type_from_key` — `compiler/src/ir/mono.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/{program,function}.rs`, `compiler/src/ir/tests.rs` (AR-40) ✅ (completed: 2026-09-25 10:09; ST-4 green)
 - [x] 1.2.11 Allow `export` on a generic struct, export `Pair` in the ST-3 fixture, and update the spec rules `STR-21`/`G-5` and the `E10302` wording to functions only — `compiler/src/sema/items.rs`, `compiler/tests/v1_language_spec_test.rs`, `spec/07-structs.md`, `spec/06-functions.md`, `spec/14-diagnostics.md`, `spec/grammar.ebnf.md`, `spec/decisions.md`, `spec/17-codegen.md` (AR-41) ✅ (completed: 2026-09-25 10:09; ST-3 green, spec check OK)
 

@@ -43,11 +43,12 @@ impl Checker<'_, '_> {
                 let returns = self.returns.clone();
                 match value {
                     Some(value) => {
-                        if returns.is_void() {
-                            self.check_value(value, None);
+                        let value_ty = if returns.is_void() {
+                            self.check_value(value, None)
                         } else {
-                            self.check_into(value, &returns);
-                        }
+                            self.check_into(value, &returns)
+                        };
+                        self.reject_callable_only_value(&value_ty, value.span);
                     }
                     // A bare `return;` suits only a `void` function; anywhere
                     // else it returns nothing where a value is required.
@@ -79,15 +80,36 @@ impl Checker<'_, '_> {
         }
         match (&declared, &decl.value) {
             (Some(ty), Some(value)) => {
-                self.check_into(value, ty);
+                let value_ty = self.check_into(value, ty);
+                self.reject_callable_only_value(&value_ty, value.span);
                 self.declare(&decl.name, ty.clone());
             }
             (Some(ty), None) => self.declare(&decl.name, ty.clone()),
             (None, Some(value)) => {
                 let ty = self.check_value(value, None);
+                self.reject_callable_only_value(&ty, value.span);
                 self.declare(&decl.name, ty);
             }
             (None, None) => self.declare(&decl.name, Ty::unknown()),
+        }
+    }
+
+    /// Reports `E10304` when a callable-only type-parameter value is stored or
+    /// returned instead of called or passed on.
+    ///
+    /// A value of a parameter declared `F: func(...)` has no storable form: its
+    /// concrete function is chosen only at the call, so binding it to a name or
+    /// returning it would outlive that choice.
+    fn reject_callable_only_value(&mut self, ty: &Ty, span: crate::span::Span) {
+        if let TyKind::Param(name) = &ty.kind {
+            if self.callable_bound_params.iter().any(|bound| bound == name) {
+                self.error(
+                    "E10304",
+                    format!("value of type parameter '{name}' cannot be stored or returned"),
+                    "call it or pass it on",
+                    span,
+                );
+            }
         }
     }
 
