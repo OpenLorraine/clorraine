@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 20:02
-> **Progress**: 13/24 tasks (54%)
+> **Last Updated**: 2026-09-25 20:07
+> **Progress**: 15/24 tasks (63%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -152,7 +152,10 @@ Rust suites, written red before each fix (AR-4).
 
 ## Phase 3: Ownership and emission
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: eb9cd5febdc1d64acdd37d5e8cddd8fb13ba769c
+> **Expected modification set**: `compiler/src/own/expr.rs`, `compiler/src/own/tests.rs`,
+> `compiler/src/codegen/drop.rs`, `compiler/src/codegen/expr.rs`,
+> `compiler/tests/v1_language_impl_test.rs` (strict scope)
 > **Lenses**: correctness, resource lifetime (drop)
 
 ### Step 3.1: Specification tests (red)
@@ -160,8 +163,10 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-03](03-03-ownership-codegen.md) · [07](07-testing-strategy.md) ST-3, ST-5, ST-6, ST-7, ST-12 · [AR-10, AR-11, AR-12]
 **Objective**: Pin the move, drop, and zero-value expectations.
 
-- [ ] 3.1.1 [spec-author] Write regressions — ST-3 (`Box<String>` copied twice reports `E10020`), ST-5 (emitted drop releases `b.value`), ST-6 (`Pair<Pair<i32>> {}` emits nested zero states and compiles), ST-7 (`Point {}` still valid), ST-12 (non-generic emitted C unchanged) — `compiler/src/sema/regressions.rs`, `compiler/tests/v1_language_impl_test.rs`
-- [ ] 3.1.2 Confirm ST-3, ST-5, ST-6 FAIL (red) — `cargo test --workspace --no-fail-fast`
+- [x] 3.1.1 [spec-author] Write regressions — ST-3 (`Box<String>` copied twice reports `E10020`), ST-5 (emitted drop releases `b.value`), ST-6 (`Pair<Pair<i32>> {}` emits nested zero states and compiles), ST-7 (`Point {}` still valid), ST-12 (non-generic emitted C unchanged) — `compiler/src/sema/regressions.rs`, `compiler/tests/v1_language_impl_test.rs` ✅ (completed: 2026-09-25 20:07; ST-3/ST-4 placed in `compiler/src/own/tests.rs` because `E10020` is reported by the ownership stage, not `sema`)
+- [x] 3.1.2 Confirm ST-3, ST-5, ST-6 FAIL (red) — `cargo test --workspace --no-fail-fast` ✅ (completed: 2026-09-25 20:07)
+
+**Red-phase note**: ST-5 and ST-6 fail (no generic field drop; nested zero value emits `{ 0, 0 }`). ST-3 and ST-4 already pass — the underlying duplicability defect (DEF-07) was fixed in Phase 1, so the ownership stage already reports `E10020`; the spec expectation is unchanged and remains the oracle. ST-7 and ST-12 pass as controls.
 
 **Deliverables**:
 - ST-3 red (no `E10020`), ST-5 red (no field drop), ST-6 red (invalid C / ICE)

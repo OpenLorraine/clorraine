@@ -551,3 +551,95 @@ func main(): i32 {
         "a field write through a raw global must require 'unsafe'; got:\n{stderr}"
     );
 }
+
+#[test]
+fn a_generic_struct_handle_field_is_dropped() {
+    let source = r#"module tests.v1.impl.generic_drop;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    value: T;
+}
+
+func main(): i32 {
+    let b = Box<String> { value: stringOf("x") };
+    return 0;
+}
+"#;
+    let emitted = emit("generic-drop", source);
+    assert!(
+        emitted.contains("FreeString(b.value)"),
+        "the generic handle field must be released; got:\n{emitted}"
+    );
+}
+
+#[test]
+fn a_nested_generic_zero_value_emits_nested_zero_states() {
+    let source = r#"module tests.v1.impl.nested_zero;
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+func main(): i32 {
+    let z = Pair<Pair<i32>> {};
+    return z.first.first;
+}
+"#;
+    let emitted = emit("nested-zero", source);
+    assert!(
+        emitted.contains("(ClPair__Pair__i32){ {0}, {0} }"),
+        "the nested zero value must use nested zero states; got:\n{emitted}"
+    );
+}
+
+#[test]
+fn a_plain_zero_value_stays_valid() {
+    let source = r#"module tests.v1.impl.plain_zero;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func main(): i32 {
+    let p = Point {};
+    return p.x;
+}
+"#;
+    let emitted = emit("plain-zero", source);
+    assert!(
+        emitted.contains("(ClPoint){ 0, 0 }"),
+        "a non-generic zero value must still emit its zero fields; got:\n{emitted}"
+    );
+}
+
+#[test]
+fn a_non_generic_owning_struct_is_unchanged() {
+    // A non-generic struct that owns a handle still drops its field and emits
+    // no generic instantiation symbol.
+    let source = r#"module tests.v1.impl.non_generic_drop;
+
+import { String, stringOf } from std.text;
+
+struct Label {
+    name: String;
+}
+
+func main(): i32 {
+    let l = Label { name: stringOf("x") };
+    return 0;
+}
+"#;
+    let emitted = emit("non-generic-drop", source);
+    assert!(
+        emitted.contains("FreeString(l.name)"),
+        "a non-generic owning field must still drop; got:\n{emitted}"
+    );
+    assert!(
+        !emitted.contains("ClLabel__"),
+        "a non-generic struct must not gain a generic symbol"
+    );
+}

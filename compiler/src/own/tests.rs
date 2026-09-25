@@ -589,3 +589,34 @@ fn a_partially_written_struct_may_not_be_read_whole() {
     assert_eq!(error_codes(source), vec!["E10021"]);
 }
 
+#[test]
+fn a_generic_struct_holding_a_handle_is_move_only() {
+    // `Box<String>` owns its `String`, so the second use after a move is the
+    // moved-value error; reading the declared `T` would call it duplicable and
+    // let the handle be copied.
+    let source = with_view_helper(
+        "struct Box<T> { value: T; }\n\
+         func dropBox(take b: Box<String>): void {}\n\
+         func demo(): void {\n\
+             let a = Box<String> { value: $\"x{1}\" };\n\
+             let b = a;\n\
+             dropBox(a);\n\
+         }",
+    );
+    assert_eq!(error_codes(&source), vec!["E10020"]);
+}
+
+#[test]
+fn a_generic_struct_holding_a_copy_value_is_duplicable() {
+    // The same shape with an `i32` argument copies, so `a` may be used again.
+    let source = with_view_helper(
+        "struct Box<T> { value: T; }\n\
+         func demo(): void {\n\
+             let a = Box<i32> { value: 1 };\n\
+             let b = a;\n\
+             let c = a;\n\
+         }",
+    );
+    assert!(error_codes(&source).is_empty(), "{:?}", error_codes(&source));
+}
+
