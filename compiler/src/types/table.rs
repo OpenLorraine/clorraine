@@ -580,6 +580,19 @@ mod tests {
 
     /// Inserts a struct with the given fields for a layout test.
     fn insert_struct(table: &mut TypeTable, name: &str, fields: Vec<(&str, Ty)>) {
+        insert_generic_struct(table, name, &[], fields);
+    }
+
+    /// Inserts a struct whose fields may name the given generic parameters.
+    ///
+    /// The parameter names are recorded so a field written in terms of `T` can
+    /// be resolved once an instance supplies that argument.
+    fn insert_generic_struct(
+        table: &mut TypeTable,
+        name: &str,
+        params: &[&str],
+        fields: Vec<(&str, Ty)>,
+    ) {
         table.structs.insert(
             name.to_owned(),
             StructInfo {
@@ -587,10 +600,19 @@ mod tests {
                     .into_iter()
                     .map(|(field, ty)| (field.to_owned(), ty))
                     .collect(),
-                type_params: Vec::new(),
+                type_params: params.iter().map(|param| (*param).to_owned()).collect(),
                 overlay: false,
             },
         );
+    }
+
+    /// A generic-parameter atom, as a struct field is declared before an
+    /// instance supplies the argument.
+    fn param(name: &str) -> Ty {
+        Ty {
+            kind: TyKind::Param(name.to_owned()),
+            nullable: false,
+        }
     }
 
     /// A non-nullable scalar type.
@@ -635,6 +657,43 @@ mod tests {
             nullable: false,
         }));
         assert!(table.duplicable(&Ty::unknown()));
+    }
+
+    #[test]
+    fn a_generic_struct_holding_a_handle_is_move_only() {
+        // `Box<String>` owns the `String`, so it copies only if the instance's
+        // argument reaches the field; reading the declared `T` would call it
+        // duplicable and let a handle be copied without a diagnostic.
+        let mut table = TypeTable::default();
+        insert_generic_struct(&mut table, "Box", &["T"], vec![("value", param("T"))]);
+        assert!(table.duplicable(&Ty::struct_with("Box", vec![Ty::i32_ty()])));
+        assert!(!table.duplicable(&Ty::struct_with("Box", vec![Ty::handle("String")])));
+    }
+
+    #[test]
+    fn a_generic_struct_size_substitutes_its_type_argument() {
+        // `sizeof(Box<i32>)` folds to the concrete field width rather than
+        // deferring because the field is the bare parameter `T`.
+        let mut table = TypeTable::default();
+        insert_generic_struct(&mut table, "Box", &["T"], vec![("value", param("T"))]);
+        assert_eq!(
+            table.size_of(&Ty::struct_with("Box", vec![Ty::i32_ty()])),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn a_generic_struct_field_offset_substitutes_its_type_argument() {
+        // `offsetof(Pair<i32>, second)` folds to the width of the substituted
+        // first field rather than deferring on the bare parameter.
+        let mut table = TypeTable::default();
+        insert_generic_struct(
+            &mut table,
+            "Pair",
+            &["T"],
+            vec![("first", param("T")), ("second", param("T"))],
+        );
+        assert_eq!(table.offset_of("Pair", "second"), Some(4));
     }
 
     #[test]

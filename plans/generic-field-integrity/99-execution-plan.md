@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 18:39
-> **Progress**: 0/24 tasks (0%)
+> **Last Updated**: 2026-09-25 19:46
+> **Progress**: 2/24 tasks (8%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -53,8 +53,9 @@ Rust suites, written red before each fix (AR-4).
 
 ## Phase 1: Types substitution foundation
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: 539a40bd88a832eff37fb5940c47dc028d7bceab
+> **Expected modification set**: `compiler/src/types/mod.rs`, `compiler/src/types/table.rs`,
+> `compiler/src/consts/mod.rs` (strict scope)
 > **Lenses**: correctness, edge cases (constructor profile)
 
 ### Step 1.1: Specification tests (red)
@@ -62,8 +63,8 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-01](03-01-types-substitution.md) · [07](07-testing-strategy.md) ST-8, ST-9 · AR-3, AR-6, AR-7, AR-13
 **Objective**: Pin the type-table expectations before the helper exists.
 
-- [ ] 1.1.1 [spec-author] Write type-table regressions — ST-8 (`sizeof(Box<i32>)` folds), ST-9 (`offsetof(Pair<i32>, second)` folds), and `duplicable_at(Box<String>)` is false — in `compiler/src/types/table.rs`
-- [ ] 1.1.2 Run the type-table tests and confirm the new cases FAIL (red) — `cargo test --workspace --no-fail-fast`
+- [x] 1.1.1 [spec-author] Write type-table regressions — ST-8 (`sizeof(Box<i32>)` folds), ST-9 (`offsetof(Pair<i32>, second)` folds), and `duplicable_at(Box<String>)` is false — in `compiler/src/types/table.rs` ✅ (completed: 2026-09-25 19:46)
+- [x] 1.1.2 Run the type-table tests and confirm the new cases FAIL (red) — `cargo test --workspace --no-fail-fast` ✅ (completed: 2026-09-25 19:46)
 
 **Deliverables**:
 - New red tests compile and fail for the expected reason (generic size/offset unknown; `Box<String>` reported duplicable)
