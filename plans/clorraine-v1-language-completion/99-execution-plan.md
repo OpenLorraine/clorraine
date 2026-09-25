@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 16:05
-> **Progress**: 49/49 tasks (100%; all four phases complete and reviewed — generics, lambdas, volatile/MMIO, and closeout; `make verify` green)
+> **Last Updated**: 2026-09-25 16:20
+> **Progress**: 49/49 tasks (100%; all four phases complete and reviewed — generics, lambdas, volatile/MMIO, and closeout; `make verify` green; post-completion DEF-05 fix applied and re-verified)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -279,7 +279,7 @@ only: a determinism case, `AGENTS.md`, and the roadmap). Findings:
 
 | # | Severity | Finding | Resolution |
 |---|----------|---------|------------|
-| R4-1 | 🟡 Minor | The first determinism sample tripped a pre-existing generics gap: a callable-bound generic rejects a concrete function or closure when `T` is inferred from a generic-struct field (`apply(p.first, addOne)` is E10303). It is a false rejection with an explicit-type-argument workaround, and no authorized ST case covers it. | Report-only and recorded as roadmap defect DEF-05; the sample was changed to infer `T` from a literal and keeps the generic struct, the lambda, and the volatile access in the same program. |
+| R4-1 | 🟡 Minor | The first determinism sample tripped a pre-existing generics gap: a callable-bound generic rejects a concrete function or closure when `T` is inferred from a generic-struct field (`apply(p.first, addOne)` is E10303). The same root cause silently accepted `takesI32(p.first)` for a `Pair<u8>`. | Fixed on 2026-09-25 after the user asked to resolve it: a struct instance's type arguments are now substituted into its field type in the checker, the dot-call field lookup, the struct-literal field check, and the emitter. Recorded as roadmap defect DEF-05; the determinism sample keeps `p.first` so it exercises the fixed path, and regressions live in `sema::regressions` and `v1_language_impl_test`. |
 
 ---
 

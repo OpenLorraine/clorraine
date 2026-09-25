@@ -165,6 +165,57 @@ func main(): i32 {
 }
 
 #[test]
+fn a_generic_field_feeds_a_callable_bound() {
+    // The field of `Pair<i32>` is `i32`, so the concrete `addOne` satisfies
+    // `F: func(T): T` without an explicit type argument.
+    let source = r#"module tests.v1.impl.field_bound;
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+func addOne(x: i32): i32 { return x + 1; }
+func apply<T, F: func(T): T>(x: T, f: F): T { return f(x); }
+
+func main(): i32 {
+    let p = Pair<i32> { first: 5, second: 2 };
+    return apply(p.first, addOne);
+}
+"#;
+    let emitted = emit("field-bound", source);
+    assert!(
+        emitted.contains("cl_apply__i32_fn(p.first,"),
+        "the substituted field must flow into the monomorphized generic call"
+    );
+}
+
+#[test]
+fn a_callable_field_of_a_generic_struct_checks_its_substituted_signature() {
+    // A callable field declared `func(T): T` becomes `func(i32): i32` on the
+    // `Holder<i32>` instance, so the dot-call takes an `i32` argument.
+    let source = r#"module tests.v1.impl.field_callable;
+
+struct Holder<T> {
+    run: func(T): T;
+    value: T;
+}
+
+func id(x: i32): i32 { return x; }
+
+func main(): i32 {
+    let h = Holder<i32> { run: id, value: 5 };
+    return h.run(h.value);
+}
+"#;
+    let emitted = emit("field-callable", source);
+    assert!(
+        emitted.contains("(h.run)(h.value)"),
+        "the callable field must be invoked with the substituted argument type"
+    );
+}
+
+#[test]
 fn returning_a_callable_only_value_reports_e10304() {
     let source = r#"module tests.v1.impl.callable;
 

@@ -126,12 +126,12 @@ func apply<T, F: func(T): T>(x: T, f: F): T {
 func demo(): i32 {
     let p = Pair<i32> { first: 1, second: 2 };
     let base: i32 = 10;
-    let r = apply(1, [base] (x: i32) => x + base);
+    let r = apply(p.first, [base] (x: i32) => x + base);
     let value: u8 = 0;
     unsafe {
         let q: raw u8 = &value;
         writeVolatile8(q, 7);
-        return r + p.first + i32(readVolatile8(q));
+        return r + i32(readVolatile8(q));
     }
 }
 

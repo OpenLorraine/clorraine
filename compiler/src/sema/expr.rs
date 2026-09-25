@@ -9,7 +9,7 @@
 //! `ops` module; calls and generics live in `call`; this one owns names,
 //! literals, aggregates, intrinsics, and templates.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     Expr, ExprKind, FieldInit, IntrinsicArg, LambdaBody, QualifiedName, ScalarType, TemplatePiece,
@@ -401,6 +401,32 @@ impl Checker<'_, '_> {
         self.member_type(&base_ty, name, base.span)
     }
 
+    /// The type of a named field on a struct value, with the instance's type
+    /// arguments substituted into the declaration.
+    ///
+    /// A generic struct declares its fields in terms of its type parameters, so
+    /// reading `Pair<i32>.first` must yield `i32`, not the bare `T`. The
+    /// declared field type is substituted with the instance's arguments before
+    /// it leaves this method; an unsubstituted `T` would leak into the call
+    /// checker and wrongly reject a concrete value. A non-generic struct, and a
+    /// field the struct does not declare, substitute nothing.
+    pub(super) fn field_type(&self, base_ty: &Ty, field: &str) -> Option<Ty> {
+        let TyKind::Struct(struct_name, args) = &base_ty.kind else {
+            return None;
+        };
+        let declared = self.table.struct_field(struct_name, field)?;
+        let params = self.table.struct_type_params(struct_name).unwrap_or(&[]);
+        if params.is_empty() || args.is_empty() {
+            return Some(declared);
+        }
+        let bindings: BTreeMap<String, Ty> = params
+            .iter()
+            .cloned()
+            .zip(args.iter().cloned())
+            .collect();
+        Some(crate::types::substitute(&declared, &bindings))
+    }
+
     /// Types one member of an already-typed value, reporting an unknown name.
     ///
     /// A field and a free function may share a spelling for a dot-call, so the
@@ -408,7 +434,7 @@ impl Checker<'_, '_> {
     fn member_type(&mut self, base_ty: &Ty, name: &str, span: Span) -> Ty {
         match &base_ty.kind {
             TyKind::Struct(struct_name, _) => {
-                if let Some(field_ty) = self.table.struct_field(struct_name, name) {
+                if let Some(field_ty) = self.field_type(base_ty, name) {
                     return field_ty;
                 }
                 if self.free_function(name).is_none() {
@@ -589,7 +615,7 @@ impl Checker<'_, '_> {
             );
         }
         for field in fields {
-            if let Some(field_ty) = self.table.struct_field(&struct_name, &field.name) {
+            if let Some(field_ty) = self.field_type(&target, &field.name) {
                 self.check_into(&field.value, &field_ty);
             } else {
                 self.check_value(&field.value, None);

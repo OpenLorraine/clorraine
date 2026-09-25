@@ -8,6 +8,8 @@
 //! from the typed IR, every type is read from the value rather than inferred
 //! again from the source tree.
 
+use std::collections::BTreeMap;
+
 use crate::ast::{BinaryOp, ScalarType, UnaryOp};
 use crate::ir::{
     Place, PlaceBase, Projection, Value, ValueKind, ValuePiece,
@@ -212,19 +214,37 @@ impl<'a> Emitter<'a> {
     }
 
     /// The type of a field selected from `base`, following a raw pointer.
+    ///
+    /// A generic struct declares its fields in terms of its type parameters, so
+    /// the instance's type arguments are substituted into the declaration, and
+    /// the enclosing generic context's substitution is applied on top. This
+    /// keeps a projected field concrete (`Pair<i32>.first` is `i32`) so a later
+    /// projection or index picks the right C type.
     fn field_type(&self, base: &Ty, field: &str) -> Ty {
         match &base.kind {
-            TyKind::Struct(name, _) => self
-                .sema
-                .table
-                .struct_fields(name)
-                .and_then(|fields| {
-                    fields
-                        .iter()
-                        .find(|(declared, _)| declared == field)
-                        .map(|(_, ty)| ty.clone())
-                })
-                .unwrap_or_else(Ty::unknown),
+            TyKind::Struct(name, args) => {
+                let declared = self
+                    .sema
+                    .table
+                    .struct_fields(name)
+                    .and_then(|fields| {
+                        fields
+                            .iter()
+                            .find(|(declared, _)| declared == field)
+                            .map(|(_, ty)| ty.clone())
+                    })
+                    .unwrap_or_else(Ty::unknown);
+                let params = self.sema.table.struct_type_params(name).unwrap_or(&[]);
+                if params.is_empty() || args.is_empty() {
+                    return self.substitute(&declared);
+                }
+                let bindings: BTreeMap<String, Ty> = params
+                    .iter()
+                    .cloned()
+                    .zip(args.iter().cloned())
+                    .collect();
+                self.substitute(&crate::types::substitute(&declared, &bindings))
+            }
             TyKind::Raw(inner) => self.field_type(inner, field),
             _ => Ty::unknown(),
         }

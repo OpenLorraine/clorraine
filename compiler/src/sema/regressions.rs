@@ -333,3 +333,47 @@ func main(): i32 { return 0; }
 "#,
     );
 }
+
+#[test]
+fn a_generic_struct_field_yields_its_substituted_type() {
+    // Reading a field of an instantiated generic struct uses that instance's
+    // type argument, so a callable-bound check sees a concrete `i32` and the
+    // concrete function satisfies `F: func(T): T`.
+    assert_accepts(
+        r#"module test;
+struct Pair<T> { first: T; second: T; }
+func addOne(x: i32): i32 { return x + 1; }
+func apply<T, F: func(T): T>(x: T, f: F): T { return f(x); }
+func main(): i32 {
+    let p = Pair<i32> { first: 5, second: 2 };
+    return apply(p.first, addOne);
+}
+"#,
+    );
+    // The field keeps the instantiated type: `Pair<u8>.first` is `u8`, not the
+    // bare parameter `T`, so passing it where an `i32` is required is rejected
+    // instead of silently accepted.
+    assert_codes(
+        r#"module test;
+struct Pair<T> { first: T; second: T; }
+func takesI32(x: i32): i32 { return x; }
+func main(): i32 {
+    let p = Pair<u8> { first: 5, second: 2 };
+    return takesI32(p.first);
+}
+"#,
+        &["E10200"],
+    );
+    // A generic struct literal checks each field against the substituted type
+    // as well, so a wrong-typed field is reported.
+    assert_codes(
+        r#"module test;
+struct Pair<T> { first: T; second: T; }
+func main(): i32 {
+    let p = Pair<i32> { first: "x", second: 2 };
+    return p.second;
+}
+"#,
+        &["E10200"],
+    );
+}

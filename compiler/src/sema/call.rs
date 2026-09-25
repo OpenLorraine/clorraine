@@ -306,7 +306,7 @@ impl Checker<'_, '_> {
     /// receiver-taking `len` intrinsic stands in as one so `xs.len()` works.
     fn dot_call(&self, base: &Ty, name: &str) -> Option<DotCall> {
         if let TyKind::Struct(struct_name, _) = &base.kind {
-            if let Some(field_ty) = self.table.struct_field(struct_name, name) {
+            if let Some(field_ty) = self.field_type(base, name) {
                 return match &field_ty.kind {
                     TyKind::Func(signature) => Some(DotCall::Field(FuncSig {
                         params: signature.params.clone(),
