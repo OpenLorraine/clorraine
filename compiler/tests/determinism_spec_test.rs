@@ -106,3 +106,59 @@ fn compiling_the_same_source_twice_is_byte_identical() {
         "the same source, profile, and flags must emit byte-identical C"
     );
 }
+
+/// A sample that exercises generics, lambdas, and volatile together compiles
+/// to the same C bytes every time.
+#[test]
+fn a_mixed_language_sample_rebuilds_byte_identical() {
+    let scratch = ScratchDir::new("mixed");
+    let source = r#"module tests.determinism.mixed;
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func demo(): i32 {
+    let p = Pair<i32> { first: 1, second: 2 };
+    let base: i32 = 10;
+    let r = apply(1, [base] (x: i32) => x + base);
+    let value: u8 = 0;
+    unsafe {
+        let q: raw u8 = &value;
+        writeVolatile8(q, 7);
+        return r + p.first + i32(readVolatile8(q));
+    }
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    std::fs::write(scratch.path().join("mixed.clo"), source)
+        .expect("write the mixed sample");
+
+    let first = compile_relative(&scratch, "mixed.clo", "first.c");
+    let second = compile_relative(&scratch, "mixed.clo", "second.c");
+
+    assert!(
+        first.contains("ClPair__i32"),
+        "the sample must exercise a generic struct:\n{first}"
+    );
+    assert!(
+        first.contains("cl_lambda_0"),
+        "the sample must exercise a lambda:\n{first}"
+    );
+    assert!(
+        first.contains("*(volatile u8 *)"),
+        "the sample must exercise a volatile access:\n{first}"
+    );
+    assert_eq!(
+        first, second,
+        "the same source, profile, and flags must emit byte-identical C"
+    );
+}

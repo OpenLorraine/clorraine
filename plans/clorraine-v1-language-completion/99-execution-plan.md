@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 16:02
-> **Progress**: 45/49 tasks (92%; Phase 3 complete and reviewed — volatile intrinsics, the volatile global qualifier, and the `std.amiga.custom` MMIO module; `make verify` green after the review fix)
+> **Last Updated**: 2026-09-25 16:05
+> **Progress**: 49/49 tasks (100%; all four phases complete and reviewed — generics, lambdas, volatile/MMIO, and closeout; `make verify` green)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -252,7 +252,7 @@ this environment, so the review ran on the Phase 3 diff
 
 ## Phase 4: Closeout
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `f470a6bb2c680f3214fb012b454935c94dbeb03e` (Phase 4 start; the review diffs from this commit)
 > **Expected modification set**: `compiler/tests/determinism_spec_test.rs`, `AGENTS.md`, `plans/00-roadmap.md`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
 > **Scope mode**: strict
 
@@ -261,16 +261,25 @@ this environment, so the review ran on the Phase 3 diff
 **Reference**: [01-requirements.md](01-requirements.md) acceptance criteria · AR-21, AR-32
 **Objective**: remove stale references, confirm determinism, and close the plan.
 
-- [ ] 4.1.1 Sweep for stale `E90002` and `// stage:` references and dead code across the compiler, spec, and tests
-- [ ] 4.1.2 Confirm byte-identical rebuilds for a sample exercising generics, lambdas, and volatile — `compiler/tests/determinism_spec_test.rs`
-- [ ] 4.1.3 Update `AGENTS.md` (test map, any staged-surface note) and confirm `plans/00-roadmap.md` reflects completion — `AGENTS.md`, `plans/00-roadmap.md`
-- [ ] 4.1.4 Full acceptance run — `make verify`
+- [x] 4.1.1 Sweep for stale `E90002` and `// stage:` references and dead code across the compiler, spec, and tests ✅ (completed: 2026-09-25 16:04; no `E90002` reference remains in the compiler or any `.clo`, no golden carries a `// stage:` annotation, and the build is warning-free; the remaining `E90002` mentions are the retired registry row, check.sh/README commentary, and plan history)
+- [x] 4.1.2 Confirm byte-identical rebuilds for a sample exercising generics, lambdas, and volatile — `compiler/tests/determinism_spec_test.rs` ✅ (completed: 2026-09-25 16:04; a mixed sample compiles twice and asserts both byte-identity and that the emitted C contains a generic struct, a lifted lambda, and a volatile access)
+- [x] 4.1.3 Update `AGENTS.md` (test map, any staged-surface note) and confirm `plans/00-roadmap.md` reflects completion — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-25 16:04; AGENTS.md now lists the v1 language spec/impl tests, the `std.amiga.custom` module, and the extended compiler scope; the roadmap marks PLAN-04 Done and records the new generics callable-bound defect DEF-05)
+- [x] 4.1.4 Full acceptance run — `make verify` ✅ (completed: 2026-09-25 16:05; `make verify` exit 0 — "verify: all legs passed")
 
 **Deliverables**:
 - A clean tree with no stale staged references
 - `make verify` green
 
 **Verify**: `make verify`.
+
+### Phase 4 review (strict profile)
+
+Reviewed inline on 2026-09-25 on the Phase 4 diff `f470a6bb..HEAD` (closeout
+only: a determinism case, `AGENTS.md`, and the roadmap). Findings:
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| R4-1 | 🟡 Minor | The first determinism sample tripped a pre-existing generics gap: a callable-bound generic rejects a concrete function or closure when `T` is inferred from a generic-struct field (`apply(p.first, addOne)` is E10303). It is a false rejection with an explicit-type-argument workaround, and no authorized ST case covers it. | Report-only and recorded as roadmap defect DEF-05; the sample was changed to infer `T` from a literal and keeps the generic struct, the lambda, and the volatile access in the same program. |
 
 ---
 
