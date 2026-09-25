@@ -1,5 +1,6 @@
 // expect-error E10306
 // trigger: generic aggregate instantiated with a capturing closure's ephemeral type
+// stage: 2
 module tests.compile_fail.E10306;
 
 struct Holder<T> {

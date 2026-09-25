@@ -23,8 +23,8 @@ stage 4 depends on the callable bound; volatile/MMIO is independent.
 
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
-| 1 | Generics | 18 |
-| 2 | Lambdas | 16 |
+| 1 | Generics | 17 |
+| 2 | Lambdas | 17 |
 | 3 | Volatile and MMIO | 11 |
 | 4 | Closeout | 4 |
 
@@ -52,7 +52,7 @@ stage 4 depends on the callable bound; volatile/MMIO is independent.
 goldens, and record the red phase.
 
 - [x] 1.1.1 [spec-author] Write the runnable generics cases from ST-1..ST-4 in a new spec suite — `compiler/tests/v1_language_spec_test.rs` ✅ (completed: 2026-09-25 09:02)
-- [x] 1.1.2 [spec-author] Un-skip the generics compile-fail goldens: remove `E10303`/`E10304` from `EXCLUDED_CODES`, add `E10303`/`E10304`/`E10306` to `ASSERTED_CODES`, drop the `// stage:` annotation from `E10306`, and add the ST-27 golden — `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/{E10306_generic_ephemeral_arg,E10305_generic_struct_recursion}.clo` ✅ (completed: 2026-09-25 09:03)
+- [x] 1.1.2 [spec-author] Un-skip the generics compile-fail goldens: remove `E10303`/`E10304` from `EXCLUDED_CODES`, add `E10303`/`E10304`/`E10306` to `ASSERTED_CODES`, drop the `// stage:` annotation from `E10306`, and add the ST-27 golden — `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/{E10306_generic_ephemeral_arg,E10305_generic_struct_recursion}.clo` ✅ (completed: 2026-09-25 09:03; E10306 was re-staged to Phase 2 later, see AR-42/task 2.2.10)
 - [x] 1.1.3 Run the suite and record the red phase: the new generics cases and the un-skipped goldens fail; no existing case regresses ✅ (completed: 2026-09-25 09:04) — red: 4 goldens (E10303/E10304/E10306/E10305-struct) and all 4 runnable cases fail; E10305-struct currently overflows the compiler stack
 
 **Deliverables**:
@@ -74,7 +74,7 @@ ephemeral-argument rule.
 - [x] 1.2.5 Emit one concrete struct per recorded instance with substituted field types — `compiler/src/codegen/program.rs` ✅ (completed: 2026-09-25 09:24; landed with 1.2.4; ST-1/ST-2 green, Array regressions cleared)
 - [x] 1.2.6 Enforce `E10303` when a bound argument is not a matching `func(...)` or closure — `compiler/src/sema/call.rs` ✅ (completed: 2026-09-25 10:11; also fixed `types::substitute` to descend into function types so a bound's return/params substitute)
 - [x] 1.2.7 Enforce `E10304` when a callable-only value is stored or returned — `compiler/src/sema/{call,expr}.rs` ✅ (completed: 2026-09-25 10:11; implemented in `sema/{mod,stmt}.rs`)
-- [ ] 1.2.8 Enforce `E10306` when a resolved aggregate type contains a closure argument — `compiler/src/sema/{mod,call,expr}.rs`
+
 - [x] 1.2.9 Extend the `E10305` recursion cap to cover generic-struct instantiation — `compiler/src/{sema/items,call}.rs`, `compiler/src/types/table.rs` ✅ (completed: 2026-09-25 10:13; uses a value-embedding cycle check plus a depth guard on `size_of`)
 - [x] 1.2.10 Store `Instance.args` as `Ty` and key every function instance from `type_key`, removing `type_from_key` — `compiler/src/ir/mono.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/{program,function}.rs`, `compiler/src/ir/tests.rs` (AR-40) ✅ (completed: 2026-09-25 10:09; ST-4 green)
 - [x] 1.2.11 Allow `export` on a generic struct, export `Pair` in the ST-3 fixture, and update the spec rules `STR-21`/`G-5` and the `E10302` wording to functions only — `compiler/src/sema/items.rs`, `compiler/tests/v1_language_spec_test.rs`, `spec/07-structs.md`, `spec/06-functions.md`, `spec/14-diagnostics.md`, `spec/grammar.ebnf.md`, `spec/decisions.md`, `spec/17-codegen.md` (AR-41) ✅ (completed: 2026-09-25 10:09; ST-3 green, spec check OK)
@@ -86,8 +86,8 @@ ephemeral-argument rule.
 
 - [ ] 1.3.1 Add generics implementation and unit tests (instance dedupe, nested keys, all three diagnostics) — `compiler/tests/v1_language_impl_test.rs`, in-module tests
 - [ ] 1.3.2 Update the `E103xx` registry wording to the implemented status — `spec/14-diagnostics.md`
-- [!] 1.3.3 Verify the generics suite is green — `make check` — Blocked: needs 1.2.6–1.2.9
-- [!] 1.3.4 Verify the generics phase end to end — `make verify` — Blocked: needs 1.3.3
+- [ ] 1.3.3 Verify the generics suite is green — `make check` (E10306 is re-staged to Phase 2 by AR-42)
+- [ ] 1.3.4 Verify the generics phase end to end — `make verify`
 
 **Deliverables**:
 - Generic structs and the three diagnostics working
@@ -134,6 +134,7 @@ rules.
 - [ ] 2.2.7 Emit the capture-less function-pointer value and the capturing two-word value — `compiler/src/codegen/expr.rs`
 - [ ] 2.2.8 Emit the closure call and the monomorphized call form inside a generic body — `compiler/src/codegen/{calls,expr}.rs`
 - [ ] 2.2.9 Key closure instances in monomorphization (`closure_<N>`) — `compiler/src/own/generics.rs`, `compiler/src/codegen/types.rs`
+- [ ] 2.2.10 Enforce `E10306` when a resolved aggregate type contains an ephemeral closure argument, and un-stage its golden — `compiler/src/sema/{mod,call,expr}.rs`, `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/E10306_generic_ephemeral_arg.clo` (moved from Phase 1 by AR-42)
 
 ### Step 2.3: Implementation tests, spec prose, and verification
 
