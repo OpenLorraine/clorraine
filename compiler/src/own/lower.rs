@@ -155,13 +155,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 then_value: Box::new(self.lower_value(then_value)),
                 else_value: Box::new(self.lower_value(else_value)),
             },
-            ExprKind::StructLiteral { name, fields, .. } => ValueKind::StructLit {
-                name: name.segments.last().cloned().unwrap_or_default(),
-                fields: fields
-                    .iter()
-                    .map(|field| (field.name.clone(), self.lower_value(&field.value)))
-                    .collect(),
-            },
+            ExprKind::StructLiteral { name, fields, .. } => {
+                let mut lowered = Vec::with_capacity(fields.len());
+                for field in fields {
+                    let value = self.lower_value(&field.value);
+                    let value = self.consume_place(value);
+                    lowered.push((field.name.clone(), value));
+                }
+                ValueKind::StructLit {
+                    name: name.segments.last().cloned().unwrap_or_default(),
+                    fields: lowered,
+                }
+            }
             ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
                 elements: elements.iter().map(|element| self.lower_value(element)).collect(),
                 fill: fill
@@ -533,6 +538,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(ty, ValueKind::Temp(id))
     }
 
+    /// Consumes an owned place value as a move, emptying its source.
+    ///
+    /// A place value whose type is non-duplicable and does not mention a generic
+    /// parameter is moved into a compiler temporary: `Statement::Move` copies
+    /// the value and then zeros the source, so a later drop of the source cannot
+    /// free the value the destination now owns. Every other value is returned
+    /// unchanged. This realizes the "a move is a copy plus a zero of the source"
+    /// rule for a value consumed inside an aggregate literal.
+    pub(super) fn consume_place(&mut self, value: Value) -> Value {
+        let ValueKind::Place(source) = &value.kind else {
+            return value;
+        };
+        if self.sema.table.duplicable(&value.ty) || mentions_type_param(&value.ty) {
+            return value;
+        }
+        let source = source.clone();
+        let ty = value.ty.clone();
+        let id = self.new_temp(ty.clone());
+        let target = Place {
+            base: ir::PlaceBase::Temp(id),
+            projections: Vec::new(),
+            ty: ty.clone(),
+        };
+        self.emit(Statement::Move {
+            target,
+            source,
+        });
+        Value::new(ty, ValueKind::Temp(id))
+    }
+
     /// Stores an impure operand in a compiler temporary before it is used twice.
     ///
     /// Unlike [`Self::materialize_guard_operand`], which defers the assignment
@@ -636,7 +671,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 /// Such a type has no C spelling until its instantiation substitutes the
 /// parameter, so it cannot be declared as a temporary in the uninstantiated
 /// body that produced it.
-fn mentions_type_param(ty: &Ty) -> bool {
+pub(super) fn mentions_type_param(ty: &Ty) -> bool {
     match &ty.kind {
         TyKind::Param(_) => true,
         TyKind::Raw(inner) => mentions_type_param(inner),

@@ -37,6 +37,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .cloned()
     }
 
+    /// Records a value-consuming read of an owned place as a move.
+    ///
+    /// A struct-literal field consumes its value: an owned (non-duplicable)
+    /// place is moved out, so the source field must be treated as moved. A
+    /// duplicable place is copied, and a type that still mentions a generic
+    /// parameter is left to the instantiation, matching the lowering's guard.
+    /// The move makes a second read the moved-value error and a
+    /// deeper-than-top-level path the v1 partial-move error.
+    fn consume_owned_place(&mut self, expr: &Expr, span: Span) {
+        let ty = self.ty(expr);
+        if self.sema.table.duplicable(&ty) || super::lower::mentions_type_param(&ty) {
+            return;
+        }
+        if let Some(target) = self.place_target(expr) {
+            self.move_target(target, span);
+        }
+    }
+
     /// True when a call's callee expression lowers to a closure value.
     ///
     /// A capturing lambda's recorded type is a closure, but a capture-less
@@ -133,6 +151,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::StructLiteral { fields, .. } => {
                 for field in fields {
                     self.eval(&field.value);
+                    self.consume_owned_place(&field.value, field.value.span);
                 }
             }
             ExprKind::ArrayLiteral { elements, fill } => {

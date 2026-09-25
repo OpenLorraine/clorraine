@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 01:11
-> **Progress**: 2/10 tasks (20%)
+> **Last Updated**: 2026-09-26 01:13
+> **Progress**: 5/10 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -76,9 +76,9 @@ existing suites, written red before each fix (AR-4).
 **Reference**: [03-01](03-01-nested-move-lowering.md) §Implementation Details · AR-1, AR-3
 **Objective**: Record the move in the ownership flow and emit the source zero.
 
-- [ ] 1.2.1 Mark a consumed non-duplicable struct-literal field as moved via `move_target` — `compiler/src/own/expr.rs`
-- [ ] 1.2.2 Add `consume_place` (with the `mentions_type_param` guard) and route the `StructLit` field lowering through it — `compiler/src/own/lower.rs`
-- [ ] 1.2.3 Confirm the Step 1.1 cases PASS (green)
+- [x] 1.2.1 Mark a consumed non-duplicable struct-literal field as moved via `move_target` — `compiler/src/own/expr.rs` ✅ (completed: 2026-09-26 01:13)
+- [x] 1.2.2 Add `consume_place` (with the `mentions_type_param` guard) and route the `StructLit` field lowering through it — `compiler/src/own/lower.rs` ✅ (completed: 2026-09-26 01:13)
+- [x] 1.2.3 Confirm the Step 1.1 cases PASS (green) ✅ (completed: 2026-09-26 01:13)
 
 **Deliverables**:
 - ST-1, ST-2, ST-6, ST-7, ST-9, ST-10 pass; a duplicable or type-parameter place is still copied
