@@ -9,7 +9,7 @@
 //! arguments of a generic struct.
 
 use crate::ast::{EnumDecl, Expr, ScalarType, StructDecl, Type, TypeKind};
-use crate::types::{int_fits, integer_scalar, TyKind};
+use crate::types::{int_fits, integer_scalar, Ty, TyKind, TypeTable};
 
 use super::Checker;
 
@@ -31,6 +31,7 @@ impl Checker<'_, '_> {
             );
         }
         self.type_params = decl.type_params.iter().map(|p| p.name.clone()).collect();
+        let mut reported_recursion = false;
         for field in &decl.fields {
             let ty = self.resolve_type(&field.ty);
             if matches!(ty.kind, TyKind::Str) {
@@ -39,6 +40,24 @@ impl Checker<'_, '_> {
                     format!("view-typed field '{}' is not allowed", field.name),
                     "store an owner, or `static str` for literals",
                     field.name_span,
+                );
+            }
+            // A field that embeds the struct by value makes it infinitely
+            // sized; a generic field that instantiates the struct with a new
+            // argument recurses without bound. Only a `raw` pointer, a handle,
+            // a function pointer, or a slice breaks the chain.
+            if !reported_recursion
+                && embeds_by_value(self.table, &ty, &decl.name, 0)
+            {
+                reported_recursion = true;
+                self.error(
+                    "E10305",
+                    format!(
+                        "instantiation of '{}' is recursive beyond the limit",
+                        decl.name
+                    ),
+                    "break the recursion with a `raw` pointer",
+                    decl.name_span,
                 );
             }
         }
@@ -193,5 +212,37 @@ impl Checker<'_, '_> {
             | TypeKind::Error => {}
         }
         valid
+    }
+}
+
+/// True when a value of `ty` embeds `target` by value, directly or through
+/// other struct fields.
+///
+/// A `raw` pointer, a handle, a function pointer, and a slice are pointer-sized,
+/// so they end the by-value chain; a fixed array and a nested struct continue
+/// it. The walk is depth-limited so a cycle that does not name `target` cannot
+/// loop.
+fn embeds_by_value(table: &TypeTable, ty: &Ty, target: &str, depth: usize) -> bool {
+    if depth > 32 {
+        return false;
+    }
+    match &ty.kind {
+        TyKind::Struct(name, _) => {
+            if name == target {
+                return true;
+            }
+            table.struct_fields(name).is_some_and(|fields| {
+                fields
+                    .iter()
+                    .any(|(_, field)| embeds_by_value(table, field, target, depth + 1))
+            })
+        }
+        // A slice carries a pointer and a length, so only a fixed array embeds
+        // its element.
+        TyKind::Array { element, extents } => {
+            extents.iter().all(Option::is_some)
+                && embeds_by_value(table, element, target, depth + 1)
+        }
+        _ => false,
     }
 }

@@ -361,13 +361,24 @@ impl TypeTable {
     /// The value is used by constant folding; a type whose size is not
     /// modelled yet yields `None` so the caller can defer.
     pub fn size_of(&self, ty: &Ty) -> Option<usize> {
+        self.size_of_at(ty, 0)
+    }
+
+    /// Depth-limited worker for [`TypeTable::size_of`].
+    ///
+    /// A malformed self-referential declaration would otherwise recurse without
+    /// bound; the limit makes the size unknown instead of overflowing.
+    fn size_of_at(&self, ty: &Ty, depth: usize) -> Option<usize> {
+        if depth > 32 {
+            return None;
+        }
         match &ty.kind {
             TyKind::Void => Some(0),
             TyKind::Scalar(scalar) => scalar_size(*scalar),
             TyKind::Raw(_) | TyKind::Func(_) => Some(4),
             TyKind::Str | TyKind::CString => Some(8),
             TyKind::Array { element, extents } => {
-                let element = self.size_of(element)?;
+                let element = self.size_of_at(element, depth + 1)?;
                 let mut total = element;
                 for extent in extents {
                     total = total.checked_mul((*extent)?)?;
@@ -377,7 +388,7 @@ impl TypeTable {
             TyKind::Struct(name, _) => {
                 let mut total = 0usize;
                 for (_, field) in self.struct_fields(name)? {
-                    total = total.checked_add(self.size_of(field)?)?;
+                    total = total.checked_add(self.size_of_at(field, depth + 1)?)?;
                 }
                 Some(total)
             }
