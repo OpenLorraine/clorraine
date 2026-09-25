@@ -41,6 +41,7 @@ pub(super) fn c_type(ty: &Ty) -> String {
             }
         }
         TyKind::Func(signature) => func_pointer_type(signature),
+        TyKind::Closure(closure) => closure_type(closure.id),
         TyKind::Param(name) => format!("Cl{name}"),
         TyKind::Unknown => "i32".to_owned(),
     }
@@ -154,8 +155,14 @@ pub(super) fn type_key(ty: &Ty) -> String {
         }
         TyKind::Array { element, .. } => type_key(element),
         TyKind::Func(_) => "fn".to_owned(),
+        TyKind::Closure(closure) => format!("closure_{}", closure.id),
         TyKind::Unknown => "unknown".to_owned(),
     }
+}
+
+/// The C struct name of a closure's two-word value.
+pub(super) fn closure_type(id: usize) -> String {
+    format!("ClClosure_{id}")
 }
 
 /// The scalar a type denotes, when it is a scalar.

@@ -346,6 +346,9 @@ impl TypeTable {
         }
         match &ty.kind {
             TyKind::Handle(_) => false,
+            // A capturing closure is ephemeral: it owns its environment for one
+            // synchronous call and cannot be copied, stored, or captured.
+            TyKind::Closure(_) => false,
             TyKind::Struct(name, _) => self.struct_fields(name).is_none_or(|fields| {
                 fields
                     .iter()

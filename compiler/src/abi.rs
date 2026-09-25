@@ -60,6 +60,9 @@ pub fn ffi_type_with(ty: &Ty, enum_backing: Option<crate::ast::ScalarType>) -> S
         // as an object pointer: the target ABI calls it, so an `APTR` argument
         // would not convert to the pointer type the shim expects.
         TyKind::Func(signature) => ffi_function_pointer(signature),
+        // A closure is ephemeral and never crosses the FFI boundary; the
+        // opaque pointer keeps the mapping total for an unreachable case.
+        TyKind::Closure(_) => "APTR".to_owned(),
         TyKind::Param(name) => format!("Cl{name}"),
         TyKind::Unknown => "APTR".to_owned(),
     }

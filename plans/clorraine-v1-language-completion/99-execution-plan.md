@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 14:00
-> **Progress**: 20/49 tasks (41%; Phase 2 red phase recorded)
+> **Last Updated**: 2026-09-25 14:03
+> **Progress**: 21/49 tasks (43%; Phase 2 red phase recorded; closure type added)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -137,7 +137,7 @@ retire `E90002`, and record the red phase.
 **Objective**: lift, type, and emit lambdas, with the capture and ephemerality
 rules.
 
-- [ ] 2.2.1 Add the `ClosureTy` representation and the `TyKind::Closure` variant — `compiler/src/types/mod.rs`
+- [x] 2.2.1 Add the `ClosureTy` representation and the `TyKind::Closure` variant — `compiler/src/types/mod.rs` ✅ (completed: 2026-09-25 14:03; `ClosureTy { id, params, returns }`, `TyKind::Closure`, `is_closure`, non-duplicable, and `c_type`/`type_key`/`ffi_type`/`display` coverage; the red set is unchanged, so no regression)
 - [ ] 2.2.2 Type and scope-check a lambda, binding captures, and classify each capture (copy / read-only borrow / `[borrow]`) — `compiler/src/sema/expr.rs`
 - [ ] 2.2.3 Enforce `E10403`, `E10401`, and `E10402` — `compiler/src/sema/expr.rs`
 - [ ] 2.2.4 Enforce `E10400` at a `func(...)` conversion and `E10404` at a storage, return, or capture — `compiler/src/sema/{expr,call}.rs`

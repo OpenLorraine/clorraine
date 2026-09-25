@@ -62,6 +62,13 @@ pub enum TyKind {
     },
     /// An exact-signature function pointer.
     Func(FuncTy),
+    /// A capturing closure's ephemeral type.
+    ///
+    /// A closure is a two-word callable (a function pointer plus an environment
+    /// pointer). It is not duplicable, it cannot be a stored value, and it is
+    /// valid only for the synchronous call that receives it, so the checker
+    /// reports `E10404` when one is bound, stored, returned, or captured.
+    Closure(ClosureTy),
     /// A generic type parameter, treated as opaque while checking.
     Param(String),
     /// An imported or otherwise unresolved type; it accepts every operation.
@@ -71,6 +78,22 @@ pub enum TyKind {
 /// A function-pointer signature.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FuncTy {
+    /// Parameter types in order.
+    pub params: Vec<Ty>,
+    /// Return type.
+    pub returns: Box<Ty>,
+}
+
+/// A capturing closure's ephemeral type.
+///
+/// `id` is the stable index of the lambda site, in source order. The emitter
+/// names the lifted function, the environment struct, and the two-word value
+/// from it, and the monomorphization key uses it, so the same site always names
+/// the same instance across runs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosureTy {
+    /// Stable lambda-site index.
+    pub id: usize,
     /// Parameter types in order.
     pub params: Vec<Ty>,
     /// Return type.
@@ -188,6 +211,11 @@ impl Ty {
         matches!(self.kind, TyKind::Param(_))
     }
 
+    /// True when the type is a capturing closure.
+    pub fn is_closure(&self) -> bool {
+        matches!(self.kind, TyKind::Closure(_))
+    }
+
     /// True when the type is `bool`.
     pub fn is_bool(&self) -> bool {
         matches!(self.kind, TyKind::Scalar(ScalarType::Bool))
@@ -236,6 +264,10 @@ impl Ty {
             TyKind::Func(signature) => {
                 let params: Vec<String> = signature.params.iter().map(Ty::display).collect();
                 format!("func({}): {}", params.join(", "), signature.returns.display())
+            }
+            TyKind::Closure(closure) => {
+                let params: Vec<String> = closure.params.iter().map(Ty::display).collect();
+                format!("closure({}): {}", params.join(", "), closure.returns.display())
             }
         };
         if self.nullable {
