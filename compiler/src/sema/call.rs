@@ -103,7 +103,11 @@ impl Checker<'_, '_> {
         args: &[Arg],
         span: Span,
     ) -> Ty {
-        let declared = signature.type_params.clone();
+        let declared: Vec<String> = signature
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
         let arg_types: Vec<(Ty, Span)> = args
             .iter()
             .map(|arg| (self.check_value(&arg.value, None), arg.value.span))

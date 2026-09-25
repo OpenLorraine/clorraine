@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{Expr, Item, QualifiedName, ScalarType, Type, TypeKind, TypeParam};
+use crate::ast::{CallableBound, Expr, Item, QualifiedName, ScalarType, Type, TypeKind, TypeParam};
 use crate::consts::ConstFolder;
 use crate::load::Loaded;
 
@@ -22,8 +22,20 @@ pub struct FuncSig {
     pub params: Vec<Ty>,
     /// Return type.
     pub returns: Ty,
-    /// Names of the function's generic parameters.
-    pub type_params: Vec<String>,
+    /// The function's generic parameters, each with its optional callable bound.
+    pub type_params: Vec<TypeParamSig>,
+}
+
+/// A generic parameter with its optional callable bound.
+///
+/// The bound is resolved when the signature is collected, so the checker can
+/// verify a concrete argument against it without re-reading the declaration.
+#[derive(Clone, Debug)]
+pub struct TypeParamSig {
+    /// Parameter name.
+    pub name: String,
+    /// The `func(...)` bound, when the declaration wrote one.
+    pub bound: Option<FuncTy>,
 }
 
 impl FuncSig {
@@ -161,7 +173,7 @@ impl TypeTable {
                                 .map(|param| resolve_ty(&param.ty, &params, &table))
                                 .collect(),
                             returns: resolve_ty(&decl.returns, &params, &table),
-                            type_params: params,
+                            type_params: type_param_sigs(&decl.type_params, &params, &table),
                         };
                         if let Some(module_functions) = table.functions.get_mut(&module.name) {
                             module_functions.insert(decl.name.clone(), signature);
@@ -402,6 +414,40 @@ fn scalar_size(scalar: crate::ast::ScalarType) -> Option<usize> {
 /// Collects the written names of a declaration's type parameters.
 fn type_param_names(params: &[TypeParam]) -> Vec<String> {
     params.iter().map(|param| param.name.clone()).collect()
+}
+
+/// Collects a declaration's type parameters, resolving any callable bound.
+///
+/// `names` is the same parameter list's names, reused so a bound that mentions a
+/// sibling parameter (as in `F: func(T): T`) resolves it to an opaque
+/// [`TyKind::Param`].
+fn type_param_sigs(params: &[TypeParam], names: &[String], table: &TypeTable) -> Vec<TypeParamSig> {
+    params
+        .iter()
+        .map(|param| TypeParamSig {
+            name: param.name.clone(),
+            bound: param
+                .bound
+                .as_ref()
+                .map(|bound| resolve_callable_bound(bound, names, table)),
+        })
+        .collect()
+}
+
+/// Resolves a `func(...)` bound into a function-pointer signature.
+fn resolve_callable_bound(
+    bound: &CallableBound,
+    type_params: &[String],
+    table: &TypeTable,
+) -> FuncTy {
+    FuncTy {
+        params: bound
+            .params
+            .iter()
+            .map(|param| resolve_ty(param, type_params, table))
+            .collect(),
+        returns: Box::new(resolve_ty(&bound.returns, type_params, table)),
+    }
 }
 
 /// Resolves an AST type against the collected declarations.

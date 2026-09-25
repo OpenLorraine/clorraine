@@ -17,7 +17,7 @@ use crate::ast::{Expr, ExprKind, ScalarType};
 
 mod table;
 
-pub use table::{resolve_ty, resolve_ty_with, FuncSig, TypeTable};
+pub use table::{resolve_ty, resolve_ty_with, FuncSig, TypeParamSig, TypeTable};
 
 /// A checked type: a shape plus the `?` empty-state flag.
 #[derive(Clone, Debug, PartialEq, Eq)]
