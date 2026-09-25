@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 19:48
-> **Progress**: 5/24 tasks (21%)
+> **Last Updated**: 2026-09-25 19:50
+> **Progress**: 7/24 tasks (29%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -90,8 +90,8 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-01](03-01-types-substitution.md) §Testing Requirements · [AR-14, AR-15]
 **Objective**: Cover helper edge cases and verify the phase.
 
-- [ ] 1.3.1 Add implementation tests for the helper's empty/short-argument no-op and `offset_of` on a non-generic struct — `compiler/src/types/mod.rs` / `compiler/src/types/table.rs`
-- [ ] 1.3.2 Full phase verification — `make check`
+- [x] 1.3.1 Add implementation tests for the helper's empty/short-argument no-op and `offset_of` on a non-generic struct — `compiler/src/types/mod.rs` / `compiler/src/types/table.rs` ✅ (completed: 2026-09-25 19:49)
+- [x] 1.3.2 Full phase verification — `make check` ✅ (completed: 2026-09-25 19:50)
 
 **Deliverables**:
 - All verification passing

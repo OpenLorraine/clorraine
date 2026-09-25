@@ -728,6 +728,48 @@ mod tests {
     }
 
     #[test]
+    fn substitute_instance_keeps_an_unbound_parameter() {
+        // No parameters or no arguments is a no-op, so a non-generic type is
+        // returned unchanged and a partial list never corrupts one.
+        let declared = param("T");
+        assert_eq!(substitute_instance(&declared, &[], &[]), declared);
+        assert_eq!(
+            substitute_instance(&declared, &["T".to_owned()], &[]),
+            declared
+        );
+        // A short argument list binds what it can and leaves the rest in place.
+        let params = ["T".to_owned(), "U".to_owned()];
+        assert_eq!(
+            substitute_instance(&param("U"), &params, &[Ty::i32_ty()]),
+            param("U")
+        );
+        assert_eq!(
+            substitute_instance(&param("T"), &params, &[Ty::i32_ty()]),
+            Ty::i32_ty()
+        );
+    }
+
+    #[test]
+    fn instance_field_substitutes_and_is_a_no_op_without_arguments() {
+        let mut table = TypeTable::default();
+        insert_generic_struct(&mut table, "Box", &["T"], vec![("value", param("T"))]);
+        insert_struct(&mut table, "Point", vec![("x", Ty::i32_ty())]);
+        // A generic instance resolves the field to its argument.
+        assert_eq!(
+            table.instance_field(&Ty::struct_with("Box", vec![Ty::i32_ty()]), "value"),
+            Some(Ty::i32_ty())
+        );
+        // A non-generic struct's field is returned unchanged.
+        assert_eq!(
+            table.instance_field(&Ty::struct_("Point"), "x"),
+            Some(Ty::i32_ty())
+        );
+        assert_eq!(table.instance_field(&Ty::struct_("Point"), "missing"), None);
+        // `offset_of` on a non-generic struct is unchanged.
+        assert_eq!(table.offset_of(&Ty::struct_("Point"), "x"), Some(0));
+    }
+
+    #[test]
     fn sizes_and_offsets_fold_for_plain_layouts() {
         let mut table = TypeTable::default();
         insert_struct(
