@@ -41,7 +41,7 @@ mod place;
 pub use control::{BranchShape, LoopKind};
 pub use global::GlobalId;
 pub use guards::value_needs_guards;
-pub use mono::{CopyObligation, Instance, Monomorphization};
+pub use mono::{CopyObligation, Instance, Monomorphization, StructInstance};
 pub use place::{Place, PlaceBase, Projection};
 
 /// Index of a block inside a [`Function`].

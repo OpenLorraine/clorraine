@@ -27,6 +27,29 @@ impl Instance {
     }
 }
 
+/// One concrete instantiation of a generic struct.
+///
+/// A generic struct's fields are laid out per distinct argument list, so each
+/// instantiation has its own emitted C struct. The instance records the struct
+/// name and its concrete arguments so codegen can emit and deduplicate it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructInstance {
+    /// The struct's name as declared.
+    pub name: String,
+    /// The concrete type arguments, in declaration order.
+    pub args: Vec<String>,
+}
+
+impl StructInstance {
+    /// The key that identifies this instance uniquely.
+    ///
+    /// Two uses with the same struct and the same type arguments share one
+    /// emitted type, so the key is the deduplication identity codegen uses.
+    pub fn dedupe_key(&self) -> String {
+        format!("{}<{}>", self.name, self.args.join(", "))
+    }
+}
+
 /// A copy a generic body must perform at each instantiation.
 ///
 /// A writable lend parameter instantiated with a duplicable type binds a copy
@@ -54,6 +77,7 @@ pub struct CopyObligation {
 #[derive(Clone, Debug, Default)]
 pub struct Monomorphization {
     instances: Vec<Instance>,
+    structs: Vec<StructInstance>,
     obligations: Vec<CopyObligation>,
 }
 
@@ -74,6 +98,25 @@ impl Monomorphization {
     /// Every distinct instance recorded so far.
     pub fn instances(&self) -> &[Instance] {
         &self.instances
+    }
+
+    /// Records a struct instance, returning true when it was not already
+    /// present.
+    pub fn record_struct(&mut self, instance: StructInstance) -> bool {
+        if self
+            .structs
+            .iter()
+            .any(|known| known.dedupe_key() == instance.dedupe_key())
+        {
+            return false;
+        }
+        self.structs.push(instance);
+        true
+    }
+
+    /// Every distinct struct instance recorded so far.
+    pub fn struct_instances(&self) -> &[StructInstance] {
+        &self.structs
     }
 
     /// Records a copy obligation the generic body owes.

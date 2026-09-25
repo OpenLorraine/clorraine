@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 09:10
-> **Progress**: 4/47 tasks (9%)
+> **Last Updated**: 2026-09-25 09:11
+> **Progress**: 5/47 tasks (11%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -67,7 +67,7 @@ goldens, and record the red phase.
 ephemeral-argument rule.
 
 - [x] 1.2.1 Carry each type parameter's callable bound into the type stage (`TypeParamSig`) and update its callers — `compiler/src/types/table.rs`, `compiler/src/sema/call.rs` ✅ (completed: 2026-09-25 09:10)
-- [ ] 1.2.2 Add `StructInstance` and `record_struct`/`struct_instances` beside the function instances — `compiler/src/ir/mono.rs`
+- [x] 1.2.2 Add `StructInstance` and `record_struct`/`struct_instances` beside the function instances — `compiler/src/ir/mono.rs` ✅ (completed: 2026-09-25 09:11)
 - [ ] 1.2.3 Collect struct instances from resolved declaration and IR types, recursing into nested arguments — `compiler/src/own/generics.rs`
 - [ ] 1.2.4 Include a struct's type arguments in `type_key` and `c_type` (`Cl<Name>__<typekey>`) — `compiler/src/codegen/types.rs`
 - [ ] 1.2.5 Emit one concrete struct per recorded instance with substituted field types — `compiler/src/codegen/program.rs`
