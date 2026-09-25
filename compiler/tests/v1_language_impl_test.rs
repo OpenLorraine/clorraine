@@ -478,3 +478,25 @@ func main(): i32 {
         "the register write must dereference the raw base"
     );
 }
+
+#[test]
+fn a_field_write_through_a_raw_global_needs_unsafe() {
+    let source = r#"module tests.v1.impl.raw_base_unsafe;
+
+struct Regs {
+    dmacon: volatile u16;
+}
+
+const BASE: raw Regs = raw Regs(0x00DFF000);
+
+func main(): i32 {
+    BASE.dmacon = 1;
+    return 0;
+}
+"#;
+    let stderr = diagnostics("raw-base-unsafe", source);
+    assert!(
+        stderr.contains("E10600"),
+        "a field write through a raw global must require 'unsafe'; got:\n{stderr}"
+    );
+}

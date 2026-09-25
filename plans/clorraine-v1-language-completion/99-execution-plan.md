@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 15:58
-> **Progress**: 45/49 tasks (92%; Phase 3 complete and green — volatile intrinsics, the volatile global qualifier, and the `std.amiga.custom` MMIO module; under post-phase review)
+> **Last Updated**: 2026-09-25 16:02
+> **Progress**: 45/49 tasks (92%; Phase 3 complete and reviewed — volatile intrinsics, the volatile global qualifier, and the `std.amiga.custom` MMIO module; `make verify` green after the review fix)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -233,6 +233,20 @@ qualifier, and add the wrapper module.
 - Volatile spec tests and the MMIO corpus green
 
 **Verify**: `make verify`.
+
+### Phase 3 review (strict profile)
+
+Reviewed inline on 2026-09-25 (independent reviewer agents are manual-only in
+this environment, so the review ran on the Phase 3 diff
+`9b69289d..HEAD`). Findings:
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| R3-1 | 🟠 Major | A field write through a module-level `raw` pointer outside `unsafe` was not gated: `check_place_raw` walked local bindings only, so `BASE.dmacon = 1` (a `const raw`) reached codegen with no `E10600`. The fix that makes a `const raw` writable is what exposed this, so it shipped with 3.2 and was caught by the review. | Fixed as a necessary correction: `check_place_raw` now walks a global root too, so both a local and a module-level raw pointer report the unsafe gate. Covered by the impl test `a_field_write_through_a_raw_global_needs_unsafe`; `make check` and `make verify` re-run green. |
+| R3-2 | 🟡 Minor | An overlay field access outside `unsafe` reports `E10600` (raw dereference), while the appendix's table lists "volatile intrinsic or overlay access" under `E10604`. Pre-existing; only the intrinsics have an `E10604` golden. | Report-only; no ST case or golden covers the overlay spelling. |
+| R3-3 | 🟡 Minor | `setColor`/`setDma` write real custom-chip registers; the `vamos` corpus run proves the access completes against plain memory, not a visible hardware effect. | Report-only; the FS-UAE leg is not part of this corpus program and the risk is limited to the write. |
+| R3-4 | 🟡 Minor | `volatile_width` falls back to `u8` for an unknown name; the fallback is unreachable because the caller passes only the six names. | Report-only; keeps the helper total without a panicking arm. |
+| R3-5 | 🟡 Minor | AR-28 names `cop1lc` among the wrappers, but the module declares the `cop1lc` field with no exported setter (matching the module example in the design). | Report-only; the field documents the register map and the corpus covers `dmacon` and `color`. |
 
 ---
 

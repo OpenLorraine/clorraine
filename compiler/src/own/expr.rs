@@ -555,10 +555,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// target from being read as a value, which would be wrong for a field of
     /// a partially initialized or partially moved struct.
     pub(super) fn check_place_raw(&mut self, target: &'a Expr) {
-        let Some(PlaceTarget::Local(id, projections)) = self.place_target(target) else {
+        let Some(base) = self.place_target(target) else {
             return;
         };
-        let mut current = self.bindings[id].ty.clone();
+        // A field write through a raw pointer is a dereference whether the
+        // pointer is a local or a module-level binding, so both roots are
+        // walked for the unsafe gate.
+        let (mut current, projections) = match base {
+            PlaceTarget::Local(id, projections) => (self.bindings[id].ty.clone(), projections),
+            PlaceTarget::Global(id, projections) => {
+                let ty = self
+                    .program
+                    .globals
+                    .get(&id)
+                    .map(|global| global.ty.clone())
+                    .unwrap_or_else(Ty::unknown);
+                (ty, projections)
+            }
+        };
         for projection in &projections {
             match projection {
                 ir::Projection::Field(field) => {
