@@ -165,6 +165,23 @@ fn instances_deduplicate_by_function_and_type_arguments() {
 }
 
 #[test]
+fn struct_instances_deduplicate_by_name_and_arguments() {
+    let mut mono = Monomorphization::default();
+    let first = StructInstance {
+        name: "Pair".to_owned(),
+        args: vec![crate::types::Ty::i32_ty()],
+    };
+    assert!(mono.record_struct(first.clone()));
+    assert!(!mono.record_struct(first.clone()));
+    assert!(mono.record_struct(StructInstance {
+        name: "Pair".to_owned(),
+        args: vec![crate::types::Ty::usize_ty()],
+    }));
+    assert_eq!(mono.struct_instances().len(), 2);
+    assert_eq!(first.dedupe_key(), "Pair<i32>");
+}
+
+#[test]
 fn copy_obligations_name_their_instantiation() {
     let mut mono = Monomorphization::default();
     mono.require_copy(CopyObligation {

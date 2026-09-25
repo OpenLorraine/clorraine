@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 10:13
-> **Progress**: 13/49 tasks (27%)
+> **Last Updated**: 2026-09-25 10:32
+> **Progress**: 16/49 tasks (33%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -84,9 +84,9 @@ ephemeral-argument rule.
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) ST-1..ST-9, ST-27 · [03-04](03-04-spec-goldens.md) · AR-25
 **Objective**: green the generics phase and align the registry wording.
 
-- [ ] 1.3.1 Add generics implementation and unit tests (instance dedupe, nested keys, all three diagnostics) — `compiler/tests/v1_language_impl_test.rs`, in-module tests
-- [ ] 1.3.2 Update the `E103xx` registry wording to the implemented status — `spec/14-diagnostics.md`
-- [ ] 1.3.3 Verify the generics suite is green — `make check` (E10306 is re-staged to Phase 2 by AR-42)
+- [x] 1.3.1 Add generics implementation and unit tests (instance dedupe, nested keys, all three diagnostics) — `compiler/tests/v1_language_impl_test.rs`, in-module tests ✅ (completed: 2026-09-25 10:32; 5 integration tests plus unit tests for `type_key`/`c_type` and struct-instance dedupe)
+- [x] 1.3.2 Update the `E103xx` registry wording to the implemented status — `spec/14-diagnostics.md` ✅ (completed: 2026-09-25 10:32; the E10303/E10304/E10305 rows already state the implemented triggers and messages, and `spec/check.sh` cross-validates them; E10306 stays defined and is asserted in Phase 2 per AR-42, so no wording edit was needed)
+- [x] 1.3.3 Verify the generics suite is green — `make check` (E10306 is re-staged to Phase 2 by AR-42) ✅ (completed: 2026-09-25 10:32; spec check OK; 17 targets pass)
 - [ ] 1.3.4 Verify the generics phase end to end — `make verify`
 
 **Deliverables**:

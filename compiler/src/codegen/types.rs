@@ -222,6 +222,20 @@ mod tests {
     }
 
     #[test]
+    fn instantiated_struct_keys_compose_over_nested_arguments() {
+        let pair_i32 = Ty::struct_with("Pair", vec![Ty::i32_ty()]);
+        assert_eq!(type_key(&pair_i32), "Pair__i32");
+        assert_eq!(c_type(&pair_i32), "ClPair__i32");
+
+        let nested = Ty::struct_with("Pair", vec![pair_i32]);
+        assert_eq!(type_key(&nested), "Pair__Pair__i32");
+        assert_eq!(c_type(&nested), "ClPair__Pair__i32");
+
+        assert_eq!(type_key(&Ty::struct_("Point")), "Point");
+        assert_eq!(c_type(&Ty::struct_("Point")), "ClPoint");
+    }
+
+    #[test]
     fn empty_states_match_the_drop_contract() {
         assert_eq!(empty_state(&Ty::handle("File")), "NULL");
         assert_eq!(empty_state(&Ty::i32_ty()), "0");
