@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 15:26
-> **Progress**: 34/49 tasks (69%; Phase 2 complete and reviewed — lambdas stages 1-4 implemented, tested, documented; `make verify` green)
+> **Last Updated**: 2026-09-25 15:45
+> **Progress**: 37/49 tasks (75%; Phase 2 complete and reviewed; Phase 3 red phase recorded — volatile spec tests, MMIO corpus, and the E11200 golden are in place and failing as intended)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -180,8 +180,8 @@ ran on the Phase 2 diff `e14fb1e..HEAD`). Findings:
 
 ## Phase 3: Volatile and MMIO
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
-> **Expected modification set**: `compiler/src/sema/expr.rs`, `compiler/src/codegen/{calls,program}.rs`, `compiler/src/{ir/global,sema/items}.rs`, `compiler/src/stdlib.rs`, `stdlib/std.amiga.custom.clo`, `compiler/tests/v1_language_{spec,impl}_test.rs`, `compiler/tests/corpus_spec_test.rs`, `spec/tests/corpus/volatile-mmio/**`, `docker/scripts/corpus-amiga.sh`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
+> **Phase baseline tree**: `9b69289d773c1e9907dfee2858d1c3030cbbbaa9` (Phase 3 start; the review diffs from this commit)
+> **Expected modification set**: `compiler/src/sema/expr.rs`, `compiler/src/codegen/{calls,program}.rs`, `compiler/src/{ir/global,sema/items}.rs`, `compiler/src/stdlib.rs`, `stdlib/std.amiga.custom.clo`, `compiler/tests/v1_language_{spec,impl}_test.rs`, `compiler/tests/{corpus_spec_test,compile_fail_spec_test}.rs`, `spec/tests/corpus/volatile-mmio/**`, `spec/tests/compile-fail/E11200_custom_module.clo`, `docker/scripts/corpus-amiga.sh`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
 > **Scope mode**: strict
 
 ### Step 3.1: Encode the volatile behaviour before it exists
@@ -190,9 +190,9 @@ ran on the Phase 2 diff `e14fb1e..HEAD`). Findings:
 **Objective**: write the runnable volatile spec tests, add the MMIO corpus, and
 record the red phase.
 
-- [ ] 3.1.1 [spec-author] Write the runnable volatile cases from ST-20..ST-24 — `compiler/tests/v1_language_spec_test.rs`
-- [ ] 3.1.2 [spec-author] Add the MMIO corpus and the host import-rejection golden — `spec/tests/corpus/volatile-mmio/{program.clo,expected-output.txt,README.md}`, `spec/tests/compile-fail/E11200_custom_module.clo`, `compiler/tests/{corpus_spec_test,compile_fail_spec_test}.rs`
-- [ ] 3.1.3 Run the suite and record the red phase: the volatile cases fail (the intrinsic lowers to `0`) and the MMIO import is rejected; no existing case regresses
+- [x] 3.1.1 [spec-author] Write the runnable volatile cases from ST-20..ST-24 — `compiler/tests/v1_language_spec_test.rs` ✅ (completed: 2026-09-25 15:45; v20 volatile byte round-trip, v21 16/32-bit round-trip, v23 read-between-writes, v24 global qualifier; ST-22 stays on the existing E10604 golden)
+- [x] 3.1.2 [spec-author] Add the MMIO corpus and the host import-rejection golden — `spec/tests/corpus/volatile-mmio/{program.clo,expected-output.txt,README.md}`, `spec/tests/compile-fail/E11200_custom_module.clo`, `compiler/tests/{corpus_spec_test,compile_fail_spec_test}.rs` ✅ (completed: 2026-09-25 15:45; corpus program calls `setColor`/`setDma`, README documents the surface, golden imports `std.amiga.custom` under host, and a corpus host-rejection test was added)
+- [x] 3.1.3 Run the suite and record the red phase: the volatile cases fail (the intrinsic lowers to `0`) and the MMIO import is rejected; no existing case regresses ✅ (completed: 2026-09-25 15:45) — red: v20/v21/v23 fail (the intrinsic lowers to `0`, so the read result differs and `p` is unused), v24 fails (no `volatile` global qualifier), `compile_fail_goldens` fails E11200_custom_module, `corpus_spec_test` fails the volatile-mmio host rejection, and the lib `every_corpus_import_is_exported` fails (module not registered); `./spec/check.sh` is green and the other targets pass, so no existing case regresses
 
 **Deliverables**:
 - The volatile spec-test cases and the MMIO corpus

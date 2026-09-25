@@ -426,3 +426,124 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A `writeVolatile8`/`readVolatile8` round-trip over a real local address
+/// reads the written byte back on the host profile.
+#[test]
+fn a_volatile_byte_round_trips_through_a_real_address() {
+    let source = r#"module tests.v1.volatile8;
+
+func demo(): i32 {
+    let value: u8 = 0;
+    unsafe {
+        let p: raw u8 = &value;
+        writeVolatile8(p, 0x2A);
+        return i32(readVolatile8(p));
+    }
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("v20", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(0x2A),
+        "v20: the volatile byte did not round-trip; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A `writeVolatile16`/`writeVolatile32` round-trip over real local addresses
+/// reads each written value back.
+#[test]
+fn volatile_words_round_trip_through_real_addresses() {
+    let source = r#"module tests.v1.volatile_wide;
+
+func demo(): i32 {
+    let low: u16 = 0;
+    let high: u32 = 0;
+    unsafe {
+        let p16: raw u16 = &low;
+        let p32: raw u32 = &high;
+        writeVolatile16(p16, 0x1234);
+        writeVolatile32(p32, 0x89ABCDEF);
+        if (i32(readVolatile16(p16)) != 0x1234) {
+            return 1;
+        }
+        if (readVolatile32(p32) != 0x89ABCDEF) {
+            return 2;
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("v21", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "v21: a volatile word did not round-trip; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Two volatile reads separated by a volatile write to the same address
+/// observe the write; the value is not folded or cached.
+#[test]
+fn a_volatile_read_between_writes_observes_the_new_value() {
+    let source = r#"module tests.v1.volatile_sequence;
+
+func demo(): i32 {
+    let value: u8 = 0;
+    unsafe {
+        let p: raw u8 = &value;
+        writeVolatile8(p, 7);
+        let first: u8 = readVolatile8(p);
+        writeVolatile8(p, 9);
+        let second: u8 = readVolatile8(p);
+        return i32(first) * 10 + i32(second);
+    }
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("v23", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(79),
+        "v23: a volatile read did not observe the intervening write; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A module-level `volatile let` emits a C `volatile`-qualified global.
+#[test]
+fn a_volatile_module_global_emits_the_qualifier() {
+    let source = r#"module tests.v1.volatile_global;
+
+volatile let ticks: u32 = 0;
+
+func main(): i32 {
+    ticks = ticks + 1;
+    return i32(ticks);
+}
+"#;
+    let (output, emitted) = run_and_emit("v24", &[("main.clo", source)]);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "v24: unexpected exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        emitted.contains("static volatile u32"),
+        "v24: the emitted C must qualify the volatile global; emitted:\n{emitted}"
+    );
+}

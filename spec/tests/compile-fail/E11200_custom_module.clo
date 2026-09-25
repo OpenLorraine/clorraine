@@ -1,0 +1,9 @@
+// expect-error E11200
+// trigger: importing std.amiga.custom under the host profile
+module tests.compile_fail.E11200_custom;
+
+import { setDma } from std.amiga.custom;
+
+func main(): i32 {
+    return 0;
+}

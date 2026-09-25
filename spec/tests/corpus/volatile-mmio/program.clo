@@ -1,0 +1,16 @@
+// Exercises the per-chip MMIO wrapper on hosted-amiga: it sets a color through
+// the offset-based volatile intrinsic and toggles DMA through the overlay-struct
+// form, then reports success. The wrapper holds the raw register bases and the
+// `unsafe` blocks, so the program stays on the safe surface.
+module tests.corpus.VolatileMmio;
+
+import { setColor, setDma } from std.amiga.custom;
+import { println } from std.io;
+
+func main(): i32 {
+    setColor(0, 0x0F00);
+    setDma(true);
+    setDma(false);
+    println("volatile-mmio: ok");
+    return 0;
+}

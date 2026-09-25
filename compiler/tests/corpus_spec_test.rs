@@ -5,11 +5,11 @@
 //! compiler under the fixed warning flags, and the program runs in a private
 //! working directory. The three portable programs must compile with zero
 //! diagnostics and print their recorded output byte for byte. The
-//! interrupt-counter needs the AmigaOS scheduler and interrupt dispatcher, and
-//! the graphics program needs the AmigaOS screen and graphics libraries; the
-//! host profile provides neither, so under `--profile host` both must be
-//! rejected with the profile-surface diagnostic `E11200` instead of being
-//! compiled.
+//! interrupt-counter needs the AmigaOS scheduler and interrupt dispatcher, the
+//! graphics program needs the AmigaOS screen and graphics libraries, and the
+//! volatile-mmio program needs the per-chip MMIO wrapper; the host profile
+//! provides none of them, so under `--profile host` each must be rejected with
+//! the profile-surface diagnostic `E11200` instead of being compiled.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -207,5 +207,33 @@ fn graphics_is_rejected_on_the_host_profile() {
     assert!(
         first_line.contains("is not available on profile 'host'"),
         "graphics: the diagnostic must name the host profile, got:\n{stderr}"
+    );
+}
+
+/// `volatile-mmio` is hosted-amiga only, so the host profile rejects it.
+///
+/// The program imports the per-chip MMIO wrapper `std.amiga.custom`, which the
+/// host profile does not provide; the compiler must report `E11200` as its first
+/// diagnostic and exit 1 rather than emit C that cannot link.
+#[test]
+fn volatile_mmio_is_rejected_on_the_host_profile() {
+    let scratch = ScratchDir::new("volatile-mmio");
+    let c_path = scratch.path().join("out.c");
+    let compile = compile_host("volatile-mmio", &c_path);
+    assert_eq!(
+        compile.status.code(),
+        Some(1),
+        "volatile-mmio: the host profile must reject the program with exit 1; stderr:\n{}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&compile.stderr);
+    let first_line = stderr.lines().next().unwrap_or_default();
+    assert!(
+        first_line.starts_with("error E11200:"),
+        "volatile-mmio: expected an E11200 first line, got:\n{stderr}"
+    );
+    assert!(
+        first_line.contains("is not available on profile 'host'"),
+        "volatile-mmio: the diagnostic must name the host profile, got:\n{stderr}"
     );
 }
