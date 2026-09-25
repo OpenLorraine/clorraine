@@ -49,6 +49,14 @@ impl Checker<'_, '_> {
                             self.check_into(value, &returns)
                         };
                         self.reject_callable_only_value(&value_ty, value.span);
+                        // A closure cannot be returned: its environment dies
+                        // with the enclosing frame, so the caller would receive
+                        // a dangling callable. A concrete `func(...)` return is
+                        // the E10400 case, already reported above.
+                        if value_ty.is_closure() && !matches!(returns.kind, TyKind::Func(_)) {
+                            self.reject_ephemeral_storage(&value_ty, value.span);
+                        }
+                        self.reject_capture_move(value);
                     }
                     // A bare `return;` suits only a `void` function; anywhere
                     // else it returns nothing where a value is required.
@@ -82,12 +90,19 @@ impl Checker<'_, '_> {
             (Some(ty), Some(value)) => {
                 let value_ty = self.check_into(value, ty);
                 self.reject_callable_only_value(&value_ty, value.span);
+                // A closure is accepted only where a callable bound consumes it
+                // inline; storing one in a named binding is E10404. A concrete
+                // `func(...)` target is the E10400 case, reported above.
+                if value_ty.is_closure() && !matches!(ty.kind, TyKind::Func(_)) {
+                    self.reject_ephemeral_storage(&value_ty, value.span);
+                }
                 self.declare(&decl.name, ty.clone());
             }
             (Some(ty), None) => self.declare(&decl.name, ty.clone()),
             (None, Some(value)) => {
                 let ty = self.check_value(value, None);
                 self.reject_callable_only_value(&ty, value.span);
+                self.reject_ephemeral_storage(&ty, value.span);
                 self.declare(&decl.name, ty);
             }
             (None, None) => self.declare(&decl.name, Ty::unknown()),
@@ -118,10 +133,17 @@ impl Checker<'_, '_> {
         let declared = decl.ty.as_ref().map(|ty| self.resolve_type(ty));
         let ty = match declared {
             Some(ty) => {
-                self.check_into(&decl.value, &ty);
+                let value_ty = self.check_into(&decl.value, &ty);
+                if value_ty.is_closure() && !matches!(ty.kind, TyKind::Func(_)) {
+                    self.reject_ephemeral_storage(&value_ty, decl.value.span);
+                }
                 ty
             }
-            None => self.check_value(&decl.value, None),
+            None => {
+                let ty = self.check_value(&decl.value, None);
+                self.reject_ephemeral_storage(&ty, decl.value.span);
+                ty
+            }
         };
         self.declare(&decl.name, ty);
     }

@@ -2,6 +2,8 @@
 // trigger: lambda moves a captured binding
 module tests.compile_fail.E10401;
 
+import { stringOf } from std.text;
+
 func consume(take s: String): void {
 }
 

@@ -469,19 +469,6 @@ fn raw_compound_assignment_requires_unsafe() {
 }
 
 #[test]
-fn a_lambda_reports_its_staged_feature() {
-    let source = "module t;\n\
-        let gp: raw u32 = raw u32(0x1000);\n\
-        func use(f: func(i32): u32): u32 { return f(1); }\n\
-        func demo(): u32 {\n\
-            let f = (x: i32) => *gp;\n\
-            return use(f);\n\
-        }\n\
-        func main(): i32 { return 0; }\n";
-    assert_eq!(error_codes(source), vec!["E90000"]);
-}
-
-#[test]
 fn returning_a_borrow_parameter_is_rejected() {
     let source = "module t;\n\
         handle File freedBy Close;\n\

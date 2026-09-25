@@ -20,6 +20,12 @@ use super::{int_literal_value, FuncTy, Ty, TyKind};
 pub struct FuncSig {
     /// Parameter types in order.
     pub params: Vec<Ty>,
+    /// The declared mode of each parameter, in order.
+    ///
+    /// The checker keeps the modes so a call can tell a `take` argument, which
+    /// moves its value, from a lend. A signature rebuilt from a function
+    /// pointer type has no declaration, so its mode list is empty.
+    pub modes: Vec<crate::ast::Mode>,
     /// Return type.
     pub returns: Ty,
     /// The function's generic parameters, each with its optional callable bound.
@@ -52,6 +58,7 @@ impl Default for FuncSig {
     fn default() -> Self {
         Self {
             params: Vec::new(),
+            modes: Vec::new(),
             returns: Ty::unknown(),
             type_params: Vec::new(),
         }
@@ -172,6 +179,7 @@ impl TypeTable {
                                 .iter()
                                 .map(|param| resolve_ty(&param.ty, &params, &table))
                                 .collect(),
+                            modes: decl.params.iter().map(|param| param.mode).collect(),
                             returns: resolve_ty(&decl.returns, &params, &table),
                             type_params: type_param_sigs(&decl.type_params, &params, &table),
                         };

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 14:03
-> **Progress**: 21/49 tasks (43%; Phase 2 red phase recorded; closure type added)
+> **Last Updated**: 2026-09-25 15:05
+> **Progress**: 25/49 tasks (51%; Phase 2 sema complete — all six lambda goldens green; codegen remains)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -138,15 +138,15 @@ retire `E90002`, and record the red phase.
 rules.
 
 - [x] 2.2.1 Add the `ClosureTy` representation and the `TyKind::Closure` variant — `compiler/src/types/mod.rs` ✅ (completed: 2026-09-25 14:03; `ClosureTy { id, params, returns }`, `TyKind::Closure`, `is_closure`, non-duplicable, and `c_type`/`type_key`/`ffi_type`/`display` coverage; the red set is unchanged, so no regression)
-- [ ] 2.2.2 Type and scope-check a lambda, binding captures, and classify each capture (copy / read-only borrow / `[borrow]`) — `compiler/src/sema/expr.rs`
-- [ ] 2.2.3 Enforce `E10403`, `E10401`, and `E10402` — `compiler/src/sema/expr.rs`
-- [ ] 2.2.4 Enforce `E10400` at a `func(...)` conversion and `E10404` at a storage, return, or capture — `compiler/src/sema/{expr,call}.rs`
+- [x] 2.2.2 Type and scope-check a lambda, binding captures, and classify each capture (copy / read-only borrow / `[borrow]`) — `compiler/src/sema/expr.rs` ✅ (completed: 2026-09-25 15:05; `check_lambda` types the body in a child scope, records each `ClosureSite`, and classifies captures by duplicability; `Func` for capture-less, `Closure` for capturing)
+- [x] 2.2.3 Enforce `E10403`, `E10401`, and `E10402` — `compiler/src/sema/expr.rs` ✅ (completed: 2026-09-25 15:05; a `take` capture is E10403; moving a borrowed capture through a `take` argument or a return/expression body is E10401; writing a copy/read-only capture is E10402. `FuncSig` gained parameter modes so a call can tell a `take` argument)
+- [x] 2.2.4 Enforce `E10400` at a `func(...)` conversion and `E10404` at a storage, return, or capture — `compiler/src/sema/{expr,call}.rs` ✅ (completed: 2026-09-25 15:05; E10400 in `check_conversion`; E10404 at `let`/`const`/return/array-element storage; a callable-bound `F` now accepts a matching closure signature)
 - [ ] 2.2.5 Add the IR closure value and closure-call forms and thread them through lowering and the ownership pass — `compiler/src/ir/**`, `compiler/src/own/**`
 - [ ] 2.2.6 Lift each lambda to a `static` function and emit its environment struct — `compiler/src/codegen/{expr,program}.rs`
 - [ ] 2.2.7 Emit the capture-less function-pointer value and the capturing two-word value — `compiler/src/codegen/expr.rs`
 - [ ] 2.2.8 Emit the closure call and the monomorphized call form inside a generic body — `compiler/src/codegen/{calls,expr}.rs`
 - [ ] 2.2.9 Key closure instances in monomorphization (`closure_<N>`) — `compiler/src/own/generics.rs`, `compiler/src/codegen/types.rs`
-- [ ] 2.2.10 Enforce `E10306` when a resolved aggregate type contains an ephemeral closure argument, and un-stage its golden — `compiler/src/sema/{mod,call,expr}.rs`, `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/E10306_generic_ephemeral_arg.clo` (moved from Phase 1 by AR-42)
+- [x] 2.2.10 Enforce `E10306` when a resolved aggregate type contains an ephemeral closure argument, and un-stage its golden — `compiler/src/sema/{mod,call,expr}.rs`, `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/E10306_generic_ephemeral_arg.clo` (moved from Phase 1 by AR-42) ✅ (completed: 2026-09-25 15:05; a closure bound to an unbounded generic parameter, or used as a generic struct's type argument, is E10306; the golden is asserted and green)
 
 ### Step 2.3: Implementation tests, spec prose, and verification
 

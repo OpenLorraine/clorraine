@@ -18,13 +18,13 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::ast::{FuncDecl, Item, ScalarType, Type};
+use crate::ast::{Expr, ExprKind, FuncDecl, Item, ScalarType, Type};
 use crate::consts::ConstFolder;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::profile::Profile;
 use crate::span::Span;
-use crate::types::{resolve_ty_with, Ty, TyKind, TypeTable};
+use crate::types::{resolve_ty_with, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind, TypeTable};
 
 pub(crate) mod call;
 mod expr;
@@ -53,6 +53,11 @@ pub struct SemaOutput {
     pub table: TypeTable,
     /// The type of each expression node, keyed by the node's address.
     pub expr_types: HashMap<usize, Ty>,
+    /// The captured bindings of each capturing lambda, keyed by its site id.
+    ///
+    /// The ownership and emission stages read this instead of re-deriving the
+    /// capture list and its modes from the source.
+    pub closures: BTreeMap<usize, ClosureSite>,
 }
 
 /// Checks every module of the loaded program and records the result.
@@ -62,12 +67,23 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     // reported before the per-module type checks that would consume the order.
     init_cycle::check(loaded, diagnostics);
     let mut expr_types: HashMap<usize, Ty> = HashMap::new();
+    let mut closures: BTreeMap<usize, ClosureSite> = BTreeMap::new();
+    // Lambda site ids are program-global and deterministic: they count the
+    // lambda expressions in source order across every module, so the same
+    // program always names the same lifted function and environment.
+    let mut next_closure_id = 0usize;
     for module in loaded.modules.values() {
-        let mut checker = Checker::new(module, &table, loaded, profile, diagnostics);
+        let mut checker = Checker::new(module, &table, loaded, profile, diagnostics, next_closure_id);
         checker.check_module();
+        next_closure_id = checker.next_closure_id;
+        closures.extend(checker.closures.drain(..).map(|site| (site.id, site)));
         expr_types.extend(checker.recorded.drain(..));
     }
-    SemaOutput { table, expr_types }
+    SemaOutput {
+        table,
+        expr_types,
+        closures,
+    }
 }
 
 /// A local or parameter binding: its checked type.
@@ -98,6 +114,13 @@ struct Checker<'a, 'd> {
     /// `(node address, type)` for every checked expression, handed to the
     /// ownership stage.
     recorded: Vec<(usize, Ty)>,
+    /// The next free lambda-site id, shared across the program's modules.
+    next_closure_id: usize,
+    /// The captured bindings of each capturing lambda, in site order.
+    closures: Vec<ClosureSite>,
+    /// The capture lists of the lambdas currently being checked, innermost
+    /// last. A body write or move of a name found here is a capture error.
+    lambda_captures: Vec<Vec<CaptureInfo>>,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
     /// The selected profile, so profile-surface rules can be reported here.
@@ -112,6 +135,7 @@ impl<'a, 'd> Checker<'a, 'd> {
         loaded: &'a Loaded,
         profile: Profile,
         diagnostics: &'d mut Diagnostics,
+        next_closure_id: usize,
     ) -> Self {
         Self {
             module,
@@ -123,6 +147,9 @@ impl<'a, 'd> Checker<'a, 'd> {
             function_name: None,
             returns: Ty::void(),
             recorded: Vec::new(),
+            next_closure_id,
+            closures: Vec::new(),
+            lambda_captures: Vec::new(),
             diagnostics,
             profile,
         }
@@ -316,6 +343,54 @@ impl<'a, 'd> Checker<'a, 'd> {
             .push(Diagnostic::error(code, message, span).with_help(help));
     }
 
+    /// The capture mode of `name` in the innermost enclosing lambda that
+    /// captures it, if any.
+    ///
+    /// The innermost capture wins so a nested lambda's own capture shadows an
+    /// enclosing lambda's capture of the same spelling.
+    fn capture_mode(&self, name: &str) -> Option<CaptureMode> {
+        for captures in self.lambda_captures.iter().rev() {
+            if let Some(info) = captures.iter().find(|info| info.name == name) {
+                return Some(info.mode);
+            }
+        }
+        None
+    }
+
+    /// Reports `E10402` when a lambda body writes a capture that is not a
+    /// `[borrow x]` capture.
+    fn reject_capture_write(&mut self, target: &Expr) {
+        let Some(root) = place_root_name(target) else {
+            return;
+        };
+        if matches!(
+            self.capture_mode(root),
+            Some(CaptureMode::Copy | CaptureMode::ReadOnlyBorrow)
+        ) {
+            self.error(
+                "E10402",
+                format!("cannot write captured '{root}' without '[borrow {root}]'"),
+                "add the borrow capture",
+                target.span,
+            );
+        }
+    }
+
+    /// Reports `E10404` when a capturing closure reaches a storage position.
+    ///
+    /// A closure owns a stack environment valid only for its synchronous call,
+    /// so binding, storing, returning, or capturing one has no meaning.
+    fn reject_ephemeral_storage(&mut self, ty: &Ty, span: Span) {
+        if ty.is_closure() {
+            self.error(
+                "E10404",
+                "closures are ephemeral and cannot be stored, returned, or captured",
+                "pass the lambda directly",
+                span,
+            );
+        }
+    }
+
     /// The type a name reference has.
     ///
     /// A lexical binding wins, then a module declaration, then an import. An
@@ -444,6 +519,23 @@ fn mentions_heap_string(ty: &Ty) -> bool {
             signature.params.iter().any(mentions_heap_string)
                 || mentions_heap_string(&signature.returns)
         }
+        TyKind::Closure(closure) => {
+            closure.params.iter().any(mentions_heap_string)
+                || mentions_heap_string(&closure.returns)
+        }
         _ => false,
+    }
+}
+
+/// The root name of a place expression, if it is a plain name.
+///
+/// `counter`, `obj.field`, and `xs[0]` all root at a name, so a capture check
+/// can tell that a write or move targets a captured binding.
+pub(super) fn place_root_name(expr: &Expr) -> Option<&str> {
+    match &expr.kind {
+        ExprKind::Name(name) => Some(name),
+        ExprKind::Qualified(name) if name.segments.len() == 1 => Some(&name.segments[0]),
+        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => place_root_name(base),
+        _ => None,
     }
 }

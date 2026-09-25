@@ -12,11 +12,15 @@
 use std::collections::BTreeSet;
 
 use crate::ast::{
-    Expr, ExprKind, FieldInit, IntrinsicArg, QualifiedName, ScalarType, TemplatePiece, Type,
+    Expr, ExprKind, FieldInit, IntrinsicArg, LambdaBody, QualifiedName, ScalarType, TemplatePiece,
+    Type,
 };
 use crate::profile::Profile;
 use crate::span::Span;
-use crate::types::{implicit_conversion, int_fits, scalar_cast_allowed, Ty, TyKind};
+use crate::types::{
+    implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite,
+    ClosureTy, FuncTy, Ty, TyKind,
+};
 
 use super::Checker;
 
@@ -75,31 +79,148 @@ impl Checker<'_, '_> {
             ExprKind::ArrayLiteral { elements, fill } => {
                 self.check_array_literal(elements, fill, expected, expr.span)
             }
-            // Lambda syntax is frozen but its semantics are staged out, so a
-            // lambda reports its staged-feature code. The opaque type keeps
-            // its uses from producing false follow-on errors.
-            ExprKind::Lambda { captures, .. } => {
-                if captures.is_empty() {
-                    self.error(
-                        "E90000",
-                        "'lambda' is not yet supported",
-                        "remove the lambda or wait for the staged feature",
-                        expr.span,
-                    );
-                } else {
-                    self.error(
-                        "E90002",
-                        "lambda captures are not yet implemented",
-                        "remove the capture list or wait for the staged feature",
-                        expr.span,
-                    );
-                }
-                Ty::unknown()
-            }
+            ExprKind::Lambda {
+                captures,
+                params,
+                body,
+            } => self.check_lambda(captures, params, body, expr.span),
             ExprKind::Unsafe(inner) => self.check_value(inner, expected),
             ExprKind::IntrinsicCall { name, args } => self.check_intrinsic(name, args),
             ExprKind::Template(pieces) => self.check_template(pieces),
             ExprKind::Error => Ty::unknown(),
+        }
+    }
+
+    /// Types a lambda, checking its body and classifying each capture.
+    ///
+    /// A capture-less lambda is a plain function pointer (`func(...)`). A
+    /// capturing lambda is the ephemeral `Closure` type: it owns a stack
+    /// environment for one synchronous call, so it is accepted only at a
+    /// callable-bound generic parameter (see the call rules) and rejected
+    /// wherever a storable value is required.
+    ///
+    /// The body is checked in a child scope that binds the captures and the
+    /// parameters. While the body is checked the capture list is active, so a
+    /// write or a move of a captured binding is reported here.
+    fn check_lambda(
+        &mut self,
+        captures: &[crate::ast::Capture],
+        params: &[crate::ast::LambdaParam],
+        body: &LambdaBody,
+        _span: Span,
+    ) -> Ty {
+        let id = self.next_closure_id;
+        self.next_closure_id += 1;
+
+        let mut infos: Vec<CaptureInfo> = Vec::new();
+        for capture in captures {
+            let ty = self.name_type(&capture.name);
+            match capture.mode {
+                crate::ast::Mode::Take => {
+                    self.error(
+                        "E10403",
+                        "'take' captures are not supported",
+                        "copy or borrow the capture",
+                        capture.span,
+                    );
+                }
+                crate::ast::Mode::Borrow => infos.push(CaptureInfo {
+                    name: capture.name.clone(),
+                    ty,
+                    mode: CaptureMode::WriteBorrow,
+                }),
+                // A duplicable value is copied into the environment; a
+                // non-duplicable one is borrowed read-only so its owner is not
+                // moved. An opaque type stays a copy so an unmodelled
+                // standard-library value is not rejected.
+                crate::ast::Mode::None | crate::ast::Mode::Const => {
+                    let mode = if ty.is_unknown() || self.table.duplicable(&ty) {
+                        CaptureMode::Copy
+                    } else {
+                        CaptureMode::ReadOnlyBorrow
+                    };
+                    infos.push(CaptureInfo {
+                        name: capture.name.clone(),
+                        ty,
+                        mode,
+                    });
+                }
+            }
+        }
+
+        let param_types: Vec<Ty> = params
+            .iter()
+            .map(|param| self.resolve_type(&param.ty))
+            .collect();
+
+        self.push_scope();
+        for info in &infos {
+            self.declare(&info.name, info.ty.clone());
+        }
+        for (param, ty) in params.iter().zip(&param_types) {
+            self.declare(&param.name, ty.clone());
+        }
+
+        self.lambda_captures.push(infos.clone());
+        let returns = match body {
+            LambdaBody::Expr(value) => {
+                // An expression body may be `void` (for example a lambda that
+                // only calls a void function), so it is checked as an
+                // expression rather than a value.
+                let ty = self.check_expr(value, None);
+                self.reject_capture_move(value);
+                ty
+            }
+            LambdaBody::Block(block) => {
+                self.check_block(block);
+                Ty::void()
+            }
+        };
+        self.lambda_captures.pop();
+        self.pop_scope();
+
+        if infos.is_empty() {
+            Ty::func(FuncTy {
+                params: param_types,
+                returns: Box::new(returns),
+            })
+        } else {
+            self.closures.push(ClosureSite {
+                id,
+                params: param_types.clone(),
+                returns: returns.clone(),
+                captures: infos,
+            });
+            Ty {
+                kind: TyKind::Closure(ClosureTy {
+                    id,
+                    params: param_types,
+                    returns: Box::new(returns),
+                }),
+                nullable: false,
+            }
+        }
+    }
+
+    /// Reports `E10401` when a lambda returns a borrowed capture by value.
+    ///
+    /// A copy capture is a value the lambda owns, so returning it is fine. A
+    /// read-only or writable borrow only lends the enclosing binding, so moving
+    /// it out of the lambda is not allowed.
+    pub(super) fn reject_capture_move(&mut self, value: &Expr) {
+        let Some(root) = super::place_root_name(value) else {
+            return;
+        };
+        if matches!(
+            self.capture_mode(root),
+            Some(CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow)
+        ) {
+            self.error(
+                "E10401",
+                format!("cannot move captured '{root}' in a lambda"),
+                "copy the value at capture time",
+                value.span,
+            );
         }
     }
 
@@ -134,6 +255,18 @@ impl Checker<'_, '_> {
     /// Used where the caller has already checked the expression and only the
     /// conversion remains, so the expression is never walked twice.
     pub(super) fn check_conversion(&mut self, ty: &Ty, expected: &Ty, span: Span) {
+        // A capturing closure owns a stack environment and satisfies only a
+        // callable-bound generic parameter, never a concrete `func(...)`
+        // value. A capture-less lambda is a `Func` and takes the branch below.
+        if let (TyKind::Closure(_), TyKind::Func(_)) = (&ty.kind, &expected.kind) {
+            self.error(
+                "E10400",
+                "capturing lambda cannot be used as 'func(...)'",
+                "use a capture-less lambda, or a C-hook trampoline (v1.1)",
+                span,
+            );
+            return;
+        }
         if let (TyKind::Func(_), TyKind::Func(_)) = (&ty.kind, &expected.kind) {
             if ty != expected {
                 self.error(
@@ -398,6 +531,17 @@ impl Checker<'_, '_> {
         for ty in type_args {
             resolved_args.push(self.resolve_type(ty));
         }
+        // A generic aggregate whose type argument is a closure would have to
+        // store the closure, whose environment is ephemeral. Only a callable
+        // bound may consume a closure inline, and a struct field is not one.
+        if resolved_args.iter().any(Ty::contains_closure) {
+            self.error(
+                "E10306",
+                format!("'{struct_name}' cannot be instantiated with an ephemeral type argument"),
+                "use a storable type",
+                span,
+            );
+        }
         let target = Ty::struct_with(&struct_name, resolved_args);
         if let Some(params) = self.table.struct_type_params(&struct_name) {
             if type_args.is_empty() && !params.is_empty() {
@@ -529,6 +673,13 @@ impl Checker<'_, '_> {
                 Some(element_ty) => self.check_into(expr, element_ty),
                 None => self.check_value(expr, None),
             };
+            if let Some(element_ty) = &element {
+                if ty.is_closure() && !matches!(element_ty.kind, TyKind::Func(_)) {
+                    self.reject_ephemeral_storage(&ty, expr.span);
+                }
+            } else {
+                self.reject_ephemeral_storage(&ty, expr.span);
+            }
             if element.is_none() {
                 element = Some(ty);
             }
@@ -536,10 +687,14 @@ impl Checker<'_, '_> {
         if let Some(fill_expr) = fill {
             match &element {
                 Some(element_ty) => {
-                    self.check_into(fill_expr, element_ty);
+                    let value_ty = self.check_into(fill_expr, element_ty);
+                    if value_ty.is_closure() && !matches!(element_ty.kind, TyKind::Func(_)) {
+                        self.reject_ephemeral_storage(&value_ty, fill_expr.span);
+                    }
                 }
                 None => {
-                    self.check_value(fill_expr, None);
+                    let value_ty = self.check_value(fill_expr, None);
+                    self.reject_ephemeral_storage(&value_ty, fill_expr.span);
                 }
             }
         }

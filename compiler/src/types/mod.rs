@@ -100,6 +100,52 @@ pub struct ClosureTy {
     pub returns: Box<Ty>,
 }
 
+/// How a lambda captures one enclosing binding.
+///
+/// The capture decision follows the captured binding's type: a duplicable value
+/// is copied into the environment, while a non-duplicable value is captured as
+/// a read-only borrow so the owner is not moved. A written `[borrow x]` capture
+/// is a writable borrow that the lambda may assign through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureMode {
+    /// A duplicable value is copied into the environment.
+    Copy,
+    /// A non-duplicable value is borrowed read-only.
+    ReadOnlyBorrow,
+    /// A `[borrow x]` capture the lambda may write through.
+    WriteBorrow,
+}
+
+/// One binding a lambda captures, with the type and mode chosen for it.
+///
+/// The semantic stage records this list per lambda site so the ownership and
+/// emission stages do not re-derive the capture decision from the source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CaptureInfo {
+    /// The captured binding's name.
+    pub name: String,
+    /// The captured binding's checked type.
+    pub ty: Ty,
+    /// How the binding is captured.
+    pub mode: CaptureMode,
+}
+
+/// The captured bindings of one lambda site.
+///
+/// The site id matches the [`ClosureTy`] of the same lambda, so a closure value
+/// can be connected to its environment layout and lifted function.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClosureSite {
+    /// Stable lambda-site index.
+    pub id: usize,
+    /// Parameter types in order.
+    pub params: Vec<Ty>,
+    /// Return type.
+    pub returns: Ty,
+    /// The bindings captured by the lambda, in the order they are stored.
+    pub captures: Vec<CaptureInfo>,
+}
+
 impl Ty {
     /// Builds a non-nullable scalar type.
     pub fn scalar(scalar: ScalarType) -> Self {
@@ -214,6 +260,14 @@ impl Ty {
     /// True when the type is a capturing closure.
     pub fn is_closure(&self) -> bool {
         matches!(self.kind, TyKind::Closure(_))
+    }
+
+    /// True when the type contains a capturing closure anywhere.
+    ///
+    /// Used to reject an aggregate instantiated with an ephemeral type
+    /// argument, where the closure is nested inside a struct or array.
+    pub fn contains_closure(&self) -> bool {
+        contains_closure(self)
     }
 
     /// True when the type is `bool`.
@@ -337,6 +391,18 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
             }),
             nullable: ty.nullable,
         },
+        TyKind::Closure(closure) => Ty {
+            kind: TyKind::Closure(ClosureTy {
+                id: closure.id,
+                params: closure
+                    .params
+                    .iter()
+                    .map(|param| substitute(param, bindings))
+                    .collect(),
+                returns: Box::new(substitute(&closure.returns, bindings)),
+            }),
+            nullable: ty.nullable,
+        },
         _ => ty.clone(),
     }
 }
@@ -439,6 +505,26 @@ fn contains_param(ty: &Ty) -> bool {
         TyKind::Struct(_, args) => args.iter().any(contains_param),
         TyKind::Func(signature) => {
             signature.params.iter().any(contains_param) || contains_param(&signature.returns)
+        }
+        TyKind::Closure(closure) => {
+            closure.params.iter().any(contains_param) || contains_param(&closure.returns)
+        }
+        _ => false,
+    }
+}
+
+/// True when a capturing closure appears anywhere inside a type.
+///
+/// An ephemeral closure has no storable form, so an aggregate or generic
+/// argument that contains one is rejected by the caller.
+pub fn contains_closure(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Closure(_) => true,
+        TyKind::Array { element, .. } => contains_closure(element),
+        TyKind::Raw(inner) => contains_closure(inner),
+        TyKind::Struct(_, args) => args.iter().any(contains_closure),
+        TyKind::Func(signature) => {
+            signature.params.iter().any(contains_closure) || contains_closure(&signature.returns)
         }
         _ => false,
     }

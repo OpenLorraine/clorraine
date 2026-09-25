@@ -52,6 +52,9 @@ impl Checker<'_, '_> {
                         operand.span,
                     );
                 }
+                // An increment writes its operand, so the same capture rule
+                // applies as for an assignment.
+                self.reject_capture_write(operand);
                 ty
             }
         }
@@ -345,6 +348,9 @@ impl Checker<'_, '_> {
                 target.span,
             );
         }
+        // Writing a captured binding needs a `[borrow x]` capture; a copy or a
+        // read-only borrow cannot be written.
+        self.reject_capture_write(target);
         let target_ty = self.check_value(target, None);
         match op {
             AssignOp::Assign => {

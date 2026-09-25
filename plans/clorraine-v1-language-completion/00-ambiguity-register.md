@@ -1,7 +1,7 @@
 # Ambiguity Register: Clorraine v1 language completion
 
 > **Status**: ✅ GATE PASSED — 39 items: 32 resolved, 7 explicitly deferred
-> **Last Updated**: 2026-09-24 21:04
+> **Last Updated**: 2026-09-25 15:05
 > **CodeOps Artifact Schema**: 1
 
 Every row below was raised during the Phase 1 interview and resolved by the
@@ -12,7 +12,9 @@ specification only where the user authorized it (AR-3).
 
 > **Items added during execution** are tagged `(runtime)`. AR-40 and AR-41 were
 > raised during Phase 1 execution and resolved by the user on 2026-09-25; they
-> are implemented by tasks 1.2.10 and 1.2.11.
+> are implemented by tasks 1.2.10 and 1.2.11. AR-42 was raised at the Phase 1/2
+> boundary and moved E10306 to Phase 2. AR-43 was raised during Phase 2 and
+> corrects the missing import in two lambda goldens.
 
 ## Register
 
@@ -60,6 +62,7 @@ specification only where the user authorized it (AR-3).
 | AR-40 (runtime) | Technical | A function instance with a non-scalar type argument names an invalid C symbol: the call site keys the instance with `type_key` (`func(...)` -> `fn`), but prototype/body emission uses `Instance.args.join("_")` from `Ty::display()` (`func(i32): i32`), and `type_from_key` cannot rebuild a function signature. ST-4 (`apply<i32, func(i32): i32>`) surfaces it | Store `Instance.args` as `Ty` and derive every instance symbol from `type_key` (recommended) / keep display strings and add a parallel `Vec<Ty>` for substitution / sanitize display strings into identifiers and store each signature separately | ✅ Resolved (user, 2026-09-25): store `Instance.args` as `Ty`; every instance symbol comes from `type_key`; `type_from_key` is removed (task 1.2.10) |
 | AR-41 (runtime) | Behavioral | ST-3 imports `Pair` from another module, but the fixture does not `export` it; MOD-5/MOD-11 require export (E11102) while STR-21/G4 forbid exporting a generic struct (E10302). As written, ST-3 and R16's cross-module clause cannot both hold under the frozen spec | Amend STR-21/G4 so a generic struct may be exported, enabling the cross-module composition R16 requires (recommended) / rule the ST-3 fixture defective and remove its cross-module import / rule cross-module generic structs unsupported and drop R16's cross-module clause | ✅ Resolved (user, 2026-09-25): a generic struct may be exported; generic functions stay non-exportable (E10302). Authorizes spec edits to `spec/07-structs.md`, `spec/06-functions.md`, `spec/14-diagnostics.md`, `spec/grammar.ebnf.md`, `spec/decisions.md`, and `spec/17-codegen.md` (task 1.2.11) |
 | AR-42 (runtime) | Behavioral | Task 1.2.8 (E10306) is sequenced in Phase 1, but its golden passes a capturing lambda to a generic aggregate; a capturing lambda reports E90002 before any closure type exists, and `TyKind::Closure` is added in Phase 2 (task 2.2.1). Phase 1 therefore cannot green E10306 without pulling closure typing forward | Move E10306 to Phase 2 and re-stage its golden until the closure type exists (recommended) / pull `TyKind::Closure` and minimal lambda typing into Phase 1 / special-case a capturing lambda in a generic-aggregate argument to report E10306 without a closure type | ✅ Resolved (user, 2026-09-25): move E10306 to Phase 2. Its golden carries `// stage: 2` and stays out of `ASSERTED_CODES` until task 2.2.10 |
+| AR-43 (runtime) | Technical | The Phase 2 lambda goldens `E10401_lambda_moves_capture.clo` and `E10403_take_capture.clo` call `stringOf` without importing it from `std.text`, so the name stage reports E10219 and the intended E10401/E10403 check is never reached | Add the missing `import { stringOf } from std.text;` to both fixtures (recommended) / rewrite the fixtures to avoid `String` / drop the `String` part and test the capture rule with a scalar | ✅ Resolved (user, 2026-09-25, runtime): add the missing import to both goldens. This is a fixture correction so the intended semantic check runs; the expected diagnostic codes are unchanged |
 
 ## Resolution Notes
 

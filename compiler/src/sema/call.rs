@@ -59,7 +59,7 @@ impl Checker<'_, '_> {
                     if !signature.type_params.is_empty() {
                         return self.check_generic_call(name, &signature, type_args, args, span);
                     }
-                    self.check_args_direct(args, &signature.params);
+                    self.check_args_direct(args, &signature.params, &signature.modes);
                     return signature.returns;
                 }
                 // The compiler-known `text(v)` formatter is not declared in
@@ -156,11 +156,52 @@ impl Checker<'_, '_> {
         }
 
         self.check_callable_bounds(&signature.type_params, &bindings, span);
-        for ((ty, arg_span), param) in arg_types.iter().zip(&signature.params) {
-            let expected = crate::types::substitute(param, &bindings);
-            self.check_conversion(ty, &expected, *arg_span);
+        self.check_ephemeral_bindings(name, &signature.type_params, &bindings, span);
+        for (index, arg) in args.iter().enumerate() {
+            if signature.modes.get(index).copied() == Some(crate::ast::Mode::Take) {
+                self.reject_capture_move(&arg.value);
+            }
+            if let (Some((ty, arg_span)), Some(param)) =
+                (arg_types.get(index), signature.params.get(index))
+            {
+                let expected = crate::types::substitute(param, &bindings);
+                self.check_conversion(ty, &expected, *arg_span);
+            }
         }
         crate::types::substitute(&signature.returns, &bindings)
+    }
+
+    /// Reports `E10306` when an unbounded generic parameter is bound to a type
+    /// that contains an ephemeral closure.
+    ///
+    /// A callable-bound parameter may receive a capturing closure because the
+    /// closure is consumed by the synchronous call. A plain parameter has no
+    /// such bound, so an aggregate such as `Holder<closure>` would try to store
+    /// the closure and is rejected.
+    fn check_ephemeral_bindings(
+        &mut self,
+        name: &str,
+        type_params: &[crate::types::TypeParamSig],
+        bindings: &BTreeMap<String, Ty>,
+        span: Span,
+    ) {
+        for param in type_params {
+            if param.bound.is_some() {
+                continue;
+            }
+            if let Some(concrete) = bindings.get(&param.name) {
+                if concrete.contains_closure() {
+                    self.error(
+                        "E10306",
+                        format!(
+                            "'{name}' cannot be instantiated with an ephemeral type argument"
+                        ),
+                        "use a storable type",
+                        span,
+                    );
+                }
+            }
+        }
     }
 
     /// Checks every concrete type argument against a declared callable bound.
@@ -184,6 +225,11 @@ impl Checker<'_, '_> {
             let expected = crate::types::substitute(&Ty::func(bound.clone()), bindings);
             let matches = match (&concrete.kind, &expected.kind) {
                 (TyKind::Func(found), TyKind::Func(want)) => found == want,
+                // A capturing closure satisfies a callable bound by signature;
+                // the synchronous call is what makes its environment valid.
+                (TyKind::Closure(found), TyKind::Func(want)) => {
+                    found.params == want.params && found.returns == want.returns
+                }
                 _ => false,
             };
             if !matches {
@@ -264,6 +310,7 @@ impl Checker<'_, '_> {
                 return match &field_ty.kind {
                     TyKind::Func(signature) => Some(DotCall::Field(FuncSig {
                         params: signature.params.clone(),
+                        modes: Vec::new(),
                         returns: (*signature.returns).clone(),
                         type_params: Vec::new(),
                     })),
@@ -294,6 +341,7 @@ impl Checker<'_, '_> {
         match name {
             "len" => Some(DotCall::Function(FuncSig {
                 params: vec![Ty::unknown()],
+                modes: Vec::new(),
                 returns: Ty::usize_ty(),
                 type_params: Vec::new(),
             })),
@@ -305,7 +353,7 @@ impl Checker<'_, '_> {
     ///
     /// An arity mismatch is left alone: no diagnostic in this phase owns it.
     fn check_args(&mut self, args: &[Arg], params: &[Ty]) {
-        self.check_args_impl(args, params, false);
+        self.check_args_impl(args, params, &[], false);
     }
 
     /// Like [`Self::check_args`] for a direct call of a named function.
@@ -314,14 +362,26 @@ impl Checker<'_, '_> {
     /// apply: the emitter can see the named callee's parameter type there. A
     /// call through a function-typed value keeps `E10200`, because the emitter
     /// cannot recover the expected type for the argument.
-    fn check_args_direct(&mut self, args: &[Arg], params: &[Ty]) {
-        self.check_args_impl(args, params, true);
+    fn check_args_direct(&mut self, args: &[Arg], params: &[Ty], modes: &[crate::ast::Mode]) {
+        self.check_args_impl(args, params, modes, true);
     }
 
     /// Checks call arguments, optionally allowing a `cstring` literal argument.
-    fn check_args_impl(&mut self, args: &[Arg], params: &[Ty], allow_cstring_literal: bool) {
+    ///
+    /// When a parameter is declared `take`, the argument moves its value to the
+    /// callee. Moving a captured binding out of a lambda is `E10401`.
+    fn check_args_impl(
+        &mut self,
+        args: &[Arg],
+        params: &[Ty],
+        modes: &[crate::ast::Mode],
+        allow_cstring_literal: bool,
+    ) {
         if args.len() == params.len() {
-            for (arg, param) in args.iter().zip(params) {
+            for (index, (arg, param)) in args.iter().zip(params).enumerate() {
+                if modes.get(index).copied() == Some(crate::ast::Mode::Take) {
+                    self.reject_capture_move(&arg.value);
+                }
                 if allow_cstring_literal && is_cstring_literal_argument(&arg.value, param) {
                     // A `static str` literal is a NUL-terminated C string, so
                     // it is accepted where a `cstring` is expected and emitted
