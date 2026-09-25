@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 00:20
-> **Progress**: 0/10 tasks (0%)
+> **Last Updated**: 2026-09-26 01:11
+> **Progress**: 2/10 tasks (20%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -63,8 +63,8 @@ existing suites, written red before each fix (AR-4).
 **Reference**: [03-01](03-01-nested-move-lowering.md) · [07](07-testing-strategy.md) ST-1..ST-10 · AR-1, AR-3, AR-14, AR-15
 **Objective**: Pin the move, source-zero, and diagnostic expectations before the fix.
 
-- [ ] 1.1.1 [spec-author] Write regressions — ST-1/ST-2/ST-9 (temporary and reassignment forms; emitted C zeroes the source and has no stale save), ST-6 (`E10020`), ST-7 (`E10026`), ST-10 (`E10034`) in `compiler/tests/stage_spec_test.rs`; ST-4 (borrow control) and ST-8 (non-reading fast-path control) in `compiler/tests/codegen_run_spec_test.rs`
-- [ ] 1.1.2 Confirm ST-1, ST-2, ST-6, ST-7, ST-9, and ST-10 FAIL (red); ST-4 and ST-8 are controls
+- [x] 1.1.1 [spec-author] Write regressions — ST-1/ST-2/ST-9 (temporary and reassignment forms; emitted C zeroes the source and has no stale save), ST-6 (`E10020`), ST-7 (`E10026`), ST-10 (`E10034`) in `compiler/tests/stage_spec_test.rs`; ST-4 (borrow control) and ST-8 (non-reading fast-path control) in `compiler/tests/codegen_run_spec_test.rs` ✅ (completed: 2026-09-26 01:11; ST-4/ST-8 are the existing `an_assignment_reading_its_target_drops_the_old_value_after_the_rhs` and `assignment_drops_the_old_value` controls)
+- [x] 1.1.2 Confirm ST-1, ST-2, ST-6, ST-7, ST-9, and ST-10 FAIL (red); ST-4 and ST-8 are controls ✅ (completed: 2026-09-26 01:11)
 
 **Deliverables**:
 - The temporary and reassignment forms double-free (no source zero); a double read is not `E10020`; a deeper path is not `E10026`; a borrowed field is not `E10034`

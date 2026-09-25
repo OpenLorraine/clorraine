@@ -2558,3 +2558,120 @@ func main(): i32 {
         "warning W10006: unused import 'Buffer'",
     );
 }
+
+/// A binding moved into a struct literal is emptied before the literal is built.
+///
+/// The old target's drop then cannot free the handle the new value owns.
+#[test]
+fn a_moved_binding_is_emptied_when_consumed_by_a_literal() {
+    let source = r#"module spec.stage.pm_tmp;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    value: T;
+}
+
+func demo(): void {
+    let b = Box<String> { value: stringOf("x") };
+    let t = b.value;
+    b = Box<String> { value: t };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    let (run, emitted) = run_source_emitting("pm-tmp", source);
+    let c = assert_emitted("pm-tmp", &run, emitted);
+    assert!(
+        !c.contains("(ClBox__String){ t }"),
+        "the moved binding must be consumed through a temporary, not copied directly:\n{c}"
+    );
+}
+
+/// A literal that reads the assignment target moves the field out first, so the
+/// emitter never needs the stale save copy that aliases the moved handle.
+#[test]
+fn a_literal_reading_its_target_empties_the_field() {
+    let source = r#"module spec.stage.pm_self;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    value: T;
+}
+
+func demo(): void {
+    let b = Box<String> { value: stringOf("x") };
+    b = Box<String> { value: b.value };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    let (run, emitted) = run_source_emitting("pm-self", source);
+    let c = assert_emitted("pm-self", &run, emitted);
+    assert!(
+        !c.contains("__cl_save"),
+        "a consumed field needs no stale save copy:\n{c}"
+    );
+}
+
+/// A field consumed by a literal twice reports the moved-field error.
+#[test]
+fn consuming_a_literal_field_twice_reports_the_moved_field() {
+    let source = r#"module spec.stage.pm_twice;
+
+import { String } from std.text;
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+func demo(): void {
+    let p = Pair<String> { first: $"a{1}", second: $"b{2}" };
+    p = Pair<String> { first: p.first, second: p.first };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_code("pm-twice", source, "E10020");
+}
+
+/// A deeper-than-top-level path consumed by a literal reports the v1 limit.
+#[test]
+fn consuming_a_nested_path_reports_the_partial_move_limit() {
+    let source = r#"module spec.stage.pm_nested;
+
+import { String } from std.text;
+
+struct Inner { s: String; }
+struct Outer { inner: Inner; }
+struct Box<T> { value: T; }
+
+func demo(): void {
+    let o = Outer { inner: Inner { s: $"a{1}" } };
+    let x = Box<String> { value: o.inner.s };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_code("pm-nested", source, "E10026");
+}
+
+/// A field of a borrowed parameter consumed by a literal reports the borrow move.
+#[test]
+fn consuming_a_borrowed_param_field_reports_the_borrow_move() {
+    let source = r#"module spec.stage.pm_borrow;
+
+import { String } from std.text;
+
+struct Box<T> { value: T; }
+
+func demo(borrow b: Box<String>): void {
+    let x = Box<String> { value: b.value };
+}
+
+func main(): i32 { return 0; }
+"#;
+    assert_reports_code("pm-borrow", source, "E10034");
+}
