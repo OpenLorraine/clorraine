@@ -107,6 +107,7 @@ Rust suites, written red before each fix (AR-4).
 > **Expected modification set**: `compiler/src/sema/mod.rs`, `compiler/src/sema/expr.rs`,
 > `compiler/src/sema/regressions.rs` (strict scope)
 > **Lenses**: correctness, security (unsafe/overlay boundary)
+> **Phase review**: independent correctness/overlay-boundary review of the phase diff — no findings (2026-09-25)
 
 ### Step 2.1: Specification tests (red)
 
