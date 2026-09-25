@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 10:34
-> **Progress**: 17/49 tasks (35%)
+> **Last Updated**: 2026-09-25 13:24
+> **Progress**: 17/49 tasks (35%; Phase 1 complete and reviewed)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -94,6 +94,18 @@ ephemeral-argument rule.
 - Generics spec tests green
 
 **Verify**: `make verify`.
+
+### Phase 1 review (strict profile)
+
+Reviewed inline on 2026-09-25 (independent reviewer agents are manual-only in
+this environment and the shared quality-profile file is absent, so the review
+ran on the phase diff `119365d..HEAD`). Findings:
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| F1 | 🟠 Major | A struct embedding an instantiated generic struct emitted invalid C: the embedded definition was written after its use, and a generic field's instantiation was not always collected (`Box<T>{ p: Pair<T> }` as `Box<i32>`). `clc` exited 0; `cc` failed `unknown type name 'ClPair__i32'`. Fixed under the user's ruling. | Expanded each recorded instance's fields in `collect_struct_instances`; emit struct definitions in by-value dependency order behind a forward typedef (`StructUnit`/`order_struct_units`). Verified by a runnable spec case (g5), an ordering impl test, and re-run `make check`/`make verify`. |
+| F2 | 🟡 Minor | `E10304` is enforced for `let` and `return` only; storing a callable-only value in a field or global is not diagnosed (spec G-4). | Report-only; no trigger or spec test covers it in this plan. Left as a known gap. |
+| F3 | 🟡 Minor | The E10305 value-cycle check missed recursion through a generic parameter field, e.g. `struct S { b: Box<S> }` with `Box<T>{ inner: T }`; `size_of`'s depth guard prevented a compiler crash but the C was invalid. | Fixed with F1: `embeds_by_value` now substitutes a generic struct's arguments into its fields before descending; `struct S { b: Box<S> }` reports E10305. Covered by an impl test. |
 
 ---
 

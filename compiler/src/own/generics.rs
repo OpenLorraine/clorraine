@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, Type, TypeParam};
+use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, StructDecl, Type, TypeParam};
 use crate::ir::{
     CopyObligation, Function, Instance, Monomorphization, Statement, StructInstance, Terminator,
     Value, ValueKind,
@@ -76,6 +76,41 @@ pub fn collect_struct_instances(loaded: &Loaded, sema: &SemaOutput, mono: &mut M
                 }
                 _ => {}
             }
+        }
+    }
+
+    // A generic struct can hold a field that is itself an instantiation, as in
+    // `struct Box<T> { p: Pair<T> }`. Each recorded instance fixes its
+    // parameters, so its fields name concrete instantiations that the emitter
+    // must also write; expand every instance and record what its fields name,
+    // repeating until no new instance appears. A struct that embeds itself by
+    // value is rejected by the checker, so this terminates.
+    let decls: BTreeMap<&str, &StructDecl> = loaded
+        .modules
+        .values()
+        .flat_map(|module| module.items.iter())
+        .filter_map(|item| match item {
+            Item::Struct(decl) => Some((decl.name.as_str(), decl)),
+            _ => None,
+        })
+        .collect();
+    let mut index = 0;
+    while index < mono.struct_instances().len() {
+        let instance = mono.struct_instances()[index].clone();
+        index += 1;
+        let Some(decl) = decls.get(instance.name.as_str()) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        let subst: BTreeMap<String, Ty> = decl
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .zip(instance.args.iter().cloned())
+            .collect();
+        for field in &decl.fields {
+            let ty = resolve_ty(&field.ty, &params, &sema.table);
+            record_struct_type(&crate::types::substitute(&ty, &subst), sema, mono);
         }
     }
 }

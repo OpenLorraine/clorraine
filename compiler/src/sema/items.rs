@@ -8,6 +8,8 @@
 //! constant-shaped parts of every type, such as array extents and the type
 //! arguments of a generic struct.
 
+use std::collections::BTreeMap;
+
 use crate::ast::{EnumDecl, Expr, ScalarType, StructDecl, Type, TypeKind};
 use crate::types::{int_fits, integer_scalar, Ty, TyKind, TypeTable};
 
@@ -220,21 +222,36 @@ impl Checker<'_, '_> {
 ///
 /// A `raw` pointer, a handle, a function pointer, and a slice are pointer-sized,
 /// so they end the by-value chain; a fixed array and a nested struct continue
-/// it. The walk is depth-limited so a cycle that does not name `target` cannot
+/// it. A generic struct's arguments are substituted into its fields before the
+/// walk descends, so `Box<S>` with `Box<T> { inner: T }` is seen to embed `S`.
+/// The walk is depth-limited so a cycle that does not name `target` cannot
 /// loop.
 fn embeds_by_value(table: &TypeTable, ty: &Ty, target: &str, depth: usize) -> bool {
     if depth > 32 {
         return false;
     }
     match &ty.kind {
-        TyKind::Struct(name, _) => {
+        TyKind::Struct(name, args) => {
             if name == target {
                 return true;
             }
-            table.struct_fields(name).is_some_and(|fields| {
-                fields
-                    .iter()
-                    .any(|(_, field)| embeds_by_value(table, field, target, depth + 1))
+            let Some(fields) = table.struct_fields(name) else {
+                return false;
+            };
+            let subst: BTreeMap<String, Ty> = table
+                .struct_type_params(name)
+                .unwrap_or(&[])
+                .iter()
+                .cloned()
+                .zip(args.iter().cloned())
+                .collect();
+            fields.iter().any(|(_, field)| {
+                embeds_by_value(
+                    table,
+                    &crate::types::substitute(field, &subst),
+                    target,
+                    depth + 1,
+                )
             })
         }
         // A slice carries a pointer and a length, so only a fixed array embeds

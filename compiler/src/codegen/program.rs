@@ -8,9 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
-use crate::ir::{
-    GlobalId, Place, PlaceBase, Projection, StructInstance, Value, ValueKind, ValuePiece,
-};
+use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
 use crate::types::{resolve_ty, Ty, TyKind};
@@ -251,15 +249,26 @@ impl<'a> Emitter<'a> {
     ///
     /// A non-generic struct is written once under its bare name. A generic
     /// struct has no single C layout, so its bare template is skipped and one
-    /// concrete struct is written for each instantiation the program uses.
+    /// concrete struct is written for each instantiation the program uses. The
+    /// definitions are ordered so a struct that embeds another by value is
+    /// written after it, and a forward typedef precedes every definition so a
+    /// pointer field can name a struct defined later.
     pub(super) fn emit_aggregate_declarations(&mut self) {
-        let structs: Vec<&'a StructDecl> = self.structs.values().copied().collect();
-        for decl in structs {
-            if decl.type_params.is_empty() {
-                self.emit_struct(decl);
-            } else {
-                self.emit_struct_instances(decl);
+        let units = self.struct_units();
+        if !units.is_empty() {
+            for unit in &units {
+                self.push(&format!("typedef struct {s} {s};", s = unit.symbol));
             }
+            self.push("");
+        }
+        for unit in units {
+            self.push(&format!("struct {} {{", unit.symbol));
+            for (name, ty, volatile) in &unit.fields {
+                let qualifier = if *volatile { "volatile " } else { "" };
+                self.push(&format!("    {qualifier}{};", declarator(ty, name)));
+            }
+            self.push("};");
+            self.push("");
         }
         let enums: Vec<&'a EnumDecl> = self.enums.values().map(|info| info.decl).collect();
         for decl in enums {
@@ -267,60 +276,58 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Writes one C struct with its fields in declaration order.
-    pub(super) fn emit_struct(&mut self, decl: &StructDecl) {
-        self.push(&format!("struct Cl{name} {{", name = decl.name));
-        let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
-        for field in &decl.fields {
-            let ty = resolve_ty(&field.ty, &params, &self.sema.table);
-            let qualifier = if field.volatile { "volatile " } else { "" };
-            self.push(&format!("    {qualifier}{};", declarator(&ty, &field.name)));
+    /// Builds one [`StructUnit`] per emitted struct definition, in an order
+    /// where a struct embedded by value is defined before its user.
+    fn struct_units(&self) -> Vec<StructUnit> {
+        let mut units: Vec<StructUnit> = Vec::new();
+        for &decl in self.structs.values() {
+            if decl.type_params.is_empty() {
+                units.push(self.struct_unit(decl, &[]));
+                continue;
+            }
+            for instance in self
+                .ownership
+                .monomorphization
+                .struct_instances()
+                .iter()
+                .filter(|instance| instance.name == decl.name)
+            {
+                units.push(self.struct_unit(decl, &instance.args));
+            }
         }
-        self.push("};");
-        self.push(&format!("typedef struct Cl{name} Cl{name};", name = decl.name));
-        self.push("");
+        order_struct_units(units)
     }
 
-    /// Writes one C struct per recorded instantiation of a generic struct.
-    ///
-    /// The bare template is never emitted: its fields still name the type
-    /// parameters, so it is not a complete C type. Each recorded instance
-    /// replaces the declaration's parameters with its concrete arguments, which
-    /// fixes the field types, and takes the instantiated symbol
-    /// `Cl<Name>__<typekey>`. Instances are recorded with a nested argument's
-    /// inner instantiation first, so a field type is always declared before the
-    /// struct that uses it.
-    fn emit_struct_instances(&mut self, decl: &StructDecl) {
-        let instances: Vec<StructInstance> = self
-            .ownership
-            .monomorphization
-            .struct_instances()
-            .iter()
-            .filter(|instance| instance.name == decl.name)
-            .cloned()
-            .collect();
+    /// Builds the definition of one struct: a non-generic declaration or one
+    /// generic instance with its parameters substituted.
+    fn struct_unit(&self, decl: &'a StructDecl, args: &[Ty]) -> StructUnit {
         let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
-        for instance in instances {
-            let symbol = format!(
+        let subst: BTreeMap<String, Ty> = decl
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .zip(args.iter().cloned())
+            .collect();
+        let mut fields = Vec::with_capacity(decl.fields.len());
+        let symbol = if decl.type_params.is_empty() {
+            format!("Cl{}", decl.name)
+        } else {
+            format!(
                 "Cl{}",
-                type_key(&Ty::struct_with(decl.name.clone(), instance.args.clone()))
-            );
-            let subst: BTreeMap<String, Ty> = decl
-                .type_params
-                .iter()
-                .map(|param| param.name.clone())
-                .zip(instance.args.iter().cloned())
-                .collect();
-            self.push(&format!("struct {symbol} {{"));
-            for field in &decl.fields {
-                let ty = resolve_ty(&field.ty, &params, &self.sema.table);
-                let ty = super::substitute_in(&ty, &subst);
-                let qualifier = if field.volatile { "volatile " } else { "" };
-                self.push(&format!("    {qualifier}{};", declarator(&ty, &field.name)));
-            }
-            self.push("};");
-            self.push(&format!("typedef struct {symbol} {symbol};"));
-            self.push("");
+                type_key(&Ty::struct_with(decl.name.clone(), args.to_vec()))
+            )
+        };
+        let mut deps: Vec<String> = Vec::new();
+        for field in &decl.fields {
+            let ty = resolve_ty(&field.ty, &params, &self.sema.table);
+            let ty = super::substitute_in(&ty, &subst);
+            collect_value_deps(&ty, &mut deps);
+            fields.push((field.name.clone(), ty, field.volatile));
+        }
+        StructUnit {
+            symbol,
+            fields,
+            deps,
         }
     }
 
@@ -712,6 +719,65 @@ impl<'a> Emitter<'a> {
         symbols
     }
 
+}
+
+/// One struct definition to emit: a non-generic struct or a generic instance.
+struct StructUnit {
+    /// The C symbol of the struct.
+    symbol: String,
+    /// The fields in declaration order, with any instance substitution applied.
+    fields: Vec<(String, Ty, bool)>,
+    /// Symbols of the structs this definition embeds by value, which must be
+    /// defined first.
+    deps: Vec<String>,
+}
+
+/// Adds the symbol of every aggregate type `ty` embeds by value.
+///
+/// A pointer, handle, function pointer, or slice does not embed its referent,
+/// so only a struct and a fixed array contribute.
+fn collect_value_deps(ty: &Ty, deps: &mut Vec<String>) {
+    match &ty.kind {
+        TyKind::Struct(..) => deps.push(c_type(ty)),
+        TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
+            collect_value_deps(element, deps);
+        }
+        _ => {}
+    }
+}
+
+/// Orders struct definitions so a by-value dependency precedes its user.
+///
+/// A back edge is a cycle the checker rejects, so it cannot occur in a valid
+/// program; if one is present the remaining units keep their input order rather
+/// than looping.
+fn order_struct_units(units: Vec<StructUnit>) -> Vec<StructUnit> {
+    let known: BTreeSet<String> = units.iter().map(|unit| unit.symbol.clone()).collect();
+    let mut remaining: Vec<Option<StructUnit>> = units.into_iter().map(Some).collect();
+    let mut defined: BTreeSet<String> = BTreeSet::new();
+    let mut ordered: Vec<StructUnit> = Vec::new();
+    loop {
+        let mut progressed = false;
+        for slot in remaining.iter_mut() {
+            let ready = slot.as_ref().is_some_and(|unit| {
+                unit.deps.iter().all(|dep| {
+                    dep == &unit.symbol || !known.contains(dep) || defined.contains(dep)
+                })
+            });
+            if ready {
+                if let Some(unit) = slot.take() {
+                    defined.insert(unit.symbol.clone());
+                    ordered.push(unit);
+                    progressed = true;
+                }
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+    ordered.extend(remaining.into_iter().flatten());
+    ordered
 }
 
 /// The simple name a callee expression carries, for a program-level call.

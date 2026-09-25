@@ -205,3 +205,57 @@ func main(): i32 {
         "expected E10305, got:\n{stderr}"
     );
 }
+
+#[test]
+fn an_embedded_generic_struct_is_defined_before_its_user() {
+    let source = r#"module tests.v1.impl.embed_order;
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+struct Box<T> {
+    value: Pair<T>;
+}
+
+func main(): i32 {
+    let b = Box<i32> { value: Pair<i32> { first: 1, second: 2 } };
+    return b.value.first;
+}
+"#;
+    let emitted = emit("embed-order", source);
+    let embedded = emitted
+        .find("struct ClPair__i32 {")
+        .expect("the embedded instantiation must be defined");
+    let user = emitted
+        .find("struct ClBox__i32 {")
+        .expect("the embedding instantiation must be defined");
+    assert!(
+        embedded < user,
+        "the embedded struct must be defined before its user"
+    );
+}
+
+#[test]
+fn a_struct_recursing_through_a_generic_field_reports_e10305() {
+    let source = r#"module tests.v1.impl.recursive_generic;
+
+struct Box<T> {
+    inner: T;
+}
+
+struct S {
+    b: Box<S>;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let stderr = diagnostics("recursive-generic", source);
+    assert!(
+        stderr.contains("error E10305"),
+        "expected E10305, got:\n{stderr}"
+    );
+}

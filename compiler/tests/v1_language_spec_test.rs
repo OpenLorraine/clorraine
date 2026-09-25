@@ -253,3 +253,37 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A generic struct may embed another generic struct: the embedded
+/// instantiation is defined once and before the struct that uses it, and the
+/// emitted C compiles and runs.
+#[test]
+fn a_generic_struct_embeds_another_generic_struct() {
+    let source = r#"module tests.v1.generics_embed;
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+struct Box<T> {
+    value: Pair<T>;
+}
+
+func demo(): i32 {
+    let b = Box<i32> { value: Pair<i32> { first: 1, second: 2 } };
+    return b.value.first;
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let output = run_and_emit("g5", &[("main.clo", source)]).0;
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "g5: unexpected exit; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
