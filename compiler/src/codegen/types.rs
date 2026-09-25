@@ -25,7 +25,14 @@ pub(super) fn c_type(ty: &Ty) -> String {
         TyKind::CString => "char *".to_owned(),
         TyKind::Raw(inner) => format!("{} *", c_type(inner)),
         TyKind::Handle(name) => handle_type(name),
-        TyKind::Struct(name, _) | TyKind::Enum(name) => format!("Cl{name}"),
+        TyKind::Enum(name) => format!("Cl{name}"),
+        TyKind::Struct(name, args) => {
+            if args.is_empty() {
+                format!("Cl{name}")
+            } else {
+                format!("Cl{}", type_key(ty))
+            }
+        }
         TyKind::Array { element, extents } => {
             if extents.iter().all(Option::is_some) {
                 c_type(element)
@@ -136,8 +143,14 @@ pub(super) fn type_key(ty: &Ty) -> String {
         TyKind::StaticStr => "static_str".to_owned(),
         TyKind::CString => "cstring".to_owned(),
         TyKind::Raw(inner) => format!("raw_{}", type_key(inner)),
-        TyKind::Handle(name) | TyKind::Struct(name, _) | TyKind::Enum(name) | TyKind::Param(name) => {
-            name.clone()
+        TyKind::Handle(name) | TyKind::Enum(name) | TyKind::Param(name) => name.clone(),
+        TyKind::Struct(name, args) => {
+            if args.is_empty() {
+                name.clone()
+            } else {
+                let rendered: Vec<String> = args.iter().map(type_key).collect();
+                format!("{name}__{}", rendered.join("_"))
+            }
         }
         TyKind::Array { element, .. } => type_key(element),
         TyKind::Func(_) => "fn".to_owned(),

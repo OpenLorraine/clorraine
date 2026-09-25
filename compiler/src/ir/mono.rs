@@ -5,6 +5,8 @@
 //! obligations a generic body owes, so codegen can consume them without reading
 //! the source tree again.
 
+use crate::types::Ty;
+
 /// One concrete instantiation of a generic function.
 ///
 /// A generic body is checked once; every call that instantiates it produces an
@@ -31,13 +33,18 @@ impl Instance {
 ///
 /// A generic struct's fields are laid out per distinct argument list, so each
 /// instantiation has its own emitted C struct. The instance records the struct
-/// name and its concrete arguments so codegen can emit and deduplicate it.
+/// name and its concrete type arguments so codegen can emit and deduplicate it.
+///
+/// The arguments are kept as checked types rather than rendered spellings
+/// because the emitter substitutes them into the declaration's field types; a
+/// nested argument such as `Pair<i32>` is a structured type that a string
+/// spelling alone cannot reproduce.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StructInstance {
     /// The struct's name as declared.
     pub name: String,
     /// The concrete type arguments, in declaration order.
-    pub args: Vec<String>,
+    pub args: Vec<Ty>,
 }
 
 impl StructInstance {
@@ -46,7 +53,8 @@ impl StructInstance {
     /// Two uses with the same struct and the same type arguments share one
     /// emitted type, so the key is the deduplication identity codegen uses.
     pub fn dedupe_key(&self) -> String {
-        format!("{}<{}>", self.name, self.args.join(", "))
+        let rendered: Vec<String> = self.args.iter().map(Ty::display).collect();
+        format!("{}<{}>", self.name, rendered.join(", "))
     }
 }
 
@@ -71,9 +79,11 @@ pub struct CopyObligation {
 /// The instantiation set and copy obligations of a generic program.
 ///
 /// This is the input codegen consumes: the set of concrete function copies to
-/// emit, each with a stable deduplication key, plus the copies a generic body
-/// owes. The type arguments are stored as their rendered spellings because the
-/// emitter names symbols from them.
+/// emit, each with a stable deduplication key, the concrete generic structs to
+/// emit, and the copies a generic body owes. A function instance's type
+/// arguments are stored as their rendered spellings because the emitter names
+/// symbols from them; a struct instance keeps the checked types so the emitter
+/// can substitute them into the struct's fields.
 #[derive(Clone, Debug, Default)]
 pub struct Monomorphization {
     instances: Vec<Instance>,
@@ -103,11 +113,7 @@ impl Monomorphization {
     /// Records a struct instance, returning true when it was not already
     /// present.
     pub fn record_struct(&mut self, instance: StructInstance) -> bool {
-        if self
-            .structs
-            .iter()
-            .any(|known| known.dedupe_key() == instance.dedupe_key())
-        {
+        if self.structs.iter().any(|known| known == &instance) {
             return false;
         }
         self.structs.push(instance);

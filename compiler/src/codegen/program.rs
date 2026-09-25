@@ -8,12 +8,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
-use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
+use crate::ir::{
+    GlobalId, Place, PlaceBase, Projection, StructInstance, Value, ValueKind, ValuePiece,
+};
 use crate::load::Module;
 use crate::profile::Profile;
 use crate::types::{resolve_ty, Ty, TyKind};
 
-use super::types::{c_type, collect_slice_types, declarator, mangle_module, scalar_of};
+use super::types::{c_type, collect_slice_types, declarator, mangle_module, scalar_of, type_key};
 use super::{Emitter, FuncInfo};
 
 impl<'a> Emitter<'a> {
@@ -246,10 +248,18 @@ impl<'a> Emitter<'a> {
     }
 
     /// Writes the user struct and enum declarations.
+    ///
+    /// A non-generic struct is written once under its bare name. A generic
+    /// struct has no single C layout, so its bare template is skipped and one
+    /// concrete struct is written for each instantiation the program uses.
     pub(super) fn emit_aggregate_declarations(&mut self) {
         let structs: Vec<&'a StructDecl> = self.structs.values().copied().collect();
         for decl in structs {
-            self.emit_struct(decl);
+            if decl.type_params.is_empty() {
+                self.emit_struct(decl);
+            } else {
+                self.emit_struct_instances(decl);
+            }
         }
         let enums: Vec<&'a EnumDecl> = self.enums.values().map(|info| info.decl).collect();
         for decl in enums {
@@ -269,6 +279,49 @@ impl<'a> Emitter<'a> {
         self.push("};");
         self.push(&format!("typedef struct Cl{name} Cl{name};", name = decl.name));
         self.push("");
+    }
+
+    /// Writes one C struct per recorded instantiation of a generic struct.
+    ///
+    /// The bare template is never emitted: its fields still name the type
+    /// parameters, so it is not a complete C type. Each recorded instance
+    /// replaces the declaration's parameters with its concrete arguments, which
+    /// fixes the field types, and takes the instantiated symbol
+    /// `Cl<Name>__<typekey>`. Instances are recorded with a nested argument's
+    /// inner instantiation first, so a field type is always declared before the
+    /// struct that uses it.
+    fn emit_struct_instances(&mut self, decl: &StructDecl) {
+        let instances: Vec<StructInstance> = self
+            .ownership
+            .monomorphization
+            .struct_instances()
+            .iter()
+            .filter(|instance| instance.name == decl.name)
+            .cloned()
+            .collect();
+        let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
+        for instance in instances {
+            let symbol = format!(
+                "Cl{}",
+                type_key(&Ty::struct_with(decl.name.clone(), instance.args.clone()))
+            );
+            let subst: BTreeMap<String, Ty> = decl
+                .type_params
+                .iter()
+                .map(|param| param.name.clone())
+                .zip(instance.args.iter().cloned())
+                .collect();
+            self.push(&format!("struct {symbol} {{"));
+            for field in &decl.fields {
+                let ty = resolve_ty(&field.ty, &params, &self.sema.table);
+                let ty = super::substitute_in(&ty, &subst);
+                let qualifier = if field.volatile { "volatile " } else { "" };
+                self.push(&format!("    {qualifier}{};", declarator(&ty, &field.name)));
+            }
+            self.push("};");
+            self.push(&format!("typedef struct {symbol} {symbol};"));
+            self.push("");
+        }
     }
 
     /// Writes the enum constants as macros over the backing integer type.

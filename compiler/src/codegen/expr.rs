@@ -80,7 +80,9 @@ impl<'a> Emitter<'a> {
                 self.guarded_value(then_value),
                 self.guarded_value(else_value)
             ),
-            ValueKind::StructLit { name, fields } => self.struct_literal(name, fields),
+            ValueKind::StructLit { name, fields } => {
+                self.struct_literal(&self.substitute(&value.ty), name, fields)
+            }
             ValueKind::ArrayLit { elements, fill } => self.array_literal(elements, fill),
             ValueKind::Template(pieces) => self.template(pieces),
             ValueKind::Intrinsic {
@@ -472,7 +474,12 @@ impl<'a> Emitter<'a> {
     }
 
     /// Renders a struct literal with its fields in declaration order.
-    fn struct_literal(&self, name: &str, fields: &[(String, Value)]) -> String {
+    ///
+    /// The cast names the literal's concrete type so a generic instantiation
+    /// takes its instantiated C struct. A field the literal omits gets the
+    /// field type's empty state, with the active substitution applied so a
+    /// generic body's field is concrete.
+    fn struct_literal(&self, ty: &Ty, name: &str, fields: &[(String, Value)]) -> String {
         let declared = self
             .sema
             .table
@@ -484,7 +491,7 @@ impl<'a> Emitter<'a> {
             match fields.iter().find(|(written, _)| written == field) {
                 Some((_, value)) => values.push(self.value(value)),
                 None => {
-                    let empty = self.empty_state(field_ty);
+                    let empty = self.empty_state(&self.substitute(field_ty));
                     values.push(empty);
                 }
             }
@@ -494,6 +501,10 @@ impl<'a> Emitter<'a> {
                 values.push(self.value(value));
             }
         }
-        format!("(Cl{name}){{ {} }}", values.join(", "))
+        let cast = match &ty.kind {
+            TyKind::Struct(..) => c_type(ty),
+            _ => format!("Cl{name}"),
+        };
+        format!("({cast}){{ {} }}", values.join(", "))
     }
 }

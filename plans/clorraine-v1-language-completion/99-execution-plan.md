@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 09:14
-> **Progress**: 6/47 tasks (13%)
+> **Last Updated**: 2026-09-25 09:24
+> **Progress**: 8/47 tasks (17%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -40,8 +40,8 @@ stage 4 depends on the callable bound; volatile/MMIO is independent.
 
 ## Phase 1: Generics
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
-> **Expected modification set**: `compiler/src/types/table.rs`, `compiler/src/sema/{call,expr,mod}.rs`, `compiler/src/ir/mono.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen/{types,program}.rs`, `compiler/tests/v1_language_spec_test.rs`, `compiler/tests/v1_language_impl_test.rs`, `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/**`, `spec/14-diagnostics.md`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
+> **Phase baseline tree**: `119365d28b44f24652e5384139ea26ca79d210f7` (the commit before phase 1; the phase-start snapshot script was unavailable, so the post-phase review diffs from this commit)
+> **Expected modification set**: `compiler/src/types/table.rs`, `compiler/src/sema/{call,expr,mod}.rs`, `compiler/src/ir/mono.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen/{types,program,expr}.rs`, `compiler/tests/v1_language_spec_test.rs`, `compiler/tests/v1_language_impl_test.rs`, `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/**`, `spec/14-diagnostics.md`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
 > **Scope mode**: strict
 
 ### Step 1.1: Encode the generics behaviour before it exists
@@ -69,8 +69,8 @@ ephemeral-argument rule.
 - [x] 1.2.1 Carry each type parameter's callable bound into the type stage (`TypeParamSig`) and update its callers — `compiler/src/types/table.rs`, `compiler/src/sema/call.rs` ✅ (completed: 2026-09-25 09:10)
 - [x] 1.2.2 Add `StructInstance` and `record_struct`/`struct_instances` beside the function instances — `compiler/src/ir/mono.rs` ✅ (completed: 2026-09-25 09:11)
 - [x] 1.2.3 Collect struct instances from resolved declaration and IR types, recursing into nested arguments — `compiler/src/own/generics.rs` ✅ (completed: 2026-09-25 09:14)
-- [ ] 1.2.4 Include a struct's type arguments in `type_key` and `c_type` (`Cl<Name>__<typekey>`) — `compiler/src/codegen/types.rs`
-- [ ] 1.2.5 Emit one concrete struct per recorded instance with substituted field types — `compiler/src/codegen/program.rs`
+- [x] 1.2.4 Include a struct's type arguments in `type_key` and `c_type` (`Cl<Name>__<typekey>`) — `compiler/src/codegen/types.rs` ✅ (completed: 2026-09-25 09:24; landed with 1.2.5, plus `StructInstance.args` carries `Ty` and `struct_literal` casts to the concrete type)
+- [x] 1.2.5 Emit one concrete struct per recorded instance with substituted field types — `compiler/src/codegen/program.rs` ✅ (completed: 2026-09-25 09:24; landed with 1.2.4; ST-1/ST-2 green, Array regressions cleared)
 - [ ] 1.2.6 Enforce `E10303` when a bound argument is not a matching `func(...)` or closure — `compiler/src/sema/call.rs`
 - [ ] 1.2.7 Enforce `E10304` when a callable-only value is stored or returned — `compiler/src/sema/{call,expr}.rs`
 - [ ] 1.2.8 Enforce `E10306` when a resolved aggregate type contains a closure argument — `compiler/src/sema/{mod,call,expr}.rs`

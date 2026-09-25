@@ -102,7 +102,7 @@ fn record_struct_type(ty: &Ty, sema: &SemaOutput, mono: &mut Monomorphization) {
             if is_instance {
                 mono.record_struct(StructInstance {
                     name: name.clone(),
-                    args: args.iter().map(Ty::display).collect(),
+                    args: args.clone(),
                 });
             }
         }
