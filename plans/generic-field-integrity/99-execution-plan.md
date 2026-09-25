@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 20:00
-> **Progress**: 11/24 tasks (46%)
+> **Last Updated**: 2026-09-25 20:02
+> **Progress**: 13/24 tasks (54%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -139,8 +139,8 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-02](03-02-checker.md) §Testing Requirements
 **Objective**: Cover nested/raw edges and verify the phase.
 
-- [ ] 2.3.1 Add an implementation test that `Pair<Pair<i32>>.first` is `Pair<i32>` and that a raw base peels to its pointee — `compiler/src/sema/regressions.rs`
-- [ ] 2.3.2 Full phase verification — `make check`
+- [x] 2.3.1 Add an implementation test that `Pair<Pair<i32>>.first` is `Pair<i32>` and that a raw base peels to its pointee — `compiler/src/sema/regressions.rs` ✅ (completed: 2026-09-25 20:01)
+- [x] 2.3.2 Full phase verification — `make check` ✅ (completed: 2026-09-25 20:02)
 
 **Deliverables**:
 - All verification passing

@@ -436,3 +436,55 @@ func main(): i32 { return 0; }
 "#,
     );
 }
+
+#[test]
+fn a_nested_generic_field_is_its_substituted_instance() {
+    // `Pair<Pair<i32>>.first` is `Pair<i32>`, so passing it where a `Pair<i32>`
+    // is required is accepted, while passing it where an `i32` is required is
+    // the conversion error.
+    assert_accepts(
+        r#"module test;
+struct Pair<T> { first: T; second: T; }
+func takesPair(p: Pair<i32>): i32 { return p.first; }
+func main(): i32 {
+    let p = Pair<Pair<i32>> {
+        first: Pair<i32> { first: 1, second: 2 },
+        second: Pair<i32> { first: 3, second: 4 },
+    };
+    return takesPair(p.first);
+}
+"#,
+    );
+    assert_codes(
+        r#"module test;
+struct Pair<T> { first: T; second: T; }
+func takesI32(x: i32): i32 { return x; }
+func main(): i32 {
+    let p = Pair<Pair<i32>> {
+        first: Pair<i32> { first: 1, second: 2 },
+        second: Pair<i32> { first: 3, second: 4 },
+    };
+    return takesI32(p.first);
+}
+"#,
+        &["E10200"],
+    );
+}
+
+#[test]
+fn a_raw_base_peels_to_its_pointee_for_a_member() {
+    // A non-generic field reached through a raw pointer is typed from the
+    // pointee, so reading it is accepted.
+    assert_accepts(
+        r#"module test;
+struct Point { x: i32; y: i32; }
+func demo(p: Point): i32 {
+    unsafe {
+        let r: raw Point = raw Point(&p);
+        return r.x;
+    }
+}
+func main(): i32 { return 0; }
+"#,
+    );
+}
