@@ -55,8 +55,9 @@ Rust suites, written red before each fix (AR-4).
 
 > **Phase baseline tree**: 539a40bd88a832eff37fb5940c47dc028d7bceab
 > **Expected modification set**: `compiler/src/types/mod.rs`, `compiler/src/types/table.rs`,
-> `compiler/src/consts/mod.rs` (strict scope)
+> `compiler/src/consts/mod.rs`, `compiler/src/sema/items.rs` (strict scope)
 > **Lenses**: correctness, edge cases (constructor profile)
+> **Phase review**: independent correctness review of the phase diff — no findings (2026-09-25)
 
 ### Step 1.1: Specification tests (red)
 
