@@ -201,6 +201,20 @@ impl Emitter<'_> {
                 Some(ty) => format!("sizeof({})", c_type(&self.substitute(ty))),
                 None => "0".to_owned(),
             },
+            // The hardware intrinsics become a `volatile`-qualified access at
+            // the intrinsic's native width. The qualifier is what forbids
+            // folding, caching, and reordering; no byte swap is emitted.
+            "readVolatile8" | "readVolatile16" | "readVolatile32" => {
+                let width = volatile_width(name);
+                let addr = self.intrinsic_arg(args, 0);
+                format!("(*(volatile {width} *)({addr}))")
+            }
+            "writeVolatile8" | "writeVolatile16" | "writeVolatile32" => {
+                let width = volatile_width(name);
+                let addr = self.intrinsic_arg(args, 0);
+                let value = self.intrinsic_arg(args, 1);
+                format!("(*(volatile {width} *)({addr}) = ({value}))")
+            }
             _ => "0".to_owned(),
         }
     }
@@ -228,5 +242,18 @@ impl Emitter<'_> {
             TyKind::Raw(inner) => *inner,
             _ => Ty::unknown(),
         }
+    }
+}
+
+/// The C scalar name a volatile intrinsic accesses, keyed by its name.
+///
+/// The suffix of `readVolatileN`/`writeVolatileN` is the access width, so the
+/// qualifier is applied to the matching unsigned C type.
+fn volatile_width(name: &str) -> &'static str {
+    match name {
+        "readVolatile8" | "writeVolatile8" => "u8",
+        "readVolatile16" | "writeVolatile16" => "u16",
+        "readVolatile32" | "writeVolatile32" => "u32",
+        _ => "u8",
     }
 }

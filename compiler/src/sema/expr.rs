@@ -763,10 +763,41 @@ impl Checker<'_, '_> {
                 self.check_intrinsic_expr_args(args);
                 Ty::void()
             }
+            // The six hardware intrinsics: the address must convert to the
+            // matching `raw` pointer and the written value to the matching
+            // unsigned scalar; the read returns that scalar. A mismatch is the
+            // ordinary conversion diagnostic, so no new code is introduced.
+            "readVolatile8" | "readVolatile16" | "readVolatile32" => {
+                let scalar = volatile_scalar(name).expect("a readVolatile intrinsic");
+                self.check_volatile_address(args, scalar);
+                self.check_intrinsic_expr_args(args.get(1..).unwrap_or(&[]));
+                Ty::scalar(scalar)
+            }
+            "writeVolatile8" | "writeVolatile16" | "writeVolatile32" => {
+                let scalar = volatile_scalar(name).expect("a writeVolatile intrinsic");
+                self.check_volatile_address(args, scalar);
+                if let Some(IntrinsicArg::Expr(value)) = args.get(1) {
+                    self.check_into(value, &Ty::scalar(scalar));
+                }
+                self.check_intrinsic_expr_args(args.get(2..).unwrap_or(&[]));
+                Ty::void()
+            }
             _ => {
                 self.check_intrinsic_expr_args(args);
                 Ty::unknown()
             }
+        }
+    }
+
+    /// Checks the address argument of a volatile intrinsic against `raw T`.
+    ///
+    /// The first argument must be an expression convertible to a `raw` pointer
+    /// to the intrinsic's scalar width. Any further arguments are left to the
+    /// caller so no expression is checked twice.
+    fn check_volatile_address(&mut self, args: &[IntrinsicArg], scalar: ScalarType) {
+        if let Some(IntrinsicArg::Expr(addr)) = args.first() {
+            let expected = Ty::raw(Ty::scalar(scalar));
+            self.check_into(addr, &expected);
         }
     }
 
@@ -838,6 +869,20 @@ impl Checker<'_, '_> {
             "compare explicitly, for example `x != 0`",
             span,
         );
+    }
+}
+
+/// The unsigned scalar width a volatile intrinsic accesses, keyed by its name.
+///
+/// The six names share one shape: `readVolatileN` reads a `uN` and
+/// `writeVolatileN` writes a `uN` through a `raw uN`. The suffix number maps to
+/// `u8`, `u16`, or `u32`.
+fn volatile_scalar(name: &str) -> Option<ScalarType> {
+    match name {
+        "readVolatile8" | "writeVolatile8" => Some(ScalarType::U8),
+        "readVolatile16" | "writeVolatile16" => Some(ScalarType::U16),
+        "readVolatile32" | "writeVolatile32" => Some(ScalarType::U32),
+        _ => None,
     }
 }
 

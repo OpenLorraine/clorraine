@@ -504,20 +504,31 @@ impl<'a> Emitter<'a> {
     }
 
     /// Writes the module-level variables with empty-state initializers.
+    ///
+    /// A `volatile let` keeps its C `volatile` qualifier so the compiler does
+    /// not fold, cache, or reorder accesses to memory another agent can change.
     pub(super) fn emit_globals(&mut self) {
         if self.globals.is_empty() {
             return;
         }
-        let globals: Vec<(String, String, Ty)> = self
+        let globals: Vec<(String, String, Ty, bool)> = self
             .globals
             .values()
-            .map(|global| (global.name.clone(), global.module.clone(), global.ty.clone()))
+            .map(|global| {
+                (
+                    global.name.clone(),
+                    global.module.clone(),
+                    global.ty.clone(),
+                    global.volatile,
+                )
+            })
             .collect();
-        for (name, module, ty) in globals {
+        for (name, module, ty, volatile) in globals {
             let symbol = self.global_symbol(&module, &name);
             let empty = self.empty_state(&ty);
+            let qualifier = if volatile { "volatile " } else { "" };
             self.push(&format!(
-                "static {} = {};",
+                "static {qualifier}{} = {};",
                 declarator(&ty, &symbol),
                 empty
             ));

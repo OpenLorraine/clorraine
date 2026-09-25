@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 15:45
-> **Progress**: 37/49 tasks (75%; Phase 2 complete and reviewed; Phase 3 red phase recorded — volatile spec tests, MMIO corpus, and the E11200 golden are in place and failing as intended)
+> **Last Updated**: 2026-09-25 15:50
+> **Progress**: 42/49 tasks (86%; Phase 2 complete and reviewed; Phase 3 volatile and MMIO implemented and green on `make check` plus the hosted-amiga corpus; implementation tests and the phase-end `make verify` remain)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -181,8 +181,15 @@ ran on the Phase 2 diff `e14fb1e..HEAD`). Findings:
 ## Phase 3: Volatile and MMIO
 
 > **Phase baseline tree**: `9b69289d773c1e9907dfee2858d1c3030cbbbaa9` (Phase 3 start; the review diffs from this commit)
-> **Expected modification set**: `compiler/src/sema/expr.rs`, `compiler/src/codegen/{calls,program}.rs`, `compiler/src/{ir/global,sema/items}.rs`, `compiler/src/stdlib.rs`, `stdlib/std.amiga.custom.clo`, `compiler/tests/v1_language_{spec,impl}_test.rs`, `compiler/tests/{corpus_spec_test,compile_fail_spec_test}.rs`, `spec/tests/corpus/volatile-mmio/**`, `spec/tests/compile-fail/E11200_custom_module.clo`, `docker/scripts/corpus-amiga.sh`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
+> **Expected modification set**: `compiler/src/sema/expr.rs`, `compiler/src/codegen/{calls,program}.rs`, `compiler/src/codegen.rs`, `compiler/src/consts/mod.rs`, `compiler/src/own/expr.rs`, `compiler/src/stdlib.rs`, `stdlib/std.amiga.custom.clo`, `compiler/tests/v1_language_{spec,impl}_test.rs`, `compiler/tests/{corpus_spec_test,compile_fail_spec_test}.rs`, `spec/tests/corpus/volatile-mmio/**`, `spec/tests/compile-fail/E11200_custom_module.clo`, `docker/scripts/corpus-amiga.sh`, `plans/clorraine-v1-language-completion/99-execution-plan.md`
 > **Scope mode**: strict
+>
+> The modification set was expanded during execution: the volatile global flag
+> lives on `codegen::GlobalInfo` rather than `ir/global.rs`/`sema/items.rs`, and
+> two necessary corrections were needed to support the `const raw` register base
+> (`compiler/src/consts/mod.rs` folds a constant `raw` cast, and
+> `compiler/src/own/expr.rs` treats a field write through a `raw` global as a
+> pointee write rather than an immutable-binding write).
 
 ### Step 3.1: Encode the volatile behaviour before it exists
 
@@ -206,11 +213,11 @@ record the red phase.
 **Objective**: type and lower the six intrinsics, emit the volatile global
 qualifier, and add the wrapper module.
 
-- [ ] 3.2.1 Type the six volatile intrinsics and their argument conversions — `compiler/src/sema/expr.rs`
-- [ ] 3.2.2 Lower the six intrinsics to a C `volatile`-qualified access — `compiler/src/codegen/calls.rs`
-- [ ] 3.2.3 Carry the `volatile` global flag to codegen and emit the C qualifier — `compiler/src/ir/global.rs`, `compiler/src/sema/items.rs`, `compiler/src/codegen/program.rs`
-- [ ] 3.2.4 Author the `std.amiga.custom` module and register it — `stdlib/std.amiga.custom.clo`, `compiler/src/stdlib.rs`
-- [ ] 3.2.5 Wire the MMIO corpus into the hosted-amiga leg: add `volatile-mmio` to the corpus script's running-program set and add its corpus test — `docker/scripts/corpus-amiga.sh`, `compiler/tests/corpus_spec_test.rs`
+- [x] 3.2.1 Type the six volatile intrinsics and their argument conversions — `compiler/src/sema/expr.rs` ✅ (completed: 2026-09-25 15:50; `readVolatileN` returns `uN` and `writeVolatileN` returns `void`, with the address checked against `raw uN` and the value against `uN` through the ordinary conversion diagnostic; implementation lives in `compiler/src/sema/expr.rs`, not `ir/global.rs`/`sema/items.rs`)
+- [x] 3.2.2 Lower the six intrinsics to a C `volatile`-qualified access — `compiler/src/codegen/calls.rs` ✅ (completed: 2026-09-25 15:50; `(*(volatile uN *)(addr))` for a read and `(*(volatile uN *)(addr) = value)` for a write, native width, no byte swap)
+- [x] 3.2.3 Carry the `volatile` global flag to codegen and emit the C qualifier — `compiler/src/ir/global.rs`, `compiler/src/sema/items.rs`, `compiler/src/codegen/program.rs` ✅ (completed: 2026-09-25 15:50; the flag is carried on `codegen::GlobalInfo` from the AST `GlobalLetDecl.volatile` and emitted by `emit_globals`; `ir/global.rs`/`sema/items.rs` were not needed)
+- [x] 3.2.4 Author the `std.amiga.custom` module and register it — `stdlib/std.amiga.custom.clo`, `compiler/src/stdlib.rs` ✅ (completed: 2026-09-25 15:50; overlay `CustomRegs` with `raw` base `CUSTOM_BASE` and exported `setDma`/`setColor`, registered in `SOURCES` and `MODULES`; a constant `raw` cast now folds in `compiler/src/consts/mod.rs`, and a field write through a `raw` global is a pointee write in `compiler/src/own/expr.rs`, both necessary for the `const raw` base)
+- [x] 3.2.5 Wire the MMIO corpus into the hosted-amiga leg: add `volatile-mmio` to the corpus script's running-program set and add its corpus test — `docker/scripts/corpus-amiga.sh`, `compiler/tests/corpus_spec_test.rs` ✅ (completed: 2026-09-25 15:50; `PROGRAMS` now runs `volatile-mmio` and it matches its recorded output under `vamos`, and the host-rejection corpus test landed with 3.1.2)
 
 ### Step 3.3: Implementation tests and verification
 

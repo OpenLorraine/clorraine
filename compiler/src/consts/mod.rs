@@ -172,6 +172,7 @@ impl<'a> ConstFolder<'a> {
                 self.fold_binary(*op, left, right, expr.span, context)
             }
             ExprKind::Cast { ty, value } => self.fold_cast(ty, value, expr.span),
+            ExprKind::RawCast { value, .. } => self.fold_raw_cast(value, expr.span),
             ExprKind::Name(name) => self.fold_name(name, expr.span),
             ExprKind::Qualified(name) => self.fold_qualified(name, expr.span),
             ExprKind::IntrinsicCall { name, args } => self.fold_intrinsic(name, args, expr.span),
@@ -303,6 +304,23 @@ impl<'a> ConstFolder<'a> {
                     value: ConstValue::Float(v),
                 })
             }
+            _ => Err(ConstError::NotConstant(span)),
+        }
+    }
+
+    /// Folds a constant `raw` cast of an integer address.
+    ///
+    /// A module-level register base is written `raw T(0xADDRESS)`. The address
+    /// itself is the constant; the raw target only names how the pointer is
+    /// typed, so the fold keeps the inner integer value. A non-integer operand
+    /// is not a constant address.
+    fn fold_raw_cast(&mut self, value: &Expr, span: Span) -> Result<FoldValue, ConstError> {
+        let inner = self.fold_value(value, None)?;
+        match inner.value {
+            ConstValue::Int(address) => Ok(FoldValue {
+                scalar: None,
+                value: ConstValue::Int(address),
+            }),
             _ => Err(ConstError::NotConstant(span)),
         }
     }

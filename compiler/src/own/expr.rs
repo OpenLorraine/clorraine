@@ -309,7 +309,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .globals
                     .get(&id)
                     .is_some_and(|global| global.is_const);
-                if is_const {
+                // A field write through a `raw` global reaches the pointee, not
+                // the constant pointer binding, so the const does not forbid it.
+                let through_pointer = self.writes_through_raw_global(&id, &projections);
+                if is_const && !through_pointer {
                     self.error(
                         "E10023",
                         format!("cannot assign to immutable '{}'", id.name),
@@ -326,7 +329,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         target.span,
                     );
                 }
-                if !is_const {
+                if !is_const || through_pointer {
                     if has_runtime_element(&projections) {
                         self.emit_indexed_store(target, value, compound);
                     } else {
@@ -371,7 +374,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .globals
                     .get(&id)
                     .is_some_and(|global| global.is_const);
-                if is_const {
+                // A field update through a `raw` global reaches the pointee,
+                // not the constant pointer binding.
+                let through_pointer = self.writes_through_raw_global(&id, &projections);
+                if is_const && !through_pointer {
                     self.error(
                         "E10023",
                         format!("cannot assign to immutable '{}'", id.name),
@@ -391,6 +397,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.eval(operand);
             }
         }
+    }
+
+    /// True when an assignment to a global place goes through a `raw` pointer.
+    ///
+    /// A module-level `const` of `raw T` is an immutable pointer binding, but
+    /// the memory it names is not part of the binding: `BASE.field = ...`
+    /// writes the pointee, which the const does not forbid. Only a write with
+    /// no projection reaches the binding itself.
+    fn writes_through_raw_global(&self, id: &ir::GlobalId, projections: &[ir::Projection]) -> bool {
+        !projections.is_empty()
+            && self
+                .program
+                .globals
+                .get(id)
+                .is_some_and(|global| matches!(global.ty.kind, TyKind::Raw(_)))
     }
 
     /// Emits the store for an assignment, plain or compound.

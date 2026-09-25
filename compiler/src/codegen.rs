@@ -53,6 +53,8 @@ pub(super) struct GlobalInfo {
     pub(super) name: String,
     /// The checked type.
     pub(super) ty: Ty,
+    /// True for a `volatile let`, which becomes a C `volatile` global.
+    pub(super) volatile: bool,
 }
 
 /// A user enum with its declaration.
@@ -218,10 +220,16 @@ impl<'a> Emitter<'a> {
                         self.enums.entry(decl.name.clone()).or_insert(EnumInfo { decl });
                     }
                     Item::GlobalLet(decl) => {
-                        self.record_global(module, &decl.name, Some(&decl.ty), &decl.value);
+                        self.record_global(
+                            module,
+                            &decl.name,
+                            Some(&decl.ty),
+                            &decl.value,
+                            decl.volatile,
+                        );
                     }
                     Item::GlobalConst(decl) => {
-                        self.record_global(module, &decl.name, Some(&decl.ty), &decl.value);
+                        self.record_global(module, &decl.name, Some(&decl.ty), &decl.value, false);
                     }
                     Item::Ffi(block) => {
                         for signature in &block.decls {
@@ -243,6 +251,7 @@ impl<'a> Emitter<'a> {
         name: &str,
         declared: Option<&Type>,
         init: &'a Expr,
+        volatile: bool,
     ) {
         let ty = declared
             .map(|ty| resolve_ty(ty, &[], &self.sema.table))
@@ -254,6 +263,7 @@ impl<'a> Emitter<'a> {
                 module: module.name.clone(),
                 name: name.to_owned(),
                 ty,
+                volatile,
             });
     }
 

@@ -1,0 +1,54 @@
+//! Amiga custom chips: safe wrappers over the volatile register intrinsics.
+//!
+//! This module belongs to the hosted-amiga profile; the host profile has no
+//! custom chips, so the module is not available there. The register bases and
+//! every `unsafe` block live here, so application code calls the wrappers and
+//! never writes a raw address or opens an `unsafe` block.
+//!
+//! The register map is an overlay struct: its fields are `volatile`, so a
+//! field access is a hardware access that the C compiler must not fold, cache,
+//! or reorder. The base is a `const raw` cast of the fixed custom-chip address,
+//! so it is defined once instead of re-derived in every function.
+
+module std.amiga.custom;
+
+/// The custom-chip registers the v1 wrappers touch.
+///
+/// This is an overlay type: it is reached only through a `raw` pointer and is
+/// never stored, copied, or passed by value.
+struct CustomRegs {
+    /// DMA control (`DMACON`).
+    dmacon: volatile u16;
+    /// Copper list start (`COP1LC`).
+    cop1lc: volatile u32;
+}
+
+/// The base of the custom-chip register block (`$DFF000`).
+const CUSTOM_BASE: raw CustomRegs = raw CustomRegs(0x00DFF000);
+
+/// The copper-DMA enable bit in `DMACON`.
+const COP_DMA: u16 = 0x0080;
+
+/// Enables or disables copper DMA (`COPEN` in `DMACON`).
+///
+/// The read-modify-write runs through the `volatile` overlay field, so each
+/// access reaches the hardware.
+export func setDma(enabled: bool): void {
+    unsafe {
+        if (enabled) {
+            CUSTOM_BASE.dmacon = CUSTOM_BASE.dmacon | COP_DMA;
+        } else {
+            CUSTOM_BASE.dmacon = CUSTOM_BASE.dmacon & (0xFFFF - COP_DMA);
+        }
+    }
+}
+
+/// Sets color register `index` to the 12-bit Amiga color `value`.
+///
+/// The caller must keep `index` inside the active palette range; the color
+/// registers start at `$DFF180` and each one is a 16-bit word.
+export func setColor(index: u32, value: u16): void {
+    unsafe {
+        writeVolatile16(raw u16(0x00DFF180) + index, value);
+    }
+}

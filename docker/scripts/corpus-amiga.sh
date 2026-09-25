@@ -33,7 +33,7 @@ GCC_FLAGS=(-std=c99 -mcrt=nix20 -m68000 -fwrapv -O0 -g -Wall -Wextra -Werror)
 VBCC_FLAGS=(+aos68k -c99 -O2 -cpu=68000 -I/opt/amiga/m68k-amigaos/ndk-include)
 
 # The portable programs: each prints its recorded output and exits zero.
-PROGRAMS=(file-copier string-parser buffer-container)
+PROGRAMS=(file-copier string-parser buffer-container volatile-mmio)
 
 if [ ! -x "${CLC}" ]; then
     echo "corpus-amiga: compiler not found: ${CLC}" >&2
