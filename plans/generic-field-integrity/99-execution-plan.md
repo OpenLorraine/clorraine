@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 20:10
-> **Progress**: 19/24 tasks (79%)
+> **Last Updated**: 2026-09-25 20:12
+> **Progress**: 21/24 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -193,8 +193,8 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-03](03-03-ownership-codegen.md) §Testing Requirements
 **Objective**: Cover emit edges and verify the phase.
 
-- [ ] 3.3.1 Add implementation tests: `Box<String>` drop releases the field; a nested generic zero value round-trips through `clorraine build` — `compiler/tests/v1_language_impl_test.rs`
-- [ ] 3.3.2 Full phase verification — `make check`
+- [x] 3.3.1 Add implementation tests: `Box<String>` drop releases the field; a nested generic zero value round-trips through `clorraine build` — `compiler/tests/v1_language_impl_test.rs` ✅ (completed: 2026-09-25 20:11)
+- [x] 3.3.2 Full phase verification — `make check` ✅ (completed: 2026-09-25 20:12)
 
 **Deliverables**:
 - All verification passing

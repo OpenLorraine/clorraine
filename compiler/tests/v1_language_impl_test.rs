@@ -74,6 +74,21 @@ fn emit(tag: &str, source: &str) -> String {
     std::fs::read_to_string(&c_path).unwrap_or_default()
 }
 
+/// Builds one source with the `clorraine` driver for the host profile.
+///
+/// The driver compiles the emitted C with the host C compiler, so a zero exit
+/// proves the translation unit is valid C.
+fn build(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source).expect("cannot write the snippet");
+    Command::new(env!("CARGO_BIN_EXE_clorraine"))
+        .args(["build", "main.clo"])
+        .current_dir(scratch.path())
+        .output()
+        .expect("failed to spawn the clorraine driver")
+}
+
 /// Compiles one source and returns the compiler's stderr.
 fn diagnostics(tag: &str, source: &str) -> String {
     let scratch = ScratchDir::new(tag);
@@ -641,5 +656,55 @@ func main(): i32 {
     assert!(
         !emitted.contains("ClLabel__"),
         "a non-generic struct must not gain a generic symbol"
+    );
+}
+
+#[test]
+fn a_generic_handle_field_builds() {
+    // The dropped generic handle field must produce valid C: the driver
+    // compiles the translation unit with the host C compiler.
+    let source = r#"module tests.v1.impl.generic_drop_build;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    value: T;
+}
+
+func main(): i32 {
+    let b = Box<String> { value: stringOf("x") };
+    return 0;
+}
+"#;
+    let output = build("generic-drop-build", source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the generic handle field must build; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn a_nested_generic_zero_value_builds() {
+    // The nested zero state must produce valid C, not `{ 0, 0 }`.
+    let source = r#"module tests.v1.impl.nested_zero_build;
+
+struct Pair<T> {
+    first: T;
+    second: T;
+}
+
+func main(): i32 {
+    let z = Pair<Pair<i32>> {};
+    return z.first.first;
+}
+"#;
+    let output = build("nested-zero-build", source);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "the nested generic zero value must build; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
