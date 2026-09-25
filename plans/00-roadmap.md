@@ -25,7 +25,7 @@
 | PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-09 | Clorraine demo video toolkit | — | [clorraine-demo-video](clorraine-demo-video/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
 | PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | ⛔ Blocked (was: Executing) | ⛔ | 2026-09-25 | waits on DEF-11; Phase 4 pending |
-| ↳ DEF-11 | Self-referential struct-literal reassignment double-frees | — | — | Executing | 🔄 | 2026-09-25 | fix in a dedicated plan before PLAN-10 Phase 4 |
+| ↳ DEF-11 | Self-referential struct-literal reassignment double-frees | — | [partial-move-drop-coherence](partial-move-drop-coherence/00-index.md) | Executing | 🔄 | 2026-09-25 | fix before PLAN-10 Phase 4 |
 
 ## Backlog / Known defects
 
