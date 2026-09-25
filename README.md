@@ -25,9 +25,9 @@ under FS-UAE (the Amiga emulator). It continues with a real program,
 move-then-use it rejects
 ([`examples/ownership-fail.clo`](examples/ownership-fail.clo)), the
 one-command build, the `hosted-amiga` run, and that program under FS-UAE. It
-then draws — a card on the graphics surface and the `graphics` corpus program
-painting colored bars and a line under FS-UAE — and closes with a card on
-LorraineOS, the project Clorraine belongs to.
+then draws — a rotating 3D cube drawn line by line on a custom Amiga screen
+under FS-UAE — and closes with a card on LorraineOS, the project Clorraine
+belongs to.
 
 The full video (`demo/demo-full.mp4`), the opening loop (`demo/demo.gif`), and
 `demo/emulator.mp4` are generated from the story script `demo/story.ts` by the

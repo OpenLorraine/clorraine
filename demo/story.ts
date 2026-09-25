@@ -51,6 +51,7 @@ export default defineDemo({
       kind: "code",
       file: "spec/tests/corpus/string-parser/program.clo",
       scroll: true,
+      duration: 14,
       caption: "Real Clorraine source — C-like syntax, ownership checked at compile time",
     },
     {
@@ -90,14 +91,15 @@ export default defineDemo({
       id: "draw-explain",
       kind: "card",
       title: "Now: draw",
-      subtitle: "A custom Amiga screen with colors, bars, and lines",
+      subtitle: "A rotating 3D cube, drawn line by line on a custom Amiga screen",
     },
     {
       id: "graphics",
       kind: "emulator",
-      file: "spec/tests/corpus/graphics/program.clo",
+      file: "examples/graphics/cube.clo",
       frame: true,
-      caption: "Drawing on an Amiga screen — under FS-UAE (Amiga emulator)",
+      duration: 20,
+      caption: "A spinning 3D cube drawn by Clorraine — under FS-UAE (Amiga emulator)",
     },
     {
       id: "los",

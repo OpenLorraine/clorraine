@@ -32,7 +32,7 @@ test("the code and emulator chapters point at the expected sources", async () =>
 
   assert.equal(sourceFile(byId.get("hello-src")), "examples/hello/hello.clo");
   assert.equal(sourceFile(byId.get("source")), "spec/tests/corpus/string-parser/program.clo");
-  assert.equal(sourceFile(byId.get("graphics")), "spec/tests/corpus/graphics/program.clo");
+  assert.equal(sourceFile(byId.get("graphics")), "examples/graphics/cube.clo");
 });
 
 test("the long source chapter scrolls so the whole program is shown", async () => {
@@ -42,11 +42,15 @@ test("the long source chapter scrolls so the whole program is shown", async () =
   assert.equal(source.scroll, true);
 });
 
-test("the story keeps the per-kind default durations (no per-scene override)", async () => {
+test("durations stay positive, with only the long chapters overriding their defaults", async () => {
   const config = await loadConfig(story, { root });
+  const overrides = new Map([
+    ["source", 14],
+    ["graphics", 20],
+  ]);
 
   for (const scene of config.scenes) {
-    assert.equal(scene.duration, undefined, `${scene.id} uses the kind default`);
-    assert.ok(sceneDuration(scene) > 0);
+    assert.ok(sceneDuration(scene) > 0, `${scene.id} has a positive duration`);
+    assert.equal(scene.duration, overrides.get(scene.id), `${scene.id} duration`);
   }
 });
