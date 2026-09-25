@@ -157,6 +157,7 @@ Rust suites, written red before each fix (AR-4).
 > `compiler/src/codegen/drop.rs`, `compiler/src/codegen/expr.rs`,
 > `compiler/tests/v1_language_impl_test.rs` (strict scope)
 > **Lenses**: correctness, resource lifetime (drop)
+> **Phase review**: RV-001 🔴 CRITICAL — a self-referential struct-literal reassignment (`b = Box<String> { value: b.value };`) now double-frees for generic owning structs: `emit_assign` (`compiler/src/codegen/function.rs:494`) treats the RHS field read as a borrow and drops the saved old value, which aliases the new value. Root cause is pre-existing (the non-generic `Label` form already double-frees at the baseline); this phase's substitution-aware `emits_drop` newly makes it reachable for generics. **User ruling (2026-09-25): track DEF-11 and fix it in a dedicated plan before Phase 4.** This plan is paused after Phase 3 pending DEF-11.
 
 ### Step 3.1: Specification tests (red)
 

@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-25 19:05
+> **Last Updated**: 2026-09-25 23:20
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -24,7 +24,8 @@
 | PLAN-07 | ARM64 port | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-06 |
 | PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-09 | Clorraine demo video toolkit | — | [clorraine-demo-video](clorraine-demo-video/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
-| PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | Executing | 🔄 | 2026-09-25 | depends on PLAN-04 |
+| PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | ⛔ Blocked (was: Executing) | ⛔ | 2026-09-25 | waits on DEF-11; Phase 4 pending |
+| ↳ DEF-11 | Self-referential struct-literal reassignment double-frees | — | — | Executing | 🔄 | 2026-09-25 | fix in a dedicated plan before PLAN-10 Phase 4 |
 
 ## Backlog / Known defects
 
@@ -40,3 +41,4 @@
 | DEF-08 | Drop not emitted for a generic struct holding a handle | 2026-09-25 | Open | `codegen/drop.rs` reads declared field types without substituting, so `Box<String>` never emits the `String` drop and leaks. Pre-existing. |
 | DEF-09 | Nested generic zero value emits C that fails `-Werror` | 2026-09-25 | Open | `codegen/expr.rs::struct_literal` fills an omitted field from the enclosing substitution only, so `Pair<Pair<i32>> {}` (a valid zero value, `spec/07-structs.md:44` STR-7) emits `(ClPair__Pair__i32){ 0, 0 }` and the driver reports a failed C compile. Pre-existing. |
 | DEF-10 | Remaining unsubstituted generic-field reads | 2026-09-25 | Open | The ownership `member_type` (`compiler/src/own/expr.rs`), raw-pointer member access (typed `Unknown`), and `size_of_at`/`offset_of` (`compiler/src/types/table.rs`) still read declared field types without the instance substitution. Minor; pre-existing. |
+| DEF-11 | Self-referential struct-literal reassignment double-frees | 2026-09-25 | Open | `b = Box<String> { value: b.value };` compiles but emits a double free: `emit_assign` (`compiler/src/codegen/function.rs:494`) treats the RHS field read of the target as a borrow, saves the old value, then drops the saved handle that the new value also owns. The non-generic form (`struct Label { name: String }`) already double-frees at baseline; Phase 3's substitution-aware `emits_drop` newly makes it reachable through a generic struct. Root cause is partial-move/drop coherence across the ownership stage and the emitter. Found by the Phase 3 review (RV-001). |
