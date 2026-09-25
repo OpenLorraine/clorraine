@@ -98,7 +98,7 @@ pub fn check(
         }
     }
     let mut monomorphization = generics::collect(loaded, &program, sema);
-    generics::collect_ir_instances(&functions, &program, &mut monomorphization);
+    generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     OwnershipOutput {
         functions,
         monomorphization,

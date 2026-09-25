@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 09:11
-> **Progress**: 5/47 tasks (11%)
+> **Last Updated**: 2026-09-25 09:14
+> **Progress**: 6/47 tasks (13%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -68,7 +68,7 @@ ephemeral-argument rule.
 
 - [x] 1.2.1 Carry each type parameter's callable bound into the type stage (`TypeParamSig`) and update its callers — `compiler/src/types/table.rs`, `compiler/src/sema/call.rs` ✅ (completed: 2026-09-25 09:10)
 - [x] 1.2.2 Add `StructInstance` and `record_struct`/`struct_instances` beside the function instances — `compiler/src/ir/mono.rs` ✅ (completed: 2026-09-25 09:11)
-- [ ] 1.2.3 Collect struct instances from resolved declaration and IR types, recursing into nested arguments — `compiler/src/own/generics.rs`
+- [x] 1.2.3 Collect struct instances from resolved declaration and IR types, recursing into nested arguments — `compiler/src/own/generics.rs` ✅ (completed: 2026-09-25 09:14)
 - [ ] 1.2.4 Include a struct's type arguments in `type_key` and `c_type` (`Cl<Name>__<typekey>`) — `compiler/src/codegen/types.rs`
 - [ ] 1.2.5 Emit one concrete struct per recorded instance with substituted field types — `compiler/src/codegen/program.rs`
 - [ ] 1.2.6 Enforce `E10303` when a bound argument is not a matching `func(...)` or closure — `compiler/src/sema/call.rs`

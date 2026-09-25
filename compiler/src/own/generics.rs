@@ -11,9 +11,10 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, Type};
+use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, Type, TypeParam};
 use crate::ir::{
-    CopyObligation, Function, Instance, Monomorphization, Statement, Terminator, Value, ValueKind,
+    CopyObligation, Function, Instance, Monomorphization, Statement, StructInstance, Terminator,
+    Value, ValueKind,
 };
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
@@ -39,7 +40,97 @@ pub fn collect(
             }
         }
     }
+    collect_struct_instances(loaded, sema, &mut mono);
     mono
+}
+
+/// Records the concrete generic-struct instantiations the declarations name.
+///
+/// A struct field, function parameter, or return type that spells a concrete
+/// instantiation (for example `Pair<i32>`) pins a C struct the emitter must
+/// write. A type that still mentions a type parameter belongs to an
+/// uninstantiated template and is skipped; its concrete forms are recorded
+/// where it is used.
+pub fn collect_struct_instances(loaded: &Loaded, sema: &SemaOutput, mono: &mut Monomorphization) {
+    for module in loaded.modules.values() {
+        for item in &module.items {
+            match item {
+                Item::Struct(decl) => {
+                    let params = type_param_names(&decl.type_params);
+                    for field in &decl.fields {
+                        record_struct_type(&resolve_ty(&field.ty, &params, &sema.table), sema, mono);
+                    }
+                }
+                Item::Func(decl) | Item::Comptime(decl) => {
+                    let params = type_param_names(&decl.type_params);
+                    for param in &decl.params {
+                        record_struct_type(&resolve_ty(&param.ty, &params, &sema.table), sema, mono);
+                    }
+                    record_struct_type(&resolve_ty(&decl.returns, &params, &sema.table), sema, mono);
+                }
+                Item::GlobalLet(decl) => {
+                    record_struct_type(&resolve_ty(&decl.ty, &[], &sema.table), sema, mono);
+                }
+                Item::GlobalConst(decl) => {
+                    record_struct_type(&resolve_ty(&decl.ty, &[], &sema.table), sema, mono);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Collects a declaration's written type-parameter names.
+fn type_param_names(params: &[TypeParam]) -> Vec<String> {
+    params.iter().map(|param| param.name.clone()).collect()
+}
+
+/// Records every concrete generic-struct instantiation a type names.
+///
+/// The walk recurses through the type so a struct nested in an array, pointer,
+/// function signature, or another struct's argument list is recorded too. A
+/// struct whose arguments are not all concrete is skipped.
+fn record_struct_type(ty: &Ty, sema: &SemaOutput, mono: &mut Monomorphization) {
+    match &ty.kind {
+        TyKind::Struct(name, args) => {
+            for arg in args {
+                record_struct_type(arg, sema, mono);
+            }
+            let is_instance = sema.table.struct_type_params(name).is_some_and(|params| {
+                !params.is_empty() && params.len() == args.len() && args.iter().all(is_concrete)
+            });
+            if is_instance {
+                mono.record_struct(StructInstance {
+                    name: name.clone(),
+                    args: args.iter().map(Ty::display).collect(),
+                });
+            }
+        }
+        TyKind::Array { element, .. } => record_struct_type(element, sema, mono),
+        TyKind::Raw(inner) => record_struct_type(inner, sema, mono),
+        TyKind::Func(signature) => {
+            for param in &signature.params {
+                record_struct_type(param, sema, mono);
+            }
+            record_struct_type(&signature.returns, sema, mono);
+        }
+        _ => {}
+    }
+}
+
+/// True when a type is fully concrete, with no generic parameter or unresolved
+/// placeholder anywhere inside it.
+fn is_concrete(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Param(_) | TyKind::Unknown => false,
+        TyKind::Array { element, .. } => is_concrete(element),
+        TyKind::Raw(inner) => is_concrete(inner),
+        TyKind::Struct(_, args) => args.iter().all(is_concrete),
+        TyKind::Func(signature) => {
+            signature.params.iter().all(is_concrete) && is_concrete(&signature.returns)
+        }
+        _ => true,
+    }
 }
 
 /// Walks a block looking for generic call sites.
@@ -307,23 +398,38 @@ fn type_bindings(
 /// instances that the AST-only pass cannot key. A call whose arguments still
 /// name a type parameter belongs to an uninstantiated generic template and is
 /// skipped.
-pub fn collect_ir_instances(functions: &[Function], program: &ProgramInfo, mono: &mut Monomorphization) {
+pub fn collect_ir_instances(
+    functions: &[Function],
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
     for function in functions {
+        record_struct_type(&function.ret, sema, mono);
+        for param in &function.params {
+            record_struct_type(&param.ty, sema, mono);
+        }
+        for local in &function.locals {
+            record_struct_type(&local.ty, sema, mono);
+        }
+        for temp in &function.temps {
+            record_struct_type(temp, sema, mono);
+        }
         for block in &function.blocks {
             for instr in &block.statements {
                 match &instr.statement {
-                    Statement::Assign { value, .. } => walk_value(value, program, mono),
+                    Statement::Assign { value, .. } => walk_value(value, program, sema, mono),
                     Statement::StorePointer { pointer, value } => {
-                        walk_value(pointer, program, mono);
-                        walk_value(value, program, mono);
+                        walk_value(pointer, program, sema, mono);
+                        walk_value(value, program, sema, mono);
                     }
                     Statement::Call { callee, type_args, args, .. } => {
                         record_instance(callee, type_args, program, mono);
                         for arg in args {
-                            walk_value(arg, program, mono);
+                            walk_value(arg, program, sema, mono);
                         }
                     }
-                    Statement::Discard { value } => walk_value(value, program, mono),
+                    Statement::Discard { value } => walk_value(value, program, sema, mono),
                     Statement::Move { .. }
                     | Statement::MoveOut { .. }
                     | Statement::Borrow { .. }
@@ -335,14 +441,14 @@ pub fn collect_ir_instances(functions: &[Function], program: &ProgramInfo, mono:
                 }
             }
             match &block.terminator {
-                Terminator::Branch { condition, .. } => walk_value(condition, program, mono),
+                Terminator::Branch { condition, .. } => walk_value(condition, program, sema, mono),
                 Terminator::Switch { value, arms, .. } => {
-                    walk_value(value, program, mono);
+                    walk_value(value, program, sema, mono);
                     for (label, _) in arms {
-                        walk_value(label, program, mono);
+                        walk_value(label, program, sema, mono);
                     }
                 }
-                Terminator::Return(Some(value)) => walk_value(value, program, mono),
+                Terminator::Return(Some(value)) => walk_value(value, program, sema, mono),
                 _ => {}
             }
         }
@@ -376,7 +482,8 @@ fn record_instance(
 }
 
 /// Walks a value, recording every generic call it contains.
-fn walk_value(value: &Value, program: &ProgramInfo, mono: &mut Monomorphization) {
+fn walk_value(value: &Value, program: &ProgramInfo, sema: &SemaOutput, mono: &mut Monomorphization) {
+    record_struct_type(&value.ty, sema, mono);
     match &value.kind {
         ValueKind::Call {
             callee,
@@ -386,58 +493,58 @@ fn walk_value(value: &Value, program: &ProgramInfo, mono: &mut Monomorphization)
         } => {
             record_instance(callee, type_args, program, mono);
             if let Some(receiver) = receiver {
-                walk_value(receiver, program, mono);
+                walk_value(receiver, program, sema, mono);
             }
             for arg in args {
-                walk_value(arg, program, mono);
+                walk_value(arg, program, sema, mono);
             }
         }
-        ValueKind::Member { base, .. } => walk_value(base, program, mono),
+        ValueKind::Member { base, .. } => walk_value(base, program, sema, mono),
         ValueKind::Index { base, index } => {
-            walk_value(base, program, mono);
-            walk_value(index, program, mono);
+            walk_value(base, program, sema, mono);
+            walk_value(index, program, sema, mono);
         }
-        ValueKind::Unary { operand, .. } => walk_value(operand, program, mono),
+        ValueKind::Unary { operand, .. } => walk_value(operand, program, sema, mono),
         ValueKind::Binary { left, right, .. } => {
-            walk_value(left, program, mono);
-            walk_value(right, program, mono);
+            walk_value(left, program, sema, mono);
+            walk_value(right, program, sema, mono);
         }
-        ValueKind::Cast { value, .. } => walk_value(value, program, mono),
+        ValueKind::Cast { value, .. } => walk_value(value, program, sema, mono),
         ValueKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            walk_value(condition, program, mono);
-            walk_value(then_value, program, mono);
-            walk_value(else_value, program, mono);
+            walk_value(condition, program, sema, mono);
+            walk_value(then_value, program, sema, mono);
+            walk_value(else_value, program, sema, mono);
         }
         ValueKind::StructLit { fields, .. } => {
             for (_, field) in fields {
-                walk_value(field, program, mono);
+                walk_value(field, program, sema, mono);
             }
         }
         ValueKind::ArrayLit { elements, fill } => {
             for element in elements {
-                walk_value(element, program, mono);
+                walk_value(element, program, sema, mono);
             }
             if let Some(fill) = fill {
-                walk_value(fill, program, mono);
+                walk_value(fill, program, sema, mono);
             }
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
                 if let crate::ir::ValuePiece::Placeholder(inner) = piece {
-                    walk_value(inner, program, mono);
+                    walk_value(inner, program, sema, mono);
                 }
             }
         }
         ValueKind::Intrinsic { args, .. } => {
             for arg in args {
-                walk_value(arg, program, mono);
+                walk_value(arg, program, sema, mono);
             }
         }
-        ValueKind::Materialize { value, .. } => walk_value(value, program, mono),
+        ValueKind::Materialize { value, .. } => walk_value(value, program, sema, mono),
         ValueKind::Place(_)
         | ValueKind::Int(_)
         | ValueKind::Float(_)
