@@ -34,7 +34,8 @@ const ASSERTED_CODES: &[&str] = &[
     "E10039", "E10040", "E10041", "E10100", "E10101", "E10102", "E10103", "E10104", "E10200",
     "E10201", "E10202", "E10203", "E10204", "E10205", "E10206", "E10207", "E10208", "E10209",
     "E10210", "E10211", "E10212", "E10215", "E10216", "E10217", "E10218", "E10219", "E10220",
-    "E10221", "E10222", "E10223", "E10224", "E10226", "E10300", "E10301", "E10302", "E10305",
+    "E10221", "E10222", "E10223", "E10224", "E10226", "E10300", "E10301", "E10302", "E10303",
+    "E10304", "E10305", "E10306",
     "E10500", "E10501", "E10503", "E10600", "E10601", "E10602", "E10603", "E10604", "E11100",
     "E11101", "E11102", "E11103", "E11104", "E11105", "E11106", "E11200", "E11201", "E20000",
     "E20001", "E20002", "E20003", "E20004", "E20005", "E20006", "E20007", "E20008", "E90001",
@@ -46,8 +47,6 @@ const ASSERTED_CODES: &[&str] = &[
 const EXCLUDED_CODES: &[(&str, &str)] = &[
     ("E10213", "data inclusion is not part of the implemented language subset"),
     ("E10214", "data inclusion is not part of the implemented language subset"),
-    ("E10303", "callable bounds are not part of the implemented language subset"),
-    ("E10304", "callable bounds are not part of the implemented language subset"),
     (
         "E10400",
         "capturing a lambda is staged out; a capture list reports E90002 first",

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 09:02
-> **Progress**: 1/47 tasks (2%)
+> **Last Updated**: 2026-09-25 09:04
+> **Progress**: 3/47 tasks (6%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -51,8 +51,8 @@ stage 4 depends on the callable bound; volatile/MMIO is independent.
 goldens, and record the red phase.
 
 - [x] 1.1.1 [spec-author] Write the runnable generics cases from ST-1..ST-4 in a new spec suite — `compiler/tests/v1_language_spec_test.rs` ✅ (completed: 2026-09-25 09:02)
-- [ ] 1.1.2 [spec-author] Un-skip the generics compile-fail goldens: remove `E10303`/`E10304` from `EXCLUDED_CODES`, add `E10303`/`E10304`/`E10306` to `ASSERTED_CODES`, drop the `// stage:` annotation from `E10306`, and add the ST-27 golden — `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/{E10306_generic_ephemeral_arg,E10305_generic_struct_recursion}.clo`
-- [ ] 1.1.3 Run the suite and record the red phase: the new generics cases and the un-skipped goldens fail; no existing case regresses
+- [x] 1.1.2 [spec-author] Un-skip the generics compile-fail goldens: remove `E10303`/`E10304` from `EXCLUDED_CODES`, add `E10303`/`E10304`/`E10306` to `ASSERTED_CODES`, drop the `// stage:` annotation from `E10306`, and add the ST-27 golden — `compiler/tests/compile_fail_spec_test.rs`, `spec/tests/compile-fail/{E10306_generic_ephemeral_arg,E10305_generic_struct_recursion}.clo` ✅ (completed: 2026-09-25 09:03)
+- [x] 1.1.3 Run the suite and record the red phase: the new generics cases and the un-skipped goldens fail; no existing case regresses ✅ (completed: 2026-09-25 09:04) — red: 4 goldens (E10303/E10304/E10306/E10305-struct) and all 4 runnable cases fail; E10305-struct currently overflows the compiler stack
 
 **Deliverables**:
 - The generics spec-test cases and the un-skipped goldens
