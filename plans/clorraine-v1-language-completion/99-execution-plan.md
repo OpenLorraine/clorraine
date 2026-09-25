@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 15:50
-> **Progress**: 42/49 tasks (86%; Phase 2 complete and reviewed; Phase 3 volatile and MMIO implemented and green on `make check` plus the hosted-amiga corpus; implementation tests and the phase-end `make verify` remain)
+> **Last Updated**: 2026-09-25 15:58
+> **Progress**: 45/49 tasks (92%; Phase 3 complete and green — volatile intrinsics, the volatile global qualifier, and the `std.amiga.custom` MMIO module; under post-phase review)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -224,9 +224,9 @@ qualifier, and add the wrapper module.
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) ST-20..ST-26 · AR-19, AR-20
 **Objective**: green the volatile phase.
 
-- [ ] 3.3.1 Add volatile implementation and unit tests (global qualifier, module registration, lowering forms) — `compiler/tests/v1_language_impl_test.rs`, in-module tests
-- [ ] 3.3.2 Verify the volatile suite is green — `make check`
-- [ ] 3.3.3 Verify the volatile phase end to end, including the hosted-amiga MMIO corpus — `make verify`
+- [x] 3.3.1 Add volatile implementation and unit tests (global qualifier, module registration, lowering forms) — `compiler/tests/v1_language_impl_test.rs`, in-module tests ✅ (completed: 2026-09-25 15:54; impl tests for the C global qualifier, the two volatile access forms, and the `const raw` field write; a `consts` unit test for the folded `raw` cast; a `stdlib` unit test for the `std.amiga.custom` registration)
+- [x] 3.3.2 Verify the volatile suite is green — `make check` ✅ (completed: 2026-09-25 15:55; `make check` exit 0 — spec check OK, all 17 Rust targets green)
+- [x] 3.3.3 Verify the volatile phase end to end, including the hosted-amiga MMIO corpus — `make verify` ✅ (completed: 2026-09-25 15:58; `make verify` exit 0 — "verify: all legs passed", including the `volatile-mmio` corpus on hosted-amiga)
 
 **Deliverables**:
 - The six intrinsics, the volatile global qualifier, and the MMIO module working

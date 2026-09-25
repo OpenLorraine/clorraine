@@ -410,3 +410,71 @@ func main(): i32 {
         "a capture-less lambda must not use the two-word closure struct"
     );
 }
+
+#[test]
+fn a_volatile_module_global_keeps_the_c_qualifier() {
+    let source = r#"module tests.v1.impl.volatile_global;
+
+volatile let ticks: u32 = 0;
+
+func main(): i32 {
+    ticks = ticks + 1;
+    return i32(ticks);
+}
+"#;
+    let emitted = emit("volatile-global", source);
+    assert!(
+        emitted.contains("static volatile u32"),
+        "a `volatile let` must emit a C `volatile` static, not a plain one"
+    );
+}
+
+#[test]
+fn the_volatile_intrinsics_emit_a_volatile_access() {
+    let source = r#"module tests.v1.impl.volatile_forms;
+
+func demo(): i32 {
+    let value: u16 = 0;
+    unsafe {
+        let p: raw u16 = &value;
+        writeVolatile16(p, 0x1234);
+        return i32(readVolatile16(p));
+    }
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let emitted = emit("volatile-forms", source);
+    assert!(
+        count(&emitted, "*(volatile u16 *)") >= 2,
+        "both the read and the write must reach a `volatile u16` pointee access"
+    );
+}
+
+#[test]
+fn a_field_write_through_a_const_raw_global_is_allowed() {
+    // A `const raw` register base is an immutable pointer, but writing its
+    // pointee is a hardware access, not a write to the binding.
+    let source = r#"module tests.v1.impl.raw_base;
+
+struct Regs {
+    dmacon: volatile u16;
+}
+
+const BASE: raw Regs = raw Regs(0x00DFF000);
+
+func main(): i32 {
+    unsafe {
+        BASE.dmacon = 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit("raw-base", source);
+    assert!(
+        emitted.contains("->dmacon"),
+        "the register write must dereference the raw base"
+    );
+}

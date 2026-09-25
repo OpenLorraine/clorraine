@@ -616,3 +616,32 @@ fn an_unknown_intrinsic_is_not_constant() {
         Err(ConstError::NotConstant(_))
     ));
 }
+
+/// A raw cast `raw T(value)`.
+fn raw_cast(target: &str, value: Expr) -> Expr {
+    Expr {
+        kind: ExprKind::RawCast {
+            ty: named_type(target),
+            value: Box::new(value),
+        },
+        span: span(),
+    }
+}
+
+#[test]
+fn a_raw_cast_of_an_integer_address_is_constant() {
+    // A module-level register base is `raw T(0xADDRESS)`; the address is the
+    // constant and the raw target only names the pointer type.
+    assert_eq!(
+        fold(&raw_cast("Regs", int(0x00DFF000))),
+        Ok(ConstValue::Int(0x00DFF000))
+    );
+}
+
+#[test]
+fn a_raw_cast_of_a_non_integer_is_not_constant() {
+    assert!(matches!(
+        fold(&raw_cast("Regs", boolean(true))),
+        Err(ConstError::NotConstant(_))
+    ));
+}

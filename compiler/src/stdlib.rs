@@ -297,6 +297,14 @@ mod tests {
     }
 
     #[test]
+    fn the_custom_module_is_registered_with_its_wrappers() {
+        assert!(lookup("std.amiga.custom").is_some());
+        assert!(source("std.amiga.custom").is_some());
+        assert!(exports("std.amiga.custom", "setDma"));
+        assert!(exports("std.amiga.custom", "setColor"));
+    }
+
+    #[test]
     fn embedded_sources_match_their_export_table_entry() {
         for module in SOURCES {
             assert!(
