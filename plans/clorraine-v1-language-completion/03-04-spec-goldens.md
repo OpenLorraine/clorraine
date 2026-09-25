@@ -19,6 +19,7 @@ golden-data edits (AR-3, AR-32). No other document restates them.
 | `spec/14-diagnostics.md` | `E90002` marked reserved with no trigger; `E10303`/`E10304`/`E10306` and `E10400`-`E10404` lose any "staged" wording | AR-21, AR-25 |
 | `spec/tests/compile-fail/E10303_callable_bound_violated.clo` | Asserted (removed from the excluded list) | AR-25 |
 | `spec/tests/compile-fail/E10304_callable_value_stored.clo` | Asserted (removed from the excluded list) | AR-25 |
+| `spec/tests/compile-fail/E10305_generic_struct_recursion.clo` | New golden: a recursive generic-struct instantiation is `E10305` | AR-18 |
 | `spec/tests/compile-fail/E10306_generic_ephemeral_arg.clo` | Remove the `// stage:` annotation; assert `E10306` | AR-16 |
 | `spec/tests/compile-fail/E10400_capturing_lambda_as_func.clo` | Asserted (removed from the excluded list) | AR-10 |
 | `spec/tests/compile-fail/E10401..E10404` | Remove the `// stage:` annotations; assert each | AR-13, AR-14, AR-22 |

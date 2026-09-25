@@ -74,8 +74,8 @@
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/v1_language_spec_test.rs` | ST-1..ST-4, ST-27, ST-10..ST-14, ST-20..ST-24 | Generics, lambdas, volatile (runnable) |
-| `compiler/tests/compile_fail_spec_test.rs` | ST-5..ST-9, ST-15..ST-19, ST-22, ST-25 | Generics, lambdas, volatile (goldens) |
+| `compiler/tests/v1_language_spec_test.rs` | ST-1..ST-4, ST-10..ST-14, ST-20..ST-24 | Generics, lambdas, volatile (runnable) |
+| `compiler/tests/compile_fail_spec_test.rs` | ST-5..ST-9, ST-27, ST-15..ST-19, ST-22, ST-25 | Generics, lambdas, volatile (goldens) |
 | `compiler/tests/corpus_spec_test.rs` + `spec/tests/corpus/volatile-mmio/` | ST-26 | MMIO wrapper (hosted-amiga) |
 
 ### Implementation Tests (edge cases, internals)
