@@ -172,8 +172,16 @@ impl Checker<'_, '_> {
                 ty
             }
             LambdaBody::Block(block) => {
+                // A block body infers its return type from its `return`
+                // statements. The enclosing return type is hidden while the
+                // body is checked so a `return` inside the lambda is not
+                // compared against the enclosing function's type.
+                let saved_returns = std::mem::replace(&mut self.returns, Ty::unknown());
+                self.lambda_returns.push(None);
                 self.check_block(block);
-                Ty::void()
+                let inferred = self.lambda_returns.pop().flatten();
+                self.returns = saved_returns;
+                inferred.unwrap_or_else(Ty::void)
             }
         };
         self.lambda_captures.pop();

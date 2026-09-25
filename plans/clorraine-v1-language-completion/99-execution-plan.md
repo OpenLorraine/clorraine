@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 15:23
-> **Progress**: 34/49 tasks (69%; Phase 2 complete — lambdas stages 1-4 implemented, tested, and documented; `make verify` green)
+> **Last Updated**: 2026-09-25 15:26
+> **Progress**: 34/49 tasks (69%; Phase 2 complete and reviewed — lambdas stages 1-4 implemented, tested, documented; `make verify` green)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -163,6 +163,18 @@ rules.
 - Spec prose aligned
 
 **Verify**: `make verify`.
+
+### Phase 2 review (strict profile)
+
+Reviewed inline on 2026-09-25 (independent reviewer agents are manual-only in
+this environment and the shared quality-profile file is absent, so the review
+ran on the Phase 2 diff `e14fb1e..HEAD`). Findings:
+
+| # | Severity | Finding | Resolution |
+|---|----------|---------|------------|
+| R2-1 | 🟠 Major | A block-bodied lambda that used `return expr;` was rejected: `check_lambda` typed a block body as `void`, so binding it to `func(i32): i32` reported `E10210`. The grammar (§8) allows `expression \| block` as a lambda body, so this rejected valid in-scope syntax. | Fixed as a necessary correction: the semantic stage now infers a block body's return type from its first value `return` (bare `return;` in a block lambda is not the void-return error). Covered by the impl test `a_block_body_lambda_infers_its_return_type`; `make check` and `make verify` re-run green. |
+| R2-2 | 🟡 Minor | A lambda defined inside a generic body is out of scope, so it is lifted once rather than per instantiation. | Report-only; no ST case or golden covers it, and the design excludes it. |
+| R2-3 | 🟡 Minor | Several `return`s in a block-bodied lambda with conflicting types are not diagnosed; the first non-void type wins. | Report-only; type unification is not specified and no test covers it. |
 
 ---
 

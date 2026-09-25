@@ -366,6 +366,25 @@ func main(): i32 {
 }
 
 #[test]
+fn a_block_body_lambda_infers_its_return_type() {
+    let source = r#"module tests.v1.impl.block_return;
+
+func apply2(x: i32, f: func(i32): i32): i32 {
+    return f(f(x));
+}
+
+func main(): i32 {
+    return apply2(3, (x: i32) => { return x + 1; });
+}
+"#;
+    let emitted = emit("block-return", source);
+    assert!(
+        emitted.contains("i32 cl_lambda_0("),
+        "a block body's `return x + 1` must infer an i32 return, not void"
+    );
+}
+
+#[test]
 fn a_captureless_lambda_needs_no_environment() {
     let source = r#"module tests.v1.impl.captureless;
 

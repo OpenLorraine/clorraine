@@ -121,6 +121,11 @@ struct Checker<'a, 'd> {
     /// The capture lists of the lambdas currently being checked, innermost
     /// last. A body write or move of a name found here is a capture error.
     lambda_captures: Vec<Vec<CaptureInfo>>,
+    /// The return type inferred for each block-bodied lambda currently being
+    /// checked, innermost last. Each `return` in the body records the first
+    /// non-`void` value type here, so a block body gets the same return type an
+    /// expression body would.
+    lambda_returns: Vec<Option<Ty>>,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
     /// The selected profile, so profile-surface rules can be reported here.
@@ -150,6 +155,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             next_closure_id,
             closures: Vec::new(),
             lambda_captures: Vec::new(),
+            lambda_returns: Vec::new(),
             diagnostics,
             profile,
         }
@@ -373,6 +379,19 @@ impl<'a, 'd> Checker<'a, 'd> {
                 "add the borrow capture",
                 target.span,
             );
+        }
+    }
+
+    /// Records the returned type of the block-bodied lambda being checked.
+    ///
+    /// The first non-`void` `return` value fixes the lambda's return type; a
+    /// block with no value `return` stays `void`. A `return` from an enclosing
+    /// function, not inside a block-bodied lambda, is ignored.
+    fn record_lambda_return(&mut self, ty: &Ty) {
+        if let Some(slot) = self.lambda_returns.last_mut() {
+            if slot.is_none() && !ty.is_void() {
+                *slot = Some(ty.clone());
+            }
         }
     }
 

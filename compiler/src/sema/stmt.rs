@@ -57,10 +57,13 @@ impl Checker<'_, '_> {
                             self.reject_ephemeral_storage(&value_ty, value.span);
                         }
                         self.reject_capture_move(value);
+                        self.record_lambda_return(&value_ty);
                     }
-                    // A bare `return;` suits only a `void` function; anywhere
-                    // else it returns nothing where a value is required.
-                    None if !returns.is_void() => {
+                    // A block-bodied lambda infers its return type from its
+                    // `return` statements, so a bare `return;` there is not the
+                    // void-return error. Anywhere else it returns nothing where
+                    // the declared type needs a value.
+                    None if !returns.is_void() && self.lambda_returns.is_empty() => {
                         self.error(
                             "E10200",
                             format!("cannot convert '()' to '{}' implicitly", returns.display()),
