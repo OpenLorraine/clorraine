@@ -8,8 +8,6 @@
 //! from the typed IR, every type is read from the value rather than inferred
 //! again from the source tree.
 
-use std::collections::BTreeMap;
-
 use crate::ast::{BinaryOp, ScalarType, UnaryOp};
 use crate::ir::{
     Place, PlaceBase, Projection, Value, ValueKind, ValuePiece,
@@ -222,29 +220,12 @@ impl<'a> Emitter<'a> {
     /// projection or index picks the right C type.
     fn field_type(&self, base: &Ty, field: &str) -> Ty {
         match &base.kind {
-            TyKind::Struct(name, args) => {
-                let declared = self
-                    .sema
-                    .table
-                    .struct_fields(name)
-                    .and_then(|fields| {
-                        fields
-                            .iter()
-                            .find(|(declared, _)| declared == field)
-                            .map(|(_, ty)| ty.clone())
-                    })
-                    .unwrap_or_else(Ty::unknown);
-                let params = self.sema.table.struct_type_params(name).unwrap_or(&[]);
-                if params.is_empty() || args.is_empty() {
-                    return self.substitute(&declared);
-                }
-                let bindings: BTreeMap<String, Ty> = params
-                    .iter()
-                    .cloned()
-                    .zip(args.iter().cloned())
-                    .collect();
-                self.substitute(&crate::types::substitute(&declared, &bindings))
-            }
+            TyKind::Struct(..) => self
+                .sema
+                .table
+                .instance_field(base, field)
+                .map(|declared| self.substitute(&declared))
+                .unwrap_or_else(Ty::unknown),
             TyKind::Raw(inner) => self.field_type(inner, field),
             _ => Ty::unknown(),
         }
@@ -587,8 +568,9 @@ impl<'a> Emitter<'a> {
     ///
     /// The cast names the literal's concrete type so a generic instantiation
     /// takes its instantiated C struct. A field the literal omits gets the
-    /// field type's empty state, with the active substitution applied so a
-    /// generic body's field is concrete.
+    /// field type's empty state: the instance's type arguments are substituted
+    /// (so a nested generic field becomes a zero state, not a scalar `0`), and
+    /// the active generic context's substitution is applied on top.
     fn struct_literal(&self, ty: &Ty, name: &str, fields: &[(String, Value)]) -> String {
         let declared = self
             .sema
@@ -597,11 +579,11 @@ impl<'a> Emitter<'a> {
             .map(<[(String, Ty)]>::to_vec)
             .unwrap_or_default();
         let mut values: Vec<String> = Vec::new();
-        for (field, field_ty) in &declared {
+        for (field, _) in &declared {
             match fields.iter().find(|(written, _)| written == field) {
                 Some((_, value)) => values.push(self.value(value)),
                 None => {
-                    let empty = self.empty_state(&self.substitute(field_ty));
+                    let empty = self.empty_state(&self.field_type(ty, field));
                     values.push(empty);
                 }
             }

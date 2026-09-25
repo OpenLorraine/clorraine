@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 20:07
-> **Progress**: 15/24 tasks (63%)
+> **Last Updated**: 2026-09-25 20:10
+> **Progress**: 19/24 tasks (79%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -178,10 +178,10 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-03](03-03-ownership-codegen.md) §Implementation Details · [AR-10, AR-11, AR-12, AR-14]
 **Objective**: Substitute in the ownership read, drop emission, and the zero-value initializer.
 
-- [ ] 3.2.1 Route `own/expr.rs::member_type` through `TypeTable::instance_field` — `compiler/src/own/expr.rs`
-- [ ] 3.2.2 Substitute in `codegen/drop.rs::emit_drop_expr` and `emits_drop` (apply `self.substitute` after the instance substitution) — `compiler/src/codegen/drop.rs`
-- [ ] 3.2.3 Substitute the omitted-field zero state in `struct_literal` via `self.field_type(ty, field)`, and consolidate `codegen/expr.rs::field_type` onto `instance_field` — `compiler/src/codegen/expr.rs`
-- [ ] 3.2.4 Confirm the Step 3.1 cases PASS (green)
+- [x] 3.2.1 Route `own/expr.rs::member_type` through `TypeTable::instance_field` — `compiler/src/own/expr.rs` ✅ (completed: 2026-09-25 20:10)
+- [x] 3.2.2 Substitute in `codegen/drop.rs::emit_drop_expr` and `emits_drop` (apply `self.substitute` after the instance substitution) — `compiler/src/codegen/drop.rs` ✅ (completed: 2026-09-25 20:10)
+- [x] 3.2.3 Substitute the omitted-field zero state in `struct_literal` via `self.field_type(ty, field)`, and consolidate `codegen/expr.rs::field_type` onto `instance_field` — `compiler/src/codegen/expr.rs` ✅ (completed: 2026-09-25 20:10)
+- [x] 3.2.4 Confirm the Step 3.1 cases PASS (green) ✅ (completed: 2026-09-25 20:10)
 
 **Deliverables**:
 - ST-3, ST-5, ST-6, ST-7, ST-12 pass

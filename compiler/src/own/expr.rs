@@ -201,18 +201,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// The type of a field selected from `base`, following a raw pointer.
+    ///
+    /// The instance's type arguments are substituted into the declaration, so a
+    /// field of an instantiated generic struct has its concrete type rather than
+    /// the bare parameter.
     pub(super) fn member_type(&self, base: &Ty, field: &str) -> Ty {
         match &base.kind {
-            TyKind::Struct(name, _) => self
+            TyKind::Struct(..) => self
                 .sema
                 .table
-                .struct_fields(name)
-                .and_then(|fields| {
-                    fields
-                        .iter()
-                        .find(|(declared, _)| declared == field)
-                        .map(|(_, ty)| ty.clone())
-                })
+                .instance_field(base, field)
                 .unwrap_or_else(Ty::unknown),
             TyKind::Raw(inner) => self.member_type(inner, field),
             _ => Ty::unknown(),

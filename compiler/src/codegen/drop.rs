@@ -8,7 +8,7 @@
 
 use crate::borrow::is_view;
 use crate::ir::Place;
-use crate::types::{Ty, TyKind};
+use crate::types::{substitute_instance, Ty, TyKind};
 
 use super::Emitter;
 
@@ -37,14 +37,21 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    if ({c_name}) {{ {deleter}({c_name}); }}"));
                 self.push(&format!("    {c_name} = {null};"));
             }
-            TyKind::Struct(name, _) => {
+            TyKind::Struct(name, args) => {
                 let fields = self
                     .sema
                     .table
                     .struct_fields(name)
                     .map(<[(String, Ty)]>::to_vec)
                     .unwrap_or_default();
-                for (field, field_ty) in fields {
+                let params = self
+                    .sema
+                    .table
+                    .struct_type_params(name)
+                    .unwrap_or(&[])
+                    .to_vec();
+                for (field, declared) in fields {
+                    let field_ty = self.substitute(&substitute_instance(&declared, &params, args));
                     if !self.needs_drop(&field_ty) {
                         continue;
                     }
@@ -66,12 +73,23 @@ impl<'a> Emitter<'a> {
         }
         match &ty.kind {
             TyKind::Handle(_) => true,
-            TyKind::Struct(name, _) => self
-                .sema
-                .table
-                .struct_fields(name)
-                .map(|fields| fields.iter().any(|(_, field_ty)| self.emits_drop(field_ty)))
-                .unwrap_or(false),
+            TyKind::Struct(name, args) => {
+                let fields = self
+                    .sema
+                    .table
+                    .struct_fields(name)
+                    .map(<[(String, Ty)]>::to_vec)
+                    .unwrap_or_default();
+                let params = self
+                    .sema
+                    .table
+                    .struct_type_params(name)
+                    .unwrap_or(&[])
+                    .to_vec();
+                fields.iter().any(|(_, declared)| {
+                    self.emits_drop(&self.substitute(&substitute_instance(declared, &params, args)))
+                })
+            }
             _ => false,
         }
     }
