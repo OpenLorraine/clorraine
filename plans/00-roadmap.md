@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-25 01:35
+> **Last Updated**: 2026-09-25 08:58
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -18,7 +18,7 @@
 | PLAN-01 | Clorraine compiler MVP | — | [clorraine-compiler-mvp](clorraine-compiler-mvp/00-index.md) | Done | ✅ | 2026-09-21 | — |
 | PLAN-02 | Clorraine build/run driver | — | [clorraine-driver](clorraine-driver/00-index.md) | Done | ✅ | 2026-09-23 | PLAN-01 |
 | PLAN-03 | Freestanding (LorraineOS) profile | — | [clorraine-freestanding-profile](clorraine-freestanding-profile/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
-| PLAN-04 | Clorraine v1 language completion | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-01 |
+| PLAN-04 | Clorraine v1 language completion | — | [clorraine-v1-language-completion](clorraine-v1-language-completion/00-index.md) | Plan Preflighted | 🔬 | 2026-09-25 | depends on PLAN-01 |
 | PLAN-05 | Developer tooling and install path | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-04 |
 | PLAN-06 | LorraineOS bring-up (downstream) | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-03; separate repository |
 | PLAN-07 | ARM64 port | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-06 |
