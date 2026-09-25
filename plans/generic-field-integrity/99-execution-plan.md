@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 19:54
-> **Progress**: 9/24 tasks (38%)
+> **Last Updated**: 2026-09-25 20:00
+> **Progress**: 11/24 tasks (46%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -126,8 +126,8 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [03-02](03-02-checker.md) §Implementation Details · [AR-9, AR-13]
 **Objective**: Substitute in the overlay walk and route checker field reads through the helper.
 
-- [ ] 2.2.1 Substitute instance arguments in `overlay_reached`; replace `Checker::field_type`'s body with `TypeTable::instance_field` and follow a `TyKind::Raw` base — `compiler/src/sema/mod.rs`, `compiler/src/sema/expr.rs`
-- [ ] 2.2.2 Confirm the Step 2.1 cases PASS (green)
+- [x] 2.2.1 Substitute instance arguments in `overlay_reached`; replace `Checker::field_type`'s body with `TypeTable::instance_field` and follow a `TyKind::Raw` base — `compiler/src/sema/mod.rs`, `compiler/src/sema/expr.rs` ✅ (completed: 2026-09-25 20:00)
+- [x] 2.2.2 Confirm the Step 2.1 cases PASS (green) ✅ (completed: 2026-09-25 20:00)
 
 **Deliverables**:
 - ST-1, ST-2, ST-10, ST-11 pass; the DEF-05 field-bound cases still pass

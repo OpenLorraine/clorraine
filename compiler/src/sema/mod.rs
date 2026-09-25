@@ -24,7 +24,10 @@ use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::profile::Profile;
 use crate::span::Span;
-use crate::types::{resolve_ty_with, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind, TypeTable};
+use crate::types::{
+    resolve_ty_with, substitute_instance, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind,
+    TypeTable,
+};
 
 pub(crate) mod call;
 mod expr;
@@ -312,14 +315,15 @@ impl<'a, 'd> Checker<'a, 'd> {
         match &ty.kind {
             TyKind::Raw(_) => None,
             TyKind::Array { element, .. } => self.overlay_reached(element, depth + 1),
-            TyKind::Struct(name, _) => {
+            TyKind::Struct(name, args) => {
                 if self.table.is_overlay(name) {
                     return Some(name.clone());
                 }
+                let params = self.table.struct_type_params(name).unwrap_or(&[]);
                 self.table.struct_fields(name).and_then(|fields| {
-                    fields
-                        .iter()
-                        .find_map(|(_, field)| self.overlay_reached(field, depth + 1))
+                    fields.iter().find_map(|(_, field)| {
+                        self.overlay_reached(&substitute_instance(field, params, args), depth + 1)
+                    })
                 })
             }
             _ => None,
