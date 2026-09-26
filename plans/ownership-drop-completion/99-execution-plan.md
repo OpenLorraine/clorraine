@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 19:59
-> **Progress**: 34/48 tasks (71%)
+> **Last Updated**: 2026-09-26 20:01
+> **Progress**: 36/48 tasks (75%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -230,8 +230,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-03](03-03-view-field-enforcement.md) · [07](07-testing-strategy.md) · AR-4, AR-10, AR-20
 **Objective**: Express the field and fill rules as failing tests.
 
-- [ ] 4.1.1 [spec-author] Write specification tests for ST-4, ST-5, ST-6, ST-10, ST-11, ST-12 — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 4.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase)
+- [x] 4.1.1 [spec-author] Write specification tests for ST-4, ST-5, ST-6, ST-10, ST-11, ST-12 — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 20:00) — six cases plus the ST-12 slice companion; ST-4, ST-10, and ST-12 are the new-behavior cases, ST-5, ST-6, ST-11, and the slice companion pin behavior that already holds
+- [x] 4.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase) ✅ (completed: 2026-09-26 20:01) — spec check OK; the only failures are `should_reject_a_slice_view_field`, `should_reject_a_fill_of_a_move_only_element`, and `should_report_e10101_when_a_fixed_array_reaches_an_uncontracted_extern`, each on the missing expected diagnostic
 
 **Deliverables**:
 - The six ST cases exist and fail before the fix

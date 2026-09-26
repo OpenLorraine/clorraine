@@ -427,3 +427,168 @@ func main(): i32 { demo(); return 0; }
         "the growable drop must free the buffer; emitted C:\n{emitted}"
     );
 }
+
+/// `spec/08-arrays-strings.md`: a struct field may not be a view. A slice
+/// `u8[]` is a pointer and a length over storage owned elsewhere, so a struct
+/// that stored one could outlive the storage it points at; the field is
+/// `E10205`.
+#[test]
+fn should_reject_a_slice_view_field() {
+    assert_reports(
+        "e10205-slice-field",
+        r#"module tests.od.view_field_slice;
+
+struct Bad {
+    part: u8[];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+        &["error E10205: view-typed field 'part' is not allowed"],
+    );
+}
+
+/// A plain `str` field is a view as well — the original shape of the rule —
+/// and stays `E10205`.
+#[test]
+fn should_reject_a_str_view_field() {
+    assert_reports(
+        "e10205-str-field",
+        r#"module tests.od.view_field_str;
+
+struct Bad {
+    part: str;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+        &["error E10205: view-typed field 'part' is not allowed"],
+    );
+}
+
+/// A struct may hold owned storage, a literal (`static str`), an FFI pointer
+/// (`cstring`), and an owned fixed array; none of those is a view.
+#[test]
+fn should_accept_a_struct_with_owned_literal_pointer_and_fixed_array_fields() {
+    assert_accepts(
+        "view-field-allowed",
+        r#"module tests.od.view_field_allowed;
+
+import { String } from std.text;
+
+struct Ok {
+    name: String;
+    tag: static str;
+    path: cstring;
+    row: u8[8];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+    );
+}
+
+/// A fill repeats one value into every element, so the element must be
+/// duplicable. A move-only element would be copied into each slot and then
+/// released once per slot, freeing the same storage twice; the literal is
+/// `E10215`.
+#[test]
+fn should_reject_a_fill_of_a_move_only_element() {
+    assert_reports(
+        "e10215-fill-move-only",
+        r#"module tests.od.fill_move_only;
+
+import { String } from std.text;
+
+func demo(a: String): void {
+    let xs: String[2] = [; a];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+        &["error E10215: array fill requires a fixed extent"],
+    );
+}
+
+/// A fill of a duplicable element is the ordinary zero-initializer form.
+#[test]
+fn should_accept_a_fill_of_a_duplicable_element() {
+    assert_accepts(
+        "fill-duplicable",
+        r#"module tests.od.fill_duplicable;
+
+func demo(): void {
+    let xs: u8[4] = [; 0];
+}
+
+func main(): i32 {
+    demo();
+    return 0;
+}
+"#,
+    );
+}
+
+/// `spec/12-ffi-contracts.md`: an uncontracted parameter accepts only scalars,
+/// `raw`, `cstring`, views, and `null`. A fixed array is owned inline storage,
+/// so passing one is `E10101` even inside `unsafe`.
+#[test]
+fn should_report_e10101_when_a_fixed_array_reaches_an_uncontracted_extern() {
+    assert_reports(
+        "e10101-fixed-array",
+        r#"module tests.od.fixed_array_extern;
+
+ffi lib {
+    func RawConsume(data: u8[4]): i32;
+}
+
+func demo(xs: u8[4]): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = RawConsume(xs);
+    }
+    return n;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+        &["error E10101: 'RawConsume' has no contract for parameter 'data'"],
+    );
+}
+
+/// The same uncontracted signature accepts a slice: it is a view over storage
+/// owned elsewhere, so the call carries no ownership the callee could keep.
+#[test]
+fn should_accept_a_slice_passed_to_an_uncontracted_extern() {
+    assert_accepts(
+        "slice-extern",
+        r#"module tests.od.slice_extern;
+
+ffi lib {
+    func RawConsume(data: u8[]): i32;
+}
+
+func demo(s: u8[]): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = RawConsume(s);
+    }
+    return n;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+    );
+}
