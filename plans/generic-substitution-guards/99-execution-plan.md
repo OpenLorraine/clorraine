@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 22:40
-> **Progress**: 10/13 tasks (77%)
+> **Last Updated**: 2026-09-26 22:49
+> **Progress**: 13/13 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -109,7 +109,7 @@ scope (AR-19).
 
 ## Phase 2: Full acceptance and closeout
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `25baa175de43f0afdaba7b3f82fda281295aede8`
 > **Expected modification set**: `plans/00-roadmap.md`,
 > `plans/generic-substitution-guards/99-execution-plan.md`, `AGENTS.md` only if a
 > factual note changed (strict scope)
@@ -120,9 +120,9 @@ scope (AR-19).
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria · AR-12, AR-16
 **Objective**: Prove the whole feature and record completion.
 
-- [ ] 2.1.1 Full acceptance run — `make verify`
-- [ ] 2.1.2 Trace R1–R8 to the passing ST cases and record the close-out evidence — `plans/generic-substitution-guards/99-execution-plan.md`
-- [ ] 2.1.3 Mark DEF-12 Fixed on `plans/00-roadmap.md`, set this plan's row to Done and link it; update `AGENTS.md` only if a factual note changed
+- [x] 2.1.1 Full acceptance run — `make verify` ✅ (completed: 2026-09-26 22:48)
+- [x] 2.1.2 Trace R1–R8 to the passing ST cases and record the close-out evidence — `plans/generic-substitution-guards/99-execution-plan.md` ✅ (completed: 2026-09-26 22:49)
+- [x] 2.1.3 Mark DEF-12 Fixed on `plans/00-roadmap.md`, set this plan's row to Done and link it; update `AGENTS.md` only if a factual note changed ✅ (completed: 2026-09-26 22:49)
 
 **Deliverables**:
 - `make verify` green; every requirement traced to a passing case; roadmap and plan status updated
@@ -153,3 +153,29 @@ Phase 2 (full acceptance)
 6. ✅ Documentation updated — roadmap DEF-12 fixed; plan done
 7. ✅ Code reviewed (strict profile — independent review of the phase diff)
 8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
+
+---
+
+## Close-out: Requirement Traceability
+
+Every requirement of `01-requirements.md` traces to a passing case.
+
+| Requirement | Specification cases (`ownership_drop_spec_test.rs`) | Implementation tests / evidence |
+| ----------- | -------------------------------------------------- | ------------------------------- |
+| R1 — view-field guard at the instance | ST-1, ST-2, ST-3 (reject), ST-4, ST-5 (recorded instances), ST-6 (accept), ST-8 (concrete not re-reported) | unit `a_declaration_named_nested_instance_reports_the_inner_field`, `the_parameter_mention_gate_skips_concrete_fills` |
+| R2 — fill guard at the instance | ST-9, ST-10, ST-11, ST-13 (reject), ST-12 (duplicable accept) | unit `a_multi_extent_fill_uses_the_base_element`, `a_fill_in_a_local_statement_is_audited`, `a_fill_in_a_return_terminator_is_audited`, `a_duplicable_fill_is_accepted`; ST-15 |
+| R3 — scoped to substituted types | ST-7 (two audit errors on a sema-clean program), ST-8, ST-14 (concrete case reported once) | unit `the_parameter_mention_gate_skips_concrete_fills`; review traced the driver gate `compiler/src/driver.rs:296` |
+| R4 — deterministic coverage of the recorded set | ST-1..ST-13 (explicit and inferred), ST-15 | unit tests cover locals, returns, and multi-extent; AR-19 records the unrecorded gaps |
+| R5 — audit boundary | ST-12 (legal instance emits no diagnostic) | unit `a_duplicable_fill_is_accepted`; `comptime` generics stay `E90001` in the unchanged type stage; the lifted-lambda fill stays out of scope (AR-19) |
+| R6 — no regressions | every existing spec test plus all ST cases | `make check` (20 suites; `spec check: OK`) and `make verify` (corpus, vbcc, FS-UAE, run-fault all passed) |
+| R7 — no frozen-artifact change | — | the phase diff touches no `spec/`, `stdlib/`, or corpus source |
+| R8 — diagnostic parity | ST-1, ST-9 assert the exact message | help parity is structural: both the audit and the declaration-site guards use the literals at `compiler/src/sema/items.rs:43` and `compiler/src/sema/expr.rs:713` |
+
+**Acceptance evidence**
+
+- `cargo test -p clc --test ownership_drop_spec_test` → 36 passed (10 red before the fix, all green after).
+- `cargo test -p clc --lib instance_check` → 6 passed.
+- `cargo test -p clc --test ownership_drop_impl_test` → 14 passed.
+- `make check` → exit 0 (`spec check: OK (27 files, 104 compile-fail tests)`; 20 suites ok).
+- `make verify` → exit 0 (corpus, vbcc, FS-UAE, and the six run-fault programs).
+- Phase 1 independent correctness review → no findings.
