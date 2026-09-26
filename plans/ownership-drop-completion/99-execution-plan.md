@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 20:12
-> **Progress**: 41/48 tasks (85%)
+> **Last Updated**: 2026-09-26 20:14
+> **Progress**: 43/48 tasks (90%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -261,8 +261,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-03](03-03-view-field-enforcement.md) §Testing Requirements · PF-013
 **Objective**: Cover the edges of the two checks.
 
-- [ ] 4.3.1 Add edge tests: a nullable view field, a 1-D move-only fill (not a multi-dimensional fill), and a nested fixed array field — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 4.3.2 Run `make check` (phase gate)
+- [x] 4.3.1 Add edge tests: a nullable view field, a 1-D move-only fill (not a multi-dimensional fill), and a nested fixed array field — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 20:14)
+- [x] 4.3.2 Run `make check` (phase gate) ✅ (completed: 2026-09-26 20:14) — spec check OK; 20 suites green
 
 **Deliverables**:
 - Nullable `str?`/slice fields are rejected; the allowed fields stay allowed

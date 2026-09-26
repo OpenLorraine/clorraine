@@ -592,3 +592,80 @@ func main(): i32 {
 "#,
     );
 }
+
+/// The nullable suffix does not change what a field is: `str?` is still a
+/// `str` view and `u8[]?` is still a slice view, so both are `E10205`.
+#[test]
+fn should_reject_a_nullable_view_field() {
+    assert_reports(
+        "e10205-nullable-str",
+        r#"module tests.od.nullable_str_field;
+
+struct Bad {
+    part: str?;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+        &["error E10205: view-typed field 'part' is not allowed"],
+    );
+    assert_reports(
+        "e10205-nullable-slice",
+        r#"module tests.od.nullable_slice_field;
+
+struct Bad {
+    part: u8[]?;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+        &["error E10205: view-typed field 'part' is not allowed"],
+    );
+}
+
+/// A one-dimensional prefix-plus-fill literal repeats the fill value, so a
+/// move-only fill is `E10215` even when a prefix element is present.
+#[test]
+fn should_reject_a_prefix_and_fill_literal_of_a_move_only_element() {
+    assert_reports(
+        "e10215-prefix-fill",
+        r#"module tests.od.fill_prefix_move;
+
+import { String, stringOf } from std.text;
+
+func demo(): void {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    let xs: String[3] = [a; b];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+        &["error E10215: array fill requires a fixed extent"],
+    );
+}
+
+/// A multi-dimensional fixed array is owned inline storage, so a struct field
+/// may hold one.
+#[test]
+fn should_accept_a_nested_fixed_array_field() {
+    assert_accepts(
+        "nested-fixed-field",
+        r#"module tests.od.nested_fixed_field;
+
+struct Ok {
+    grid: u8[2][2];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#,
+    );
+}
