@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 01:50
-> **Progress**: 7/10 tasks (70%)
+> **Last Updated**: 2026-09-26 02:40
+> **Progress**: 10/10 tasks (100%) — Done
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -52,11 +52,12 @@ existing suites, written red before each fix (AR-4).
 
 ## Phase 1: Owned literal-field consumption
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 379f9c2452d6a1d8cba3d81fcd7303a3422fb524
 > **Expected modification set**: `compiler/src/own/expr.rs`, `compiler/src/own/lower.rs`,
 > `compiler/src/own/tests.rs`, `compiler/tests/stage_spec_test.rs`,
 > `compiler/tests/codegen_run_spec_test.rs`, `compiler/tests/partial_move_impl_test.rs` (strict scope)
 > **Lenses**: correctness, resource lifetime (drop)
+> **Phase review**: RV-001 🔴 (a postfix-projection field `(b).value` was marked moved but lowered to a `Member` that `consume_place` never consumed → double free) — fixed in `c93068f`; re-review of the fix diff returned no findings. AR-18 also replaced the flaky ASan oracle with a build-and-run oracle during this phase.
 
 ### Step 1.1: Specification tests (red)
 
@@ -102,8 +103,8 @@ existing suites, written red before each fix (AR-4).
 
 ## Phase 2: Full acceptance and closeout
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
-> **Expected modification set**: `compiler/tests/partial_move_impl_test.rs`, `plans/00-roadmap.md`,
+> **Phase baseline tree**: 297bf2c1b9ea8f79b0567150063c0f43c0d77e1c
+> **Expected modification set**: `plans/00-roadmap.md`, `AGENTS.md`,
 > `plans/partial-move-drop-coherence/99-execution-plan.md` (strict scope)
 > **Lenses**: regression, documentation
 
@@ -112,9 +113,9 @@ existing suites, written red before each fix (AR-4).
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria · AR-2, AR-5
 **Objective**: Prove the whole feature and record completion.
 
-- [ ] 2.1.1 Run the build-and-run matrix across ST-1, ST-2, ST-3, and ST-5 (generic and non-generic); confirm every form exits cleanly with no double-free abort
-- [ ] 2.1.2 Full acceptance run — `make verify`
-- [ ] 2.1.3 Mark DEF-11 Fixed on `plans/00-roadmap.md`, set this plan's roadmap row to Done, and set PLAN-10 back to Executing (Phase 4 pending); update `AGENTS.md` only if a factual note changed
+- [x] 2.1.1 Run the build-and-run matrix across ST-1, ST-2, ST-3, and ST-5 (generic and non-generic); confirm every form exits cleanly with no double-free abort ✅ (completed: 2026-09-26 02:26; 5 run cases pass, including the postfix case)
+- [x] 2.1.2 Full acceptance run — `make verify` ✅ (completed: 2026-09-26 02:40; all legs passed)
+- [x] 2.1.3 Mark DEF-11 Fixed on `plans/00-roadmap.md`, set this plan's roadmap row to Done, and set PLAN-10 back to Executing (Phase 4 pending); update `AGENTS.md` only if a factual note changed ✅ (completed: 2026-09-26 02:40; added `partial_move_impl_test.rs` to the AGENTS.md test map)
 
 **Deliverables**:
 - `make verify` green; roadmap and plan status updated

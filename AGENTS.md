@@ -73,6 +73,9 @@ in `CMD`).
   tests**.
 - `compiler/tests/clorraine_driver_spec_test.rs` holds the **specification
   tests** for the `clorraine` build/run driver.
+- `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
+  partial-move / drop coherence: it builds the emitted C and runs it, so a
+  double free aborts in the C library.
 - `compiler/tests/freestanding_spec_test.rs` holds the **specification tests**
   for the `freestanding` profile: the m68k link-exit assertion and the host
   no-libc run.
