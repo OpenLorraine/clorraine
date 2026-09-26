@@ -290,3 +290,23 @@ func main(): i32 { demo(); return 0; }
 "#;
     assert_emits_valid_c("rv003", source);
 }
+
+/// `spec/08-arrays-strings.md`: a nested array literal initializes a
+/// multi-dimensional fixed array, one dimension per brace level.
+///
+/// The front end already accepts the shape, but C cannot assign a brace list to
+/// an array element, so the emitter must recurse one dimension per level. The
+/// host C compiler is the oracle: at the defect the element assignment is
+/// `d[0] = { 1, 2 };`, which C rejects.
+#[test]
+fn should_emit_valid_c_when_a_nested_array_literal_initializes_a_fixed_array() {
+    let source = r#"module tests.od.nested_literal;
+
+func demo(): void {
+    let d: u8[3][2] = [[1, 2], [3, 4], [5, 6]];
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_emits_valid_c("pf003", source);
+}

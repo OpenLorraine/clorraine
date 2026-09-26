@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 15:42
-> **Progress**: 17/47 tasks (36%)
+> **Last Updated**: 2026-09-26 16:55
+> **Progress**: 19/47 tasks (40%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -122,7 +122,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 ## Phase 2: Nested-Array Literals
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 7ce34ab1ab32c3cfaf81c7da88e64542c901e78c
 > **Lenses**: compiler and language
 
 ### Step 2.1: Specification Tests
@@ -130,8 +130,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-05](03-05-nested-array-literals.md) · [07](07-testing-strategy.md) · PF-003
 **Objective**: Express the nested array literal as a failing test.
 
-- [ ] 2.1.1 [spec-author] Write a specification test that a nested array literal `u8[3][2] = [[1,2],[3,4],[5,6]]` is accepted — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 2.1.2 Run `make check` and confirm the new test fails for the right reason (red phase)
+- [x] 2.1.1 [spec-author] Write a specification test that a nested array literal `u8[3][2] = [[1,2],[3,4],[5,6]]` is accepted — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 16:55; case `should_emit_valid_c_when_a_nested_array_literal_initializes_a_fixed_array`, driving the host C compiler as the oracle)
+- [x] 2.1.2 Run `make check` and confirm the new test fails for the right reason (red phase) ✅ (completed: 2026-09-26 16:55; cc rejects the emitted C: `error: expected expression before '{' token` on the three element assignments)
 
 **Deliverables**:
 - The ST case exists and fails before the fix
