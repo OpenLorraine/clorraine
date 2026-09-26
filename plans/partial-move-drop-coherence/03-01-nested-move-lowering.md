@@ -145,4 +145,4 @@ owner.
 - `compiler/src/own/tests.rs`: a duplicable literal field is not moved; a field
   whose type mentions a type parameter is left untouched.
 - `compiler/tests/partial_move_impl_test.rs`: the temporary and reassignment
-  forms are ASan clean.
+  forms run cleanly (no double-free abort).

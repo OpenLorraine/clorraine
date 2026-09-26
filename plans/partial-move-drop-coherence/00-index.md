@@ -72,7 +72,7 @@ func demoB(): void {
 | Fix site | Ownership mark + lowering; the assignment emitter is unchanged (AR-3) |
 | Semantics | Free once; the zeroed source is the drop flag; partial moves stay legal (AR-2, AR-7) |
 | Out of scope | The `take`-field `Member` shape, self-assignment, guarded fields (AR-13, AR-15) |
-| Tests | ASan in an impl suite + emitted-C in the spec suites (AR-4) |
+| Tests | build-and-run oracle in an impl suite + emitted-C in the spec suites (AR-4, AR-18) |
 | Verify | `make check` per task; final `make verify` (AR-5) |
 
 ## Related Files

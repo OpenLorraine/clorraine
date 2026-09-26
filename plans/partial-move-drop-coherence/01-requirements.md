@@ -40,7 +40,7 @@ diagnostic, and edits no `spec/` file. It makes the implementation match
 - No fix for a `take`-argument dotted field: `consume(b.value)` already zeroes; the postfix `(b).value` shape is a separate defect, not DEF-11 (AR-15).
 - No self-assignment special case: `s = s` already frees once through `Statement::Move` (AR-13).
 - Deeper-than-top-level partial moves stay `E10026`; guarded/short-circuit fields, arrays of owners, owner elements, and global places are out of scope (AR-15).
-- No new test harness or dependency beyond an ASan compile-and-run helper in an implementation suite (AR-4).
+- No new test harness or dependency beyond a build-and-run oracle helper in an implementation suite (AR-4, AR-18).
 
 ## Technical Requirements
 
@@ -78,14 +78,14 @@ diagnostic, and edits no `spec/` file. It makes the implementation match
 | Assignment phase | keep / drop | drop | Unneeded after the literal fix and would break an immutable spec oracle | AR-3 |
 | `take`-field | fix/retarget / remove | remove | The common form already works; the remaining shape is a separate defect | AR-15 |
 | Self-assignment | keep / drop | drop | Already frees once; not a DEF-11 case | AR-13 |
-| Tests | ASan + emitted-C | ASan in an impl suite + emitted-C in the spec suite | Keeps the spec oracle sanitizer-independent | AR-4 |
+| Tests | run oracle + emitted-C | build-and-run oracle in an impl suite + emitted-C in the spec suite | Reliable without a sanitizer; the container's ASan is flaky | AR-4, AR-18 |
 
 > **Traceability:** Every scope decision references the Ambiguity Register entry
 > (AR #) that resolved it. See `00-ambiguity-register.md`.
 
 ## Acceptance Criteria
 
-1. [ ] R1–R7 satisfied; DEF-11 no longer reproduces (ASan clean).
+1. [ ] R1–R7 satisfied; DEF-11 no longer reproduces (a clean run with no double-free abort).
 2. [ ] The moved-out source is zeroed in the emitted C for the struct-literal and temporary forms.
 3. [ ] `make check` passes on every task; final `make verify` passes.
 4. [ ] The assignment fast path is preserved (no emitted-C change for a non-reading RHS).

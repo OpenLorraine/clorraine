@@ -11,11 +11,11 @@
 | --------- | ------ |
 | Ownership mark for a consumed literal field | 100% of the new branches (duplicable, owned place, type-parameter guard, deeper path, borrowed param) |
 | Lowering (`consume_place`) | 100% of the new branches (duplicable, owned, type-parameter guard) |
-| Memory safety | Every move-out form is ASan clean |
+| Memory safety | Every move-out form runs cleanly (no double free) |
 | Non-move behavior | The assignment fast path is preserved |
 
-E2E: the run suite compiles and runs emitted C; ASan is added as a stricter run
-oracle in a dedicated implementation suite (AR-4).
+E2E: the run suite compiles and runs emitted C; a dedicated implementation
+suite adds a run oracle that catches the double free (AR-4, AR-18).
 
 ### Test placement (AR-4)
 
@@ -23,12 +23,13 @@ oracle in a dedicated implementation suite (AR-4).
 | ----- | ---- | -------- |
 | `compiler/tests/stage_spec_test.rs` | emitted-C + diagnostics | ST-1, ST-2, ST-6, ST-7, ST-9, ST-10 |
 | `compiler/tests/codegen_run_spec_test.rs` | compile-and-run | ST-4, ST-8 |
-| `compiler/tests/partial_move_impl_test.rs` (new implementation suite) | ASan compile-and-run | ST-1, ST-2, ST-3, ST-5 |
+| `compiler/tests/partial_move_impl_test.rs` (new implementation suite) | plain build-and-run | ST-1, ST-2, ST-3, ST-5 |
 
-The ASan oracle lives in its own implementation suite, not the spec suite, so the
-immutable spec oracle stays sanitizer-independent. It sets `ASAN_OPTIONS=detect_leaks=0`
-(the oracle targets memory errors — double free and use-after-free — not leaks),
-and asserts exit 0 with no `AddressSanitizer` output.
+The run oracle lives in its own implementation suite: the host C compiler builds
+the emitted C and the program runs, asserting a clean exit. A double free aborts
+inside the C library (`free(): double free detected`), so the oracle is red
+before the fix and green after. It needs no sanitizer, because the SDK
+container's 64 MB `/dev/shm` makes AddressSanitizer unreliable (AR-18).
 
 ## 🚨 Specification Test Cases (MANDATORY — NON-NEGOTIABLE)
 
@@ -38,11 +39,11 @@ and asserts exit 0 with no `AddressSanitizer` output.
 
 | # | Input / Scenario | Expected Behavior | Source |
 | --- | --- | --- | --- |
-| ST-1 | `let t = b.value; b = Box<String> { value: t };` (generic) | The emitted C zeroes `b.value`/`t`; ASan clean | `spec/17-codegen.md:182-199`, AR-1 |
-| ST-2 | `b = Box<String> { value: b.value };` (generic) | The emitted C zeroes `b.value` and has no `__cl_save` for the handle; ASan clean | `spec/17-codegen.md:182-199`, AR-1 |
-| ST-3 | `struct Label { name: String }` with the ST-2 form (non-generic) | ASan clean | AR-11 |
+| ST-1 | `let t = b.value; b = Box<String> { value: t };` (generic) | The emitted C zeroes `b.value`/`t`; runs cleanly | `spec/17-codegen.md:182-199`, AR-1 |
+| ST-2 | `b = Box<String> { value: b.value };` (generic) | The emitted C zeroes `b.value` and has no `__cl_save` for the handle; runs cleanly | `spec/17-codegen.md:182-199`, AR-1 |
+| ST-3 | `struct Label { name: String }` with the ST-2 form (non-generic) | runs cleanly | AR-11 |
 | ST-4 | `f = Dup(borrow f)` | Emits `open/dup/close/close` (control) | AR-12 |
-| ST-5 | `p = Pair<String> { first: p.first, second: p.second };` | Moves both fields; ASan clean | AR-14 |
+| ST-5 | `p = Pair<String> { first: p.first, second: p.second };` | Moves both fields; runs cleanly | AR-14 |
 | ST-6 | `p = Pair<String> { first: p.first, second: p.first };` (an owned field) | Reports `E10020` on the second read | `spec/03-ownership.md:123-134`, AR-14 |
 | ST-7 | `Box { value: o.inner.s }` (a deeper path) | Reports `E10026` (v1 top-level limit) | `spec/03-ownership.md:123-134`, AR-15 |
 | ST-8 | `b = Box<String> { value: stringOf("y") };` (RHS does not read `b`) | The emitted assignment keeps the existing drop-then-store order (control) | AR-8 |
@@ -57,14 +58,15 @@ and asserts exit 0 with no `AddressSanitizer` output.
 | --------- | -------- | --------- |
 | `compiler/tests/stage_spec_test.rs` | ST-1, ST-2, ST-6, ST-7, ST-9, ST-10 | emitted C + diagnostics |
 | `compiler/tests/codegen_run_spec_test.rs` | ST-4, ST-8 | lowering + codegen |
-| `compiler/tests/partial_move_impl_test.rs` | ST-1, ST-2, ST-3, ST-5 | ASan runtime |
+| `compiler/tests/partial_move_impl_test.rs` | ST-1, ST-2, ST-3, ST-5 | build-and-run |
 
-### ASan Oracle
+### Run Oracle
 
-A helper in `compiler/tests/partial_move_impl_test.rs` compiles the emitted C with
-`cc -fsanitize=address -g`, runs it with `ASAN_OPTIONS=detect_leaks=0`, and asserts
-exit 0 and no `AddressSanitizer` output. It covers ST-1, ST-2, ST-3, and ST-5. The
-host `cc` inside the SDK container provides ASan (confirmed).
+A helper in `compiler/tests/partial_move_impl_test.rs` builds the emitted C with
+the host C compiler and runs the program, asserting a clean exit and no
+`double free` message. It covers ST-1, ST-2, ST-3, and ST-5. A double free
+aborts in the C library, so a defect is observable without a sanitizer
+(AR-18).
 
 ### Implementation Tests
 
@@ -90,7 +92,7 @@ helpers. A `Box<T>`/`Label` owning struct, a `Pair<T>` owning struct, and a
 
 ### Mock Requirements
 
-None. The deleter is the real `FreeString`, observed through ASan.
+None. The deleter is the real `FreeString`, observed through the run oracle.
 
 ## Verification Checklist
 
@@ -99,7 +101,7 @@ None. The deleter is the real `FreeString`, observed through ASan.
 - [ ] Specification tests written BEFORE implementation
 - [ ] Specification tests verified to FAIL before implementation (red phase)
 - [ ] All specification tests pass after implementation (green phase)
-- [ ] ASan is clean for every move-out form
+- [ ] Every move-out form runs cleanly (no double free)
 - [ ] Implementation tests written for internals
 - [ ] No regressions in existing tests (assignment fast path preserved)
 - [ ] No `spec/` file modified

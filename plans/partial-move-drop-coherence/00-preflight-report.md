@@ -302,3 +302,16 @@ verified. The revised plan (2 phases, 10 tasks) is ready for execution.
 as `Executing` prematurely — flagged for correction per the roadmap never-regress rule.
 Since execution follows immediately, the row may instead proceed to `Executing`.
 
+---
+
+## Post-preflight change (AR-18, 2026-09-26)
+
+During execution the ASan oracle chosen at PF-005 proved unreliable: the SDK
+container's `/dev/shm` is 64 MB and the ASan suite hung in 3 of 5 isolated runs
+(and inside `make check`). The user resolved AR-18 by replacing ASan with a
+plain build-and-run oracle: the host C compiler builds the emitted C and the
+program runs, so a double free aborts in the C library (`free(): double free
+detected`). The oracle lives in `compiler/tests/partial_move_impl_test.rs`.
+This changes AR-4/PF-005's oracle vehicle but not the finding's intent (a
+runtime oracle for free-once). No other finding is affected.
+

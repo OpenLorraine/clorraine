@@ -620,3 +620,30 @@ fn a_generic_struct_holding_a_copy_value_is_duplicable() {
     assert!(error_codes(&source).is_empty(), "{:?}", error_codes(&source));
 }
 
+#[test]
+fn a_duplicable_literal_field_is_copied_not_moved() {
+    // An `i32` field is duplicable, so consuming it in a literal copies it and
+    // the source stays usable.
+    let source = "module t;\n\
+        struct Pair<T> { first: T; second: T; }\n\
+        func demo(): void {\n\
+            let p = Pair<i32> { first: 1, second: 2 };\n\
+            let q = Pair<i32> { first: p.first, second: p.second };\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}
+
+#[test]
+fn a_type_parameter_literal_field_is_not_moved() {
+    // A field still written in terms of `T` is left to the instantiation, so
+    // rebuilding a generic struct from its own fields is accepted.
+    let source = "module t;\n\
+        struct Pair<T> { first: T; second: T; }\n\
+        func rebuild<T>(p: Pair<T>): Pair<T> {\n\
+            return Pair<T> { first: p.first, second: p.second };\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}
+

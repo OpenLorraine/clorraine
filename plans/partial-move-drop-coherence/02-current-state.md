@@ -91,7 +91,7 @@ through `move_target` (AR-14, AR-15).
 
 ### External Dependencies
 
-- None. ASan is available in the SDK container for the test oracle (AR-4).
+- None. The host C compiler supports the build-and-run oracle (AR-4, AR-18).
 
 ## Risks and Concerns
 
