@@ -244,3 +244,26 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A prefix plus a fill covers every element the prefix did not, in a
+/// one-dimensional array and in a nested one.
+#[test]
+fn a_prefix_and_fill_literal_fills_the_remaining_elements() {
+    let output = build_and_run(
+        "prefix-fill",
+        r#"module tests.od.prefix_fill_run;
+
+func main(): i32 {
+    let a: u8[5] = [1, 2; 9];
+    let d: u8[3][2] = [[1, 2]; [7, 8]];
+    return i32(a[4]) + i32(d[2][1]);
+}
+"#,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(17),
+        "the fill must cover the remaining elements (9 + 8); stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

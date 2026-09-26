@@ -40,3 +40,33 @@
 
 - Verify at review: `make check` — `spec check: OK (27 files, 103 compile-fail tests)`; 324 library unit tests pass; all integration suites pass.
 - Re-review after the RV-001 fix: one scoped pass on the fix diff (Step 1.4), per the single-re-review budget.
+
+## Phase 2 — Nested-array literals
+
+**Reviewed revision**: `3095145`
+**Phase diff**: `30988fc..3095145` — `compiler/src/codegen/function.rs`
+(`emit_array_assign_to`), `compiler/tests/ownership_drop_spec_test.rs`,
+`compiler/tests/ownership_drop_impl_test.rs`.
+
+### Findings and rulings
+
+| ID | Severity | Finding | Ruling |
+|----|----------|---------|--------|
+| RV-010 | 🟠 MAJOR | An array literal with an explicit prefix **and** a fill silently dropped the fill: `emit_array_assign_to` returned as soon as `elements` was non-empty, so indices `elements.len()..extent` were never written. The nested form (`u8[3][2] = [[1,2]; [7,8]]`) changed from a loud invalid-C failure before the phase into valid C with wrong values (exit `0`, not `8`); the 1-D form (`u8[5] = [1,2; 9]`) was a pre-existing silent defect masked by the `0` fill. | **Accepted — fix both forms now** (user ruling): the fill loop runs from `elements.len()` to the extent for the scalar and nested fills. Added the build-and-run case `a_prefix_and_fill_literal_fills_the_remaining_elements` (1-D and nested, exit `17`). |
+| F4 | 🔵 OBSERVATION | A move-only nested fill (`String[3][2] = [; [a, b]]`) now compiles and aliases the moved temporaries (currently leaks; would double-free once Phase 3 adds element drop). | Report-only. AR-10 resolved to reject a move-only fill with `E10215`; Phase 4's guard reads `result_element` (the base element), so it covers the nested form. No action now. |
+| F3 | 🔵 OBSERVATION | A multi-extent fixed-array return of a **place** copies one extent (`__cl_ret[i] = d[i];`, a C array assignment); a non-literal array element likewise emits array assignment. | Report-only; pre-existing and outside the nested-literal scope (the fixed-array-return component is one-dimension, RV-008). |
+
+### Verification asks (confirmed by the reviewer)
+
+| Ask | Result |
+|-----|--------|
+| The derived element type matches the flat multi-extent encoding | ✅ `Ty::array(element, extents[1..])`; no off-by-one |
+| The recursion consumes one extent per level and terminates | ✅ |
+| The 1-D path and the `__cl_ret` out-parameter path are unchanged | ✅ |
+| The new tests fail on the pre-change code for the right reason | ✅ `cc` rejects the old `d[0] = { 1, 2 };` |
+| `make check` re-run independently | ✅ PASS |
+
+### Review evidence
+
+- Verify at review: `make check` — `spec check: OK (27 files, 103 compile-fail tests)`; all suites pass.
+- One scoped re-review follows on the RV-010 fix diff, per the single-re-review budget.

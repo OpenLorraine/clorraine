@@ -658,15 +658,15 @@ impl<'a> Emitter<'a> {
             let lowered = self.value(value);
             self.push(&format!("    {sub} = {lowered};"));
         }
-        if !elements.is_empty() {
-            return;
-        }
+        let prefix = elements.len();
         let Some(fill) = fill else {
             return;
         };
+        // A fill covers every index the prefix did not: `[a, b; fill]` fills
+        // from the prefix length to the extent, and `[; fill]` fills them all.
         if let Some(element_ty) = &nested_ty {
             if let ValueKind::ArrayLit { elements, fill } = &fill.kind {
-                for index in 0..extent {
+                for index in prefix..extent {
                     let sub = format!("{target_c}[{index}]");
                     self.emit_array_assign_to(&sub, element_ty, elements, fill);
                 }
@@ -675,7 +675,7 @@ impl<'a> Emitter<'a> {
         }
         self.emit_guards(fill);
         let lowered = self.value(fill);
-        for index in 0..extent {
+        for index in prefix..extent {
             self.push(&format!("    {target_c}[{index}] = {lowered};"));
         }
     }

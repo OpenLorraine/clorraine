@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 17:02
+> **Last Updated**: 2026-09-26 17:10
 > **Progress**: 23/47 tasks (49%)
 > **CodeOps Artifact Schema**: 1
 
@@ -143,7 +143,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-05](03-05-nested-array-literals.md) §Implementation Details · PF-003
 **Objective**: Emit a nested array literal one dimension per level.
 
-- [x] 2.2.1 Recurse one dimension per level in `emit_array_assign` — `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-26 16:59; `emit_array_assign_to` derives the element type from the remaining extents and recurses on a nested `ArrayLit` element and on a nested fill value; the 1-D path is unchanged)
+- [x] 2.2.1 Recurse one dimension per level in `emit_array_assign` — `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-26 16:59; `emit_array_assign_to` derives the element type from the remaining extents and recurses on a nested `ArrayLit` element and on a nested fill value; the 1-D path is unchanged. Review follow-up RV-010: the fill now covers indices `elements.len()..extent`, so a prefix-plus-fill literal no longer drops the fill)
 - [x] 2.2.2 Run `make check` and confirm the Phase 2 spec test passes (green phase) ✅ (completed: 2026-09-26 16:59)
 
 **Deliverables**:
@@ -156,7 +156,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-05](03-05-nested-array-literals.md) §Testing Requirements · [07](07-testing-strategy.md) ST-9
 **Objective**: Prove the nested literal at run time.
 
-- [x] 2.3.1 Add a build-and-run case: a nested `u8[3][2]` read — `compiler/tests/ownership_drop_impl_test.rs` ✅ (completed: 2026-09-26 17:02; `a_nested_array_literal_keeps_its_element_values` reads `d[2][1] == 6`)
+- [x] 2.3.1 Add a build-and-run case: a nested `u8[3][2]` read — `compiler/tests/ownership_drop_impl_test.rs` ✅ (completed: 2026-09-26 17:02; `a_nested_array_literal_keeps_its_element_values` reads `d[2][1] == 6`. Review follow-up RV-010: added `a_prefix_and_fill_literal_fills_the_remaining_elements` for the 1-D and nested prefix-plus-fill forms)
 - [x] 2.3.2 Run `make check` (phase gate) ✅ (completed: 2026-09-26 17:02)
 
 **Deliverables**:
