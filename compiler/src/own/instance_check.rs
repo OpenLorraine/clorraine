@@ -15,9 +15,7 @@
 //! rejects the undeclared or unsubstituted type it emits.
 
 use crate::diag::{Diagnostic, Diagnostics};
-use crate::ir::{
-    Function, Instance, Monomorphization, Statement, Terminator, Value, ValueKind,
-};
+use crate::ir::{Function, Monomorphization, Statement, Terminator, Value, ValueKind};
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
 use crate::span::Span;
@@ -318,5 +316,151 @@ fn check_fill_type(
                 "a fill cannot repeat a move-only element; construct each element",
             ),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parse::Parser;
+    use crate::profile::Profile;
+    use crate::span::SourceMap;
+
+    /// Runs the front end on one source and returns its error diagnostics as
+    /// `(code, message)` pairs.
+    fn errors(source: &str) -> Vec<(String, String)> {
+        let mut sources = SourceMap::new();
+        let mut sink = Diagnostics::new(false, None);
+        let id = sources.add_file("test.clo".to_owned(), source.to_owned());
+        let program = Parser::new(&sources, id, &mut sink).parse_program();
+        let loaded = crate::load::load(vec![(id, program)], &mut sink);
+        let sema = crate::sema::check(&loaded, Profile::Host, &mut sink);
+        if !sink.failed() {
+            let _ = crate::own::check(&loaded, &sema, &mut sink);
+        }
+        sink.items()
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == crate::diag::Severity::Error)
+            .map(|diagnostic| (diagnostic.code.to_owned(), diagnostic.message.clone()))
+            .collect()
+    }
+
+    /// The messages of the errors with one code, in report order.
+    fn errors_of(source: &str, code: &str) -> Vec<String> {
+        errors(source)
+            .into_iter()
+            .filter(|(candidate, _)| candidate == code)
+            .map(|(_, message)| message)
+            .collect()
+    }
+
+    /// A concrete fill in a generic body is the declaration-site guard's case and
+    /// is skipped by the audit, while the parameterized fill in the same body is
+    /// judged once.
+    #[test]
+    fn the_parameter_mention_gate_skips_concrete_fills() {
+        let source = r#"module test;
+import { String, stringOf } from std.text;
+func f<T>(a: T): T[2] {
+    let concrete: i32[2] = [; 0];
+    return [; a];
+}
+func demo(): void {
+    let s: String = stringOf("x");
+    let xs: String[2] = f<String>(s);
+}
+func main(): i32 { return 0; }
+"#;
+        assert_eq!(errors_of(source, "E10215").len(), 1);
+    }
+
+    /// A nested generic struct named by a literal is recorded, so the inner
+    /// field is judged once with the outer instance's argument.
+    #[test]
+    fn a_declaration_named_nested_instance_reports_the_inner_field() {
+        let source = r#"module test;
+struct Wrap<T> {
+    v: T;
+}
+struct Outer<T> {
+    w: Wrap<T>;
+}
+func demo(): void {
+    let o: Outer<str> = Outer<str> { w: Wrap<str> { v: "hi" } };
+}
+func main(): i32 { return 0; }
+"#;
+        let messages = errors_of(source, "E10205");
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].contains("'v'"), "unexpected message: {}", messages[0]);
+    }
+
+    /// A multi-extent fill judges the base element, so a move-only substitution
+    /// is rejected once.
+    #[test]
+    fn a_multi_extent_fill_uses_the_base_element() {
+        let source = r#"module test;
+import { String, stringOf } from std.text;
+func g<T>(a: T): T[2][2] {
+    return [; a];
+}
+func demo(): void {
+    let s: String = stringOf("x");
+    let m: String[2][2] = g<String>(s);
+}
+func main(): i32 { return 0; }
+"#;
+        assert_eq!(errors_of(source, "E10215").len(), 1);
+    }
+
+    /// The duplicable substitution is accepted: it is the ordinary fill form.
+    #[test]
+    fn a_duplicable_fill_is_accepted() {
+        let source = r#"module test;
+func fillIt<T>(a: T): T[2] {
+    return [; a];
+}
+func demo(): void {
+    let ns: i32[2] = fillIt<i32>(7);
+}
+func main(): i32 { return 0; }
+"#;
+        assert!(errors(source).is_empty(), "unexpected diagnostics: {:?}", errors(source));
+    }
+
+    /// A fill that is a local binding's value is reached through the statement
+    /// walk, not only through a return.
+    #[test]
+    fn a_fill_in_a_local_statement_is_audited() {
+        let source = r#"module test;
+import { String, stringOf } from std.text;
+func f<T>(a: T): i32 {
+    let xs: T[2] = [; a];
+    return 0;
+}
+func demo(): void {
+    let s: String = stringOf("x");
+    let n: i32 = f<String>(s);
+}
+func main(): i32 { return 0; }
+"#;
+        assert_eq!(errors_of(source, "E10215").len(), 1);
+    }
+
+    /// A fill that is a return value is reached through the terminator walk.
+    #[test]
+    fn a_fill_in_a_return_terminator_is_audited() {
+        let source = r#"module test;
+import { String, stringOf } from std.text;
+func f<T>(a: T): T[2] {
+    return [; a];
+}
+func demo(): void {
+    let s: String = stringOf("x");
+    let xs: String[2] = f<String>(s);
+}
+func main(): i32 { return 0; }
+"#;
+        assert_eq!(errors_of(source, "E10215").len(), 1);
     }
 }

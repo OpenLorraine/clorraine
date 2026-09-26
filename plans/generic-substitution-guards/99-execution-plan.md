@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 22:37
-> **Progress**: 7/13 tasks (54%)
+> **Last Updated**: 2026-09-26 22:40
+> **Progress**: 10/13 tasks (77%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -96,9 +96,9 @@ scope (AR-19).
 **Reference**: [03-01](03-01-instantiation-checks.md) §Testing Requirements · AR-15
 **Objective**: Cover the internal branches and prove the legal programs build and run.
 
-- [ ] 1.3.1 Add unit tests for the parameter-mention gate, a declaration-named nested instance, a multi-extent fill, a duplicable fill, and a value reached through a terminator — `compiler/src/own/instance_check.rs`
-- [ ] 1.3.2 Add the ST-15 and ST-16 build-and-run controls (plain build, no sanitizer) — `compiler/tests/ownership_drop_impl_test.rs`
-- [ ] 1.3.3 Full phase verification — `make check`
+- [x] 1.3.1 Add unit tests for the parameter-mention gate, a declaration-named nested instance, a multi-extent fill, a duplicable fill, and a value reached through a terminator — `compiler/src/own/instance_check.rs` ✅ (completed: 2026-09-26 22:39)
+- [x] 1.3.2 Add the ST-15 and ST-16 build-and-run controls (plain build, no sanitizer) — `compiler/tests/ownership_drop_impl_test.rs` ✅ (completed: 2026-09-26 22:39)
+- [x] 1.3.3 Full phase verification — `make check` ✅ (completed: 2026-09-26 22:40)
 
 **Deliverables**:
 - Unit tests and controls pass; no double-free abort in the control programs; `make check` exit 0

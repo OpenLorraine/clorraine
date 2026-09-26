@@ -415,3 +415,62 @@ func main(): i32 { demo(); return 0; }
         "set must release the replaced element; emitted body:\n{body}"
     );
 }
+
+/// The instantiation-time fill audit must leave the duplicable instantiation
+/// alone: `fillIt<i32>` builds, runs, and returns the first element, while an
+/// owning `String[2]` in the same program is released exactly once.
+#[test]
+fn a_duplicable_generic_fill_builds_and_runs() {
+    let output = build_and_run(
+        "gs-control-fill",
+        r#"module tests.gs.control_fill;
+
+import { String, stringOf } from std.text;
+
+func fillIt<T>(a: T): T[2] {
+    return [; a];
+}
+
+func demo(): i32 {
+    let ns: i32[2] = fillIt<i32>(7);
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    let ss: String[2] = [a, b];
+    return ns[0];
+}
+
+func main(): i32 { return demo(); }
+"#,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(7),
+        "the filled element must be 7; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// An owning `Wrap<String>` and a duplicable `Wrap<static str>` dropped
+/// normally run clean: the audit does not turn a legal instantiation into a
+/// double free.
+#[test]
+fn owning_and_literal_generic_structs_drop_cleanly() {
+    run_clean(
+        "gs-control-drop",
+        r#"module tests.gs.control_drop;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func demo(): void {
+    let a: Wrap<String> = Wrap<String> { v: stringOf("x") };
+    let b: Wrap<static str> = Wrap<static str> { v: "lit" };
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
