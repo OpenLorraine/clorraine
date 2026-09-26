@@ -6,11 +6,12 @@ routing belongs in configuration, not prose.
 <!-- CODEOPS-PROJECT:START -->
 ## Project
 
-The Clorraine compiler: a Rust workspace whose binary `clc` compiles the
+The Clorraine compiler: a Rust workspace with two binaries. `clc` compiles the
 corpus subset of the frozen specification under `spec/`, extended with the v1
 language completion surfaces (generics, lambdas, and volatile access with the
 per-chip MMIO wrappers), to one C99 translation unit for the `host`,
-`hosted-amiga`, and `freestanding` profiles. The
+`hosted-amiga`, and `freestanding` profiles; `clorraine` is the build/run driver
+around it. The
 `freestanding` profile is a provisional, LorraineOS-adoptable ABI (m68k, 32-bit,
 big-endian, no libc) with a console-only standard-library surface. The workspace
 is **std-only**: no crates, no build scripts. The primary languages are Rust
@@ -102,10 +103,9 @@ in `CMD`).
 
 ## CodeOps
 
-- Layout: **flat** (no `codeops/` directory). The plan is at
-  `plans/clorraine-compiler-mvp/99-execution-plan.md`; the roadmap is
-  `plans/00-roadmap.md`.
-- Keep `plans/99-...`/roadmap state in sync through the CodeOps skills, and
+- Layout: **flat** (no `codeops/` directory). Each feature plan lives at
+  `plans/<feature>/99-execution-plan.md`; the roadmap is `plans/00-roadmap.md`.
+- Keep `plans/*/99-...`/roadmap state in sync through the CodeOps skills, and
   follow the repository's quality profile (strict: independent review, stop on
   critical/major findings).
 <!-- CODEOPS-PROJECT:END -->
