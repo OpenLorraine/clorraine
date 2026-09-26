@@ -147,23 +147,26 @@ pub enum Provenance {
 /// True for a type that is a view over other storage.
 ///
 /// A view is a cheap pointer-and-length value, so binding or copying it does
-/// not move the storage it points into.
+/// not move the storage it points into. A slice is a view; a fixed array is not
+/// — it is inline storage the value owns.
 pub fn is_view(ty: &Ty) -> bool {
-    matches!(
-        ty.kind,
-        TyKind::Str | TyKind::CString | TyKind::StaticStr | TyKind::Array { .. }
-    )
+    match ty.kind {
+        TyKind::Str | TyKind::CString | TyKind::StaticStr => true,
+        TyKind::Array { .. } => ty.is_slice(),
+        _ => false,
+    }
 }
 
 /// True for a view type whose lifetime participates in return elision.
 ///
 /// `static str` is excluded: it points at static storage and needs no input
-/// parameter (EL-4).
+/// parameter (EL-4). A slice participates; a fixed array does not.
 pub fn is_elided_view(ty: &Ty) -> bool {
-    matches!(
-        ty.kind,
-        TyKind::Str | TyKind::CString | TyKind::Array { .. }
-    )
+    match ty.kind {
+        TyKind::Str | TyKind::CString => true,
+        TyKind::Array { .. } => ty.is_slice(),
+        _ => false,
+    }
 }
 
 /// True for a type that may be a lifetime-elision candidate.
@@ -192,25 +195,32 @@ pub fn is_handle(ty: &Ty) -> bool {
 
 /// True for an owned handle or aggregate, the two shapes an uncontracted
 /// extern parameter may not receive.
+///
+/// A fixed array is an owned aggregate; a slice is a view and is allowed.
 pub fn is_handle_or_aggregate(ty: &Ty) -> bool {
-    matches!(ty.kind, TyKind::Handle(_) | TyKind::Struct(..))
+    match ty.kind {
+        TyKind::Handle(_) | TyKind::Struct(..) => true,
+        TyKind::Array { .. } => ty.is_fixed_array(),
+        _ => false,
+    }
 }
 
 /// True for a type that can carry the `?` empty state.
 ///
-/// Nullability is meaningful for handles, raw pointers, `cstring`, and views;
-/// on any other type the suffix is rejected.
+/// Nullability is meaningful for handles, raw pointers, `cstring`, and views; a
+/// fixed array is inline storage with no empty state. On any other type the
+/// suffix is rejected.
 pub fn is_nullable_capable(ty: &Ty) -> bool {
-    matches!(
-        ty.kind,
+    match ty.kind {
         TyKind::Handle(_)
-            | TyKind::Raw(_)
-            | TyKind::CString
-            | TyKind::Str
-            | TyKind::StaticStr
-            | TyKind::Array { .. }
-            | TyKind::Unknown
-    )
+        | TyKind::Raw(_)
+        | TyKind::CString
+        | TyKind::Str
+        | TyKind::StaticStr
+        | TyKind::Unknown => true,
+        TyKind::Array { .. } => ty.is_slice(),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -332,5 +342,25 @@ mod tests {
             func observe(v: u8[]): void {}\n\
             func main(): i32 { return 0; }\n";
         assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_fixed_array_is_an_aggregate_but_a_slice_is_a_view() {
+        let fixed = Ty::array(Ty::i32_ty(), vec![Some(4)]);
+        let slice = Ty::array(Ty::i32_ty(), vec![None]);
+        assert!(is_handle_or_aggregate(&fixed));
+        assert!(!is_handle_or_aggregate(&slice));
+        assert!(!is_view(&fixed));
+        assert!(is_view(&slice));
+        assert!(!is_nullable_capable(&fixed));
+        assert!(is_nullable_capable(&slice));
+    }
+
+    #[test]
+    fn a_fixed_array_stays_a_lend_candidate() {
+        let fixed = Ty::array(Ty::i32_ty(), vec![Some(2)]);
+        let slice = Ty::array(Ty::i32_ty(), vec![None]);
+        assert!(is_lend_candidate(&fixed));
+        assert!(is_lend_candidate(&slice));
     }
 }

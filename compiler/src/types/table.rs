@@ -379,7 +379,16 @@ impl TypeTable {
                     self.duplicable_at(&substitute_instance(field, params, args), depth + 1)
                 })
             }),
-            TyKind::Array { element, .. } => self.duplicable_at(element, depth + 1),
+            // A slice is a view: copying it copies a pointer and a length, so it
+            // is always duplicable. A fixed array is owned storage, so it is
+            // duplicable only when its element is.
+            TyKind::Array { element, .. } => {
+                if ty.is_slice() {
+                    true
+                } else {
+                    self.duplicable_at(element, depth + 1)
+                }
+            }
             _ => true,
         }
     }
@@ -861,7 +870,11 @@ mod tests {
         let table = TypeTable::default();
         let owner = || Ty::handle("String");
         assert!(table.duplicable(&Ty::array(Ty::i32_ty(), vec![Some(2)])));
-        assert!(!table.duplicable(&Ty::array(owner(), vec![None])));
+        // A slice is a view: copying it copies a pointer and a length, so it is
+        // duplicable even when its element owns a resource.
+        assert!(table.duplicable(&Ty::array(owner(), vec![None])));
+        // A fixed array is owned storage, so it follows its element.
+        assert!(!table.duplicable(&Ty::array(owner(), vec![Some(2)])));
         // A nested array recurses to its innermost element.
         assert!(table.duplicable(&Ty::array(
             Ty::array(Ty::i32_ty(), vec![Some(2)]),

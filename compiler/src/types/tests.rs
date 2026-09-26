@@ -307,3 +307,24 @@ fn type_predicates_and_display_match_the_surface_spelling() {
     };
     assert_eq!(Ty::func(signature).display(), "func(i32): bool");
 }
+
+#[test]
+fn the_shape_predicates_split_slices_from_fixed_arrays() {
+    use ScalarType::U8;
+    // A slice has at least one omitted extent.
+    assert!(Ty::array(Ty::scalar(U8), vec![None]).is_slice());
+    assert!(!Ty::array(Ty::scalar(U8), vec![None]).is_fixed_array());
+    // A fixed array has every extent present.
+    assert!(Ty::array(Ty::scalar(U8), vec![Some(4)]).is_fixed_array());
+    assert!(!Ty::array(Ty::scalar(U8), vec![Some(4)]).is_slice());
+    // A multi-dimensional fixed array is fixed; a partially omitted one is a
+    // slice.
+    assert!(Ty::array(Ty::scalar(U8), vec![Some(3), Some(2)]).is_fixed_array());
+    assert!(Ty::array(Ty::scalar(U8), vec![None, Some(2)]).is_slice());
+    assert!(!Ty::array(Ty::scalar(U8), vec![None, Some(2)]).is_fixed_array());
+    // A scalar is neither shape. An empty extent list never comes from source,
+    // and the predicates stay total on it: no omitted extent means not a slice.
+    assert!(!Ty::scalar(U8).is_slice());
+    assert!(!Ty::scalar(U8).is_fixed_array());
+    assert!(!Ty::array(Ty::scalar(U8), vec![]).is_slice());
+}

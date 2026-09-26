@@ -168,7 +168,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
-                elements: elements.iter().map(|element| self.lower_value(element)).collect(),
+                elements: elements
+                    .iter()
+                    .map(|element| {
+                        let value = self.lower_value(element);
+                        self.consume_place(value)
+                    })
+                    .collect(),
                 fill: fill
                     .as_ref()
                     .map(|fill| Box::new(self.lower_value(fill))),

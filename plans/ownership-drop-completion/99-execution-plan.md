@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 14:58
-> **Progress**: 2/43 tasks (5%)
+> **Last Updated**: 2026-09-26 15:00
+> **Progress**: 10/43 tasks (23%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -72,11 +72,11 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-01](03-01-array-classification.md) §Implementation Details · AR-5, AR-6, AR-22, AR-23
 **Objective**: Add the shape predicate, route the shape consumers, and consume array-literal elements.
 
-- [ ] 1.2.1 Add `Ty::is_slice` and `Ty::is_fixed_array` — `compiler/src/types/mod.rs`
-- [ ] 1.2.2 Route `is_view`, `is_elided_view`, and `is_nullable_capable` through `is_slice`, and add a fixed array to `is_handle_or_aggregate`; leave `is_lend_candidate` unchanged — `compiler/src/borrow.rs`
-- [ ] 1.2.3 Treat a slice as duplicable in `duplicable_at` (fixed arrays still recurse) — `compiler/src/types/table.rs`
-- [ ] 1.2.4 Consume array-literal elements in the ownership walk and the lowering — `compiler/src/own/expr.rs`, `compiler/src/own/lower.rs`
-- [ ] 1.2.5 Run `make check` and confirm the Phase 1 spec tests pass (green phase)
+- [x] 1.2.1 Add `Ty::is_slice` and `Ty::is_fixed_array` — `compiler/src/types/mod.rs` ✅ (completed: 2026-09-26 15:00)
+- [x] 1.2.2 Route `is_view`, `is_elided_view`, and `is_nullable_capable` through `is_slice`, and add a fixed array to `is_handle_or_aggregate`; leave `is_lend_candidate` unchanged — `compiler/src/borrow.rs` ✅ (completed: 2026-09-26 15:00)
+- [x] 1.2.3 Treat a slice as duplicable in `duplicable_at` (fixed arrays still recurse) — `compiler/src/types/table.rs` ✅ (completed: 2026-09-26 15:00; also corrected the unit test that pinned the old slice rule, per the corrected spec)
+- [x] 1.2.4 Consume array-literal elements in the ownership walk and the lowering — `compiler/src/own/expr.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-09-26 15:00)
+- [x] 1.2.5 Run `make check` and confirm the Phase 1 spec tests pass (green phase) ✅ (completed: 2026-09-26 15:00)
 
 **Deliverables**:
 - One predicate decides the array shape for the view/elision/nullability/aggregate consumers
@@ -89,9 +89,9 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-01](03-01-array-classification.md) §Testing Requirements
 **Objective**: Cover the internals and the two classification edges.
 
-- [ ] 1.3.1 Add unit tests for `is_slice` / `is_fixed_array` and `is_handle_or_aggregate` — `compiler/src/types/mod.rs`, `compiler/src/borrow.rs`
-- [ ] 1.3.2 Add the lend-candidate regression test (ST-15) — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 1.3.3 Run `make check` (phase gate)
+- [x] 1.3.1 Add unit tests for `is_slice` / `is_fixed_array` and `is_handle_or_aggregate` — `compiler/src/types/mod.rs`, `compiler/src/borrow.rs` ✅ (completed: 2026-09-26 15:00; the `types` unit tests live in `compiler/src/types/tests.rs`, included by `mod.rs`)
+- [x] 1.3.2 Add the lend-candidate regression test (ST-15) — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 15:00; the spec-level case plus a `borrow.rs` unit test pin that a fixed array stays a lend candidate)
+- [x] 1.3.3 Run `make check` (phase gate) ✅ (completed: 2026-09-26 15:00)
 
 **Deliverables**:
 - Internals covered by unit tests

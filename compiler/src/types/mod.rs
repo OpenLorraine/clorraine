@@ -285,6 +285,24 @@ impl Ty {
         matches!(self.kind, TyKind::Scalar(scalar) if !matches!(scalar, ScalarType::Bool))
     }
 
+    /// True for a slice `T[]`: an array view with at least one omitted extent.
+    ///
+    /// A fixed array (`T[N]`) is an owned aggregate; a slice is a pointer and a
+    /// length. The two share [`TyKind::Array`], so this is the one place the
+    /// distinction lives for the view, elision, nullability, and aggregate
+    /// consumers.
+    pub fn is_slice(&self) -> bool {
+        matches!(&self.kind, TyKind::Array { extents, .. } if extents.iter().any(Option::is_none))
+    }
+
+    /// True for a fixed array `T[N]` with every extent present.
+    ///
+    /// A fixed array is inline storage the value owns, unlike a slice, which is
+    /// a view over storage owned elsewhere.
+    pub fn is_fixed_array(&self) -> bool {
+        matches!(&self.kind, TyKind::Array { extents, .. } if extents.iter().all(Option::is_some))
+    }
+
     /// Renders the type the way a diagnostic shows it.
     pub fn display(&self) -> String {
         let base = match &self.kind {

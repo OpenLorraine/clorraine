@@ -157,6 +157,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::ArrayLiteral { elements, fill } => {
                 for element in elements {
                     self.eval(element);
+                    self.consume_owned_place(element, element.span);
                 }
                 if let Some(fill) = fill {
                     self.eval(fill);

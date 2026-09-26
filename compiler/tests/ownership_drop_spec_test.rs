@@ -159,5 +159,9 @@ func demo(): void {
 
 func main(): i32 { demo(); return 0; }
 "#;
-    assert_reports("st16", source, &["error E10011"]);
+    assert_reports(
+        "st16",
+        source,
+        &["error E10011: nullable type is not allowed on 'String[2]'"],
+    );
 }
