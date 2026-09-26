@@ -1,10 +1,10 @@
 //! Declaration checking for structs, enums, and module-level bindings.
 //!
 //! These checks are mostly one-shot: a declaration is validated where it is
-//! read, not while a body is walked. Struct fields reject the plain `str` view
-//! and require at least one field; an enum needs an integer backing type and
-//! constant member values; a module-level `const` initializer must fold while a
-//! module-level `let` may be computed at run time. The same pass validates the
+//! read, not while a body is walked. Struct fields reject a view — a `str` or a
+//! slice — and require at least one field; an enum needs an integer backing type
+//! and constant member values; a module-level `const` initializer must fold while
+//! a module-level `let` may be computed at run time. The same pass validates the
 //! constant-shaped parts of every type, such as array extents and the type
 //! arguments of a generic struct.
 
@@ -16,11 +16,13 @@ use super::Checker;
 impl Checker<'_, '_> {
     /// Checks a struct declaration.
     ///
-    /// A struct must declare at least one field and no field may be a plain
-    /// `str` view. A generic struct may be exported so another module can
-    /// instantiate it; only a generic function is rejected under `E10302`. A
-    /// `volatile` field is accepted here; the overlay ban is enforced where a
-    /// value is built.
+    /// A struct must declare at least one field and no field may be a view: a
+    /// `str` or a slice borrows storage owned elsewhere, so a struct that stored
+    /// one could outlive it. `static str` is a literal, `cstring` is an FFI
+    /// pointer, and a fixed array is owned, so all three stay allowed. A generic
+    /// struct may be exported so another module can instantiate it; only a
+    /// generic function is rejected under `E10302`. A `volatile` field is
+    /// accepted here; the overlay ban is enforced where a value is built.
     pub(super) fn check_struct(&mut self, decl: &StructDecl) {
         if decl.fields.is_empty() {
             self.error(
@@ -34,7 +36,7 @@ impl Checker<'_, '_> {
         let mut reported_recursion = false;
         for field in &decl.fields {
             let ty = self.resolve_type(&field.ty);
-            if matches!(ty.kind, TyKind::Str) {
+            if matches!(ty.kind, TyKind::Str) || ty.is_slice() {
                 self.error(
                     "E10205",
                     format!("view-typed field '{}' is not allowed", field.name),

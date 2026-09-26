@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 20:01
-> **Progress**: 36/48 tasks (75%)
+> **Last Updated**: 2026-09-26 20:12
+> **Progress**: 41/48 tasks (85%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -243,11 +243,11 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-03](03-03-view-field-enforcement.md) §Implementation Details · AR-4, AR-10, AR-20
 **Objective**: Reject a slice view field and a move-only fill, and state the rule in the chapters.
 
-- [ ] 4.2.1 Extend the `E10205` check to a slice field — `compiler/src/sema/items.rs`
-- [ ] 4.2.2 Add the `E10215` move-only fill guard (reusing the existing message text) — `compiler/src/sema/expr.rs`
-- [ ] 4.2.3 Extend the `AL` rule and the `E10215` text — `spec/08-arrays-strings.md`, `spec/14-diagnostics.md`
-- [ ] 4.2.4 Treat a fixed-array `ffi` parameter as uncontracted so an owned argument is `E10101` and a slice stays accepted (AR-32) — `compiler/src/ffi.rs`
-- [ ] 4.2.5 Run `make check` and confirm the Phase 4 spec tests pass (green phase)
+- [x] 4.2.1 Extend the `E10205` check to a slice field — `compiler/src/sema/items.rs` ✅ (completed: 2026-09-26 20:12)
+- [x] 4.2.2 Add the `E10215` move-only fill guard (reusing the existing message text) — `compiler/src/sema/expr.rs` ✅ (completed: 2026-09-26 20:12)
+- [x] 4.2.3 Extend the `AL` rule and the `E10215` text — `spec/08-arrays-strings.md`, `spec/14-diagnostics.md` ✅ (completed: 2026-09-26 20:12)
+- [x] 4.2.4 Treat a fixed-array `ffi` parameter as uncontracted so an owned argument is `E10101` and a slice stays accepted (AR-32) — `compiler/src/ffi.rs` ✅ (completed: 2026-09-26 20:12)
+- [x] 4.2.5 Run `make check` and confirm the Phase 4 spec tests pass (green phase) ✅ (completed: 2026-09-26 20:12) — spec check OK; 20 suites green; the fix603 conflict resolved per AR-33
 
 **Deliverables**:
 - A slice field is `E10205`; `cstring`/`static str`/fixed arrays stay accepted

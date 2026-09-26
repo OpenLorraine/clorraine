@@ -89,8 +89,17 @@ pub fn is_uncontracted(signature: &FuncSignature, table: &TypeTable) -> bool {
 }
 
 /// True when one `ffi` parameter is uncontracted.
+///
+/// A handle, a struct, and a fixed array are owned storage the extern has no
+/// contract for, so the caller must either contract the parameter or call
+/// inside `unsafe`. A slice is a view over storage owned elsewhere and stays
+/// acceptable, like a scalar, `raw`, or `cstring`.
 pub fn is_uncontracted_param(mode: Mode, ty: &Ty) -> bool {
-    mode == Mode::None && matches!(ty.kind, crate::types::TyKind::Handle(_) | crate::types::TyKind::Struct(..))
+    mode == Mode::None
+        && (matches!(
+            ty.kind,
+            crate::types::TyKind::Handle(_) | crate::types::TyKind::Struct(..)
+        ) || ty.is_fixed_array())
 }
 
 /// Resolves the declared type of an `ffi` parameter.
@@ -251,6 +260,32 @@ mod tests {
         let source = "module t;\n\
             ffi lib { func RawTick(n: i32): i32; }\n\
             func demo(): i32 { unsafe { return RawTick(0); } }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(!reports(source, "E10101"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_fixed_array_to_an_uncontracted_parameter_is_rejected() {
+        let source = "module t;\n\
+            ffi lib { func RawSum(xs: u8[4]): i32; }\n\
+            func demo(xs: u8[4]): i32 {\n\
+                let n: i32 = 0;\n\
+                unsafe { n = RawSum(xs); }\n\
+                return n;\n\
+            }\n\
+            func main(): i32 { return 0; }\n";
+        assert!(reports(source, "E10101"), "{:?}", error_codes(source));
+    }
+
+    #[test]
+    fn a_slice_to_an_uncontracted_parameter_is_accepted() {
+        let source = "module t;\n\
+            ffi lib { func RawSum(xs: u8[]): i32; }\n\
+            func demo(xs: u8[]): i32 {\n\
+                let n: i32 = 0;\n\
+                unsafe { n = RawSum(xs); }\n\
+                return n;\n\
+            }\n\
             func main(): i32 { return 0; }\n";
         assert!(!reports(source, "E10101"), "{:?}", error_codes(source));
     }

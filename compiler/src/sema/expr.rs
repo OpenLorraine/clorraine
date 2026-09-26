@@ -695,6 +695,26 @@ impl Checker<'_, '_> {
             },
             None => (None, None),
         };
+        // A fill repeats one value into every element, so the element type must
+        // be duplicable: repeating a move-only value would alias one owner into
+        // several slots, and each slot would release the same storage. Without a
+        // context element type the extent error above already covers the
+        // literal.
+        if fill.is_some() {
+            if let Some(element_ty) = result_element.as_ref() {
+                if !element_ty.is_unknown()
+                    && !element_ty.is_param()
+                    && !self.table.duplicable(element_ty)
+                {
+                    self.error(
+                        "E10215",
+                        "array fill requires a fixed extent",
+                        "a fill cannot repeat a move-only element; construct each element",
+                        span,
+                    );
+                }
+            }
+        }
         for expr in elements {
             let ty = match &element {
                 Some(element_ty) => self.check_into(expr, element_ty),

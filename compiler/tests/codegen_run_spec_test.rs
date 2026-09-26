@@ -1359,20 +1359,18 @@ func main(): i32 {
 /// is done; the temporary lives to the end of the function, so the read after
 /// the nested block sees the bytes the view selected.
 #[test]
-fn an_owned_temporary_outlives_a_view_stored_in_an_outer_struct() {
+fn an_owned_temporary_outlives_a_local_view_binding() {
     let source = r#"module codegen.fix603;
 
 import { stringOf, bytes } from std.text;
 import { println } from std.io;
 
-struct S { v: u8[]; }
-
 func main(): i32 {
-    let s: S = S{ v: bytes(stringOf("hi")) };
+    let v: u8[] = bytes(stringOf("hi"));
     {
-        s = S{ v: bytes(stringOf("bye")) };
+        v = bytes(stringOf("bye"));
     }
-    println($"c={i32(s.v[0])}");
+    println($"c={i32(v[0])}");
     return 0;
 }
 "#;

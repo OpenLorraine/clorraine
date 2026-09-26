@@ -96,7 +96,7 @@
 | E10212 | Unknown member of a struct, enum, or module | `'{name}' is not a member of '{type}'` | check the declaration or the spelling |
 | E10213 | `embed` outside a constant context | `'embed' is only allowed in a constant context` | use it in `const` or a module-level initializer |
 | E10214 | Embedded file cannot be read at build time, or the path is absolute or escapes the project root | `cannot read embedded file '{path}'` | use a relative path inside the project root, and fix the build permissions |
-| E10215 | Array fill literal without a fixed extent in context | `array fill requires a fixed extent` | annotate the array type |
+| E10215 | Array fill literal without a fixed extent in context, or a fill value whose element type is not duplicable | `array fill requires a fixed extent` | annotate the array type; construct each element for a move-only fill |
 | E10216 | Constant index into a fixed array is out of range | `index {index} is out of range for '{type}[{extent}]'` | fix the index or the extent |
 | E10217 | Assignment result used as a value | `assignment result is 'void' and cannot be used as a value` | split the statement; do not chain assignments |
 | E10218 | Condition expression that is not `bool` | `condition must be 'bool'` | compare explicitly, for example `x != 0` |

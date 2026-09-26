@@ -47,7 +47,7 @@ typed by the expected type, not by the literal alone.
 
 | Rule | Statement | Diagnostic |
 |---|---|---|
-| AL-1 | The fill forms need a fixed extent in context, and a literal prefix longer than the extent is rejected | E10215 |
+| AL-1 | The fill forms need a fixed extent in context and a duplicable fill value, and a literal prefix longer than the extent is rejected | E10215 |
 | AL-2 | Elements are typed by the expected type | - |
 | AL-3 | `[]` is the empty literal | - |
 
@@ -288,7 +288,7 @@ let n = xs.len();                            // dot-call resolves to len(xs)
 | E10040 | element loop over non-duplicable elements without `borrow` |
 | E10205 | view-typed struct field other than `static str` |
 | E10209 | indexing a type that is not indexable |
-| E10215 | array fill literal without a fixed extent in context, or a literal prefix longer than the extent |
+| E10215 | array fill literal without a fixed extent in context, a fill value whose element type is not duplicable, or a literal prefix longer than the extent |
 | E10216 | constant index into a fixed array is out of range |
 | E10220 | inner extent omitted in a multi-dimensional type |
 | E10226 | an extent that is not greater than zero (`u8[0]`) |
