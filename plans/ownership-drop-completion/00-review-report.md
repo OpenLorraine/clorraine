@@ -70,3 +70,15 @@
 
 - Verify at review: `make check` — `spec check: OK (27 files, 103 compile-fail tests)`; all suites pass.
 - One scoped re-review follows on the RV-010 fix diff, per the single-re-review budget.
+
+#### Re-review after the RV-010 fix (`3095145..65851e1`)
+
+RV-010 is resolved for every enumerated form (1-D scalar, nested, empty prefix,
+`prefix == extent`, `prefix > extent` rejection, 3-D, deeper) with no new
+CRITICAL/MAJOR issue. The `prefix` bound is captured before the `if let` shadow
+and both loops use it; no index is written twice or skipped.
+
+| ID | Severity | Finding | Ruling |
+|----|----------|---------|--------|
+| NEW-1 | 🔵 OBSERVATION | When `prefix == extent` the fill loop is empty but `emit_guards(fill)` still runs, so a guard can trap for a fill value nothing copies. Pre-fix this path returned before the fill. | Report-only. Chapter 04 orders the fill to evaluate once, so emitting the guard is defensible; changing it could drop a required evaluation. |
+| NEW-2 | 🔵 OBSERVATION | A non-literal nested fill with a prefix now reaches the scalar path (`d[1] = v;`) and is invalid C — the same pre-existing gap as F3, whose reach this fix widens from the empty-prefix form. | Report-only; whole fixed-array-element assignment is out of scope (AR-28). |
