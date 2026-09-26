@@ -404,9 +404,11 @@ func main(): i32 { demo(); return 0; }
 "#,
     );
     let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    // The prototype and the definition both start with the same text; the
+    // definition is the last occurrence, so the body is the final chunk.
     let body = emitted
         .split("static void cl_set__String")
-        .nth(1)
+        .last()
         .expect("the instantiated set definition must be emitted");
     assert!(
         body.contains("FreeString("),

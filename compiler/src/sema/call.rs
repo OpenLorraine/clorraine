@@ -168,7 +168,9 @@ impl Checker<'_, '_> {
                 self.check_conversion(ty, &expected, *arg_span);
             }
         }
-        crate::types::substitute(&signature.returns, &bindings)
+        let returns = crate::types::substitute(&signature.returns, &bindings);
+        self.reject_fixed_array_sequence(&returns, span);
+        returns
     }
 
     /// Reports `E10306` when an unbounded generic parameter is bound to a type

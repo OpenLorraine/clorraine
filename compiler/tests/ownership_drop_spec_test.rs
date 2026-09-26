@@ -311,6 +311,27 @@ func main(): i32 { demo(); return 0; }
     assert_emits_valid_c("pf003", source);
 }
 
+/// A fixed-array `Array` element is rejected even when the `Array` type is built
+/// by a generic call's type argument, not a written annotation.
+#[test]
+fn should_reject_a_fixed_array_element_built_by_a_generic_call() {
+    let source = r#"module tests.od.array_fixed_call;
+
+import { String } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let xs = arrayNew<String[2]>();
+    return 0;
+}
+"#;
+    assert_reports(
+        "e90000-call",
+        source,
+        &["error E90000: 'String[2]' is not yet supported"],
+    );
+}
+
 /// `spec/appendix-stdlib.md`: a growable `Array<T>` accepts a move-only element
 /// now that element drop glue exists, so the staged `E90000` no longer fires.
 #[test]

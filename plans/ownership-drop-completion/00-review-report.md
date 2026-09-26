@@ -117,3 +117,15 @@ and both loops use it; no index is written twice or skipped.
 - Verify at review: `make check` — `spec check: OK`; all suites pass.
 - The reviewer ran AddressSanitizer on `Array<String>`, `Array<Owned>`, `Array<Array<String>>`, `Array<Buffer>`, and nested fixed arrays: no leak and no double free.
 - One scoped re-review follows on the RV-011 fix diff, per the single-re-review budget.
+
+#### Re-review after the RV-011 fix (`088a312..f933b1b`)
+
+The re-review confirmed the annotation cases and the `E90000` wiring, but found
+RV-011 was not fully closed and two minor defects.
+
+| ID | Severity | Finding | Ruling |
+|----|----------|---------|--------|
+| RV-011 (re-open) | 🟠 MAJOR | The guard was syntactic: it matched only an `Array<...>` annotation. `arrayNew<String[2]>()` and the inferred `let xs = arrayNew<String[2]>()` build `Array<fixed-array>` by substitution and were still accepted with invalid C. | **Accepted within the existing ruling** (reject fixed-array elements). The check now runs on the resolved `Array<...>` type as `Sema::reject_fixed_array_sequence`, called from `resolve_type` and from `check_generic_call`, so both the annotation and the generic-substitution paths are rejected. Verified: annotation, `arrayNew<String[2]>()`, and nested `arrayNew<Array<u8[2]>>()` report `E90000`; `Array<Buffer>`/`Array<String>`/`Array<Owned>`/`Array<Array<i32>>` stay accepted. |
+| RV-012 (re-open) | 🟡 MINOR | `.split("static void cl_set__String").nth(1)` returned the code between the prototype and the definition, not the body. | **Accepted — fix now**: the definition is the last occurrence, so the test uses `.last()`. Fixed. |
+| RV-013 | 🟡 MINOR | The syntactic check called `resolve_type` on the element, re-running element validation and duplicating element-level diagnostics. | **Accepted — fix now**: the resolved-type check inspects the already-resolved element, so element diagnostics run once. Fixed. |
+| F4 | 🔵 OBSERVATION | The first diagnostic line names the element type in the `'{feature}'` slot; that matches the Chapter 14 template but reads as a type. | Report-only; the template fixes the wording. |

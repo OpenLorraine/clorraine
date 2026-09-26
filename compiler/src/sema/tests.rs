@@ -559,18 +559,3 @@ func main(): i32 { return 0; }
 "#,
     );
 }
-
-/// A fixed array is rejected as an `Array` element.
-///
-/// The container stores its elements through a pointer and cannot name a row as
-/// one element yet, so a fixed-array element stays staged.
-#[test]
-fn a_fixed_array_array_element_reports_e90000() {
-    assert_codes(
-        r#"module test;
-func takesGrid(xs: Array<u8[2]>): void {}
-func main(): i32 { return 0; }
-"#,
-        &["E90000"],
-    );
-}
