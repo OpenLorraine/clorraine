@@ -71,6 +71,12 @@ impl<'a> Emitter<'a> {
         self.function = Some(function);
         self.current_module = info.module.clone();
         self.return_ty = self.substitute(&function.ret);
+        // A by-value fixed-array return is written into the hidden trailing
+        // out-parameter, so the caller's destination is the result variable on
+        // every path, with or without a cleanup ladder.
+        if self.return_ty.is_fixed_array() {
+            self.result_var = Some("__cl_ret".to_owned());
+        }
 
         for param in &function.params {
             let c_name = sanitize_identifier(&param.name);
@@ -255,9 +261,14 @@ impl<'a> Emitter<'a> {
             self.push(&format!("    if (sizeof(__cl_tmp{index})) {{ }}"));
         }
         if let Some(result) = self.result_var.clone() {
-            let ret = self.return_ty.clone();
-            let empty = self.empty_state(&ret);
-            self.push(&format!("    {} = {};", declarator(&ret, &result), empty));
+            // A fixed-array result is the hidden out-parameter the caller
+            // passed in, so it already exists as a parameter and must not be
+            // redeclared as a local. Every other result is a hoisted local.
+            if !self.return_ty.is_fixed_array() {
+                let ret = self.return_ty.clone();
+                let empty = self.empty_state(&ret);
+                self.push(&format!("    {} = {};", declarator(&ret, &result), empty));
+            }
         }
         // Reference every parameter so an unused one does not fail the
         // `-Wunused-parameter` check the emitted C must pass. A `sizeof` test
@@ -316,6 +327,28 @@ impl<'a> Emitter<'a> {
                         self.emit_line_directive(span);
                         self.emit_reassigned_target_drop(target);
                         self.emit_array_assign(target, &ty, elements, fill);
+                        return;
+                    }
+                }
+                // A by-value fixed-array call is lowered through a hidden
+                // out-parameter: the call names the caller's destination as its
+                // trailing argument and the assignment itself is dropped.
+                if let ValueKind::Call {
+                    callee,
+                    type_args,
+                    args,
+                    receiver,
+                } = &value.kind
+                {
+                    if self.substitute(&target.ty).is_fixed_array() {
+                        self.emit_call(
+                            span,
+                            callee,
+                            type_args,
+                            args,
+                            receiver.as_deref(),
+                            Some(target),
+                        );
                         return;
                     }
                 }
@@ -410,6 +443,23 @@ impl<'a> Emitter<'a> {
                 self.emit_line_directive(span);
                 for arg in args {
                     self.emit_guards(arg);
+                }
+                // A by-value fixed-array result is C's hidden out-parameter:
+                // the call writes through the caller's destination instead of
+                // assigning the (unassignable) array result.
+                if let Some(place) = result {
+                    if self.substitute(&place.ty).is_fixed_array() {
+                        let destination = self.place(place);
+                        let call = self.call_with_destination(
+                            callee,
+                            type_args,
+                            args,
+                            receiver,
+                            &destination,
+                        );
+                        self.push(&format!("    {call};"));
+                        return;
+                    }
                 }
                 let call = self.call(callee, type_args, args, receiver);
                 let prefix = match result {
@@ -517,7 +567,7 @@ impl<'a> Emitter<'a> {
         self.push("    }");
     }
 
-    /// Emits an array literal as element-by-element assignments.
+    /// Emits an array literal as element-by-element assignments to a place.
     fn emit_array_assign(
         &mut self,
         target: &Place,
@@ -526,6 +576,22 @@ impl<'a> Emitter<'a> {
         fill: &Option<Box<ir::Value>>,
     ) {
         let target_c = self.place(target);
+        self.emit_array_assign_to(&target_c, ty, elements, fill);
+    }
+
+    /// Emits an array literal as element-by-element assignments to a C lvalue.
+    ///
+    /// The target is a rendered C lvalue rather than a place, so the same
+    /// lowering can write a hoisted local or the hidden out-parameter that
+    /// carries a by-value fixed-array return. C cannot assign an array in one
+    /// statement, so each element is stored on its own.
+    pub(super) fn emit_array_assign_to(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        elements: &[ir::Value],
+        fill: &Option<Box<ir::Value>>,
+    ) {
         for (index, element) in elements.iter().enumerate() {
             self.emit_guards(element);
             let lowered = self.value(element);

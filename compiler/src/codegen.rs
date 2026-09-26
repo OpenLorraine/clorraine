@@ -400,7 +400,10 @@ impl<'a> Emitter<'a> {
         let storage = if decl.exported { "" } else { "static " };
         let ret = resolve_ty(&decl.returns, &type_param_names(decl), &self.sema.table);
         let ret = substitute_in(&ret, subst);
-        let ret_c = if ret.is_void() {
+        // C cannot return an array by value, so a by-value fixed-array return
+        // is lowered through a hidden trailing out-parameter: the function
+        // becomes `void` and the caller passes its destination storage.
+        let ret_c = if ret.is_void() || ret.is_fixed_array() {
             "void".to_owned()
         } else {
             c_type(&ret)
@@ -415,6 +418,9 @@ impl<'a> Emitter<'a> {
             } else {
                 params.push(declarator(&ty, &c_name));
             }
+        }
+        if ret.is_fixed_array() {
+            params.push(declarator(&ret, "__cl_ret"));
         }
         if params.is_empty() {
             params.push("void".to_owned());

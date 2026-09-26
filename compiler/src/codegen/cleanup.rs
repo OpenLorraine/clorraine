@@ -258,31 +258,82 @@ impl<'a> Emitter<'a> {
     ) {
         self.emit_line_directive(span);
         if let Some(value) = value {
-            self.emit_guards(value);
-            let lowered = self.value(value);
-            if let Some(result) = self.result_var.clone() {
-                self.push(&format!("    {result} = {lowered};"));
-                // Returning an owned place transfers it to the caller, so the
-                // source is emptied before the cleanup ladder runs; otherwise
-                // the callee would release what it just handed back.
-                if let ValueKind::Place(place) = &value.kind {
-                    let ty = self.substitute(&place.ty);
-                    if self.needs_drop(&ty) {
-                        let source = self.place(place);
-                        self.emit_move_zero(&source, &ty);
-                    }
-                }
+            if self.return_ty.is_fixed_array() {
+                self.emit_fixed_array_return(value);
             } else {
-                self.push(&format!("    return {lowered};"));
-                return;
+                self.emit_guards(value);
+                let lowered = self.value(value);
+                if let Some(result) = self.result_var.clone() {
+                    self.push(&format!("    {result} = {lowered};"));
+                    // Returning an owned place transfers it to the caller, so
+                    // the source is emptied before the cleanup ladder runs;
+                    // otherwise the callee would release what it just handed
+                    // back.
+                    if let ValueKind::Place(place) = &value.kind {
+                        let ty = self.substitute(&place.ty);
+                        if self.needs_drop(&ty) {
+                            let source = self.place(place);
+                            self.emit_move_zero(&source, &ty);
+                        }
+                    }
+                } else {
+                    self.push(&format!("    return {lowered};"));
+                    return;
+                }
             }
         }
         if let Some(label) = jump {
             self.push(&format!("    goto __cl_c{label};"));
+        } else if self.return_ty.is_fixed_array() {
+            // A fixed-array return lowers to a `void` function whose result
+            // already sits in the caller's out-parameter.
+            self.push("    return;");
         } else if let Some(result) = self.result_var.clone() {
             self.push(&format!("    return {result};"));
         } else {
             self.push("    return;");
+        }
+    }
+
+    /// Copies a by-value fixed-array return into the hidden out-parameter.
+    ///
+    /// C cannot assign or return an array, so the value is written to the
+    /// caller's destination element by element. An array literal writes its
+    /// elements through [`Emitter::emit_array_assign_to`]; a returned owned
+    /// place is copied element by element and then emptied, so the scope
+    /// cleanup does not release the value the caller now owns.
+    fn emit_fixed_array_return(&mut self, value: &ir::Value) {
+        let ty = self.return_ty.clone();
+        match &value.kind {
+            ValueKind::ArrayLit { elements, fill } => {
+                self.emit_array_assign_to("__cl_ret", &ty, elements, fill);
+            }
+            ValueKind::Place(place) => {
+                self.emit_guards(value);
+                let source = self.place(place);
+                let extent = match &ty.kind {
+                    TyKind::Array { extents, .. } => {
+                        extents.first().and_then(|size| *size).unwrap_or(0)
+                    }
+                    _ => 0,
+                };
+                for index in 0..extent {
+                    self.push(&format!("    __cl_ret[{index}] = {source}[{index}];"));
+                }
+                let source_ty = self.substitute(&place.ty);
+                if self.needs_drop(&source_ty) {
+                    self.emit_move_zero(&source, &source_ty);
+                }
+            }
+            _ => {
+                // A form other than a literal or a place has no C array value
+                // to copy. Keep the generic store, so an unsupported form fails
+                // the C compiler loudly rather than silently leaving the
+                // caller's destination untouched.
+                self.emit_guards(value);
+                let lowered = self.value(value);
+                self.push(&format!("    __cl_ret = {lowered};"));
+            }
         }
     }
 
@@ -298,6 +349,10 @@ impl<'a> Emitter<'a> {
             if index + 1 < rungs.len() {
                 let next = self.labels[&rungs[index + 1]];
                 self.push(&format!("    goto __cl_c{next};"));
+            } else if self.return_ty.is_fixed_array() {
+                // The result already sits in the caller's out-parameter and
+                // the function is `void`, so the ladder ends with a bare return.
+                self.push("    return;");
             } else if let Some(result) = self.result_var.clone() {
                 self.push(&format!("    return {result};"));
             } else {
@@ -312,7 +367,9 @@ impl<'a> Emitter<'a> {
     /// compiler's return-type analysis when the last emitted block ends with a
     /// `goto` into the ladder.
     pub(super) fn emit_closing_return(&mut self) {
-        if self.return_ty.is_void() {
+        // A fixed-array return lowers to a `void` function, so it may fall off
+        // the end like any other `void` function.
+        if self.return_ty.is_void() || self.return_ty.is_fixed_array() {
             return;
         }
         if let Some(result) = self.result_var.clone() {

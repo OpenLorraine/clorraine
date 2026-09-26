@@ -364,7 +364,42 @@ impl<'a> Emitter<'a> {
         args: &[Value],
         receiver: Option<&Value>,
     ) -> String {
-        let argument_list = self.call_arguments(callee, args);
+        self.render_call(callee, type_args, args, receiver, None)
+    }
+
+    /// Renders a call whose by-value fixed-array result goes to a destination.
+    ///
+    /// C cannot return an array by value, so a fixed-array-returning function
+    /// takes the caller's destination as one extra trailing argument. The
+    /// destination is appended after the rendered arguments.
+    pub(super) fn call_with_destination(
+        &self,
+        callee: &str,
+        type_args: &[Ty],
+        args: &[Value],
+        receiver: Option<&Value>,
+        destination: &str,
+    ) -> String {
+        self.render_call(callee, type_args, args, receiver, Some(destination))
+    }
+
+    /// Renders a call, optionally appending one trailing destination argument.
+    fn render_call(
+        &self,
+        callee: &str,
+        type_args: &[Ty],
+        args: &[Value],
+        receiver: Option<&Value>,
+        destination: Option<&str>,
+    ) -> String {
+        let mut rendered: Vec<String> = Vec::new();
+        if !args.is_empty() {
+            rendered.push(self.call_arguments(callee, args));
+        }
+        if let Some(destination) = destination {
+            rendered.push(destination.to_owned());
+        }
+        let argument_list = rendered.join(", ");
         if let Some(receiver) = receiver {
             let target = self.value(receiver);
             return format!("({target})({argument_list})");

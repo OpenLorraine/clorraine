@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 15:00
-> **Progress**: 10/43 tasks (23%)
+> **Last Updated**: 2026-09-26 15:42
+> **Progress**: 17/47 tasks (36%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -22,13 +22,13 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
-| 1 | Array classification, nullability, and element moves | 10 |
-| 2 | Fixed-array return and nested-array literals | 9 |
+| 1 | Array classification, nullability, element moves, and the fixed-array return | 17 |
+| 2 | Nested-array literals | 6 |
 | 3 | Array element drop glue, `set`, and un-stage `E90000` | 11 |
 | 4 | View-field and fill enforcement | 8 |
 | 5 | Full verification and documentation | 5 |
 
-**Total: 43 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the task-size criteria in the make-plan quality checklist)
+**Total: 47 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the task-size criteria in the make-plan quality checklist)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
 >
@@ -99,49 +99,64 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 **Verify**: `make check`
 
+### Step 1.4: Fixed-Array Return Lowering (pulled forward per RV-001)
+
+**Reference**: [03-04](03-04-fixed-array-return.md) · [07](07-testing-strategy.md) · PF-001
+**Objective**: Lower a by-value fixed-array return now that a fixed array is owned, so classification and return lowering land together and no build accepts invalid C.
+
+- [x] 1.4.1 [spec-author] Write specification tests that `func pair(): String[2]` compiles and that a slice return is unchanged — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 15:33)
+- [x] 1.4.2 Run `make check` and confirm the new tests fail for the right reason (red phase) ✅ (completed: 2026-09-26 15:33; cc rejects the emitted C: `expected expression before '{'` and `assignment to expression with array type`)
+- [x] 1.4.3 Emit a fixed-array return as `void` with a trailing `T __cl_ret[N]` out-parameter — `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-26 15:40)
+- [x] 1.4.4 Copy the returned value into `__cl_ret` in `emit_return`/`emit_closing_return` and suppress the result local — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-09-26 15:40)
+- [x] 1.4.5 Pass the caller destination at fixed-array call sites — `compiler/src/codegen/calls.rs` ✅ (completed: 2026-09-26 15:40; delivered via `call_with_destination` in `compiler/src/codegen/expr.rs` plus the `Assign`/`emit_call` routing in `function.rs`)
+- [x] 1.4.6 Run `make check` and confirm the Step 1.4 spec tests pass (green phase) ✅ (completed: 2026-09-26 15:40)
+- [x] 1.4.7 Add a build-and-run case: `let p: String[2] = pair();` releases each element once (ST-1) — `compiler/tests/ownership_drop_impl_test.rs` ✅ (completed: 2026-09-26 15:42; two cases: owning return frees once, scalar return round-trips)
+
+**Deliverables**:
+- `func pair(): String[2]` emits `void cl_pair(..., ClString __cl_ret[2])` and writes into it
+- A returned `String[2]` compiles as valid C and is released exactly once
+
+**Verify**: `make check`
+
 ---
 
-## Phase 2: Fixed-Array Return and Nested-Array Literals
+## Phase 2: Nested-Array Literals
 
 > **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
 > **Lenses**: compiler and language
 
 ### Step 2.1: Specification Tests
 
-**Reference**: [03-04](03-04-fixed-array-return.md) · [03-05](03-05-nested-array-literals.md) · [07](07-testing-strategy.md) · PF-001, PF-003
-**Objective**: Express the by-value return and the nested literal as failing tests.
+**Reference**: [03-05](03-05-nested-array-literals.md) · [07](07-testing-strategy.md) · PF-003
+**Objective**: Express the nested array literal as a failing test.
 
-- [ ] 2.1.1 [spec-author] Write specification tests that `func pair(): String[2]` compiles (no `E10036`) and that a nested array literal is accepted — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 2.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase)
+- [ ] 2.1.1 [spec-author] Write a specification test that a nested array literal `u8[3][2] = [[1,2],[3,4],[5,6]]` is accepted — `compiler/tests/ownership_drop_spec_test.rs`
+- [ ] 2.1.2 Run `make check` and confirm the new test fails for the right reason (red phase)
 
 **Deliverables**:
-- The ST cases exist and fail before the fix
+- The ST case exists and fails before the fix
 
-**Verify**: `make check` (expected: new tests red)
+**Verify**: `make check` (expected: new test red)
 
 ### Step 2.2: Implementation
 
-**Reference**: [03-04](03-04-fixed-array-return.md) §Implementation Details · [03-05](03-05-nested-array-literals.md) §Implementation Details · PF-001, PF-003
-**Objective**: Lower a by-value fixed-array return and emit nested literals per dimension.
+**Reference**: [03-05](03-05-nested-array-literals.md) §Implementation Details · PF-003
+**Objective**: Emit a nested array literal one dimension per level.
 
-- [ ] 2.2.1 Emit a fixed-array return as `void` with a trailing out-parameter — `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs`
-- [ ] 2.2.2 Copy the returned value into the out-parameter in `emit_return`/`emit_closing_return` — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`
-- [ ] 2.2.3 Pass the result destination at fixed-array call sites — `compiler/src/codegen/calls.rs`
-- [ ] 2.2.4 Recurse one dimension per level in `emit_array_assign` — `compiler/src/codegen/function.rs`
-- [ ] 2.2.5 Run `make check` and confirm the Phase 2 spec tests pass (green phase)
+- [ ] 2.2.1 Recurse one dimension per level in `emit_array_assign` — `compiler/src/codegen/function.rs`
+- [ ] 2.2.2 Run `make check` and confirm the Phase 2 spec test passes (green phase)
 
 **Deliverables**:
-- `func pair(): String[2]` emits `void cl_pair(..., ClString __cl_ret[2])` and writes into it
-- `u8[3][2] = [[1,2],[3,4],[5,6]]` emits per-element assignments
+- `u8[3][2] = [[1,2],[3,4],[5,6]]` emits per-dimension element assignments
 
 **Verify**: `make check`
 
 ### Step 2.3: Implementation Tests and Hardening
 
-**Reference**: [03-04](03-04-fixed-array-return.md) §Testing Requirements · [07](07-testing-strategy.md) ST-1
-**Objective**: Prove the return and nested literal at run time.
+**Reference**: [03-05](03-05-nested-array-literals.md) §Testing Requirements · [07](07-testing-strategy.md) ST-9
+**Objective**: Prove the nested literal at run time.
 
-- [ ] 2.3.1 Add build-and-run cases: a returned `String[2]` (ST-1) and a nested `u8[3][2]` read — `compiler/tests/ownership_drop_impl_test.rs`
+- [ ] 2.3.1 Add a build-and-run case: a nested `u8[3][2]` read — `compiler/tests/ownership_drop_impl_test.rs`
 - [ ] 2.3.2 Run `make check` (phase gate)
 
 **Deliverables**:

@@ -93,6 +93,53 @@ fn assert_accepts(tag: &str, source: &str) {
     );
 }
 
+/// Compiles one snippet and returns the scratch directory and emitted C path.
+///
+/// The front end must accept the program; the caller inspects the emitted C.
+fn emit_c(tag: &str, source: &str) -> (ScratchDir, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("cannot write snippet: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let run = Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args([
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ])
+        .output()
+        .expect("failed to spawn the compiler binary");
+    assert_eq!(
+        run.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    (scratch, c_path)
+}
+
+/// Asserts that the emitted translation unit is valid C.
+///
+/// The front end can accept a program whose emitted C does not compile, so the
+/// host C compiler is the oracle for the emitter half of the case. This is the
+/// checker-plus-emitter contract; run-time behavior is covered separately.
+fn assert_emits_valid_c(tag: &str, source: &str) {
+    let (_scratch, c_path) = emit_c(tag, source);
+    let built = Command::new("cc")
+        .args(["-std=c99", "-fsyntax-only"])
+        .arg(&c_path)
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+}
+
 /// `spec/08-arrays-strings.md` §6: a binding moved into an array literal is
 /// invalid afterward, so reading it again is `E10020`.
 ///
@@ -164,4 +211,32 @@ func main(): i32 { demo(); return 0; }
         source,
         &["error E10011: nullable type is not allowed on 'String[2]'"],
     );
+}
+
+/// `spec/08-arrays-strings.md` §6: a function may return a fixed array by value.
+///
+/// C cannot return an array, so the emitter must lower the by-value return into
+/// valid C (a hidden out-parameter) rather than `return <array>`. The emitted
+/// translation unit is the oracle here; the run-time release behavior is the
+/// companion implementation test. A slice return is unchanged and is covered by
+/// the lend-candidate case above.
+#[test]
+fn should_emit_valid_c_when_a_function_returns_a_fixed_array_by_value() {
+    let source = r#"module tests.od.freereturn;
+
+import { String, stringOf } from std.text;
+
+func pair(): String[2] {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    return [a, b];
+}
+
+func demo(): void {
+    let p: String[2] = pair();
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_emits_valid_c("st1", source);
 }
