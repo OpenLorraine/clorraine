@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 02:45
-> **Progress**: 22/24 tasks (92%)
+> **Last Updated**: 2026-09-26 02:48
+> **Progress**: 24/24 tasks (100%) — Done
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -218,8 +218,8 @@ Rust suites, written red before each fix (AR-4).
 **Objective**: Prove the whole feature and record completion.
 
 - [x] 4.1.1 Search the touched modules for any remaining duplicated zip-substitute block or unsubstituted field read; confirm none remains and no dead code was introduced ✅ (completed: 2026-09-26 02:45; touched modules clean; user-ruled consolidation of the two pre-existing copies in `own/generics.rs` and `codegen/program.rs` onto `substitute_instance`; `make check` green)
-- [ ] 4.1.2 Full acceptance run — `make verify`
-- [ ] 4.1.3 Mark DEF-06…DEF-10 Fixed on `plans/00-roadmap.md` and set this plan's roadmap row to Done; update `AGENTS.md` only if a factual note changed
+- [x] 4.1.2 Full acceptance run — `make verify` ✅ (completed: 2026-09-26 02:48; all legs passed; one transient vbcc "No config file!" flake on the first attempt, green on retry)
+- [x] 4.1.3 Mark DEF-06…DEF-10 Fixed on `plans/00-roadmap.md` and set this plan's roadmap row to Done; update `AGENTS.md` only if a factual note changed ✅ (completed: 2026-09-26 02:48; DEF-06–DEF-10 marked Fixed with regressions; PLAN-10 row Done; AGENTS.md unchanged — no factual note changed)
 
 **Deliverables**:
 - `make verify` green; roadmap and plan status updated
