@@ -310,3 +310,99 @@ func main(): i32 { demo(); return 0; }
 "#;
     assert_emits_valid_c("pf003", source);
 }
+
+/// `spec/appendix-stdlib.md`: a growable `Array<T>` accepts a move-only element
+/// now that element drop glue exists, so the staged `E90000` no longer fires.
+#[test]
+fn should_accept_a_growable_array_of_a_move_only_element() {
+    let source = r#"module tests.od.growable_move_only;
+
+import { Buffer, Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let xs: Array<Buffer> = arrayNew<Buffer>();
+    return 0;
+}
+"#;
+    assert_accepts("st8", source);
+}
+
+/// `spec/appendix-stdlib.md:62`: replacing a growable element is accepted for a
+/// move-only element, which the former staged `E90000` rejected.
+#[test]
+fn should_accept_replacing_a_growable_move_only_element() {
+    let source = r#"module tests.od.set_move_only;
+
+import { String, stringOf } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func demo(): void {
+    let xs: Array<String> = arrayNew<String>();
+    xs.push(stringOf("a"));
+    xs.set(0, stringOf("b"));
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_accepts("st17", source);
+}
+
+/// The fixed-array drop glue releases each element in place, one dimension per
+/// level, so a nested declaration indexes a row and then an element.
+///
+/// The per-dimension shape is the point: a flattened index would name a row
+/// instead of an element and drop the wrong storage.
+#[test]
+fn should_emit_fixed_array_drop_glue_one_dimension_per_level() {
+    let source = r#"module tests.od.fixed_drop_shape;
+
+import { String, stringOf } from std.text;
+
+func demo(): void {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    let c: String = stringOf("c");
+    let d: String = stringOf("d");
+    let grid: String[2][2] = [[a, b], [c, d]];
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    let (_scratch, c_path) = emit_c("drop-shape-fixed", source);
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    for name in ["grid[0][0]", "grid[0][1]", "grid[1][0]", "grid[1][1]"] {
+        let expected = format!("FreeString({name})");
+        assert!(
+            emitted.contains(&expected),
+            "the fixed-array drop must release `{name}` in place; emitted C:\n{emitted}"
+        );
+    }
+}
+
+/// The growable drop glue walks the elements through the buffer, then frees the
+/// buffer and empties the array.
+#[test]
+fn should_emit_growable_array_drop_glue_through_the_buffer() {
+    let source = r#"module tests.od.grow_drop_shape;
+
+import { String, stringOf } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func demo(): void {
+    let xs: Array<String> = arrayNew<String>();
+    xs.push(stringOf("x"));
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    let (_scratch, c_path) = emit_c("drop-shape-grow", source);
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        emitted.contains("cl_buffer_ptr(xs.data)"),
+        "the growable drop must walk the buffer; emitted C:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("FreeBuffer(xs.data)"),
+        "the growable drop must free the buffer; emitted C:\n{emitted}"
+    );
+}

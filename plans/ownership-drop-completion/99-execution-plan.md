@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 17:10
-> **Progress**: 23/47 tasks (49%)
+> **Last Updated**: 2026-09-26 17:36
+> **Progress**: 25/47 tasks (53%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -168,7 +168,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 ## Phase 3: Array Element Drop Glue, `set`, and Un-stage `E90000`
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 0a7d0e3c81ff09747baad917b1e446d183873b97
 > **Lenses**: compiler and language
 
 ### Step 3.1: Specification Tests
@@ -176,8 +176,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-02](03-02-array-drop-glue.md) · [07](07-testing-strategy.md) · AR-2, AR-3, AR-7, AR-25
 **Objective**: Express the accepted growable container, the drop shapes, and `set`, as failing tests.
 
-- [ ] 3.1.1 [spec-author] Write specification and emitter tests for ST-8 (`Array<Buffer>` accepted), ST-17 (`set` drops the replaced element), and the fixed-array (per dimension) and growable drop shapes — `compiler/tests/ownership_drop_spec_test.rs`, `compiler/src/codegen/drop.rs`
-- [ ] 3.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase)
+- [x] 3.1.1 [spec-author] Write specification and emitter tests for ST-8 (`Array<Buffer>` accepted), ST-17 (`set` drops the replaced element), and the fixed-array (per dimension) and growable drop shapes — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 17:36; emitter-shape assertions realized as emitted-C text checks in the spec file, since `codegen` has no Emitter unit-test harness — only pure-function tests)
+- [x] 3.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase) ✅ (completed: 2026-09-26 17:36; ST-8/ST-17 red with `E90000`; shape tests red with the missing drop lines)
 
 **Deliverables**:
 - The ST cases exist and fail before the fix
@@ -194,7 +194,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 3.2.3 Make `set<T>` drop the replaced element — `stdlib/std.mem.clo`
 - [ ] 3.2.4 Remove `check_sequence_element` and its call — `compiler/src/sema/mod.rs`
 - [ ] 3.2.5 Update the `E90000` unit test to assert `Array<move-only>` is accepted — `compiler/src/sema/tests.rs`
-- [ ] 3.2.6 Un-stage `E90000`: delete the staged golden, remove its README row, update the `check.sh` comment — `spec/tests/staged/`, `spec/check.sh`
+- [ ] 3.2.6 Un-stage `E90000`: delete the staged golden, remove its README row, update the `check.sh` comment — `spec/tests/staged/`, `spec/check.sh`; also convert the staged spec test `stage_spec_test.rs:2368` to an acceptance test (AR-30)
 - [ ] 3.2.7 Run `make check` and confirm the Phase 3 spec tests pass (green phase)
 
 **Deliverables**:

@@ -1,6 +1,6 @@
 # Ambiguity Register: Ownership and Drop Model Completion
 
-> **Status**: ✅ GATE PASSED — all 29 items resolved (22 at creation, 7 added by the preflight review)
+> **Status**: ✅ GATE PASSED — all 30 items resolved (22 at creation, 7 added by the preflight review, 1 added at runtime)
 > **Last Updated**: 2026-09-26 14:45
 
 ## Scope
@@ -51,6 +51,7 @@ this plan.
 | AR-27 | Technical | Emitting a nested array literal | (a) recurse one dimension per level; (b) compound-literal cast | (a) — preflight PF-003; per-dimension indexing matches the C declaration | ✅ Resolved |
 | AR-28 | Technical | Whether `emits_drop` gains a fixed-array arm | (a) no arm; whole fixed-array assignment stays out of scope; (b) add the arm and route assignment | (a) — preflight PF-009; the scratch local is a C array and cannot be assigned | ✅ Resolved |
 | AR-29 | UX | `E10215` message for the move-only fill | (a) reuse the existing message text with a specific help; (b) add a second message | (a) — preflight PF-008; keeps one registry template and the message matcher | ✅ Resolved |
+| AR-30 | Testing (runtime) | A staged specification test also pins the old `E90000` trigger: `compiler/tests/stage_spec_test.rs:2368` asserts `Array<Buffer>` reports `E90000`, which AR-2/AR-3 remove but the plan did not list. | (a) convert it to an acceptance test for `Array<Buffer>`, renamed; (b) delete it, since the new ST-8 spec test covers acceptance; (c) keep the trigger (contradicts AR-2) | (a) confirmed 2026-09-26 — the case stays in the staged suite as the un-staged regression | ✅ Resolved |
 
 ## Resolution Notes
 
