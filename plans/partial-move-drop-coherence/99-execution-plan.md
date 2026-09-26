@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 02:40
+> **Last Updated**: 2026-09-26 02:31
 > **Progress**: 10/10 tasks (100%) — Done
 > **CodeOps Artifact Schema**: 1
 
@@ -114,8 +114,8 @@ existing suites, written red before each fix (AR-4).
 **Objective**: Prove the whole feature and record completion.
 
 - [x] 2.1.1 Run the build-and-run matrix across ST-1, ST-2, ST-3, and ST-5 (generic and non-generic); confirm every form exits cleanly with no double-free abort ✅ (completed: 2026-09-26 02:26; 5 run cases pass, including the postfix case)
-- [x] 2.1.2 Full acceptance run — `make verify` ✅ (completed: 2026-09-26 02:40; all legs passed)
-- [x] 2.1.3 Mark DEF-11 Fixed on `plans/00-roadmap.md`, set this plan's roadmap row to Done, and set PLAN-10 back to Executing (Phase 4 pending); update `AGENTS.md` only if a factual note changed ✅ (completed: 2026-09-26 02:40; added `partial_move_impl_test.rs` to the AGENTS.md test map)
+- [x] 2.1.2 Full acceptance run — `make verify` ✅ (completed: 2026-09-26 02:29; all legs passed)
+- [x] 2.1.3 Mark DEF-11 Fixed on `plans/00-roadmap.md`, set this plan's roadmap row to Done, and set PLAN-10 back to Executing (Phase 4 pending); update `AGENTS.md` only if a factual note changed ✅ (completed: 2026-09-26 02:29; added `partial_move_impl_test.rs` to the AGENTS.md test map)
 
 **Deliverables**:
 - `make verify` green; roadmap and plan status updated
