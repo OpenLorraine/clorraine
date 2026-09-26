@@ -1,0 +1,66 @@
+# Ambiguity Register: Ownership and Drop Model Completion
+
+> **Status**: ✅ GATE PASSED — all 22 items resolved
+> **Last Updated**: 2026-09-26 14:01
+
+## Scope
+
+This plan fixes the confirmed version-1 ownership and drop-model defects in
+`plans/00-roadmap.md` PLAN-11. The defects are: a fixed array is misclassified
+as a view (F1), a slice view field is accepted (F2), and owning-element drop
+glue for arrays is staged (F3). The plan adds no language surface; it makes the
+implementation match the frozen specification chapters 03, 08, 11, 16 and the
+standard-library appendix. The ledger-deferred items (nested partial moves O4,
+per-field loan precision O8, aggregate view returns F2, `Box<T>` X1, and
+non-lexical lifetimes) stay out of this plan.
+
+## Register
+
+| # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
+|---|----------|-----------------|-------------------|---------------|--------|
+| AR-1 | Scope | Which work the plan covers | (a) the confirmed v1 defects F1–F3 only, keeping O4/O8/F2-view-returns/X1/NLL deferred; (b) also pull one or more deferred items forward (needs a ledger change) | (a) confirmed 2026-09-26 | ✅ Resolved |
+| AR-2 | Scope | Owning-element drop-glue scope | (a) implement fixed-array **and** growable `Array<T>` element drop, and un-stage `E90000`; (b) fix fixed arrays only and keep growable `Array<move-only>` staged | (a) confirmed 2026-09-26 | ✅ Resolved |
+| AR-3 | Technical | `E90000` loses its only trigger once `Array<move-only>` is accepted | (a) delete `E90000` from the registry, the exclusion list, and the staged golden; (b) keep `E90000` as the dormant generic staged fallback, delete only the now-passing staged golden, keep it excluded | (b) — the minimal consequence of the authorized un-stage (AR-2); it changes no normative chapter, only the staged test data and the exclusion comment | ✅ Resolved |
+| AR-4 | Behavioral | Which view-typed fields `E10205` rejects | (a) reject `str` and slice (`T[]`) fields, keep `cstring`, `static str`, `raw`, `func`, handles, structs, and fixed arrays; (b) keep rejecting only `str` | (a) confirmed 2026-09-26; `spec/08-arrays-strings.md:289` says "view-typed struct field other than `static str`", and `T4`/`T9` ban slice fields | ✅ Resolved |
+| AR-5 | Technical | How the two array shapes are distinguished | (a) one predicate `Ty::is_slice` (an `Array` with any omitted extent), used by every consumer, with the fixed array as the complement; (b) a per-site check | (a) — a single predicate is what stops the stages from drifting apart again | ✅ Resolved |
+| AR-6 | Behavioral | How an array-literal element is consumed | (a) consume/move an owned element exactly like a struct-literal field, in both the ownership walk and the lowering; (b) keep copying elements | (a) confirmed 2026-09-26; a move copies then empties the source (`spec/08` section 6, O1/O3) | ✅ Resolved |
+| AR-7 | Behavioral | Array drop order | Fixed array: elements first-to-last, no separate storage step. Growable `Array<T>`: elements first-to-last, then the storage. | Grounded in O2 (`spec/decisions.md:80`) and `spec/appendix-stdlib.md:66-67`; no new decision | ✅ Resolved |
+| AR-8 | Technical | How growable `Array<T>` element drop is emitted | (a) an inline loop in the drop ladder that walks the buffer through the existing `cl_buffer_ptr` FFI, reusing the existing inline drop ladder; (b) a new generated runtime helper or harness | (a) — ordinary feature code in an existing pattern; no new support surface | ✅ Resolved |
+| AR-9 | Behavioral | A fixed-array return is currently rejected as a view return (`E10036`) | The function `func pair(): String[N]` from `spec/08` section 6 must compile and return by value; the return path is verified and fixed if needed | Grounded in `spec/08-arrays-strings.md:158-171`; no new decision | ✅ Resolved |
+| AR-10 | Edge cases | A fill literal (`[x; fill]`, `[; fill]`) of a move-only element currently aliases the value and double-frees it | (a) reject the fill form when the element type is not duplicable, extending the existing array-literal code `E10215` and its chapter note; (b) leave it unsound and record an accepted risk | (a) confirmed 2026-09-26 | ✅ Resolved |
+| AR-11 | Edge cases | Nested fixed arrays (`T[N][M]`), a growable array with zero elements, a fixed array as a struct field, and duplicable elements that need no element drop | Covered by the classification (AR-5) and the drop design (AR-7, AR-8); each is an explicit test | Design follows from AR-5/AR-7/AR-8 | ✅ Resolved |
+| AR-12 | Testing | Test placement | (a) new tests in the Rust suites plus the existing build-and-run oracle, with no new `spec/` goldens (the `E90000` staged golden is removed per AR-3); (b) add new `spec/` goldens | (a) confirmed 2026-09-26 | ✅ Resolved |
+| AR-13 | Technical | Verification commands | (a) `make check` per task and `make verify` before completion; (b) `make check` only | (a) confirmed 2026-09-26 | ✅ Resolved |
+| AR-14 | Naming | Plan folder slug and database link | (a) `plans/ownership-drop-completion/`, `Implements: PLAN-11`; (b) another name | (a) confirmed 2026-09-26 | ✅ Resolved |
+| AR-15 | Integration points | Interfaces the change affects | Internal only: `types`, `borrow`, `own`, `sema`, and `codegen`. No CLI, ABI, profile, or emitted-artifact contract changes | N/A — grounded in the change surface | ✅ Resolved |
+| AR-16 | Security & compliance | External input, injection, auth, or data protection | N/A — a compiler-internal change. The change improves memory safety, which is the reverse of a security regression | N/A | ✅ Resolved |
+| AR-17 | Non-functional | Performance, scalability, availability | No target. The element-drop loop is bounded by the element count; type checking cost is unchanged in order | N/A | ✅ Resolved |
+| AR-18 | Data & state | Data model, ownership, or persisted format | N/A — no persisted format or data model is involved | N/A | ✅ Resolved |
+| AR-19 | Stakeholder conflicts | Competing priorities or permission boundaries | N/A — single maintainer | N/A | ✅ Resolved |
+| AR-20 | UX & presentation | Diagnostic wording | Reuse the existing `E10205` text; AR-10 chose (a), so extend the existing `E10215` text in `spec/14-diagnostics.md` and the `AL` rules in `spec/08-arrays-strings.md`; no new code is introduced | AR-10(a) applies — extend `E10215`, no new code | ✅ Resolved |
+| AR-21 | Technical (complexity escalation) | Is the change a material support surface? | (a) ordinary feature code in existing patterns, no escalation; (b) full escalation packet | (a) — the work is edits to existing type, checker, and emitter code plus the existing build-and-run oracle; no new layer, dependency, harness, or infrastructure | ✅ Resolved |
+| AR-22 | Behavioral | A slice's duplicability | A slice copies freely (it is a view); the current `duplicable_at` wrongly recurses into the element. The classification predicate (AR-5) also fixes duplicability | Grounded in `spec/03-ownership.md:21` and T9; no new decision | ✅ Resolved |
+
+## Resolution Notes
+
+**AR-3:** `E90000` is the generic staged fallback; its one live trigger is
+`Array<move-only>` (`spec/tests/staged/README.md:11`). Once AR-2 lands that
+trigger is gone, so the staged golden can no longer assert the code. The
+smallest change keeps the fallback defined for future staged features and only
+removes the stale test data. No chapter text changes.
+
+**AR-5:** This mirrors the lesson from the generic-field-integrity plan: the
+defects exist because the same fact (instances substitute, arrays are views) was
+duplicated across stages. One predicate, used everywhere, prevents the drift.
+
+**AR-10:** Reproduced against the emitted C: a `String[2]` initialized with
+`[; a]` emits `arr[0] = a; arr[1] = a;` and then `FreeString(a)`, leaving two
+aliases of one freed handle. This is the same soundness family as F1 and the
+plan's own array-literal change (AR-6) intersects it, so it is surfaced here
+rather than silently left. Option (a) is a small normative addition to the
+array-fill rules.
+
+**AR-22:** A slice is a pointer-and-length view (`spec/08-arrays-strings.md:66`),
+so a copy is a cheap view copy and the type is duplicable regardless of its
+element. The current recursion into the element is the dual of the fixed-array
+misclassification and is fixed by the same predicate.
