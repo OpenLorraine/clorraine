@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-26 14:50
+> **Last Updated**: 2026-09-26 15:45
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -26,7 +26,7 @@
 | PLAN-09 | Clorraine demo video toolkit | — | [clorraine-demo-video](clorraine-demo-video/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
 | PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | Done | ✅ | 2026-09-26 | DEF-06–DEF-10 fixed |
 | ↳ DEF-11 | Self-referential struct-literal reassignment double-frees | — | [partial-move-drop-coherence](partial-move-drop-coherence/00-index.md) | Done | ✅ | 2026-09-26 | fixed by partial-move-drop-coherence |
-| PLAN-11 | Ownership and drop model completion | — | [ownership-drop-completion](ownership-drop-completion/00-index.md) | Executing | 🔄 | 2026-09-26 | preflight passed; Phase 1 (classification) in progress |
+| PLAN-11 | Ownership and drop model completion | — | [ownership-drop-completion](ownership-drop-completion/00-index.md) | Executing | 🔄 | 2026-09-26 | Phase 1 complete (17/47): classification, nullability, element moves, fixed-array return; Phase 2 (nested literals) next |
 | PLAN-12 | Non-lexical lifetimes (NLL, v2) | — | — | Backlog | ⬜ | 2026-09-26 | after PLAN-11 |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
