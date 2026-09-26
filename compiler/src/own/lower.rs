@@ -547,13 +547,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// unchanged. This realizes the "a move is a copy plus a zero of the source"
     /// rule for a value consumed inside an aggregate literal.
     pub(super) fn consume_place(&mut self, value: Value) -> Value {
-        let ValueKind::Place(source) = &value.kind else {
+        let Some(source) = self.value_place(&value) else {
             return value;
         };
         if self.sema.table.duplicable(&value.ty) || mentions_type_param(&value.ty) {
             return value;
         }
-        let source = source.clone();
         let ty = value.ty.clone();
         let id = self.new_temp(ty.clone());
         let target = Place {
@@ -566,6 +565,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             source,
         });
         Value::new(ty, ValueKind::Temp(id))
+    }
+
+    /// The place a value reads, when it is a field reached through a place.
+    ///
+    /// A `Member` value keeps a run-time base for a call result, but when its
+    /// base is itself a place (`(b).value`) the whole path is a place and can be
+    /// moved. The field projection is appended so the resolved place matches the
+    /// ownership walk's `place_target`.
+    fn value_place(&self, value: &Value) -> Option<Place> {
+        match &value.kind {
+            ValueKind::Place(place) => Some(place.clone()),
+            ValueKind::Member { base, name } => {
+                let mut place = self.value_place(base)?;
+                place.projections.push(ir::Projection::Field(name.clone()));
+                place.ty = value.ty.clone();
+                Some(place)
+            }
+            _ => None,
+        }
     }
 
     /// Stores an impure operand in a compiler temporary before it is used twice.

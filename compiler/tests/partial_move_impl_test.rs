@@ -204,3 +204,26 @@ func main(): i32 { demo(); return 0; }
 "#,
     );
 }
+
+/// A parenthesized (postfix) field path is consumed like a dotted one.
+#[test]
+fn a_postfix_field_move_frees_once() {
+    run_clean(
+        "postfix",
+        r#"module tests.pm.postfix;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    value: T;
+}
+
+func demo(): void {
+    let b = Box<String> { value: stringOf("x") };
+    b = Box<String> { value: (b).value };
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
