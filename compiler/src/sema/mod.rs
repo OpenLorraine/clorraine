@@ -237,6 +237,7 @@ impl<'a, 'd> Checker<'a, 'd> {
         if !self.validate_type(ty) {
             return Ty::unknown();
         }
+        self.check_sequence_element(ty);
         let table = self.table;
         let type_params = &self.type_params;
         let resolved = resolve_ty_with(ty, type_params, table, &mut |expr| {
@@ -255,6 +256,33 @@ impl<'a, 'd> Checker<'a, 'd> {
             );
         }
         resolved
+    }
+
+    /// Reports `E90000` for a growable sequence whose element is a fixed array.
+    ///
+    /// The version 1 container stores its elements by value through a pointer,
+    /// so a fixed-array element would need a pointer-to-array declaration and
+    /// per-dimension indexing that the container API does not emit yet. A
+    /// scalar, handle, struct, slice, or nested growable element is accepted.
+    fn check_sequence_element(&mut self, ty: &Type) {
+        let crate::ast::TypeKind::Named { name, args } = &ty.kind else {
+            return;
+        };
+        if !name.segments.last().is_some_and(|last| last == "Array") {
+            return;
+        }
+        let Some(element_ast) = args.first() else {
+            return;
+        };
+        let element = self.resolve_type(element_ast);
+        if element.is_fixed_array() {
+            self.error(
+                "E90000",
+                format!("'{}' is not yet supported", element.display()),
+                "wrap the elements in a struct; a fixed-array element is staged",
+                ty.span,
+            );
+        }
     }
 
     /// Reports `E10207` when a value of `ty` reaches an overlay type.

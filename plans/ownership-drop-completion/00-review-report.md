@@ -82,3 +82,38 @@ and both loops use it; no index is written twice or skipped.
 |----|----------|---------|--------|
 | NEW-1 | 🔵 OBSERVATION | When `prefix == extent` the fill loop is empty but `emit_guards(fill)` still runs, so a guard can trap for a fill value nothing copies. Pre-fix this path returned before the fill. | Report-only. Chapter 04 orders the fill to evaluate once, so emitting the guard is defensible; changing it could drop a required evaluation. |
 | NEW-2 | 🔵 OBSERVATION | A non-literal nested fill with a prefix now reaches the scalar path (`d[1] = v;`) and is invalid C — the same pre-existing gap as F3, whose reach this fix widens from the empty-prefix form. | Report-only; whole fixed-array-element assignment is out of scope (AR-28). |
+
+## Phase 3 — Array element drop glue, `set`, and un-stage `E90000`
+
+**Reviewed revision**: `088a312`
+**Phase diff**: `821b6a4..088a312` — `compiler/src/codegen/drop.rs`,
+`compiler/src/sema/mod.rs`, `compiler/src/sema/tests.rs`,
+`compiler/tests/ownership_drop_impl_test.rs`,
+`compiler/tests/stage_spec_test.rs`, `spec/check.sh`,
+`spec/tests/staged/`.
+
+### Findings and rulings
+
+| ID | Severity | Finding | Ruling |
+|----|----------|---------|--------|
+| RV-011 | 🟠 MAJOR | Removing `E90000` also admitted `Array<fixed-array>` (for example `Array<String[2]>`). The growable drop arm uses `c_type(element)`, which strips the extents, so the emitted pointer type and the index depth are wrong: the front end accepts the program and `cc` rejects the C (`dereferencing 'void *' pointer`) or the stride mis-addresses rows. | **Accepted — reject a fixed-array `Array` element** (user ruling). A narrow `check_sequence_element` reports `E90000` for that element only; `E90000` is now live again (AR-3 amended), removed from the exclusion list, and covered by `spec/tests/compile-fail/E90000_array_fixed_element.clo`. Fixed. |
+| RV-012 | 🟡 MINOR | `set_releases_the_replaced_element_in_the_emitted_c` split on `cl_set__String`, whose first hit is the forward declaration, so the checked chunk also included the caller's scope-exit destructor — a false positive. | **Accepted — fix now**: split on `static void cl_set__String` to isolate the definition. Fixed. |
+| F3 | 🔵 OBSERVATION | A slice of a move-only element (`Buffer[]` param, or `Array<Buffer>.get`) emits `ClSlice_*` typedefs before the element typedef, so the C is invalid. Pre-existing and also reachable at the baseline; the phase makes it reachable through `Array<move-only>`. | Report-only. `Array<Buffer>` acceptance (ST-8) and `Array<String>` `set` (ST-17) do not call `get`/`set` on a handle/struct element with a slice result, so the phase's cases are sound. A separate fix is needed for the slice typedef order. |
+| F4 | 🔵 OBSERVATION | `03-02` still described changing `stdlib/std.mem.clo` for `set`, which the phase does not do now that PF-007 is treated as a false positive. | **Accepted — fix now**: the section now records the emitted-drop verification (AR-31). Fixed. |
+
+### Verification asks (confirmed by the reviewer)
+
+| Ask | Result |
+|-----|--------|
+| Fixed-array drop one extent per level, row-major, exactly once (2-D/3-D/deeper) | ✅ ASan clean |
+| Growable drop: buffer read once, elements then buffer, idempotent guard, unique locals | ✅ ASan clean |
+| Special `Array` arm and generic struct walk are mutually exclusive (no double free) | ✅ |
+| `emits_drop` stays false for a fixed array | ✅ |
+| `E90000` has no other live trigger and no stale code reference | ✅ (one intended trigger added by RV-011) |
+| `make check` re-run independently | ✅ PASS |
+
+### Review evidence
+
+- Verify at review: `make check` — `spec check: OK`; all suites pass.
+- The reviewer ran AddressSanitizer on `Array<String>`, `Array<Owned>`, `Array<Array<String>>`, `Array<Buffer>`, and nested fixed arrays: no leak and no double free.
+- One scoped re-review follows on the RV-011 fix diff, per the single-re-review budget.

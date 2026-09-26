@@ -135,12 +135,14 @@ existing output.
 
 Un-staging `Array<move-only>` (AR-2) also makes `xs.set(i, take v)` legal for a
 move-only element. The standard-library contract is to replace element `i`,
-**dropping the old one** (`spec/appendix-stdlib.md:62`), but `set` currently
-writes `one[0] = v;` and never releases the old element
-(`stdlib/std.mem.clo:97-102`), which leaks a handle (PF-007). This component
-changes `set` to drop the old element first, by moving the old value out and
-dropping it before the store, and adds a build-and-run test. This is a change to
-`stdlib/std.mem.clo`, not to the emitter.
+**dropping the old one** (`spec/appendix-stdlib.md:62`). The preflight read
+`set`'s body (`stdlib/std.mem.clo`) and inferred a leak (PF-007), but the
+emitter already releases an owned assignment target: `one[0] = v` lowers through
+`emit_assign`, which drops the old element before the store. The emitted
+`cl_set__String` body contains `FreeString((one).ptr[0])` before the store, and
+an AddressSanitizer run of `push("a"); set(0, "b")` reports no leak and no
+double free. No `stdlib/std.mem.clo` change is needed (AR-31); this component
+only adds the verification test.
 
 ### `emits_drop` (no fixed-array arm)
 

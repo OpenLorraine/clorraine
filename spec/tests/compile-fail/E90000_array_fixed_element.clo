@@ -1,0 +1,17 @@
+// expect-error E90000
+// trigger: a fixed array used as an Array element type
+// requires: the growable container stores elements by value through a pointer,
+// so a fixed-array element needs a pointer-to-array declaration and
+// per-dimension indexing that the container API does not emit yet
+module tests.compile_fail.E90000_array_fixed_element;
+
+import { String } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func demo(): void {
+    let xs: Array<String[2]> = arrayNew<String[2]>();
+}
+
+func main(): i32 {
+    return 0;
+}

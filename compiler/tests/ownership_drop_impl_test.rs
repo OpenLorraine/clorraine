@@ -405,9 +405,9 @@ func main(): i32 { demo(); return 0; }
     );
     let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
     let body = emitted
-        .split("cl_set__String")
+        .split("static void cl_set__String")
         .nth(1)
-        .expect("the instantiated set body must be emitted");
+        .expect("the instantiated set definition must be emitted");
     assert!(
         body.contains("FreeString("),
         "set must release the replaced element; emitted body:\n{body}"
