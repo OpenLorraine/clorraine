@@ -85,15 +85,7 @@ pub fn collect_struct_instances(loaded: &Loaded, sema: &SemaOutput, mono: &mut M
     // must also write; expand every instance and record what its fields name,
     // repeating until no new instance appears. A struct that embeds itself by
     // value is rejected by the checker, so this terminates.
-    let decls: BTreeMap<&str, &StructDecl> = loaded
-        .modules
-        .values()
-        .flat_map(|module| module.items.iter())
-        .filter_map(|item| match item {
-            Item::Struct(decl) => Some((decl.name.as_str(), decl)),
-            _ => None,
-        })
-        .collect();
+    let decls = struct_declarations(loaded);
     let mut index = 0;
     while index < mono.struct_instances().len() {
         let instance = mono.struct_instances()[index].clone();
@@ -109,8 +101,26 @@ pub fn collect_struct_instances(loaded: &Loaded, sema: &SemaOutput, mono: &mut M
     }
 }
 
+/// Every struct declaration, keyed by name.
+///
+/// The instance collectors and the instantiation audit both need the declared
+/// fields of a recorded instance; one map keeps that lookup in one place. A
+/// struct name is program-global in the model the corpus uses, so the simple
+/// name is the key, matching [`ProgramInfo`].
+pub(super) fn struct_declarations(loaded: &Loaded) -> BTreeMap<&str, &StructDecl> {
+    loaded
+        .modules
+        .values()
+        .flat_map(|module| module.items.iter())
+        .filter_map(|item| match item {
+            Item::Struct(decl) => Some((decl.name.as_str(), decl)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Collects a declaration's written type-parameter names.
-fn type_param_names(params: &[TypeParam]) -> Vec<String> {
+pub(super) fn type_param_names(params: &[TypeParam]) -> Vec<String> {
     params.iter().map(|param| param.name.clone()).collect()
 }
 

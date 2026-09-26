@@ -43,6 +43,7 @@ mod call_check;
 mod expr;
 mod flow;
 mod generics;
+mod instance_check;
 mod lower;
 mod loops;
 mod place;
@@ -116,6 +117,7 @@ pub fn check(
     }
     let mut monomorphization = generics::collect(loaded, &program, sema);
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
+    instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
     OwnershipOutput {
         functions,
         monomorphization,

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 22:35
-> **Progress**: 3/13 tasks (23%)
+> **Last Updated**: 2026-09-26 22:37
+> **Progress**: 7/13 tasks (54%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -81,10 +81,10 @@ scope (AR-19).
 **Reference**: [03-01](03-01-instantiation-checks.md) §Implementation Details · AR-2, AR-6, AR-18
 **Objective**: Report `E10205` and `E10215` for the parameterized instantiations only.
 
-- [ ] 1.2.1 Add the shared `struct_declarations` helper, reuse it in `collect_struct_instances`, and raise `type_param_names` visibility — `compiler/src/own/generics.rs`
-- [ ] 1.2.2 Add the module with `check` and `check_view_fields`, and wire it into the stage — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs`
-- [ ] 1.2.3 Add `check_fill_instances` and its statement/terminator value walk — `compiler/src/own/instance_check.rs`
-- [ ] 1.2.4 Confirm the Step 1.1 cases PASS (green); run `make check`
+- [x] 1.2.1 Add the shared `struct_declarations` helper, reuse it in `collect_struct_instances`, and raise `type_param_names` visibility — `compiler/src/own/generics.rs` ✅ (completed: 2026-09-26 22:37)
+- [x] 1.2.2 Add the module with `check` and `check_view_fields`, and wire it into the stage — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs` ✅ (completed: 2026-09-26 22:37)
+- [x] 1.2.3 Add `check_fill_instances` and its statement/terminator value walk — `compiler/src/own/instance_check.rs` ✅ (completed: 2026-09-26 22:37)
+- [x] 1.2.4 Confirm the Step 1.1 cases PASS (green); run `make check` ✅ (completed: 2026-09-26 22:37)
 
 **Deliverables**:
 - ST-1..ST-14 pass; the concrete cases are not double-reported; `make check` green
