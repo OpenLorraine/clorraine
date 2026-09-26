@@ -1,7 +1,7 @@
 # Ambiguity Register: Generic Field Integrity
 
-> **Status**: ✅ GATE PASSED — all 22 items resolved
-> **Last Updated**: 2026-09-25 18:39
+> **Status**: ✅ GATE PASSED — all 23 items resolved
+> **Last Updated**: 2026-09-26 02:45
 
 ## Scope
 
@@ -37,6 +37,7 @@ feature.
 | AR-20 | Data & state | Data model, ownership, or format change | N/A | No data model or persisted format is involved | ✅ Resolved |
 | AR-21 | Stakeholder conflicts | Competing priorities or permission boundaries | N/A | Single maintainer, no conflicting stakeholders | ✅ Resolved |
 | AR-22 | Technical (complexity escalation) | Is the shared helper a material support surface requiring the escalation gate? | (a) small helper, no escalation; (b) full escalation packet | (a) A single pure function plus one `TypeTable` convenience used by existing call sites is the "small helper" the shared gate exempts; no new layer, dependency, harness, or infrastructure | ✅ Resolved |
+| AR-23 (runtime) | Technical (scope) | Task 4.1.1 found two pre-existing inline `params.zip(args)` → `substitute` blocks outside the plan's declared file scope (`own/generics.rs`, `codegen/program.rs`), while R7 and Success Criterion 4 say the duplicated blocks are gone | (a) consolidate both onto `substitute_instance`; (b) leave as pre-existing debt; (c) consolidate only `own/generics.rs` | (a) consolidate both — user ruling 2026-09-26 02:45; the two files join the Phase 4 modification set | ✅ Resolved |
 
 ## Resolution Notes
 
@@ -57,3 +58,11 @@ new behavior is invented.
 **AR-14:** Name collision is handled by substituting per instance: for `func f<T>(p:
 Pair<T>)`, the instance argument is `Param("T")`, so the field stays `T` and the
 emitter's enclosing substitution resolves it to the concrete type.
+
+**AR-23 (runtime):** The Phase 4 audit confirmed the plan's touched modules were
+clean, but a broader search found two pre-existing copies of the same substitution
+pattern that the plan's file lists had excluded. Because R7 ("exactly one shared
+place") and Success Criterion 4 ("the duplicated zip-substitute blocks are gone")
+are Must-Have outcomes, the user ruled to consolidate both onto
+`substitute_instance`. Both edits are behavior-equivalent refactors (no output
+change); the existing suites verify them.

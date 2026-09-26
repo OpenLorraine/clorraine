@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-25 20:12
-> **Progress**: 21/24 tasks (88%)
+> **Last Updated**: 2026-09-26 02:45
+> **Progress**: 22/24 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -206,7 +206,10 @@ Rust suites, written red before each fix (AR-4).
 
 ## Phase 4: Full acceptance and closeout
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: caf87ce7cab1fb3300c0ead75a769fe0e31b1ff8
+> **Expected modification set**: `compiler/src/own/generics.rs`, `compiler/src/codegen/program.rs`,
+> `plans/00-roadmap.md`, `AGENTS.md`, `plans/generic-field-integrity/**` (strict scope, expanded by
+> AR-23)
 > **Lenses**: regression, documentation
 
 ### Step 4.1: Acceptance and documentation
@@ -214,7 +217,7 @@ Rust suites, written red before each fix (AR-4).
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria · [AR-4, AR-5]
 **Objective**: Prove the whole feature and record completion.
 
-- [ ] 4.1.1 Search the touched modules for any remaining duplicated zip-substitute block or unsubstituted field read; confirm none remains and no dead code was introduced
+- [x] 4.1.1 Search the touched modules for any remaining duplicated zip-substitute block or unsubstituted field read; confirm none remains and no dead code was introduced ✅ (completed: 2026-09-26 02:45; touched modules clean; user-ruled consolidation of the two pre-existing copies in `own/generics.rs` and `codegen/program.rs` onto `substitute_instance`; `make check` green)
 - [ ] 4.1.2 Full acceptance run — `make verify`
 - [ ] 4.1.3 Mark DEF-06…DEF-10 Fixed on `plans/00-roadmap.md` and set this plan's roadmap row to Done; update `AGENTS.md` only if a factual note changed
 

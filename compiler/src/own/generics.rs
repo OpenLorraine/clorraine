@@ -18,7 +18,7 @@ use crate::ir::{
 };
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
-use crate::types::{resolve_ty, Ty, TyKind};
+use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::program::{Callee, ProgramInfo};
 
@@ -102,15 +102,9 @@ pub fn collect_struct_instances(loaded: &Loaded, sema: &SemaOutput, mono: &mut M
             continue;
         };
         let params = type_param_names(&decl.type_params);
-        let subst: BTreeMap<String, Ty> = decl
-            .type_params
-            .iter()
-            .map(|param| param.name.clone())
-            .zip(instance.args.iter().cloned())
-            .collect();
         for field in &decl.fields {
             let ty = resolve_ty(&field.ty, &params, &sema.table);
-            record_struct_type(&crate::types::substitute(&ty, &subst), sema, mono);
+            record_struct_type(&substitute_instance(&ty, &params, &instance.args), sema, mono);
         }
     }
 }

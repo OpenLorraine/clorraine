@@ -11,7 +11,7 @@ use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, Templ
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
-use crate::types::{resolve_ty, CaptureMode, Ty, TyKind};
+use crate::types::{resolve_ty, substitute_instance, CaptureMode, Ty, TyKind};
 
 use super::types::{c_type, collect_slice_types, declarator, mangle_module, scalar_of, type_key};
 use super::{Emitter, FuncInfo};
@@ -363,12 +363,6 @@ impl<'a> Emitter<'a> {
     /// generic instance with its parameters substituted.
     fn struct_unit(&self, decl: &'a StructDecl, args: &[Ty]) -> StructUnit {
         let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
-        let subst: BTreeMap<String, Ty> = decl
-            .type_params
-            .iter()
-            .map(|param| param.name.clone())
-            .zip(args.iter().cloned())
-            .collect();
         let mut fields = Vec::with_capacity(decl.fields.len());
         let symbol = if decl.type_params.is_empty() {
             format!("Cl{}", decl.name)
@@ -381,7 +375,7 @@ impl<'a> Emitter<'a> {
         let mut deps: Vec<String> = Vec::new();
         for field in &decl.fields {
             let ty = resolve_ty(&field.ty, &params, &self.sema.table);
-            let ty = super::substitute_in(&ty, &subst);
+            let ty = substitute_instance(&ty, &params, args);
             collect_value_deps(&ty, &mut deps);
             fields.push((field.name.clone(), ty, field.volatile));
         }
