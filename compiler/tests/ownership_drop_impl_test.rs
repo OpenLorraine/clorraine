@@ -222,3 +222,25 @@ func main(): i32 { demo(); return 0; }
 "#,
     );
 }
+
+/// A nested array literal fills every dimension, so the emitted C compiles and
+/// a deep element reads back its initializer value.
+#[test]
+fn a_nested_array_literal_keeps_its_element_values() {
+    let output = build_and_run(
+        "nested-literal",
+        r#"module tests.od.nested_literal_run;
+
+func main(): i32 {
+    let d: u8[3][2] = [[1, 2], [3, 4], [5, 6]];
+    return i32(d[2][1]);
+}
+"#,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(6),
+        "the deep element must be 6; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

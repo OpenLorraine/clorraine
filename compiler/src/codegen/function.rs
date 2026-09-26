@@ -627,7 +627,9 @@ impl<'a> Emitter<'a> {
     /// The target is a rendered C lvalue rather than a place, so the same
     /// lowering can write a hoisted local or the hidden out-parameter that
     /// carries a by-value fixed-array return. C cannot assign an array in one
-    /// statement, so each element is stored on its own.
+    /// statement, so a multi-extent type is filled one dimension deeper: an
+    /// element that is itself an array literal recurses against the indexed
+    /// sub-target instead of writing a rejected brace list.
     pub(super) fn emit_array_assign_to(
         &mut self,
         target_c: &str,
@@ -635,25 +637,46 @@ impl<'a> Emitter<'a> {
         elements: &[ir::Value],
         fill: &Option<Box<ir::Value>>,
     ) {
-        for (index, element) in elements.iter().enumerate() {
-            self.emit_guards(element);
-            let lowered = self.value(element);
-            self.push(&format!("    {target_c}[{index}] = {lowered};"));
-        }
-        if elements.is_empty() {
-            if let Some(fill) = fill {
-                let extent = match &ty.kind {
-                    TyKind::Array { extents, .. } => {
-                        extents.first().and_then(|size| *size).unwrap_or(0)
-                    }
-                    _ => 0,
-                };
-                self.emit_guards(fill);
-                let lowered = self.value(fill);
-                for index in 0..extent {
-                    self.push(&format!("    {target_c}[{index}] = {lowered};"));
+        let TyKind::Array { element, extents } = &ty.kind else {
+            return;
+        };
+        let extent = extents.first().and_then(|size| *size).unwrap_or(0);
+        // A multi-extent type keeps its base element and every extent, so the
+        // element type of the outer dimension is the array of the remaining
+        // extents. A one-extent array has a scalar element.
+        let nested_ty = (extents.len() > 1)
+            .then(|| Ty::array((**element).clone(), extents[1..].to_vec()));
+        for (index, value) in elements.iter().enumerate() {
+            let sub = format!("{target_c}[{index}]");
+            if let Some(element_ty) = &nested_ty {
+                if let ValueKind::ArrayLit { elements, fill } = &value.kind {
+                    self.emit_array_assign_to(&sub, element_ty, elements, fill);
+                    continue;
                 }
             }
+            self.emit_guards(value);
+            let lowered = self.value(value);
+            self.push(&format!("    {sub} = {lowered};"));
+        }
+        if !elements.is_empty() {
+            return;
+        }
+        let Some(fill) = fill else {
+            return;
+        };
+        if let Some(element_ty) = &nested_ty {
+            if let ValueKind::ArrayLit { elements, fill } = &fill.kind {
+                for index in 0..extent {
+                    let sub = format!("{target_c}[{index}]");
+                    self.emit_array_assign_to(&sub, element_ty, elements, fill);
+                }
+                return;
+            }
+        }
+        self.emit_guards(fill);
+        let lowered = self.value(fill);
+        for index in 0..extent {
+            self.push(&format!("    {target_c}[{index}] = {lowered};"));
         }
     }
 
