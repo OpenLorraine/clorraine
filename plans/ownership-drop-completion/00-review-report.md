@@ -129,3 +129,36 @@ RV-011 was not fully closed and two minor defects.
 | RV-012 (re-open) | 🟡 MINOR | `.split("static void cl_set__String").nth(1)` returned the code between the prototype and the definition, not the body. | **Accepted — fix now**: the definition is the last occurrence, so the test uses `.last()`. Fixed. |
 | RV-013 | 🟡 MINOR | The syntactic check called `resolve_type` on the element, re-running element validation and duplicating element-level diagnostics. | **Accepted — fix now**: the resolved-type check inspects the already-resolved element, so element diagnostics run once. Fixed. |
 | F4 | 🔵 OBSERVATION | The first diagnostic line names the element type in the `'{feature}'` slot; that matches the Chapter 14 template but reads as a type. | Report-only; the template fixes the wording. |
+
+## Phase 4 — View-field and fill enforcement
+
+> **Phase baseline**: `5a8dd91df8fa6c3724192b5be0695d2eea99c41f`
+> **Review status**: ✅ Complete — one correctness review (strict profile, base lenses); no re-review required (no critical/major fix applied)
+
+### Findings and rulings
+
+| ID | Severity | Finding | Ruling |
+|----|----------|---------|--------|
+| RV-402 | 🟠 MAJOR | A generic fill instantiated with a move-only element double-frees: `func fillIt<T>(a: T): T[2] { return [; a]; }` called with `String` is accepted and emits two aliases of one handle. Reproduced independently: AddressSanitizer reports "attempting double-free". The guard deliberately skips a type-parameter element, so a substituted element is never checked. | **Deferred** (user ruling): recorded as `DEF-12` in the roadmap; a sound fix needs an instantiation-time check, a new mechanism, and is planned separately. |
+| RV-401 | 🟡 MINOR | `Wrap<str>` / `Wrap<u8[]>` fields compile after substitution, bypassing the view-field ban; the same substitution blind spot as RV-402. | **Deferred** with RV-402 (`DEF-12`). |
+| RV-403 | 🟡 MINOR | The codegen-run test's doc comment still described the rewritten case as a struct field. | **Accepted — fixed**: the comment now names the local view binding. |
+| RV-404 | 🔵 OBSERVATION | `check_array_literal`'s doc omitted the duplicable-element rule. | **Accepted — fixed** for doc parity. |
+| RV-405 | 🔵 OBSERVATION | The slice-extern test name says "uncontracted extern" although a slice-only signature is not uncontracted. | Report-only. |
+| RV-406 | 🔵 OBSERVATION | The `fix603` regression asserted only stdout; a freed byte can still read `c=98` under the allocator's cache. | **Accepted — hardened**: the test now also asserts each owned temporary's release occurs after the read in the emitted C. |
+
+### Verification asks (confirmed by the reviewer)
+
+| Ask | Result |
+|-----|--------|
+| Slice view fields (direct, nullable) report `E10205`; `cstring`/`static str`/fixed arrays stay accepted | ✅ |
+| Move-only fills report `E10215` (1-D, multi-D, prefix+fill); duplicable fills unchanged | ✅ for concrete elements; generic `T` deferred (RV-402) |
+| The fixed-array `ffi` predicate reaches `E10100` and `E10101`; a slice stays accepted; no first-party breakage | ✅ (no stdlib/corpus fixed-array `ffi` parameter) |
+| `fix603` preserves the temporary-lifetime regression | ✅ rewritten and hardened |
+| `make check` re-run independently | ✅ PASS |
+
+### Review evidence
+
+- Verify at review: `make check` — `spec check: OK`; all 20 suites pass.
+- Independent verification of RV-402 by the reviewing agent and the parent: ASan reports the double free.
+- Base lenses only (correctness, maintainability, standards); no security or performance risk tags are active, so no auditor dispatch.
+- No re-review required: the accepted fixes are minor documentation and test hardening; the major finding was deferred, not fixed.

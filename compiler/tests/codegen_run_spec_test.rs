@@ -1352,7 +1352,7 @@ func main(): i32 {
     );
 }
 
-/// An owned temporary outlives a view stored into an outer struct.
+/// An owned temporary outlives a local view binding.
 ///
 /// The byte view derives from the `stringOf` result, which the callee only
 /// borrows. The result must be released, but not before the view that reads it
@@ -1374,7 +1374,24 @@ func main(): i32 {
     return 0;
 }
 "#;
-    let output = build_and_run("fix603", source, None);
+    let scratch = ScratchDir::new("fix603");
+    let program = compile_and_build("fix603", &[("main.clo", source)], None, scratch.path());
+    let emitted = std::fs::read_to_string(scratch.path().join("out.c"))
+        .unwrap_or_else(|err| panic!("fix603: cannot read the emitted C: {err}"));
+    let read_at = emitted
+        .find("cl_std_io_println(")
+        .unwrap_or_else(|| panic!("fix603: the println call must be emitted"));
+    for name in ["__cl_owned0", "__cl_owned1"] {
+        let release = format!("FreeString({name})");
+        let release_at = emitted
+            .rfind(&release)
+            .unwrap_or_else(|| panic!("fix603: {name} must be released"));
+        assert!(
+            release_at > read_at,
+            "fix603: the owned temporary behind {name} must outlive the read; emitted C:\n{emitted}"
+        );
+    }
+    let output = run_program("fix603", &program, None);
     assert_stdout("fix603", &output, "c=98\n");
 }
 

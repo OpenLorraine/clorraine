@@ -640,8 +640,9 @@ impl Checker<'_, '_> {
     /// Types an array literal, taking element type and extent from context
     /// where the context provides them.
     ///
-    /// A fill form needs a fixed extent, and a literal prefix may not be
-    /// longer than the context extent.
+    /// A fill form needs a fixed extent and a duplicable element: repeating a
+    /// move-only value would alias one owner into every slot. A literal prefix
+    /// may not be longer than the context extent.
     fn check_array_literal(
         &mut self,
         elements: &[Expr],
