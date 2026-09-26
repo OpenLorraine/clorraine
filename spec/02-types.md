@@ -38,7 +38,7 @@ integer in v1.
 |---|---|---|
 | `i8` `i16` `i32` | signed two's-complement integer | widths 8, 16, 32 |
 | `u8` `u16` `u32` | unsigned integer | widths 8, 16, 32 |
-| `usize` `isize` | pointer-sized integer | 32-bit on m68k, 64-bit on ARM64 |
+| `usize` `isize` | pointer-sized integer | 32-bit on the v1 m68k target |
 | `f32` `f64` | IEEE 754 binary floating point | 32-bit and 64-bit |
 | `bool` | logical value | not an integer (section 3) |
 

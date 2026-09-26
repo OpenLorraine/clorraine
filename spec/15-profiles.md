@@ -118,5 +118,5 @@ deniable by default and escalable with `--deny-warnings` (N6).
 |---|---|
 | Profile file format | Compiled-in tables first; data files later |
 | `freestanding` ABI | Implemented provisionally (m68k, 32-bit, big-endian, no libc); LorraineOS may adopt or replace it |
-| ARM64 profile | Design-only now; add when LorraineOS needs it |
+| ARM64 profile | Not planned; the v1 target is m68k/AmigaOS-compatible |
 | Stack-frame thresholds | v1 defaults; revisit after the first target measurements |

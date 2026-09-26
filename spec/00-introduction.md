@@ -7,9 +7,8 @@
 
 ## 1. What Clorraine is
 
-Clorraine is a statically typed systems language for the Motorola 68000 family
-(and, by design, later ARM64). It looks like C, is checked like Rust, and
-compiles to plain C:
+Clorraine is a statically typed systems language for the Motorola 68000 family.
+It looks like C, is checked like Rust, and compiles to plain C:
 
 * **C-like surface syntax** - braces, semicolons, `name: type`, `func`,
   `module`, `export`/`import`, and the C operator table.
@@ -88,8 +87,9 @@ abort. Below the boundary (MMIO, interrupts, raw memory), access is audited
 ### A8 - Co-designed with LorraineOS
 
 Clorraine exists to write LorraineOS and Amiga programs. Binary compatibility
-with AmigaOS is the v1 integration path; source portability (pointer size,
-endianness) keeps a future ARM64 port a profile change, not a redesign.
+with AmigaOS is the v1 integration path. Target facts live in profiles, so
+supporting another machine would be a profile addition, not a redesign; no
+such target (for example ARM64) is planned for v1.
 
 ## 3. What Clorraine deliberately is not
 

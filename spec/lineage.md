@@ -148,7 +148,7 @@ amendment so the specification stays derivable rather than remembered.
 A1 was chosen against the alternatives below; the list is kept so the decision
 stays reviewable. None of them dominates it under the Amiga constraints:
 deterministic release, no runtime support in the emitted C, interrupt and MMIO
-safety, 512K-2MB machines, and a future ARM64 profile.
+safety, 512K-2MB machines, and profile-defined targets.
 
 | Family | Release | Lowers to C as | Deciding weakness |
 |---|---|---|---|

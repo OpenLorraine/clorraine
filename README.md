@@ -1,12 +1,11 @@
 # Clorraine
 
 Clorraine is the systems language of **LorraineOS** — a bare-metal Amiga OS for
-the Motorola 68000 family, with an ARM64 port planned.
+the Motorola 68000 family.
 
 Clorraine is a safe, C-like language with Rust-style ownership and borrow
 checking. It is designed for systems programming first and compiles to plain C,
-so the generated code runs on the existing Amiga toolchains and, later, on
-ARM64.
+so the generated code runs on the existing Amiga toolchains.
 
 Like C and Unix — and later Oberon — the language and the OS are co-designed:
 LorraineOS requirements drive Clorraine's feature set, and Clorraine exists to
@@ -48,15 +47,15 @@ profiles, and the host and target acceptance suites are green.
 | FS-UAE + `vamos` run/debug loop (`make run`, `make run-vamos`, ADF fallback) | Ready |
 | Phase 0 hosted skeleton (ownership contracts, cleanup shapes, run matrix) | Complete |
 | Language specification v0.4 — Phase A decisions, Phase B grammar freeze, Phase C chapter rewrites, Phase D compile-fail suite ([spec](spec/README.md)) | v0.4, frozen for the MVP; the compiler targets its corpus subset |
-| Compiler MVP (C-like → C with ownership checks) | Implemented; `make check` and `make verify` green |
+| Compiler (C-like → C with generics, lambdas, and volatile/MMIO) | Implemented; `make check` and `make verify` green |
+| Borrow checker (conservative, lexical — v1) | Implemented; non-lexical lifetimes (NLL) are the next step |
 | Validation corpus (`spec/tests/corpus/`) | Passes on host and hosted-amiga (GCC + `vamos`, FS-UAE, vbcc build) |
-| LorraineOS bring-up (freestanding profile, m68k) | With/after the MVP |
-| ARM64 port | Later |
+| Freestanding (m68k, no-libc) profile | Implemented; LorraineOS bring-up is a separate downstream project |
 
 ## Repository layout
 
 ```
-compiler/  The `clc` compiler: Rust front end, checker, and C99 emitter
+compiler/  The `clc` compiler and `clorraine` driver: Rust front end, checker, and C99 emitter
 stdlib/    The embedded standard-library `.clo` sources
 spec/      The language specification, grammar, and golden test data
 docker/    The Clorraine SDK: pinned, from-source Amiga toolchain in Docker

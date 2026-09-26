@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-26 02:48
+> **Last Updated**: 2026-09-26 13:41
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -19,13 +19,32 @@
 | PLAN-02 | Clorraine build/run driver | — | [clorraine-driver](clorraine-driver/00-index.md) | Done | ✅ | 2026-09-23 | PLAN-01 |
 | PLAN-03 | Freestanding (LorraineOS) profile | — | [clorraine-freestanding-profile](clorraine-freestanding-profile/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-04 | Clorraine v1 language completion | — | [clorraine-v1-language-completion](clorraine-v1-language-completion/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
-| PLAN-05 | Developer tooling and install path | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-04 |
-| PLAN-06 | LorraineOS bring-up (downstream) | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-03; separate repository |
-| PLAN-07 | ARM64 port | — | — | Backlog | ⬜ | 2026-09-23 | depends on PLAN-06 |
+| PLAN-05 | Developer experience and delivery | — | — | Backlog | ⬜ | 2026-09-26 | after the language completion program; see Scope decisions |
+| PLAN-06 | LorraineOS bring-up (downstream) | — | — | Deferred | ⏸️ | 2026-09-26 | external repository; the OS does not exist; Clorraine's freestanding ABI (PLAN-03) is done |
+| PLAN-07 | ARM64 target port | — | — | Deferred | ⏸️ | 2026-09-26 | not planned; the v1 target is m68k/AmigaOS-compatible; aarch64 host builds stay supported |
 | PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-09 | Clorraine demo video toolkit | — | [clorraine-demo-video](clorraine-demo-video/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
 | PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | Done | ✅ | 2026-09-26 | DEF-06–DEF-10 fixed |
 | ↳ DEF-11 | Self-referential struct-literal reassignment double-frees | — | [partial-move-drop-coherence](partial-move-drop-coherence/00-index.md) | Done | ✅ | 2026-09-26 | fixed by partial-move-drop-coherence |
+| PLAN-11 | Ownership and borrow model completion | — | — | Backlog | ⬜ | 2026-09-26 | first of the language-completion program |
+| PLAN-12 | Non-lexical lifetimes (NLL, v2) | — | — | Backlog | ⬜ | 2026-09-26 | after PLAN-11 |
+| PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
+
+## Scope decisions (v1.0)
+
+The completion program targets a **v1.0 core**: a rule-complete language and a borrow checker at NLL precision. Everything else is deferred so the target stays bounded.
+
+| Area | v1.0 (in) | Deferred |
+| ---- | --------- | -------- |
+| Borrow/ownership | Ownership-model features (PLAN-11), then **NLL** (PLAN-12) | Polonius (v3) — only if NLL proves insufficient |
+| Language | Every non-staged rule and the standard-library surface the corpus needs | `comptime` (E90001), pools/arenas (E90004), `stores`/`transfers` (E90003), nested templates (E90005), user contract tables (W10005), C-hook trampolines (v1.1) |
+| Targets | m68k/AmigaOS-compatible (`hosted-amiga`, `freestanding`) and the `host` test profile | ARM64 target (PLAN-07); 64-bit `usize`/`isize`; LorraineOS (PLAN-06) |
+| Amiga surface | `std.amiga.*` growth, including `std.amiga.exec`, wider custom-chip, and intuition/graphics extras (PLAN-13) | — |
+| Delivery (PLAN-05) | Amiga-developer-first DX; VSCode first (TextMate grammar, then LSP staged); `--explain` and machine-readable diagnostics; a fetch/detect SDK installer | Project manifest / package manager; watch mode, deep LSP, debugger |
+
+**Delivery direction (PLAN-05):** the installer **fetches or detects-and-fetches** every component from its upstream source (the NDK from Aminet, the C toolchain from upstream or our GPL-compliant prebuilt) — it never redistributes the NDK or other restrictively licensed third-party binaries. The `host` profile remains a zero-friction on-ramp (a single binary plus any C compiler). A **licence decision** is a hard blocker for any public release.
+
+**Host support:** `clc` builds and runs on x86_64 and aarch64 developer machines (host-only); this is kept and tested, independent of any ARM64 target.
 
 ## Backlog / Known defects
 
