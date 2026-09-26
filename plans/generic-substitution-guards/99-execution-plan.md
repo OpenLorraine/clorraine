@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 21:40
-> **Progress**: 0/13 tasks (0%)
+> **Last Updated**: 2026-09-26 22:35
+> **Progress**: 3/13 tasks (23%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -55,8 +55,7 @@ scope (AR-19).
 
 ## Phase 1: Instantiation-time audit
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: `3442b3af1a470919cfdfbc3b187f5db3e419ab94`
 > **Expected modification set**: `compiler/src/own/instance_check.rs` (new),
 > `compiler/src/own/generics.rs`, `compiler/src/own.rs`,
 > `compiler/tests/ownership_drop_spec_test.rs`,
@@ -68,9 +67,9 @@ scope (AR-19).
 **Reference**: [03-01](03-01-instantiation-checks.md) · [07](07-testing-strategy.md) ST-1..ST-14 · AR-3, AR-4, AR-7, AR-9, AR-17
 **Objective**: Pin the instantiation diagnostics and the accepted controls before the audit exists.
 
-- [ ] 1.1.1 [spec-author] Write the view-field cases ST-1..ST-8 — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 1.1.2 [spec-author] Write the fill cases ST-9..ST-14 — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 1.1.3 Confirm the rejection cases FAIL (red) while the acceptance controls pass; record the run — `compiler/tests/ownership_drop_spec_test.rs`
+- [x] 1.1.1 [spec-author] Write the view-field cases ST-1..ST-8 — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 22:35)
+- [x] 1.1.2 [spec-author] Write the fill cases ST-9..ST-14 — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 22:35)
+- [x] 1.1.3 Confirm the rejection cases FAIL (red) while the acceptance controls pass; record the run — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 22:35)
 
 **Deliverables**:
 - ST-1..ST-5, ST-7, ST-9..ST-11, and ST-13 fail red; the ST-6, ST-8, ST-12, and ST-14 controls pass unchanged (ST-8/ST-14 are declaration-site controls, PF-004)

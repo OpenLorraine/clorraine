@@ -669,3 +669,411 @@ func main(): i32 {
 "#,
     );
 }
+
+/// Asserts that compiling one snippet reports each expected line exactly the
+/// given number of times, and fails with exit code 1.
+///
+/// The plain `assert_reports` checks only presence, so it cannot pin a count.
+/// A case that must report one error per field, or must not report an error at
+/// all for a field, needs the exact count; the line text carries the field name
+/// so an over-report is visible.
+fn assert_reports_counted(tag: &str, source: &str, expected: &[(&str, usize)]) {
+    let run = run_source(tag, source);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    for (line, count) in expected {
+        let seen = stderr.lines().filter(|candidate| candidate == line).count();
+        assert_eq!(
+            seen, *count,
+            "{tag}: expected {count} occurrence(s) of `{line}`, saw {seen}; stderr:\n{stderr}"
+        );
+    }
+    assert_eq!(run.status.code(), Some(1), "{tag}: failing compiles exit 1");
+}
+
+// -- Instantiation-time view-field guards (E10205) -------------------------
+//
+// A field typed `T` is not a view as written, so the declaration-site guard
+// cannot judge it until a type argument supplies the concrete kind. These cases
+// pin the instantiation-time audit: a substituted `str` or slice is rejected,
+// while an owned substitution, a literal, a pointer, and a fixed array are not.
+
+/// A `str` substituted into a field typed `T` is a view, so the instantiation
+/// is rejected the same way a written `str` field is (`spec/02-types.md` TY-10).
+#[test]
+fn should_reject_a_str_substituted_into_a_generic_view_field() {
+    let source = r#"module tests.gs.view_str;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func demo(): void {
+    let w: Wrap<str> = Wrap<str> { v: "hi" };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-view-str",
+        source,
+        &["error E10205: view-typed field 'v' is not allowed"],
+    );
+}
+
+/// A slice substituted into a field typed `T` is a view over storage owned
+/// elsewhere, so the instantiation is rejected.
+#[test]
+fn should_reject_a_slice_substituted_into_a_generic_view_field() {
+    let source = r#"module tests.gs.view_slice;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func demo(): void {
+    let s: String = stringOf("hi");
+    let b: Wrap<u8[]> = Wrap<u8[]> { v: bytes(s) };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-view-slice",
+        source,
+        &["error E10205: view-typed field 'v' is not allowed"],
+    );
+}
+
+/// The nullable suffix does not change what a field is: a substituted `str?` is
+/// still a `str` view, so it is rejected.
+#[test]
+fn should_reject_a_nullable_str_substituted_into_a_generic_view_field() {
+    let source = r#"module tests.gs.view_nullable;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func demo(): void {
+    let w: Wrap<str?> = Wrap<str?> { v: null };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-view-nullable",
+        source,
+        &["error E10205: view-typed field 'v' is not allowed"],
+    );
+}
+
+/// A generic struct may hold another generic struct; the inner field is judged
+/// once the outer instance fixes the parameter, so `Outer<str>` is rejected at
+/// the inner `v` field.
+#[test]
+fn should_reject_a_nested_str_substituted_through_a_generic_field() {
+    let source = r#"module tests.gs.view_nested;
+
+struct Wrap<T> {
+    v: T;
+}
+
+struct Outer<T> {
+    w: Wrap<T>;
+}
+
+func demo(): void {
+    let o: Outer<str> = Outer<str> { w: Wrap<str> { v: "hi" } };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-view-nested",
+        source,
+        &["error E10205: view-typed field 'v' is not allowed"],
+    );
+}
+
+/// A generic function's return type fixes the parameter at the call: the
+/// concrete return type records `Wrap<str>`, so the field is judged with `str`
+/// substituted and rejected.
+#[test]
+fn should_reject_a_str_returned_by_a_generic_call_into_a_view_field() {
+    let source = r#"module tests.gs.view_call;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func make<T>(v: T): Wrap<T> {
+    return Wrap<T> { v: v };
+}
+
+func demo(): void {
+    let w: Wrap<str> = make<str>("hi");
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-view-call",
+        source,
+        &["error E10205: view-typed field 'v' is not allowed"],
+    );
+}
+
+/// A control set for the accepted substitutions: an owned handle, a literal, a
+/// fixed array, and an FFI pointer are not views, so each instantiation compiles
+/// and the emitted C stays valid.
+#[test]
+fn should_accept_owning_substitutions_into_a_generic_field() {
+    let source = r#"module tests.gs.view_controls;
+
+import { String, stringOf } from std.text;
+import { Buffer } from std.mem;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func demo(take own: Buffer): void {
+    let a: Wrap<static str> = Wrap<static str> { v: "hi" };
+    let b: Wrap<u8[2]> = Wrap<u8[2]> { v: [1, 2] };
+    let c: Wrap<String> = Wrap<String> { v: stringOf("x") };
+    let d: Wrap<Buffer> = Wrap<Buffer> { v: own };
+}
+
+func main(): i32 { return 0; }
+"#;
+    assert_emits_valid_c("gs-view-controls", source);
+}
+
+/// A two-parameter instantiation with two view arguments reports one error per
+/// field and no error for anything else.
+#[test]
+fn should_report_two_view_field_errors_for_a_two_parameter_instantiation() {
+    let source = r#"module tests.gs.view_pair;
+
+import { stringOf, bytes } from std.text;
+
+struct Pair<T, U> {
+    a: T;
+    b: U;
+}
+
+func demo(): void {
+    let p: Pair<str, u8[]> =
+        Pair<str, u8[]> { a: "hi", b: bytes(stringOf("hi")) };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "gs-view-pair",
+        source,
+        &[
+            ("error E10205: view-typed field 'a' is not allowed", 1),
+            ("error E10205: view-typed field 'b' is not allowed", 1),
+        ],
+    );
+}
+
+/// A field already concrete at the declaration is the declaration-site guard's
+/// case; the type checker stops the program before the audit runs, so the field
+/// is reported once and the parameterized sibling is not reported at all.
+#[test]
+fn should_report_the_declaration_site_view_field_once_for_a_concrete_field() {
+    let source = r#"module tests.gs.view_concrete;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Mixed<T> {
+    part: u8[];
+    v: T;
+}
+
+func demo(): void {
+    let m: Mixed<String> =
+        Mixed<String> { part: bytes(stringOf("x")), v: stringOf("x") };
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "gs-view-concrete",
+        source,
+        &[
+            ("error E10205: view-typed field 'part' is not allowed", 1),
+            ("error E10205: view-typed field 'v' is not allowed", 0),
+        ],
+    );
+}
+
+// -- Instantiation-time fill guards (E10215) -------------------------------
+//
+// A fill typed by an array whose element is a parameter cannot be judged at the
+// declaration, because duplicability is unknown until the argument is supplied.
+// These cases pin the audit of the substituted element (`spec/08-arrays-strings.md`
+// AL-1): a move-only substitution is rejected and a duplicable one is not.
+
+/// The explicit string argument substitutes a move-only element into the fill,
+/// so repeating it would alias one owner into both slots and is rejected.
+#[test]
+fn should_reject_a_move_only_fill_substituted_by_an_explicit_argument() {
+    let source = r#"module tests.gs.fill_explicit;
+
+import { String, stringOf } from std.text;
+
+func fillIt<T>(a: T): T[2] {
+    return [; a];
+}
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let cs: String[2] = fillIt<String>(s);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-fill-explicit",
+        source,
+        &["error E10215: array fill requires a fixed extent"],
+    );
+}
+
+/// An inferred type argument is recorded from the lowered call, so the move-only
+/// substitution is rejected without a written argument list.
+#[test]
+fn should_reject_a_move_only_fill_substituted_by_an_inferred_argument() {
+    let source = r#"module tests.gs.fill_inferred;
+
+import { String, stringOf } from std.text;
+
+func fillIt<T>(a: T): T[2] {
+    return [; a];
+}
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let cs: String[2] = fillIt(s);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-fill-inferred",
+        source,
+        &["error E10215: array fill requires a fixed extent"],
+    );
+}
+
+/// A prefix plus a fill repeats the fill value into the remaining slots, so a
+/// move-only substitution is rejected through the shared path.
+#[test]
+fn should_reject_a_prefix_and_fill_instantiated_with_a_move_only_element() {
+    let source = r#"module tests.gs.fill_prefix;
+
+import { String, stringOf } from std.text;
+
+func pair<T>(a: T, b: T): T[2] {
+    return [a; b];
+}
+
+func demo(): void {
+    let x: String = stringOf("x");
+    let y: String = stringOf("y");
+    let ps: String[2] = pair<String>(x, y);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-fill-prefix",
+        source,
+        &["error E10215: array fill requires a fixed extent"],
+    );
+}
+
+/// The accepted fill controls: an explicit scalar argument, an inferred scalar
+/// argument, and an ordinary scalar fill each compile and emit valid C.
+#[test]
+fn should_accept_duplicable_fill_instantiations() {
+    let source = r#"module tests.gs.fill_controls;
+
+func fillIt<T>(a: T): T[2] {
+    return [; a];
+}
+
+func demo(): void {
+    let ns: i32[2] = fillIt<i32>(7);
+    let a: u8 = 3;
+    let us: u8[2] = fillIt(a);
+    let xs: u8[4] = [; 0];
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_emits_valid_c("gs-fill-controls", source);
+}
+
+/// A substituted struct that looked duplicable at the declaration is move-only
+/// once its argument is supplied, so the fill is rejected: the declaration-site
+/// guard saw `Wrap<T>` and could not tell.
+#[test]
+fn should_reject_a_move_only_fill_substituted_from_a_generic_struct() {
+    let source = r#"module tests.gs.fill_struct;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func rep<T>(w: Wrap<T>): Wrap<T>[2] {
+    return [; w];
+}
+
+func demo(): void {
+    let w: Wrap<String> = Wrap<String> { v: stringOf("x") };
+    let r: Wrap<String>[2] = rep<String>(w);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports(
+        "gs-fill-struct",
+        source,
+        &["error E10215: array fill requires a fixed extent"],
+    );
+}
+
+/// A fill already concrete at the declaration is the declaration-site guard's
+/// case; the type checker stops the program before the audit runs, so the fill
+/// is reported once even though the enclosing function is generic.
+#[test]
+fn should_report_the_declaration_site_fill_once_for_a_generic_body() {
+    let source = r#"module tests.gs.fill_concrete;
+
+import { String, stringOf } from std.text;
+
+func f<T>(x: T): i32 {
+    let xs: String[2] = [; stringOf("x")];
+    return 0;
+}
+
+func demo(): void {
+    let n: i32 = f<i32>(1);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "gs-fill-concrete",
+        source,
+        &[("error E10215: array fill requires a fixed extent", 1)],
+    );
+}
