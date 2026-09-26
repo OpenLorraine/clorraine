@@ -162,3 +162,35 @@ RV-011 was not fully closed and two minor defects.
 - Independent verification of RV-402 by the reviewing agent and the parent: ASan reports the double free.
 - Base lenses only (correctness, maintainability, standards); no security or performance risk tags are active, so no auditor dispatch.
 - No re-review required: the accepted fixes are minor documentation and test hardening; the major finding was deferred, not fixed.
+
+## Phase 5 — Full verification and close-out
+
+> **Phase baseline**: `c9e62f557ba801d83911a9d162972ff42134c2fe`
+> **Verification**: `make verify` PASS (all legs); `./spec/check.sh` OK; `cargo build --workspace` warning-free
+
+### Requirement traceability (R1–R10 → passing tests)
+
+| Req | Behavior | Evidence | Result |
+|-----|----------|----------|--------|
+| R1 | Fixed array is owned, slice is a view; one predicate | `types::tests::the_shape_predicates_split_slices_from_fixed_arrays` (`Ty::is_slice`/`is_fixed_array`) | ✅ |
+| R2 | View/elision/nullability classification; lend candidate unchanged; slice duplicable | `borrow::tests::a_fixed_array_is_an_aggregate_but_a_slice_is_a_view`, `::a_fixed_array_stays_a_lend_candidate`; `types::table::tests::array_duplicability_follows_nested_elements_and_the_pointer_boundary`; spec `should_accept_a_view_return_derived_from_a_fixed_array_parameter` (ST-15), `should_reject_a_nullable_fixed_array` (ST-16) | ✅ |
+| R3 | By-value fixed-array return | spec `should_emit_valid_c_when_a_function_returns_a_fixed_array_by_value`, `...forwards_another_call`, `...result_is_discarded`; impl `a_returned_owning_fixed_array_frees_each_element_once`, `a_returned_scalar_fixed_array_keeps_its_values`, `a_forwarded_owning_fixed_array_return_frees_each_element_once`, `a_discarded_owning_fixed_array_return_runs_clean` (ST-1) | ✅ |
+| R4 | Array-literal element moves | spec `should_report_e10020_when_a_moved_element_source_is_used` (ST-2) | ✅ |
+| R5 | Fixed-array element drop, first-to-last | spec `should_emit_fixed_array_drop_glue_one_dimension_per_level`; impl `a_fixed_array_local_drops_each_element_once`, `a_nested_fixed_array_drops_every_element_once`, `a_duplicable_fixed_array_keeps_its_values` (ST-1/ST-3/ST-9) | ✅ |
+| R6 | Growable drop; `E90000` un-staged | spec `should_accept_a_growable_array_of_a_move_only_element` (ST-8), `should_emit_growable_array_drop_glue_through_the_buffer`, `should_reject_a_fixed_array_element_built_by_a_generic_call`; impl `a_growable_array_drops_its_elements_once` (ST-7); the staged golden is removed | ✅ |
+| R7 | Move-only fill rejected under `E10215` | spec `should_reject_a_fill_of_a_move_only_element` (ST-10), `should_accept_a_fill_of_a_duplicable_element` (ST-11), `should_reject_a_prefix_and_fill_literal_of_a_move_only_element` | ✅ for concrete elements; generic `T` deferred (`DEF-12`) |
+| R8 | View-field ban under `E10205` at any nullability | spec `should_reject_a_slice_view_field` (ST-4), `should_reject_a_str_view_field` (ST-5), `should_accept_a_struct_with_owned_literal_pointer_and_fixed_array_fields` (ST-6), `should_reject_a_nullable_view_field`, `should_accept_a_nested_fixed_array_field` | ✅ for direct fields; generic `Wrap<T>` deferred (`DEF-12`) |
+| R9 | No regressions | `make verify` PASS: host `make check`, hosted-amiga corpus (four programs) + vbcc build-only, FS-UAE (two programs), six run-fault programs | ✅ |
+| R10 | `set` drops the replaced element | spec `should_accept_replacing_a_growable_move_only_element` (ST-17), `should_emit_growable_array_drop_glue_through_the_buffer`; impl `a_replaced_growable_element_is_stored_and_freed_once`, `set_releases_the_replaced_element_in_the_emitted_c` | ✅ |
+
+### Acceptance criteria
+
+| Criterion | Result |
+|-----------|--------|
+| R1–R10 traced to a passing test | ✅ table above |
+| `make check` green per task; `make verify` green before completion | ✅ |
+| No dead code from the removed `E90000` trigger | ✅ `cargo build` warning-free; `check_sequence_element` gone; `reject_fixed_array_sequence` has live call sites |
+| Both `spec/` text edits present and consistent | ✅ `spec/check.sh` OK |
+| Plan state and the `E90000` un-staging note recorded | ✅ |
+
+The only known gap is `DEF-12`, the generic-substitution blind spot, which is not a requirement of this plan and is deferred in the roadmap.

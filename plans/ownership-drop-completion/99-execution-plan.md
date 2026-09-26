@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 20:14
-> **Progress**: 43/48 tasks (90%)
+> **Last Updated**: 2026-09-26 20:27
+> **Progress**: 48/48 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -274,17 +274,18 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 ## Phase 5: Full Verification and Documentation
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `c9e62f557ba801d83911a9d162972ff42134c2fe`
 > **Lenses**: compiler and language
+> **Scope mode**: strict
 
 ### Step 5.1: Full Verification
 
 **Reference**: [07](07-testing-strategy.md) · AR-13
 **Objective**: Prove the whole feature with the full acceptance command.
 
-- [ ] 5.1.1 Run `make verify` (hosted-amiga legs and the corpus)
-- [ ] 5.1.2 Run `./spec/check.sh` and confirm the extended `E10215` text and the `E90000` un-staging are consistent
-- [ ] 5.1.3 Confirm no dead code: the removed `E90000` trigger leaves no unused function and no stale helper
+- [x] 5.1.1 Run `make verify` (hosted-amiga legs and the corpus) ✅ (completed: 2026-09-26 20:25) — all legs passed: host check, hosted-amiga corpus (file-copier, string-parser, buffer-container, volatile-mmio), vbcc build-only, FS-UAE (interrupt-counter, graphics), and the six run-fault programs
+- [x] 5.1.2 Run `./spec/check.sh` and confirm the extended `E10215` text and the `E90000` un-staging are consistent ✅ (completed: 2026-09-26 20:25) — spec check OK; `E10215` extended in `spec/08` AL-1 and the diagnostics row and in `spec/14` with the message template unchanged; `E90000` has its live golden, is in `ASSERTED_CODES`, and has no staged golden left
+- [x] 5.1.3 Confirm no dead code: the removed `E90000` trigger leaves no unused function and no stale helper ✅ (completed: 2026-09-26 20:25) — `cargo build --workspace` is warning-free; `check_sequence_element` is gone; `reject_fixed_array_sequence` has live call sites in `resolve_type` and `check_generic_call`
 
 **Deliverables**:
 - `make verify` green
@@ -297,8 +298,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [00-index](00-index.md)
 **Objective**: Sync the plan state and the roadmap.
 
-- [ ] 5.2.1 Set PLAN-11 to Done and link this plan; update `plans/00-roadmap.md`
-- [ ] 5.2.2 Post-phase review: confirm every R1–R10 traces to a passing test, then record the review evidence
+- [x] 5.2.1 Set PLAN-11 to Done and link this plan; update `plans/00-roadmap.md` ✅ (completed: 2026-09-26 20:27)
+- [x] 5.2.2 Post-phase review: confirm every R1–R10 traces to a passing test, then record the review evidence ✅ (completed: 2026-09-26 20:27) — full traceability table recorded in `00-review-report.md`; only the deferred `DEF-12` gap remains
 
 **Deliverables**:
 - Roadmap synced
