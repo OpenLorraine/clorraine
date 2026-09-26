@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 14:45
-> **Progress**: 0/45 tasks (0%)
+> **Last Updated**: 2026-09-26 14:58
+> **Progress**: 2/43 tasks (5%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -22,13 +22,13 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
-| 1 | Array classification, nullability, and element moves | 12 |
+| 1 | Array classification, nullability, and element moves | 10 |
 | 2 | Fixed-array return and nested-array literals | 9 |
 | 3 | Array element drop glue, `set`, and un-stage `E90000` | 11 |
 | 4 | View-field and fill enforcement | 8 |
 | 5 | Full verification and documentation | 5 |
 
-**Total: 45 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the task-size criteria in the make-plan quality checklist)
+**Total: 43 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the task-size criteria in the make-plan quality checklist)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
 >
@@ -50,7 +50,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 ## Phase 1: Array Classification, Nullability, and Element Moves
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of the phase-start state)_
+> **Phase baseline tree**: 2759dbc2e3226f1000bc43466c1794f0ed25f3de
 > **Lenses**: compiler and language
 
 ### Step 1.1: Specification Tests
@@ -58,12 +58,12 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-01](03-01-array-classification.md) · [07](07-testing-strategy.md) · AR-5, AR-6, AR-22, AR-23
 **Objective**: Express the required shape, nullability, and move behavior as failing tests.
 
-- [ ] 1.1.1 [spec-author] Write specification tests for ST-2 (moved element is `E10020`), ST-13 (shape predicate), ST-14 (aggregate classification), ST-15 (fixed-array lend candidate), ST-16 (fixed array not nullable) — `compiler/tests/ownership_drop_spec_test.rs`
-- [ ] 1.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase)
+- [x] 1.1.1 [spec-author] Write specification tests for ST-2 (moved element is `E10020`), ST-13 (shape predicate), ST-14 (aggregate classification), ST-15 (fixed-array lend candidate), ST-16 (fixed array not nullable) — `compiler/tests/ownership_drop_spec_test.rs` ✅ (completed: 2026-09-26 14:57) — note: ST-13/ST-14 are predicate-level and are written as the 1.3.1 unit tests; the spec file carries ST-2, ST-15, ST-16
+- [x] 1.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase) ✅ (completed: 2026-09-26 14:57)
 
 **Deliverables**:
-- [ ] The five ST cases exist and fail before the fix
-- [ ] Red-phase evidence recorded in the task line
+- The five ST cases exist and fail before the fix
+- Red-phase evidence recorded in the task line
 
 **Verify**: `make check` (expected: new tests red, existing suite green)
 
@@ -79,8 +79,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 1.2.5 Run `make check` and confirm the Phase 1 spec tests pass (green phase)
 
 **Deliverables**:
-- [ ] One predicate decides the array shape for the view/elision/nullability/aggregate consumers
-- [ ] An array literal moves an owned element and copies a duplicable one
+- One predicate decides the array shape for the view/elision/nullability/aggregate consumers
+- An array literal moves an owned element and copies a duplicable one
 
 **Verify**: `make check`
 
@@ -94,8 +94,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 1.3.3 Run `make check` (phase gate)
 
 **Deliverables**:
-- [ ] Internals covered by unit tests
-- [ ] A view return over a fixed-array lend is still accepted
+- Internals covered by unit tests
+- A view return over a fixed-array lend is still accepted
 
 **Verify**: `make check`
 
@@ -115,7 +115,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 2.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase)
 
 **Deliverables**:
-- [ ] The ST cases exist and fail before the fix
+- The ST cases exist and fail before the fix
 
 **Verify**: `make check` (expected: new tests red)
 
@@ -131,8 +131,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 2.2.5 Run `make check` and confirm the Phase 2 spec tests pass (green phase)
 
 **Deliverables**:
-- [ ] `func pair(): String[2]` emits `void cl_pair(..., ClString __cl_ret[2])` and writes into it
-- [ ] `u8[3][2] = [[1,2],[3,4],[5,6]]` emits per-element assignments
+- `func pair(): String[2]` emits `void cl_pair(..., ClString __cl_ret[2])` and writes into it
+- `u8[3][2] = [[1,2],[3,4],[5,6]]` emits per-element assignments
 
 **Verify**: `make check`
 
@@ -145,7 +145,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 2.3.2 Run `make check` (phase gate)
 
 **Deliverables**:
-- [ ] The oracle compiles and runs the emitted C; no invalid-C error
+- The oracle compiles and runs the emitted C; no invalid-C error
 
 **Verify**: `make check`
 
@@ -165,7 +165,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 3.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase)
 
 **Deliverables**:
-- [ ] The ST cases exist and fail before the fix
+- The ST cases exist and fail before the fix
 
 **Verify**: `make check` (expected: new tests red)
 
@@ -183,8 +183,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 3.2.7 Run `make check` and confirm the Phase 3 spec tests pass (green phase)
 
 **Deliverables**:
-- [ ] Fixed (per dimension) and growable arrays release their elements once
-- [ ] `Array<move-only>` is accepted; `set` drops the old element; `E90000` has no live trigger
+- Fixed (per dimension) and growable arrays release their elements once
+- `Array<move-only>` is accepted; `set` drops the old element; `E90000` has no live trigger
 
 **Verify**: `make check`
 
@@ -197,7 +197,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 3.3.2 Run `make check` (phase gate)
 
 **Deliverables**:
-- [ ] No `free(): double free` and no leak in any run
+- No `free(): double free` and no leak in any run
 
 **Verify**: `make check`
 
@@ -217,7 +217,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 4.1.2 Run `make check` and confirm the new tests fail for the right reason (red phase)
 
 **Deliverables**:
-- [ ] The six ST cases exist and fail before the fix
+- The six ST cases exist and fail before the fix
 
 **Verify**: `make check` (expected: new tests red)
 
@@ -232,8 +232,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 4.2.4 Run `make check` and confirm the Phase 4 spec tests pass (green phase)
 
 **Deliverables**:
-- [ ] A slice field is `E10205`; `cstring`/`static str`/fixed arrays stay accepted
-- [ ] A move-only fill is `E10215`; a duplicable fill is unchanged
+- A slice field is `E10205`; `cstring`/`static str`/fixed arrays stay accepted
+- A move-only fill is `E10215`; a duplicable fill is unchanged
 
 **Verify**: `make check`
 
@@ -246,8 +246,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 4.3.2 Run `make check` (phase gate)
 
 **Deliverables**:
-- [ ] Nullable `str?`/slice fields are rejected; the allowed fields stay allowed
-- [ ] The fill edge test uses the 1-D form the guard covers
+- Nullable `str?`/slice fields are rejected; the allowed fields stay allowed
+- The fill edge test uses the 1-D form the guard covers
 
 **Verify**: `make check`
 
@@ -268,8 +268,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 5.1.3 Confirm no dead code: the removed `E90000` trigger leaves no unused function and no stale helper
 
 **Deliverables**:
-- [ ] `make verify` green
-- [ ] `spec/check.sh` OK
+- `make verify` green
+- `spec/check.sh` OK
 
 **Verify**: `make verify`
 
@@ -282,8 +282,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 5.2.2 Post-phase review: confirm every R1–R10 traces to a passing test, then record the review evidence
 
 **Deliverables**:
-- [ ] Roadmap synced
-- [ ] Review evidence recorded
+- Roadmap synced
+- Review evidence recorded
 
 **Verify**: `make check`
 

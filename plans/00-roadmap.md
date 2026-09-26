@@ -26,7 +26,7 @@
 | PLAN-09 | Clorraine demo video toolkit | — | [clorraine-demo-video](clorraine-demo-video/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
 | PLAN-10 | Generic field integrity (DEF-06–DEF-10) | — | [generic-field-integrity](generic-field-integrity/00-index.md) | Done | ✅ | 2026-09-26 | DEF-06–DEF-10 fixed |
 | ↳ DEF-11 | Self-referential struct-literal reassignment double-frees | — | [partial-move-drop-coherence](partial-move-drop-coherence/00-index.md) | Done | ✅ | 2026-09-26 | fixed by partial-move-drop-coherence |
-| PLAN-11 | Ownership and drop model completion | — | [ownership-drop-completion](ownership-drop-completion/00-index.md) | Plan Preflighted | 🔬 | 2026-09-26 | preflight: 15 findings resolved (1 critical, 6 major); ready for execution |
+| PLAN-11 | Ownership and drop model completion | — | [ownership-drop-completion](ownership-drop-completion/00-index.md) | Executing | 🔄 | 2026-09-26 | preflight passed; Phase 1 (classification) in progress |
 | PLAN-12 | Non-lexical lifetimes (NLL, v2) | — | — | Backlog | ⬜ | 2026-09-26 | after PLAN-11 |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
