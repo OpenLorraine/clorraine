@@ -1,7 +1,7 @@
 # Ambiguity Register: Ownership and Drop Model Completion
 
-> **Status**: ✅ GATE PASSED — all 31 items resolved (22 at creation, 7 added by the preflight review, 2 added at runtime)
-> **Last Updated**: 2026-09-26 14:45
+> **Status**: ✅ GATE PASSED — all 32 items resolved (22 at creation, 7 added by the preflight review, 3 added at runtime)
+> **Last Updated**: 2026-09-26 19:59
 
 ## Scope
 
@@ -53,6 +53,7 @@ this plan.
 | AR-29 | UX | `E10215` message for the move-only fill | (a) reuse the existing message text with a specific help; (b) add a second message | (a) — preflight PF-008; keeps one registry template and the message matcher | ✅ Resolved |
 | AR-30 | Testing (runtime) | A staged specification test also pins the old `E90000` trigger: `compiler/tests/stage_spec_test.rs:2368` asserts `Array<Buffer>` reports `E90000`, which AR-2/AR-3 remove but the plan did not list. | (a) convert it to an acceptance test for `Array<Buffer>`, renamed; (b) delete it, since the new ST-8 spec test covers acceptance; (c) keep the trigger (contradicts AR-2) | (a) confirmed 2026-09-26 — the case stays in the staged suite as the un-staged regression | ✅ Resolved |
 | AR-31 | Testing (runtime) | PF-007 claimed `set<T>` leaks the replaced element. Against the built emitter, `one[0] = v` already drops the owned assignment target: the emitted `cl_set__String` body frees the old element, and an AddressSanitizer run shows no leak. A standard-library change (`let old = one[0];`) double-drops. | (a) skip the `std.mem` change and verify the existing drop; (b) force an explicit drop | (a) confirmed 2026-09-26 — PF-007 is a false positive; 3.2.3 is re-scoped to verification | ✅ Resolved |
+| AR-32 | Behavioral (runtime) | ST-12 is red for a path the phase does not own. `is_uncontracted_param` (`compiler/src/ffi.rs:92`) matches only `Handle`/`Struct`, so a fixed-array FFI parameter such as `u8[4]` is treated as contracted: the call needs no `unsafe` and `E10101` is unreachable (the call-site guard at `own/call_check.rs:424` is never entered). CN-11 (`spec/12-ffi-contracts.md:131`) says an uncontracted parameter accepts only scalars, `raw`, `cstring`, views, and `null`; a fixed array is owned inline storage, so passing one is `E10101`. Phase 1 assumed the existing rule already reached this case (`00-preflight-report.md:228`), but the predicate gate is the declared type, not the argument. | (a) add a Phase 4 task: treat a fixed-array parameter as uncontracted in `is_uncontracted_param`, with a unit test; (b) defer ST-12 and record the gap as a deferred item | (a) confirmed 2026-09-26 — one predicate (`|| ty.is_fixed_array()`), no stdlib `ffi` declaration uses a fixed-array parameter, so no first-party breakage; task 4.2.4 added and `compiler/src/ffi.rs` joins the phase's expected modification set | ✅ Resolved |
 
 ## Resolution Notes
 

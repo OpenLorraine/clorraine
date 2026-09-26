@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 18:06
-> **Progress**: 34/47 tasks (72%)
+> **Last Updated**: 2026-09-26 19:59
+> **Progress**: 34/48 tasks (71%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -25,10 +25,10 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 | 1 | Array classification, nullability, element moves, and the fixed-array return | 17 |
 | 2 | Nested-array literals | 6 |
 | 3 | Array element drop glue, `set`, and un-stage `E90000` | 11 |
-| 4 | View-field and fill enforcement | 8 |
+| 4 | View-field and fill enforcement | 9 |
 | 5 | Full verification and documentation | 5 |
 
-**Total: 47 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the task-size criteria in the make-plan quality checklist)
+**Total: 48 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the task-size criteria in the make-plan quality checklist)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
 >
@@ -220,8 +220,10 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 
 ## Phase 4: View-Field and Fill Enforcement
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `5a8dd91df8fa6c3724192b5be0695d2eea99c41f`
 > **Lenses**: compiler and language
+> **Scope mode**: strict
+> **Expected modification set**: `compiler/tests/ownership_drop_spec_test.rs`, `compiler/src/sema/items.rs`, `compiler/src/sema/expr.rs`, `compiler/src/sema/tests.rs`, `compiler/src/ffi.rs`, `spec/08-arrays-strings.md`, `spec/14-diagnostics.md`
 
 ### Step 4.1: Specification Tests
 
@@ -244,11 +246,13 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [ ] 4.2.1 Extend the `E10205` check to a slice field — `compiler/src/sema/items.rs`
 - [ ] 4.2.2 Add the `E10215` move-only fill guard (reusing the existing message text) — `compiler/src/sema/expr.rs`
 - [ ] 4.2.3 Extend the `AL` rule and the `E10215` text — `spec/08-arrays-strings.md`, `spec/14-diagnostics.md`
-- [ ] 4.2.4 Run `make check` and confirm the Phase 4 spec tests pass (green phase)
+- [ ] 4.2.4 Treat a fixed-array `ffi` parameter as uncontracted so an owned argument is `E10101` and a slice stays accepted (AR-32) — `compiler/src/ffi.rs`
+- [ ] 4.2.5 Run `make check` and confirm the Phase 4 spec tests pass (green phase)
 
 **Deliverables**:
 - A slice field is `E10205`; `cstring`/`static str`/fixed arrays stay accepted
 - A move-only fill is `E10215`; a duplicable fill is unchanged
+- A fixed-array `ffi` parameter is uncontracted: an owned argument is `E10101`, a slice argument stays accepted
 
 **Verify**: `make check`
 
