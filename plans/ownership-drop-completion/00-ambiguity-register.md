@@ -1,18 +1,22 @@
 # Ambiguity Register: Ownership and Drop Model Completion
 
-> **Status**: ✅ GATE PASSED — all 22 items resolved
-> **Last Updated**: 2026-09-26 14:01
+> **Status**: ✅ GATE PASSED — all 29 items resolved (22 at creation, 7 added by the preflight review)
+> **Last Updated**: 2026-09-26 14:45
 
 ## Scope
 
 This plan fixes the confirmed version-1 ownership and drop-model defects in
 `plans/00-roadmap.md` PLAN-11. The defects are: a fixed array is misclassified
-as a view (F1), a slice view field is accepted (F2), and owning-element drop
-glue for arrays is staged (F3). The plan adds no language surface; it makes the
-implementation match the frozen specification chapters 03, 08, 11, 16 and the
-standard-library appendix. The ledger-deferred items (nested partial moves O4,
-per-field loan precision O8, aggregate view returns F2, `Box<T>` X1, and
-non-lexical lifetimes) stay out of this plan.
+as a view (F1), a slice view field is accepted (F2), owning-element drop glue
+for arrays is staged (F3), and a move-only fill literal aliases its value (F4).
+The preflight review added four more confirmed gaps: a fixed-array return cannot
+be emitted (PF-001), a nested array literal emits invalid C (PF-003), a fixed
+array is still nullable (PF-004), and `set` leaks the replaced element (PF-007).
+The plan adds no language surface; it makes the implementation match the frozen
+specification chapters 03, 08, 11, 16 and the standard-library appendix. The
+ledger-deferred items (nested partial moves O4, per-field loan precision O8,
+aggregate view returns F2, `Box<T>` X1, and non-lexical lifetimes) stay out of
+this plan.
 
 ## Register
 
@@ -40,6 +44,13 @@ non-lexical lifetimes) stay out of this plan.
 | AR-20 | UX & presentation | Diagnostic wording | Reuse the existing `E10205` text; AR-10 chose (a), so extend the existing `E10215` text in `spec/14-diagnostics.md` and the `AL` rules in `spec/08-arrays-strings.md`; no new code is introduced | AR-10(a) applies — extend `E10215`, no new code | ✅ Resolved |
 | AR-21 | Technical (complexity escalation) | Is the change a material support surface? | (a) ordinary feature code in existing patterns, no escalation; (b) full escalation packet | (a) — the work is edits to existing type, checker, and emitter code plus the existing build-and-run oracle; no new layer, dependency, harness, or infrastructure | ✅ Resolved |
 | AR-22 | Behavioral | A slice's duplicability | A slice copies freely (it is a view); the current `duplicable_at` wrongly recurses into the element. The classification predicate (AR-5) also fixes duplicability | Grounded in `spec/03-ownership.md:21` and T9; no new decision | ✅ Resolved |
+| AR-23 | Technical | A fixed array must not be nullable now that it is owned | (a) route `is_nullable_capable` through `is_slice`; (b) leave it | (a) — preflight PF-004; a fixed array is inline storage, not a pointer-like view (T8) | ✅ Resolved |
+| AR-24 | Behavioral | Whether a fixed array stays a lifetime-elision candidate | (a) keep it (borrowed storage a returned view may borrow); (b) remove it | (a) — preflight PF-006; removing it would break a valid view return | ✅ Resolved |
+| AR-25 | Behavioral | `set<T>` dropping the replaced element | (a) drop the old element; (b) leave the overwrite | (a) — preflight PF-007; `spec/appendix-stdlib.md:62` requires the drop | ✅ Resolved |
+| AR-26 | Technical | Lowering a by-value fixed-array return | (a) hidden trailing out-parameter; (b) generated struct wrapper | (a) — preflight PF-001; reuses the existing pointer-lowered parameter shape | ✅ Resolved |
+| AR-27 | Technical | Emitting a nested array literal | (a) recurse one dimension per level; (b) compound-literal cast | (a) — preflight PF-003; per-dimension indexing matches the C declaration | ✅ Resolved |
+| AR-28 | Technical | Whether `emits_drop` gains a fixed-array arm | (a) no arm; whole fixed-array assignment stays out of scope; (b) add the arm and route assignment | (a) — preflight PF-009; the scratch local is a C array and cannot be assigned | ✅ Resolved |
+| AR-29 | UX | `E10215` message for the move-only fill | (a) reuse the existing message text with a specific help; (b) add a second message | (a) — preflight PF-008; keeps one registry template and the message matcher | ✅ Resolved |
 
 ## Resolution Notes
 

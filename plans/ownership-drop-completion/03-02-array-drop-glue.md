@@ -41,16 +41,36 @@ a fixed array of move-only elements. This component adds the emission:
 
 ### Fixed Array
 
-For `TyKind::Array { element, extents }` with every extent present, the count is
-the product of the extents, and each element drops first-to-last (AR-7):
+For `TyKind::Array { element, extents }` with every extent present, the elements
+drop first-to-last (AR-7). Because the C declaration is a multi-dimensional array
+(`ClString grid[2][2]`), the drop must index **one dimension at a time**; a flat
+index would treat a row as an element and index out of bounds (PF-002). A small
+recursive helper emits one loop per extent:
+
+```rust
+/// Emits the drop of a fixed array by recursing one extent per level.
+///
+/// The C declaration keeps every extent (`ClString grid[2][2]`), so each level
+/// indexes one dimension; a flattened index would name a row, not an element.
+fn emit_fixed_array_drop(&mut self, c_name: &str, element: &Ty, extents: &[usize]) {
+    match extents.split_first() {
+        None => self.emit_drop_expr(c_name, element),
+        Some((head, tail)) => {
+            for i in 0..*head {
+                self.emit_fixed_array_drop(&format!("{c_name}[{i}]"), element, tail);
+            }
+        }
+    }
+}
+```
+
+The array arm calls it only when an element owns storage:
 
 ```rust
 TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
     if self.needs_drop(element) {
-        let count: usize = extents.iter().filter_map(|e| *e).product();
-        for i in 0..count {
-            self.emit_drop_expr(&format!("{c_name}[{i}]"), element);
-        }
+        let dims: Vec<usize> = extents.iter().filter_map(|e| *e).collect();
+        self.emit_fixed_array_drop(c_name, element, &dims);
     }
 }
 ```
@@ -63,6 +83,10 @@ arr[0] = NULL;
 if (arr[1]) { FreeString(arr[1]); }
 arr[1] = NULL;
 ```
+
+For `ClString grid[2][2]` the same shape is emitted for all four elements in
+row-major, first-to-last order: `grid[0][0]`, `grid[0][1]`, `grid[1][0]`,
+`grid[1][1]`.
 
 ### Growable `Array<T>`
 
@@ -101,22 +125,36 @@ if (xs.data) {
 The element C type is `super::types::c_type(element)`; `cl_buffer_ptr` is the
 existing FFI (`compiler/runtime/shim_host.c:119`), already called by the emitted
 `get`/`set` for `Array<T>` (`stdlib/std.mem.clo:91-102`). The element drop reuses
-`emit_drop_expr`, so a nested struct or handle element drops correctly. The
-indentation of the loop body is cosmetic and does not change any existing output.
+`emit_drop_expr`, so a nested struct or handle element drops correctly. The loop
+locals are allocated with `self.unique_local("__cl_elems")` /
+`self.unique_local("__cl_i")` so a user local of the same name is not shadowed
+(PF-010). The indentation of the loop body is cosmetic and does not change any
+existing output.
 
-### `emits_drop`
+### The replaced element in `set<T>`
 
-Add a fixed-array arm so the assignment scratch local is used when an element
-needs a drop:
+Un-staging `Array<move-only>` (AR-2) also makes `xs.set(i, take v)` legal for a
+move-only element. The standard-library contract is to replace element `i`,
+**dropping the old one** (`spec/appendix-stdlib.md:62`), but `set` currently
+writes `one[0] = v;` and never releases the old element
+(`stdlib/std.mem.clo:97-102`), which leaks a handle (PF-007). This component
+changes `set` to drop the old element first, by moving the old value out and
+dropping it before the store, and adds a build-and-run test. This is a change to
+`stdlib/std.mem.clo`, not to the emitter.
 
-```rust
-TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
-    self.emits_drop(element)
-}
-```
+### `emits_drop` (no fixed-array arm)
 
-A slice keeps the `false` result (a view owns nothing). A growable `Array<T>`
-already returns true through its `data: Buffer` field and needs no change.
+`emits_drop` (`codegen/drop.rs:70-95`) only gates the assignment scratch local in
+`emit_assign` (`codegen/function.rs:486`). That scratch local is declared with
+`declarator`, which for an array is a C array (`ClString __cl_save[2]`) that
+cannot be assigned: `__cl_save[2] = target;` is not C. Adding a fixed-array arm
+would therefore route a fixed-array assignment through invalid C (PF-009), so
+`emits_drop` stays `false` for a fixed array, exactly as for a slice. A
+fixed-array literal assignment is emitted by the array path in
+`emit_statement` (`codegen/function.rs:311-323`); whole fixed-array assignment
+(`b = a;`, `b = id(a)`) is a pre-existing gap outside this plan and must not be
+introduced or relied on. A growable `Array<T>` still returns true through its
+`data: Buffer` field and needs no change.
 
 ### Removing the `E90000` Trigger
 
@@ -132,8 +170,11 @@ exclusion list; only the stale staged test data changes (AR-3):
 
 ### Integration Points
 
-- `emits_drop` gates the assignment scratch local (`codegen/cleanup.rs`), so the
-  fixed-array arm is required for a correct assignment drop.
+- `emits_drop` lives in `codegen/drop.rs:70-95` and gates the assignment scratch
+  local in `emit_assign` (`codegen/function.rs:486`); it gains **no** fixed-array
+  arm (PF-009).
+- `needs_drop` (`codegen/drop.rs:98-104`) consults `is_view`, so a fixed array of
+  move-only elements starts to need a drop without a direct edit.
 - The growable loop calls an FFI function from the drop ladder; the emission
   order is elements then buffer, so a freed buffer is never read.
 
@@ -170,7 +211,14 @@ func grow(): void {
 
 - A build-and-run test that a `String[2]` local and a returned `String[2]` drop
   each element exactly once (the C library aborts on a double free).
+- A build-and-run test that a `String[2][2]` drops all four elements
+  first-to-last, which also exercises the nested-literal fix in
+  [03-05](03-05-nested-array-literals.md).
 - A build-and-run test that `Array<String>` with pushed elements drops each
   element exactly once and frees the buffer.
-- A checker test that `Array<Buffer>` no longer reports `E90000`.
-- An emitter test for the fixed-array drop shape and the growable loop shape.
+- A build-and-run test that `xs.set(0, v)` on an `Array<String>` drops the old
+  element (PF-007).
+- A checker test that `Array<Buffer>` no longer reports `E90000`, and that the
+  updated `sema/tests.rs` unit test agrees (PF-005).
+- An emitter test for the fixed-array drop shape (one dimension per level) and
+  the growable loop shape.

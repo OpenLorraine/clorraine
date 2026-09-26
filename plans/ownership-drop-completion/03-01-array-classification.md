@@ -30,7 +30,20 @@ array is not kept away from an uncontracted extern (X4).
 ### Proposed Changes
 
 Add two predicates to `Ty` beside the existing shape helpers, then route the
-consumers through them.
+shape-sensitive consumers through them: `is_view`, `is_elided_view`,
+`duplicable_at`, `is_handle_or_aggregate`, and `is_nullable_capable`.
+`is_lend_candidate` stays unchanged (a fixed array is borrowable storage).
+
+The predicate is the single decision for the array shape. Other stages still
+test the extents inline (`codegen/calls.rs:57,156`, `codegen/render.rs:32`,
+`codegen/guards.rs:331`, `codegen/cleanup.rs:329`, `own/lower.rs:499,601`,
+`codegen/program.rs:840`, `abi.rs:58`); they already use the same
+`all(Some)`/`any(None)` test and are left as they are, but the plan does not claim
+that every stage calls the predicate (PF-011).
+
+A fixed-array **return** is not handled by classification alone: C cannot return
+an array. Its by-value lowering is designed in
+[03-04](03-04-fixed-array-return.md) (PF-001).
 
 ## Implementation Details
 
@@ -42,7 +55,8 @@ impl Ty {
     ///
     /// A fixed array (`T[N]`) is an owned aggregate; a slice is a pointer and a
     /// length. The two share `TyKind::Array`, so this is the one place the
-    /// distinction lives, and every stage asks here instead of re-deciding.
+    /// distinction lives for the view, elision, nullability, and aggregate
+    /// consumers; they ask here instead of re-deciding.
     pub fn is_slice(&self) -> bool {
         matches!(&self.kind, TyKind::Array { extents, .. } if extents.iter().any(Option::is_none))
     }
@@ -60,9 +74,10 @@ impl Ty {
 | -------- | ----- | ----- | -- |
 | `is_view` (`borrow.rs:151`) | `Str \| CString \| StaticStr \| Array{..}` | `Str \| CString \| StaticStr`, plus `Array` when `ty.is_slice()` | AR-5 |
 | `is_elided_view` (`borrow.rs:162`) | `Str \| CString \| Array{..}` | `Str \| CString`, plus `Array` when `ty.is_slice()` | AR-5 |
-| `is_lend_candidate` (`borrow.rs:175`) | `… \| Array{..}` | keep `Raw`, `Handle`, `Struct("Array")`; `Array` only when `ty.is_slice()` | AR-5 |
+| `is_lend_candidate` (`borrow.rs:175`) | `… \| Array{..}` | **unchanged** — a fixed array is borrowed storage a returned view may borrow, so it stays a candidate (PF-006) | AR-5 |
 | `duplicable_at` (`table.rs:382`) | recurses into the element | a slice is `true` (a view copies); a fixed array recurses into the element | AR-22 |
 | `is_handle_or_aggregate` (`borrow.rs:195`) | `Handle \| Struct` | add a fixed array (an owned aggregate); a slice stays out (a view) | AR-5 |
+| `is_nullable_capable` (`borrow.rs:203`) | `… \| Array{..}` | `Array` only when `ty.is_slice()`; a fixed array is not nullable (PF-004) | AR-23 |
 
 `needs_drop` (`codegen/drop.rs:98-104`) consults `is_view`, so it becomes correct
 for fixed arrays without a direct edit.
@@ -123,7 +138,12 @@ func demo(): void {
 
 - Unit tests on `Ty::is_slice` / `Ty::is_fixed_array` for slices, fixed arrays,
   multi-dimensional arrays, and empty extents.
-- Checker tests that a fixed-array return compiles and that a moved element
-  source is `E10020`.
+- A regression test that a view return derived from a fixed-array parameter is
+  still accepted (`func head(arr: u8[2]): u8[] { return slice(arr, 0, 1); }`),
+  which pins that `is_lend_candidate` keeps fixed arrays (PF-006).
+- A checker test that a fixed array is not nullable: `let a: String[2]? = null;`
+  is rejected (PF-004).
+- Checker tests that a moved element source is `E10020`; the fixed-array return
+  is covered by [03-04](03-04-fixed-array-return.md).
 - Emitter tests that a fixed array of duplicable elements copies and a fixed
   array of move-only elements moves.

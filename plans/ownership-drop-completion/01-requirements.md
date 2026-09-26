@@ -21,13 +21,17 @@ staged. This feature makes the implementation match `spec/03-ownership.md`,
   extent present) is an *owned aggregate*; a slice (at least one extent omitted)
   is a *view*. One predicate expresses the slice case, and the fixed array is its
   complement.
-- [ ] **R2 — Classification (AR-5):** `borrow::is_view`, `borrow::is_elided_view`,
-  and `borrow::is_lend_candidate` treat a fixed array as owned (not a view), and a
-  slice as a view. `TypeTable::duplicable` treats a slice as duplicable regardless
-  of its element (AR-22).
+- [ ] **R2 — Classification (AR-5, AR-23):** `borrow::is_view`,
+  `borrow::is_elided_view`, and `borrow::is_nullable_capable` treat a fixed array
+  as owned (not a view), and a slice as a view. `borrow::is_lend_candidate` is
+  **unchanged**: a fixed array is borrowed storage a returned view may borrow, so
+  it stays a candidate (PF-006). `TypeTable::duplicable` treats a slice as
+  duplicable regardless of its element (AR-22).
 - [ ] **R3 — Fixed-array return (AR-9):** `func pair(): String[N] { ... return
   [a, b]; }` compiles and returns by value; it is not a view return and needs no
-  elision candidate (`spec/08-arrays-strings.md` section 6).
+  elision candidate (`spec/08-arrays-strings.md` section 6). Because C cannot
+  return an array, this requires the by-value lowering in
+  [03-04](03-04-fixed-array-return.md); classification alone is not enough.
 - [ ] **R4 — Element moves (AR-6):** in both the ownership walk and the lowering,
   an array-literal element is consumed exactly like a struct-literal field: an
   owned (non-duplicable) place moves and its source is emptied; a duplicable place
@@ -46,6 +50,9 @@ staged. This feature makes the implementation match `spec/03-ownership.md`,
 - [ ] **R8 — View fields (AR-4):** `E10205` rejects a field whose type is `str`
   or a slice (`T[]`), at any nullability. It keeps accepting `cstring`,
   `static str`, `raw`, `func`, handles, structs, and fixed arrays.
+- [ ] **R10 — `set` drops the replaced element (AR-25):** once
+  `Array<move-only>` is accepted (R6), `xs.set(i, take v)` must drop the old
+  element before storing `v`, as `spec/appendix-stdlib.md:62` requires.
 
 ### Should Have
 
@@ -58,6 +65,8 @@ staged. This feature makes the implementation match `spec/03-ownership.md`,
   view returns (ledger F2), `Box<T>` (ledger X1), and non-lexical lifetimes —
   each stays deferred (AR-1). This plan does not change the borrow checker's
   lexical model.
+- Whole fixed-array assignment (`b = a;`, `b = id(a)`) is a pre-existing codegen
+  gap and stays out of scope (PF-009); no requirement depends on it.
 
 ## Technical Requirements
 
@@ -96,7 +105,7 @@ a use-after-free and a double-free (AR-16).
 
 ## Acceptance Criteria
 
-1. [ ] R1–R8 implemented and each traced to an `ST-` case in `07-testing-strategy.md`.
+1. [ ] R1–R10 implemented and each traced to an `ST-` case in `07-testing-strategy.md`.
 2. [ ] `make check` is green after every task; `make verify` is green before completion (AR-13).
 3. [ ] No dead code: the removed `E90000` trigger leaves no unused function, and no stale helper remains.
 4. [ ] The two `spec/` text edits (AR-10, AR-20) are present and consistent with the code.

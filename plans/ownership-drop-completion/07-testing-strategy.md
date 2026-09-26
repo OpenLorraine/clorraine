@@ -38,6 +38,8 @@
 | ST-9 | `let grid: String[2][2] = [[a, b], [c, d]];` then run | all four elements are released exactly once, first-to-last | O2 |
 | ST-13 | `Ty::is_slice` on `u8[]`, `u8[4]`, `u8[3][2]`, `u8[][2]` | true only for `u8[]` (and any type with an omitted extent) | spec/08 §1, §3 |
 | ST-14 | `is_handle_or_aggregate` on a fixed array and a slice | true for the fixed array; false for the slice | X4 |
+| ST-15 | `func head(arr: u8[2]): u8[] { return slice(arr, 0, 1); }` | accepted — a fixed array stays a lend candidate | EL-2; PF-006 |
+| ST-16 | `let a: String[2]? = null;` | rejected — a fixed array is not nullable | T8; PF-004 |
 
 ### Growable Container
 
@@ -45,6 +47,7 @@
 | --- | --- | --- | --- |
 | ST-7 | `Array<String>` with two pushed elements, then run | elements release first-to-last, then the buffer; no double free | spec/appendix-stdlib §3; O2 |
 | ST-8 | `let xs: Array<Buffer> = arrayNew<Buffer>();` | accepted; no `E90000` | AR-2 |
+| ST-17 | `Array<String>` with two elements, then `xs.set(0, v)`; run | the replaced element is dropped; no leak | spec/appendix-stdlib §3 (:62); PF-007 |
 
 ### View Fields and Fill
 
@@ -65,19 +68,21 @@
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/ownership_drop_spec_test.rs` | ST-2, ST-4, ST-5, ST-6, ST-8, ST-10, ST-11, ST-12, ST-13, ST-14 | classification, checks |
+| `compiler/tests/ownership_drop_spec_test.rs` | ST-1 (checker/emitter half), ST-2, ST-4, ST-5, ST-6, ST-8, ST-10, ST-11, ST-12, ST-13, ST-14, ST-15, ST-16 | classification, checks, return compile |
 | `compiler/src/types/mod.rs` (`mod tests`) | ST-13 | shape predicate |
 | `compiler/src/borrow.rs` (`mod tests`) | ST-14 | classification predicate |
 
 ### Implementation Tests (edge cases, internals)
 
 > Written AFTER implementation. `compiler/tests/ownership_drop_impl_test.rs` builds
-> and runs the emitted C, so a second release aborts.
+> and runs the emitted C, so a second release aborts. It is the runtime oracle for
+> the spec cases whose behavior is only observable at run time (PF-015); the
+> spec-level expectation for each is also pinned in the spec file above.
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| `compiler/tests/ownership_drop_impl_test.rs` | ST-1, ST-3, ST-7, ST-9 runtime drop and ordering | High |
-| `compiler/src/codegen/drop.rs` (`mod tests`) | emitted shape for a fixed array and the growable loop | Medium |
+| `compiler/tests/ownership_drop_impl_test.rs` | ST-1, ST-3, ST-7, ST-9, ST-17 runtime drop, ordering, and replacement | High |
+| `compiler/src/codegen/drop.rs` (`mod tests`) | emitted shape for a fixed array (per dimension) and the growable loop | Medium |
 
 ### Integration Tests
 

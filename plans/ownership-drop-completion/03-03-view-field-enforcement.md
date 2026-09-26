@@ -63,8 +63,8 @@ if fill.is_some() {
         {
             self.error(
                 "E10215",
-                "array fill cannot repeat a move-only element",
-                "construct each element explicitly",
+                "array fill requires a fixed extent",
+                "a fill cannot repeat a move-only element; construct each element",
                 span,
             );
         }
@@ -84,9 +84,14 @@ Two small edits make the chapters state the behavior the code now enforces:
   fill value must be duplicable) and extend the `E10215` row in the diagnostics
   table (`spec/08-arrays-strings.md:291`).
 - `spec/14-diagnostics.md`: extend the `E10215` description to include "or a fill
-  value whose element type is not duplicable".
+  value whose element type is not duplicable". The `Message` column keeps its
+  single template (`array fill requires a fixed extent`) and the new trigger
+  reuses that text, with the move-only reason in the help, so the registry and
+  the `compile_fail_spec_test` message matcher stay consistent (PF-008).
 
-No new diagnostic code is introduced (AR-10, AR-20).
+No new diagnostic code is introduced (AR-10, AR-20). `spec/13-data-inclusion.md`
+also references E10215 for `embed`; its statement ("never raised by `embed`")
+stays true and needs no edit, but the edit note records the cross-reference.
 
 ### Integration Points
 
