@@ -325,6 +325,26 @@ impl<'a> Emitter<'a> {
                     self.emit_move_zero(&source, &source_ty);
                 }
             }
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } => {
+                // A returned fixed-array call writes straight into the same
+                // destination the enclosing function returns through.
+                for arg in args {
+                    self.emit_guards(arg);
+                }
+                let call = self.call_with_destination(
+                    callee,
+                    type_args,
+                    args,
+                    receiver.as_deref(),
+                    "__cl_ret",
+                );
+                self.push(&format!("    {call};"));
+            }
             _ => {
                 // A form other than a literal or a place has no C array value
                 // to copy. Keep the generic store, so an unsupported form fails

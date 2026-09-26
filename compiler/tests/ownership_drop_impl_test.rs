@@ -168,3 +168,57 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A forwarded fixed-array return threads the destination through both calls,
+/// so the owning elements transfer once and nothing is freed twice.
+#[test]
+fn a_forwarded_owning_fixed_array_return_frees_each_element_once() {
+    run_clean(
+        "ret-forward",
+        r#"module tests.od.forward_owning;
+
+import { String, stringOf } from std.text;
+
+func inner(): String[2] {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    return [a, b];
+}
+
+func outer(): String[2] {
+    return inner();
+}
+
+func demo(): void {
+    let p: String[2] = outer();
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
+
+/// A discarded fixed-array-returning call passes a destination, so the emitted
+/// C compiles and the run does not free anything twice.
+#[test]
+fn a_discarded_owning_fixed_array_return_runs_clean() {
+    run_clean(
+        "ret-discard",
+        r#"module tests.od.discard_owning;
+
+import { String, stringOf } from std.text;
+
+func inner(): String[2] {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    return [a, b];
+}
+
+func demo(): void {
+    inner();
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}

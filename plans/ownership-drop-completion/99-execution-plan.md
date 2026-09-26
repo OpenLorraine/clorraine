@@ -108,7 +108,7 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 - [x] 1.4.2 Run `make check` and confirm the new tests fail for the right reason (red phase) ✅ (completed: 2026-09-26 15:33; cc rejects the emitted C: `expected expression before '{'` and `assignment to expression with array type`)
 - [x] 1.4.3 Emit a fixed-array return as `void` with a trailing `T __cl_ret[N]` out-parameter — `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-26 15:40)
 - [x] 1.4.4 Copy the returned value into `__cl_ret` in `emit_return`/`emit_closing_return` and suppress the result local — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-09-26 15:40)
-- [x] 1.4.5 Pass the caller destination at fixed-array call sites — `compiler/src/codegen/calls.rs` ✅ (completed: 2026-09-26 15:40; delivered via `call_with_destination` in `compiler/src/codegen/expr.rs` plus the `Assign`/`emit_call` routing in `function.rs`)
+- [x] 1.4.5 Pass the caller destination at fixed-array call sites — `compiler/src/codegen/calls.rs` ✅ (completed: 2026-09-26 15:40; delivered via `call_with_destination` in `compiler/src/codegen/expr.rs` plus the `Assign`/`emit_call` routing in `function.rs`. Re-review follow-up: the returned-call and discarded-call paths also pass a destination — RV-006/RV-007)
 - [x] 1.4.6 Run `make check` and confirm the Step 1.4 spec tests pass (green phase) ✅ (completed: 2026-09-26 15:40)
 - [x] 1.4.7 Add a build-and-run case: `let p: String[2] = pair();` releases each element once (ST-1) — `compiler/tests/ownership_drop_impl_test.rs` ✅ (completed: 2026-09-26 15:42; two cases: owning return frees once, scalar return round-trips)
 

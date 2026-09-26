@@ -446,9 +446,17 @@ impl<'a> Emitter<'a> {
                 }
                 // A by-value fixed-array result is C's hidden out-parameter:
                 // the call writes through the caller's destination instead of
-                // assigning the (unassignable) array result.
-                if let Some(place) = result {
-                    if self.substitute(&place.ty).is_fixed_array() {
+                // assigning the (unassignable) array result. A discarded result
+                // still needs storage, so it writes into a statement-local
+                // destination that the cleanup releases.
+                let array_result = match result {
+                    Some(place) => self.substitute(&place.ty).is_fixed_array(),
+                    None => self
+                        .callee_return_type(callee)
+                        .is_some_and(|ty| ty.is_fixed_array()),
+                };
+                if array_result {
+                    if let Some(place) = result {
                         let destination = self.place(place);
                         let call = self.call_with_destination(
                             callee,
@@ -458,8 +466,28 @@ impl<'a> Emitter<'a> {
                             &destination,
                         );
                         self.push(&format!("    {call};"));
-                        return;
+                    } else if let Some(ty) = self.callee_return_type(callee) {
+                        let dest = self.unique_local("__cl_discard");
+                        self.push("    {");
+                        self.push(&format!(
+                            "        {} = {};",
+                            declarator(&ty, &dest),
+                            self.empty_state(&ty)
+                        ));
+                        let call = self.call_with_destination(
+                            callee,
+                            type_args,
+                            args,
+                            receiver,
+                            &dest,
+                        );
+                        self.push(&format!("        {call};"));
+                        if self.needs_drop(&ty) {
+                            self.emit_drop_expr(&dest, &ty);
+                        }
+                        self.push("    }");
                     }
+                    return;
                 }
                 let call = self.call(callee, type_args, args, receiver);
                 let prefix = match result {
@@ -507,6 +535,21 @@ impl<'a> Emitter<'a> {
                 .iter()
                 .map(|param| resolve_ty(&param.ty, &[], &self.sema.table))
                 .collect()
+        })
+    }
+
+    /// The declared return type of a known user function, with the active
+    /// generic substitution applied.
+    ///
+    /// `None` for an unknown callee or an intrinsic, whose result type the
+    /// emitter does not need to name here. The call-site renderer uses this to
+    /// learn whether a result is a by-value fixed array, which C lowers through
+    /// a hidden destination argument.
+    pub(super) fn callee_return_type(&self, callee: &str) -> Option<Ty> {
+        self.resolve_function(callee).map(|info| {
+            let names = type_param_names(info.decl);
+            let ty = resolve_ty(&info.decl.returns, &names, &self.sema.table);
+            self.substitute(&ty)
         })
     }
 

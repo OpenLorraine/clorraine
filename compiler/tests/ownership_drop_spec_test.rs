@@ -240,3 +240,53 @@ func main(): i32 { demo(); return 0; }
 "#;
     assert_emits_valid_c("st1", source);
 }
+
+/// A function may return the result of another fixed-array-returning call.
+///
+/// The hidden destination is threaded through both calls, so the emitted C
+/// stays valid for the forwarded form as well as the literal form.
+#[test]
+fn should_emit_valid_c_when_a_fixed_array_return_forwards_another_call() {
+    let source = r#"module tests.od.forward_return;
+
+import { String, stringOf } from std.text;
+
+func inner(): String[2] {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    return [a, b];
+}
+
+func outer(): String[2] {
+    return inner();
+}
+
+func main(): i32 { let p: String[2] = outer(); return 0; }
+"#;
+    assert_emits_valid_c("rv002", source);
+}
+
+/// A discarded fixed-array-returning call still provides a destination.
+///
+/// The result is not used, but the callee still writes through a hidden
+/// out-parameter, so the emitter must pass one even when the value is dropped.
+#[test]
+fn should_emit_valid_c_when_a_fixed_array_result_is_discarded() {
+    let source = r#"module tests.od.discard_return;
+
+import { String, stringOf } from std.text;
+
+func inner(): String[2] {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    return [a, b];
+}
+
+func demo(): void {
+    inner();
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_emits_valid_c("rv003", source);
+}
