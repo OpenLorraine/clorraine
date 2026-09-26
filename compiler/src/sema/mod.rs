@@ -237,7 +237,6 @@ impl<'a, 'd> Checker<'a, 'd> {
         if !self.validate_type(ty) {
             return Ty::unknown();
         }
-        self.check_sequence_element(ty);
         let table = self.table;
         let type_params = &self.type_params;
         let resolved = resolve_ty_with(ty, type_params, table, &mut |expr| {
@@ -256,36 +255,6 @@ impl<'a, 'd> Checker<'a, 'd> {
             );
         }
         resolved
-    }
-
-    /// Rejects a growable sequence whose element type owns a resource.
-    ///
-    /// The version 1 container has no generated drop glue, so its elements must
-    /// be duplicable; a move-only element such as a handle is a staged-feature
-    /// error rather than a type error.
-    fn check_sequence_element(&mut self, ty: &Type) {
-        let crate::ast::TypeKind::Named { name, args } = &ty.kind else {
-            return;
-        };
-        if !name.segments.last().is_some_and(|last| last == "Array") {
-            return;
-        }
-        let Some(element_ast) = args.first() else {
-            return;
-        };
-        let element = self.resolve_type(element_ast);
-        if element.is_unknown() || element.is_param() || self.table.duplicable(&element) {
-            return;
-        }
-        self.error(
-            "E90000",
-            format!(
-                "'{}' is not a duplicable element for 'Array'",
-                element.display()
-            ),
-            "use a duplicable element type; owning-element drop glue is staged",
-            ty.span,
-        );
     }
 
     /// Reports `E10207` when a value of `ty` reaches an overlay type.

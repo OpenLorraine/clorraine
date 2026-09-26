@@ -538,16 +538,14 @@ func main(): i32 { return 0; }
     );
 }
 
-/// The `Array<T>` element rule fires only for a known, move-only element.
+/// A growable `Array<T>` accepts a move-only element.
 ///
-/// The rule rejects a growable sequence of a resource-owning element because
-/// version 1 cannot drop such elements. It must stay quiet for a duplicable
-/// element, for a nested sequence of duplicable elements, and for an element
-/// type the table cannot resolve; those are ordinary programs or already
-/// reported elsewhere.
+/// Version 1 generates the element drop glue, so the former staged `E90000`
+/// no longer fires for `Array<Buffer>` or a struct that owns a `String`. The
+/// case keeps the duplicable, nested, and unresolved spellings accepted too.
 #[test]
-fn the_array_element_rule_fires_only_for_a_known_move_only_element() {
-    assert_codes(
+fn a_move_only_array_element_is_accepted() {
+    assert_accepts(
         r#"module test;
 handle Buffer freedBy FreeBuffer;
 ffi lib { func FreeBuffer(take b: Buffer): void; }
@@ -559,6 +557,5 @@ func takesNested(xs: Array<Array<i32>>): void {}
 func takesUnknown(xs: Array<Undeclared>): void {}
 func main(): i32 { return 0; }
 "#,
-        &["E90000", "E90000"],
     );
 }

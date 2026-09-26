@@ -267,3 +267,149 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A fixed array local drops each owning element exactly once at scope exit.
+#[test]
+fn a_fixed_array_local_drops_each_element_once() {
+    run_clean(
+        "fixed-local",
+        r#"module tests.od.fixed_local;
+
+import { String, stringOf } from std.text;
+
+func demo(): void {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    let arr: String[2] = [a, b];
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
+
+/// A nested fixed array drops every element once, one dimension per level.
+#[test]
+fn a_nested_fixed_array_drops_every_element_once() {
+    run_clean(
+        "nested-local",
+        r#"module tests.od.nested_local;
+
+import { String, stringOf } from std.text;
+
+func demo(): void {
+    let a: String = stringOf("a");
+    let b: String = stringOf("b");
+    let c: String = stringOf("c");
+    let d: String = stringOf("d");
+    let grid: String[2][2] = [[a, b], [c, d]];
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
+
+/// A growable array drops its elements through the buffer and then the buffer.
+#[test]
+fn a_growable_array_drops_its_elements_once() {
+    run_clean(
+        "grow-drop",
+        r#"module tests.od.grow_drop;
+
+import { String, stringOf } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func demo(): void {
+    let xs: Array<String> = arrayNew<String>();
+    xs.push(stringOf("a"));
+    xs.push(stringOf("b"));
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
+
+/// A duplicable fixed array needs no element drop and keeps its values.
+#[test]
+fn a_duplicable_fixed_array_keeps_its_values() {
+    let output = build_and_run(
+        "dup-array",
+        r#"module tests.od.dup_array;
+
+func main(): i32 {
+    let row: i32[4] = [1, 2, 3, 4];
+    return row[0] + row[1] + row[2] + row[3];
+}
+"#,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(10),
+        "the duplicable elements must sum to 10; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Replacing a growable element stores the new value and does not double free.
+///
+/// The exit code reads the replaced slot back, so the store is observed. A leak
+/// is not observable here; the emitted-shape case below pins the drop call.
+#[test]
+fn a_replaced_growable_element_is_stored_and_freed_once() {
+    let output = build_and_run(
+        "set-replace",
+        r#"module tests.od.set_replace;
+
+import { String, stringOf, bytes } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let xs: Array<String> = arrayNew<String>();
+    xs.push(stringOf("a"));
+    xs.set(0, stringOf("b"));
+    return i32(bytes(xs.get(0)[0])[0]);
+}
+"#,
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(98),
+        "the replaced element must be 'b' (98); stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The emitted `set` body releases the replaced element before storing the new
+/// one, so the growable container does not leak on replacement.
+#[test]
+fn set_releases_the_replaced_element_in_the_emitted_c() {
+    let scratch = ScratchDir::new("set-shape");
+    let c_path = emit_c(
+        "set-shape",
+        &scratch,
+        r#"module tests.od.set_shape;
+
+import { String, stringOf } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func demo(): void {
+    let xs: Array<String> = arrayNew<String>();
+    xs.push(stringOf("a"));
+    xs.set(0, stringOf("b"));
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    let body = emitted
+        .split("cl_set__String")
+        .nth(1)
+        .expect("the instantiated set body must be emitted");
+    assert!(
+        body.contains("FreeString("),
+        "set must release the replaced element; emitted body:\n{body}"
+    );
+}

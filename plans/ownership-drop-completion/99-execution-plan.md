@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-26 17:36
-> **Progress**: 25/47 tasks (53%)
+> **Last Updated**: 2026-09-26 18:06
+> **Progress**: 34/47 tasks (72%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -189,13 +189,13 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-02](03-02-array-drop-glue.md) §Implementation Details · AR-2, AR-3, AR-7, AR-8, AR-25
 **Objective**: Emit array element drop, fix `set`, and remove the `E90000` trigger.
 
-- [ ] 3.2.1 Add the per-dimension fixed-array arm to `emit_drop_expr` — `compiler/src/codegen/drop.rs`
-- [ ] 3.2.2 Add the growable `Array<T>` arm to `emit_drop_expr` (elements then buffer, null-safe, `unique_local` loop locals) — `compiler/src/codegen/drop.rs`
-- [ ] 3.2.3 Make `set<T>` drop the replaced element — `stdlib/std.mem.clo`
-- [ ] 3.2.4 Remove `check_sequence_element` and its call — `compiler/src/sema/mod.rs`
-- [ ] 3.2.5 Update the `E90000` unit test to assert `Array<move-only>` is accepted — `compiler/src/sema/tests.rs`
-- [ ] 3.2.6 Un-stage `E90000`: delete the staged golden, remove its README row, update the `check.sh` comment — `spec/tests/staged/`, `spec/check.sh`; also convert the staged spec test `stage_spec_test.rs:2368` to an acceptance test (AR-30)
-- [ ] 3.2.7 Run `make check` and confirm the Phase 3 spec tests pass (green phase)
+- [x] 3.2.1 Add the per-dimension fixed-array arm to `emit_drop_expr` — `compiler/src/codegen/drop.rs` ✅ (completed: 2026-09-26 18:05; `emit_fixed_array_drop` recurses one extent per level)
+- [x] 3.2.2 Add the growable `Array<T>` arm to `emit_drop_expr` (elements then buffer, null-safe, `unique_local` loop locals) — `compiler/src/codegen/drop.rs` ✅ (completed: 2026-09-26 18:05; `emit_growable_array_drop` loops through `cl_buffer_ptr`, then frees `data` and resets `count`)
+- [x] 3.2.3 Verify that `set<T>` drops the replaced element — `stdlib/std.mem.clo`, tests ✅ (completed: 2026-09-26 18:05; re-scoped per the AR-31 ruling — PF-007 is a false positive: the emitter already drops an owned assignment target, so no standard-library change is needed. Verified by the emitted `cl_set__String` body and an AddressSanitizer run; covered by `set_releases_the_replaced_element_in_the_emitted_c` and `a_replaced_growable_element_is_stored_and_freed_once`)
+- [x] 3.2.4 Remove `check_sequence_element` and its call — `compiler/src/sema/mod.rs` ✅ (completed: 2026-09-26 18:05)
+- [x] 3.2.5 Update the `E90000` unit test to assert `Array<move-only>` is accepted — `compiler/src/sema/tests.rs` ✅ (completed: 2026-09-26 18:05; `a_move_only_array_element_is_accepted`)
+- [x] 3.2.6 Un-stage `E90000`: delete the staged golden, remove its README row, update the `check.sh` comment — `spec/tests/staged/`, `spec/check.sh`; also convert the staged spec test `stage_spec_test.rs:2368` to an acceptance test (AR-30) ✅ (completed: 2026-09-26 18:05)
+- [x] 3.2.7 Run `make check` and confirm the Phase 3 spec tests pass (green phase) ✅ (completed: 2026-09-26 18:06; spec check OK, 20 suites green)
 
 **Deliverables**:
 - Fixed (per dimension) and growable arrays release their elements once
@@ -208,8 +208,8 @@ oracle; it adds no new layer, dependency, or harness (AR-21).
 **Reference**: [03-02](03-02-array-drop-glue.md) §Testing Requirements · [07](07-testing-strategy.md) ST-7, ST-9
 **Objective**: Prove the runtime drop behavior with the build-and-run oracle.
 
-- [ ] 3.3.1 Add build-and-run cases: a fixed array, a nested `String[2][2]` (ST-9), and `Array<String>` drop exactly once; and `set` drops the replaced element (ST-17) — `compiler/tests/ownership_drop_impl_test.rs`
-- [ ] 3.3.2 Run `make check` (phase gate)
+- [x] 3.3.1 Add build-and-run cases: a fixed array, a nested `String[2][2]` (ST-9), and `Array<String>` drop exactly once; and `set` drops the replaced element (ST-17) — `compiler/tests/ownership_drop_impl_test.rs` ✅ (completed: 2026-09-26 18:06; fixed-local, nested-local, grow-drop, dup-array, set-replace, and the `set` emitted-shape case)
+- [x] 3.3.2 Run `make check` (phase gate) ✅ (completed: 2026-09-26 18:06)
 
 **Deliverables**:
 - No `free(): double free` and no leak in any run

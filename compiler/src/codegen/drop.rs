@@ -37,36 +37,105 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    if ({c_name}) {{ {deleter}({c_name}); }}"));
                 self.push(&format!("    {c_name} = {null};"));
             }
-            TyKind::Struct(name, args) => {
-                let fields = self
-                    .sema
-                    .table
-                    .struct_fields(name)
-                    .map(<[(String, Ty)]>::to_vec)
-                    .unwrap_or_default();
-                let params = self
-                    .sema
-                    .table
-                    .struct_type_params(name)
-                    .unwrap_or(&[])
-                    .to_vec();
-                for (field, declared) in fields {
-                    let field_ty = self.substitute(&substitute_instance(&declared, &params, args));
-                    if !self.needs_drop(&field_ty) {
-                        continue;
-                    }
-                    self.emit_drop_expr(&format!("{c_name}.{field}"), &field_ty);
+            TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
+                if self.needs_drop(element) {
+                    let dims: Vec<usize> =
+                        extents.iter().filter_map(|size| *size).collect();
+                    self.emit_fixed_array_drop(c_name, element, &dims);
                 }
             }
+            TyKind::Struct(name, args) if name == "Array" && args.len() == 1 => {
+                // The growable container owns its buffer and its elements, so it
+                // releases the elements through the buffer before the generic
+                // field walk frees the buffer. A duplicable element needs no
+                // element pass, so it takes the ordinary field walk.
+                let element = self.substitute(&args[0]);
+                if self.needs_drop(&element) {
+                    self.emit_growable_array_drop(c_name, &element);
+                } else {
+                    self.emit_struct_drop(c_name, name, args);
+                }
+            }
+            TyKind::Struct(name, args) => self.emit_struct_drop(c_name, name, args),
             _ => {}
         }
     }
 
-    /// True when a value of this type drops owned storage in the emitted C.
+    /// Emits the drop of a struct by recursing into each owned field.
     ///
-    /// This refines [`Self::needs_drop`]: a type the emitter has no drop
-    /// lowering for, such as an array, needs no old-value release and cannot
-    /// use the assignment scratch local.
+    /// The container special cases that handle their own storage do not call
+    /// this, so a field is never released twice.
+    fn emit_struct_drop(&mut self, c_name: &str, name: &str, args: &[Ty]) {
+        let fields = self
+            .sema
+            .table
+            .struct_fields(name)
+            .map(<[(String, Ty)]>::to_vec)
+            .unwrap_or_default();
+        let params = self
+            .sema
+            .table
+            .struct_type_params(name)
+            .unwrap_or(&[])
+            .to_vec();
+        for (field, declared) in fields {
+            let field_ty = self.substitute(&substitute_instance(&declared, &params, args));
+            if !self.needs_drop(&field_ty) {
+                continue;
+            }
+            self.emit_drop_expr(&format!("{c_name}.{field}"), &field_ty);
+        }
+    }
+
+    /// Emits the drop of a fixed array one extent per level.
+    ///
+    /// The C declaration keeps every extent (`ClString grid[2][2]`), so each
+    /// level indexes one dimension; a flattened index would name a row, not an
+    /// element. The base element is dropped at the deepest level.
+    fn emit_fixed_array_drop(&mut self, c_name: &str, element: &Ty, extents: &[usize]) {
+        match extents.split_first() {
+            None => self.emit_drop_expr(c_name, element),
+            Some((head, tail)) => {
+                for index in 0..*head {
+                    self.emit_fixed_array_drop(&format!("{c_name}[{index}]"), element, tail);
+                }
+            }
+        }
+    }
+
+    /// Emits the drop of a growable `Array<T>`: its elements through the buffer,
+    /// then the buffer itself.
+    ///
+    /// The buffer pointer is read once and the `data` guard makes an already
+    /// dropped array a no-op, so a second drop never reads a freed buffer. The
+    /// loop locals are unique, so a user local of the same name is not shadowed.
+    fn emit_growable_array_drop(&mut self, c_name: &str, element: &Ty) {
+        let data = format!("{c_name}.data");
+        let element_c = super::types::c_type(element);
+        let elems = self.unique_local("__cl_elems");
+        let index = self.unique_local("__cl_i");
+        self.push(&format!("    if ({data}) {{"));
+        self.push(&format!(
+            "        {element_c} *{elems} = ({element_c} *)cl_buffer_ptr({data});"
+        ));
+        self.push(&format!("        usize {index} = 0;"));
+        self.push(&format!("        while ({index} < {c_name}.count) {{"));
+        self.emit_drop_expr(&format!("{elems}[{index}]"), element);
+        self.push(&format!("            {index} = {index} + 1;"));
+        self.push("        }");
+        self.emit_drop_expr(&data, &Ty::handle("Buffer"));
+        self.push(&format!("        {c_name}.count = 0;"));
+        self.push("    }");
+    }
+
+    /// True when a value of this type can use the assignment scratch local to
+    /// release its old value.
+    ///
+    /// This refines [`Self::needs_drop`]. A fixed array is owned and drops its
+    /// elements, but it has no arm here: the scratch local is declared with a
+    /// declarator, which for an array is a C array that cannot be assigned.
+    /// Whole fixed-array assignment is out of scope, so a fixed array keeps the
+    /// no-scratch behavior.
     pub(super) fn emits_drop(&self, ty: &Ty) -> bool {
         if !self.needs_drop(ty) {
             return false;

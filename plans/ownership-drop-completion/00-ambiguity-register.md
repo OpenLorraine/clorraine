@@ -1,6 +1,6 @@
 # Ambiguity Register: Ownership and Drop Model Completion
 
-> **Status**: ✅ GATE PASSED — all 30 items resolved (22 at creation, 7 added by the preflight review, 1 added at runtime)
+> **Status**: ✅ GATE PASSED — all 31 items resolved (22 at creation, 7 added by the preflight review, 2 added at runtime)
 > **Last Updated**: 2026-09-26 14:45
 
 ## Scope
@@ -46,12 +46,13 @@ this plan.
 | AR-22 | Behavioral | A slice's duplicability | A slice copies freely (it is a view); the current `duplicable_at` wrongly recurses into the element. The classification predicate (AR-5) also fixes duplicability | Grounded in `spec/03-ownership.md:21` and T9; no new decision | ✅ Resolved |
 | AR-23 | Technical | A fixed array must not be nullable now that it is owned | (a) route `is_nullable_capable` through `is_slice`; (b) leave it | (a) — preflight PF-004; a fixed array is inline storage, not a pointer-like view (T8) | ✅ Resolved |
 | AR-24 | Behavioral | Whether a fixed array stays a lifetime-elision candidate | (a) keep it (borrowed storage a returned view may borrow); (b) remove it | (a) — preflight PF-006; removing it would break a valid view return | ✅ Resolved |
-| AR-25 | Behavioral | `set<T>` dropping the replaced element | (a) drop the old element; (b) leave the overwrite | (a) — preflight PF-007; `spec/appendix-stdlib.md:62` requires the drop | ✅ Resolved |
+| AR-25 | Behavioral | `set<T>` dropping the replaced element | (a) drop the old element; (b) leave the overwrite | (a) — preflight PF-007; `spec/appendix-stdlib.md:62` requires the drop. Verified at execution: the emitter already drops an owned assignment target, so the behavior holds with no standard-library change (see AR-31) | ✅ Resolved |
 | AR-26 | Technical | Lowering a by-value fixed-array return | (a) hidden trailing out-parameter; (b) generated struct wrapper | (a) — preflight PF-001; reuses the existing pointer-lowered parameter shape | ✅ Resolved |
 | AR-27 | Technical | Emitting a nested array literal | (a) recurse one dimension per level; (b) compound-literal cast | (a) — preflight PF-003; per-dimension indexing matches the C declaration | ✅ Resolved |
 | AR-28 | Technical | Whether `emits_drop` gains a fixed-array arm | (a) no arm; whole fixed-array assignment stays out of scope; (b) add the arm and route assignment | (a) — preflight PF-009; the scratch local is a C array and cannot be assigned | ✅ Resolved |
 | AR-29 | UX | `E10215` message for the move-only fill | (a) reuse the existing message text with a specific help; (b) add a second message | (a) — preflight PF-008; keeps one registry template and the message matcher | ✅ Resolved |
 | AR-30 | Testing (runtime) | A staged specification test also pins the old `E90000` trigger: `compiler/tests/stage_spec_test.rs:2368` asserts `Array<Buffer>` reports `E90000`, which AR-2/AR-3 remove but the plan did not list. | (a) convert it to an acceptance test for `Array<Buffer>`, renamed; (b) delete it, since the new ST-8 spec test covers acceptance; (c) keep the trigger (contradicts AR-2) | (a) confirmed 2026-09-26 — the case stays in the staged suite as the un-staged regression | ✅ Resolved |
+| AR-31 | Testing (runtime) | PF-007 claimed `set<T>` leaks the replaced element. Against the built emitter, `one[0] = v` already drops the owned assignment target: the emitted `cl_set__String` body frees the old element, and an AddressSanitizer run shows no leak. A standard-library change (`let old = one[0];`) double-drops. | (a) skip the `std.mem` change and verify the existing drop; (b) force an explicit drop | (a) confirmed 2026-09-26 — PF-007 is a false positive; 3.2.3 is re-scoped to verification | ✅ Resolved |
 
 ## Resolution Notes
 

@@ -2358,14 +2358,13 @@ func main(): i32 {
     assert_no_diagnostics("stdlib-hosted", run);
 }
 
-/// A non-duplicable element type in an `Array` instantiation is rejected.
+/// A growable `Array` accepts a move-only element.
 ///
-/// The growable sequence accepts duplicable element types only, because v1
-/// cannot generate the drop glue a move-only element would need. Instantiating
-/// it with the move-only `Buffer` handle is therefore a staged-feature error
-/// rather than a type error.
+/// The owning-element drop glue now exists, so the former staged `E90000` for
+/// `Array<Buffer>` no longer fires. This case stays in the staged suite as the
+/// regression that the feature moved from staged to live.
 #[test]
-fn a_non_duplicable_array_element_reports_its_code() {
+fn a_move_only_array_element_is_accepted() {
     let source = r#"module spec.stage.stdlib_array_buffer;
 
 import { Buffer, Array, arrayNew } from std.mem;
@@ -2375,7 +2374,7 @@ func main(): i32 {
     return 0;
 }
 "#;
-    assert_reports_code("stdlib-array-buffer", source, "E90000");
+    assert_front_end_accepts("stdlib-array-buffer", source);
 }
 
 /// A local that is declared and never used reports W10000.

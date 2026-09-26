@@ -89,7 +89,8 @@ done <<< "${chapter_codes}"
 # --- compile-fail suite (Ch 16 section 6) -------------------------------------
 # Each test declares its expected code on the first line; every registered
 # compile-time code must have a test. Runtime faults are run-test cases under
-# tests/run/; E90000 is the generic staged-feature fallback; E90003, E90004 and
+# tests/run/; E90000 is the generic staged-feature fallback and now has no live
+# trigger; E90003, E90004 and
 # W10005 are staged under tests/staged/ because they cannot produce their code
 # until the feature or harness exists (see tests/staged/README.md). E90002 is
 # retired in Ch 14, so it is not in the live registry and needs no test.
@@ -161,8 +162,9 @@ for f in tests/staged/*.clo; do
 done
 
 # E11210-E11214 are runtime faults (tests/run/); E90000 is the generic staged
-# fallback; the rest are staged in tests/staged/ until their feature or harness
-# exists. Retired codes such as E90002 are not in the live registry.
+# fallback and now has no live trigger; the rest are staged in tests/staged/
+# until their feature or harness exists. Retired codes such as E90002 are not in
+# the live registry.
 excluded_codes="E11210 E11211 E11212 E11213 E11214 E90000 E90003 E90004 W10005"
 while IFS= read -r code; do
     [ -z "${code}" ] && continue
