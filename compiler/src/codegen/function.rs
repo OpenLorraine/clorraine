@@ -579,7 +579,7 @@ impl<'a> Emitter<'a> {
         if !self.emits_drop(&ty) {
             self.emit_guards(value);
             let target_c = self.place(target);
-            let lowered = self.value(value);
+            let lowered = self.store_text(value, &ty);
             self.push(&format!("    {target_c} = {lowered};"));
             return;
         }
@@ -589,7 +589,7 @@ impl<'a> Emitter<'a> {
             // is released before the right-hand side is evaluated.
             self.emit_drop(target);
             self.emit_guards(value);
-            let lowered = self.value(value);
+            let lowered = self.store_text(value, &ty);
             self.push(&format!("    {target_c} = {lowered};"));
             return;
         }
@@ -604,10 +604,26 @@ impl<'a> Emitter<'a> {
             target_c
         ));
         self.emit_guards(value);
-        let lowered = self.value(value);
+        let lowered = self.store_text(value, &ty);
         self.push(&format!("        {target_c} = {lowered};"));
         self.emit_drop_expr(&save, &ty);
         self.push("    }");
+    }
+
+    /// Renders a value for a store into a target of type `ty`.
+    ///
+    /// An owned `String` widens implicitly to the `str` view the target holds,
+    /// through the same shim view the call-argument widening uses. Every other
+    /// store renders the value directly.
+    fn store_text(&mut self, value: &Value, ty: &Ty) -> String {
+        let text = self.value(value);
+        let value_ty = self.substitute(&value.ty);
+        if matches!(ty.kind, TyKind::Str | TyKind::StaticStr)
+            && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
+        {
+            return format!("cl_string_view({text})");
+        }
+        text
     }
 
     /// Emits an array literal as element-by-element assignments to a place.

@@ -491,7 +491,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
 
         let saved_state = self.state.clone();
-        let saved_bindings = self.bindings.len();
         let saved_scopes = self.scopes.len();
         let saved_defers = self.defer_entries.len();
         let saved_report = self.report_diagnostics;
@@ -503,7 +502,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.report_diagnostics = saved_report;
         self.materialize_owned_temporaries = saved_owned;
         self.state = saved_state;
-        self.bindings.truncate(saved_bindings);
+        // The deferred block's own locals are kept: the IR lowered here refers
+        // to them, so they must stay in the function's local list for the
+        // emitter to declare them. Their cleanup is the block's own.
         self.scopes.truncate(saved_scopes);
         self.defer_entries.truncate(saved_defers);
         self.switch_to(saved_block);
