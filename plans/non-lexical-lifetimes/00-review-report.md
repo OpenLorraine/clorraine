@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 19:23
+> **Last Updated**: 2026-09-27 20:24
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -186,8 +186,24 @@ for `do`/`while` — so its effect belongs to the back edge as well as to the
 condition-false exit. ST-57/ST-58 now expect the condition re-read and the later
 use (two `E10020`). The inert `stable_post` scrub was removed as dead.
 
-Also added ST-60 as the accepted mirror for the new joins. Gate status:
-FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, F1 – F4, F6, F8 – F10 and
-F8b/F9b are fixed and verified by `make check` (60 spec tests). F7 (defer-local
-owned `let` emits invalid C) and the defer-temporary runtime leak remain open for
-Phase 3.
+Also added ST-60 as the accepted mirror for the new joins.
+
+### Phase 3 implementation tests (F11, F12)
+
+The implementation tests reached the plan's runtime oracle and found that 7 of
+17 accepted NLL programs emitted C that the host compiler rejected. Both causes
+were pre-existing codegen gaps outside the NLL model, fixed under the user's
+ruling:
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| F11 | 🟠 MAJOR | Implicit `String` → `str` widening was accepted but emitted as a direct `ClStr = ClString` assignment (6 programs, including ST-2 and ST-10). | **Fixed**: `emit_assign` renders the store through the same `cl_string_view()` widening the call-argument path uses; all 17 accepted programs build. |
+| F12 | 🟠 MAJOR | A `let` inside a `defer` was accepted but its local was never declared in the emitted C (ST-21). | **Fixed**: the deferred block's own bindings are kept, so the emitter declares them. |
+
+After the fixes, all 17 accepted NLL spec programs build with `-Wall -Wextra
+-Werror` and run to their expected exit. Gate status: every NLL finding
+(FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, F1 – F4, F6, F8 – F10,
+F8b/F9b, F11, F12) is fixed. The defer-temporary runtime leak remains open (a
+missing drop in the registration-lowered defer block, not a memory-safety
+defect). `make check` is green (60 spec tests, 7 liveness unit tests, 5
+implementation tests) and `make verify` reports all legs passed.

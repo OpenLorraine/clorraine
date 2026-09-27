@@ -565,3 +565,157 @@ fn display(owner: usize, names: &BTreeMap<usize, String>) -> String {
 fn push(diagnostics: &mut Diagnostics, code: &'static str, message: String, help: &str, span: Span) {
     diagnostics.push(Diagnostic::error(code, message, span).with_help(help));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diag::Diagnostics;
+
+    /// Builds a creation event at one position.
+    fn created(block: usize, index: usize, loan: usize, owner: usize) -> LoanEvent {
+        LoanEvent {
+            position: Position { block, index },
+            span: Span::default(),
+            kind: LoanEventKind::Created {
+                loan: LoanId(loan),
+                owner,
+                kind: LoanKind::Shared,
+            },
+        }
+    }
+
+    /// Builds a use event at one position.
+    fn used(block: usize, index: usize, loan: usize) -> LoanEvent {
+        LoanEvent {
+            position: Position { block, index },
+            span: Span::default(),
+            kind: LoanEventKind::Used { loan: LoanId(loan) },
+        }
+    }
+
+    /// Builds an owner access event at one position.
+    fn access(block: usize, index: usize, owner: usize, kind: AccessKind) -> LoanEvent {
+        LoanEvent {
+            position: Position { block, index },
+            span: Span::default(),
+            kind: LoanEventKind::Access {
+                owner,
+                access: kind,
+            },
+        }
+    }
+
+    /// Builds a release event at one position.
+    fn release(block: usize, index: usize, owner: usize) -> LoanEvent {
+        LoanEvent {
+            position: Position { block, index },
+            span: Span::default(),
+            kind: LoanEventKind::Release { owner },
+        }
+    }
+
+    /// The written names for the owners used in these tests.
+    fn names() -> BTreeMap<usize, String> {
+        BTreeMap::from([(0, "s".to_owned())])
+    }
+
+    /// The codes of every reported diagnostic, in report order.
+    fn reported(events: &[LoanEvent], successors: &[Vec<BlockId>]) -> Vec<&'static str> {
+        let analysis = Analysis::build(successors, events);
+        let live = analysis.regions();
+        let mut diagnostics = Diagnostics::new(false, None);
+        analysis.report(events, &live, &names(), &mut diagnostics);
+        diagnostics
+            .items()
+            .iter()
+            .map(|diagnostic| diagnostic.code)
+            .collect()
+    }
+
+    /// A loan with no use has an empty region and blocks nothing.
+    #[test]
+    fn a_loan_with_no_use_has_an_empty_region() {
+        let successors = vec![vec![1], Vec::new()];
+        let events = vec![created(0, 0, 0, 0)];
+        let analysis = Analysis::build(&successors, &events);
+        let regions = analysis.regions();
+        assert!(regions[&LoanId(0)].is_empty());
+        assert!(reported(&events, &successors).is_empty());
+    }
+
+    /// A use on one branch extends the region only to the positions between the
+    /// creation and that use.
+    #[test]
+    fn a_branch_only_use_extends_the_region_to_that_branch() {
+        let successors = vec![vec![1, 2], vec![3], vec![3], Vec::new()];
+        let events = vec![created(0, 0, 0, 0), used(1, 0, 0)];
+        let analysis = Analysis::build(&successors, &events);
+        let regions = analysis.regions();
+        let region = &regions[&LoanId(0)];
+        assert!(region.contains(&Position { block: 0, index: 0 }));
+        assert!(region.contains(&Position { block: 1, index: 0 }));
+        assert!(!region.contains(&Position { block: 3, index: 0 }));
+    }
+
+    /// A move while a later use is reachable is one `E10022`.
+    #[test]
+    fn a_move_before_a_reachable_use_is_e10022() {
+        let successors = vec![Vec::new()];
+        let events = vec![
+            created(0, 0, 0, 0),
+            access(0, 1, 0, AccessKind::Move),
+            used(0, 2, 0),
+        ];
+        assert_eq!(reported(&events, &successors), vec!["E10022"]);
+    }
+
+    /// A shared loan that a loop back edge keeps alive at a write is one
+    /// `E10031` for the write.
+    #[test]
+    fn a_write_on_a_loop_back_edge_is_e10031() {
+        let successors = vec![vec![1], vec![1, 2], Vec::new()];
+        let events = vec![
+            created(0, 0, 0, 0),
+            used(1, 0, 0),
+            access(1, 1, 0, AccessKind::Write),
+        ];
+        assert_eq!(reported(&events, &successors), vec!["E10031"]);
+    }
+
+    /// Aliases share one loan, so both uses extend the one region.
+    #[test]
+    fn alias_uses_share_one_region() {
+        let successors = vec![vec![1], Vec::new()];
+        let events = vec![created(0, 0, 0, 0), used(1, 0, 0), used(1, 1, 0)];
+        let analysis = Analysis::build(&successors, &events);
+        let regions = analysis.regions();
+        assert_eq!(regions[&LoanId(0)].len(), 3);
+        assert!(reported(&events, &successors).is_empty());
+    }
+
+    /// A use reached only through the owner's release is one `E10030`, even
+    /// when several uses follow the release.
+    #[test]
+    fn a_use_after_a_release_is_one_e10030() {
+        let successors = vec![vec![1], vec![2], Vec::new()];
+        let events = vec![
+            created(0, 0, 0, 0),
+            release(1, 0, 0),
+            used(2, 0, 0),
+            used(2, 1, 0),
+        ];
+        assert_eq!(reported(&events, &successors), vec!["E10030"]);
+    }
+
+    /// A use before the release has a release-free path, so it is accepted.
+    #[test]
+    fn a_use_before_a_release_is_accepted() {
+        let successors = vec![vec![1], vec![2], Vec::new()];
+        let events = vec![
+            created(0, 0, 0, 0),
+            used(1, 0, 0),
+            release(1, 1, 0),
+        ];
+        assert!(reported(&events, &successors).is_empty());
+    }
+}

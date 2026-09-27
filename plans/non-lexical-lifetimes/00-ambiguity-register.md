@@ -224,3 +224,8 @@ effect was still missing from the back edge (F8b/F9b: the next iteration's
 condition re-read a moved owner, ASan-confirmed), so the condition now runs
 inside the fixpoint for all three loop kinds and its effect joins both the back
 edge and the exit.
+
+The Phase 3 implementation tests then found two pre-existing codegen gaps the
+runtime oracle had to expose: implicit `String` → `str` widening was not lowered
+in assignments (F11), and a `let` inside a `defer` was never declared in the
+emitted C (F12). Both are fixed; all 17 accepted spec programs now build and run.

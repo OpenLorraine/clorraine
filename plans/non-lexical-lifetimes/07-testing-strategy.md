@@ -137,7 +137,7 @@ code vector (reject cases), like `compiler/tests/stage_spec_test.rs` and
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
 | `compiler/src/own/liveness.rs` (unit tests) | region shapes on hand-built events and small CFGs: no use ⇒ empty region; a use on one branch only; a use after the conflict; a loop back edge; alias sharing; release-free reachability (a loop-local owner stays accepted); report-once; a deferred block's events stay ordered on its exit edge | High |
-| `compiler/tests/non_lexical_lifetimes_impl_test.rs` | accepted ST-1 and ST-10 programs build and run (elements freed once); a conflict is reported exactly once; the diagnostics of one program are identical across two runs | High |
+| `compiler/tests/non_lexical_lifetimes_impl_test.rs` | accepted ST-1 and ST-10 programs build and run (elements freed once); a conflict is reported exactly once; the diagnostics of one program are identical across two runs | High — this oracle exposed and now guards the two codegen gaps F11 (`String` → `str` widening in assignments) and F12 (defer-local locals declared in the emitted C) |
 
 ### Integration Tests
 
