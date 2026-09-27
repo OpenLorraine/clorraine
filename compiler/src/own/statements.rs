@@ -529,7 +529,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // before the edge is recorded; otherwise a loan they create would be
         // missing from the state that joins after the loop.
         self.run_defers_from(floor + 1);
-        let state = self.state.clone();
+        let state = self.edge_state(floor);
         if let Some(frame) = self.exits.last_mut() {
             frame.record_break(state);
         }
@@ -552,6 +552,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         };
         self.run_for_in_write(write);
+        // The defers the continue runs belong to its edge, and the edge returns
+        // to the loop head, so its state is recorded against the head's block
+        // for the loop fixpoint to join into the entry.
+        self.run_defers_from(floor + 1);
+        let state = self.edge_state(floor);
+        self.record_continue(continue_block, state);
         self.emit_exit_cleanup(floor);
         self.terminate(Terminator::Goto(continue_block));
     }

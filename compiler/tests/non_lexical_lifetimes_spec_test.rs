@@ -1157,3 +1157,215 @@ func main(): i32 { demo(); return 0; }
         &[("error E10030: borrow of 's' does not live long enough", 1)],
     );
 }
+
+// -- Continue edges and the for-condition back edge ------------------------
+
+/// `spec/16-borrow-rules.md` section 6: an explicit `continue` returns to the
+/// head, so a loan the body created is live at the body top on the next
+/// iteration and the use is E10030.
+#[test]
+fn should_report_e10030_when_a_continue_edge_carries_a_loan_to_the_body_top() {
+    let source = r#"module tests.nll.continue_body_top;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let i: i32 = 0;
+    while (i < 2) {
+        firstByte(held);
+        let s: String = stringOf("x");
+        held = bytes(s);
+        i = i + 1;
+        continue;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "continue-body-top",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: a conditional `continue` still returns
+/// to the head, so the loan it created is live there on the next iteration.
+#[test]
+fn should_report_e10030_when_a_conditional_continue_carries_a_loan_to_the_head() {
+    let source = r#"module tests.nll.continue_branch_loan;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let i: i32 = 0;
+    while (i < 2) {
+        firstByte(held);
+        if (i < 1) {
+            let s: String = stringOf("x");
+            held = bytes(s);
+            continue;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "continue-branch-loan",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the `do`/`while` continue edge carries
+/// the same back-edge rule as the `while` continue edge.
+#[test]
+fn should_report_e10030_when_a_do_while_continue_edge_carries_a_loan() {
+    let source = r#"module tests.nll.do_while_continue;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let i: i32 = 0;
+    do {
+        firstByte(held);
+        let s: String = stringOf("x");
+        held = bytes(s);
+        i = i + 1;
+        continue;
+    } while (i < 2);
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "do-while-continue",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the three-clause `for` condition is
+/// re-evaluated at the head, so a back-edge view is live there and its use is
+/// E10030.
+#[test]
+fn should_report_e10030_when_a_for_c_condition_use_reaches_the_back_edge() {
+    let source = r#"module tests.nll.for_c_condition;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    for (let i: i32 = 0; i32(firstByte(held)) >= 0; i++) {
+        let s: String = stringOf("x");
+        held = bytes(s);
+        if (i >= 1) {
+            break;
+        }
+        continue;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "for-c-condition",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: an element loop's continue edge carries
+/// the same rule.
+#[test]
+fn should_report_e10030_when_a_for_in_continue_edge_carries_a_loan() {
+    let source = r#"module tests.nll.for_in_continue;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let xs: u32[2] = [1, 2];
+    for (x in xs) {
+        firstByte(held);
+        let s: String = stringOf("y");
+        held = bytes(s);
+        continue;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "for-in-continue",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: a value bound to the loop-local owner
+/// on a `continue` path is still live at the use after the loop, so it is
+/// E10030.
+#[test]
+fn should_report_e10030_when_a_continue_bound_view_is_used_after_the_loop() {
+    let source = r#"module tests.nll.continue_exit;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(c: bool): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let i: i32 = 0;
+    while (i < 2) {
+        if (c) {
+            let s: String = stringOf("x");
+            held = bytes(s);
+            i = i + 1;
+            continue;
+        }
+        i = i + 1;
+    }
+    return i32(firstByte(held));
+}
+
+func main(): i32 { return demo(true); }
+"#;
+    assert_reports_counted(
+        "continue-exit",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}

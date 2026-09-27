@@ -73,6 +73,12 @@ func viewOf(s: str): str { return s; }
 | ST-34 | a defer whose inner loop binds `s` and rebinds `held`, then uses `held` | rejected — `E10030`, owner named `s` (not `?`) | AR-26, AR-25 (name table) |
 | ST-35 | `while (i < 2) { let v: str = s; observeStr(v); i = i + 1; } sink(s);` | accepted — the in-loop use precedes the move | AR-24 |
 | ST-36 | `while (i < 1) { let s = ...; defer { held = s; } break; } observeStr(held);` | rejected — `E10030`: the `break` runs the defer | AR-26 |
+| ST-37 | `while (...) { firstByte(held); let s = ...; held = bytes(s); continue; }` | rejected — `E10030`: the `continue` edge returns to the head | AR-24 (continue edge joins the head) |
+| ST-38 | ST-37 with the loan under `if (i < 1) { ... continue; }` | rejected — `E10030` | AR-24 |
+| ST-39 | the ST-37 shape as a `do { ... } while` | rejected — `E10030` | AR-24 |
+| ST-40 | the ST-37 shape with the condition use (the `for`-condition back edge) | rejected — `E10030` | AR-24 |
+| ST-41 | the ST-37 shape as an element `for (x in xs)` with `continue` | rejected — `E10030` | AR-24 |
+| ST-42 | `if (c) { let s = ...; held = bytes(s); continue; } ... return firstByte(held);` | rejected — `E10030`: the continue edge reaches the exit | AR-24 |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -98,7 +104,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-36 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-42 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact

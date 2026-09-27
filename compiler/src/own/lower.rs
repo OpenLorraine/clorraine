@@ -342,6 +342,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_ordinals = std::mem::take(&mut self.next_ordinal);
         let saved_loans = std::mem::take(&mut self.loan_ids);
         let saved_names = std::mem::take(&mut self.binding_names);
+        let saved_continues = std::mem::take(&mut self.continue_states);
         let saved_defer = self.defer_anchor;
         let saved_registration = self.next_registration;
         let saved_owned_temp = self.next_owned_temp;
@@ -404,6 +405,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.next_ordinal = saved_ordinals;
         self.loan_ids = saved_loans;
         self.binding_names = saved_names;
+        self.continue_states = saved_continues;
         self.defer_anchor = saved_defer;
         self.next_registration = saved_registration;
         self.next_owned_temp = saved_owned_temp;

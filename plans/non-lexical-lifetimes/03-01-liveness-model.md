@@ -93,6 +93,11 @@ a `for` step, and what carries a loan created in a deferred block onto the flow
 after the scope. Interning also keeps the loop fixpoint finite: one id per
 derivation site, not one per iteration.
 
+The loop head joins the pre-state, the fall-through state, and the state on
+every `continue` edge back to the loop (not a `break` or `return`, which leaves
+the loop). A `continue` therefore feeds the head even when it is the last
+statement of the body and the body's block ends in a terminator.
+
 ## Uses and accesses (AR-6)
 
 | Event | Recorded when | Consumed by |

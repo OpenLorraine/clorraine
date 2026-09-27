@@ -24,7 +24,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         let pre = self.state.clone();
         let floor = self.scopes.len();
-        let (entry, post) = self.loop_entry_state(pre.clone(), |checker| {
+        let (entry, post) = self.loop_entry_state(pre.clone(), Some(head), |checker| {
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -74,7 +74,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         let pre = self.state.clone();
         let floor = self.scopes.len();
-        let (entry, post) = self.loop_entry_state(pre, |checker| {
+        let (entry, post) = self.loop_entry_state(pre, Some(condition_block), |checker| {
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -149,7 +149,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         let pre = self.state.clone();
         let continue_floor = floor + 1;
-        let (entry, post) = self.loop_entry_state(pre.clone(), |checker| {
+        let (entry, post) = self.loop_entry_state(pre.clone(), Some(step_block), |checker| {
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -395,7 +395,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         let pre = self.state.clone();
         let continue_floor = floor + 1;
-        let (entry, _post) = self.loop_entry_state(pre.clone(), |checker| {
+        let (entry, _post) = self.loop_entry_state(pre.clone(), Some(step_block), |checker| {
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,

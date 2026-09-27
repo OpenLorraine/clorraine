@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 11:45
+> **Last Updated**: 2026-09-27 12:12
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -121,12 +121,27 @@ The two criticals and the two open minors were fixed after the user's ruling:
 | FM-002 | `assert_reports_counted` rejects any diagnostic not listed in the expectation and pins the total error count. |
 
 Verification (all green): `make check`; `non_lexical_lifetimes_spec_test` 36
-passed (the eight new cases ST-28 – ST-36 were red against the reviewer's probes
-at HEAD, and the shapes were ASan-confirmed use-after-frees there); every probe
-the two reviewers used now reports its expected diagnostic or is accepted:
-`holeA2e`/`holeCond`/`holeDoWhile`/`holeForC`/`continueCarry`/`nestedCarry`/
-`holeForStep`/`rr001`/`e4`/`e5`/`e6`/`e7`/`defere10030` → the expected `E10030`
-(`defere10030` now names `s`); `rv001` → `E10022`; `sa2`/`sa3`/`overR1`/`overR2`/
-`overR3` → accepted (no over-rejection). Because the code changed after this
-review, a fresh independent review of the follow-up diff is required before the
-gate closes; it is dispatched next.
+passed; every probe the two reviewers used reports its expected diagnostic or is
+accepted: `holeA2e`/`holeCond`/`holeDoWhile`/`holeForC`/`continueCarry`/
+`nestedCarry`/`holeForStep`/`rr001`/`e4`/`e5`/`e6`/`e7`/`defere10030` → the
+expected `E10030` (`defere10030` now names `s`); `rv001` → `E10022`;
+`sa2`/`sa3`/`overR1`/`overR2`/`overR3` → accepted (no over-rejection).
+
+### Fresh review of the follow-up (b961900..2f0f128)
+
+Two independent generic subagents reviewed the follow-up. Verdict: FR-002 is
+fixed and no over-rejection was found (a full differential over every tracked
+`.clo`, plus 16,000/12,000 differential fuzz programs), but **FR-001 was only
+partly closed** and a separate pre-existing critical was found.
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| FR-001b | 🔴 CRITICAL | Both reviewers independently found the same residual: a loop body terminated by `continue` is treated as leaving the loop (`loop_entry_state` collapsed a terminated body to `pre`; `check_continue` recorded no edge state), so a loan created on a continue path was missing from the head and the exit. ASan-confirmed use-after-free; accepted at the pre-fix commit too. | Fixed: `check_continue` records its edge state by target block and `loop_entry_state` joins every `continue` edge into the head; `edge_state` drops the scopes the edge leaves. ST-37 – ST-42 pin the four loop kinds, the conditional continue, and the exit use. |
+| NEW-001 | 🔴 CRITICAL | `defer_before_local`: the checker runs **every** defer before recording the scope's releases, but the emitter interleaves drops and defers by reverse registration order. A defer registered before a local it observes is checked as if the local were alive, while the emitted C drops the local first. ASan-confirmed use-after-free; pre-existing (accepted at `b961900`, unchanged by the follow-up). | **Open — needs a ruling.** Modeling this correctly changes the cleanup order in `pop_scope`/`emit_exit_cleanup`/`emit_return_cleanup` and the recorded `Release`/defer event order. |
+| FM-004 | 🟡 MINOR | ST-32 (`for` step) and ST-35 are already green at `b961900`, so they are not regression tests for the follow-up; the earlier report's claim that all eight new cases were red is inaccurate. | Corrected here; ST-32/ST-35 retained as coverage/monotonicity guards. |
+| FM-005 | 🟡 MINOR | No case pinned the three-clause `for` **condition** back edge (now ST-40). | Added ST-40. |
+| FM-006 | 🟡 MINOR | The head reorder raises the `E10020` count from 1 to 2 on a loop whose condition is short-circuited after a body move (still rejected either way). | Report-only. |
+
+The quality gate stays **open** on NEW-001 and is otherwise closed for the
+non-lexical-lifetime findings: FR-001/FR-001b/FR-002/FM-001/FM-002 are fixed and
+verified, and no over-rejection was found.

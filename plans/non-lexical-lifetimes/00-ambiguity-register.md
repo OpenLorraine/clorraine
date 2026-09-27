@@ -181,3 +181,15 @@ The fix, under AR-24 and AR-26:
 ST-28 – ST-36 pin the four loop kinds, the condition and step uses, the defer
 rebind, the `break` defer, and the owner name. `carry_loans` was confirmed not to
 over-reject (a 20,000-program differential and every tracked `.clo` file).
+
+A fresh independent review of that fix then found the loop family still open on
+the **`continue`** edge: a body terminated by `continue` was treated as leaving
+the loop, so its state never reached the head (a residual FR-001, ASan-confirmed
+at both the pre-fix and the follow-up commit). `check_continue` now records its
+edge state keyed by the target block, and `loop_entry_state` joins every
+`continue` edge into the head while keeping `break`/`return` out; `edge_state`
+drops the scopes the edge leaves. ST-37 – ST-42 pin the four loop kinds, the
+conditional continue, and the exit use. The same review found a separate,
+pre-existing critical in the defer model (the checker runs all defers before all
+releases while the emitter interleaves them by reverse registration order),
+which is recorded in the review report for a ruling.

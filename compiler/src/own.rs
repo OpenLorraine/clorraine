@@ -184,6 +184,13 @@ struct FunctionChecker<'a, 'd> {
     /// exit, so a diagnostic about a loan whose owner was declared there still
     /// names the owner instead of falling back to `?`.
     binding_names: BTreeMap<usize, String>,
+    /// The joined state of every `continue` edge, by its target block.
+    ///
+    /// A `continue` returns to the loop head (or the `for` step), so its state
+    /// must join the loop entry: a loan the edge creates is live at the body
+    /// top, in the condition, and after the loop. The target block identifies
+    /// the loop, so nested loops do not mix their continue edges.
+    continue_states: BTreeMap<BlockId, FlowState>,
     /// The block a currently checked deferred block is anchored to.
     ///
     /// While a deferred block is checked on an exit edge its IR is lowered
@@ -262,6 +269,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             next_ordinal: BTreeMap::new(),
             loan_ids: BTreeMap::new(),
             binding_names: BTreeMap::new(),
+            continue_states: BTreeMap::new(),
             defer_anchor: None,
             next_registration: 0,
             next_owned_temp: 0,
@@ -432,12 +440,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The speculative pass emits into a copy of the graph and reports no
     /// diagnostics; the graph and the binding table are restored before the
-    /// real pass that lowers the body. A body that ends in a terminator never
-    /// reaches the back edge, so its effect is kept out of the entry and only
-    /// the pre-state joins the head. It returns the stable entry state and the
+    /// real pass that lowers the body. The head joins the pre-state with the
+    /// fall-through state and with every `continue` edge back to this loop;
+    /// a `break` or `return` edge leaves the loop, so its effect reaches only
+    /// the exit and never the head. It returns the stable entry state and the
     /// stable state after the body, which is the exit state of a loop whose
     /// body always runs.
-    fn loop_entry_state<F>(&mut self, pre: FlowState, run_body: F) -> (FlowState, FlowState)
+    fn loop_entry_state<F>(
+        &mut self,
+        pre: FlowState,
+        continue_block: Option<BlockId>,
+        run_body: F,
+    ) -> (FlowState, FlowState)
     where
         F: Fn(&mut Self),
     {
@@ -464,14 +478,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A body whose current block is already terminated does not
                 // fall through to a later point in the body, so its effect
                 // belongs to that exit edge rather than to the next iteration's
-                // entry. Joining the effect would make a value moved on the
-                // exiting edge look moved at the head even though no later
-                // iteration runs.
-                let next = if self.is_terminated() {
-                    pre.clone()
-                } else {
-                    Self::merge(pre.clone(), post.clone())
-                };
+                // entry. A `continue` edge, however, does return to the head,
+                // so the state recorded on every continue edge to this loop
+                // joins the entry even when the body ended in a terminator.
+                let mut next = pre.clone();
+                if !self.is_terminated() {
+                    next = Self::merge(next, post.clone());
+                }
+                if let Some(state) = continue_block
+                    .and_then(|target| self.continue_states.get(&target))
+                    .cloned()
+                {
+                    next = Self::merge(next, state);
+                }
                 if next == entry {
                     break 'fixpoint (entry, post);
                 }
@@ -655,6 +674,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn with_place(&mut self, id: usize, update: impl FnOnce(&mut PlaceState)) {
         let entry = self.state.places.entry(id).or_default();
         update(entry);
+    }
+
+    /// The state that leaves the scopes at or below `floor` on an exit edge.
+    ///
+    /// The scopes being left are removed from a clone of the current state, so
+    /// a `break` or `continue` edge does not carry a closed binding's loan into
+    /// the loop head or the code after the loop.
+    fn edge_state(&self, floor: usize) -> FlowState {
+        let mut state = self.state.clone();
+        for scope in self.scopes.iter().skip(floor) {
+            for id in &scope.order {
+                state.places.remove(id);
+                state.loans.remove(id);
+            }
+        }
+        state
+    }
+
+    /// Records a `continue` edge's state against the block it jumps to.
+    ///
+    /// Two `continue`s to the same loop join by union, exactly like branches.
+    fn record_continue(&mut self, target: BlockId, state: FlowState) {
+        match self.continue_states.get(&target) {
+            Some(existing) => {
+                let joined = Self::merge(existing.clone(), state);
+                self.continue_states.insert(target, joined);
+            }
+            None => {
+                self.continue_states.insert(target, state);
+            }
+        }
     }
 
     /// Merges two branch states conservatively.
