@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 20:12
-> **Progress**: 19/22 tasks (86%)
+> **Last Updated**: 2026-09-27 21:00
+> **Progress**: 22/22 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -169,14 +169,40 @@ bounded by the task-size criteria in the make-plan quality checklist)
 **Objective**: Record the close-out evidence and mark PLAN-12 done.
 
 - [ ] 4.1.1 Trace R1 – R9 to the passing ST cases and record the acceptance evidence in this document
-- [ ] 4.1.2 Set the `PLAN-12` row on `plans/00-roadmap.md` to Done and link it; update `AGENTS.md` only if a durable fact changed
-- [ ] 4.1.3 Final phase gate (`make check`) and close-out commit
+- [x] 4.1.2 Set the `PLAN-12` row on `plans/00-roadmap.md` to Done and link it; update `AGENTS.md` only if a durable fact changed ✅ (completed: 2026-09-27 20:51) — the roadmap row is Done with the 22/22 summary; `AGENTS.md` gained the two NLL test-file entries in the test naming map
+- [x] 4.1.3 Final phase gate (`make check`) and close-out commit ✅ (completed: 2026-09-27 21:00) — close-out review completed (F11r fixed; DEF-13/DEF-14 filed); `make check` green (60 spec + 7 unit + 8 implementation tests, 22 binaries, no warnings) and `make verify` green (`verify: all legs passed`); close-out commits `397a6e3` and this one
 
 **Deliverables**:
 - The traceability section covers every requirement
 - The roadmap shows PLAN-12 done
 
 **Verify**: `make check`
+
+---
+
+## Traceability and Acceptance Evidence
+
+- [x] 4.1.1 Trace R1 – R9 to the passing ST cases and record the acceptance evidence in this document ✅ (completed: 2026-09-27 20:40)
+
+Every requirement maps to specification cases that pass at HEAD, plus the
+recorded gate evidence:
+
+| Requirement | Passing ST cases | Additional evidence |
+| ----------- | ---------------- | ------------------- |
+| R1 last-use regions decide `E10022`/`E10031`/`E10032` | ST-1, ST-4 – ST-9, ST-12, ST-13, ST-17 – ST-24 | liveness unit tests (`a_move_before_a_reachable_use_is_e10022`, `a_write_on_a_loop_back_edge_is_e10031`) |
+| R2 loan identity and alias fidelity | ST-12, ST-13, ST-17 – ST-19 | `LoanOrigin` interning; `alias_uses_share_one_region` unit test |
+| R3 use/access coverage and evaluation order | ST-1, ST-14 – ST-16, ST-20, ST-21, ST-51 – ST-55 | 5 implementation tests build and run accepted programs |
+| R4 origin containment and `E10030` | ST-10, ST-11, ST-22, ST-25 – ST-47, ST-57, ST-58 | unit tests `a_use_after_a_release_is_one_e10030`, `a_use_before_a_release_is_accepted` |
+| R5 precision across branches, loops, early returns, defers, element loops, stdlib views, widening, generics | ST-7, ST-20, ST-25 – ST-56, ST-60 | `make verify` corpus legs |
+| R6 monotonicity and regressions | accepted mirrors ST-8, ST-20, ST-35, ST-44, ST-48 – ST-50, ST-60 | `make check` green (60 spec + 7 unit + 5 implementation tests, 22 binaries); `make verify: all legs passed` |
+| R7 spec and ledger coherence | — (chapters, not cases) | Phase 1 commit `a381010`; `spec/check.sh` OK; rewritten golden `E10031_view_widening_mutation.clo` still rejects |
+| R8 no new surface | all rejection cases keep their v1 codes/messages | `spec/check.sh` OK (104 compile-fail tests); `make verify` all legs |
+| R9 clean implementation | — (structure, not cases) | lexical `Loans` removed in `94ef5ff`; its tests migrated to the 7 liveness unit tests; build and `make check` warning-free |
+
+Acceptance gates: `make check` green after every task (recorded per task
+above); `make verify` green before completion (3.2.1, `verify: all legs
+passed`). The full finding ledger, including the review rounds that closed
+FR-001/FR-001b/FR-002, NEW-001, F1 – F12, is in `00-review-report.md`.
 
 ---
 

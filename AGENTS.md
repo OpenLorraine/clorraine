@@ -74,6 +74,11 @@ in `CMD`).
   tests**.
 - `compiler/tests/clorraine_driver_spec_test.rs` holds the **specification
   tests** for the `clorraine` build/run driver.
+- `compiler/tests/non_lexical_lifetimes_spec_test.rs` holds the specification
+  tests for the v2 last-use borrow model, and
+  `compiler/tests/non_lexical_lifetimes_impl_test.rs` holds its implementation
+  tests (accepted programs build and run; conflicts report once; diagnostics
+  are deterministic).
 - `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
   partial-move / drop coherence: it builds the emitted C and runs it, so a
   double free aborts in the C library.
