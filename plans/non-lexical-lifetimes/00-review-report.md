@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 12:12
+> **Last Updated**: 2026-09-27 17:53
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -137,11 +137,19 @@ partly closed** and a separate pre-existing critical was found.
 | # | Severity | Finding | Status |
 |---|----------|---------|--------|
 | FR-001b | 🔴 CRITICAL | Both reviewers independently found the same residual: a loop body terminated by `continue` is treated as leaving the loop (`loop_entry_state` collapsed a terminated body to `pre`; `check_continue` recorded no edge state), so a loan created on a continue path was missing from the head and the exit. ASan-confirmed use-after-free; accepted at the pre-fix commit too. | Fixed: `check_continue` records its edge state by target block and `loop_entry_state` joins every `continue` edge into the head; `edge_state` drops the scopes the edge leaves. ST-37 – ST-42 pin the four loop kinds, the conditional continue, and the exit use. |
-| NEW-001 | 🔴 CRITICAL | `defer_before_local`: the checker runs **every** defer before recording the scope's releases, but the emitter interleaves drops and defers by reverse registration order. A defer registered before a local it observes is checked as if the local were alive, while the emitted C drops the local first. ASan-confirmed use-after-free; pre-existing (accepted at `b961900`, unchanged by the follow-up). | **Open — needs a ruling.** Modeling this correctly changes the cleanup order in `pop_scope`/`emit_exit_cleanup`/`emit_return_cleanup` and the recorded `Release`/defer event order. |
+| NEW-001 | 🔴 CRITICAL | `defer_before_local`: the checker runs **every** defer before recording the scope's releases, but the emitter interleaves drops and defers by reverse registration order. A defer registered before a local it observes is checked as if the local were alive, while the emitted C drops the local first. ASan-confirmed use-after-free; pre-existing (accepted at `b961900`, unchanged by the follow-up). | **Fixed** under the user's ruling: `run_scope_cleanup` sorts a scope's bindings and defers by registration newest first and records them in that order on `pop_scope`, `break`/`continue`, and `return`; `DeferEntry` carries the registration number. `defer_before_local` now reports `E10030`; ST-43 – ST-47 pin the order and the mirror accepted case. |
 | FM-004 | 🟡 MINOR | ST-32 (`for` step) and ST-35 are already green at `b961900`, so they are not regression tests for the follow-up; the earlier report's claim that all eight new cases were red is inaccurate. | Corrected here; ST-32/ST-35 retained as coverage/monotonicity guards. |
 | FM-005 | 🟡 MINOR | No case pinned the three-clause `for` **condition** back edge (now ST-40). | Added ST-40. |
 | FM-006 | 🟡 MINOR | The head reorder raises the `E10020` count from 1 to 2 on a loop whose condition is short-circuited after a body move (still rejected either way). | Report-only. |
 
-The quality gate stays **open** on NEW-001 and is otherwise closed for the
-non-lexical-lifetime findings: FR-001/FR-001b/FR-002/FM-001/FM-002 are fixed and
+### NEW-001 follow-up (user ruling: fix now + review)
+
+The checker now models the emitter's cleanup order: a scope's bindings and
+defers are one registration sequence and `run_scope_cleanup` records them newest
+first on every exit path. `make check` is green and
+`non_lexical_lifetimes_spec_test` has 47 passed. A fresh independent review of
+this fix together with the earlier unreviewed `continue` fix (`166c35c`) is
+dispatched; the quality gate stays open until it reports.
+
+Gate status otherwise: FR-001/FR-001b/FR-002/FM-001/FM-002 are fixed and
 verified, and no over-rejection was found.

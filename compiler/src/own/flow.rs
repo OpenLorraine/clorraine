@@ -211,4 +211,8 @@ pub(super) struct DeferEntry<'a> {
     pub(super) depth: usize,
     /// The deferred statements.
     pub(super) block: &'a Block,
+    /// Registration order shared with the scope's bindings, so the checker can
+    /// interleave the scope's drops and defers exactly as the emitter runs
+    /// them: one reverse registration sequence.
+    pub(super) registration: u32,
 }

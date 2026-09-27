@@ -1369,3 +1369,171 @@ func main(): i32 { return demo(true); }
         &[("error E10030: borrow of 's' does not live long enough", 1)],
     );
 }
+
+// -- Defer and drop registration order -------------------------------------
+
+/// `spec/03-ownership.md`: a scope's drops and defers run in one reverse
+/// registration order. A defer registered before the local it observes runs
+/// after that local's release, so its use of the view is E10030.
+#[test]
+fn should_report_e10030_when_a_defer_registered_before_a_local_uses_its_view() {
+    let source = r#"module tests.nll.defer_before_local;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    {
+        defer {
+            firstByte(held);
+        }
+        let s: String = stringOf("x");
+        held = bytes(s);
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "defer-before-local",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/03-ownership.md`: the mirror order is legal. A defer registered after
+/// the owner it observes runs before the owner's release, so the use is
+/// accepted.
+#[test]
+fn should_accept_a_defer_registered_after_the_owner_it_observes() {
+    let source = r#"module tests.nll.defer_after_local;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    {
+        let s: String = stringOf("x");
+        let held: u8[] = bytes(s);
+        defer {
+            firstByte(held);
+        }
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_accepts("defer-after-local", source);
+}
+
+/// `spec/03-ownership.md`: the reverse registration order holds on the `return`
+/// cleanup ladder too, so the defer runs after the earlier-registered owner's
+/// release.
+#[test]
+fn should_report_e10030_when_a_return_orders_a_defer_before_a_local() {
+    let source = r#"module tests.nll.return_defer_before_local;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    defer {
+        firstByte(held);
+    }
+    let s: String = stringOf("x");
+    held = bytes(s);
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "return-defer-before-local",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/03-ownership.md`: the reverse registration order holds on the `break`
+/// edge too.
+#[test]
+fn should_report_e10030_when_a_break_orders_a_defer_before_a_local() {
+    let source = r#"module tests.nll.break_defer_before_local;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let i: i32 = 0;
+    while (i < 1) {
+        defer {
+            firstByte(held);
+        }
+        let s: String = stringOf("x");
+        held = bytes(s);
+        break;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "break-defer-before-local",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/03-ownership.md`: the reverse registration order holds on the
+/// `continue` edge too.
+#[test]
+fn should_report_e10030_when_a_continue_orders_a_defer_before_a_local() {
+    let source = r#"module tests.nll.continue_defer_before_local;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let i: i32 = 0;
+    while (i < 1) {
+        defer {
+            firstByte(held);
+        }
+        let s: String = stringOf("x");
+        held = bytes(s);
+        i = i + 1;
+        continue;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "continue-defer-before-local",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}

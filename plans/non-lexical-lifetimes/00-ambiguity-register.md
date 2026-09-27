@@ -149,10 +149,19 @@ release-free condition.
 **AR-26 (deferred-block anchoring):** The deferred block is checked against a
 discarded clone of the graph, so its events are placed at the real block the
 edge leaves instead of at a clone position a later real block could reuse. The
-events keep the order the block records them, and the edge's owner releases are
-recorded after them, so a view used and then released in one straight-line defer
-is accepted (ST-21). The defer id and the re-anchoring step are removed from the
-module.
+events keep the order the block records them. The defer id and the re-anchoring
+step are removed from the module.
+
+A later review found that the *relative order of a defer and the scope's
+releases* was wrong: the checker ran every defer before every release, while the
+emitter interleaves drops and defers by one reverse registration sequence, so a
+defer registered before a local was checked as if the local were alive although
+the emitted C frees it first (NEW-001, ASan-confirmed). `run_scope_cleanup` now
+sorts a scope's bindings and defers by registration newest first and records
+them in that order on every exit path (`pop_scope`, `break`/`continue`, and
+`return`), matching `emit_actions`; `DeferEntry` carries the registration
+number. ST-43 – ST-47 pin the order and the mirror (defer-after-local) accepted
+case.
 
 ### Final-review follow-up (FR-001, FR-002, FM-001)
 
@@ -190,6 +199,8 @@ edge state keyed by the target block, and `loop_entry_state` joins every
 `continue` edge into the head while keeping `break`/`return` out; `edge_state`
 drops the scopes the edge leaves. ST-37 – ST-42 pin the four loop kinds, the
 conditional continue, and the exit use. The same review found a separate,
-pre-existing critical in the defer model (the checker runs all defers before all
-releases while the emitter interleaves them by reverse registration order),
-which is recorded in the review report for a ruling.
+pre-existing critical in the defer model (NEW-001: the checker ran all defers
+before all releases while the emitter interleaves them by reverse registration
+order), fixed under the user's ruling: `run_scope_cleanup` records each scope's
+bindings and defers in reverse registration order on every exit path, and
+ST-43 – ST-47 pin it.

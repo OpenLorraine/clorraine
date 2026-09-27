@@ -81,6 +81,9 @@ from each creation ∩ backward reachability from each use), and
 * `FunctionChecker.continue_states: BTreeMap<BlockId, FlowState>` — the joined
   state of every `continue` edge keyed by its target block, so `loop_entry_state`
   joins a `continue` back edge into the head even when it terminates the body.
+* `DeferEntry.registration: u32` — the registration number a deferred block
+  shares with the scope's bindings, so `run_scope_cleanup` interleaves the
+  scope's drops and defers in the same reverse order the emitter runs them.
 * `FlowState.loans: BTreeMap<usize, BTreeSet<LoanId>>` (`compiler/src/own/flow.rs`)
   — the loans each view binding may carry at a point; merged by union at joins
   and loop entries. Because a loan's id is interned from its origin, the
@@ -127,15 +130,15 @@ owner after a join yields every loan:
 | `check_argument_place` Mode::Borrow (`compiler/src/own/call_check.rs:278-343`) | keep `E10038`, `E10041`, `W10001`, and the duplicate-`lent` check; replace `loans.conflict` with `Request { owner, kind: Exclusive }` |
 | any call argument | `eval` reads the argument, so `read_place` records `Used` for every loan it carries |
 | `check_return` (`compiler/src/own/statements.rs:592-626`) | `eval` reads the returned value, so `read_place` records `Used` for every loan it carries |
-| `pop_scope` (`compiler/src/own.rs:314-339`) | `Release` for every binding of the scope being left; `end_scope` is removed |
-| `emit_exit_cleanup` (`compiler/src/own/statements.rs:561-585`) | `Release` for every binding of each scope deeper than `floor` |
-| `emit_return_cleanup` (`compiler/src/own.rs:706-728`) | `Release` for every binding of every open scope |
-| `run_defers_from` (`compiler/src/own.rs:347-356`) | capture the current block as the edge's anchor and pass it to `check_defer_exit` |
-| `check_defer_exit` (`compiler/src/own.rs:359-382`) | set `defer_anchor` to the edge's block for the whole block check, so every recorded event lands on the real edge in recorded order; a nested defer keeps the outer anchor; roll back the graph and the binding/scope stacks but **keep the flow state**, so a rebind the defer makes to an outer binding is visible after the scope |
+| `run_scope_cleanup` (`compiler/src/own.rs`) | one scope's bindings and defers, sorted by registration newest first; a binding records `Release` and emits its drop, a defer is checked at the edge anchor. This is the single order the checker records cleanup in, matching `emit_actions` |
+| `pop_scope` (`compiler/src/own.rs`) | runs `run_scope_cleanup` for the innermost scope, then pops it |
+| `emit_exit_cleanup` (`compiler/src/own/statements.rs`) | per scope deeper than `floor`, innermost first: a `ScopeExit` marker then `run_scope_cleanup` |
+| `emit_return_cleanup` (`compiler/src/own.rs`) | per open scope, innermost first: a `ScopeExit` marker then `run_scope_cleanup` |
+| `check_defer_exit` (`compiler/src/own.rs`) | set `defer_anchor` to the edge's block for the whole block check, so every recorded event lands on the real edge in recorded order; a nested defer keeps the outer anchor; roll back the graph and the binding/scope stacks but **keep the flow state**, so a rebind the defer makes to an outer binding is visible after the scope |
 | loop head and condition (`compiler/src/own/loops.rs`) | `while` and the three-clause `for` are lowered so the head block is checked with the loop-entry state; the condition's view uses are recorded against the loans the back edge carries |
 | `loop_entry_state` (`compiler/src/own.rs`) | the head joins the pre-state, the fall-through state, and every `continue` edge for this loop; a `break`/`return` edge reaches only the exit |
-| `check_break` (`compiler/src/own/statements.rs`) | run the defers the `break` triggers before recording the break-edge state, so a loan they create joins the state after the loop |
-| `check_continue` (`compiler/src/own/statements.rs`) | run the defers, then record the edge state in `continue_states` keyed by the target block; `edge_state` drops the scopes the edge leaves from the recorded state |
+| `check_break` (`compiler/src/own/statements.rs`) | run the edge cleanup (interleaved drops and defers), then record the break-edge state, so a loan a defer creates joins the state after the loop |
+| `check_continue` (`compiler/src/own/statements.rs`) | run the edge cleanup, then record the edge state in `continue_states` keyed by the target block; `edge_state` drops the scopes the edge leaves from the recorded state |
 | `DeferEntry` (`compiler/src/own/flow.rs:202-207`) | unchanged shape: the registered depth and block |
 
 `Release` events are recorded for every binding in a leaving scope. Loans only

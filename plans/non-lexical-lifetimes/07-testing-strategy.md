@@ -79,6 +79,11 @@ func viewOf(s: str): str { return s; }
 | ST-40 | the ST-37 shape with the condition use (the `for`-condition back edge) | rejected — `E10030` | AR-24 |
 | ST-41 | the ST-37 shape as an element `for (x in xs)` with `continue` | rejected — `E10030` | AR-24 |
 | ST-42 | `if (c) { let s = ...; held = bytes(s); continue; } ... return firstByte(held);` | rejected — `E10030`: the continue edge reaches the exit | AR-24 |
+| ST-43 | `defer { ... }` registered before `let s = ...`, then `held = bytes(s)` | rejected — `E10030`: the defer runs after `s`'s release | AR-26 (reverse registration order) |
+| ST-44 | the ST-43 shape with the defer registered after `let s` | accepted — the defer runs before the release | AR-26 |
+| ST-45 | the ST-43 shape ended by `return` | rejected — `E10030` | AR-26 |
+| ST-46 | the ST-43 shape ended by `break` | rejected — `E10030` | AR-26 |
+| ST-47 | the ST-43 shape ended by `continue` | rejected — `E10030` | AR-26 |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -104,7 +109,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-42 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-47 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact

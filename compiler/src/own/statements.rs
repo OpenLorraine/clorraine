@@ -475,9 +475,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Checks a deferred block.
     ///
-    /// The block's IR is lowered at registration, but its ownership effects
-    /// are checked on each scope exit edge (by `run_defers_from`) and restored
-    /// here, so they do not leak into the enclosing flow.
+    /// The block's IR is lowered at registration, but its ownership effects are
+    /// checked on each scope exit edge, in the scope's reverse registration
+    /// order, so they interleave with the scope's drops exactly as the emitter
+    /// runs them.
     pub(super) fn check_defer(&mut self, block: &'a Block) {
         let saved_block = self.builder.current();
         let scope = self.current_scope();
@@ -510,6 +511,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_entries.push(DeferEntry {
             depth: self.scopes.len(),
             block,
+            registration,
         });
     }
 
@@ -525,15 +527,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let floor = frame.scope_floor;
         let write = frame.for_in.clone();
         self.run_for_in_write(write);
-        // The defers the break runs are part of the edge state, so they run
-        // before the edge is recorded; otherwise a loan they create would be
-        // missing from the state that joins after the loop.
-        self.run_defers_from(floor + 1);
+        // The cleanup the break runs is part of the edge state, so it runs
+        // before the edge is recorded; otherwise a loan a defer creates would
+        // be missing from the state that joins after the loop.
+        self.emit_exit_cleanup(floor);
         let state = self.edge_state(floor);
         if let Some(frame) = self.exits.last_mut() {
             frame.record_break(state);
         }
-        self.emit_exit_cleanup(floor);
         self.terminate(Terminator::Goto(break_block));
     }
 
@@ -552,13 +553,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         };
         self.run_for_in_write(write);
-        // The defers the continue runs belong to its edge, and the edge returns
-        // to the loop head, so its state is recorded against the head's block
-        // for the loop fixpoint to join into the entry.
-        self.run_defers_from(floor + 1);
+        self.emit_exit_cleanup(floor);
+        // The cleanup the continue runs belongs to its edge, and the edge
+        // returns to the loop head, so its state is recorded against the head's
+        // block for the loop fixpoint to join into the entry.
         let state = self.edge_state(floor);
         self.record_continue(continue_block, state);
-        self.emit_exit_cleanup(floor);
         self.terminate(Terminator::Goto(continue_block));
     }
 
@@ -570,38 +570,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.store_for_in_element(&write.element, &write.iterable, &write.index, write.id);
     }
 
-    /// Emits the defers and drops for the scopes deeper than `floor`.
+    /// Emits the cleanup of the scopes deeper than `floor`, innermost first.
     ///
-    /// A `ScopeExit` marker precedes each scope's drops, so the emitter routes
-    /// the edge through that scope's cleanup even when the scope owns only a
-    /// `defer`.
+    /// A `ScopeExit` marker precedes each scope's cleanup, so the emitter
+    /// routes the edge through that scope even when it owns only a `defer`, and
+    /// then the scope's drops and defers run in reverse registration order.
     fn emit_exit_cleanup(&mut self, floor: usize) {
-        self.run_defers_from(floor + 1);
         let depth = self.scopes.len();
         for index in (floor..depth).rev() {
             let scope_id = self.scopes[index].id;
-            let ids: Vec<usize> = self.scopes[index]
-                .order
-                .iter()
-                .rev()
-                .copied()
-                .collect();
-            let span = self.current_span;
-            for id in &ids {
-                self.record_event(LoanEventKind::Release { owner: *id }, span);
-            }
             self.emit(Statement::ScopeExit { scope: scope_id });
-            for id in ids {
-                if self.bindings[id].needs_drop {
-                    let place = self.binding_place(id);
-                    let order = self.bindings[id].registration;
-                    self.emit(Statement::Drop {
-                        place,
-                        scope: scope_id,
-                        order,
-                    });
-                }
-            }
+            self.run_scope_cleanup(index);
         }
     }
 

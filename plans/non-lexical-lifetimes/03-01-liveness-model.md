@@ -129,9 +129,16 @@ it is conservative (the event may happen on only some paths).
 The defer's effect on bindings that outlive its scope is kept on the flow that
 leaves the scope, because the defer runs when the scope exits. A view rebound
 inside a defer therefore carries its loan after the scope, and a later use is
-checked against the owner's release exactly like any other loan. A `break` or
-`continue` runs the defers it triggers before its edge state is recorded, so a
-loan they create joins the state that follows the loop.
+checked against the owner's release exactly like any other loan.
+
+A scope's drops and its defers share one registration sequence and run in
+reverse, so the checker interleaves their recorded events the same way the
+emitter interleaves the emitted cleanup: a defer registered before a local
+observes that local after its release, and a defer registered after it observes
+the local before its release. The `break`, `continue`, and `return` cleanups
+follow the same reverse registration order, and the `break`/`continue` edge
+state is recorded after its cleanup, so a loan a defer creates joins the state
+that follows the loop.
 
 ## Rules decided by regions
 

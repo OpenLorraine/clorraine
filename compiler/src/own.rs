@@ -347,59 +347,71 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes.last().map(|scope| scope.id).unwrap_or(0)
     }
 
-    /// Leaves the innermost scope, running its defers and emitting its drops.
+    /// Leaves the innermost scope, running its cleanup in registration order.
     ///
-    /// The defers run before the scope is popped so the names the deferred
-    /// block closes over are still visible to the ownership walk. Each drop is
-    /// tagged with this scope's id so the emitter can place it on the matching
-    /// rung of the cleanup ladder.
+    /// A scope's drops and `defer` blocks share one registration sequence and
+    /// the emitter runs them in reverse, so the checker interleaves them the
+    /// same way. The scope stays on the stack while its cleanup runs, so the
+    /// names the deferred blocks close over are still visible to the walk.
     fn pop_scope(&mut self) {
         let depth = self.scopes.len();
         if depth == 0 {
             return;
         }
-        self.run_defers_from(depth);
-        let Some(scope) = self.scopes.pop() else {
-            return;
-        };
-        let scope_id = scope.id;
-        let close_span = self.current_span;
-        for id in &scope.order {
-            self.record_event(LoanEventKind::Release { owner: *id }, close_span);
-        }
-        for id in scope.order.iter().rev() {
-            if self.bindings[*id].needs_drop {
-                let place = self.binding_place(*id);
-                let order = self.bindings[*id].registration;
-                self.emit(Statement::Drop {
-                    place,
-                    scope: scope_id,
-                    order,
-                });
-            }
-        }
-        for id in scope.order {
-            self.state.places.remove(&id);
-            self.state.loans.remove(&id);
-        }
+        self.run_scope_cleanup(depth - 1);
+        self.scopes.pop();
     }
 
-    /// Runs every deferred block registered at or below `floor`, newest first.
+    /// Runs one scope's cleanup actions in reverse registration order.
     ///
-    /// Each deferred block is checked against the state on the exit edge, and
-    /// its effect on bindings that outlive the scope is kept: a defer runs when
-    /// the scope exits, so a view it rebinds, or an owner it moves, is in that
-    /// state on the flow that follows the scope. The check emits no IR: the
-    /// deferred block already has its own lowered block from registration.
-    fn run_defers_from(&mut self, floor: usize) {
+    /// `scope_index` is the scope's position on the stack; the caller leaves it
+    /// in place, and every deeper scope has already run its own cleanup, so the
+    /// scope's deferred blocks are the newest entries in `defer_entries`. A
+    /// deferred block registered before a binding therefore runs after that
+    /// binding's release, exactly as the emitter orders them. Each drop is
+    /// tagged with the scope's id so the emitter can place it on the matching
+    /// rung of the cleanup ladder.
+    fn run_scope_cleanup(&mut self, scope_index: usize) {
+        let scope_depth = scope_index + 1;
+        let scope_id = self.scopes[scope_index].id;
+        let mut actions: Vec<(u32, CleanupAction<'a>)> = Vec::new();
+        for id in &self.scopes[scope_index].order {
+            actions.push((
+                self.bindings[*id].registration,
+                CleanupAction::Release(*id),
+            ));
+        }
         while self
             .defer_entries
             .last()
-            .is_some_and(|entry| entry.depth >= floor)
+            .is_some_and(|entry| entry.depth == scope_depth)
         {
             let entry = self.defer_entries.pop().expect("defer entry");
-            let anchor = self.builder.current();
-            self.check_defer_exit(entry.block, anchor);
+            actions.push((entry.registration, CleanupAction::Defer(entry.block)));
+        }
+        actions.sort_by(|left, right| right.0.cmp(&left.0));
+        for (_, action) in actions {
+            match action {
+                CleanupAction::Release(id) => {
+                    let span = self.current_span;
+                    self.record_event(LoanEventKind::Release { owner: id }, span);
+                    if self.bindings[id].needs_drop {
+                        let place = self.binding_place(id);
+                        let order = self.bindings[id].registration;
+                        self.emit(Statement::Drop {
+                            place,
+                            scope: scope_id,
+                            order,
+                        });
+                    }
+                    self.state.places.remove(&id);
+                    self.state.loans.remove(&id);
+                }
+                CleanupAction::Defer(block) => {
+                    let anchor = self.builder.current();
+                    self.check_defer_exit(block, anchor);
+                }
+            }
         }
     }
 
@@ -839,40 +851,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
-    /// Emits the drops of every open scope, innermost first, then returns.
+    /// Emits the cleanup of every open scope, innermost first, then returns.
     ///
-    /// Deferred blocks run first, in reverse registration order, followed by
-    /// the drops. The deferred effects are checked but do not change the
-    /// return value, which was already evaluated. Each scope the edge leaves
-    /// gets a `ScopeExit` marker so the emitter runs that scope's cleanup even
-    /// when the scope owns only a `defer`.
+    /// Each scope the edge leaves gets a `ScopeExit` marker, so the emitter
+    /// runs that scope's cleanup even when the scope owns only a `defer`, and
+    /// then the scope's drops and defers run in reverse registration order.
+    /// The deferred effects are checked but do not change the return value,
+    /// which was already evaluated.
     fn emit_return_cleanup(&mut self) {
-        self.run_defers_from(1);
         let depths: Vec<usize> = (1..=self.scopes.len()).rev().collect();
         for depth in depths {
             let Some(scope) = self.scopes.get(depth - 1) else {
                 continue;
             };
             let scope_id = scope.id;
-            let ids: Vec<usize> = scope.order.iter().rev().copied().collect();
-            let span = self.current_span;
-            for id in &ids {
-                self.record_event(LoanEventKind::Release { owner: *id }, span);
-            }
             self.emit(Statement::ScopeExit { scope: scope_id });
-            for id in ids {
-                if self.bindings[id].needs_drop {
-                    let place = self.binding_place(id);
-                    let order = self.bindings[id].registration;
-                    self.emit(Statement::Drop {
-                        place,
-                        scope: scope_id,
-                        order,
-                    });
-                }
-            }
+            self.run_scope_cleanup(depth - 1);
         }
     }
+}
+
+/// One cleanup action of a scope being left.
+///
+/// A scope's bindings and its deferred blocks share one registration sequence;
+/// the actions are sorted newest first so the checker records their effects in
+/// the same order the emitter runs them.
+enum CleanupAction<'a> {
+    /// Release a binding and emit its drop.
+    Release(usize),
+    /// Check a deferred block on the exit edge.
+    Defer(&'a Block),
 }
 
 impl PlaceTarget {
