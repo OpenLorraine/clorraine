@@ -340,7 +340,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_defers = std::mem::take(&mut self.defer_entries);
         let saved_events = std::mem::take(&mut self.events);
         let saved_ordinals = std::mem::take(&mut self.next_ordinal);
-        let saved_next_loan = self.next_loan;
+        let saved_loans = std::mem::take(&mut self.loan_ids);
+        let saved_names = std::mem::take(&mut self.binding_names);
         let saved_defer = self.defer_anchor;
         let saved_registration = self.next_registration;
         let saved_owned_temp = self.next_owned_temp;
@@ -348,7 +349,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_current_span = self.current_span;
         self.next_registration = 0;
         self.next_owned_temp = 0;
-        self.next_loan = 0;
         self.defer_anchor = None;
         self.returns = ret.clone();
 
@@ -390,12 +390,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         function.temps = self.temps.clone();
         function.module = self.module.name.clone();
         function.lambda_site = Some(site);
-        let names: Vec<String> = self
-            .bindings
-            .iter()
-            .map(|binding| binding.name.clone())
-            .collect();
-        liveness::check(&function, &self.events, &names, self.diagnostics);
+        liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
         self.lifted.push(function);
 
         self.builder = saved_builder;
@@ -407,7 +402,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_entries = saved_defers;
         self.events = saved_events;
         self.next_ordinal = saved_ordinals;
-        self.next_loan = saved_next_loan;
+        self.loan_ids = saved_loans;
+        self.binding_names = saved_names;
         self.defer_anchor = saved_defer;
         self.next_registration = saved_registration;
         self.next_owned_temp = saved_owned_temp;

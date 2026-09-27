@@ -19,17 +19,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let head = self.new_block();
         self.terminate(Terminator::Goto(head));
         self.switch_to(head);
-        self.eval(&decl.condition);
         let body_block = self.new_block();
         let exit = self.new_block();
-        let condition = self.lower_value(&decl.condition);
-        let shape = self.loop_shape(LoopKind::While, body_block, exit, head);
-        self.terminate(Terminator::Branch {
-            condition,
-            on_true: body_block,
-            on_false: exit,
-            shape,
-        });
 
         let pre = self.state.clone();
         let floor = self.scopes.len();
@@ -45,7 +36,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             checker.exits.pop();
         });
 
+        // The condition runs at the head on every iteration, so it is checked
+        // with the head state: a view bound on the back edge carries its loan
+        // here, and a use of it in the condition is recorded against that loan.
         self.state = entry.clone();
+        self.switch_to(head);
+        self.eval(&decl.condition);
+        let condition = self.lower_value(&decl.condition);
+        let shape = self.loop_shape(LoopKind::While, body_block, exit, head);
+        self.terminate(Terminator::Branch {
+            condition,
+            on_true: body_block,
+            on_false: exit,
+            shape,
+        });
+
         self.exits
             .push(ExitFrame::new(exit, Some(head), floor, floor));
         self.switch_to(body_block);
@@ -56,9 +61,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let frame = self.exits.pop().expect("loop frame");
         let always_true = condition_is_true(&decl.condition);
-        let mut exit_state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
-        self.carry_loans(&mut exit_state);
-        self.state = exit_state;
+        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
         self.switch_to(exit);
     }
 
@@ -114,9 +117,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             shape,
         });
         let frame = self.exits.pop().expect("loop frame");
-        let mut exit_state = join_breaks(post, &frame);
-        self.carry_loans(&mut exit_state);
-        self.state = exit_state;
+        self.state = join_breaks(post, &frame);
         self.switch_to(exit);
     }
 
@@ -142,23 +143,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let head = self.new_block();
         self.terminate(Terminator::Goto(head));
         self.switch_to(head);
-        if let Some(condition) = &decl.condition {
-            self.eval(condition);
-        }
         let body_block = self.new_block();
         let step_block = self.new_block();
         let exit = self.new_block();
-        let condition = match &decl.condition {
-            Some(condition) => self.lower_value(condition),
-            None => Value::bool(Ty::boolean(), true),
-        };
-        let condition_ok = !self.block_has_statements(head);
-        self.terminate(Terminator::Branch {
-            condition,
-            on_true: body_block,
-            on_false: exit,
-            shape: BranchShape::Plain,
-        });
 
         let pre = self.state.clone();
         let continue_floor = floor + 1;
@@ -179,7 +166,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             checker.exits.pop();
         });
 
+        // The condition runs at the head on every iteration, so it is checked
+        // with the head state: a view bound on the back edge carries its loan
+        // here, and a use of it in the condition is recorded against that loan.
         self.state = entry.clone();
+        self.switch_to(head);
+        if let Some(condition) = &decl.condition {
+            self.eval(condition);
+        }
+        let condition = match &decl.condition {
+            Some(condition) => self.lower_value(condition),
+            None => Value::bool(Ty::boolean(), true),
+        };
+        let condition_ok = !self.block_has_statements(head);
+        self.terminate(Terminator::Branch {
+            condition,
+            on_true: body_block,
+            on_false: exit,
+            shape: BranchShape::Plain,
+        });
+
         self.exits.push(ExitFrame::new(
             exit,
             Some(step_block),
@@ -214,9 +220,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .condition
             .as_ref()
             .map_or(true, condition_is_true);
-        let mut exit_state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
-        self.carry_loans(&mut exit_state);
-        self.state = exit_state;
+        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
         self.switch_to(exit);
         self.pop_scope();
     }
@@ -430,9 +434,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.terminate(Terminator::Goto(head));
         }
         let frame = self.exits.pop().expect("loop frame");
-        let mut exit_state = join_breaks(entry, &frame);
-        self.carry_loans(&mut exit_state);
-        self.state = exit_state;
+        self.state = join_breaks(entry, &frame);
         self.switch_to(exit);
         self.pop_scope();
     }

@@ -22,6 +22,10 @@ already lowers every body into the typed CFG while it checks
 /// Identity of one loan inside one function.
 pub(super) struct LoanId(usize);
 
+/// What makes a loan's identity stable across every pass: its owner,
+/// permission, and the source range of the derivation that created it.
+pub(super) struct LoanOrigin { owner: usize, kind: LoanKind, start: u32, end: u32 }
+
 /// A point in the finished function's event sequence.
 pub(super) struct Position {
     pub(super) block: ir::BlockId,
@@ -51,7 +55,7 @@ pub(super) struct LoanEvent {
 pub(super) fn check(
     function: &ir::Function,
     events: &[LoanEvent],
-    names: &[String],
+    names: &BTreeMap<usize, String>,
     diagnostics: &mut Diagnostics,
 );
 ```
@@ -67,22 +71,28 @@ from each creation ∩ backward reachability from each use), and
   or lifted lambda.
 * `FunctionChecker.next_ordinal: BTreeMap<BlockId, usize>` — the next event
   ordinal in each block.
-* `FunctionChecker.next_loan: usize` — the loan id counter.
+* `FunctionChecker.loan_ids: BTreeMap<LoanOrigin, LoanId>` — interns a loan id
+  from its origin, so every pass over a derivation agrees on the id.
+* `FunctionChecker.binding_names: BTreeMap<usize, String>` — the written name of
+  every binding ever declared; it outlives the truncation at a deferred block's
+  exit, so an `E10030` about a defer-local owner still names it.
 * `FunctionChecker.defer_anchor: Option<BlockId>` — set while a deferred block
   is checked, so its events are placed at the edge's real block.
 * `FlowState.loans: BTreeMap<usize, BTreeSet<LoanId>>` (`compiler/src/own/flow.rs`)
   — the loans each view binding may carry at a point; merged by union at joins
-  and loop entries. A loop's exit state also unions the loans of the real body
-  pass, because the speculative fixpoint records no loans; without that carry,
-  a view used after the loop would record no use and its region would end too
-  early. `pop_scope` drops the loans of the bindings it closes.
+  and loop entries. Because a loan's id is interned from its origin, the
+  speculative loop fixpoint populates this map too, so a loan created in a loop
+  body is carried at the head, in the condition, and after the loop, and a loan
+  created in a deferred block is carried on the exit edge. `pop_scope` drops the
+  loans of the bindings it closes.
 
-Events are recorded only while `report_diagnostics` is true, which already
-excludes the speculative loop fixpoint (`loop_entry_state` sets it false for
-the whole pass, `compiler/src/own.rs:389-439`); no loan is allocated on that
-pass either, so the loop fixpoint's loan sets stay bounded. `lift_lambda`
-(`compiler/src/own/lower.rs:311-397`) takes the log, checks the lifted
-function with it, and restores the saved log.
+Events are recorded only while `report_diagnostics` is true, which excludes the
+speculative loop fixpoint (`loop_entry_state` sets it false for the whole pass,
+`compiler/src/own.rs:389-439`). The loan id is still interned on that pass, so
+the fixpoint's loan sets stay bounded (one id per derivation site) while the
+head state is correct. `lift_lambda` (`compiler/src/own/lower.rs:311-397`)
+swaps the log, the loan interner, and the name table around the lifted
+function's check and restores them.
 
 ### Loan identity resolver
 
@@ -107,7 +117,7 @@ owner after a join yields every loan:
 | Site | Event recorded |
 | ---- | -------------- |
 | `bind_value` (`compiler/src/own/statements.rs:240-273`) | for a view binding whose `view_provenance` is `Local`/`Param`: `view_loans(value)` empty ⇒ allocate an id, record `Created { owner }`, and set the binding's loan set to it; non-empty ⇒ record `Used` for each source and set the binding's loan set to the sources. A whole-binding rebind updates the set the same way; a rebind to a value with no loan clears it; `E10041` is checked in `record_view_loan` |
-| `record_view_loan` (`compiler/src/own/statements.rs:276-297`) | keep the inline `E10041` check; record `Request`; create nothing on a speculative pass; the inline `E10032` check and `Loans::add` are removed |
+| `record_view_loan` (`compiler/src/own/statements.rs:276-301`) | keep the inline `E10041` check; intern the loan id from its origin on every pass so the speculative fixpoint and the reporting pass agree; record `Request` and `Created` only on the reporting pass |
 | `read_place` (`compiler/src/own/place.rs:18-68`) | for every loan the read binding carries, record `Used` |
 | `write_place` (`compiler/src/own/place.rs:93-161`) | after the const/read-only checks: for a projected write through a view binding, record `Used` for every loan it carries; for a non-view binding, record `Access { owner: id, access: Write }`; a whole-binding write of a view binding is a rebind, so no use is recorded here and `bind_value` updates the set |
 | `move_place` (`compiler/src/own/place.rs:170-229`) | after the `E10034` check: record `Access { owner: id, access: Move }`; the `blocks_move` check is removed |
@@ -118,7 +128,9 @@ owner after a join yields every loan:
 | `emit_exit_cleanup` (`compiler/src/own/statements.rs:561-585`) | `Release` for every binding of each scope deeper than `floor` |
 | `emit_return_cleanup` (`compiler/src/own.rs:706-728`) | `Release` for every binding of every open scope |
 | `run_defers_from` (`compiler/src/own.rs:347-356`) | capture the current block as the edge's anchor and pass it to `check_defer_exit` |
-| `check_defer_exit` (`compiler/src/own.rs:359-377`) | set `defer_anchor` to the edge's block for the whole block check, so every recorded event lands on the real edge in recorded order; a nested defer keeps the outer anchor; restore after |
+| `check_defer_exit` (`compiler/src/own.rs:359-382`) | set `defer_anchor` to the edge's block for the whole block check, so every recorded event lands on the real edge in recorded order; a nested defer keeps the outer anchor; roll back the graph and the binding/scope stacks but **keep the flow state**, so a rebind the defer makes to an outer binding is visible after the scope |
+| loop head and condition (`compiler/src/own/loops.rs`) | `while` and the three-clause `for` are lowered so the head block is checked with the loop-entry state; the condition's view uses are recorded against the loans the back edge carries |
+| `check_break` (`compiler/src/own/statements.rs`) | run the defers the `break` triggers before recording the break-edge state, so a loan they create joins the state after the loop |
 | `DeferEntry` (`compiler/src/own/flow.rs:202-207`) | unchanged shape: the registered depth and block |
 
 `Release` events are recorded for every binding in a leaving scope. Loans only
@@ -153,8 +165,7 @@ After `builder.finish()`:
 
 * `FunctionChecker::check()` (`compiler/src/own.rs:246-273`): after
   `builder.finish()` and the locals/temps are set, call
-  `liveness::check(&function, &self.events, &names, self.diagnostics)` with
-  `names` derived from the current bindings.
+  `liveness::check(&function, &self.events, &self.binding_names, self.diagnostics)`.
 * `lift_lambda` (`compiler/src/own/lower.rs:367-384`): after the lifted
   function is finished, run the same call while the lambda's bindings and
   events are still installed.
@@ -192,7 +203,7 @@ predicates stay in `borrow.rs`. The dormant `ir::LoanKind` and
 | A conflict found in the post-pass | report at the event span, v1 message and help | AR-9 |
 | `E10030` found by reachability | report once at the loan's creation span | AR-8 |
 | An invalid program now reports more than one conflict | accepted: conflicts no longer return early; the Phase 2 sweep reconciles any test that pins an exact code vector | AR-11 |
-| An event recorded in a discarded speculative graph | prevented: recording is gated on `report_diagnostics`, the log is swapped around lambda lifting, and every event recorded inside a defer is evaluated at that defer's `DeferEdge` positions, never at its recorded one | AR-4 |
+| An event recorded in a discarded speculative graph | prevented: recording is gated on `report_diagnostics`, the log is swapped around lambda lifting, and every event recorded inside a defer is anchored to the edge's real block in recorded order | AR-4, AR-26 |
 
 ## Testing Requirements
 

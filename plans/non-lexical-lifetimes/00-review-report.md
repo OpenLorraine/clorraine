@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 10:25
+> **Last Updated**: 2026-09-27 11:45
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -83,3 +83,50 @@ rather than re-reviewed again (no third pass). The follow-up fix is verified by
 `make check` (green) and `non_lexical_lifetimes_spec_test` (27 passed); the new
 cases were validated against the pre-fix behavior reproduced by the re-review
 with `clc` and AddressSanitizer.
+
+### Phase 2 final review (out-of-cycle, user-requested)
+
+- **Diff**: `77f59e1f..b961900` (the whole Phase 2 change, including the RR-001 fix)
+- **Reviewers**: two independent generic subagents — one soundness (false
+  accepts), one conformance/monotonicity (false rejects and test quality)
+- **Verdict**: 🔴 two CRITICAL soundness holes remain; the RR-001 fix is a
+  partial fix of a larger class. `carry_loans` introduced no over-rejection
+  (confirmed by a 20,000-program differential run and every tracked `.clo`).
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| FR-001 | 🔴 CRITICAL | The loop **entry/back-edge** state is built speculatively, so it never carries loans created in the body. The one real body pass starts from that loan-free state, so a use at the top of the body (or in the condition) records no use and no `E10030`. RR-001 fixed only the **exit**; this is the same mechanism on the entry edge. ASan-confirmed use-after-free; `clc` accepts. | Open |
+| FR-002 | 🔴 CRITICAL | Flow effects inside a `defer` are discarded (`check_defer_exit` restores `saved_state`), so a view widened inside the defer stays loan-free; a later use of the escaped view records no use and no `E10030`. ASan-confirmed use-after-free; v1 rejected it. | Open |
+| FM-001 | 🟡 MINOR | `E10030` prints `'?'` for an owner declared inside a `defer` (defer-local binding-index reuse; SA-5, still open) | Open |
+| FM-002 | 🟡 MINOR | `assert_reports_counted` does not assert the absence of extra diagnostics (same as the existing harness and RV-3) | Open |
+| FM-003 | 🟡 MINOR | The spec-test module doc names a Phase 3 implementation-test file that does not yet exist; `liveness.rs` has no unit tests; accepted programs are never built/run, which is why FR-001/FR-002 escaped `make check` | Open (Phase 3) |
+| FI-001 | ℹ️ INFO | ST-17 – ST-27 pass at the pre-change tree too (they guard the intermediate v2 trees, not the baseline) | Accepted |
+| FI-002 | ℹ️ INFO | A `let` inside a `defer` emits an undeclared C local (pre-existing, unchanged by this diff) | Accepted |
+
+Both criticals were reproduced at HEAD by this review: `clc` accepts each probe
+(exit 0), and the emitted C run under AddressSanitizer reports
+`heap-use-after-free`. Neither case is in ST-1 – ST-27, so `make check` stays
+green. The RR-001 fix is therefore correct but incomplete, and the quality gate
+remains open until FR-001 and FR-002 are fixed and re-reviewed.
+
+### Phase 2 final-review follow-up (user ruling: fix criticals and minors)
+
+The two criticals and the two open minors were fixed after the user's ruling:
+
+| # | Fix |
+|---|-----|
+| FR-001 | A loan's id is interned from its origin (owner, kind, derivation source range), so the speculative loop fixpoint and the reporting pass agree on it; the fixpoint now populates the flow-state loans, so a loan created in a loop body is carried at the head, in the condition, and after the loop. The three-clause `for` and `while` check their condition with the loop-entry state, and the exit-only `carry_loans` union was removed. |
+| FR-002 | `check_defer_exit` keeps the flow state (only the graph, binding table, and scope stack roll back), so a defer's rebind of an outer view persists after the scope; a `break`/`continue` runs its defers before the edge state is recorded. |
+| FM-001 | A persistent `binding_names` table outlives a deferred block's truncation, so `E10030` names a defer-local owner. |
+| FM-002 | `assert_reports_counted` rejects any diagnostic not listed in the expectation and pins the total error count. |
+
+Verification (all green): `make check`; `non_lexical_lifetimes_spec_test` 36
+passed (the eight new cases ST-28 – ST-36 were red against the reviewer's probes
+at HEAD, and the shapes were ASan-confirmed use-after-frees there); every probe
+the two reviewers used now reports its expected diagnostic or is accepted:
+`holeA2e`/`holeCond`/`holeDoWhile`/`holeForC`/`continueCarry`/`nestedCarry`/
+`holeForStep`/`rr001`/`e4`/`e5`/`e6`/`e7`/`defere10030` → the expected `E10030`
+(`defere10030` now names `s`); `rv001` → `E10022`; `sa2`/`sa3`/`overR1`/`overR2`/
+`overR3` → accepted (no over-rejection). Because the code changed after this
+review, a fresh independent review of the follow-up diff is required before the
+gate closes; it is dispatched next.

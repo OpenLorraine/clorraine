@@ -54,7 +54,7 @@ use flow::{
     Binding, BindingKind, DeferEntry, ExitFrame, FlowState, ForInWrite, PlaceState, PlaceTarget,
     Scope,
 };
-use liveness::{AccessKind, LoanEvent, LoanEventKind, LoanId, Position};
+use liveness::{AccessKind, LoanEvent, LoanEventKind, LoanId, LoanOrigin, Position};
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -170,8 +170,20 @@ struct FunctionChecker<'a, 'd> {
     events: Vec<LoanEvent>,
     /// The next ordinal to hand out in each block's event sequence.
     next_ordinal: BTreeMap<BlockId, usize>,
-    /// Next loan id inside the function being checked.
-    next_loan: usize,
+    /// Stable identity of the persistent loan a view derivation creates.
+    ///
+    /// A loan is keyed by where it is created, not by allocation order, so the
+    /// same derivation gets the same id in a speculative pass and on the
+    /// reporting pass. That stability is what lets a loan created in a loop body
+    /// or a deferred block be seen at the loop head and after the scope, where
+    /// the speculative pass must carry it before the reporting pass records it.
+    loan_ids: BTreeMap<LoanOrigin, LoanId>,
+    /// The written name of every binding ever declared, by binding index.
+    ///
+    /// The name table outlives the binding's truncation at a deferred block's
+    /// exit, so a diagnostic about a loan whose owner was declared there still
+    /// names the owner instead of falling back to `?`.
+    binding_names: BTreeMap<usize, String>,
     /// The block a currently checked deferred block is anchored to.
     ///
     /// While a deferred block is checked on an exit edge its IR is lowered
@@ -248,7 +260,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             defer_entries: Vec::new(),
             events: Vec::new(),
             next_ordinal: BTreeMap::new(),
-            next_loan: 0,
+            loan_ids: BTreeMap::new(),
+            binding_names: BTreeMap::new(),
             defer_anchor: None,
             next_registration: 0,
             next_owned_temp: 0,
@@ -289,12 +302,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             })
             .collect();
         function.temps = self.temps.clone();
-        let names: Vec<String> = self
-            .bindings
-            .iter()
-            .map(|binding| binding.name.clone())
-            .collect();
-        liveness::check(&function, &self.events, &names, self.diagnostics);
+        liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
         (function, self.lifted)
     }
 
@@ -370,10 +378,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Runs every deferred block registered at or below `floor`, newest first.
     ///
-    /// Each deferred block is checked against the state on the exit edge and
-    /// then discarded, so its writes and moves belong to the edge and do not
-    /// leak into the flow that follows. The check emits no IR: the deferred
-    /// block already has its own lowerd block from registration.
+    /// Each deferred block is checked against the state on the exit edge, and
+    /// its effect on bindings that outlive the scope is kept: a defer runs when
+    /// the scope exits, so a view it rebinds, or an owner it moves, is in that
+    /// state on the flow that follows the scope. The check emits no IR: the
+    /// deferred block already has its own lowered block from registration.
     fn run_defers_from(&mut self, floor: usize) {
         while self
             .defer_entries
@@ -392,8 +401,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// event it records is anchored to the real block the edge leaves rather
     /// than to a clone block that a later real block may reuse. A nested defer
     /// keeps the outer anchor, so its events stay in the outer block's order.
+    /// The flow state is kept: only the graph, the binding table, and the
+    /// scopes are rolled back, so a write the defer makes to an outer binding
+    /// stays visible on the flow that leaves the scope.
     fn check_defer_exit(&mut self, block: &'a Block, anchor: BlockId) {
-        let saved_state = self.state.clone();
         let saved_builder = self.builder.clone();
         let saved_bindings = self.bindings.len();
         let saved_scopes = self.scopes.len();
@@ -409,7 +420,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.pop_scope();
         self.defer_anchor = saved_anchor;
-        self.state = saved_state;
         self.builder = saved_builder;
         self.bindings.truncate(saved_bindings);
         self.scopes.truncate(saved_scopes);
@@ -531,6 +541,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         needs_drop: bool,
     ) -> usize {
         let id = self.bindings.len();
+        self.binding_names.insert(id, name.to_owned());
         let scope = self.scopes.len();
         let registration = self.register_cleanup();
         let provenance = if kind == BindingKind::Param && is_lend_candidate(&ty) {
@@ -646,22 +657,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         update(entry);
     }
 
-    /// Adds the loans of the real flow state to a computed loop-exit state.
-    ///
-    /// A loan created while a loop body ran is not seen by the speculative
-    /// fixpoint, which records nothing, so an exit state built from the
-    /// speculative snapshots must still carry the real body's loans. Otherwise
-    /// a view used after the loop records no use and its region ends too early,
-    /// accepting a read of freed storage.
-    fn carry_loans(&self, exit: &mut FlowState) {
-        for (id, loans) in &self.state.loans {
-            exit.loans
-                .entry(*id)
-                .or_default()
-                .extend(loans.iter().copied());
-        }
-    }
-
     /// Merges two branch states conservatively.
     ///
     /// A move or partial move on either path survives; a value is initialized
@@ -752,11 +747,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
     }
 
-    /// Allocates the next loan id inside the current function.
-    fn alloc_loan(&mut self) -> LoanId {
-        let loan = LoanId(self.next_loan);
-        self.next_loan += 1;
-        loan
+    /// The stable id of a loan created by a derivation with this origin.
+    ///
+    /// Interning makes the id independent of how many times a pass walks the
+    /// derivation, so a speculative loop pass and the reporting pass agree, and
+    /// a loan created in a loop body does not multiply once per iteration.
+    fn intern_loan(&mut self, origin: LoanOrigin) -> LoanId {
+        let next = self.loan_ids.len();
+        *self
+            .loan_ids
+            .entry(origin)
+            .or_insert_with(|| LoanId(next))
     }
 
     /// Records a compiler-created temporary and returns its id.

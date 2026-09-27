@@ -64,6 +64,15 @@ func viewOf(s: str): str { return s; }
 | ST-25 | the ST-22 shape as a `do { ... } while (...)` | rejected — `E10030` | AR-24 |
 | ST-26 | the ST-22 shape as a three-clause `for` | rejected — `E10030` | AR-24 |
 | ST-27 | the ST-22 shape as an element `for (x in xs)` | rejected — `E10030` | AR-24 |
+| ST-28 | `while (i < 2) { firstByte(held); let s = ...; held = bytes(s); i = i + 1; }` | rejected — `E10030`: a back-edge view is live at the body top | AR-24 (stable loan identity) |
+| ST-29 | the ST-28 shape with the only use in the condition | rejected — `E10030`: the condition is re-evaluated at the head | AR-24 |
+| ST-30 | the ST-28 shape as a `do { ... } while (...)` | rejected — `E10030` | AR-24 |
+| ST-31 | the ST-28 shape as a three-clause `for` | rejected — `E10030` | AR-24 |
+| ST-32 | the ST-28 shape with the only use in the `for` step | rejected — `E10030` | AR-24 |
+| ST-33 | `if (c) { let s = ...; defer { held = s; } } observeStr(held);` | rejected — `E10030`: the defer's rebind is visible after the scope | AR-26 (defer effects persist) |
+| ST-34 | a defer whose inner loop binds `s` and rebinds `held`, then uses `held` | rejected — `E10030`, owner named `s` (not `?`) | AR-26, AR-25 (name table) |
+| ST-35 | `while (i < 2) { let v: str = s; observeStr(v); i = i + 1; } sink(s);` | accepted — the in-loop use precedes the move | AR-24 |
+| ST-36 | `while (i < 1) { let s = ...; defer { held = s; } break; } observeStr(held);` | rejected — `E10030`: the `break` runs the defer | AR-26 |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -89,7 +98,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-27 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-36 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact

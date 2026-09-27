@@ -276,18 +276,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Creates a persistent loan of an owner and reports the one inline error.
     ///
-    /// A writable view derived from a read-only borrow is `E10041`. The loan
-    /// request and the loan itself are recorded as events; whether the request
-    /// conflicts with a live loan is decided by the liveness post-pass.
+    /// A writable view derived from a read-only borrow is `E10041`. The loan's
+    /// id is interned from its origin, so a speculative pass and the reporting
+    /// pass agree on it and the loop fixpoint does not multiply ids once per
+    /// iteration. The loan request and the loan itself are recorded as events
+    /// only on the reporting pass; whether the request conflicts with a live
+    /// loan is decided by the liveness post-pass.
     fn record_view_loan(&mut self, owner: usize, kind: LoanKind, span: Span) -> Option<LoanId> {
-        // A speculative pass only computes flow state; allocating a loan there
-        // would make the loop fixpoint's loan sets grow without bound, so the
-        // loan is created once, on the reporting pass.
-        if !self.report_diagnostics {
-            return None;
-        }
-        let name = self.bindings[owner].name.clone();
-        if kind == LoanKind::Exclusive && self.is_readonly_borrow(owner) {
+        let loan = self.intern_loan(LoanOrigin::new(owner, kind, span));
+        if self.report_diagnostics && kind == LoanKind::Exclusive && self.is_readonly_borrow(owner) {
+            let name = self.bindings[owner].name.clone();
             self.error(
                 "E10041",
                 format!("cannot write through a view of read-only borrow '{name}'"),
@@ -296,9 +294,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return None;
         }
-        self.record_event(LoanEventKind::Request { owner, kind }, span);
-        let loan = self.alloc_loan();
-        self.record_event(LoanEventKind::Created { loan, owner, kind }, span);
+        if self.report_diagnostics {
+            self.record_event(LoanEventKind::Request { owner, kind }, span);
+            self.record_event(LoanEventKind::Created { loan, owner, kind }, span);
+        }
         Some(loan)
     }
 
@@ -519,15 +518,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A `for (borrow e in xs)` loop being broken writes its element back before
     /// the jump, so the last write through the element view is not lost.
     pub(super) fn check_break(&mut self, _span: Span) {
-        let state = self.state.clone();
-        let Some(frame) = self.exits.last_mut() else {
+        let Some(frame) = self.exits.last() else {
             return;
         };
         let break_block = frame.break_block;
         let floor = frame.scope_floor;
         let write = frame.for_in.clone();
-        frame.record_break(state);
         self.run_for_in_write(write);
+        // The defers the break runs are part of the edge state, so they run
+        // before the edge is recorded; otherwise a loan they create would be
+        // missing from the state that joins after the loop.
+        self.run_defers_from(floor + 1);
+        let state = self.state.clone();
+        if let Some(frame) = self.exits.last_mut() {
+            frame.record_break(state);
+        }
         self.emit_exit_cleanup(floor);
         self.terminate(Terminator::Goto(break_block));
     }

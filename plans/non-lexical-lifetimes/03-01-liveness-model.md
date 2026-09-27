@@ -21,7 +21,7 @@ thing only: **when a loan is live**.
 | ------- | ---------- |
 | **Position** | A point in one function's emitted CFG: a block and an ordinal inside that block's event sequence |
 | **Event** | One recorded fact at a position: a loan creation, a loan use, an owner access, a loan request, or an owner release |
-| **Loan** | One lend of an owner, identified by a `LoanId`; its kind is `Shared` or `Exclusive` (`compiler/src/borrow.rs:20-25`), and it carries the owner binding, a span, its creation position, and its use positions |
+| **Loan** | One lend of an owner, identified by a `LoanId` interned from its origin (owner, kind, and derivation source range); its kind is `Shared` or `Exclusive` (`compiler/src/borrow.rs:20-25`), and it carries the owner binding, a span, its creation position, and its use positions |
 | **Region** | The set of positions at which the loan is live |
 | **Use** | Any access through a view value that carries the loan (AR-6) |
 | **Owner release** | A position where an owner's storage stops existing: a scope exit, a return cleanup, or a `break`/`continue` cleanup |
@@ -84,6 +84,15 @@ after the join holds both loans and a use extends both regions. A binding that
 is rebound to a value that carries no loan (a literal, a global, or a fresh
 unowned value) carries none.
 
+A loan's id is **interned from its origin**, so it is the same id in every pass
+over the function. A speculative pass that computes a loop's head state before
+the reporting pass must therefore carry a loan created in the body with the same
+id the reporting pass will record at the creation. That stability is what
+extends a loan's region to a use at the loop head, in the loop condition, or in
+a `for` step, and what carries a loan created in a deferred block onto the flow
+after the scope. Interning also keeps the loop fixpoint finite: one id per
+derivation site, not one per iteration.
+
 ## Uses and accesses (AR-6)
 
 | Event | Recorded when | Consumed by |
@@ -111,6 +120,13 @@ release on the same edge. The rule covers every event kind, not only uses: an
 owner access, a loan creation, or a release inside a defer is placed the same
 way. For a straight-line defer this is exact; for one containing control flow
 it is conservative (the event may happen on only some paths).
+
+The defer's effect on bindings that outlive its scope is kept on the flow that
+leaves the scope, because the defer runs when the scope exits. A view rebound
+inside a defer therefore carries its loan after the scope, and a later use is
+checked against the owner's release exactly like any other loan. A `break` or
+`continue` runs the defers it triggers before its edge state is recorded, so a
+loan they create joins the state that follows the loop.
 
 ## Rules decided by regions
 
@@ -150,6 +166,10 @@ accepted stays accepted.
 | `while (...) { observe(v); s = stringOf("y"); }` | `E10031` | `E10031` — the next iteration's use is reachable through the back edge |
 | `let held: str; { let s = ...; held = s; observe(held); }` | `E10030` | accepted — every use precedes the release |
 | `let held: str; { let s = ...; held = s; } observe(held);` | `E10030` | `E10030` |
+| `while (...) { first(held); let s = ...; held = bytes(s); }` | `E10030` | `E10030` — the back-edge view is live at the head |
+| `while (first(held) ...) { let s = ...; held = bytes(s); }` | `E10030` | `E10030` — the condition is re-evaluated at the head |
+| `if (c) { let s = ...; defer { held = s; } } observe(held);` | `E10030` | `E10030` — the defer's rebind reaches after the scope |
+| `while (...) { let s = ...; defer { held = s; } break; } observe(held);` | `E10030` | `E10030` — the `break` runs the defer |
 
 ## What does not change
 
@@ -176,6 +196,6 @@ accepted stays accepted.
 
 ## Testing Requirements
 
-The specification test cases live in `07-testing-strategy.md` (ST-1 – ST-16);
+The specification test cases live in `07-testing-strategy.md` (ST-1 – ST-36);
 the implementation tests exercise the region rules directly and build and run
 the accepted programs.

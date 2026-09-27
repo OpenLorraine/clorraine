@@ -82,11 +82,13 @@ fn assert_accepts(tag: &str, source: &str) {
     );
 }
 
-/// Asserts that compiling one snippet reports each expected line exactly the
-/// given number of times, and fails with exit code 1.
+/// Asserts that compiling one snippet reports exactly the expected errors, each
+/// the given number of times, and fails with exit code 1.
 ///
 /// The exact count is the point: a loan conflict must be reported once even
-/// when several accesses are reachable from it.
+/// when several accesses are reachable from it. An error that is not in
+/// `expected` fails the case, so a fix cannot pass by adding an unrelated
+/// diagnostic. Warnings are not counted.
 fn assert_reports_counted(tag: &str, source: &str, expected: &[(&str, usize)]) {
     let run = run_source(tag, source);
     let stderr = String::from_utf8_lossy(&run.stderr);
@@ -97,6 +99,23 @@ fn assert_reports_counted(tag: &str, source: &str, expected: &[(&str, usize)]) {
             "{tag}: expected {count} occurrence(s) of `{line}`, saw {seen}; stderr:\n{stderr}"
         );
     }
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    let expected_total: usize = expected.iter().map(|(_, count)| count).sum();
+    for line in &errors {
+        assert!(
+            expected.iter().any(|(candidate, _)| candidate == line),
+            "{tag}: unexpected diagnostic `{line}`; stderr:\n{stderr}"
+        );
+    }
+    assert_eq!(
+        errors.len(),
+        expected_total,
+        "{tag}: expected {expected_total} error(s), saw {}; stderr:\n{stderr}",
+        errors.len()
+    );
     assert_eq!(run.status.code(), Some(1), "{tag}: failing compiles exit 1");
 }
 
@@ -843,6 +862,297 @@ func main(): i32 { demo(); return 0; }
 "#;
     assert_reports_counted(
         "for-in-local-escapes",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+// -- Back-edge and deferred loans ------------------------------------------
+
+/// `spec/16-borrow-rules.md` section 6: a view bound on the loop back edge is
+/// live at the head, so a use at the top of the body reads the storage freed at
+/// the end of the prior iteration and is E10030.
+#[test]
+fn should_report_e10030_when_a_back_edge_view_is_used_at_the_body_top() {
+    let source = r#"module tests.nll.back_edge_body_top;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let i: i32 = 0;
+    let held: u8[] = bytes(stringOf("z"));
+    while (i < 2) {
+        firstByte(held);
+        let s: String = stringOf("x");
+        held = bytes(s);
+        i = i + 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "back-edge-body-top",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the loop condition is evaluated at the
+/// head on every iteration, so a view bound on the back edge is live there and
+/// its use in the condition is E10030.
+#[test]
+fn should_report_e10030_when_a_back_edge_view_is_used_in_the_condition() {
+    let source = r#"module tests.nll.back_edge_condition;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let i: i32 = 0;
+    let held: u8[] = bytes(stringOf("z"));
+    while (i32(firstByte(held)) >= 0) {
+        let s: String = stringOf("x");
+        held = bytes(s);
+        i = i + 1;
+        if (i >= 2) {
+            break;
+        }
+    }
+    return i;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "back-edge-condition",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the `do`/`while` body top carries the
+/// same back-edge rule as the `while` body top.
+#[test]
+fn should_report_e10030_when_a_do_while_back_edge_view_is_used_at_the_body_top() {
+    let source = r#"module tests.nll.do_while_body_top;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let i: i32 = 0;
+    do {
+        firstByte(held);
+        let s: String = stringOf("x");
+        held = bytes(s);
+        i = i + 1;
+    } while (i < 2);
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "do-while-body-top",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the three-clause `for` body top carries
+/// the same back-edge rule.
+#[test]
+fn should_report_e10030_when_a_for_c_back_edge_view_is_used_at_the_body_top() {
+    let source = r#"module tests.nll.for_c_body_top;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    for (let i: i32 = 0; i < 2; i++) {
+        firstByte(held);
+        let s: String = stringOf("x");
+        held = bytes(s);
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "for-c-body-top",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: a three-clause `for` step runs after
+/// the body, so a view bound on the back edge is live there and its use in the
+/// step is E10030.
+#[test]
+fn should_report_e10030_when_a_back_edge_view_is_used_in_the_step() {
+    let source = r#"module tests.nll.back_edge_step;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let k: i32 = 0;
+    for (let i: i32 = 0; i < 2; k = k + i32(firstByte(held))) {
+        let s: String = stringOf("x");
+        held = bytes(s);
+    }
+    return k;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "back-edge-step",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/03-ownership.md`: a defer runs on the scope's exit edge and its rebind
+/// of an outer view is visible after the scope, so a later use of the view is
+/// E10030.
+#[test]
+fn should_report_e10030_when_a_defer_rebinds_an_outer_view_to_a_scope_owner() {
+    let source = r#"module tests.nll.defer_rebind_escapes;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(c: bool): void {
+    let held: str = "";
+    if (c) {
+        let s: String = stringOf("x");
+        defer {
+            held = s;
+        }
+    }
+    observeStr(held);
+}
+
+func main(): i32 { demo(true); return 0; }
+"#;
+    assert_reports_counted(
+        "defer-rebind-escapes",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/14-diagnostics.md` E10030: the owner name is still printed when the
+/// owner was declared inside a defer and that scope has already closed.
+#[test]
+fn should_name_a_defer_local_owner_in_e10030() {
+    let source = r#"module tests.nll.defer_local_owner_name;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let held: str = "";
+    defer {
+        let i: i32 = 0;
+        while (i < 1) {
+            let s: String = stringOf("x");
+            held = s;
+            i = i + 1;
+        }
+        observeStr(held);
+    }
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "defer-local-owner-name",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 7: an outer owner borrowed in a loop into
+/// a loop-local view whose only use is inside the loop is accepted; the move
+/// after the loop follows the loan's last use.
+#[test]
+fn should_accept_a_move_after_an_in_loop_borrow_whose_use_stays_in_the_loop() {
+    let source = r#"module tests.nll.in_loop_borrow_then_move;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+func sink(take s: String): void {}
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let i: i32 = 0;
+    while (i < 2) {
+        let v: str = s;
+        observeStr(v);
+        i = i + 1;
+    }
+    sink(s);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_accepts("in-loop-borrow-then-move", source);
+}
+
+/// `spec/03-ownership.md`: a defer runs on the `break` edge too, so a view it
+/// rebinds there still escorts the owner's release; a later use is E10030.
+#[test]
+fn should_report_e10030_when_a_break_edge_defers_a_rebind() {
+    let source = r#"module tests.nll.break_defer_rebind;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let held: str = "";
+    let i: i32 = 0;
+    while (i < 1) {
+        let s: String = stringOf("x");
+        defer {
+            held = s;
+        }
+        break;
+    }
+    observeStr(held);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "break-defer-rebind",
         source,
         &[("error E10030: borrow of 's' does not live long enough", 1)],
     );

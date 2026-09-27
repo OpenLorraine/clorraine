@@ -24,6 +24,38 @@ use crate::span::Span;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LoanId(pub(super) usize);
 
+/// What makes a loan's identity stable across every pass over a function.
+///
+/// A loan is created by one source derivation, so its owner, permission, and
+/// source range are the same in a speculative pass and on the reporting pass.
+/// Keying by that origin means a loan created inside a loop body or a deferred
+/// block keeps one id everywhere it is seen, which is what lets a use recorded
+/// at the loop head, in the loop condition, or after the owner's scope resolve
+/// to the loan the reporting pass created.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct LoanOrigin {
+    /// Index of the binding that owns the storage.
+    pub(super) owner: usize,
+    /// The permission the loan grants.
+    pub(super) kind: LoanKind,
+    /// Start byte offset of the derivation that created the loan.
+    pub(super) start: u32,
+    /// End byte offset of the derivation that created the loan.
+    pub(super) end: u32,
+}
+
+impl LoanOrigin {
+    /// The origin of a loan created by a derivation at `span`.
+    pub(super) fn new(owner: usize, kind: LoanKind, span: Span) -> Self {
+        Self {
+            owner,
+            kind,
+            start: span.start,
+            end: span.end,
+        }
+    }
+}
+
 /// A point in the finished function's event sequence.
 ///
 /// A position is a block and an ordinal inside that block's recorded events.
@@ -133,7 +165,7 @@ fn terminator_successors(terminator: &Terminator) -> Vec<BlockId> {
 pub(super) fn check(
     function: &ir::Function,
     events: &[LoanEvent],
-    names: &[String],
+    names: &BTreeMap<usize, String>,
     diagnostics: &mut Diagnostics,
 ) {
     if events.is_empty() {
@@ -236,7 +268,7 @@ impl Analysis {
         &self,
         events: &[LoanEvent],
         live: &BTreeMap<LoanId, BTreeSet<Position>>,
-        names: &[String],
+        names: &BTreeMap<usize, String>,
         diagnostics: &mut Diagnostics,
     ) {
         for event in events {
@@ -522,9 +554,9 @@ fn closure_avoiding(
 }
 
 /// The written name of a binding, for a diagnostic message.
-fn display(owner: usize, names: &[String]) -> String {
+fn display(owner: usize, names: &BTreeMap<usize, String>) -> String {
     names
-        .get(owner)
+        .get(&owner)
         .cloned()
         .unwrap_or_else(|| String::from("?"))
 }

@@ -12,7 +12,7 @@
 use crate::types::{Ty, TyKind};
 
 /// The permission a loan grants.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LoanKind {
     /// Many readers, no writer.
     Shared,

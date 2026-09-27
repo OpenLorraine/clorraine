@@ -153,3 +153,31 @@ events keep the order the block records them, and the edge's owner releases are
 recorded after them, so a view used and then released in one straight-line defer
 is accepted (ST-21). The defer id and the re-anchoring step are removed from the
 module.
+
+### Final-review follow-up (FR-001, FR-002, FM-001)
+
+The out-of-cycle final review of `77f59e1f..b961900` found the RR-001 fix
+incomplete: a loan's id was allocation-ordered, so a speculative pass could not
+carry a body-created loan and the loop **entry** (body top, condition, `for`
+step) recorded no use (FR-001); and a deferred block's flow effects were
+discarded, so a view it rebound to a scope-local owner kept no loan after the
+scope (FR-002). Both were ASan-confirmed use-after-frees the pre-change compiler
+rejected.
+
+The fix, under AR-24 and AR-26:
+
+* A loan's id is **interned from its origin** (owner, kind, and the derivation's
+  source range), so every pass over the derivation agrees on it. The speculative
+  loop fixpoint now populates the flow-state loans — one id per derivation site,
+  so it stays finite — and a loan created in the loop body is carried at the
+  head, in the condition, and after the loop. The exit-only `carry_loans` union
+  is removed.
+* A deferred block's effect on bindings that outlive its scope is kept; only the
+  graph, the binding table, and the scope stack roll back. A `break` or
+  `continue` runs the defers it triggers before its edge state is recorded.
+* The name table is persistent across a deferred block's truncation, so an
+  `E10030` about a defer-local owner names it instead of printing `?` (FM-001).
+
+ST-28 – ST-36 pin the four loop kinds, the condition and step uses, the defer
+rebind, the `break` defer, and the owner name. `carry_loans` was confirmed not to
+over-reject (a 20,000-program differential and every tracked `.clo` file).
