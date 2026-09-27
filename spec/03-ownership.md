@@ -225,8 +225,8 @@ Passing an uninitialized slot to a `borrow T?` out-parameter is E10021.
 
 ## 7. Borrows of owned values
 
-This section summarizes the borrow contract for owners. The checker and its v1
-lexical model are specified in [Ch 16](16-borrow-rules.md); borrows never
+This section summarizes the borrow contract for owners. The checker and its
+borrow model are specified in [Ch 16](16-borrow-rules.md); borrows never
 release a value and never change ownership.
 
 | Rule | Diagnostic |

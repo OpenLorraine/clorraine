@@ -94,14 +94,12 @@ func greeting(): static str { return "hello"; }
 `Box<T>` with generated drop glue is a v1.1 design item (X1, F4); until then
 recursive structures use raw pointers and explicit release.
 
-## 6. Borrow checking: target and v1
+## 6. Borrow checking: target and v2
 
-The target model is NLL (O11). **v1 implements a conservative lexical
-approximation**: a borrow lives to the end of its scope and the checker rejects
-some programs Rust would accept. The approximation never accepts a program
-that NLL would reject. The Rust parallel is pre-2018 borrow checking, and the
-upgrade path does not change the source-level contract, so no syntax is frozen
-around the v1 weakness.
+The checker computes last-use regions (O11): a borrow lives until its last use
+on any path, at the language's whole-owner loan granularity. It accepts the
+programs the earlier lexical approximation rejected, and the source-level
+contract did not change, so no syntax is frozen around the old weakness.
 
 Reborrows are implicit at call sites in both languages; Clorraine spells
 nothing extra (O12). Raw pointers are far simpler than Rust's: `raw T` with a
@@ -166,10 +164,9 @@ safety, 512K-2MB machines, and profile-defined targets.
 | C++ lowering (RAII, smart pointers) | static, destructors | C++ toolchain | vbcc is C-only; GCC C++ is heavier |
 | Direct 68k backend (no C) | static | native code | loses C interop, debuggers, and both existing backends |
 
-Known v1 seams, to be validated before the checker is built: the conservative
-pre-NLL approximation (section 6), the copy-on-lend rule for duplicable values
-(D9, V9), and view elision without annotations (section 4). Validation is a
-small, hand-checked corpus: a file copier, an interrupt-driven counter, a
-string/parser workload, and a buffer/container workload. Repeated V9 or
-pre-NLL rejections in those programs are grounds to amend the rule, not to
-reopen the model.
+Known v1 seams, to be validated before the checker is built: the copy-on-lend
+rule for duplicable values (D9, V9) and view elision without annotations
+(section 4). Validation is a small, hand-checked corpus: a file copier, an
+interrupt-driven counter, a string/parser workload, and a buffer/container
+workload. Repeated V9 rejections in those programs are grounds to amend the
+rule, not to reopen the model.

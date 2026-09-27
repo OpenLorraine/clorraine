@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 09:04
-> **Progress**: 2/22 tasks (9%)
+> **Last Updated**: 2026-09-27 09:06
+> **Progress**: 5/22 tasks (23%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -75,9 +75,9 @@ bounded by the task-size criteria in the make-plan quality checklist)
 **Reference**: [03-03-spec-amendment.md](03-03-spec-amendment.md) · AR-2, AR-11
 **Objective**: Make the frozen chapters describe v2 and keep every golden presenting a still-rejected shape.
 
-- [ ] 1.2.1 Apply the chapter edits of 03-03 — `spec/16-borrow-rules.md`, `spec/lineage.md`, `spec/decisions.md`, `spec/03-ownership.md`
-- [ ] 1.2.2 Rewrite the flipping golden per 03-03 — `spec/tests/compile-fail/E10031_view_widening_mutation.clo`
-- [ ] 1.2.3 Run the spec oracle and the compile-fail suite for the rewritten golden, and confirm the amended chapters pass while the golden still reports `E10031`
+- [x] 1.2.1 Apply the chapter edits of 03-03 — `spec/16-borrow-rules.md`, `spec/lineage.md`, `spec/decisions.md`, `spec/03-ownership.md` ✅ (completed: 2026-09-27 09:06) — plus two mechanical coherence fixes the exact-edit set missed: the lineage §6 heading ("target and v2") and the now-dangling "pre-NLL" trigger in the lineage §10 validation sentence.
+- [x] 1.2.2 Rewrite the flipping golden per 03-03 — `spec/tests/compile-fail/E10031_view_widening_mutation.clo` ✅ (completed: 2026-09-27 09:06) — added `observe(v)` after the mutation so the program still reports `E10031`.
+- [x] 1.2.3 Run the spec oracle and the compile-fail suite for the rewritten golden, and confirm the amended chapters pass while the golden still reports `E10031` ✅ (completed: 2026-09-27 09:06) — `spec/check.sh`: OK (27 files, 104 compile-fail tests); `cargo test --test compile_fail_spec_test`: 3 passed, including the rewritten golden.
 
 **Deliverables**:
 - The frozen spec describes last-use regions; no other golden changed

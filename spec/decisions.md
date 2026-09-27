@@ -86,7 +86,7 @@ through the cleanup ladder.
 | O8 | **Field borrows are allowed** and tracked conservatively as whole-struct loans (read-only field lend = shared loan; `borrow` field lend = exclusive loan). Nested reads and lends are allowed; nested moves are deferred |
 | O9 | **No local view expressions.** Bindings hold values; views arrive from parameters and view-typed returns (`let part = head(buf, 8);`) |
 | O10 | Globals must be duplicable (`copy`) or `const`; `own` globals are banned (no exit drops). Mutable global state is allowed with constant or runtime initializers (section 13) |
-| O11 | Borrow rules: many readers XOR one writer; borrows never outlive owners; borrows escape only when parameter-derived; v1 is lexical, non-lexical checking comes later |
+| O11 | Borrow rules: many readers XOR one writer; borrows never outlive owners; borrows escape only when parameter-derived; the checker computes non-lexical last-use regions (RFC 2094) |
 | O12 | **Reborrowing views**: a read-only view derived from a borrow is a shared reborrow; a writable view derived from a writable borrow is an exclusive reborrow limited to the expression. This makes `borrow bufferBytes(buf)` valid when `buf` is itself a parameter |
 
 ## 6. Types

@@ -19,8 +19,8 @@ The checker reasons over a small, explicit model.
 |---|---|
 | **Place** | A memory location: a local, a parameter, a struct field, an array element, or a temporary |
 | **Loan** | A permission to access a place, created by a lend: a read-only lend parameter, a `borrow` parameter, a view derivation, or a reborrow |
-| **Origin** | The region in which a loan is valid; v1 origins are lexical scopes, while the NLL target uses last-use regions |
-| **Live** | A loan is live from its creation until its last use inside its origin; v1 approximates this as "until the end of the origin's scope" |
+| **Origin** | The region in which a loan is valid: from its creation to its last use on any path (a last-use region, RFC 2094) |
+| **Live** | A loan is live at a point when one of its uses is reachable from that point and its creation precedes it |
 | **Access** | A read, a write, a move, or another loan of a place |
 | **Conflict** | Two accesses at one point that the kind of a live loan forbids |
 
@@ -51,8 +51,8 @@ must write is a reborrow (section 3).
 **Implicit `String` -> `str` widening is a loan.** Turning a `String` into a
 `str` implicitly — for example when passing it to a `str` parameter, returning
 it from a `str`-returning helper, or binding a local `str` view — creates a
-shared loan of that `String`. The loan is live until the end of the derived
-view's origin. Mutating, moving, or reallocating the `String` while the view is
+shared loan of that `String`. The loan ends at the last use of the derived view
+or any alias of it. Mutating, moving, or reallocating the `String` while the view is
 live is E10031 (mutation while a shared loan is live) or E10022 (move while a
 loan is live).
 
@@ -218,10 +218,11 @@ section 2, not on the syntax tree. The IR is built from `assign`, `move`,
 1. **Lower to CFG.** Each function becomes basic blocks of IR statements.
 2. **Collect loans.** Every lend parameter, view derivation, reborrow, and
    call-site marker yields a loan record `(place, kind, origin)`.
-3. **Liveness.** Backward dataflow computes the loans live at every point. v1
-   approximates liveness as "from creation to the end of the lexical origin";
-   the NLL target computes last use instead. Definite assignment is tracked
-   alongside, so an uninitialized place is never lent (E10021).
+3. **Liveness.** Backward dataflow computes, for every loan, the positions from
+   which one of its uses is reachable. A loan is live at a position when its
+   creation precedes the position and a use is still reachable. Definite
+   assignment is tracked alongside, so an uninitialized place is never lent
+   (E10021).
 4. **Constraints.** Origin containment (`origin(loan)` within
    `origin(owner)`) and the call constraints for lend parameters.
 5. **Conflicts.** At every access, check consistency with the live loans using
@@ -234,11 +235,13 @@ section 2, not on the syntax tree. The IR is built from `assign`, `move`,
    the static check behind the cleanup ladder of [Ch 17](17-codegen.md)
    section 4.
 
-**v1 is a conservative lexical approximation.** It uses lexical origins, the
-simplest sound model, and rejects programs the later checker will accept. The
-approximation never accepts a program that NLL (RFC 2094) would reject, and it
-never changes the source-level contract: a program that compiles under v1
-keeps compiling when the checker gains precision (lineage section 6).
+**v2 computes last-use regions.** A loan is live until its last use on any
+path, so the checker accepts the "unused later" cases the lexical
+approximation rejected. Loan granularity remains whole-owner (O8), and a
+`defer` containing control flow is analyzed conservatively, so precision is
+bounded by those rules rather than by a lexical origin. The source-level
+contract does not change: every program the earlier lexical checker accepted
+stays accepted (lineage section 6).
 
 ## 7. Accepted and rejected examples
 
@@ -250,22 +253,30 @@ keeps compiling when the checker gains precision (lineage section 6).
 | Move an owner while a loan of it is live | rejected (E10022) |
 | Return a view of a local owner | rejected (E10035) |
 | Reborrow through a `borrow` parameter while calling a function | accepted (O12) |
-| An exclusive loan while a shared loan is live, even if unused later | rejected in v1 (E10032); accepted by v2 NLL |
+| An exclusive loan while a shared loan is live, even if unused later | accepted — the shared loan's last use ends its region |
 | Writable lend of a duplicable value | warning (W10001) |
 
 ```clorraine
 import { String, stringOf, bytes } from std.text;
 
+func observe(view: u8[]): void {
+}
+
 func sink(take s: String): void {
 }
 
-func demo(): void {
+func rejected(): void {
     let s = stringOf("hello");
-    let view = bytes(s);            // a live shared loan of s
-    if (len(view) == 0) {
-        return;
-    }
-    sink(s);                        // E10022: cannot move s while the loan is live
+    let view = bytes(s);            // a shared loan of s
+    sink(s);                        // E10022: observe(view) still uses the loan
+    observe(view);
+}
+
+func accepted(): void {
+    let s = stringOf("hello");
+    let view = bytes(s);            // a shared loan of s
+    observe(view);                  // the loan's last use
+    sink(s);                        // accepted: the loan ended at observe(view)
 }
 ```
 
@@ -293,8 +304,8 @@ func demo(): i32 {
 ```
 
 The "unused later" row is the well-known lexical-versus-non-lexical gap. v1
-keeps the loan live to the end of the origin and rejects the program; v2
-relaxes this by computing actual last uses (section 8).
+kept the loan live to the end of the origin and rejected the program; v2 ends
+it at its last use (section 8).
 
 ## 8. Relationship to Rust's checker
 
@@ -303,11 +314,11 @@ model, minus the features Clorraine does not have: no reference counting, no
 interior mutability, no threads, and no `Send`/`Sync` (D6, D7, C1). The plan is
 staged:
 
-| Phase | Model |
-|---|---|
-| v1 | Lexical origins; the conservative approximation in this chapter |
-| v2 | Non-lexical lifetimes: last-use regions and full NLL (RFC 2094) |
-| v3 | A Polonius-style alias-based formulation if the NLL implementation needs it |
+| Phase | Model | Status |
+|---|---|---|
+| v1 | Lexical origins; the conservative approximation in this chapter | superseded |
+| v2 | Non-lexical lifetimes: last-use regions and full NLL (RFC 2094) | implemented |
+| v3 | A Polonius-style alias-based formulation if the NLL implementation needs it | future |
 
 Each phase is internal. The source contract of [Ch 03](03-ownership.md) does
 not change, so no syntax is frozen around the v1 weakness.
@@ -330,7 +341,6 @@ not change, so no syntax is frozen around the v1 weakness.
 
 | Feature | Reason |
 |---|---|
-| Non-lexical lifetimes | v2, the target model (lineage section 6) |
 | Struct lifetime parameters and view fields | `static str` fields only; other view fields are E10205 ([Ch 07](07-structs.md)) |
 | Interior mutability | Not in the core language (D6) |
 | `Send`/`Sync`-style task safety | Single-threaded language; OS tasking crosses through FFI (C1, D7) |
