@@ -1839,3 +1839,133 @@ func main(): i32 { return demo(); }
 "#;
     assert_accepts("defer-owned-temp", source);
 }
+
+// -- Condition effects reach the loop exit ---------------------------------
+
+/// `spec/16-borrow-rules.md` section 7: a move the `while` condition makes
+/// reaches the code after the loop on the false path, so reusing the owner is
+/// `E10020`.
+#[test]
+fn should_report_e10020_when_a_while_condition_moves_the_owner() {
+    let source = r#"module tests.nll.while_condition_move;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func consume(take s: String): bool {
+    return false;
+}
+
+func demo(): i32 {
+    let s: String = stringOf("x");
+    while (consume(s)) {
+    }
+    let v: u8[] = bytes(s);
+    return i32(firstByte(v));
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "while-condition-move",
+        source,
+        &[("error E10020: 's' was moved and cannot be used", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 7: a move the `do`/`while` condition makes
+/// reaches the code after the loop even when the body always `continue`s.
+#[test]
+fn should_report_e10020_when_a_do_while_continue_body_moves_in_the_condition() {
+    let source = r#"module tests.nll.do_while_condition_move;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func consume(take s: String): bool {
+    return false;
+}
+
+func demo(): i32 {
+    let s: String = stringOf("x");
+    do {
+        continue;
+    } while (consume(s));
+    let v: u8[] = bytes(s);
+    return i32(firstByte(v));
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "do-while-condition-move",
+        source,
+        &[("error E10020: 's' was moved and cannot be used", 1)],
+    );
+}
+
+/// `spec/14-diagnostics.md` E10021: a temporary a deferred block materialized
+/// does not leak its binding state into the local that reuses the id, so an
+/// uninitialized use is still reported.
+#[test]
+fn should_report_e10021_when_a_later_local_reuses_a_defer_temporary_id() {
+    let source = r#"module tests.nll.defer_temp_state;
+
+import { String, stringOf, bytes } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(c: bool): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    {
+        defer {
+            observeStr(stringOf("q"));
+        }
+    }
+    let x: String;
+    if (c) {
+        x = stringOf("w");
+    }
+    observeStr(x);
+    return 0;
+}
+
+func main(): i32 { return demo(false); }
+"#;
+    assert_reports_counted(
+        "defer-temp-state",
+        source,
+        &[("error E10021: 'x' may be used before it is initialized", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 7: a view used in the `for` step on every
+/// iteration is accepted when the owner is moved only after the loop, so the
+/// step join does not over-reject.
+#[test]
+fn should_accept_a_for_step_view_use_before_the_owners_move() {
+    let source = r#"module tests.nll.for_step_view_use;
+
+import { String, stringOf, bytes } from std.text;
+
+func observe(v: u8[]): void {}
+func sink(take s: String): void {}
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let v: u8[] = bytes(s);
+    for (let i: i32 = 0; i < 2; observe(v), i++) {
+    }
+    sink(s);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_accepts("for-step-view-use", source);
+}

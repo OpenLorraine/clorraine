@@ -93,6 +93,10 @@ func viewOf(s: str): str { return s; }
 | ST-54 | a `do { … continue; } while (i < 1);` with the owner used after the loop | rejected — `E10030`: the exit joins the continue edges | AR-24 |
 | ST-55 | `while (true) { if (c) { …; break; } break; }` with the view used after | rejected — `E10030`: the break-only exit joins every break | AR-24 |
 | ST-56 | a `defer` whose body owns a temporary | accepted — the checker must not panic | AR-26 |
+| ST-57 | `while (consume(s)) {} bytes(s);` (a `take` condition) | rejected — `E10020`: the condition's move reaches the exit | AR-24 (condition effect at the exit) |
+| ST-58 | `do { continue; } while (consume(s)); bytes(s);` | rejected — `E10020` | AR-24 |
+| ST-59 | a defer-materialized temporary followed by an uninitialized local | rejected — `E10021`: the temporary's state does not leak into the reused id | AR-26 |
+| ST-60 | `for (…; observe(v), i++) {} sink(s);` | accepted — the step view use precedes the move | AR-24 (accepted mirror) |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -118,7 +122,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-56 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-60 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact

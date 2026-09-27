@@ -125,6 +125,17 @@ impl FlowState {
     pub(super) fn place(&self, id: usize) -> PlaceState {
         self.places.get(&id).cloned().unwrap_or_default()
     }
+
+    /// Removes the place and loan state of every binding at or above `floor`.
+    ///
+    /// A speculative pass or a deferred check may materialize a compiler-owned
+    /// temporary with an id above the bindings the caller saved. Its binding is
+    /// truncated from the binding table, so its state must not linger and be
+    /// inherited by a later local that reuses the id.
+    pub(super) fn drop_bindings_from(&mut self, floor: usize) {
+        self.places.retain(|id, _| *id < floor);
+        self.loans.retain(|id, _| *id < floor);
+    }
 }
 
 /// The target of an assignment or a move.

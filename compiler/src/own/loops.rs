@@ -43,6 +43,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.switch_to(head);
         self.eval(&decl.condition);
         let condition = self.lower_value(&decl.condition);
+        // The condition may move an owner, so the state after evaluating it is
+        // the exit state on the false path, not the head state.
+        let condition_state = self.state.clone();
         let shape = self.loop_shape(LoopKind::While, body_block, exit, head);
         self.terminate(Terminator::Branch {
             condition,
@@ -61,7 +64,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let frame = self.exits.pop().expect("loop frame");
         let always_true = condition_is_true(&decl.condition);
-        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
+        self.state = loop_exit_state(condition_state, post, body_terminated, always_true, &frame);
         self.switch_to(exit);
     }
 
@@ -74,7 +77,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
         let pre = self.state.clone();
         let floor = self.scopes.len();
-        let (entry, post) = self.loop_entry_state(pre, Some(condition_block), |checker| {
+        let (entry, _post) = self.loop_entry_state(pre, Some(condition_block), |checker| {
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -122,10 +125,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             shape,
         });
         let frame = self.exits.pop().expect("loop frame");
-        let mut condition_state = post;
-        if let Some(state) = self.continue_states.get(&condition_block).cloned() {
-            condition_state = Self::merge(condition_state, state);
-        }
+        // The condition may move an owner, so the state after evaluating it is
+        // the exit state on the false path.
+        let condition_state = self.state.clone();
         self.state = join_breaks(condition_state, &frame);
         self.switch_to(exit);
     }
@@ -205,6 +207,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(condition) => self.lower_value(condition),
             None => Value::bool(Ty::boolean(), true),
         };
+        // The condition may move an owner, so the state after evaluating it is
+        // the exit state on the false path, not the head state.
+        let condition_state = self.state.clone();
         let condition_ok = !self.block_has_statements(head);
         self.terminate(Terminator::Branch {
             condition,
@@ -250,7 +255,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .condition
             .as_ref()
             .map_or(true, condition_is_true);
-        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
+        self.state = loop_exit_state(condition_state, post, body_terminated, always_true, &frame);
         self.switch_to(exit);
         self.pop_scope();
     }
@@ -574,15 +579,17 @@ fn condition_is_true(condition: &Expr) -> bool {
 
 /// The state that reaches the code after a loop.
 ///
-/// Normally the exit joins the loop-entry state with every `break` edge,
-/// because the condition may be false before the body runs. When the body
-/// always terminates and the condition is the literal `true`, the loop cannot
-/// leave through its condition, so the only reachable exits are the `break`
-/// edges; their join is used directly, because the last body path is not the
-/// state of every break. `post` is unused in that case and kept out so a
-/// break-only path cannot hide another break path's moves or loans.
+/// `condition_exit` is the state after the condition was evaluated at the head:
+/// it is what reaches the code after the loop when the condition is false,
+/// including any move the condition made. The exit joins that state with every
+/// `break` edge. When the body always terminates and the condition is the
+/// literal `true`, the loop cannot leave through its condition, so the only
+/// reachable exits are the `break` edges; their join is used directly, because
+/// the last body path is not the state of every break. `post` is unused in that
+/// case and kept out so a break-only path cannot hide another break path's
+/// moves or loans.
 fn loop_exit_state(
-    entry: FlowState,
+    condition_exit: FlowState,
     _post: FlowState,
     body_terminated: bool,
     condition_always_true: bool,
@@ -592,9 +599,9 @@ fn loop_exit_state(
         if frame.saw_break {
             frame.break_state.clone()
         } else {
-            entry
+            condition_exit
         }
     } else {
-        join_breaks(entry, frame)
+        join_breaks(condition_exit, frame)
     }
 }

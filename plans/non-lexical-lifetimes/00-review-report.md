@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 18:25
+> **Last Updated**: 2026-09-27 18:51
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -165,7 +165,20 @@ tests (ST-44 is the accepted mirror). They also found:
 | F6 | 🟠 MAJOR | A defer whose body owns a temporary (e.g. `println($"…")`) panics the compiler: the temp binding is moved to scope 0 and a later cleanup indexes a truncated binding table. Pre-existing. | **Fixed**: `loop_entry_state` and `check_defer_exit` clone and restore the whole scope stack; ST-56. |
 | F7 | 🟠 MAJOR | Owned locals declared inside a defer are accepted but emit undeclared C identifiers (the known defer-local codegen gap). Pre-existing. | Open (Phase 3 / separate). |
 
-Gate status: FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, and F1 – F4/F6
-are fixed and verified by `make check` (56 spec tests). A fresh independent
-review of the F1 – F4/F6 fix is required before the gate closes; F7 (defer-local
-owned `let` emits invalid C) remains open for Phase 3.
+### Fresh review of the F1 – F4/F6 fix (4b440e0..159bfb9)
+
+Both reviewers verified F1 – F4 and F6 fixed (ST-51 – ST-56 red at `4b440e0`,
+green at HEAD with exact counts), no new false accept, no new over-rejection,
+and the fixpoint terminating (a 22k-file differential converged). They found
+three residual state-join defects, which were fixed after the ruling:
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| F8 | 🔴 CRITICAL | The `while`/`for` exit used the head state, so a move the condition made (`while (consume(s))`) never reached the code after the loop (ASan-confirmed use of a freed handle). | **Fixed**: the condition-false exit is the state after the condition was evaluated; ST-57. |
+| F9 | 🔴 CRITICAL | The `do`/`while` exit used the speculative body state, which skipped the condition for an always-continuing body, so the condition's move was lost (ASan-confirmed). | **Fixed**: the exit is the real condition-effect state; ST-58. |
+| F10 | 🟠 MAJOR | A temporary a deferred block materialized left its state behind when the binding table was truncated, so the next local reusing the id was treated as initialized (accepted use-before-init). | **Fixed**: `FlowState::drop_bindings_from` scrubs the truncated ids in `check_defer_exit` and the speculative loop state; ST-59. |
+
+Also added ST-60 as the accepted mirror for the new joins. Gate status:
+FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, F1 – F4, F6, F8 – F10 are
+fixed and verified by `make check` (60 spec tests). F7 (defer-local owned `let`
+emits invalid C) and the defer-temporary runtime leak remain open for Phase 3.

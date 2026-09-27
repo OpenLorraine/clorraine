@@ -213,3 +213,10 @@ so a loan on another path was missed (ASan-confirmed). All four now join their
 edges, and a compiler-owned temporary inside a body or a deferred block no
 longer leaves a stale binding index (F6). ST-51 – ST-56 pin them; the mirror
 accepted shapes (ST-44, ST-48 – ST-50) stay accepted.
+
+The review of that fix then found the condition's own effect was still missing
+at the exit (F8: `while`/`for` used the head state; F9: `do`/`while` used the
+speculative body state), and that a defer-materialized temporary's state leaked
+into a later local that reused its id (F10). The condition-false exit is now the
+state after the condition was evaluated, and the state of truncated bindings is
+scrubbed; ST-57 – ST-60 pin them.

@@ -479,6 +479,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes = saved_scopes;
         self.defer_entries.truncate(saved_defers);
         self.temps.truncate(saved_temps);
+        // A temporary the deferred block materialized is no longer a binding,
+        // so its state must not be inherited by a later local that reuses the
+        // id.
+        self.state.drop_bindings_from(saved_bindings);
     }
 
     /// Repeats `run_body` in a speculative pass until the loop state stops
@@ -551,6 +555,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.exits.truncate(saved_exits);
         self.temps.truncate(saved_temps);
         self.report_diagnostics = saved_report;
+        let mut entry = entry;
+        let mut stable_post = stable_post;
+        entry.drop_bindings_from(saved_bindings);
+        stable_post.drop_bindings_from(saved_bindings);
         (entry, stable_post)
     }
 

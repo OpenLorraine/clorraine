@@ -103,7 +103,9 @@ checked with the join of both before its own effect feeds the head; a
 `do`/`while` condition and exit join the continue edges the same way. A loop
 that cannot leave through its condition (a literal-`true` condition with an
 always-terminating body) joins every `break` edge at the exit, never a single
-path.
+path. The exit on the condition-false path is the state **after the condition
+was evaluated**, so a move the condition makes (a `take` call, for example) is
+visible in the code after the loop.
 
 ## Uses and accesses (AR-6)
 
