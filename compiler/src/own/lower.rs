@@ -288,7 +288,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow => {
                     self.bindings[id].used = true;
-                    if let Some(loan) = self.bindings[id].loan {
+                    for loan in self.binding_loans(id) {
                         self.record_event(LoanEventKind::Used { loan }, span);
                     }
                     captures.push(Value::new(
@@ -339,9 +339,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_exits = std::mem::take(&mut self.exits);
         let saved_defers = std::mem::take(&mut self.defer_entries);
         let saved_events = std::mem::take(&mut self.events);
+        let saved_ordinals = std::mem::take(&mut self.next_ordinal);
         let saved_next_loan = self.next_loan;
-        let saved_next_defer = self.next_defer;
-        let saved_defer = self.current_defer;
+        let saved_defer = self.defer_anchor;
         let saved_registration = self.next_registration;
         let saved_owned_temp = self.next_owned_temp;
         let saved_returns = self.returns.clone();
@@ -349,8 +349,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.next_registration = 0;
         self.next_owned_temp = 0;
         self.next_loan = 0;
-        self.next_defer = 0;
-        self.current_defer = None;
+        self.defer_anchor = None;
         self.returns = ret.clone();
 
         let body_span = match body {
@@ -407,9 +406,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.exits = saved_exits;
         self.defer_entries = saved_defers;
         self.events = saved_events;
+        self.next_ordinal = saved_ordinals;
         self.next_loan = saved_next_loan;
-        self.next_defer = saved_next_defer;
-        self.current_defer = saved_defer;
+        self.defer_anchor = saved_defer;
         self.next_registration = saved_registration;
         self.next_owned_temp = saved_owned_temp;
         self.returns = saved_returns;
@@ -474,7 +473,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 needs_drop: false,
                 registration,
                 provenance: Provenance::None,
-                loan: None,
                 base: Some(base),
             });
             if let Some(scope) = self.scopes.last_mut() {

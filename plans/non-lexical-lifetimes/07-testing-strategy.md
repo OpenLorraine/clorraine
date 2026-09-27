@@ -53,6 +53,11 @@ func viewOf(s: str): str { return s; }
 | ST-14 | `s = stringOf("x"); v: str = s; s = stringOf(v);` | accepted — the right-hand side reads `v` before the store; evaluation order decides | AR-7 |
 | ST-15 | `s = stringOf("x"); v: str = s; s = stringOf(v); observeStr(v);` | rejected — `E10031`: the use is ordered after the store | AR-7 |
 | ST-16 | `s = stringOf("x"); v: str = s; defer { observeStr(v); }` | accepted — the defer runs on the scope's exit edge before the owner's release | AR-6, AR-8 |
+| ST-17 | `s = ...; t = ...; v = bytes(s); if (c) { v = bytes(t); } sink(s); observe(v);` | rejected — exactly one `E10022`: the view still aliases `s` on the other path | AR-5 (join carries both loans) |
+| ST-18 | the mirror of ST-17 with the rebind on the `else` branch | rejected — exactly one `E10022` | AR-5 |
+| ST-19 | `s = ...; t = ...; a: str = s; if (c) { a = t; } s = stringOf("z"); observeStr(a);` | rejected — exactly one `E10031` | AR-5 |
+| ST-20 | `i = 0; while (i < 2) { let s = ...; let v: str = s; observeStr(v); i = i + 1; }` | accepted — the next iteration's use is reached from a fresh creation before the release | AR-8 (release-free reachability) |
+| ST-21 | `defer { let s = ...; let v: str = s; observeStr(v); }` | accepted — the defer's own use precedes its owner's release on the same edge | AR-6, AR-8 |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -78,7 +83,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-16 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-21 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact
@@ -92,7 +97,7 @@ code vector (reject cases), like `compiler/tests/stage_spec_test.rs` and
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| `compiler/src/own/liveness.rs` (unit tests) | region shapes on hand-built events and small CFGs: no use ⇒ empty region; a use on one branch only; a use after the conflict; a loop back edge; alias sharing; release reachability; report-once; deferred-event re-anchoring (an owner access inside a defer evaluates at the defer's exit edges) | High |
+| `compiler/src/own/liveness.rs` (unit tests) | region shapes on hand-built events and small CFGs: no use ⇒ empty region; a use on one branch only; a use after the conflict; a loop back edge; alias sharing; release-free reachability (a loop-local owner stays accepted); report-once; a deferred block's events stay ordered on its exit edge | High |
 | `compiler/tests/non_lexical_lifetimes_impl_test.rs` | accepted ST-1 and ST-10 programs build and run (elements freed once); a conflict is reported exactly once; the diagnostics of one program are identical across two runs | High |
 
 ### Integration Tests

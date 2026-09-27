@@ -17,7 +17,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// stay usable.
     pub(super) fn read_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
         self.bindings[id].used = true;
-        if let Some(loan) = self.bindings[id].loan {
+        for loan in self.binding_loans(id) {
             self.record_event(LoanEventKind::Used { loan }, span);
         }
         let state = self.state.place(id);
@@ -116,13 +116,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
-        // A write through a view is a use of the loan the view carries; a whole
-        // write of the view binding is a rebind, so `bind_value` updates its
-        // loan instead. A write to an owner that carries no loan is an owner
+        // A write through a view is a use of every loan the view carries; a
+        // whole write of the view binding is a rebind, so `bind_value` updates
+        // its loans instead. A write to a value that is not a view is an owner
         // access, decided against the loan regions in the post-pass.
-        if let Some(loan) = self.bindings[id].loan {
+        if is_view(&self.bindings[id].ty) {
             if !projections.is_empty() {
-                self.record_event(LoanEventKind::Used { loan }, span);
+                for loan in self.binding_loans(id) {
+                    self.record_event(LoanEventKind::Used { loan }, span);
+                }
             }
         } else {
             self.record_event(
@@ -284,47 +286,72 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// The loan a view value carries, if any.
+    /// The loans a binding may carry at this point.
+    ///
+    /// The set is empty for a binding that carries no loan, and holds more
+    /// than one loan after a join where the paths gave the binding different
+    /// owners.
+    pub(super) fn binding_loans(&self, id: usize) -> BTreeSet<LoanId> {
+        self.state.loans.get(&id).cloned().unwrap_or_default()
+    }
+
+    /// Replaces the loans a binding carries.
+    pub(super) fn set_binding_loans(&mut self, id: usize, loans: BTreeSet<LoanId>) {
+        if loans.is_empty() {
+            self.state.loans.remove(&id);
+        } else {
+            self.state.loans.insert(id, loans);
+        }
+    }
+
+    /// The loans a view value carries at this point.
     ///
     /// Mirrors [`Self::view_provenance`] over the loan chain: a name or a
-    /// projection inherits the loan of its base binding, a view-returning call
-    /// inherits the loan at its single elision candidate, and an owner, a
+    /// projection inherits the loans of its base binding, a view-returning call
+    /// inherits the loans at its single elision candidate, and an owner, a
     /// literal, or a fresh view derivation carries none.
-    pub(super) fn view_loan(&self, expr: &Expr) -> Option<LoanId> {
+    pub(super) fn view_loans(&self, expr: &Expr) -> BTreeSet<LoanId> {
         match &expr.kind {
-            ExprKind::Name(name) => self.lookup(name).and_then(|id| self.bindings[id].loan),
+            ExprKind::Name(name) => self
+                .lookup(name)
+                .map(|id| self.binding_loans(id))
+                .unwrap_or_default(),
             ExprKind::Qualified(name) => name
                 .segments
                 .first()
                 .and_then(|first| self.lookup(first))
-                .and_then(|id| self.bindings[id].loan),
-            ExprKind::Unsafe(inner) => self.view_loan(inner),
+                .map(|id| self.binding_loans(id))
+                .unwrap_or_default(),
+            ExprKind::Unsafe(inner) => self.view_loans(inner),
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
-                self.view_loan(value)
+                self.view_loans(value)
             }
-            ExprKind::Call { callee, args, .. } => self.call_loan(callee, args),
+            ExprKind::Call { callee, args, .. } => self.call_loans(callee, args),
             ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
-                self.view_loan(base)
+                self.view_loans(base)
             }
-            _ => None,
+            _ => BTreeSet::new(),
         }
     }
 
-    /// The loan a view produced by a call carries.
+    /// The loans a view produced by a call carries.
     ///
     /// A view-returning call with exactly one elision candidate is a reborrow
-    /// of that candidate's loan; every other call yields a fresh view whose
+    /// of that candidate's loans; every other call yields a fresh view whose
     /// loan the caller creates.
-    pub(super) fn call_loan(&self, callee: &Expr, args: &[Arg]) -> Option<LoanId> {
-        let name = self.callee_name(callee)?;
+    pub(super) fn call_loans(&self, callee: &Expr, args: &[Arg]) -> BTreeSet<LoanId> {
+        let Some(name) = self.callee_name(callee) else {
+            return BTreeSet::new();
+        };
         let is_dot = self.is_dot_call(callee);
-        let source_loan = |index: usize| -> Option<LoanId> {
+        let source_loans = |index: usize| -> BTreeSet<LoanId> {
             if is_dot && index == 0 {
-                return self.dot_receiver_loan(callee);
+                return self.dot_receiver_loans(callee);
             }
             let written_index = if is_dot { index - 1 } else { index };
             args.get(written_index)
-                .and_then(|arg| self.view_loan(&arg.value))
+                .map(|arg| self.view_loans(&arg.value))
+                .unwrap_or_default()
         };
         match self.program.callee(&name) {
             Some(Callee::User(decl)) => {
@@ -332,7 +359,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     decl.type_params.iter().map(|p| p.name.clone()).collect();
                 let returns = resolve_ty(&decl.returns, &type_params, &self.sema.table);
                 if !is_elided_view(&returns) {
-                    return None;
+                    return BTreeSet::new();
                 }
                 let candidates: Vec<usize> = decl
                     .params
@@ -349,29 +376,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .map(|(index, _)| index)
                     .collect();
                 if candidates.len() == 1 {
-                    source_loan(candidates[0])
+                    source_loans(candidates[0])
                 } else {
-                    None
+                    BTreeSet::new()
                 }
             }
             Some(Callee::Stdlib {
                 effect: StdlibEffect::ViewOf { arg, .. },
                 ..
-            }) => source_loan(arg),
-            _ => None,
+            }) => source_loans(arg),
+            _ => BTreeSet::new(),
         }
     }
 
-    /// The loan a dot-call receiver's view value carries.
-    fn dot_receiver_loan(&self, callee: &Expr) -> Option<LoanId> {
+    /// The loans a dot-call receiver's view value carries.
+    fn dot_receiver_loans(&self, callee: &Expr) -> BTreeSet<LoanId> {
         match &callee.kind {
-            ExprKind::Member { base, .. } => self.view_loan(base),
+            ExprKind::Member { base, .. } => self.view_loans(base),
             ExprKind::Qualified(name) if name.segments.len() >= 2 => name
                 .segments
                 .first()
                 .and_then(|first| self.lookup(first))
-                .and_then(|id| self.bindings[id].loan),
-            _ => None,
+                .map(|id| self.binding_loans(id))
+                .unwrap_or_default(),
+            _ => BTreeSet::new(),
         }
     }
 

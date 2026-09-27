@@ -230,9 +230,10 @@ section 2, not on the syntax tree. The IR is built from `assign`, `move`,
 6. **Escape analysis.** Reject loans that leave their origin: a returned local
    view (E10035), storage in a field or global (E10033), a borrow of a global
    (E10038).
-7. **Drop legality.** Every reachable `drop` of an owned place must precede any
-   loan use; releasing an owner while a loan of it is live is rejected. This is
-   the static check behind the cleanup ladder of [Ch 17](17-codegen.md)
+7. **Drop legality.** A use of a loan must be reachable from the loan's
+   creation without passing the owner's release; a use that every path reaches
+   only through the release reads freed storage and is rejected (E10030). This
+   is the static check behind the cleanup ladder of [Ch 17](17-codegen.md)
    section 4.
 
 **v2 computes last-use regions.** A loan is live until its last use on any

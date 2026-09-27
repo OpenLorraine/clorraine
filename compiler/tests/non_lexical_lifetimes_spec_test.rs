@@ -518,3 +518,149 @@ func main(): i32 { demo(); return 0; }
         &[("error E10031: cannot modify 's' while it is shared-borrowed", 1)],
     );
 }
+
+// -- Branch-assigned aliases and exit-edge precision -----------------------
+
+/// `spec/16-borrow-rules.md` section 1: a view rebound on one branch still
+/// aliases its first owner on the other path, so a move after the join is
+/// rejected even though the other branch re-pointed the view.
+#[test]
+fn should_report_e10022_when_a_view_is_rebound_on_one_branch() {
+    let source = r#"module tests.nll.branch_rebind_move;
+
+import { String, stringOf, bytes } from std.text;
+
+func observe(v: u8[]): void {}
+func sink(take s: String): void {}
+
+func demo(c: bool): void {
+    let s: String = stringOf("x");
+    let t: String = stringOf("y");
+    let a: u8[] = bytes(s);
+    if (c) {
+        a = bytes(t);
+    }
+    sink(s);
+    observe(a);
+}
+
+func main(): i32 { demo(true); return 0; }
+"#;
+    assert_reports_counted(
+        "branch-rebind-move",
+        source,
+        &[("error E10022: cannot move 's' while it is borrowed", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 1: the mirror shape, where the other
+/// branch carries the rebind, must reject the move the same way.
+#[test]
+fn should_report_e10022_when_the_other_branch_carries_the_rebind() {
+    let source = r#"module tests.nll.branch_rebind_else_move;
+
+import { String, stringOf, bytes } from std.text;
+
+func observe(v: u8[]): void {}
+func sink(take s: String): void {}
+
+func demo(c: bool): void {
+    let s: String = stringOf("x");
+    let t: String = stringOf("y");
+    let a: u8[] = bytes(s);
+    if (c) {
+    } else {
+        a = bytes(t);
+    }
+    sink(s);
+    observe(a);
+}
+
+func main(): i32 { demo(true); return 0; }
+"#;
+    assert_reports_counted(
+        "branch-rebind-else-move",
+        source,
+        &[("error E10022: cannot move 's' while it is borrowed", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 1: a view reassigned on one branch still
+/// aliases the first owner, so mutating that owner after the join is rejected.
+#[test]
+fn should_report_e10031_when_a_widened_view_is_rebound_on_one_branch() {
+    let source = r#"module tests.nll.branch_rebind_write;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(c: bool): void {
+    let s: String = stringOf("x");
+    let t: String = stringOf("y");
+    let a: str = s;
+    if (c) {
+        a = t;
+    }
+    s = stringOf("z");
+    observeStr(a);
+}
+
+func main(): i32 { demo(true); return 0; }
+"#;
+    assert_reports_counted(
+        "branch-rebind-write",
+        source,
+        &[("error E10031: cannot modify 's' while it is shared-borrowed", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 7: a view and its owner declared and used
+/// together in a loop body are accepted; the next iteration's use belongs to a
+/// fresh owner on the exit edge, not to the freed one.
+#[test]
+fn should_accept_a_loop_local_owner_used_within_each_iteration() {
+    let source = r#"module tests.nll.loop_local_owner;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let i: i32 = 0;
+    while (i < 2) {
+        let s: String = stringOf("x");
+        let v: str = s;
+        observeStr(v);
+        i = i + 1;
+    }
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_accepts("loop-local-owner", source);
+}
+
+/// `spec/03-ownership.md`: a straight-line defer that binds an owner, derives a
+/// view, and uses it is accepted; the defer's own release happens after its
+/// use.
+#[test]
+fn should_accept_a_defer_that_owns_and_uses_its_view_before_release() {
+    let source = r#"module tests.nll.defer_local_owner;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    defer {
+        let s: String = stringOf("x");
+        let v: str = s;
+        observeStr(v);
+    }
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_accepts("defer-local-owner", source);
+}

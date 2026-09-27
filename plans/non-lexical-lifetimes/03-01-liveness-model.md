@@ -20,7 +20,7 @@ thing only: **when a loan is live**.
 | Concept | Definition |
 | ------- | ---------- |
 | **Position** | A point in one function's emitted CFG: a block and an ordinal inside that block's event sequence |
-| **Event** | One recorded fact at a position: a loan creation, a loan use, an owner access, a loan request, an owner release, or a defer edge |
+| **Event** | One recorded fact at a position: a loan creation, a loan use, an owner access, a loan request, or an owner release |
 | **Loan** | One lend of an owner, identified by a `LoanId`; its kind is `Shared` or `Exclusive` (`compiler/src/borrow.rs:20-25`), and it carries the owner binding, a span, its creation position, and its use positions |
 | **Region** | The set of positions at which the loan is live |
 | **Use** | Any access through a view value that carries the loan (AR-6) |
@@ -31,8 +31,9 @@ thing only: **when a loan is live**.
 Events are appended in the order the walk evaluates them, so inside one
 statement a read that is evaluated before a store is also recorded before it.
 Two recorded events never share a position: within a block the ordinal
-increases by one per recorded event. A deferred event keeps its recorded order
-but is evaluated at its defer's exit edges (see Deferred blocks).
+increases by one per recorded event. A deferred block's events are recorded on
+each edge where the block runs, in the order the block executes them (see
+Deferred blocks).
 
 ### The position graph
 
@@ -77,6 +78,12 @@ The owner of a loan is always the storage owner the provenance chain reaches,
 never an intermediate view binding, so release checks compare against the real
 owner (AR-8).
 
+The loans a view binding carries are flow-sensitive: the carried set lives in
+the flow state, so when two paths give the binding different owners, the set
+after the join holds both loans and a use extends both regions. A binding that
+is rebound to a value that carries no loan (a literal, a global, or a fresh
+unowned value) carries none.
+
 ## Uses and accesses (AR-6)
 
 | Event | Recorded when | Consumed by |
@@ -87,7 +94,6 @@ owner (AR-8).
 | `Access { access: Move }` | a binding that owns storage is moved (whole or partial) | `E10022` |
 | `Request` | a persistent loan is created, or a `borrow` argument lends an owner | `E10032` |
 | `Release` | scope exit, return cleanup, or `break`/`continue` cleanup | `E10030` |
-| `DeferEdge` | a deferred block runs on an exit edge | anchors every event recorded while that block is checked |
 
 Lending an owner to a call is a **new call-scoped loan**, not a use of a
 persistent loan. Two `borrow` arguments for one owner in the same call are
@@ -96,17 +102,15 @@ still a duplicate-lend error and stay an inline check (03-02).
 ### Deferred blocks
 
 Everything a `defer` block does happens on every exit edge where that block
-runs. Because the exit-edge check re-runs against a discarded builder clone
-(`compiler/src/own.rs:359-377`), the walk tags every event it records while a
-deferred block is checked with the defer's id, and records a `DeferEdge` at
-each `run_defers_from` call. The liveness pass evaluates each tagged event at
-every `DeferEdge` of the same deferred block, in recorded order, and ignores
-the position it was recorded at (a position inside the discarded clone may
-alias a later real block). The rule covers every event kind, not only uses: an
-owner access, a loan creation, or a release inside a defer is evaluated at
-each of the defer's exit edges. For a straight-line defer this is exact; for
-one containing control flow it is conservative (the event may happen on only
-some paths).
+runs. The exit-edge check re-runs the block against a discarded builder clone,
+so the walk places every event the block records at the real block the edge
+leaves, in the order the block's statements record them, instead of at a clone
+position a later real block could reuse. The owner releases on that edge are
+recorded after the block's events, so an access inside the defer precedes the
+release on the same edge. The rule covers every event kind, not only uses: an
+owner access, a loan creation, or a release inside a defer is placed the same
+way. For a straight-line defer this is exact; for one containing control flow
+it is conservative (the event may happen on only some paths).
 
 ## Rules decided by regions
 
@@ -118,17 +122,21 @@ when a rejection fires (R6, AR-16):
 | `E10022` move while borrowed (`spec/14-diagnostics.md:53`) | `Access { access: Move }` for owner `o` | any loan of `o` is live at the event |
 | `E10031` mutation while shared-borrowed (`spec/14-diagnostics.md:59`) | `Access { access: Write }` for owner `o` | any **shared** loan of `o` is live at the event |
 | `E10032` conflicting loans (`spec/14-diagnostics.md:60`) | `Request` for owner `o`, kind `k` | any loan of `o` that is live at the event has `kind == Exclusive`, or `k == Exclusive` |
-| `E10030` loan outlives owner (`spec/14-diagnostics.md:58`) | every `Release` of owner `o` | some use of a loan of `o` is reachable from the release; reported once per loan, at the loan's creation span |
+| `E10030` loan outlives owner (`spec/14-diagnostics.md:58`) | every use of a loan of `o` | the use has no path from the loan's creation that avoids a release of `o`; reported once per loan, at the loan's creation span |
 
 `E10031` keeps its v1 condition exactly: only a **shared** live loan blocks a
 write, so this plan adds no rejection v1 did not have. The same holds for
 `E10032` (the existing `Loans::conflict` excludes nothing that was allowed:
 `compiler/src/borrow.rs:93-98`).
 
-`E10030` unifies origin containment and drop legality: a use reachable from an
-owner-release point is exactly a use after the owner's storage died, which is
-both "outlives its owner" and "releasing an owner while a loan of it is live"
-(`spec/16-borrow-rules.md:225-235`).
+`E10030` unifies origin containment and drop legality: a use reachable only
+through an owner-release point is a use after the owner's storage died on every
+path to it, which is both "outlives its owner" and "releasing an owner while a
+loan of it is live" (`spec/16-borrow-rules.md:225-235`). Requiring the
+release-free path (rather than any release before a use) keeps a loop-local
+owner accepted: the next iteration's use is reached from a fresh creation
+before the release, so it stays valid, and every program the lexical checker
+accepted stays accepted.
 
 ## Worked behaviors
 

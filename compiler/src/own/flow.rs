@@ -15,7 +15,7 @@ use crate::ir::{self, BlockId};
 use crate::span::Span;
 use crate::types::Ty;
 
-use super::liveness::{DeferId, LoanId};
+use super::liveness::LoanId;
 
 /// What a binding is: a local, a parameter, or a `borrow T?` out-parameter.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -54,12 +54,6 @@ pub(super) struct Binding {
     pub(super) registration: u32,
     /// For a view binding, where its storage comes from.
     pub(super) provenance: Provenance,
-    /// The loan a view binding carries, or `None`.
-    ///
-    /// A view value that shares the storage of a local or a parameter carries
-    /// the id of that loan, so every alias of the same storage extends one
-    /// region and the liveness pass checks the real owner.
-    pub(super) loan: Option<LoanId>,
     /// An explicit place base that overrides the binding's usual local or
     /// parameter spelling.
     ///
@@ -117,6 +111,13 @@ impl PlaceState {
 pub(super) struct FlowState {
     /// Per-binding place state.
     pub(super) places: BTreeMap<usize, PlaceState>,
+    /// The loans each view binding may carry at this point.
+    ///
+    /// A loan lives here rather than on the binding so it is flow-sensitive: a
+    /// view assigned one owner on one path and another owner on another path
+    /// carries both loans after the join, and a use reaches both regions. The
+    /// set is empty or absent for a binding that carries no loan.
+    pub(super) loans: BTreeMap<usize, BTreeSet<LoanId>>,
 }
 
 impl FlowState {
@@ -206,8 +207,6 @@ impl ExitFrame {
 
 /// A deferred block waiting to be checked on the scope's exit edges.
 pub(super) struct DeferEntry<'a> {
-    /// Identity of the deferred block inside the function.
-    pub(super) id: DeferId,
     /// Depth of the scope that registered the defer.
     pub(super) depth: usize,
     /// The deferred statements.

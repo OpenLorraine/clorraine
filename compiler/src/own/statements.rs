@@ -243,17 +243,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let provenance = self.view_provenance(value);
             if let Provenance::Local(owner) | Provenance::Param(owner) = &provenance {
                 let owner = *owner;
-                match self.view_loan(value) {
-                    Some(source) => {
-                        self.record_event(LoanEventKind::Used { loan: source }, span);
-                        self.bindings[id].loan = Some(source);
+                let sources = self.view_loans(value);
+                if sources.is_empty() {
+                    let kind = self.view_loan_kind(value);
+                    let loans = match self.record_view_loan(owner, kind, span) {
+                        Some(loan) => BTreeSet::from([loan]),
+                        None => BTreeSet::new(),
+                    };
+                    self.set_binding_loans(id, loans);
+                } else {
+                    for loan in &sources {
+                        self.record_event(LoanEventKind::Used { loan: *loan }, span);
                     }
-                    None => {
-                        let kind = self.view_loan_kind(value);
-                        let loan = self.record_view_loan(owner, kind, span);
-                        self.bindings[id].loan = loan;
-                    }
+                    self.set_binding_loans(id, sources);
                 }
+            } else {
+                // A view of static storage, a global, or an unowned value
+                // carries no loan, so a rebind to one clears any stale loan.
+                self.set_binding_loans(id, BTreeSet::new());
             }
             self.bindings[id].provenance = provenance;
             return;
@@ -273,6 +280,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// request and the loan itself are recorded as events; whether the request
     /// conflicts with a live loan is decided by the liveness post-pass.
     fn record_view_loan(&mut self, owner: usize, kind: LoanKind, span: Span) -> Option<LoanId> {
+        // A speculative pass only computes flow state; allocating a loan there
+        // would make the loop fixpoint's loan sets grow without bound, so the
+        // loan is created once, on the reporting pass.
+        if !self.report_diagnostics {
+            return None;
+        }
         let name = self.bindings[owner].name.clone();
         if kind == LoanKind::Exclusive && self.is_readonly_borrow(owner) {
             self.error(
@@ -495,9 +508,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_entries.truncate(saved_defers);
         self.switch_to(saved_block);
 
-        let id = self.alloc_defer();
         self.defer_entries.push(DeferEntry {
-            id,
             depth: self.scopes.len(),
             block,
         });

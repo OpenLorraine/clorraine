@@ -2,16 +2,16 @@
 //!
 //! The ownership walk records an ordered log of the facts that decide the view
 //! rules: loan creations, view uses, owner accesses, loan requests, owner
-//! releases, and the exit edges a deferred block runs on. After the walk this
-//! module turns that log into last-use regions over the emitted control-flow
-//! graph. A loan is live at a point when its creation reaches the point and the
-//! point can still reach one of the loan's uses, so a view that is bound and
-//! never used blocks nothing.
+//! releases, and the accesses a deferred block makes on its exit edges. After
+//! the walk this module turns that log into last-use regions over the emitted
+//! control-flow graph. A loan is live at a point when its creation reaches the
+//! point and the point can still reach one of the loan's uses, so a view that
+//! is bound and never used blocks nothing.
 //!
 //! The four borrow diagnostics are decided against the regions instead of a
 //! lexical scope: a move through a live loan is `E10022`, a write through a
 //! live shared loan is `E10031`, a loan request that conflicts with a live loan
-//! is `E10032`, and a use reachable from its owner's release is `E10030`.
+//! is `E10032`, and a use that no release-free path can reach is `E10030`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -23,10 +23,6 @@ use crate::span::Span;
 /// Identity of one loan inside one function.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LoanId(pub(super) usize);
-
-/// Identity of one deferred block inside one function.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct DeferId(pub(super) usize);
 
 /// A point in the finished function's event sequence.
 ///
@@ -78,11 +74,6 @@ pub(super) enum LoanEventKind {
         /// Index of the owner binding.
         owner: usize,
     },
-    /// A deferred block runs on this edge.
-    DeferEdge {
-        /// The deferred block that runs.
-        defer: DeferId,
-    },
 }
 
 /// How an owner binding was accessed.
@@ -97,10 +88,8 @@ pub(super) enum AccessKind {
 /// One recorded fact at one position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LoanEvent {
-    /// Where the event was recorded; ignored when `defer` is set.
+    /// Where the event runs on the control-flow graph.
     pub(super) position: Position,
-    /// The deferred block the event belongs to, or `None` for ordinary flow.
-    pub(super) defer: Option<DeferId>,
     /// Source span of the access that produced the event.
     pub(super) span: Span,
     /// What the event states.
@@ -157,17 +146,14 @@ pub(super) fn check(
 
 /// The reachability facts the rules are decided against.
 ///
-/// Events are grouped into positions, the position graph follows the
-/// function's control flow, and an event recorded while a deferred block is
-/// checked is re-anchored to the edges where that block runs. The live region
-/// of a loan is computed from this graph by [`Analysis::regions`].
+/// Events are grouped into positions and the position graph follows the
+/// function's control flow. The live region of a loan is computed from this
+/// graph by [`Analysis::regions`].
 struct Analysis {
     /// Every position in the log, ordered by block and ordinal.
     positions: Vec<Position>,
-    /// The position of each position index, for converting back.
+    /// The position index of each position.
     position_index: BTreeMap<Position, usize>,
-    /// The positions each event runs at, already resolved across defer edges.
-    effective: Vec<Vec<Position>>,
     /// The owner binding of each loan.
     owners: BTreeMap<LoanId, usize>,
     /// The permission each loan grants.
@@ -189,8 +175,6 @@ struct Analysis {
 impl Analysis {
     /// Builds the position graph and the loan facts from a recorded log.
     fn build(successors: &[Vec<BlockId>], events: &[LoanEvent]) -> Self {
-        // Only events on ordinary flow define positions; a deferred event keeps
-        // its recorded order but is re-anchored to its defer's exit edges.
         let positions = collect_positions(events);
         let mut by_block: BTreeMap<BlockId, Vec<usize>> = BTreeMap::new();
         for (rank, position) in positions.iter().enumerate() {
@@ -201,21 +185,11 @@ impl Analysis {
             .enumerate()
             .map(|(rank, position)| (*position, rank))
             .collect();
-        let effective: Vec<Vec<Position>> = resolve_events(events, &position_index)
-            .into_iter()
-            .map(|indices| {
-                indices
-                    .into_iter()
-                    .map(|rank| positions[rank])
-                    .collect::<Vec<Position>>()
-            })
-            .collect();
         let (adjacency, reverse) = build_edges(&positions, successors, &by_block);
-        let facts = collect_facts(events, &effective);
+        let facts = collect_facts(events, &position_index);
         Self {
             positions,
             position_index,
-            effective,
             owners: facts.owners,
             kinds: facts.kinds,
             spans: facts.spans,
@@ -236,8 +210,14 @@ impl Analysis {
         for (loan, creations) in &self.creations {
             let region = match self.uses.get(loan) {
                 Some(uses) if !uses.is_empty() => {
-                    let forward = closure(&self.adjacency, &to_indices(creations, &self.position_index));
-                    let backward = closure(&self.reverse, &to_indices(uses, &self.position_index));
+                    let forward = closure(
+                        &self.adjacency,
+                        &to_indices(creations, &self.position_index),
+                    );
+                    let backward = closure(
+                        &self.reverse,
+                        &to_indices(uses, &self.position_index),
+                    );
                     forward
                         .intersection(&backward)
                         .copied()
@@ -259,13 +239,10 @@ impl Analysis {
         names: &[String],
         diagnostics: &mut Diagnostics,
     ) {
-        for (index, event) in events.iter().enumerate() {
+        for event in events {
             match event.kind {
                 LoanEventKind::Access { owner, access } => {
-                    let hit = self.effective[index]
-                        .iter()
-                        .any(|position| self.access_conflicts(owner, access, live, *position));
-                    if hit {
+                    if self.access_conflicts(owner, access, live, event.position) {
                         let (code, message, help) = match access {
                             AccessKind::Move => (
                                 "E10022",
@@ -285,10 +262,7 @@ impl Analysis {
                     }
                 }
                 LoanEventKind::Request { owner, kind } => {
-                    let hit = self.effective[index]
-                        .iter()
-                        .any(|position| self.request_conflicts(owner, kind, live, *position));
-                    if hit {
+                    if self.request_conflicts(owner, kind, live, event.position) {
                         push(
                             diagnostics,
                             "E10032",
@@ -302,28 +276,51 @@ impl Analysis {
             }
         }
         for (loan, owner) in &self.owners {
-            let Some(releases) = self.releases.get(owner) else {
+            if !self.escapes_owner(loan, *owner) {
                 continue;
-            };
-            let after = closure(&self.adjacency, &to_indices(releases, &self.position_index));
-            let Some(uses) = self.uses.get(loan) else {
-                continue;
-            };
-            if uses
-                .iter()
-                .filter_map(|position| self.position_index.get(position))
-                .any(|rank| after.contains(rank))
-            {
-                let span = self.spans.get(loan).copied().unwrap_or_default();
-                push(
-                    diagnostics,
-                    "E10030",
-                    format!("borrow of '{}' does not live long enough", display(*owner, names)),
-                    "finish the use before the owner's scope ends",
-                    span,
-                );
             }
+            let span = self.spans.get(loan).copied().unwrap_or_default();
+            push(
+                diagnostics,
+                "E10030",
+                format!("borrow of '{}' does not live long enough", display(*owner, names)),
+                "finish the use before the owner's scope ends",
+                span,
+            );
         }
+    }
+
+    /// True when a use of the loan has no path from its creation that avoids a
+    /// release of the owner.
+    ///
+    /// Every path from the creation to such a use crosses the point where the
+    /// owner's storage dies, so the use reads freed storage. Requiring the
+    /// release-free path — not merely the existence of one release before a use
+    /// — keeps a loop-local owner safe: the next iteration's use is reached
+    /// from a fresh creation before the release, so it stays valid.
+    fn escapes_owner(&self, loan: &LoanId, owner: usize) -> bool {
+        let Some(uses) = self.uses.get(loan) else {
+            return false;
+        };
+        if uses.is_empty() {
+            return false;
+        }
+        let Some(creations) = self.creations.get(loan) else {
+            return false;
+        };
+        let blocked: BTreeSet<usize> = self
+            .releases
+            .get(&owner)
+            .map(|releases| to_indices(releases, &self.position_index))
+            .unwrap_or_default();
+        let safe = closure_avoiding(
+            &self.adjacency,
+            &to_indices(creations, &self.position_index),
+            &blocked,
+        );
+        uses.iter()
+            .filter_map(|position| self.position_index.get(position))
+            .any(|rank| !safe.contains(rank))
     }
 
     /// True when an owner access hits a live loan at one position.
@@ -361,87 +358,11 @@ impl Analysis {
     }
 }
 
-/// The positions of the events that run on ordinary flow.
+/// The positions of the recorded events, ordered by block and ordinal.
 fn collect_positions(events: &[LoanEvent]) -> Vec<Position> {
-    let mut real: Vec<usize> = (0..events.len())
-        .filter(|index| events[*index].defer.is_none())
-        .collect();
-    real.sort_by_key(|index| (events[*index].position.block, events[*index].position.index));
-    real.into_iter().map(|index| events[index].position).collect()
-}
-
-/// Resolves each event to the positions where it actually runs.
-///
-/// An ordinary event resolves to its own position. An event recorded while a
-/// deferred block was checked resolves to every `DeferEdge` of that block, in
-/// recorded order; the deferred edge may itself be deferred, so the resolution
-/// recurses until it reaches ordinary positions.
-fn resolve_events(
-    events: &[LoanEvent],
-    position_index: &BTreeMap<Position, usize>,
-) -> Vec<Vec<usize>> {
-    let mut edges: BTreeMap<DeferId, Vec<usize>> = BTreeMap::new();
-    for (index, event) in events.iter().enumerate() {
-        if let LoanEventKind::DeferEdge { defer } = event.kind {
-            edges.entry(defer).or_default().push(index);
-        }
-    }
-    let mut memo: Vec<Option<Vec<usize>>> = vec![None; events.len()];
-    let mut resolved = Vec::with_capacity(events.len());
-    for index in 0..events.len() {
-        let mut visiting = vec![false; events.len()];
-        resolved.push(resolve_one(
-            index,
-            events,
-            &edges,
-            position_index,
-            &mut memo,
-            &mut visiting,
-        ));
-    }
-    resolved
-}
-
-/// Resolves one event to its positions, memoized and cycle-safe.
-fn resolve_one(
-    index: usize,
-    events: &[LoanEvent],
-    edges: &BTreeMap<DeferId, Vec<usize>>,
-    position_index: &BTreeMap<Position, usize>,
-    memo: &mut Vec<Option<Vec<usize>>>,
-    visiting: &mut [bool],
-) -> Vec<usize> {
-    if let Some(known) = &memo[index] {
-        return known.clone();
-    }
-    let mut out: BTreeSet<usize> = BTreeSet::new();
-    match events[index].defer {
-        None => {
-            if let Some(&rank) = position_index.get(&events[index].position) {
-                out.insert(rank);
-            }
-        }
-        Some(defer) => {
-            for &edge in edges.get(&defer).map_or(&[][..], Vec::as_slice) {
-                if visiting[edge] {
-                    continue;
-                }
-                visiting[edge] = true;
-                out.extend(resolve_one(
-                    edge,
-                    events,
-                    edges,
-                    position_index,
-                    memo,
-                    visiting,
-                ));
-                visiting[edge] = false;
-            }
-        }
-    }
-    let resolved: Vec<usize> = out.into_iter().collect();
-    memo[index] = Some(resolved.clone());
-    resolved
+    let mut all: Vec<Position> = events.iter().map(|event| event.position).collect();
+    all.sort_by_key(|position| (position.block, position.index));
+    all
 }
 
 /// Builds the forward and backward edges of the position graph.
@@ -517,12 +438,8 @@ struct Facts {
     releases: BTreeMap<usize, BTreeSet<Position>>,
 }
 
-/// Collects the loan identity and access facts from the resolved log.
-///
-/// Every fact uses the event's resolved positions, so a loan created, used, or
-/// released inside a deferred block is anchored to the edges where that block
-/// runs.
-fn collect_facts(events: &[LoanEvent], effective: &[Vec<Position>]) -> Facts {
+/// Collects the loan identity and access facts from the recorded log.
+fn collect_facts(events: &[LoanEvent], position_index: &BTreeMap<Position, usize>) -> Facts {
     let mut facts = Facts {
         owners: BTreeMap::new(),
         kinds: BTreeMap::new(),
@@ -531,32 +448,23 @@ fn collect_facts(events: &[LoanEvent], effective: &[Vec<Position>]) -> Facts {
         uses: BTreeMap::new(),
         releases: BTreeMap::new(),
     };
-    for (index, event) in events.iter().enumerate() {
-        let positions = &effective[index];
+    for event in events {
+        if !position_index.contains_key(&event.position) {
+            continue;
+        }
+        let position = event.position;
         match event.kind {
             LoanEventKind::Created { loan, owner, kind } => {
                 facts.owners.insert(loan, owner);
                 facts.kinds.insert(loan, kind);
                 facts.spans.insert(loan, event.span);
-                facts
-                    .creations
-                    .entry(loan)
-                    .or_default()
-                    .extend(positions.iter().copied());
+                facts.creations.entry(loan).or_default().insert(position);
             }
             LoanEventKind::Used { loan } => {
-                facts
-                    .uses
-                    .entry(loan)
-                    .or_default()
-                    .extend(positions.iter().copied());
+                facts.uses.entry(loan).or_default().insert(position);
             }
             LoanEventKind::Release { owner } => {
-                facts
-                    .releases
-                    .entry(owner)
-                    .or_default()
-                    .extend(positions.iter().copied());
+                facts.releases.entry(owner).or_default().insert(position);
             }
             _ => {}
         }
@@ -580,6 +488,30 @@ fn closure(edges: &[Vec<usize>], seeds: &BTreeSet<usize>) -> BTreeSet<usize> {
     let mut seen = seeds.clone();
     let mut stack: Vec<usize> = seeds.iter().copied().collect();
     while let Some(position) = stack.pop() {
+        for &next in &edges[position] {
+            if seen.insert(next) {
+                stack.push(next);
+            }
+        }
+    }
+    seen
+}
+
+/// Every position reachable from `seeds` without leaving a `blocked` position.
+///
+/// A blocked position is reachable itself, but control does not continue out of
+/// it, which models storage that has died on the way through it.
+fn closure_avoiding(
+    edges: &[Vec<usize>],
+    seeds: &BTreeSet<usize>,
+    blocked: &BTreeSet<usize>,
+) -> BTreeSet<usize> {
+    let mut seen = seeds.clone();
+    let mut stack: Vec<usize> = seeds.iter().copied().collect();
+    while let Some(position) = stack.pop() {
+        if blocked.contains(&position) {
+            continue;
+        }
         for &next in &edges[position] {
             if seen.insert(next) {
                 stack.push(next);

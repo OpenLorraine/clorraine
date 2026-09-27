@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 09:32
+> **Last Updated**: 2026-09-27 10:08
 > **Progress**: 15/22 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 
@@ -92,6 +92,8 @@ bounded by the task-size criteria in the make-plan quality checklist)
 > **Phase baseline tree**: 77f59e1f71bbc3aa66bbf84e793e628b1dd172f5
 > **Scope mode**: strict · **Expected modifications**: `compiler/src/own/liveness.rs` (new), `compiler/src/own.rs`, `compiler/src/own/flow.rs`, `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/lower.rs`, `compiler/src/borrow.rs`, `plans/non-lexical-lifetimes/99-execution-plan.md`
 > **Lenses**: compiler and language
+>
+> **Post-phase review (strict)**: a 🔴 CRITICAL finding (a loan created on one branch was lost at the join, accepting a use-after-free) and two 🟠 MAJOR monotonicity findings were fixed after the user's ruling: loans now live in `FlowState` and merge by union, `E10030` uses release-free reachability, and deferred events are placed on the edge's real block in recorded order. Regression cases ST-17 – ST-21 were added (red first, then green): `compiler/tests/non_lexical_lifetimes_spec_test.rs`, `spec/16-borrow-rules.md`, and the plan documents are part of the fix. See `00-review-report.md` and AR-24 – AR-26.
 
 ### Step 2.1: Event Recording and the Region Pass
 

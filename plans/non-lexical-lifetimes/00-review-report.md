@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 09:10
+> **Last Updated**: 2026-09-27 10:08
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -37,3 +37,36 @@ behavior the implementation must satisfy in Phase 2.
 | RV-4 | 🟡 MINOR | `plans/00-roadmap.md:31` | Changed outside the recorded expected-modification set; standard lifecycle bookkeeping | Report-only |
 
 No re-review was required because no critical or major finding was raised.
+
+## Phase 2: Liveness implementation
+
+- **Phase baseline tree**: `77f59e1f71bbc3aa66bbf84e793e628b1dd172f5`
+- **Scope mode**: strict
+- **Diff**: `compiler/src/own/liveness.rs` (new), `compiler/src/own.rs`,
+  `compiler/src/own/{flow,place,statements,call_check,lower}.rs`,
+  `compiler/src/borrow.rs`; fix follow-up adds `compiler/tests/non_lexical_lifetimes_spec_test.rs`,
+  `spec/16-borrow-rules.md`, and the plan documents
+- **Reviewers**: correctness reviewer and a soundness/semantics auditor
+  (independent generic subagents; the specialist agents are manual-only)
+- **Lenses**: correctness, maintainability, standards; domain: compiler and language
+- **Verdict**: 🔴 CRITICAL and 🟠 MAJOR findings raised; fixed and re-verified after the user's ruling
+
+Both reviewers independently found the same soundness regression and two
+monotonicity regressions, and reproduced them against the built `clc` (the
+critical one with AddressSanitizer):
+
+| # | Severity | Finding | Ruling |
+|---|----------|---------|--------|
+| RV-001 / SA-1 | 🔴 CRITICAL | The carried loan sat on the binding and was not merged at joins, so a branch-local rebind erased the other path's loan and a use-after-free was accepted | Fix: carry the loan set in `FlowState` and union at joins (AR-24) |
+| SA-2 | 🟠 MAJOR | `E10030` reported a loop-local owner whose per-iteration use follows the previous iteration's release; v1 accepted it | Fix: reject only when a use has no release-free path from its creation (AR-25) |
+| SA-3 | 🟠 MAJOR | Deferring every deferred event to one edge position lost the block's order, so a straight-line defer's own read/release rejected and named the owner `'?'`; v1 accepted it | Fix: place deferred events on the edge's real block in recorded order (AR-26) |
+| RV-002, RV-003, SA-4, SA-5 | 🟡 MINOR | Stale loan on a loanless rebind (fixed by AR-24); O(n²) ordinal scan and a stale `merge` doc (fixed); defer-local binding-index reuse in diagnostics (report-only) | Report-only / fixed where noted |
+
+Fix verification: `make check` green; `non_lexical_lifetimes_spec_test`
+21 passed (the five new regression cases, ST-17 – ST-21, went red first); the
+critical probe now reports `E10022`, and the loop-local and defer-local probes
+are accepted. A single re-review of the fix diff was run (see below).
+
+### Phase 2 fix re-review
+
+Pending.

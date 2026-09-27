@@ -1,7 +1,7 @@
 # Ambiguity Register: Non-Lexical Lifetimes (NLL v2)
 
-> **Status**: ✅ GATE PASSED — all 23 items resolved
-> **Last Updated**: 2026-09-27 00:58
+> **Status**: ✅ GATE PASSED — all 26 items resolved
+> **Last Updated**: 2026-09-27 10:08
 
 ## Scope
 
@@ -51,6 +51,9 @@ changes: every other rejection fixture keeps a use after its conflict.
 | AR-21 | Stakeholder conflicts | Competing priorities or permission boundaries | N/A — single maintainer | N/A | ✅ Resolved |
 | AR-22 | UX & presentation | Diagnostic wording and locations | unchanged: the same codes, messages, helps, and spans; E10032/E10022/E10031 only fire on fewer programs | Grounded in AR-3; no decision | ✅ Resolved |
 | AR-23 | Technical (complexity escalation) | Is the liveness analysis a material support surface? | (a) ordinary feature code reusing the existing walk and IR; (b) full escalation packet | (a) — the analysis is the requested feature itself, not general infrastructure: it adds one focused module over the CFG the checker already builds, no layer, dependency, harness, or cross-cutting refactor | ✅ Resolved |
+| AR-24 | Technical (runtime) | Where the loans a view binding carries live (found by the Phase 2 review, RV-001/SA-1: a loan created on one branch was lost at the join, accepting a use-after-free) | carry the loan set in `FlowState` and union it at joins and loop entries / snapshot per-branch binding loans | Carry the loans in `FlowState` as a per-binding set, unioned by the merge; a rebind to a loanless value clears the set. Reuses the v1 flow-state mechanism; no new machinery | ✅ Resolved 2026-09-27 |
+| AR-25 | Behavioral (runtime) | The exact `E10030` condition (found by the Phase 2 review, SA-2: the reachable-from-a-release rule rejected a loop-local owner v1 accepted) | reject when a use has no path from its creation that avoids a release / reject when any release reaches a use | Reject when a use has no release-free path from the loan's creation; a straight-line use before the release stays accepted, and a loop-local owner's next-iteration use is reached from a fresh creation, so the R6 monotonicity obligation holds. Amends AR-8; `spec/16-borrow-rules.md` step 7 updated | ✅ Resolved 2026-09-27 |
+| AR-26 | Technical (runtime) | How deferred-block events keep their order (found by the Phase 2 review, SA-3: collapsing a defer's events onto one edge position rejected a straight-line defer v1 accepted and lost the owner name) | place each deferred event on the edge's real block in recorded order / tag and re-anchor deferred events to the edge | Place every event a deferred block records on the real block the edge leaves, in recorded order; the block's read/release order is preserved and the release on the edge follows the block's events. Amends the AR-4/AR-6 defer mechanism; removes the defer tag and re-anchoring step | ✅ Resolved 2026-09-27 |
 
 ### Resolution Notes
 
@@ -119,3 +122,29 @@ lexical `Loans` set (`compiler/src/borrow.rs:43-125`), `FlowState.loans`
 lexical E10030 check (`compiler/src/own/statements.rs:247-260`) become unused
 and are removed under the no-dead-code rule; their unit tests are migrated to
 the liveness module.
+
+### Resolution Notes (AR-24 – AR-26, Phase 2 review)
+
+**AR-24 (flow-sensitive loans):** The loan must live in the flow state, not on
+the binding, because a view assigned one owner on one path and another owner on
+another carries both loans after the join. The merge unions the per-binding
+loan sets, exactly as the v1 lexical set was unioned; no new layer or
+dependency is added. The Phase 1 spec suite covers only loans created before a
+branch, so ST-17 – ST-19 were added to pin the join behavior.
+
+**AR-25 (E10030 release-free reachability):** A use is rejected only when every
+path from the loan's creation to it crosses a release of the owner. A use before
+the release has a release-free path and is accepted, and a loop-local owner's
+next-iteration use is reached from a fresh creation, so the outer-scope case
+(ST-11) still rejects while the loop-local case (ST-20) accepts. This keeps the
+monotonicity obligation of AR-16: every program the lexical checker accepted
+stays accepted. `spec/16-borrow-rules.md` step 7 was updated to state the
+release-free condition.
+
+**AR-26 (deferred-block anchoring):** The deferred block is checked against a
+discarded clone of the graph, so its events are placed at the real block the
+edge leaves instead of at a clone position a later real block could reuse. The
+events keep the order the block records them, and the edge's owner releases are
+recorded after them, so a view used and then released in one straight-line defer
+is accepted (ST-21). The defer id and the re-anchoring step are removed from the
+module.
