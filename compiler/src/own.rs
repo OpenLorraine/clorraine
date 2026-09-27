@@ -461,7 +461,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn check_defer_exit(&mut self, block: &'a Block, anchor: BlockId) {
         let saved_builder = self.builder.clone();
         let saved_bindings = self.bindings.len();
-        let saved_scopes = self.scopes.len();
+        let saved_scopes = self.scopes.clone();
         let saved_defers = self.defer_entries.len();
         let saved_temps = self.temps.len();
         let saved_anchor = self.defer_anchor;
@@ -476,7 +476,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_anchor = saved_anchor;
         self.builder = saved_builder;
         self.bindings.truncate(saved_bindings);
-        self.scopes.truncate(saved_scopes);
+        self.scopes = saved_scopes;
         self.defer_entries.truncate(saved_defers);
         self.temps.truncate(saved_temps);
     }
@@ -504,7 +504,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_state = self.state.clone();
         let saved_builder = self.builder.clone();
         let saved_bindings = self.bindings.len();
-        let saved_scopes = self.scopes.len();
+        let saved_scopes = self.scopes.clone();
         let saved_defers = self.defer_entries.len();
         let saved_exits = self.exits.len();
         let saved_temps = self.temps.len();
@@ -514,7 +514,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let mut entry = pre.clone();
             loop {
                 self.state = entry.clone();
-                self.scopes.truncate(saved_scopes);
+                self.scopes = saved_scopes.clone();
                 self.bindings.truncate(saved_bindings);
                 self.defer_entries.truncate(saved_defers);
                 self.exits.truncate(saved_exits);
@@ -546,7 +546,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.state = saved_state;
         self.builder = saved_builder;
         self.bindings.truncate(saved_bindings);
-        self.scopes.truncate(saved_scopes);
+        self.scopes = saved_scopes;
         self.defer_entries.truncate(saved_defers);
         self.exits.truncate(saved_exits);
         self.temps.truncate(saved_temps);

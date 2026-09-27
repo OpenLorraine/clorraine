@@ -87,6 +87,12 @@ func viewOf(s: str): str { return s; }
 | ST-48 | a `defer { return 7; }` inside a loop body | accepted — the defer's own path does not wipe the loop state | AR-26 (defer control flow) |
 | ST-49 | a `defer { continue; }` inside a loop body, owner used after it | accepted | AR-26 |
 | ST-50 | the ST-49 shape with `defer { break; }` | accepted | AR-26 |
+| ST-51 | a `for` step use on a path whose body `continue`s after creating the loan | rejected — `E10030`: the step joins every continue edge | AR-24 (loop joins) |
+| ST-52 | `for (…; i < 2 && firstByte(bytes(s)) >= 0; sink(s)) { …; continue; }` | rejected — `E10020` twice: the step's move reaches the condition and the step on the next iteration | AR-24 |
+| ST-53 | a `do { … continue; } while (firstByte(held) …)` condition use | rejected — `E10030`: the condition joins the continue edges | AR-24 |
+| ST-54 | a `do { … continue; } while (i < 1);` with the owner used after the loop | rejected — `E10030`: the exit joins the continue edges | AR-24 |
+| ST-55 | `while (true) { if (c) { …; break; } break; }` with the view used after | rejected — `E10030`: the break-only exit joins every break | AR-24 |
+| ST-56 | a `defer` whose body owns a temporary | accepted — the checker must not panic | AR-26 |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -112,7 +118,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-50 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-56 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact

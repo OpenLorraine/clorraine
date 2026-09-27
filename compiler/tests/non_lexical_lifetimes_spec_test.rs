@@ -1628,3 +1628,214 @@ func main(): i32 { return demo(); }
 "#;
     assert_accepts("defer-break", source);
 }
+
+// -- Loop joins across continue paths --------------------------------------
+
+/// `spec/16-borrow-rules.md` section 6: the three-clause `for` step runs on
+/// every continue edge, so a loan a continue path created is live at the step
+/// use and is E10030.
+#[test]
+fn should_report_e10030_when_a_for_step_use_reaches_a_continue_paths_loan() {
+    let source = r#"module tests.nll.for_step_continue_loan;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let q: String = stringOf("q");
+    let i: i32 = 0;
+    for (let j: i32 = 0; i < 2; firstByte(held), j++) {
+        if (i < 1) {
+            let s: String = stringOf("x");
+            held = bytes(s);
+            i = i + 1;
+            continue;
+        }
+        held = bytes(q);
+        i = i + 1;
+        continue;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "for-step-continue-loan",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: a move in the `for` step reaches the
+/// head on the back edge, so the next iteration's condition read and step read
+/// of the moved owner are both `E10020`.
+#[test]
+fn should_report_e10020_when_a_for_step_move_reaches_the_condition() {
+    let source = r#"module tests.nll.for_step_move;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func sink(take s: String): void {}
+
+func demo(): i32 {
+    let s: String = stringOf("x");
+    for (let i: i32 = 0; i < 2 && firstByte(bytes(s)) >= 0; sink(s)) {
+        i = i + 1;
+        continue;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "for-step-move",
+        source,
+        &[("error E10020: 's' was moved and cannot be used", 2)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the `do`/`while` condition runs on
+/// every continue edge, so a continue-path loan is live at the condition use
+/// and is E10030.
+#[test]
+fn should_report_e10030_when_a_do_while_condition_use_reaches_a_continue_loan() {
+    let source = r#"module tests.nll.do_while_condition_continue_loan;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let q: String = stringOf("q");
+    let i: i32 = 0;
+    do {
+        if (i < 1) {
+            let s: String = stringOf("x");
+            held = bytes(s);
+            i = i + 1;
+            continue;
+        }
+        held = bytes(q);
+        i = i + 1;
+        continue;
+    } while (i32(firstByte(held)) >= 0);
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "do-while-condition-continue-loan",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the `do`/`while` exit joins every
+/// continue path, so a loan created only on a continue path is live after the
+/// loop and is E10030.
+#[test]
+fn should_report_e10030_when_a_do_while_exit_reaches_a_continue_paths_loan() {
+    let source = r#"module tests.nll.do_while_exit_continue_loan;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    let q: String = stringOf("q");
+    let i: i32 = 0;
+    do {
+        if (i < 1) {
+            let s: String = stringOf("x");
+            held = bytes(s);
+            i = i + 1;
+            continue;
+        }
+        held = bytes(q);
+        i = i + 1;
+        continue;
+    } while (i < 1);
+    return i32(firstByte(held));
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_reports_counted(
+        "do-while-exit-continue-loan",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: when a `while (true)` body always
+/// terminates, the code after the loop joins every `break` edge, so an earlier
+/// break path's loan is live there and is E10030.
+#[test]
+fn should_report_e10030_when_a_break_only_loop_exit_joins_every_break() {
+    let source = r#"module tests.nll.exit_two_break;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(c: bool): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    while (true) {
+        if (c) {
+            let s: String = stringOf("x");
+            held = bytes(s);
+            break;
+        }
+        break;
+    }
+    return i32(firstByte(held));
+}
+
+func main(): i32 { return demo(true); }
+"#;
+    assert_reports_counted(
+        "exit-two-break",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/03-ownership.md`: a defer whose body owns a temporary is a legal
+/// program and must not panic the checker.
+#[test]
+fn should_accept_a_defer_that_owns_a_temporary() {
+    let source = r#"module tests.nll.defer_owned_temp;
+
+import { stringOf, bytes } from std.text;
+
+func demo(): i32 {
+    let held: u8[] = bytes(stringOf("z"));
+    defer {
+        held = bytes(stringOf("q"));
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_accepts("defer-owned-temp", source);
+}

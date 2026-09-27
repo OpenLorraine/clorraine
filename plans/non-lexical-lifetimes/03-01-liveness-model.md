@@ -96,7 +96,14 @@ derivation site, not one per iteration.
 The loop head joins the pre-state, the fall-through state, and the state on
 every `continue` edge back to the loop (not a `break` or `return`, which leaves
 the loop). A `continue` therefore feeds the head even when it is the last
-statement of the body and the body's block ends in a terminator.
+statement of the body and the body's block ends in a terminator. The same join
+rule applies at every other loop point that a back edge can reach: a
+`for` step runs on the fall-through path and on every `continue` edge, and it is
+checked with the join of both before its own effect feeds the head; a
+`do`/`while` condition and exit join the continue edges the same way. A loop
+that cannot leave through its condition (a literal-`true` condition with an
+always-terminating body) joins every `break` edge at the exit, never a single
+path.
 
 ## Uses and accesses (AR-6)
 
@@ -208,6 +215,6 @@ accepted stays accepted.
 
 ## Testing Requirements
 
-The specification test cases live in `07-testing-strategy.md` (ST-1 – ST-36);
+The specification test cases live in `07-testing-strategy.md` (ST-1 – ST-56);
 the implementation tests exercise the region rules directly and build and run
 the accepted programs.

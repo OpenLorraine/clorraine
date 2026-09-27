@@ -63,7 +63,7 @@ pub(super) struct Binding {
 }
 
 /// One lexical scope and the bindings declared in it.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Scope {
     /// The scope's id in the lowered function.
     pub(super) id: ir::ScopeId,

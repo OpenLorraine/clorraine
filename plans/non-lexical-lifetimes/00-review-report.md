@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 18:12
+> **Last Updated**: 2026-09-27 18:25
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -158,12 +158,14 @@ tests (ST-44 is the accepted mirror). They also found:
 | # | Severity | Finding | Status |
 |---|----------|---------|--------|
 | F5 | 🟠 MAJOR (regression from `6dfba87`) | Control flow inside a `defer` (`return`/`break`/`continue`) runs the cleanup of the enclosing scopes during the deferred check; with the kept flow state, live bindings were wiped and later uses reported spurious `E10021` (probe `q03_defer_return`). | **Fixed**: `restore_enclosing_state` puts back a binding whose enclosing scope lost it to the deferred block's own control flow, while a binding the defer rewrote/moved/cleared keeps its new state; ST-48 – ST-50 pin the accepted shapes. |
-| F1 | 🔴 CRITICAL | The three-clause `for` step is checked with the last body path, not the join of the continue edges; a loan created on a continue path is missing at a step use (ASan-confirmed UAF), and a move in the step never reaches the head. | **Open — ruling requested.** |
-| F2 | 🔴 CRITICAL | The `do … while` condition is evaluated with the last body path, so a continue-path loan is missing at the condition use (ASan-confirmed UAF). | **Open — ruling requested.** |
-| F3 | 🔴 CRITICAL | The `do … while` exit state uses the last body path; a loan created only on a continue path is lost at the code after the loop (ASan-confirmed UAF). | **Open — ruling requested.** |
-| F4 | 🔴 CRITICAL | `loop_exit_state` returns the last body path when the body always terminates with a literal-`true` condition and a break was seen, discarding the joined break edges; an earlier break path's loan is lost (ASan-confirmed UAF). Pre-existing. | **Open — ruling requested.** |
-| F6 | 🟠 MAJOR | A defer whose body owns a temporary (e.g. `println($"…")`) panics the compiler: the temp binding is moved to scope 0 and a later cleanup indexes a truncated binding table. Pre-existing. | **Open — ruling requested.** |
+| F1 | 🔴 CRITICAL | The three-clause `for` step is checked with the last body path, not the join of the continue edges; a loan created on a continue path is missing at a step use (ASan-confirmed UAF), and a move in the step never reaches the head. | **Fixed** under the user's ruling: the step joins the fall-through and continue states, and its effect feeds the head; ST-51/ST-52 pin it. |
+| F2 | 🔴 CRITICAL | The `do … while` condition is evaluated with the last body path, so a continue-path loan is missing at the condition use (ASan-confirmed UAF). | **Fixed**: the condition joins the continue edges; ST-53. |
+| F3 | 🔴 CRITICAL | The `do … while` exit state uses the last body path; a loan created only on a continue path is lost at the code after the loop (ASan-confirmed UAF). | **Fixed**: the exit joins the continue edges; ST-54. |
+| F4 | 🔴 CRITICAL | `loop_exit_state` returns the last body path when the body always terminates with a literal-`true` condition and a break was seen, discarding the joined break edges; an earlier break path's loan is lost (ASan-confirmed UAF). Pre-existing. | **Fixed**: a break-only exit joins every break edge; ST-55. |
+| F6 | 🟠 MAJOR | A defer whose body owns a temporary (e.g. `println($"…")`) panics the compiler: the temp binding is moved to scope 0 and a later cleanup indexes a truncated binding table. Pre-existing. | **Fixed**: `loop_entry_state` and `check_defer_exit` clone and restore the whole scope stack; ST-56. |
 | F7 | 🟠 MAJOR | Owned locals declared inside a defer are accepted but emit undeclared C identifiers (the known defer-local codegen gap). Pre-existing. | Open (Phase 3 / separate). |
 
-Gate status: FR-001/FR-001b/FR-002/FM-001/FM-002 are fixed and verified; NEW-001
-and F5 are fixed; F1 – F4 and F6 are open pending the user's ruling.
+Gate status: FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, and F1 – F4/F6
+are fixed and verified by `make check` (56 spec tests). A fresh independent
+review of the F1 – F4/F6 fix is required before the gate closes; F7 (defer-local
+owned `let` emits invalid C) remains open for Phase 3.

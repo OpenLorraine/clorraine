@@ -204,3 +204,12 @@ before all releases while the emitter interleaves them by reverse registration
 order), fixed under the user's ruling: `run_scope_cleanup` records each scope's
 bindings and defers in reverse registration order on every exit path, and
 ST-43 – ST-47 pin it.
+
+The review of those fixes confirmed the cleanup order matches the emitter but
+found the loop joins still incomplete on four paths (F1 – F4): the `for` step,
+the `do`/`while` condition, the `do`/`while` exit, and a break-only exit each
+used a single path's state instead of the join of the continue or break edges,
+so a loan on another path was missed (ASan-confirmed). All four now join their
+edges, and a compiler-owned temporary inside a body or a deferred block no
+longer leaves a stale binding index (F6). ST-51 – ST-56 pin them; the mirror
+accepted shapes (ST-44, ST-48 – ST-50) stay accepted.

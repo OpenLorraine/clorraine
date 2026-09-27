@@ -102,6 +102,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.terminate(Terminator::Goto(condition_block));
         }
         self.switch_to(condition_block);
+        // The condition runs on the fall-through path and on every continue
+        // edge, so it is checked with the join of both.
+        if let Some(state) = self.continue_states.get(&condition_block).cloned() {
+            self.state = Self::merge(self.state.clone(), state);
+        }
         self.eval(&decl.condition);
         let condition = self.lower_value(&decl.condition);
         let shape = self.loop_shape(
@@ -117,7 +122,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             shape,
         });
         let frame = self.exits.pop().expect("loop frame");
-        self.state = join_breaks(post, &frame);
+        let mut condition_state = post;
+        if let Some(state) = self.continue_states.get(&condition_block).cloned() {
+            condition_state = Self::merge(condition_state, state);
+        }
+        self.state = join_breaks(condition_state, &frame);
         self.switch_to(exit);
     }
 
@@ -158,7 +167,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 continue_floor,
             ));
             checker.check_block(&decl.body);
-            if !checker.is_terminated() {
+            // The step runs on the fall-through path and on every continue
+            // edge, so it is checked with the join of both; its effect then
+            // feeds the head on the next iteration. The block is left
+            // unterminated so `loop_entry_state` sees the step's state as the
+            // back edge rather than as an exiting edge.
+            let mut step_state = if checker.is_terminated() {
+                None
+            } else {
+                Some(checker.state.clone())
+            };
+            if let Some(state) = checker.continue_states.get(&step_block).cloned() {
+                step_state = Some(match step_state {
+                    Some(fall) => FunctionChecker::merge(fall, state),
+                    None => state,
+                });
+            }
+            if let Some(state) = step_state {
+                checker.state = state;
+                checker.switch_to(step_block);
                 for step in &decl.step {
                     checker.check_expr_statement(step);
                 }
@@ -199,6 +226,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.terminate(Terminator::Goto(step_block));
         }
         self.switch_to(step_block);
+        if let Some(state) = self.continue_states.get(&step_block).cloned() {
+            self.state = Self::merge(self.state.clone(), state);
+        }
         for step in &decl.step {
             self.check_expr_statement(step);
         }
@@ -547,17 +577,23 @@ fn condition_is_true(condition: &Expr) -> bool {
 /// Normally the exit joins the loop-entry state with every `break` edge,
 /// because the condition may be false before the body runs. When the body
 /// always terminates and the condition is the literal `true`, the loop cannot
-/// leave through its condition, so the only reachable exit is the body's
-/// terminator, whose state is `post`.
+/// leave through its condition, so the only reachable exits are the `break`
+/// edges; their join is used directly, because the last body path is not the
+/// state of every break. `post` is unused in that case and kept out so a
+/// break-only path cannot hide another break path's moves or loans.
 fn loop_exit_state(
     entry: FlowState,
-    post: FlowState,
+    _post: FlowState,
     body_terminated: bool,
     condition_always_true: bool,
     frame: &ExitFrame,
 ) -> FlowState {
-    if body_terminated && condition_always_true && frame.saw_break {
-        post
+    if body_terminated && condition_always_true {
+        if frame.saw_break {
+            frame.break_state.clone()
+        } else {
+            entry
+        }
     } else {
         join_breaks(entry, frame)
     }
