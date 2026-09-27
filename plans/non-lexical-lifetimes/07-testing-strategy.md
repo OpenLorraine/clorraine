@@ -84,6 +84,9 @@ func viewOf(s: str): str { return s; }
 | ST-45 | the ST-43 shape ended by `return` | rejected — `E10030` | AR-26 |
 | ST-46 | the ST-43 shape ended by `break` | rejected — `E10030` | AR-26 |
 | ST-47 | the ST-43 shape ended by `continue` | rejected — `E10030` | AR-26 |
+| ST-48 | a `defer { return 7; }` inside a loop body | accepted — the defer's own path does not wipe the loop state | AR-26 (defer control flow) |
+| ST-49 | a `defer { continue; }` inside a loop body, owner used after it | accepted | AR-26 |
+| ST-50 | the ST-49 shape with `defer { break; }` | accepted | AR-26 |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -109,7 +112,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-47 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-50 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact

@@ -409,7 +409,40 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 CleanupAction::Defer(block) => {
                     let anchor = self.builder.current();
+                    let saved = self.state.clone();
                     self.check_defer_exit(block, anchor);
+                    self.restore_enclosing_state(&saved, scope_index);
+                }
+            }
+        }
+    }
+
+    /// Restores the enclosing scopes after a deferred block was checked.
+    ///
+    /// A `return`, `break`, or `continue` inside a deferred block cleans the
+    /// scopes it leaves as part of its own path, and that cleanup removes their
+    /// bindings from the flow state. Those scopes still enclose the flow that
+    /// follows the deferred block's scope, so a binding the deferred check
+    /// dropped is put back, while a binding the deferred block itself rewrote,
+    /// moved, or cleared keeps its new state. `saved` is the state before the
+    /// block was checked, and `scope_index` is the scope running the cleanup.
+    fn restore_enclosing_state(&mut self, saved: &FlowState, scope_index: usize) {
+        let mut dropped: Vec<usize> = Vec::new();
+        for scope in self.scopes.iter().take(scope_index) {
+            for id in &scope.order {
+                if saved.places.contains_key(id) && !self.state.places.contains_key(id) {
+                    dropped.push(*id);
+                }
+            }
+        }
+        for id in dropped {
+            self.state.places.insert(id, saved.place(id));
+            match saved.loans.get(&id) {
+                Some(loans) => {
+                    self.state.loans.insert(id, loans.clone());
+                }
+                None => {
+                    self.state.loans.remove(&id);
                 }
             }
         }
@@ -421,9 +454,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// event it records is anchored to the real block the edge leaves rather
     /// than to a clone block that a later real block may reuse. A nested defer
     /// keeps the outer anchor, so its events stay in the outer block's order.
-    /// The flow state is kept: only the graph, the binding table, and the
-    /// scopes are rolled back, so a write the defer makes to an outer binding
-    /// stays visible on the flow that leaves the scope.
+    /// The flow state is kept, except for what the enclosing scopes lose to
+    /// control flow inside the block: only the graph, the binding table, and
+    /// the scopes are rolled back, so a write the defer makes to an outer
+    /// binding stays visible on the flow that leaves the scope.
     fn check_defer_exit(&mut self, block: &'a Block, anchor: BlockId) {
         let saved_builder = self.builder.clone();
         let saved_bindings = self.bindings.len();

@@ -1537,3 +1537,94 @@ func main(): i32 { return demo(); }
         &[("error E10030: borrow of 's' does not live long enough", 1)],
     );
 }
+
+// -- Control flow inside a defer -------------------------------------------
+
+/// `spec/03-ownership.md`: a `return` inside a defer is part of the defer's own
+/// path, so it must not wipe the enclosing loop's state; the program is
+/// accepted.
+#[test]
+fn should_accept_a_return_inside_a_defer() {
+    let source = r#"module tests.nll.defer_return;
+
+func demo(): i32 {
+    let i: i32 = 0;
+    while (i < 1) {
+        defer {
+            return 7;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_accepts("defer-return", source);
+}
+
+/// `spec/03-ownership.md`: a `continue` inside a defer is part of the defer's
+/// own path; the owner used after the defer registration stays live and the
+/// program is accepted.
+#[test]
+fn should_accept_a_continue_inside_a_defer() {
+    let source = r#"module tests.nll.defer_continue;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let i: i32 = 0;
+    while (i < 2) {
+        let s: String = stringOf("x");
+        {
+            defer {
+                continue;
+            }
+        }
+        firstByte(bytes(s));
+        i = i + 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_accepts("defer-continue", source);
+}
+
+/// `spec/03-ownership.md`: a `break` inside a defer is part of the defer's own
+/// path; the owner used after the defer registration stays live and the program
+/// is accepted.
+#[test]
+fn should_accept_a_break_inside_a_defer() {
+    let source = r#"module tests.nll.defer_break;
+
+import { String, stringOf, bytes } from std.text;
+
+func firstByte(v: u8[]): u8 {
+    return v[0];
+}
+
+func demo(): i32 {
+    let i: i32 = 0;
+    while (i < 2) {
+        let s: String = stringOf("x");
+        {
+            defer {
+                break;
+            }
+        }
+        firstByte(bytes(s));
+        i = i + 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    assert_accepts("defer-break", source);
+}

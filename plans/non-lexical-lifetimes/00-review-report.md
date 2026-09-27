@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 17:53
+> **Last Updated**: 2026-09-27 18:12
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -147,9 +147,23 @@ partly closed** and a separate pre-existing critical was found.
 The checker now models the emitter's cleanup order: a scope's bindings and
 defers are one registration sequence and `run_scope_cleanup` records them newest
 first on every exit path. `make check` is green and
-`non_lexical_lifetimes_spec_test` has 47 passed. A fresh independent review of
-this fix together with the earlier unreviewed `continue` fix (`166c35c`) is
-dispatched; the quality gate stays open until it reports.
+`non_lexical_lifetimes_spec_test` has 47 passed. ### Fresh review of the continue + NEW-001 fixes (2f0f128..6dfba87)
 
-Gate status otherwise: FR-001/FR-001b/FR-002/FM-001/FM-002 are fixed and
-verified, and no over-rejection was found.
+Two independent reviewers agreed that the NEW-001 cleanup order now matches the
+emitter (checked code against `codegen/cleanup.rs` and probed nested scopes,
+multiple defers, and every exit kind) and that the single-path `continue` cases
+are closed; ST-37 – ST-42, ST-43, and ST-45 – ST-47 are genuine red regression
+tests (ST-44 is the accepted mirror). They also found:
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| F5 | 🟠 MAJOR (regression from `6dfba87`) | Control flow inside a `defer` (`return`/`break`/`continue`) runs the cleanup of the enclosing scopes during the deferred check; with the kept flow state, live bindings were wiped and later uses reported spurious `E10021` (probe `q03_defer_return`). | **Fixed**: `restore_enclosing_state` puts back a binding whose enclosing scope lost it to the deferred block's own control flow, while a binding the defer rewrote/moved/cleared keeps its new state; ST-48 – ST-50 pin the accepted shapes. |
+| F1 | 🔴 CRITICAL | The three-clause `for` step is checked with the last body path, not the join of the continue edges; a loan created on a continue path is missing at a step use (ASan-confirmed UAF), and a move in the step never reaches the head. | **Open — ruling requested.** |
+| F2 | 🔴 CRITICAL | The `do … while` condition is evaluated with the last body path, so a continue-path loan is missing at the condition use (ASan-confirmed UAF). | **Open — ruling requested.** |
+| F3 | 🔴 CRITICAL | The `do … while` exit state uses the last body path; a loan created only on a continue path is lost at the code after the loop (ASan-confirmed UAF). | **Open — ruling requested.** |
+| F4 | 🔴 CRITICAL | `loop_exit_state` returns the last body path when the body always terminates with a literal-`true` condition and a break was seen, discarding the joined break edges; an earlier break path's loan is lost (ASan-confirmed UAF). Pre-existing. | **Open — ruling requested.** |
+| F6 | 🟠 MAJOR | A defer whose body owns a temporary (e.g. `println($"…")`) panics the compiler: the temp binding is moved to scope 0 and a later cleanup indexes a truncated binding table. Pre-existing. | **Open — ruling requested.** |
+| F7 | 🟠 MAJOR | Owned locals declared inside a defer are accepted but emit undeclared C identifiers (the known defer-local codegen gap). Pre-existing. | Open (Phase 3 / separate). |
+
+Gate status: FR-001/FR-001b/FR-002/FM-001/FM-002 are fixed and verified; NEW-001
+and F5 are fixed; F1 – F4 and F6 are open pending the user's ruling.
