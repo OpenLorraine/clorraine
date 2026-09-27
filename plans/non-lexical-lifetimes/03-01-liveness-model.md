@@ -105,7 +105,10 @@ that cannot leave through its condition (a literal-`true` condition with an
 always-terminating body) joins every `break` edge at the exit, never a single
 path. The exit on the condition-false path is the state **after the condition
 was evaluated**, so a move the condition makes (a `take` call, for example) is
-visible in the code after the loop.
+visible in the code after the loop. The condition's own effect is also part of
+the back edge: it runs before the body on every `while`/`for` iteration and after
+the body on every `do`/`while` iteration, so a move it makes is seen by the next
+iteration's condition and body.
 
 ## Uses and accesses (AR-6)
 

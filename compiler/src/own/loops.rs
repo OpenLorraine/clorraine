@@ -25,6 +25,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let pre = self.state.clone();
         let floor = self.scopes.len();
         let (entry, post) = self.loop_entry_state(pre.clone(), Some(head), |checker| {
+            // The condition runs before the body on every iteration, so its own
+            // effect (a move, for example) belongs to the back edge and must be
+            // part of the fixpoint.
+            checker.eval(&decl.condition);
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,
@@ -86,7 +90,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 floor,
             ));
             checker.check_block(&decl.body);
-            if !checker.is_terminated() {
+            // The condition runs after the body on the fall-through path and on
+            // every continue edge, so it is evaluated with the join of both;
+            // its own effect then belongs to the back edge.
+            let mut condition_state = if checker.is_terminated() {
+                None
+            } else {
+                Some(checker.state.clone())
+            };
+            if let Some(state) = checker.continue_states.get(&condition_block).cloned() {
+                condition_state = Some(match condition_state {
+                    Some(fall) => FunctionChecker::merge(fall, state),
+                    None => state,
+                });
+            }
+            if let Some(state) = condition_state {
+                checker.state = state;
+                checker.switch_to(condition_block);
                 checker.eval(&decl.condition);
             }
             checker.exits.pop();
@@ -161,6 +181,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let pre = self.state.clone();
         let continue_floor = floor + 1;
         let (entry, post) = self.loop_entry_state(pre.clone(), Some(step_block), |checker| {
+            // The condition runs before the body on every iteration, so its own
+            // effect belongs to the back edge and must be part of the fixpoint.
+            if let Some(condition) = &decl.condition {
+                checker.eval(condition);
+            }
             checker.switch_to(body_block);
             checker.exits.push(ExitFrame::new(
                 exit,

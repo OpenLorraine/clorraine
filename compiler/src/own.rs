@@ -556,9 +556,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.temps.truncate(saved_temps);
         self.report_diagnostics = saved_report;
         let mut entry = entry;
-        let mut stable_post = stable_post;
         entry.drop_bindings_from(saved_bindings);
-        stable_post.drop_bindings_from(saved_bindings);
         (entry, stable_post)
     }
 

@@ -219,4 +219,8 @@ at the exit (F8: `while`/`for` used the head state; F9: `do`/`while` used the
 speculative body state), and that a defer-materialized temporary's state leaked
 into a later local that reused its id (F10). The condition-false exit is now the
 state after the condition was evaluated, and the state of truncated bindings is
-scrubbed; ST-57 – ST-60 pin them.
+scrubbed; ST-57 – ST-60 pin them. A targeted review then found the condition's
+effect was still missing from the back edge (F8b/F9b: the next iteration's
+condition re-read a moved owner, ASan-confirmed), so the condition now runs
+inside the fixpoint for all three loop kinds and its effect joins both the back
+edge and the exit.

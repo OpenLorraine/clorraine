@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 18:51
+> **Last Updated**: 2026-09-27 19:23
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -178,7 +178,16 @@ three residual state-join defects, which were fixed after the ruling:
 | F9 | 🔴 CRITICAL | The `do`/`while` exit used the speculative body state, which skipped the condition for an always-continuing body, so the condition's move was lost (ASan-confirmed). | **Fixed**: the exit is the real condition-effect state; ST-58. |
 | F10 | 🟠 MAJOR | A temporary a deferred block materialized left its state behind when the binding table was truncated, so the next local reusing the id was treated as initialized (accepted use-before-init). | **Fixed**: `FlowState::drop_bindings_from` scrubs the truncated ids in `check_defer_exit` and the speculative loop state; ST-59. |
 
+A targeted review then found the condition's own effect was still outside the
+head fixpoint (F8b/F9b): the next iteration's condition re-read a moved owner
+(ASan-confirmed). The condition now runs inside the fixpoint for all three loop
+kinds — before the body for `while`/`for`, after the joined body/continue state
+for `do`/`while` — so its effect belongs to the back edge as well as to the
+condition-false exit. ST-57/ST-58 now expect the condition re-read and the later
+use (two `E10020`). The inert `stable_post` scrub was removed as dead.
+
 Also added ST-60 as the accepted mirror for the new joins. Gate status:
-FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, F1 – F4, F6, F8 – F10 are
-fixed and verified by `make check` (60 spec tests). F7 (defer-local owned `let`
-emits invalid C) and the defer-temporary runtime leak remain open for Phase 3.
+FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, F1 – F4, F6, F8 – F10 and
+F8b/F9b are fixed and verified by `make check` (60 spec tests). F7 (defer-local
+owned `let` emits invalid C) and the defer-temporary runtime leak remain open for
+Phase 3.

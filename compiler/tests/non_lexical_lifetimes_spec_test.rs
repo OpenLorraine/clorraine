@@ -1843,8 +1843,8 @@ func main(): i32 { return demo(); }
 // -- Condition effects reach the loop exit ---------------------------------
 
 /// `spec/16-borrow-rules.md` section 7: a move the `while` condition makes
-/// reaches the code after the loop on the false path, so reusing the owner is
-/// `E10020`.
+/// belongs to the back edge and to the code after the loop, so the next
+/// iteration's condition re-read and the later use are both `E10020`.
 #[test]
 fn should_report_e10020_when_a_while_condition_moves_the_owner() {
     let source = r#"module tests.nll.while_condition_move;
@@ -1872,12 +1872,13 @@ func main(): i32 { return demo(); }
     assert_reports_counted(
         "while-condition-move",
         source,
-        &[("error E10020: 's' was moved and cannot be used", 1)],
+        &[("error E10020: 's' was moved and cannot be used", 2)],
     );
 }
 
 /// `spec/16-borrow-rules.md` section 7: a move the `do`/`while` condition makes
-/// reaches the code after the loop even when the body always `continue`s.
+/// belongs to the back edge and to the code after the loop even when the body
+/// always `continue`s, so the condition re-read and the later use are `E10020`.
 #[test]
 fn should_report_e10020_when_a_do_while_continue_body_moves_in_the_condition() {
     let source = r#"module tests.nll.do_while_condition_move;
@@ -1906,7 +1907,7 @@ func main(): i32 { return demo(); }
     assert_reports_counted(
         "do-while-condition-move",
         source,
-        &[("error E10020: 's' was moved and cannot be used", 1)],
+        &[("error E10020: 's' was moved and cannot be used", 2)],
     );
 }
 
