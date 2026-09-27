@@ -17,6 +17,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// stay usable.
     pub(super) fn read_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
         self.bindings[id].used = true;
+        if let Some(loan) = self.bindings[id].loan {
+            self.record_event(LoanEventKind::Used { loan }, span);
+        }
         let state = self.state.place(id);
         let name = self.bindings[id].name.clone();
         if state.moved {
@@ -113,15 +116,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
-        if self.state.loans.blocks_write(id) {
-            let name = self.bindings[id].name.clone();
-            self.error(
-                "E10031",
-                format!("cannot modify '{name}' while it is shared-borrowed"),
-                "end the shared borrow first",
+        // A write through a view is a use of the loan the view carries; a whole
+        // write of the view binding is a rebind, so `bind_value` updates its
+        // loan instead. A write to an owner that carries no loan is an owner
+        // access, decided against the loan regions in the post-pass.
+        if let Some(loan) = self.bindings[id].loan {
+            if !projections.is_empty() {
+                self.record_event(LoanEventKind::Used { loan }, span);
+            }
+        } else {
+            self.record_event(
+                LoanEventKind::Access {
+                    owner: id,
+                    access: AccessKind::Write,
+                },
                 span,
             );
-            return;
         }
         if !projections.is_empty() && self.state.place(id).moved {
             let name = self.bindings[id].name.clone();
@@ -182,16 +192,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
-        if self.state.loans.blocks_move(id) {
-            let name = self.bindings[id].name.clone();
-            self.error(
-                "E10022",
-                format!("cannot move '{name}' while it is borrowed"),
-                "end the borrow first",
-                span,
-            );
-            return;
-        }
+        let owner_kind = binding.kind;
+        let owner_mode = binding.mode;
+        self.record_event(
+            LoanEventKind::Access {
+                owner: id,
+                access: AccessKind::Move,
+            },
+            span,
+        );
         if projections.is_empty() {
             // A read always precedes a move in the same expression, so a move
             // of an already-moved value has already been diagnosed; repeating
@@ -207,7 +216,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // `take`/out parameter.
         let top_level = projections.len() == 1
             && matches!(projections[0], ir::Projection::Field(_));
-        let owned = matches!(binding.kind, BindingKind::Local) || binding.mode == Mode::Take;
+        let owned = matches!(owner_kind, BindingKind::Local) || owner_mode == Mode::Take;
         if !top_level || !owned {
             self.error(
                 "E10026",
@@ -272,6 +281,97 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.view_provenance(base)
             }
             _ => Provenance::None,
+        }
+    }
+
+    /// The loan a view value carries, if any.
+    ///
+    /// Mirrors [`Self::view_provenance`] over the loan chain: a name or a
+    /// projection inherits the loan of its base binding, a view-returning call
+    /// inherits the loan at its single elision candidate, and an owner, a
+    /// literal, or a fresh view derivation carries none.
+    pub(super) fn view_loan(&self, expr: &Expr) -> Option<LoanId> {
+        match &expr.kind {
+            ExprKind::Name(name) => self.lookup(name).and_then(|id| self.bindings[id].loan),
+            ExprKind::Qualified(name) => name
+                .segments
+                .first()
+                .and_then(|first| self.lookup(first))
+                .and_then(|id| self.bindings[id].loan),
+            ExprKind::Unsafe(inner) => self.view_loan(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.view_loan(value)
+            }
+            ExprKind::Call { callee, args, .. } => self.call_loan(callee, args),
+            ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+                self.view_loan(base)
+            }
+            _ => None,
+        }
+    }
+
+    /// The loan a view produced by a call carries.
+    ///
+    /// A view-returning call with exactly one elision candidate is a reborrow
+    /// of that candidate's loan; every other call yields a fresh view whose
+    /// loan the caller creates.
+    pub(super) fn call_loan(&self, callee: &Expr, args: &[Arg]) -> Option<LoanId> {
+        let name = self.callee_name(callee)?;
+        let is_dot = self.is_dot_call(callee);
+        let source_loan = |index: usize| -> Option<LoanId> {
+            if is_dot && index == 0 {
+                return self.dot_receiver_loan(callee);
+            }
+            let written_index = if is_dot { index - 1 } else { index };
+            args.get(written_index)
+                .and_then(|arg| self.view_loan(&arg.value))
+        };
+        match self.program.callee(&name) {
+            Some(Callee::User(decl)) => {
+                let type_params: Vec<String> =
+                    decl.type_params.iter().map(|p| p.name.clone()).collect();
+                let returns = resolve_ty(&decl.returns, &type_params, &self.sema.table);
+                if !is_elided_view(&returns) {
+                    return None;
+                }
+                let candidates: Vec<usize> = decl
+                    .params
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, param)| {
+                        param.mode != Mode::Take
+                            && is_lend_candidate(&resolve_ty(
+                                &param.ty,
+                                &type_params,
+                                &self.sema.table,
+                            ))
+                    })
+                    .map(|(index, _)| index)
+                    .collect();
+                if candidates.len() == 1 {
+                    source_loan(candidates[0])
+                } else {
+                    None
+                }
+            }
+            Some(Callee::Stdlib {
+                effect: StdlibEffect::ViewOf { arg, .. },
+                ..
+            }) => source_loan(arg),
+            _ => None,
+        }
+    }
+
+    /// The loan a dot-call receiver's view value carries.
+    fn dot_receiver_loan(&self, callee: &Expr) -> Option<LoanId> {
+        match &callee.kind {
+            ExprKind::Member { base, .. } => self.view_loan(base),
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => name
+                .segments
+                .first()
+                .and_then(|first| self.lookup(first))
+                .and_then(|id| self.bindings[id].loan),
+            _ => None,
         }
     }
 

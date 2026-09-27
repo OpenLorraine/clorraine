@@ -10,9 +10,9 @@
 //! recorded, so the two stages cannot disagree about the type of an
 //! expression.
 //!
-//! The version 1 model is the conservative lexical approximation: a loan is
-//! live from its creation until the end of the scope that owns the derived
-//! view. It never accepts a program a more precise analysis would reject.
+//! A loan is live from its creation until its last use on any path: the walk
+//! records the loan events and the liveness pass computes each loan's region
+//! over the emitted graph, so a view that is never used again blocks nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,6 +44,7 @@ mod expr;
 mod flow;
 mod generics;
 mod instance_check;
+mod liveness;
 mod lower;
 mod loops;
 mod place;
@@ -53,6 +54,7 @@ use flow::{
     Binding, BindingKind, DeferEntry, ExitFrame, FlowState, ForInWrite, PlaceState, PlaceTarget,
     Scope,
 };
+use liveness::{AccessKind, DeferId, LoanEvent, LoanEventKind, LoanId, Position};
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -164,6 +166,18 @@ struct FunctionChecker<'a, 'd> {
     exits: Vec<ExitFrame>,
     /// Deferred blocks registered by the open scopes, in registration order.
     defer_entries: Vec<DeferEntry<'a>>,
+    /// The ordered loan event log for the function being checked.
+    events: Vec<LoanEvent>,
+    /// Next loan id inside the function being checked.
+    next_loan: usize,
+    /// Next deferred-block id inside the function being checked.
+    next_defer: usize,
+    /// The deferred block currently being checked, if any.
+    ///
+    /// Every event recorded while this is set is anchored to the edges where
+    /// that block runs rather than to the discarded position it was recorded
+    /// at.
+    current_defer: Option<DeferId>,
     /// Next cleanup registration number, shared by bindings and `defer`
     /// entries so a scope's cleanup can interleave them in one reverse order.
     next_registration: u32,
@@ -230,6 +244,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             current_span: Span::default(),
             exits: Vec::new(),
             defer_entries: Vec::new(),
+            events: Vec::new(),
+            next_loan: 0,
+            next_defer: 0,
+            current_defer: None,
             next_registration: 0,
             next_owned_temp: 0,
             materialize_owned_temporaries: true,
@@ -269,6 +287,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             })
             .collect();
         function.temps = self.temps.clone();
+        let names: Vec<String> = self
+            .bindings
+            .iter()
+            .map(|binding| binding.name.clone())
+            .collect();
+        liveness::check(&function, &self.events, &names, self.diagnostics);
         (function, self.lifted)
     }
 
@@ -321,6 +345,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         };
         let scope_id = scope.id;
+        let close_span = self.current_span;
+        for id in &scope.order {
+            self.record_event(LoanEventKind::Release { owner: *id }, close_span);
+        }
         for id in scope.order.iter().rev() {
             if self.bindings[*id].needs_drop {
                 let place = self.binding_place(*id);
@@ -335,7 +363,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for id in scope.order {
             self.state.places.remove(&id);
         }
-        self.state.loans.end_scope(depth);
     }
 
     /// Runs every deferred block registered at or below `floor`, newest first.
@@ -351,23 +378,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .is_some_and(|entry| entry.depth >= floor)
         {
             let entry = self.defer_entries.pop().expect("defer entry");
-            self.check_defer_exit(entry.block);
+            let span = self.current_span;
+            self.record_event(LoanEventKind::DeferEdge { defer: entry.id }, span);
+            self.check_defer_exit(entry.id, entry.block);
         }
     }
 
     /// Checks one deferred block on an exit edge without emitting IR.
-    fn check_defer_exit(&mut self, block: &'a Block) {
+    ///
+    /// Every event recorded while the block is checked is tagged with the
+    /// deferred block's id, so the liveness pass evaluates it at the edges
+    /// where the block actually runs instead of the discarded clone it was
+    /// recorded in.
+    fn check_defer_exit(&mut self, id: DeferId, block: &'a Block) {
         let saved_state = self.state.clone();
         let saved_builder = self.builder.clone();
         let saved_bindings = self.bindings.len();
         let saved_scopes = self.scopes.len();
         let saved_defers = self.defer_entries.len();
         let saved_temps = self.temps.len();
+        let saved_defer = self.current_defer;
+        self.current_defer = Some(id);
         self.push_scope(block.span);
         for statement in &block.statements {
             self.check_stmt(statement);
         }
         self.pop_scope();
+        self.current_defer = saved_defer;
         self.state = saved_state;
         self.builder = saved_builder;
         self.bindings.truncate(saved_bindings);
@@ -509,6 +546,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             needs_drop,
             registration,
             provenance,
+            loan: None,
             base: None,
         });
         if let Some(scope) = self.scopes.last_mut() {
@@ -635,9 +673,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 },
             );
         }
-        let mut loans = first.loans;
-        loans.merge(&second.loans);
-        FlowState { places, loans }
+        FlowState { places }
     }
 
     // -- IR emission ---------------------------------------------------------
@@ -665,6 +701,48 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let registration = self.next_registration;
         self.next_registration += 1;
         registration
+    }
+
+    /// Appends one loan event to the function's log.
+    ///
+    /// Nothing is recorded during a speculative pass, which computes flow
+    /// state without reporting. An event on ordinary flow takes the next
+    /// ordinal in its block; an event recorded while a deferred block is
+    /// checked carries that block's id and a placeholder ordinal, because the
+    /// liveness pass re-anchors it to the block's exit edges.
+    fn record_event(&mut self, kind: LoanEventKind, span: Span) {
+        if !self.report_diagnostics {
+            return;
+        }
+        let block = self.builder.current();
+        let index = if self.current_defer.is_some() {
+            0
+        } else {
+            self.events
+                .iter()
+                .filter(|event| event.defer.is_none() && event.position.block == block)
+                .count()
+        };
+        self.events.push(LoanEvent {
+            position: Position { block, index },
+            defer: self.current_defer,
+            span,
+            kind,
+        });
+    }
+
+    /// Allocates the next loan id inside the current function.
+    fn alloc_loan(&mut self) -> LoanId {
+        let loan = LoanId(self.next_loan);
+        self.next_loan += 1;
+        loan
+    }
+
+    /// Allocates the next deferred-block id inside the current function.
+    fn alloc_defer(&mut self) -> DeferId {
+        let defer = DeferId(self.next_defer);
+        self.next_defer += 1;
+        defer
     }
 
     /// Records a compiler-created temporary and returns its id.
@@ -712,6 +790,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
             let scope_id = scope.id;
             let ids: Vec<usize> = scope.order.iter().rev().copied().collect();
+            let span = self.current_span;
+            for id in &ids {
+                self.record_event(LoanEventKind::Release { owner: *id }, span);
+            }
             self.emit(Statement::ScopeExit { scope: scope_id });
             for id in ids {
                 if self.bindings[id].needs_drop {

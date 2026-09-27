@@ -318,8 +318,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         return;
                     }
                     if !self.sema.table.duplicable(arg_ty) {
-                        let duplicate = !lent.insert(owner);
-                        if duplicate || self.state.loans.conflict(owner, LoanKind::Exclusive) {
+                        // Two lends of one owner in the same call are a
+                        // duplicate; whether the lend conflicts with a
+                        // persistent loan is decided by the liveness post-pass.
+                        if !lent.insert(owner) {
                             let name = self.bindings[owner].name.clone();
                             self.error(
                                 "E10032",
@@ -328,6 +330,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 span,
                             );
                         }
+                        self.record_event(
+                            LoanEventKind::Request {
+                                owner,
+                                kind: LoanKind::Exclusive,
+                            },
+                            span,
+                        );
                     }
                     // A writable lend can only invalidate a null narrowing when
                     // the lent type admits `null`: a `borrow T` of a

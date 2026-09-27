@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 09:06
-> **Progress**: 5/22 tasks (23%)
+> **Last Updated**: 2026-09-27 09:32
+> **Progress**: 15/22 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -89,7 +89,8 @@ bounded by the task-size criteria in the make-plan quality checklist)
 
 ## Phase 2: Liveness Implementation
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 77f59e1f71bbc3aa66bbf84e793e628b1dd172f5
+> **Scope mode**: strict · **Expected modifications**: `compiler/src/own/liveness.rs` (new), `compiler/src/own.rs`, `compiler/src/own/flow.rs`, `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/lower.rs`, `compiler/src/borrow.rs`, `plans/non-lexical-lifetimes/99-execution-plan.md`
 > **Lenses**: compiler and language
 
 ### Step 2.1: Event Recording and the Region Pass
@@ -97,15 +98,15 @@ bounded by the task-size criteria in the make-plan quality checklist)
 **Reference**: [03-01-liveness-model.md](03-01-liveness-model.md), [03-02-checker-integration.md](03-02-checker-integration.md) §Recording hooks, §Post-pass · AR-3 – AR-10
 **Objective**: Record the events, compute the regions, decide the four rules, and remove the lexical state.
 
-- [ ] 2.1.1 Add the event types and checker state (`events`, `next_loan`, `next_defer`, `current_defer`; `LoanId`/`DeferId`/`Position`/`LoanEvent`/`LoanEventKind`/`AccessKind`; `Binding.loan`) — `compiler/src/own/liveness.rs`, `compiler/src/own/flow.rs`, `compiler/src/own.rs`
-- [ ] 2.1.2 Add `view_loan`; create or share a loan in `bind_value`; record `Request` in `record_view_loan` and drop its inline `E10032` — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`
-- [ ] 2.1.3 Record uses: `read_place`, writes through views, `check_return`, and call arguments — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`
-- [ ] 2.1.4 Record owner accesses and replace the inline `E10022`/`E10031` checks — `compiler/src/own/place.rs`
-- [ ] 2.1.5 Record releases and defer edges; tag every event recorded while a deferred block is checked with its defer id; swap the log around `lift_lambda` — `compiler/src/own.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
-- [ ] 2.1.6 Implement `successors`/`regions`/`check` (including the deferred-event resolution at each defer's exit edges) and wire the post-pass into the function check — `compiler/src/own/liveness.rs`, `compiler/src/own.rs`
-- [ ] 2.1.7 Remove the lexical `Loans` set, `FlowState.loans`, the merge union, `end_scope`, and the obsolete unit tests — `compiler/src/borrow.rs`, `compiler/src/own/flow.rs`, `compiler/src/own.rs`
-- [ ] 2.1.8 Remove the inline conflict rules and the lexical `E10030` per 03-02 §Removal — `compiler/src/own/statements.rs`, `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs`
-- [ ] 2.1.9 Run `make check` and confirm the Phase 1 spec tests pass (green phase)
+- [x] 2.1.1 Add the event types and checker state (`events`, `next_loan`, `next_defer`, `current_defer`; `LoanId`/`DeferId`/`Position`/`LoanEvent`/`LoanEventKind`/`AccessKind`; `Binding.loan`) — `compiler/src/own/liveness.rs`, `compiler/src/own/flow.rs`, `compiler/src/own.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.2 Add `view_loan`; create or share a loan in `bind_value`; record `Request` in `record_view_loan` and drop its inline `E10032` — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.3 Record uses: `read_place`, writes through views, `check_return`, and call arguments — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.4 Record owner accesses and replace the inline `E10022`/`E10031` checks — `compiler/src/own/place.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.5 Record releases and defer edges; tag every event recorded while a deferred block is checked with its defer id; swap the log around `lift_lambda` — `compiler/src/own.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.6 Implement `successors`/`regions`/`check` (including the deferred-event resolution at each defer's exit edges) and wire the post-pass into the function check — `compiler/src/own/liveness.rs`, `compiler/src/own.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.7 Remove the lexical `Loans` set, `FlowState.loans`, the merge union, `end_scope`, and the obsolete unit tests — `compiler/src/borrow.rs`, `compiler/src/own/flow.rs`, `compiler/src/own.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.8 Remove the inline conflict rules and the lexical `E10030` per 03-02 §Removal — `compiler/src/own/statements.rs`, `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs` ✅ (completed: 2026-09-27 09:32)
+- [x] 2.1.9 Run `make check` and confirm the Phase 1 spec tests pass (green phase) ✅ (completed: 2026-09-27 09:32) — `make check` green: `spec/check.sh` OK (27 files, 104 compile-fail tests); `non_lexical_lifetimes_spec_test` 16 passed; every existing suite green (corpus 6, run-fault 6, stage 56, ownership 36, freestanding 16, graphics 3)
 
 **Deliverables**:
 - Every hook of 03-02 records the specified event; no hook is missed
@@ -120,7 +121,7 @@ bounded by the task-size criteria in the make-plan quality checklist)
 **Reference**: [03-02](03-02-checker-integration.md) §Error Handling · AR-11
 **Objective**: Reconcile every pre-existing test whose expectation the model changes.
 
-- [ ] 2.2.1 Sweep the suite for flipped or cascaded expectations; rewrite each to still pin its rule and record every change (the known flip set is one golden, already handled in 1.2.2)
+- [x] 2.2.1 Sweep the suite for flipped or cascaded expectations; rewrite each to still pin its rule and record every change (the known flip set is one golden, already handled in 1.2.2) ✅ (completed: 2026-09-27 09:32) — no additional rewrite was required: the full `make check` is green, so no pre-existing expectation flipped; the only changed golden remains `E10031_view_widening_mutation.clo`
 
 **Deliverables**:
 - Every rewrite listed in the task line, with its rule preserved

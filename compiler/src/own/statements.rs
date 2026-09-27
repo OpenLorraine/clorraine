@@ -233,32 +233,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Checks a binding's initializer against nullability and moves or loans.
     ///
-    /// A view bound from a local or a parameter records a loan of that owner:
+    /// A view bound from a local or a parameter carries a loan of that owner:
     /// a `take` or `borrow` parameter is storage the callee may not move or
-    /// write while the derived view lives. A writable view derived from a
-    /// read-only loan is `E10041`.
+    /// write while a use of the derived view is still reachable. A view value
+    /// that already carries a loan shares it; a fresh derivation creates one.
+    /// A writable view derived from a read-only loan is `E10041`.
     pub(super) fn bind_value(&mut self, id: usize, target: &Ty, value: &Expr, span: Span) {
         if is_view(target) {
             let provenance = self.view_provenance(value);
-            let kind = self.view_loan_kind(value);
             if let Provenance::Local(owner) | Provenance::Param(owner) = &provenance {
                 let owner = *owner;
-                let target_scope = self.bindings[id].scope;
-                if matches!(provenance, Provenance::Local(_)) {
-                    let owner_scope = self.bindings[owner].scope;
-                    if target_scope < owner_scope {
-                        let name = self.bindings[owner].name.clone();
-                        self.error(
-                            "E10030",
-                            format!("borrow of '{name}' does not live long enough"),
-                            "finish the use before the owner's scope ends",
-                            span,
-                        );
-                        self.bindings[id].provenance = provenance;
-                        return;
+                match self.view_loan(value) {
+                    Some(source) => {
+                        self.record_event(LoanEventKind::Used { loan: source }, span);
+                        self.bindings[id].loan = Some(source);
+                    }
+                    None => {
+                        let kind = self.view_loan_kind(value);
+                        let loan = self.record_view_loan(owner, kind, span);
+                        self.bindings[id].loan = loan;
                     }
                 }
-                self.record_view_loan(owner, kind, target_scope, span);
             }
             self.bindings[id].provenance = provenance;
             return;
@@ -272,8 +267,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.move_target(target_place, span);
     }
 
-    /// Records a view loan, reporting the two ways it can be illegal.
-    fn record_view_loan(&mut self, owner: usize, kind: LoanKind, origin: usize, span: Span) {
+    /// Creates a persistent loan of an owner and reports the one inline error.
+    ///
+    /// A writable view derived from a read-only borrow is `E10041`. The loan
+    /// request and the loan itself are recorded as events; whether the request
+    /// conflicts with a live loan is decided by the liveness post-pass.
+    fn record_view_loan(&mut self, owner: usize, kind: LoanKind, span: Span) -> Option<LoanId> {
         let name = self.bindings[owner].name.clone();
         if kind == LoanKind::Exclusive && self.is_readonly_borrow(owner) {
             self.error(
@@ -282,18 +281,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 "take the owner by `borrow`",
                 span,
             );
-            return;
+            return None;
         }
-        if self.state.loans.conflict(owner, kind) {
-            self.error(
-                "E10032",
-                format!("'{name}' is already borrowed"),
-                "end the first borrow first",
-                span,
-            );
-            return;
-        }
-        self.state.loans.add(owner, kind, origin, span);
+        self.record_event(LoanEventKind::Request { owner, kind }, span);
+        let loan = self.alloc_loan();
+        self.record_event(LoanEventKind::Created { loan, owner, kind }, span);
+        Some(loan)
     }
 
     /// Checks an `if`, applying null narrowing to each branch.
@@ -502,7 +495,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_entries.truncate(saved_defers);
         self.switch_to(saved_block);
 
+        let id = self.alloc_defer();
         self.defer_entries.push(DeferEntry {
+            id,
             depth: self.scopes.len(),
             block,
         });
@@ -563,13 +558,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let depth = self.scopes.len();
         for index in (floor..depth).rev() {
             let scope_id = self.scopes[index].id;
-            self.emit(Statement::ScopeExit { scope: scope_id });
             let ids: Vec<usize> = self.scopes[index]
                 .order
                 .iter()
                 .rev()
                 .copied()
                 .collect();
+            let span = self.current_span;
+            for id in &ids {
+                self.record_event(LoanEventKind::Release { owner: *id }, span);
+            }
+            self.emit(Statement::ScopeExit { scope: scope_id });
             for id in ids {
                 if self.bindings[id].needs_drop {
                     let place = self.binding_place(id);

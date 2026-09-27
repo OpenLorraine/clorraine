@@ -5,14 +5,10 @@
 //! helper that returns a view over storage the caller still owns. Loans come
 //! only from lends; there is no borrow expression in the language.
 //!
-//! The model here is the conservative lexical approximation the version 1
-//! checker uses: a loan is live from its creation until the end of the scope
-//! that owns the derived view, so the checker never accepts a program a more
-//! precise analysis would reject. The checker only needs to answer three
-//! questions with a [`Loans`] set: may the owner be moved, may it be written,
-//! and may a second loan of a given kind be created.
+//! A loan is live from its creation until its last use on any path; the
+//! checker records loan events during the ownership walk and the liveness pass
+//! decides the conflicts against the computed regions.
 
-use crate::span::Span;
 use crate::types::{Ty, TyKind};
 
 /// The permission a loan grants.
@@ -22,106 +18,6 @@ pub enum LoanKind {
     Shared,
     /// A single writer, no other access.
     Exclusive,
-}
-
-/// One live loan of an owning place.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Loan {
-    /// Index of the binding that owns the storage.
-    pub owner: usize,
-    /// The permission the loan grants.
-    pub kind: LoanKind,
-    /// Scope depth at which the loan begins; the loan ends when that scope
-    /// ends.
-    pub origin: usize,
-    /// Source location of the lending expression, for diagnostics.
-    pub span: Span,
-}
-
-/// The loans live at one program point.
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub struct Loans {
-    entries: Vec<Loan>,
-}
-
-impl Loans {
-    /// Records a new loan, ignoring an identical live loan.
-    ///
-    /// Re-adding the same `(owner, kind, origin)` loan happens when a flow
-    /// state is re-derived at a fixed point; keeping the set canonical makes
-    /// the equality check that detects the fixed point meaningful.
-    pub fn add(&mut self, owner: usize, kind: LoanKind, origin: usize, span: Span) {
-        if self
-            .entries
-            .iter()
-            .any(|loan| loan.owner == owner && loan.kind == kind && loan.origin == origin)
-        {
-            return;
-        }
-        self.entries.push(Loan {
-            owner,
-            kind,
-            origin,
-            span,
-        });
-    }
-
-    /// Drops every loan whose origin is the scope that is now ending.
-    pub fn end_scope(&mut self, scope: usize) {
-        self.entries.retain(|loan| loan.origin < scope);
-    }
-
-    /// True when any loan of the owner is live.
-    pub fn any_live(&self, owner: usize) -> bool {
-        self.entries.iter().any(|loan| loan.owner == owner)
-    }
-
-    /// True when a shared loan of the owner is live.
-    pub fn shared_live(&self, owner: usize) -> bool {
-        self.entries
-            .iter()
-            .any(|loan| loan.owner == owner && loan.kind == LoanKind::Shared)
-    }
-
-    /// True when creating a loan of `kind` over `owner` conflicts with a live
-    /// loan.
-    ///
-    /// Any number of shared reads may coexist, so a shared request only
-    /// conflicts with a live exclusive loan. An exclusive request conflicts
-    /// with any live loan, because it excludes every other access. This is
-    /// BR-2 and BR-3 in the conservative lexical model.
-    pub fn conflict(&self, owner: usize, kind: LoanKind) -> bool {
-        self.entries.iter().any(|loan| {
-            loan.owner == owner
-                && (loan.kind == LoanKind::Exclusive || kind == LoanKind::Exclusive)
-        })
-    }
-
-    /// True when the owner may not be moved because a loan is live (BR-4).
-    pub fn blocks_move(&self, owner: usize) -> bool {
-        self.any_live(owner)
-    }
-
-    /// True when the owner may not be written because a shared loan is live
-    /// (BR-2).
-    pub fn blocks_write(&self, owner: usize) -> bool {
-        self.shared_live(owner)
-    }
-
-    /// Keeps the union of two branch states: a loan live on either path is
-    /// treated as live after the join, which is conservative.
-    pub fn merge(&mut self, other: &Loans) {
-        for loan in &other.entries {
-            let duplicate = self.entries.iter().any(|known| {
-                known.owner == loan.owner
-                    && known.kind == loan.kind
-                    && known.origin == loan.origin
-            });
-            if !duplicate {
-                self.entries.push(loan.clone());
-            }
-        }
-    }
 }
 
 /// Where a view value came from.
@@ -227,47 +123,6 @@ pub fn is_nullable_capable(ty: &Ty) -> bool {
 mod tests {
     use super::*;
     use crate::own::test_support::{error_codes, reports};
-    use crate::span::Span;
-
-    /// A synthetic span; the loan set never renders it in these tests.
-    fn span() -> Span {
-        let mut sources = crate::span::SourceMap::new();
-        let id = sources.add_file("test.clo".to_owned(), String::new());
-        Span::new(id, 0, 0)
-    }
-
-    #[test]
-    fn a_shared_loan_admits_another_shared_loan_but_not_a_writer() {
-        let mut loans = Loans::default();
-        loans.add(0, LoanKind::Shared, 1, span());
-        assert!(
-            !loans.conflict(0, LoanKind::Shared),
-            "any number of shared reads may coexist"
-        );
-        assert!(loans.conflict(0, LoanKind::Exclusive), "a writer excludes");
-        assert!(loans.blocks_write(0), "a shared loan blocks a write");
-        assert!(loans.blocks_move(0), "any loan blocks a move");
-        assert!(!loans.any_live(1), "another owner is unaffected");
-    }
-
-    #[test]
-    fn an_exclusive_loan_excludes_a_second_loan_of_either_kind() {
-        let mut loans = Loans::default();
-        loans.add(0, LoanKind::Exclusive, 1, span());
-        assert!(loans.conflict(0, LoanKind::Shared));
-        assert!(loans.conflict(0, LoanKind::Exclusive));
-    }
-
-    #[test]
-    fn ending_a_scope_retires_the_loans_it_owns() {
-        let mut loans = Loans::default();
-        loans.add(0, LoanKind::Shared, 2, span());
-        loans.add(0, LoanKind::Exclusive, 3, span());
-        loans.end_scope(3);
-        assert!(loans.any_live(0), "the inner loan is gone but the outer stays");
-        loans.end_scope(2);
-        assert!(!loans.any_live(0), "the outer loan is gone");
-    }
 
     #[test]
     fn a_move_while_a_view_is_live_is_rejected() {
