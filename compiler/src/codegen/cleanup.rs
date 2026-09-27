@@ -262,7 +262,10 @@ impl<'a> Emitter<'a> {
                 self.emit_fixed_array_return(value);
             } else {
                 self.emit_guards(value);
-                let lowered = self.value(value);
+                // A returned `String` widens to the `str` view the return type
+                // declares, exactly as a store into a `str` place does.
+                let ret_ty = self.return_ty.clone();
+                let lowered = self.store_text(value, &ret_ty);
                 if let Some(result) = self.result_var.clone() {
                     self.push(&format!("    {result} = {lowered};"));
                     // Returning an owned place transfers it to the caller, so

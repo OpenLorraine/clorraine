@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 20:24
+> **Last Updated**: 2026-09-27 20:51
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -200,10 +200,24 @@ ruling:
 | F11 | 🟠 MAJOR | Implicit `String` → `str` widening was accepted but emitted as a direct `ClStr = ClString` assignment (6 programs, including ST-2 and ST-10). | **Fixed**: `emit_assign` renders the store through the same `cl_string_view()` widening the call-argument path uses; all 17 accepted programs build. |
 | F12 | 🟠 MAJOR | A `let` inside a `defer` was accepted but its local was never declared in the emitted C (ST-21). | **Fixed**: the deferred block's own bindings are kept, so the emitter declares them. |
 
+### Close-out review and final fixes
+
+A final independent review of the Phase 3 diff found the widening fix was
+incomplete and confirmed the runtime oracle's limits:
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| F11r | 🟠 MAJOR | Widening still missing for array-literal elements, run-time indexed stores, and `return` from a `str`-returning function; accepted programs emitted C that failed `-Werror`. | **Fixed**: `store_text` is used by `emit_array_assign_to`, `StorePointer`, and `emit_return`; 8 implementation tests now cover the forms. |
+| F13 | 🔴 CRITICAL | `for (borrow e in String[2])` drops the element alias before each store, so the array element is freed twice (ASan double-free). Pre-existing, not NLL. | **Filed as `DEF-13`** (Backlog) for a dedicated codegen/ownership plan. |
+| F14 | 🔴 CRITICAL | Locals are keyed by source name, so a shadowing local (e.g. a defer-local) shares one C variable and miscompiles; a NULL deref. Pre-existing, not NLL. | **Filed as `DEF-14`** (Backlog) for a dedicated codegen plan. |
+| FM-007 | 🟡 MINOR | Keeping defer bindings makes an unused defer-local warn `W10000`. | Accepted (the warning is correct for a genuinely unused local). |
+| FM-008 | 🟡 MINOR | The implementation-test oracle asserts a clean exit, not ASan, so it does not catch drop/UAF defects in accepted programs. | Accepted; F13/F14 were found by the reviewer's ASan probes and are filed. |
+
 After the fixes, all 17 accepted NLL spec programs build with `-Wall -Wextra
--Werror` and run to their expected exit. Gate status: every NLL finding
+-Werror` and run to their expected exit. Gate status: every NLL-scope finding
 (FR-001/FR-001b/FR-002/FM-001/FM-002, NEW-001, F5, F1 – F4, F6, F8 – F10,
-F8b/F9b, F11, F12) is fixed. The defer-temporary runtime leak remains open (a
-missing drop in the registration-lowered defer block, not a memory-safety
-defect). `make check` is green (60 spec tests, 7 liveness unit tests, 5
-implementation tests) and `make verify` reports all legs passed.
+F8b/F9b, F11, F12, F11r) is fixed. The defer-temporary runtime leak remains open
+as a minor non-memory-safety defect, and F13/F14 are filed as separate
+pre-existing criticals outside the NLL model. `make check` is green (60 spec
+tests, 7 liveness unit tests, 8 implementation tests) and `make verify` reports
+all legs passed.

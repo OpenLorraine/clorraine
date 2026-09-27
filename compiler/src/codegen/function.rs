@@ -376,7 +376,8 @@ impl<'a> Emitter<'a> {
                 self.emit_guards(pointer);
                 self.emit_guards(value);
                 let pointer_c = self.value(pointer);
-                let value_c = self.value(value);
+                let pointer_ty = self.substitute(&pointer.ty);
+                let value_c = self.store_text(value, &pointer_ty);
                 self.push(&format!("    *({pointer_c}) = {value_c};"));
             }
             Statement::Call {
@@ -615,7 +616,7 @@ impl<'a> Emitter<'a> {
     /// An owned `String` widens implicitly to the `str` view the target holds,
     /// through the same shim view the call-argument widening uses. Every other
     /// store renders the value directly.
-    fn store_text(&mut self, value: &Value, ty: &Ty) -> String {
+    pub(super) fn store_text(&mut self, value: &Value, ty: &Ty) -> String {
         let text = self.value(value);
         let value_ty = self.substitute(&value.ty);
         if matches!(ty.kind, TyKind::Str | TyKind::StaticStr)
@@ -671,7 +672,7 @@ impl<'a> Emitter<'a> {
                 }
             }
             self.emit_guards(value);
-            let lowered = self.value(value);
+            let lowered = self.store_text(value, element);
             self.push(&format!("    {sub} = {lowered};"));
         }
         let prefix = elements.len();
@@ -690,7 +691,7 @@ impl<'a> Emitter<'a> {
             }
         }
         self.emit_guards(fill);
-        let lowered = self.value(fill);
+        let lowered = self.store_text(fill, element);
         for index in prefix..extent {
             self.push(&format!("    {target_c}[{index}] = {lowered};"));
         }

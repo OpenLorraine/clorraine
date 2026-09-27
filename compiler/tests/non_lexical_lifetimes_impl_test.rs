@@ -245,3 +245,68 @@ func main(): i32 { demo(); return 0; }
     );
     assert_eq!(first.status.code(), second.status.code());
 }
+
+/// `spec/16-borrow-rules.md` section 2: an array literal stores an owned
+/// `String` into a `str` element through the implicit widening, so mixed
+/// element forms build and run.
+#[test]
+fn a_widening_array_literal_builds_and_runs() {
+    run_clean(
+        "widen-array-literal",
+        r#"module tests.nll_impl.widen_array_literal;
+
+import { String, stringOf } from std.text;
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let arr: str[2] = [s, "b"];
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 2: a store through a run-time index widens
+/// an owned `String` to the `str` element it writes.
+#[test]
+fn a_widening_run_time_index_store_builds_and_runs() {
+    run_clean(
+        "widen-index-store",
+        r#"module tests.nll_impl.widen_index_store;
+
+import { String, stringOf } from std.text;
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let arr: str[2] = ["a", "b"];
+    arr[i32(0)] = s;
+}
+
+func main(): i32 { demo(); return 0; }
+"#,
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 2: returning an owned `String` from a
+/// `str`-returning function widens at the return.
+#[test]
+fn a_widening_return_builds_and_runs() {
+    run_clean(
+        "widen-return",
+        r#"module tests.nll_impl.widen_return;
+
+import { String, stringOf } from std.text;
+
+func asView(s: String): str {
+    return s;
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let v: str = asView(s);
+    return 0;
+}
+"#,
+    );
+}
