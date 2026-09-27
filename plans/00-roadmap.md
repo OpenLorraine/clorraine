@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-26 22:48
+> **Last Updated**: 2026-09-27 08:58
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -28,7 +28,7 @@
 | ↳ DEF-11 | Self-referential struct-literal reassignment double-frees | — | [partial-move-drop-coherence](partial-move-drop-coherence/00-index.md) | Done | ✅ | 2026-09-26 | fixed by partial-move-drop-coherence |
 | PLAN-11 | Ownership and drop model completion | — | [ownership-drop-completion](ownership-drop-completion/00-index.md) | Done | ✅ | 2026-09-26 | 48/48; every R1–R10 traces to a passing test; DEF-12 (generic-substitution blind spot) deferred |
 | ↳ DEF-12 | Generic substitution guards | — | [generic-substitution-guards](generic-substitution-guards/00-index.md) | Done | ✅ | 2026-09-26 | 13/13; every R1–R8 traces to a passing ST case |
-| PLAN-12 | Non-lexical lifetimes (NLL, v2) | — | — | Backlog | ⬜ | 2026-09-26 | after PLAN-11 |
+| PLAN-12 | Non-lexical lifetimes (NLL, v2) | — | [non-lexical-lifetimes](non-lexical-lifetimes/00-index.md) | Executing | 🔄 | 2026-09-27 | phase 1/4 — spec tests and frozen-spec coherence |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)
