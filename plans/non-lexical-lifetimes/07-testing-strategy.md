@@ -58,6 +58,12 @@ func viewOf(s: str): str { return s; }
 | ST-19 | `s = ...; t = ...; a: str = s; if (c) { a = t; } s = stringOf("z"); observeStr(a);` | rejected — exactly one `E10031` | AR-5 |
 | ST-20 | `i = 0; while (i < 2) { let s = ...; let v: str = s; observeStr(v); i = i + 1; }` | accepted — the next iteration's use is reached from a fresh creation before the release | AR-8 (release-free reachability) |
 | ST-21 | `defer { let s = ...; let v: str = s; observeStr(v); }` | accepted — the defer's own use precedes its owner's release on the same edge | AR-6, AR-8 |
+| ST-22 | `while (i < 1) { let s = ...; held = s; i = i + 1; } observeStr(held);` | rejected — `E10030`: the view escapes a per-iteration owner | AR-24 (loans carry to the loop exit) |
+| ST-23 | `while (i < 1) { held = s; i = i + 1; } sink(s); observeStr(held);` | rejected — `E10022` | AR-24 |
+| ST-24 | the same shape with `s = stringOf("y");` after the loop | rejected — `E10031` | AR-24 |
+| ST-25 | the ST-22 shape as a `do { ... } while (...)` | rejected — `E10030` | AR-24 |
+| ST-26 | the ST-22 shape as a three-clause `for` | rejected — `E10030` | AR-24 |
+| ST-27 | the ST-22 shape as an element `for (x in xs)` | rejected — `E10030` | AR-24 |
 
 > **⚠️ AUTHORING RULE:** derive each test's expectation from the cited spec
 > rule and the register, not from the checker. If a snippet needs a helper
@@ -83,7 +89,7 @@ Notes:
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-21 | Liveness model and rules |
+| `non_lexical_lifetimes_spec_test.rs` | ST-1 – ST-27 | Liveness model and rules |
 
 The file follows the existing integration harness: compile a snippet with the
 built `clc` binary and assert either no error codes (accept cases) or the exact

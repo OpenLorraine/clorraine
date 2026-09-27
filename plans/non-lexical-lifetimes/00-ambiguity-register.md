@@ -130,7 +130,12 @@ the binding, because a view assigned one owner on one path and another owner on
 another carries both loans after the join. The merge unions the per-binding
 loan sets, exactly as the v1 lexical set was unioned; no new layer or
 dependency is added. The Phase 1 spec suite covers only loans created before a
-branch, so ST-17 – ST-19 were added to pin the join behavior.
+branch, so ST-17 – ST-19 were added to pin the join behavior. The single
+re-review then found (RR-001) that a loan created in a loop body was dropped at
+the loop exit, because the exit state came from the speculative snapshots
+(which record no loans); each loop now unions the real body's loans into its
+exit state, and `pop_scope` drops a closed scope's loans. ST-22 – ST-27 pin the
+four loop kinds and the move/write variants.
 
 **AR-25 (E10030 release-free reachability):** A use is rejected only when every
 path from the loan's creation to it crosses a release of the owner. A use before

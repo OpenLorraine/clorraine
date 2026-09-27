@@ -72,7 +72,10 @@ from each creation ∩ backward reachability from each use), and
   is checked, so its events are placed at the edge's real block.
 * `FlowState.loans: BTreeMap<usize, BTreeSet<LoanId>>` (`compiler/src/own/flow.rs`)
   — the loans each view binding may carry at a point; merged by union at joins
-  and loop entries.
+  and loop entries. A loop's exit state also unions the loans of the real body
+  pass, because the speculative fixpoint records no loans; without that carry,
+  a view used after the loop would record no use and its region would end too
+  early. `pop_scope` drops the loans of the bindings it closes.
 
 Events are recorded only while `report_diagnostics` is true, which already
 excludes the speculative loop fixpoint (`loop_entry_state` sets it false for

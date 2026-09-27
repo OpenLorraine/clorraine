@@ -56,7 +56,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let frame = self.exits.pop().expect("loop frame");
         let always_true = condition_is_true(&decl.condition);
-        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
+        let mut exit_state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
+        self.carry_loans(&mut exit_state);
+        self.state = exit_state;
         self.switch_to(exit);
     }
 
@@ -112,7 +114,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             shape,
         });
         let frame = self.exits.pop().expect("loop frame");
-        self.state = join_breaks(post, &frame);
+        let mut exit_state = join_breaks(post, &frame);
+        self.carry_loans(&mut exit_state);
+        self.state = exit_state;
         self.switch_to(exit);
     }
 
@@ -210,7 +214,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .condition
             .as_ref()
             .map_or(true, condition_is_true);
-        self.state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
+        let mut exit_state = loop_exit_state(entry, post, body_terminated, always_true, &frame);
+        self.carry_loans(&mut exit_state);
+        self.state = exit_state;
         self.switch_to(exit);
         self.pop_scope();
     }
@@ -424,7 +430,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.terminate(Terminator::Goto(head));
         }
         let frame = self.exits.pop().expect("loop frame");
-        self.state = join_breaks(entry, &frame);
+        let mut exit_state = join_breaks(entry, &frame);
+        self.carry_loans(&mut exit_state);
+        self.state = exit_state;
         self.switch_to(exit);
         self.pop_scope();
     }

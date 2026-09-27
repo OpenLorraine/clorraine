@@ -364,6 +364,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         for id in scope.order {
             self.state.places.remove(&id);
+            self.state.loans.remove(&id);
         }
     }
 
@@ -643,6 +644,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn with_place(&mut self, id: usize, update: impl FnOnce(&mut PlaceState)) {
         let entry = self.state.places.entry(id).or_default();
         update(entry);
+    }
+
+    /// Adds the loans of the real flow state to a computed loop-exit state.
+    ///
+    /// A loan created while a loop body ran is not seen by the speculative
+    /// fixpoint, which records nothing, so an exit state built from the
+    /// speculative snapshots must still carry the real body's loans. Otherwise
+    /// a view used after the loop records no use and its region ends too early,
+    /// accepting a read of freed storage.
+    fn carry_loans(&self, exit: &mut FlowState) {
+        for (id, loans) in &self.state.loans {
+            exit.loans
+                .entry(*id)
+                .or_default()
+                .extend(loans.iter().copied());
+        }
     }
 
     /// Merges two branch states conservatively.

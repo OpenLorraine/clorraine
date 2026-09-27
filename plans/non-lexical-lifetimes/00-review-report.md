@@ -2,7 +2,7 @@
 
 > **Document**: 00-review-report.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-27 10:08
+> **Last Updated**: 2026-09-27 10:25
 
 ## Phase 1: Specification tests and frozen-spec coherence
 
@@ -69,4 +69,17 @@ are accepted. A single re-review of the fix diff was run (see below).
 
 ### Phase 2 fix re-review
 
-Pending.
+Verdict: the three named findings are fixed, but the re-review found one
+residual 🔴 CRITICAL:
+
+| # | Severity | Finding | Ruling |
+|---|----------|---------|--------|
+| RR-001 | 🔴 CRITICAL | A loan created in a loop body was absent from the post-loop flow state, because the loop exit state came from the speculative fixpoint snapshots (which record no loans); a view of a loop-local owner used after the loop was accepted (ASan-confirmed use-after-free), and a move/write of an outer owner borrowed only in the loop was missed | Fixed under AR-24: each loop unions the real body's loans into its exit state, and `pop_scope` drops a closed scope's loans; ST-22 – ST-27 pin the four loop kinds and the move/write variants |
+
+The re-review re-confirmed the join fix, the release-free `E10030`, the
+deferred anchoring, the loop fixpoint termination, and the removal of the defer
+tag. Per the quality loop, a fix rejected by the single re-review is reported
+rather than re-reviewed again (no third pass). The follow-up fix is verified by
+`make check` (green) and `non_lexical_lifetimes_spec_test` (27 passed); the new
+cases were validated against the pre-fix behavior reproduced by the re-review
+with `clc` and AddressSanitizer.

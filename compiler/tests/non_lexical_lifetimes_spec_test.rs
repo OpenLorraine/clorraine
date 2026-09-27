@@ -664,3 +664,186 @@ func main(): i32 { demo(); return 0; }
 "#;
     assert_accepts("defer-local-owner", source);
 }
+
+// -- Loop-exit precision ---------------------------------------------------
+
+/// `spec/16-borrow-rules.md` section 6: a view bound inside a loop body and
+/// used after the loop aliases a per-iteration owner, so its use follows the
+/// owner's release and is E10030.
+#[test]
+fn should_report_e10030_when_a_loop_local_view_escapes_after_the_loop() {
+    let source = r#"module tests.nll.loop_local_escapes;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let i: i32 = 0;
+    let held: str = "";
+    while (i < 1) {
+        let s: String = stringOf("x");
+        held = s;
+        i = i + 1;
+    }
+    observeStr(held);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "loop-local-escapes",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 1: a loan created in a loop body still
+/// keeps the outer owner borrowed after the loop, so moving it is E10022.
+#[test]
+fn should_report_e10022_when_a_loop_borrow_precedes_a_move_after_the_loop() {
+    let source = r#"module tests.nll.loop_borrow_then_move;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+func sink(take s: String): void {}
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let held: str = "";
+    let i: i32 = 0;
+    while (i < 1) {
+        held = s;
+        i = i + 1;
+    }
+    sink(s);
+    observeStr(held);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "loop-borrow-then-move",
+        source,
+        &[("error E10022: cannot move 's' while it is borrowed", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 1: the same loan blocks a mutation after
+/// the loop, so writing the owner is E10031.
+#[test]
+fn should_report_e10031_when_a_loop_borrow_precedes_a_write_after_the_loop() {
+    let source = r#"module tests.nll.loop_borrow_then_write;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let s: String = stringOf("x");
+    let held: str = "";
+    let i: i32 = 0;
+    while (i < 1) {
+        held = s;
+        i = i + 1;
+    }
+    s = stringOf("y");
+    observeStr(held);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "loop-borrow-then-write",
+        source,
+        &[("error E10031: cannot modify 's' while it is shared-borrowed", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the `do`/`while` exit carries the same
+/// rule as the `while` exit.
+#[test]
+fn should_report_e10030_when_a_do_while_local_view_escapes() {
+    let source = r#"module tests.nll.do_while_local_escapes;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let i: i32 = 0;
+    let held: str = "";
+    do {
+        let s: String = stringOf("x");
+        held = s;
+        i = i + 1;
+    } while (i < 1);
+    observeStr(held);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "do-while-local-escapes",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the three-clause `for` exit carries the
+/// same rule.
+#[test]
+fn should_report_e10030_when_a_for_c_local_view_escapes() {
+    let source = r#"module tests.nll.for_c_local_escapes;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let held: str = "";
+    for (let i: i32 = 0; i < 1; i++) {
+        let s: String = stringOf("x");
+        held = s;
+    }
+    observeStr(held);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "for-c-local-escapes",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
+
+/// `spec/16-borrow-rules.md` section 6: the element-loop exit carries the same
+/// rule.
+#[test]
+fn should_report_e10030_when_an_element_loop_local_view_escapes() {
+    let source = r#"module tests.nll.for_in_local_escapes;
+
+import { String, stringOf } from std.text;
+
+func observeStr(v: str): void {}
+
+func demo(): void {
+    let xs: u32[1] = [1];
+    let held: str = "";
+    for (x in xs) {
+        let s: String = stringOf("x");
+        held = s;
+    }
+    observeStr(held);
+}
+
+func main(): i32 { demo(); return 0; }
+"#;
+    assert_reports_counted(
+        "for-in-local-escapes",
+        source,
+        &[("error E10030: borrow of 's' does not live long enough", 1)],
+    );
+}
