@@ -580,3 +580,27 @@ func main(): i32 {
     let output = compile_build_and_run("st15", source);
     assert_exit("st15", &output, 5);
 }
+
+/// A shadowing local may consume the outer binding in its own initializer.
+///
+/// The initializer's `x` resolves to the outer binding, which is declared
+/// before use; the value moves into the new local, so the outer binding is
+/// emptied and the function reads the moved four-byte string. A resolver that
+/// attaches the move to the new binding instead rejects the valid program.
+#[test]
+fn should_move_the_outer_value_into_the_shadowing_local() {
+    let source = r#"module codegen.own.st16;
+
+import { String, stringOf } from std.text;
+
+func vlen(s: str): i32 { return i32(len(s)); }
+
+func main(): i32 {
+    let x: String = stringOf("aaaa");
+    let x: String = x;
+    return vlen(x);
+}
+"#;
+    let output = compile_build_and_run("st16", source);
+    assert_exit("st16", &output, 4);
+}

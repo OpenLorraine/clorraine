@@ -20,6 +20,26 @@ enum PreparedStore {
     Assign { value: Value },
 }
 
+/// The ownership effect an initializer has on the binding it initializes.
+///
+/// Like [`PreparedStore`], the effect is resolved before the binding is
+/// declared, so a name the initializer reads ties to the outer binding the
+/// declaration may shadow. Applying it later keeps the flow state and the
+/// emitted store agreed on which binding was moved or loaned.
+enum BindingEffect {
+    /// A view binding: where its storage comes from, the loans it shares, and
+    /// the kind of loan a fresh derivation creates.
+    View {
+        provenance: Provenance,
+        kind: LoanKind,
+        sources: BTreeSet<LoanId>,
+    },
+    /// A non-duplicable value that names an existing place.
+    Move { source: PlaceTarget },
+    /// A duplicable copy or a fresh value: no ownership effect.
+    None,
+}
+
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- statement checking --------------------------------------------------
 
@@ -169,20 +189,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // The initializer is prepared before the binding is declared: a name
         // the initializer reads must resolve to the outer binding the
         // declaration may shadow, because the new name is not yet in scope in
-        // its own initializer (MOD-15).
+        // its own initializer.
         let prepared = decl
             .value
             .as_ref()
             .map(|value| self.prepare_store(&target, value));
+        let effect = decl
+            .value
+            .as_ref()
+            .map(|value| self.prepare_binding_effect(&target, value));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
-        if let (Some(value), Some(prepared)) = (&decl.value, prepared) {
+        if let (Some(value), Some(prepared), Some(effect)) = (&decl.value, prepared, effect) {
             let init = PlaceState {
                 initialized: true,
                 ..PlaceState::default()
             };
             self.set_place(id, init);
             self.check_value_into(value, &target, decl.span);
-            self.bind_value(id, &target, value, decl.span);
+            self.apply_binding_effect(id, effect, decl.span);
             let place = self.binding_place(id);
             self.emit_prepared_store(place, prepared);
         } else {
@@ -237,7 +261,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let value_ty = self.eval(&decl.value);
         let target = declared.or(Some(value_ty)).unwrap_or_else(Ty::unknown);
+        // As in `check_let`, the store and the ownership effect resolve before
+        // the binding is declared, so the initializer's names tie to the outer
+        // bindings they may shadow.
         let prepared = self.prepare_store(&target, &decl.value);
+        let effect = self.prepare_binding_effect(&target, &decl.value);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         self.set_place(
             id,
@@ -247,7 +275,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             },
         );
         self.check_value_into(&decl.value, &target, decl.span);
-        self.bind_value(id, &target, &decl.value, decl.span);
+        self.apply_binding_effect(id, effect, decl.span);
         let place = self.binding_place(id);
         self.emit_prepared_store(place, prepared);
     }
@@ -280,39 +308,67 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// that already carries a loan shares it; a fresh derivation creates one.
     /// A writable view derived from a read-only loan is `E10041`.
     pub(super) fn bind_value(&mut self, id: usize, target: &Ty, value: &Expr, span: Span) {
+        let effect = self.prepare_binding_effect(target, value);
+        self.apply_binding_effect(id, effect, span);
+    }
+
+    /// Resolves the ownership effect an initializer has on the new binding.
+    ///
+    /// A view binding ties to the owner its provenance names and shares or
+    /// creates a loan; a non-duplicable value that names a place is a move
+    /// from that place. Resolving the effect before the binding is declared
+    /// keeps a name the initializer reads tied to the outer binding the
+    /// declaration may shadow, so the flow state and the emitted store agree
+    /// on which binding was moved or loaned.
+    fn prepare_binding_effect(&self, target: &Ty, value: &Expr) -> BindingEffect {
         if is_view(target) {
-            let provenance = self.view_provenance(value);
-            if let Provenance::Local(owner) | Provenance::Param(owner) = &provenance {
-                let owner = *owner;
-                let sources = self.view_loans(value);
-                if sources.is_empty() {
-                    let kind = self.view_loan_kind(value);
-                    let loans = match self.record_view_loan(owner, kind, span) {
-                        Some(loan) => BTreeSet::from([loan]),
-                        None => BTreeSet::new(),
-                    };
-                    self.set_binding_loans(id, loans);
-                } else {
-                    for loan in &sources {
-                        self.record_event(LoanEventKind::Used { loan: *loan }, span);
-                    }
-                    self.set_binding_loans(id, sources);
-                }
-            } else {
-                // A view of static storage, a global, or an unowned value
-                // carries no loan, so a rebind to one clears any stale loan.
-                self.set_binding_loans(id, BTreeSet::new());
-            }
-            self.bindings[id].provenance = provenance;
-            return;
+            return BindingEffect::View {
+                provenance: self.view_provenance(value),
+                kind: self.view_loan_kind(value),
+                sources: self.view_loans(value),
+            };
         }
         if self.sema.table.duplicable(target) {
-            return;
+            return BindingEffect::None;
         }
-        let Some(target_place) = self.place_target(value) else {
-            return;
-        };
-        self.move_target(target_place, span);
+        match self.place_target(value) {
+            Some(source) => BindingEffect::Move { source },
+            None => BindingEffect::None,
+        }
+    }
+
+    /// Records a prepared ownership effect on the binding that just declared.
+    fn apply_binding_effect(&mut self, id: usize, effect: BindingEffect, span: Span) {
+        match effect {
+            BindingEffect::None => {}
+            BindingEffect::Move { source } => self.move_target(source, span),
+            BindingEffect::View {
+                provenance,
+                kind,
+                sources,
+            } => {
+                if let Provenance::Local(owner) | Provenance::Param(owner) = &provenance {
+                    let owner = *owner;
+                    if sources.is_empty() {
+                        let loans = match self.record_view_loan(owner, kind, span) {
+                            Some(loan) => BTreeSet::from([loan]),
+                            None => BTreeSet::new(),
+                        };
+                        self.set_binding_loans(id, loans);
+                    } else {
+                        for loan in &sources {
+                            self.record_event(LoanEventKind::Used { loan: *loan }, span);
+                        }
+                        self.set_binding_loans(id, sources);
+                    }
+                } else {
+                    // A view of static storage, a global, or an unowned value
+                    // carries no loan, so a rebind to one clears any stale loan.
+                    self.set_binding_loans(id, BTreeSet::new());
+                }
+                self.bindings[id].provenance = provenance;
+            }
+        }
     }
 
     /// Creates a persistent loan of an owner and reports the one inline error.

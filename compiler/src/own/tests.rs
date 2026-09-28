@@ -691,3 +691,63 @@ fn shadowing_bindings_get_unique_and_deterministic_ir_spellings() {
     assert_eq!(spelling(SHADOWED_LOCALS), vec!["x", "x#1", "x#2"]);
     assert_eq!(spelling(SHADOWED_LOCALS), vec!["x", "x#1", "x#2"]);
 }
+
+#[test]
+fn a_shadowing_initializer_moves_the_outer_binding() {
+    // The initializer's name ties to the outer binding, so the outer value
+    // moves once into the shadowing local and both bindings stay sound.
+    let source = with_view_helper(
+        "func demo(): void {\n\
+             let s: String = $\"x{1}\";\n\
+             let s: String = s;\n\
+             observe(s);\n\
+         }",
+    );
+    assert!(error_codes(&source).is_empty(), "{:?}", error_codes(&source));
+}
+
+#[test]
+fn a_moved_outer_binding_is_not_usable_after_a_shadowing_move() {
+    // The shadowing initializer moves the outer `s`, so using the outer
+    // binding after the inner block is a use of a moved value (E10020).
+    let source = with_view_helper(
+        "func demo(): void {\n\
+             let s: String = $\"x{1}\";\n\
+             {\n\
+                 let s: String = s;\n\
+             }\n\
+             observe(s);\n\
+         }",
+    );
+    assert_eq!(error_codes(&source), vec!["E10020"]);
+}
+
+#[test]
+fn a_shadowing_move_from_a_borrow_parameter_is_rejected() {
+    // A `borrow` parameter does not own its value, so a shadowing initializer
+    // cannot move it out; the whole move is E10034.
+    let source = with_view_helper(
+        "func demo(borrow s: String): void {\n\
+             let s: String = s;\n\
+         }",
+    );
+    assert_eq!(error_codes(&source), vec!["E10034"]);
+}
+
+#[test]
+fn a_shadowing_view_self_borrow_keeps_the_outer_loan() {
+    // The inner view re-derives from the outer view, so the owner stays
+    // borrowed; writing the owner while the view is used is E10031.
+    let source = with_view_helper(
+        "func demo(): void {\n\
+             let x: String = $\"x{1}\";\n\
+             let v: str = x;\n\
+             {\n\
+                 let v: str = v;\n\
+                 x = $\"y{2}\";\n\
+                 observe(v);\n\
+             }\n\
+         }",
+    );
+    assert_eq!(error_codes(&source), vec!["E10031"]);
+}

@@ -10,7 +10,7 @@
 | Code type | Target |
 | --------- | ------ |
 | Element-loop lowering and alias emission | every exit path and element shape in ST-1 – ST-7, observed through the duplicable `n` field |
-| Binding identity and C name mapping | every MOD-16 form in ST-8 – ST-15 |
+| Binding identity and C name mapping | every MOD-16 form in ST-8 – ST-16 |
 | Supporting modules | covered by the existing workspace suite |
 
 - Test names state behavior: `should [expected behavior] when [condition]`.
@@ -81,6 +81,7 @@ fix each fails the C build, segfaults, or returns the wrong value.
 | ST-13 | `f(n)`: `const n: i32 = n + 1; return n;` with `f(3)` | Exit 4; a `const` local shadows the parameter | spec 10 §5 MOD-16 |
 | ST-14 | Generic `pick<T>(value: T, fallback: T)` declares `let value: T = fallback` and returns it; `pick(1, 3)` | Exit 3; instantiation keeps distinct identities | spec 10 §5 MOD-16 |
 | ST-15 | Callable-bound lambda body: `apply<T, F: func(T): T>(x, f)` called as `apply(i32(3), [base] (x: i32) => { let x: i32 = x + base; return x; })` with `base = 2` | Exit 5; the lifted body's local is distinct from its parameter | spec 10 §5 MOD-16, AR #9 (extended) |
+| ST-16 | A local consumes the outer binding of the same name in its own initializer: `let x: String = stringOf("aaaa"); let x: String = x; return vlen(x);` | Exit 4; the outer value moves into the shadowing local once and the outer binding is emptied | spec 10 §5 MOD-15/MOD-16, spec 03 O3 |
 
 > **⚠️ AUTHORING RULE:** Derive expectations from the specification. Do NOT
 > imagine or infer what the implementation will produce. If an expected output
@@ -95,7 +96,7 @@ fix each fails the C build, segfaults, or returns the wrong value.
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/codegen_ownership_spec_test.rs` | ST-1 – ST-15 | Element alias and local identity |
+| `compiler/tests/codegen_ownership_spec_test.rs` | ST-1 – ST-16 | Element alias and local identity |
 
 The suite follows the existing run-spec pattern: compile the source, build the
 emitted C with the strict warning set, run the binary, assert the exit code and

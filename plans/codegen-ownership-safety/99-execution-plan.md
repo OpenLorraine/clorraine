@@ -185,6 +185,24 @@ Phase 3 (hardening and close-out)
   matched the baseline or improved on it.
 - No 🔴/🟠 findings, so no re-review is required.
 
+### Phase 2 — Local Identity (2026-09-28)
+
+- Independent correctness review and an independent semantics review ran in
+  parallel on the phase diff (baseline `b4270b97`, through commit `5954d89`).
+- RV-001 🔴 CRITICAL: a shadowing initializer's ownership effect still resolved
+  after the declaration, so the flow state attributed a move or loan to the new
+  binding while the emitted store moved from the outer one. Confirmed repros: a
+  valid self-move shadow was rejected; a shadowed move left the outer binding
+  dangling (segfault); a moved `borrow` parameter was freed twice.
+- **User ruling (2026-09-28 08:15):** fix per the review recommendation — resolve
+  the initializer's ownership effect before the declaration, add ST-16 as the
+  run-case oracle, and add unit tests for the rejection forms.
+- RV-002 🟡 MINOR: a `(MOD-15)` requirement reference leaked into a source
+  comment — fixed with the RV-001 follow-up.
+- The semantics review confirmed `ir_name` uniqueness and determinism,
+  diagnostics keep source names, and no other consumer keys by the wrong
+  spelling.
+
 ## Success Criteria
 
 **Feature is complete when:**
