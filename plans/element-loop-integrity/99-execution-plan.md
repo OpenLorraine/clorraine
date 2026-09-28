@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:56
-> **Progress**: 11/16 tasks (69%)
+> **Last Updated**: 2026-09-28 10:57
+> **Progress**: 12/16 tasks (75%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -138,7 +138,7 @@ verify).
 **Objective**: Pin the nested-loop emitted shape and determinism.
 
 - [x] 2.3.1 Extend `compiler/tests/element_loop_integrity_impl_test.rs`: the inner `for` header carries its own increment, no dead step label or duplicate loop remains, and two emissions are byte-identical ✅ (completed: 2026-09-28 10:56) — the determinism case emits the same source path twice (the `#line` filename is part of the bytes)
-- [ ] 2.3.2 Run the full gate: `make check` green and the workspace builds warning-free
+- [x] 2.3.2 Run the full gate: `make check` green and the workspace builds warning-free ✅ (completed: 2026-09-28 10:57) — gate evidence: 725 tests passed, 0 failed, 0 build warnings, spec check OK
 
 **Deliverables**:
 - Shape and determinism tests pass
