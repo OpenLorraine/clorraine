@@ -178,6 +178,7 @@ cl_zero(&a);
   sites. The save path stays in the emitter for a non-call right-hand side that
   reads an owned target. An exact same-place assignment is a no-op, an owned
   self-assignment reports `E10020`, and a self-referencing call takes the
-  temporary path; a conditional right-hand side (`ok ? a : b`) is accepted
-  today and does reach the branch, but the C it emits is invalid — that form is
-  filed as `DEF-25`, and the branch stays defensive until it is handled.
+  temporary path; a conditional right-hand side whose arm reads the owned
+  target (`s = ok ? s : t`) is accepted today and does reach the branch, but
+  the C it emits is invalid — that form is filed as `DEF-25`, and the branch
+  stays defensive until it is handled.

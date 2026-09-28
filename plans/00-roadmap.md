@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-28 18:26
+> **Last Updated**: 2026-09-29 01:07
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -42,6 +42,8 @@
 | ↳ DEF-23 | Materialized compiler temporaries that own elements are never released | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found during the array-value-integrity preflight (PF-005): statement-scoped `Materialize` temporaries are never dropped (scalar and array), and views bound from them are unhandled; recorded as a limitation in the plan |
 | ↳ DEF-24 | An element loop over an array-returning call emits invalid C | — | — | Backlog | ⬜ | 2026-09-28 | 🔴 critical, found during the array-value-integrity preflight (PF-007): `for (x in mk())` renders `mk()[i]` without a destination; the plan narrows R1 to place-rooted iterables and defers this form |
 | ↳ DEF-25 | A conditional fixed-array value emits invalid C | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in the array-value-integrity Phase 1 review (RV-002): `let c: i32[2] = ok ? a : b;` is accepted and emits `memcpy(&(c), &((ok ? a : b)), ...)`; an array operand of `?:` decays to a pointer, so the C compiler rejects it; `s = ok ? s : t` also reaches the fixed-array save path. Needs a materialization design and owned-branch semantics |
+| ↳ DEF-26 | A callable-field receiver in a runtime index is not bounds-guarded | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 1 re-review (RR-002): `hs[i].run(1);` is accepted and reads out of bounds; the receiver is never guarded on the ordinary call path or the fixed-array call-assign path; pre-existing |
+| ↳ DEF-27 | An array-returning func-typed field emits the wrong C function pointer type | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 1 re-review (RR-003): a `func(i32): i32[2]` field renders `i32 (*)(i32)` while the callee uses the hidden out-parameter ABI, so accepted source fails C compilation; pre-existing |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

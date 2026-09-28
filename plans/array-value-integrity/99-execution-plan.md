@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 18:19
+> **Last Updated**: 2026-09-29 01:07
 > **Progress**: 6/24 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
@@ -58,6 +58,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 > **Phase baseline tree**: `d7da76d10baad0eea910e3a8dd230223f1ca17ae`
 > **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs` (new), `compiler/src/codegen/function.rs`, `compiler/src/codegen/calls.rs`, `compiler/src/codegen/drop.rs` (doc comment), `compiler/tests/array_value_integrity_impl_test.rs` (new), `plans/array-value-integrity/99-execution-plan.md`, `plans/array-value-integrity/07-testing-strategy.md`, `plans/array-value-integrity/03-01-multi-extent-element-loops.md`, `plans/00-roadmap.md` (`DEF-25`)
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
+> **Phase 1 review**: independent reviewer (generic-subagent fallback; named reviewer agents are manual-only) on the diff vs `d7da76d1` — RV-001 🔴 missing argument guards (fixed in `676c2ee`), RV-002 🟠 conditional fixed-array value (filed `DEF-25`), RV-003/RV-004 🟡 applied; single re-review on the fix: `FIX ACCEPTED`, RR-001 wording applied, RR-002 filed `DEF-26`, RR-003 filed `DEF-27` — no blocking issue remains (2026-09-29 01:07)
 
 ### Step 1.1: Specification Tests
 
@@ -92,7 +93,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-4, AR-7
 **Objective**: Pin the emitted shapes and cover internals.
 
-- [x] 1.3.1 Write implementation tests: `memcpy` copy shape, `cl_zero` after a move, the same-place no-op, the self-assignment save shape, the call-into-temporary assignment shape, `len` renderings, and counting-deleter release shape checks — `compiler/tests/array_value_integrity_impl_test.rs` ✅ (completed: 2026-09-28 18:18) — 7/7 pass; deviation: the fixed-array save branch is unreachable from accepted programs today (an exact same-place assignment is a no-op, an owned self-assignment reports `E10020`, and a self-referencing call takes the temporary path), so no Phase 1 test pins it; it stays as the approved defensive shape (`AR-7`), and the release counts pin the reachable call path. The Phase 1 review (RV-002) found that a conditional right-hand side (`ok ? a : b`) does reach it and is accepted today; that form is filed as `DEF-25`
+- [x] 1.3.1 Write implementation tests: `memcpy` copy shape, `cl_zero` after a move, the same-place no-op, the self-assignment save shape, the call-into-temporary assignment shape, `len` renderings, and counting-deleter release shape checks — `compiler/tests/array_value_integrity_impl_test.rs` ✅ (completed: 2026-09-28 18:18) — 7/7 pass; deviation: the fixed-array save branch is unreachable from accepted programs today (an exact same-place assignment is a no-op, an owned self-assignment reports `E10020`, and a self-referencing call takes the temporary path), so no Phase 1 test pins it; it stays as the approved defensive shape (`AR-7`), and the release counts pin the reachable call path. The Phase 1 review (RV-002) found that a conditional right-hand side whose arm reads the owned target (`s = ok ? s : t`) does reach it and is accepted today; that form is filed as `DEF-25`
 - [x] 1.3.2 Full verification — `make check` (spec check plus the whole workspace) ✅ (completed: 2026-09-28 18:19) — `make check` exit 0: spec check OK (27 files, 104 compile-fail tests); 748 workspace tests passed across 28 binaries, no failures or warnings
 
 **Deliverables**:
