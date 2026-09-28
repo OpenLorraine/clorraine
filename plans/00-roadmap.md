@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-28 11:03
+> **Last Updated**: 2026-09-28 18:07
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -31,13 +31,16 @@
 | PLAN-12 | Non-lexical lifetimes (NLL, v2) | — | [non-lexical-lifetimes](non-lexical-lifetimes/00-index.md) | Done | ✅ | 2026-09-27 | 4/4 phases done (22/22); strict review closed FR-001/FR-001b/FR-002, NEW-001, F1–F12; `make verify: all legs passed` |
 | ↳ DEF-13 | `for (borrow e in xs)` double-frees a droppable element | — | [codegen-ownership-safety](codegen-ownership-safety/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed by the element-alias design (AR #2); 20/20 tasks; ASan probes clean; `make verify: all legs passed` |
 | ↳ DEF-14 | Local shadowing miscompiles (locals keyed by source name) | — | [codegen-ownership-safety](codegen-ownership-safety/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed by unique binding identity (AR #3); 20/20 tasks; ASan probes clean; `make verify: all legs passed` |
-| ↳ DEF-15 | Multi-extent element loops bind the base element, not the row | — | — | Backlog | ⬜ | 2026-09-27 | 🔴 critical, observed during codegen-ownership-safety recon; different root cause, needs a dedicated plan |
+| ↳ DEF-15 | Multi-extent element loops bind the base element, not the row | — | [array-value-integrity](array-value-integrity/00-index.md) | Executing | 🔄 | 2026-09-28 18:07 | 🔴 critical; plan fixes the row element type, outer count, the copy form, and the borrow row's C declaration; preflight passed 2026-09-28 (PF-004) |
 | ↳ DEF-16 | Reading an owned array element as a view argument double-frees | — | [element-loop-integrity](element-loop-integrity/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed and verified: element reads and their projections lend instead of materializing (`projects_from_place`); ASan-clean, `make verify` all legs passed |
 | ↳ DEF-17 | Nested element loops hang (step-block mis-selection) | — | [element-loop-integrity](element-loop-integrity/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed and verified: the step block travels on `BranchShape::Loop` and the emitter prints it directly; every nested `for` form covered, `make verify` all legs passed |
 | ↳ DEF-18 | A `take`/move through a borrow element view steals the element | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in codegen-ownership-safety preflight: element bindings are `BindingKind::Local`, so the parameter move rules do not apply (`own/place.rs:185`) |
-| ↳ DEF-19 | `len` on an owned `String` silently yields 0 | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in codegen-ownership-safety Phase 2: the `len` lowering falls through to `0` for a `String` (`codegen/calls.rs:166`); the specification's implicit `String`→`str` widening should apply |
+| ↳ DEF-19 | `len` on an owned `String` silently yields 0 | — | [array-value-integrity](array-value-integrity/00-index.md) | Executing | 🔄 | 2026-09-28 18:07 | 🟠 major; plan routes `len` through the implicit `String`→`str` widening; preflight passed 2026-09-28 (PF-002) |
 | ↳ DEF-20 | `if (x != null) { let x: T = x; }` spuriously reports E10010 | — | — | Backlog | ⬜ | 2026-09-28 | 🟡 minor, found in the codegen-ownership-safety Phase 2 re-review: `check_nonnull_expr` resolves the initializer place after the shadowing declaration (`own/expr.rs:251`); diagnostic-only and pre-existing |
-| ↳ DEF-21 | A projection over an array-returning call emits invalid C | — | — | Backlog | ⬜ | 2026-09-28 | 🔴 critical, found in element-loop-integrity planning: `mk()[0]` emits `mk()[0]` on a hidden out-parameter call (`codegen/function.rs:74`); the base needs materializing before the projection |
+| ↳ DEF-21 | A projection over an array-returning call emits invalid C | — | [array-value-integrity](array-value-integrity/00-index.md) | Executing | 🔄 | 2026-09-28 18:07 | 🔴 critical; plan materializes the call result once and keeps element moves at E10026 in every move form (PF-003); preflight passed 2026-09-28 |
+| ↳ DEF-22 | Fixed-array value assignment emits invalid C | — | [array-value-integrity](array-value-integrity/00-index.md) | Executing | 🔄 | 2026-09-28 18:07 | 🔴 critical, found during array-value-integrity planning: `let b = a;`, `let r = m[0];`, `let c = s.v;`, and whole-array moves compile in `clc` and fail the C compiler (array assignment); fixed by the plan's whole-array byte-copy store; call-RHS drop/save added (PF-001); preflight passed 2026-09-28 |
+| ↳ DEF-23 | Materialized compiler temporaries that own elements are never released | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found during the array-value-integrity preflight (PF-005): statement-scoped `Materialize` temporaries are never dropped (scalar and array), and views bound from them are unhandled; recorded as a limitation in the plan |
+| ↳ DEF-24 | An element loop over an array-returning call emits invalid C | — | — | Backlog | ⬜ | 2026-09-28 | 🔴 critical, found during the array-value-integrity preflight (PF-007): `for (x in mk())` renders `mk()[i]` without a destination; the plan narrows R1 to place-rooted iterables and defers this form |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)
