@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:41
-> **Progress**: 3/16 tasks (19%)
+> **Last Updated**: 2026-09-28 10:42
+> **Progress**: 4/16 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -73,7 +73,7 @@ verify).
 **Objective**: Make sub-object reads of owned containers lend instead of materializing.
 
 - [x] 1.2.1 Add the `projects_from_place` predicate and use it in `materialize_owned_argument` — `compiler/src/own/lower.rs` ✅ (completed: 2026-09-28 10:41)
-- [ ] 1.2.2 Verify the GREEN phase: ST-1 – ST-13 pass and `make check` is green
+- [x] 1.2.2 Verify the GREEN phase: ST-1 – ST-13 pass and `make check` is green ✅ (completed: 2026-09-28 10:42) — green evidence: 13/13 spec cases pass; `make check` → 711 tests passed, spec check OK (27 files, 104 compile-fail tests)
 
 **Deliverables**:
 - Owned element reads no longer bind a scope temporary
