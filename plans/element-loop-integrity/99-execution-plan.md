@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:40
-> **Progress**: 1/16 tasks (6%)
+> **Last Updated**: 2026-09-28 10:39
+> **Progress**: 2/16 tasks (12%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -59,7 +59,7 @@ verify).
 **Objective**: Write the DEF-16 run and rejection oracle before any implementation.
 
 - [x] 1.1.1 [spec-author] Write the DEF-16 specification cases ST-1 – ST-13 in `compiler/tests/element_loop_integrity_spec_test.rs`, with a bounded run helper and a rejection helper ✅ (completed: 2026-09-28 10:40)
-- [ ] 1.1.2 Verify the RED phase: ST-1 – ST-8 fail with the double-free abort, and ST-9 – ST-13 pass pre-fix (rejections, regression guard, and the existing `E11211` trap); record per-case evidence on this line. Any deviation is an oracle or test defect: stop and record it, do not adjust a case to match
+- [x] 1.1.2 Verify the RED phase: ST-1 – ST-8 fail with the double-free abort, and ST-9 – ST-13 pass pre-fix (rejections, regression guard, and the existing `E11211` trap); record per-case evidence on this line. Any deviation is an oracle or test defect: stop and record it, do not adjust a case to match ✅ (completed: 2026-09-28 10:39) — red evidence: ST-1 – ST-8 abort with `free(): double free detected in tcache 2` (exit 134); ST-9/ST-10 `E10026`; ST-11 exit 3; ST-12 exit 2; ST-13 `E11211` trap
 
 **Deliverables**:
 - The suite exists and compiles
