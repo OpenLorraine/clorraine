@@ -614,6 +614,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when the value reads storage an owned container is responsible for.
+    ///
+    /// A place, or a field or element projection of one at any index, names
+    /// storage something else owns: the container's cleanup releases it, so
+    /// binding a scope temporary for such a value would create a second owner
+    /// and the two drops would free the same storage twice. A
+    /// `for (borrow e in xs)` element is covered because its binding is a place
+    /// rooted at the element address, and so is any projection over a local, a
+    /// parameter, or a call-returned array stored in a place.
+    ///
+    /// An ownerless temporary is not covered: a call returning a container owns
+    /// its elements only until the temporary is released, and no container
+    /// cleanup can see them, so such a value still needs the scope binding.
+    fn projects_from_place(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Place(_) => true,
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.projects_from_place(base)
+            }
+            _ => false,
+        }
+    }
+
     /// Stores an impure operand in a compiler temporary before it is used twice.
     ///
     /// Unlike [`Self::materialize_guard_operand`], which defers the assignment
@@ -661,7 +684,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             || value.ty.is_closure()
             || self.sema.table.duplicable(&value.ty)
             || is_view(&value.ty)
-            || matches!(value.kind, ValueKind::Place(_))
+            || self.projects_from_place(&value)
             || !self.report_diagnostics
             || !self.materialize_owned_temporaries
             || value.ty.is_unknown()

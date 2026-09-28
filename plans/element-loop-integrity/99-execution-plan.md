@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:39
-> **Progress**: 2/16 tasks (12%)
+> **Last Updated**: 2026-09-28 10:41
+> **Progress**: 3/16 tasks (19%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -72,7 +72,7 @@ verify).
 **Reference**: [03-01](03-01-element-read-ownership.md) §Proposed Changes · AR #6, AR #12
 **Objective**: Make sub-object reads of owned containers lend instead of materializing.
 
-- [ ] 1.2.1 Add the `projects_from_place` predicate and use it in `materialize_owned_argument` — `compiler/src/own/lower.rs`
+- [x] 1.2.1 Add the `projects_from_place` predicate and use it in `materialize_owned_argument` — `compiler/src/own/lower.rs` ✅ (completed: 2026-09-28 10:41)
 - [ ] 1.2.2 Verify the GREEN phase: ST-1 – ST-13 pass and `make check` is green
 
 **Deliverables**:
