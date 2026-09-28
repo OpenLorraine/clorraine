@@ -177,6 +177,19 @@ fn assert_exit(tag: &str, output: &Output, expected: i32) {
     );
 }
 
+/// Asserts the run aborted at the runtime guard for `code`.
+fn assert_trap(tag: &str, output: &Output, code: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag}: a trapped run must exit nonzero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("error {code}:")),
+        "{tag}: expected the {code} trap; stderr:\n{stderr}"
+    );
+}
+
 /// Binds a duplicable array to a second local with a whole-array byte copy.
 ///
 /// C has no array assignment, so the emitter must copy the bytes and leave the
@@ -392,4 +405,28 @@ func main(): i32 {
         "ai7: a growable array should read its count field"
     );
     assert_exit("ai7", &output, 8);
+}
+
+/// A guarded call argument traps before the call runs.
+///
+/// A fixed-array call on the right of an assignment must still run the
+/// argument's bounds guard first; without it the program would read past the
+/// array and pass the garbage into the callee instead of trapping.
+#[test]
+fn should_trap_when_a_call_argument_index_is_out_of_bounds() {
+    let source = r#"module codegen.av.impl8;
+
+func mk(n: i32): i32[2] {
+    return [n, n];
+}
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    let i: i32 = 5;
+    let b: i32[2] = mk(a[i]);
+    return b[0];
+}
+"#;
+    let (output, _emitted) = emit_build_run("ai8", source);
+    assert_trap("ai8", &output, "E11211");
 }

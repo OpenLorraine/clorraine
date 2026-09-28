@@ -706,6 +706,12 @@ impl<'a> Emitter<'a> {
         receiver: Option<&ir::Value>,
     ) {
         self.emit_line_directive(span);
+        // An argument's guards (bounds, division, float, slice) run before the
+        // call, exactly as they do on the ordinary call path; the call may only
+        // execute once its arguments are known to be valid.
+        for arg in args {
+            self.emit_guards(arg);
+        }
         let temp = self.unique_local("__cl_call");
         self.push("    {");
         self.push(&format!(

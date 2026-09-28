@@ -110,7 +110,7 @@ deviation is an oracle or test defect, never a reason to change a case.
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| `compiler/tests/array_value_integrity_impl_test.rs` | Emitted shape: `memcpy` copy, `cl_zero` after a move, the same-place no-op, the call-into-temporary assignment, the materialized temporary with the destination call, the short-circuit comma operand, both `len` renderings, the pointer-to-array row declaration, and counting-deleter release shape checks (one emitted deleter call site per released element); `iterated_element` and `is_ownerless_element_move` unit coverage | High |
+| `compiler/tests/array_value_integrity_impl_test.rs` | Emitted shape: `memcpy` copy, `cl_zero` after a move, the same-place no-op, the call-into-temporary assignment, the materialized temporary with the destination call, the short-circuit comma operand, both `len` renderings, the pointer-to-array row declaration, the call-argument bounds trap, and counting-deleter release shape checks (one emitted deleter call site per released element); `iterated_element` and `is_ownerless_element_move` unit coverage | High |
 
 ### Integration Tests
 

@@ -132,10 +132,11 @@ impl<'a> Emitter<'a> {
     /// release its old value.
     ///
     /// This refines [`Self::needs_drop`]. A fixed array is owned and drops its
-    /// elements, but it has no arm here: the scratch local is declared with a
-    /// declarator, which for an array is a C array that cannot be assigned.
-    /// Whole fixed-array assignment is out of scope, so a fixed array keeps the
-    /// no-scratch behavior.
+    /// elements, but it has no arm here: the scratch local would be a C array,
+    /// which cannot be assigned, so a fixed-array assignment is routed to its
+    /// own byte-copy path before this decision is reached. That path keeps the
+    /// old value with a byte copy of its own, so the no-scratch answer here
+    /// stays correct.
     pub(super) fn emits_drop(&self, ty: &Ty) -> bool {
         if !self.needs_drop(ty) {
             return false;

@@ -56,7 +56,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 ## Phase 1: Fixed-array values and `len`
 
 > **Phase baseline tree**: `d7da76d10baad0eea910e3a8dd230223f1ca17ae`
-> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs` (new), `compiler/src/codegen/function.rs`, `compiler/src/codegen/calls.rs`, `compiler/tests/array_value_integrity_impl_test.rs` (new), `plans/array-value-integrity/99-execution-plan.md`
+> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs` (new), `compiler/src/codegen/function.rs`, `compiler/src/codegen/calls.rs`, `compiler/src/codegen/drop.rs` (doc comment), `compiler/tests/array_value_integrity_impl_test.rs` (new), `plans/array-value-integrity/99-execution-plan.md`, `plans/array-value-integrity/07-testing-strategy.md`, `plans/array-value-integrity/03-01-multi-extent-element-loops.md`, `plans/00-roadmap.md` (`DEF-25`)
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 1.1: Specification Tests
@@ -92,7 +92,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-4, AR-7
 **Objective**: Pin the emitted shapes and cover internals.
 
-- [x] 1.3.1 Write implementation tests: `memcpy` copy shape, `cl_zero` after a move, the same-place no-op, the self-assignment save shape, the call-into-temporary assignment shape, `len` renderings, and counting-deleter release shape checks — `compiler/tests/array_value_integrity_impl_test.rs` ✅ (completed: 2026-09-28 18:18) — 7/7 pass; deviation: the fixed-array save branch is unreachable from accepted programs today (an exact same-place assignment is a no-op, an owned self-assignment reports `E10020`, and a self-referencing call takes the temporary path), so no test pins it; it stays as the approved defensive shape (`AR-7`) and the release counts pin the reachable call path
+- [x] 1.3.1 Write implementation tests: `memcpy` copy shape, `cl_zero` after a move, the same-place no-op, the self-assignment save shape, the call-into-temporary assignment shape, `len` renderings, and counting-deleter release shape checks — `compiler/tests/array_value_integrity_impl_test.rs` ✅ (completed: 2026-09-28 18:18) — 7/7 pass; deviation: the fixed-array save branch is unreachable from accepted programs today (an exact same-place assignment is a no-op, an owned self-assignment reports `E10020`, and a self-referencing call takes the temporary path), so no Phase 1 test pins it; it stays as the approved defensive shape (`AR-7`), and the release counts pin the reachable call path. The Phase 1 review (RV-002) found that a conditional right-hand side (`ok ? a : b`) does reach it and is accepted today; that form is filed as `DEF-25`
 - [x] 1.3.2 Full verification — `make check` (spec check plus the whole workspace) ✅ (completed: 2026-09-28 18:19) — `make check` exit 0: spec check OK (27 files, 104 compile-fail tests); 748 workspace tests passed across 28 binaries, no failures or warnings
 
 **Deliverables**:

@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-28 18:07
+> **Last Updated**: 2026-09-28 18:26
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -41,6 +41,7 @@
 | ↳ DEF-22 | Fixed-array value assignment emits invalid C | — | [array-value-integrity](array-value-integrity/00-index.md) | Executing | 🔄 | 2026-09-28 18:07 | 🔴 critical, found during array-value-integrity planning: `let b = a;`, `let r = m[0];`, `let c = s.v;`, and whole-array moves compile in `clc` and fail the C compiler (array assignment); fixed by the plan's whole-array byte-copy store; call-RHS drop/save added (PF-001); preflight passed 2026-09-28 |
 | ↳ DEF-23 | Materialized compiler temporaries that own elements are never released | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found during the array-value-integrity preflight (PF-005): statement-scoped `Materialize` temporaries are never dropped (scalar and array), and views bound from them are unhandled; recorded as a limitation in the plan |
 | ↳ DEF-24 | An element loop over an array-returning call emits invalid C | — | — | Backlog | ⬜ | 2026-09-28 | 🔴 critical, found during the array-value-integrity preflight (PF-007): `for (x in mk())` renders `mk()[i]` without a destination; the plan narrows R1 to place-rooted iterables and defers this form |
+| ↳ DEF-25 | A conditional fixed-array value emits invalid C | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in the array-value-integrity Phase 1 review (RV-002): `let c: i32[2] = ok ? a : b;` is accepted and emits `memcpy(&(c), &((ok ? a : b)), ...)`; an array operand of `?:` decays to a pointer, so the C compiler rejects it; `s = ok ? s : t` also reaches the fixed-array save path. Needs a materialization design and owned-branch semantics |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)
