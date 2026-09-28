@@ -8,6 +8,18 @@
 
 use super::*;
 
+/// The two IR shapes a value store can take.
+///
+/// Preparing the shape before the target's binding exists keeps name
+/// resolution at the initializer's position: the target place is attached
+/// later, once the declaration has recorded the new binding.
+enum PreparedStore {
+    /// A non-duplicable value that names a place, stored as a move.
+    Move { source: Place },
+    /// A lowered value stored by assignment.
+    Assign { value: Value },
+}
+
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     // -- statement checking --------------------------------------------------
 
@@ -154,8 +166,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .clone()
             .or(value_ty)
             .unwrap_or_else(Ty::unknown);
+        // The initializer is prepared before the binding is declared: a name
+        // the initializer reads must resolve to the outer binding the
+        // declaration may shadow, because the new name is not yet in scope in
+        // its own initializer (MOD-15).
+        let prepared = decl
+            .value
+            .as_ref()
+            .map(|value| self.prepare_store(&target, value));
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
-        if let Some(value) = &decl.value {
+        if let (Some(value), Some(prepared)) = (&decl.value, prepared) {
             let init = PlaceState {
                 initialized: true,
                 ..PlaceState::default()
@@ -164,7 +184,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.check_value_into(value, &target, decl.span);
             self.bind_value(id, &target, value, decl.span);
             let place = self.binding_place(id);
-            self.emit_store(place, &target, value);
+            self.emit_prepared_store(place, prepared);
         } else {
             self.emit(Statement::Nop);
         }
@@ -177,15 +197,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// source. Every other value lowers to an assign of the lowered value,
     /// which covers duplicable copies and fresh call results.
     pub(super) fn emit_store(&mut self, target: Place, ty: &Ty, value: &'a Expr) {
+        let prepared = self.prepare_store(ty, value);
+        self.emit_prepared_store(target, prepared);
+    }
+
+    /// Prepares a store before its target place exists.
+    ///
+    /// A `let` or `const` initializer must be resolved before the binding it
+    /// initializes is declared, so a name the initializer reads resolves to
+    /// the outer binding the declaration may shadow. The caller emits the
+    /// prepared shape once the target place is built.
+    fn prepare_store(&mut self, ty: &Ty, value: &'a Expr) -> PreparedStore {
         if !self.sema.table.duplicable(ty) {
             if let Some(source) = self.place_target(value) {
-                let source = self.target_place(&source);
-                self.emit(Statement::Move { target, source });
-                return;
+                return PreparedStore::Move {
+                    source: self.target_place(&source),
+                };
             }
         }
-        let lowered = self.lower_value(value);
-        self.emit(Statement::Assign { target, value: lowered });
+        PreparedStore::Assign {
+            value: self.lower_value(value),
+        }
+    }
+
+    /// Emits a store prepared by [`Self::prepare_store`].
+    fn emit_prepared_store(&mut self, target: Place, prepared: PreparedStore) {
+        match prepared {
+            PreparedStore::Move { source } => self.emit(Statement::Move { target, source }),
+            PreparedStore::Assign { value } => self.emit(Statement::Assign { target, value }),
+        }
     }
 
     /// Checks a `const` binding.
@@ -197,6 +237,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let value_ty = self.eval(&decl.value);
         let target = declared.or(Some(value_ty)).unwrap_or_else(Ty::unknown);
+        let prepared = self.prepare_store(&target, &decl.value);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         self.set_place(
             id,
@@ -208,7 +249,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.check_value_into(&decl.value, &target, decl.span);
         self.bind_value(id, &target, &decl.value, decl.span);
         let place = self.binding_place(id);
-        self.emit_store(place, &target, &decl.value);
+        self.emit_prepared_store(place, prepared);
     }
 
     /// Reports W10000 for every declared local that was never used.

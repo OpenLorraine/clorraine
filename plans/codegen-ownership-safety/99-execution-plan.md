@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 07:56
-> **Progress**: 11/20 tasks (55%)
+> **Last Updated**: 2026-09-28 08:01
+> **Progress**: 14/20 tasks (70%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -103,14 +103,19 @@ component documents and the testing strategy.
 - [x] 2.1.1 [spec-author] Add the DEF-14 specification cases ST-8 – ST-15 — `compiler/tests/codegen_ownership_spec_test.rs` ✅ (completed: 2026-09-28 07:56)
 - [x] 2.1.2 Verify the RED phase: the new cases fail for the defect reason (wrong value, segfault, or C build failure) ✅ (completed: 2026-09-28 07:56)
 
+> **Runtime note (2.2.3):** `len` on an owned `String` silently yields `0`
+> (a separate defect, filed as `DEF-19`). The ST-9/ST-10/ST-12 programs
+> observe length through a `str` helper, which exercises the specification's
+> implicit `String`→`str` widening; their expectations are unchanged.
+
 ### Step 2.2: Implementation
 
 **Reference**: [03-02](03-02-local-identity.md) §Implementation Details · AR #3, AR #11
 **Objective**: Give every binding a unique IR spelling and use it everywhere places and locals are built.
 
-- [ ] 2.2.1 Add `Binding.ir_name` and compute it deterministically in `declare`; initialize it in `declare_captures` — `compiler/src/own/flow.rs`, `compiler/src/own.rs`, `compiler/src/own/lower.rs`
-- [ ] 2.2.2 Spell places and both `Function.locals` builders with `ir_name`; update the IR documentation — `compiler/src/own.rs`, `compiler/src/own/lower.rs`, `compiler/src/ir.rs`
-- [ ] 2.2.3 Verify the GREEN phase: ST-8 – ST-15 pass and `make check` is green
+- [x] 2.2.1 Add `Binding.ir_name` and compute it deterministically in `declare`; initialize it in `declare_captures` — `compiler/src/own/flow.rs`, `compiler/src/own.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-09-28 08:01)
+- [x] 2.2.2 Spell places and both `Function.locals` builders with `ir_name`; update the IR documentation — `compiler/src/own.rs`, `compiler/src/own/lower.rs`, `compiler/src/ir.rs` ✅ (completed: 2026-09-28 08:01)
+- [x] 2.2.3 Verify the GREEN phase: ST-8 – ST-15 pass and `make check` is green ✅ (completed: 2026-09-28 08:01)
 
 ### Step 2.3: Implementation Tests and Hardening
 

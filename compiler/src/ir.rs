@@ -454,7 +454,9 @@ pub struct Param {
 /// One local binding: its name and checked type, in declaration order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Local {
-    /// The written name.
+    /// The unique IR spelling of the binding, not necessarily the source
+    /// spelling: a binding that shadows an earlier one of the same source name
+    /// appends `#<binding-index>`.
     pub name: String,
     /// The checked local type.
     pub ty: Ty,

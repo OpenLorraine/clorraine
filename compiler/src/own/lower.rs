@@ -386,7 +386,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // alias) never declares a C local: its places root at the override.
             .filter(|binding| binding.kind == BindingKind::Local && binding.base.is_none())
             .map(|binding| ir::Local {
-                name: binding.name.clone(),
+                name: binding.ir_name.clone(),
                 ty: binding.ty.clone(),
             })
             .collect();
@@ -463,6 +463,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let registration = self.register_cleanup();
             self.bindings.push(Binding {
                 name: info.name.clone(),
+                // A capture's places root at its environment field, so its IR
+                // spelling is never read; keep the source name for diagnostics.
+                ir_name: info.name.clone(),
                 ty: info.ty.clone(),
                 span: Span::default(),
                 used: true,

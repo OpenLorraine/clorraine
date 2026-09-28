@@ -414,14 +414,16 @@ fn should_read_the_outer_string_when_an_if_block_declares_a_shadowing_local() {
 
 import { String, stringOf } from std.text;
 
+func vlen(s: str): i32 { return i32(len(s)); }
+
 func main(): i32 {
     let x: String = stringOf("aaaa");
-    if (len(x) == 4) {
+    if (vlen(x) == 4) {
         let x: String = stringOf("b");
-        if (len(x) == 1) {
+        if (vlen(x) == 1) {
         }
     }
-    return i32(len(x));
+    return vlen(x);
 }
 "#;
     let output = compile_build_and_run("st9", source);
@@ -440,6 +442,8 @@ fn should_keep_both_locals_when_sibling_blocks_shadow_the_same_name() {
 
 import { String, stringOf } from std.text;
 
+func vlen(s: str): i32 { return i32(len(s)); }
+
 func main(): i32 {
     let total: i32 = 0;
     if (total == 0) {
@@ -448,7 +452,7 @@ func main(): i32 {
     }
     if (total == 7) {
         let x: String = stringOf("q");
-        total = total + i32(len(x));
+        total = total + vlen(x);
     }
     return total;
 }
@@ -495,11 +499,13 @@ fn should_return_the_outer_value_when_a_defer_block_shadows_it() {
 
 import { String, stringOf } from std.text;
 
+func vlen(s: str): i32 { return i32(len(s)); }
+
 func main(): i32 {
     let x: i32 = 5;
     defer {
         let x: String = stringOf("inner");
-        if (len(x) > 0) {
+        if (vlen(x) > 0) {
         }
     }
     return x;

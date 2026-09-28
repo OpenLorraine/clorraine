@@ -32,6 +32,15 @@ pub(super) enum BindingKind {
 pub(super) struct Binding {
     /// The written name.
     pub(super) name: String,
+    /// The unique IR spelling of the binding.
+    ///
+    /// The first binding with a given source name keeps that name; a later
+    /// binding that shadows it appends `#<index>`. The spelling is
+    /// deterministic and reaches the C emitter through `PlaceBase::Local` and
+    /// `Local::name`; diagnostics keep the source name. A base-overridden
+    /// binding (a capture) keeps the source name and is exempt: its places
+    /// root at the override and it never reaches `Function.locals`.
+    pub(super) ir_name: String,
     /// The resolved type.
     pub(super) ty: Ty,
     /// Source span of the declared name, used to report an unused local.

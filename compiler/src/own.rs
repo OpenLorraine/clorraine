@@ -307,7 +307,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // alias) never declares a C local: its places root at the override.
             .filter(|binding| binding.kind == BindingKind::Local && binding.base.is_none())
             .map(|binding| ir::Local {
-                name: binding.name.clone(),
+                name: binding.ir_name.clone(),
                 ty: binding.ty.clone(),
             })
             .collect();
@@ -622,8 +622,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             Provenance::None
         };
+        let ir_name = self.unique_ir_name(name);
         self.bindings.push(Binding {
             name: name.to_owned(),
+            ir_name,
             ty,
             span,
             used: false,
@@ -641,6 +643,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             scope.order.push(id);
         }
         id
+    }
+
+    /// The unique IR spelling for a new binding named `name`.
+    ///
+    /// The first binding with a source name keeps it; a later binding that
+    /// shadows it appends `#<binding-index>`. The binding table is not
+    /// truncated when a scope closes, so every binding declared so far in the
+    /// function counts and sibling scopes get distinct spellings even though
+    /// neither shadows the other.
+    fn unique_ir_name(&self, name: &str) -> String {
+        if self.bindings.iter().any(|binding| binding.name == name) {
+            format!("{name}#{}", self.bindings.len())
+        } else {
+            name.to_owned()
+        }
     }
 
     /// Looks a name up from innermost scope outwards.
@@ -675,8 +692,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
         }
         let place = match binding.kind {
-            BindingKind::Param | BindingKind::OutSlot => Place::param(&binding.name),
-            BindingKind::Local => Place::local(&binding.name),
+            BindingKind::Param | BindingKind::OutSlot => Place::param(&binding.ir_name),
+            BindingKind::Local => Place::local(&binding.ir_name),
         };
         place.with_type(binding.ty.clone())
     }
