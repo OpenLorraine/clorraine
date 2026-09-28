@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-27 09:10
+> **Last Updated**: 2026-09-28 07:30
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -29,8 +29,12 @@
 | PLAN-11 | Ownership and drop model completion | — | [ownership-drop-completion](ownership-drop-completion/00-index.md) | Done | ✅ | 2026-09-26 | 48/48; every R1–R10 traces to a passing test; DEF-12 (generic-substitution blind spot) deferred |
 | ↳ DEF-12 | Generic substitution guards | — | [generic-substitution-guards](generic-substitution-guards/00-index.md) | Done | ✅ | 2026-09-26 | 13/13; every R1–R8 traces to a passing ST case |
 | PLAN-12 | Non-lexical lifetimes (NLL, v2) | — | [non-lexical-lifetimes](non-lexical-lifetimes/00-index.md) | Done | ✅ | 2026-09-27 | 4/4 phases done (22/22); strict review closed FR-001/FR-001b/FR-002, NEW-001, F1–F12; `make verify: all legs passed` |
-| ↳ DEF-13 | `for (borrow e in xs)` double-frees a droppable element | — | — | Backlog | ⬜ | 2026-09-27 | 🔴 critical, found by the NLL runtime oracle: the element alias is dropped before each store; needs a dedicated codegen/ownership plan |
-| ↳ DEF-14 | Local shadowing miscompiles (locals keyed by source name) | — | — | Backlog | ⬜ | 2026-09-27 | 🔴 critical, found by the NLL runtime oracle: a defer-local or block-local shadowing an outer name shares one C variable; needs a dedicated codegen plan |
+| ↳ DEF-13 | `for (borrow e in xs)` double-frees a droppable element | — | [codegen-ownership-safety](codegen-ownership-safety/00-index.md) | Executing | 🔄 | 2026-09-28 | 🔴 critical, found by the NLL runtime oracle; element-alias design (AR #2); preflight passed; execution started |
+| ↳ DEF-14 | Local shadowing miscompiles (locals keyed by source name) | — | [codegen-ownership-safety](codegen-ownership-safety/00-index.md) | Executing | 🔄 | 2026-09-28 | 🔴 critical, found by the NLL runtime oracle; unique binding identity (AR #3); preflight passed; execution started |
+| ↳ DEF-15 | Multi-extent element loops bind the base element, not the row | — | — | Backlog | ⬜ | 2026-09-27 | 🔴 critical, observed during codegen-ownership-safety recon; different root cause, needs a dedicated plan |
+| ↳ DEF-16 | Reading an owned array element as a view argument double-frees | — | — | Backlog | ⬜ | 2026-09-28 | 🔴 critical, found in codegen-ownership-safety preflight: `materialize_owned_argument` copies an element without moving it (`own/lower.rs:657`); blocks owned-element observation |
+| ↳ DEF-17 | Nested element loops hang (step-block mis-selection) | — | — | Backlog | ⬜ | 2026-09-28 | 🔴 critical, found in codegen-ownership-safety preflight: `for_step_block` picks the enclosing body as the step (`codegen/control.rs:407`); no harness timeout |
+| ↳ DEF-18 | A `take`/move through a borrow element view steals the element | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in codegen-ownership-safety preflight: element bindings are `BindingKind::Local`, so the parameter move rules do not apply (`own/place.rs:185`) |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)
