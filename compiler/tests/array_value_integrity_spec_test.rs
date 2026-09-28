@@ -229,13 +229,18 @@ fn assert_rejected_with(tag: &str, source: &str, code: &str, fragments: &[&str])
 
 /// A multi-extent array reports its outermost element count to `len`.
 ///
-/// The array holds two rows of three, so the length is two, not six.
+/// The array holds two rows of three, so the length is two, not six. The
+/// element read keeps the array a used value in the emitted C; the exit code
+/// is the length alone.
 #[test]
 fn should_report_the_row_count_when_len_reads_a_multi_extent_array() {
     let source = r#"module codegen.av.st1;
 
 func main(): i32 {
     let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    if (m[0][0] != 1) {
+        return 100;
+    }
     return i32(len(m));
 }
 "#;

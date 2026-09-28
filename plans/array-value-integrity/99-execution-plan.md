@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 18:12
-> **Progress**: 2/24 tasks (8%)
+> **Last Updated**: 2026-09-28 18:15
+> **Progress**: 4/24 tasks (17%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -65,7 +65,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin fixed-array copy/move, self-assignment, and `len` behavior before any implementation.
 
 - [x] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/array_value_integrity_spec_test.rs` (ST-1 – ST-9, ST-22, ST-25, ST-26) ✅ (completed: 2026-09-28 18:10)
-- [x] 1.1.2 Run the spec suite and record the red phase — the split recorded in `07-testing-strategy.md` (ST-1: wrong value; ST-2 – ST-5, ST-7, ST-8: the C compiler rejects the emitted C; ST-22, ST-25, ST-26: the `len` value is wrong; ST-6, ST-9: pass as guards; the release shape is pinned red by the Phase 1 implementation tests) ✅ (completed: 2026-09-28 18:12) — red evidence: 3 pass (ST-6 `E10020` message, ST-9 call-return binding, ST-24 literal/array/growable lengths), 27 fail: ST-1/ST-22/ST-25/ST-26 wrong `len` value; ST-2 – ST-5, ST-7, ST-8, ST-16 – ST-18, ST-23 the C compiler rejects; ST-10 – ST-13, ST-15 wrong shape (`E10209` or base-element iterations); ST-19 – ST-21, ST-27 – ST-30 no `E10026`; deviation from the recorded split: ST-14 fails on the message type (`non-duplicable 'String'` pre-fix, the row type arrives with the fix) — the case is unchanged; the `07` split table now records ST-14 as a red case
+- [x] 1.1.2 Run the spec suite and record the red phase — the split recorded in `07-testing-strategy.md` (ST-1: wrong value; ST-2 – ST-5, ST-7, ST-8: the C compiler rejects the emitted C; ST-22, ST-25, ST-26: the `len` value is wrong; ST-6, ST-9: pass as guards; the release shape is pinned red by the Phase 1 implementation tests) ✅ (completed: 2026-09-28 18:12) — red evidence: 3 pass (ST-6 `E10020` message, ST-9 call-return binding, ST-24 literal/array/growable lengths), 27 fail: ST-1/ST-22/ST-25/ST-26 wrong `len` value; ST-2 – ST-5, ST-7, ST-8, ST-16 – ST-18, ST-23 the C compiler rejects; ST-10 – ST-13, ST-15 wrong shape (`E10209` or base-element iterations); ST-19 – ST-21, ST-27 – ST-30 no `E10026`; deviation from the recorded split: ST-14 fails on the message type (`non-duplicable 'String'` pre-fix, the row type arrives with the fix) — the case is unchanged; the `07` split table now records ST-14 as a red case; ST-1's program reads an element before measuring `len`, so the array stays a used value in the emitted C and the case returns the wrong length `6` pre-fix instead of tripping the emitted-C unused warning
 
 **Deliverables**:
 - [x] Spec suite with the ST-1 – ST-9, ST-22, ST-25, ST-26 cases and the shared scratch/run helpers
@@ -79,11 +79,11 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Byte-copy array stores, the array save path, the call-into-temporary assignment path, and the `len` arms (the outer-extent rule and the `String` byte count).
 
 - [x] 1.2.1 Implement the fixed-array store path (`emit_assign`, `Statement::Move`, the save path, the call-into-temporary assignment path, and the same-place no-op) and the `len` arms (the outermost-extent rule for fixed multi-extent arrays and the owned-`String` byte count) — `compiler/src/codegen/function.rs`, `compiler/src/codegen/calls.rs` ✅ (completed: 2026-09-28 18:13)
-- [ ] 1.2.2 Run the spec suite and record the green phase — ST-1 – ST-9, ST-22, ST-25, ST-26 pass
+- [x] 1.2.2 Run the spec suite and record the green phase — ST-1 – ST-9, ST-22, ST-25, ST-26 pass ✅ (completed: 2026-09-28 18:15) — green evidence: 12/12 Phase 1 cases pass; the suite reports 13 passed (including the ST-24 guard) and 17 failures limited to the Phase 2/3 cases
 
 **Deliverables**:
-- [ ] Copy, move, reassignment, and self-assignment of fixed arrays emit valid C; a call right-hand side is moved from a temporary
-- [ ] `len(m)` is the outermost extent for fixed multi-extent arrays; `len(s)` is the byte count for an owned `String`
+- [x] Copy, move, reassignment, and self-assignment of fixed arrays emit valid C; a call right-hand side is moved from a temporary
+- [x] `len(m)` is the outermost extent for fixed multi-extent arrays; `len(s)` is the byte count for an owned `String`
 
 **Verify**: `make -C docker exec CMD="cargo test --test array_value_integrity_spec_test"`
 
