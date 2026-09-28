@@ -319,7 +319,12 @@ impl<'a> Emitter<'a> {
     ) -> BlockId {
         let Terminator::Branch {
             condition,
-            shape: BranchShape::Loop { kind, body, exit },
+            shape: BranchShape::Loop {
+                kind,
+                body,
+                exit,
+                step,
+            },
             ..
         } = &function.blocks[branch].terminator
         else {
@@ -328,6 +333,7 @@ impl<'a> Emitter<'a> {
             return branch;
         };
         let (kind, body, exit) = (*kind, *body, *exit);
+        let step = *step;
         let span = function.blocks[branch].terminator_span;
         // The branch block is the printed loop header, so it is never printed
         // as a separate labelled block.
@@ -368,7 +374,6 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    }} while ({condition_c});"));
             }
             LoopKind::For => {
-                let step = self.for_step_block(function, body, branch);
                 self.emit_line_directive(span);
                 let step_c = match step {
                     Some(step) => self.for_step_text(function, step),
@@ -396,27 +401,6 @@ impl<'a> Emitter<'a> {
             }
         }
         exit
-    }
-
-    /// The step block of a `for` loop.
-    ///
-    /// The step is the block that jumps back to the loop test from inside the
-    /// loop body. The block before the loop also jumps to the test, but it is
-    /// the loop's entry and lies outside the body, so restricting the search to
-    /// the body's closure keeps the two apart.
-    fn for_step_block(
-        &self,
-        function: &'a ir::Function,
-        body: BlockId,
-        head: BlockId,
-    ) -> Option<BlockId> {
-        let region = super::cleanup::closure_from(function, body);
-        function.blocks.iter().find_map(|block| match &block.terminator {
-            Terminator::Goto(target) if *target == head && region.contains(&block.id) => {
-                Some(block.id)
-            }
-            _ => None,
-        })
     }
 
     /// Renders a `for` step's assignments as a C comma expression.

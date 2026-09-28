@@ -31,6 +31,13 @@ pub enum BranchShape {
         body: BlockId,
         /// The block reached when the loop ends.
         exit: BlockId,
+        /// The step block of a `for` loop, or `None` for `while`/`do-while`.
+        ///
+        /// The checker creates the step block when it builds a `for` and knows
+        /// exactly which block it is, so it records it here. The emitter then
+        /// prints that block in the C header without recovering the step from
+        /// the block graph, which is ambiguous once a loop is nested.
+        step: Option<BlockId>,
     },
     /// A branch with no structured form; emit a label plus `goto`.
     Plain,

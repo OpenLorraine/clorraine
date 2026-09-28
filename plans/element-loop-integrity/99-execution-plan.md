@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:52
-> **Progress**: 8/16 tasks (50%)
+> **Last Updated**: 2026-09-28 10:53
+> **Progress**: 9/16 tasks (56%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -123,7 +123,7 @@ verify).
 **Reference**: [03-02](03-02-nested-loop-step.md) §Proposed Changes · AR #7, AR #8
 **Objective**: Carry the step block in the IR shape and delete the search.
 
-- [ ] 2.2.1 Add `step: Option<BlockId>` to `BranchShape::Loop`, set it in `own/loops.rs` at all three construction sites, consume it in `emit_loop`, and delete `for_step_block` — `compiler/src/ir/control.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/control.rs`
+- [x] 2.2.1 Add `step: Option<BlockId>` to `BranchShape::Loop`, set it in `own/loops.rs` at all three construction sites, consume it in `emit_loop`, and delete `for_step_block` — `compiler/src/ir/control.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/control.rs` ✅ (completed: 2026-09-28 10:53)
 - [ ] 2.2.2 Verify the GREEN phase: ST-14 – ST-21 pass and `make check` is green
 
 **Deliverables**:

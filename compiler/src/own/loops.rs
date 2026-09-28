@@ -270,6 +270,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 kind: LoopKind::For,
                 body: body_block,
                 exit,
+                step: Some(step_block),
             }
         } else {
             BranchShape::Plain
@@ -427,6 +428,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 kind: LoopKind::For,
                 body: body_block,
                 exit,
+                step: Some(step_block),
             }
         };
         self.terminate(Terminator::Branch {
@@ -544,7 +546,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.block_has_statements(header) {
             BranchShape::Plain
         } else {
-            BranchShape::Loop { kind, body, exit }
+            BranchShape::Loop {
+                kind,
+                body,
+                exit,
+                step: None,
+            }
         }
     }
 
