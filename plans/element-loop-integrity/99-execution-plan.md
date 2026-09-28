@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:45
-> **Progress**: 6/16 tasks (38%)
+> **Last Updated**: 2026-09-28 10:50
+> **Progress**: 7/16 tasks (44%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -100,7 +100,9 @@ verify).
 
 ## Phase 2: Nested Loop Step (DEF-17)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `35d589877da67125047aafa0dcbcb127b5eb3b3a`
+> **Expected modifications**: `compiler/tests/element_loop_integrity_spec_test.rs`, `compiler/tests/element_loop_integrity_impl_test.rs`, `compiler/src/ir/control.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/control.rs`, `99-execution-plan.md`
+> **Scope mode**: strict
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 2.1: Specification Tests
@@ -108,7 +110,7 @@ verify).
 **Reference**: [03-02](03-02-nested-loop-step.md) · [07](07-testing-strategy.md) ST-14 – ST-21 · AR #3, AR #8
 **Objective**: Extend the oracle with the nested-loop cases before the emitter change.
 
-- [ ] 2.1.1 [spec-author] Add the DEF-17 specification cases ST-14 – ST-21 to `compiler/tests/element_loop_integrity_spec_test.rs`
+- [x] 2.1.1 [spec-author] Add the DEF-17 specification cases ST-14 – ST-21 to `compiler/tests/element_loop_integrity_spec_test.rs` ✅ (completed: 2026-09-28 10:50)
 - [ ] 2.1.2 Verify the RED phase: ST-14 – ST-18 and ST-21 fail with the bounded-run timeout and ST-19/ST-20 pass; record per-case evidence on this line
 
 **Deliverables**:

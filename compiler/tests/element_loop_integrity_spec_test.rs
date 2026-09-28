@@ -557,3 +557,203 @@ func main(): i32 {
     let output = run_host("es13", source);
     assert_trap("es13", &output, "E11211");
 }
+
+/// Nested element loops run both their own heads and their own steps.
+///
+/// The outer loop walks `[1, 2]`, the inner loop walks `[1, 2, 3]`, and the sum
+/// of every `x + y` pair is `21`. A nested loop that re-enters its own
+/// pre-header as the C step never advances and hits the bounded run instead of
+/// returning.
+#[test]
+fn should_sum_both_loop_variables_when_element_loops_are_nested() {
+    let source = r#"module codegen.elem.st14;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let ys: i32[3] = [1, 2, 3];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        for (borrow y in ys) {
+            s = s + x + y;
+        }
+    }
+    return s;
+}
+"#;
+    let output = run_host("es14", source);
+    assert_exit("es14", &output, 21);
+}
+
+/// An element loop inside a `while` body advances once per outer iteration.
+///
+/// The outer `while` runs twice and the inner loop adds `1 + 2` each time, so
+/// the sum is `6`; the inner loop must terminate to reach the second iteration.
+#[test]
+fn should_advance_the_element_loop_when_it_is_inside_a_while() {
+    let source = r#"module codegen.elem.st15;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let s: i32 = 0;
+    let k: i32 = 0;
+    while (k < 2) {
+        for (borrow x in xs) {
+            s = s + x;
+        }
+        k = k + 1;
+    }
+    return s;
+}
+"#;
+    let output = run_host("es15", source);
+    assert_exit("es15", &output, 6);
+}
+
+/// A three-clause `for` inside a `while` body advances its own index.
+///
+/// The outer `while` runs twice and the inner `for` adds `0 + 1 + 2` each time,
+/// so the sum is `6`; the inner loop must run its increment, not its initializer.
+#[test]
+fn should_advance_the_three_clause_loop_when_it_is_inside_a_while() {
+    let source = r#"module codegen.elem.st16;
+
+func main(): i32 {
+    let s: i32 = 0;
+    let k: i32 = 0;
+    while (k < 2) {
+        for (let j: i32 = 0; j < 3; j = j + 1) {
+            s = s + j;
+        }
+        k = k + 1;
+    }
+    return s;
+}
+"#;
+    let output = run_host("es16", source);
+    assert_exit("es16", &output, 6);
+}
+
+/// A `continue` in a nested element loop resumes at the inner step.
+///
+/// The inner loop skips `y == 2` for both outer elements; the observed sum is
+/// `1+1 + 1+3 + 2+1 + 2+3 = 14`. A `continue` that resumes at the wrong block
+/// either hangs or counts the wrong pairs.
+#[test]
+fn should_resume_at_the_inner_step_when_a_nested_element_loop_continues() {
+    let source = r#"module codegen.elem.st17;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let ys: i32[3] = [1, 2, 3];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        for (borrow y in ys) {
+            if (y == 2) {
+                continue;
+            }
+            s = s + x + y;
+        }
+    }
+    return s;
+}
+"#;
+    let output = run_host("es17", source);
+    assert_exit("es17", &output, 14);
+}
+
+/// A `break` in a nested element loop leaves only the inner loop.
+///
+/// The inner loop stops at `y == 2` for both outer elements, so the sum is
+/// `1+1 + 2+1 = 5`; the outer loop must continue after the inner break.
+#[test]
+fn should_leave_the_inner_loop_when_a_nested_element_loop_breaks() {
+    let source = r#"module codegen.elem.st18;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let ys: i32[3] = [1, 2, 3];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        for (borrow y in ys) {
+            if (y == 2) {
+                break;
+            }
+            s = s + x + y;
+        }
+    }
+    return s;
+}
+"#;
+    let output = run_host("es18", source);
+    assert_exit("es18", &output, 5);
+}
+
+/// Two sequential element loops both complete and both advance.
+///
+/// The first loop adds `1 + 2` and the second adds `10 + 20 + 30`, so the sum
+/// is `63`; the first loop's exit must not corrupt the second loop's step.
+#[test]
+fn should_run_both_when_two_element_loops_run_in_sequence() {
+    let source = r#"module codegen.elem.st19;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let ys: i32[3] = [10, 20, 30];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        s = s + x;
+    }
+    for (borrow y in ys) {
+        s = s + y;
+    }
+    return s;
+}
+"#;
+    let output = run_host("es19", source);
+    assert_exit("es19", &output, 63);
+}
+
+/// A single top-level element loop keeps its current behavior.
+///
+/// The loop walks `[1, 2]`, adds both values, and returns `3`, so the step
+/// selection change does not disturb the non-nested shape.
+#[test]
+fn should_run_a_top_level_element_loop() {
+    let source = r#"module codegen.elem.st20;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        s = s + x;
+    }
+    return s;
+}
+"#;
+    let output = run_host("es20", source);
+    assert_exit("es20", &output, 3);
+}
+
+/// A three-clause `for` inside an element loop advances its own index.
+///
+/// The outer loop walks `[1, 2]` and the inner loop adds `x + 0`, `x + 1`, and
+/// `x + 2` for each element, so the sum is `6 + 9 = 15`; the inner loop must
+/// run its increment to terminate.
+#[test]
+fn should_advance_the_three_clause_loop_when_it_is_inside_an_element_loop() {
+    let source = r#"module codegen.elem.st21;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        for (let j: i32 = 0; j < 3; j = j + 1) {
+            s = s + x + j;
+        }
+    }
+    return s;
+}
+"#;
+    let output = run_host("es21", source);
+    assert_exit("es21", &output, 15);
+}
