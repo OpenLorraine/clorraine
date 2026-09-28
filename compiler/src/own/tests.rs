@@ -647,3 +647,47 @@ fn a_type_parameter_literal_field_is_not_moved() {
     assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
 }
 
+
+/// A source with a nested shadow and a sibling shadow of the same name.
+const SHADOWED_LOCALS: &str = "module t;\n\
+    func demo(): i32 {\n\
+        let x: i32 = 1;\n\
+        if (x > 0) {\n\
+            let x: i32 = 2;\n\
+        }\n\
+        {\n\
+            let x: i32 = 3;\n\
+        }\n\
+        return x;\n\
+    }\n\
+    func main(): i32 { return 0; }\n";
+
+#[test]
+fn shadowing_bindings_get_unique_and_deterministic_ir_spellings() {
+    // The first binding of a source name keeps that name; every later binding
+    // appends its declaration index, so a nested shadow and a sibling shadow
+    // both stay distinct. Compiling again must reproduce the same spellings,
+    // because speculative passes redeclare at the same indices.
+    let spelling = |source: &str| {
+        let (diagnostics, output) = compile(source);
+        assert_eq!(
+            diagnostics.error_count(),
+            0,
+            "the program types: {:?}",
+            error_codes(source)
+        );
+        let function = output
+            .expect("the ownership stage ran")
+            .functions
+            .into_iter()
+            .find(|function| function.name == "demo")
+            .expect("demo is lowered");
+        function
+            .locals
+            .into_iter()
+            .map(|local| local.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(spelling(SHADOWED_LOCALS), vec!["x", "x#1", "x#2"]);
+    assert_eq!(spelling(SHADOWED_LOCALS), vec!["x", "x#1", "x#2"]);
+}

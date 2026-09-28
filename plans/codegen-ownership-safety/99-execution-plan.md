@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 08:01
-> **Progress**: 14/20 tasks (70%)
+> **Last Updated**: 2026-09-28 08:03
+> **Progress**: 16/20 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -122,8 +122,8 @@ component documents and the testing strategy.
 **Reference**: [07](07-testing-strategy.md) §Test Categories
 **Objective**: Cover name uniqueness and determinism.
 
-- [ ] 2.3.1 Add the `declare` unit test and the determinism test (compile twice, identical emitted C) — `compiler/src/own.rs`, `compiler/tests/codegen_ownership_impl_test.rs`
-- [ ] 2.3.2 `make check` green after the new tests
+- [x] 2.3.1 Add the `declare` unit test and the determinism test (compile twice, identical emitted C) — `compiler/src/own.rs`, `compiler/tests/codegen_ownership_impl_test.rs` ✅ (completed: 2026-09-28 08:03)
+- [x] 2.3.2 `make check` green after the new tests ✅ (completed: 2026-09-28 08:03)
 
 **Deliverables**:
 - [ ] Every MOD-16 shadowing form compiles and behaves correctly

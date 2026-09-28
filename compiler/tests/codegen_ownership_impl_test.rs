@@ -472,3 +472,107 @@ func main(): i32 {
     build_host_no_libc("freestanding", &scratch, &emitted);
     build_m68k("freestanding", &scratch, &emitted);
 }
+
+/// A sanitized spelling collision with a source name stays distinct.
+///
+/// The shadowing local's IR spelling `x#2` sanitizes to `x_2`, which is also
+/// the C name of a source local literally named `x_2`; the emitter's unique
+/// naming must keep the two apart. The block reads both (`2 + 3`) and the
+/// outer `x` is read afterward, so the program exits `5 + 1 = 6`.
+#[test]
+fn a_shadowed_spelling_collides_safely_with_a_source_name() {
+    let source = r#"module codegen.ownimpl.collision;
+
+func f(): i32 {
+    let x: i32 = 1;
+    let total: i32 = 0;
+    {
+        let x: i32 = 2;
+        let x_2: i32 = 3;
+        total = x + x_2;
+    }
+    return total + x;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let emitted = run_host_case("collision", source, 6);
+    assert!(
+        emitted.contains("i32 x_2 = 0;"),
+        "collision: the shadowed spelling keeps the sanitized name"
+    );
+    assert!(
+        emitted.contains("i32 x_2_1 = 0;"),
+        "collision: the source spelling gets a fresh C name"
+    );
+}
+
+/// Emitting the same source twice produces byte-identical C.
+///
+/// The case covers the spelling machinery: an element alias and a shadowing
+/// local both appear, and the temporary, local, and drop numbering must not
+/// drift between runs.
+#[test]
+fn compiling_the_same_program_twice_emits_identical_c() {
+    let source = r#"module codegen.ownimpl.determinism;
+
+import { String, stringOf } from std.text;
+
+struct P { name: String; n: i32; }
+
+func fill(borrow ps: P[2]): void {
+    for (borrow p in ps) {
+        p.name = stringOf("zz");
+        p.n = 4;
+    }
+}
+
+func pick(LIMIT: i32): i32 {
+    let doubled: i32 = LIMIT * 2;
+    let LIMIT: i32 = doubled;
+    return LIMIT;
+}
+
+func main(): i32 {
+    let ps: P[2] = [P { name: stringOf("a"), n: 1 }, P { name: stringOf("b"), n: 2 }];
+    fill(borrow ps);
+    return pick(ps[0].n + ps[1].n);
+}
+"#;
+    let scratch = ScratchDir::new("determinism");
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source).expect("write the program");
+    let emit = |output_name: &str| {
+        let c_path = scratch.path().join(output_name);
+        let output = Command::new(env!("CARGO_BIN_EXE_clc"))
+            .current_dir(scratch.path())
+            .args([
+                "--profile".to_owned(),
+                "host".to_owned(),
+                "-o".to_owned(),
+                c_path.display().to_string(),
+                "main.clo".to_owned(),
+            ])
+            .output()
+            .expect("failed to spawn the compiler binary");
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "determinism: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::fs::read_to_string(&c_path).unwrap_or_default()
+    };
+    let first = emit("first.c");
+    let second = emit("second.c");
+    assert!(
+        !first.trim().is_empty(),
+        "determinism: the emitted C is empty"
+    );
+    assert_eq!(
+        first, second,
+        "determinism: repeated compilation must emit identical C"
+    );
+}
