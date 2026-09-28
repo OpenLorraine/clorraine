@@ -291,12 +291,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// its initial state live inside the loop body. The element scope is pushed
     /// here and popped by the caller after the body, which gives the element
     /// its own per-iteration cleanup.
+    ///
+    /// A `borrow` element is an alias of the iterable element: its place is
+    /// rooted at the compiler temporary that holds the element's address, and
+    /// that address is refreshed at the top of every iteration. Reads and
+    /// writes through the binding therefore reach the iterable directly, and
+    /// no copy-in or write-back step exists. A copied element keeps the
+    /// per-iteration copy into its own local.
     fn bind_for_in_element(
         &mut self,
         decl: &'a ForInStmt,
         element: &Ty,
         iterable: &Value,
         index: &Value,
+        address_temp: ir::TempId,
     ) -> usize {
         self.push_scope(decl.span);
         let id = self.declare(
@@ -315,61 +323,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ..PlaceState::default()
             },
         );
-        let read = Value::new(
-            element.clone(),
-            ValueKind::Index {
-                base: Box::new(iterable.clone()),
-                index: Box::new(index.clone()),
-            },
-        );
-        let target = self.binding_place(id);
-        self.emit(Statement::Assign {
-            target,
-            value: read,
-        });
-        id
-    }
-
-    /// Attaches the element write-back to the innermost exit frame.
-    ///
-    /// Only a `borrow` element is written back; a copied element has no view to
-    /// flush. A `break` or `continue` reads this from the frame so it can run
-    /// the write-back before the loop is left.
-    fn set_for_in_write(
-        &mut self,
-        borrow: bool,
-        id: usize,
-        element: &Ty,
-        iterable: &Value,
-        index: &Value,
-    ) {
-        if !borrow {
-            return;
-        }
-        if let Some(frame) = self.exits.last_mut() {
-            frame.for_in = Some(ForInWrite {
-                element: element.clone(),
-                iterable: iterable.clone(),
-                index: index.clone(),
-                id,
-            });
-        }
-    }
-
-    /// Copies a `borrow` element's final value back into the iterable.
-    ///
-    /// A `borrow` element is an exclusive view of the element, so a write
-    /// through it must reach the array. The binding is copied in at the top of
-    /// the iteration and copied back here, at its end and on any early edge a
-    /// `break` or `continue` takes.
-    pub(super) fn store_for_in_element(
-        &mut self,
-        element: &Ty,
-        iterable: &Value,
-        index: &Value,
-        id: usize,
-    ) {
-        self.bindings[id].used = true;
         let selected = Value::new(
             element.clone(),
             ValueKind::Index {
@@ -377,15 +330,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 index: Box::new(index.clone()),
             },
         );
-        let pointer = Value::new(
-            element.clone(),
-            ValueKind::Unary {
-                op: UnaryOp::AddressOf,
-                operand: Box::new(selected),
-            },
-        );
-        let value = Value::new(element.clone(), ValueKind::Place(self.binding_place(id)));
-        self.emit(Statement::StorePointer { pointer, value });
+        if decl.borrow {
+            self.bindings[id].base = Some(ir::PlaceBase::DerefTemp {
+                temp: address_temp,
+                ty: element.clone(),
+            });
+            // The binding is the element itself, so the iterable keeps owning
+            // the value even when the body never touches the binding; mark it
+            // used so an unused element alias is not reported as a dead local.
+            self.bindings[id].used = true;
+            let target = Place {
+                base: ir::PlaceBase::Temp(address_temp),
+                projections: Vec::new(),
+                ty: Ty::raw(element.clone()),
+            };
+            let address = Value::new(
+                Ty::raw(element.clone()),
+                ValueKind::Unary {
+                    op: UnaryOp::AddressOf,
+                    operand: Box::new(selected),
+                },
+            );
+            self.emit(Statement::Assign {
+                target,
+                value: address,
+            });
+        } else {
+            let target = self.binding_place(id);
+            self.emit(Statement::Assign {
+                target,
+                value: selected,
+            });
+        }
+        id
     }
 
     /// Checks an element loop, requiring `borrow` for non-duplicable elements.
@@ -393,7 +370,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The loop lowers to an index loop: a hidden counter runs from zero to the
     /// length of the iterable, the element binds to the element at that index,
     /// and the body runs. `continue` advances the counter, so an element view
-    /// is created and ended once per iteration. The element binding and the body
+    /// is created and ended once per iteration; a `borrow` element refreshes
+    /// its aliasing address temporary there. The element binding and the body
     /// are analyzed to a fixed point like the other loops, so a value moved in
     /// one iteration is seen as moved in the next. The loop may run zero times,
     /// so the exit joins the pre-loop state.
@@ -418,6 +396,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let floor = self.scopes.len();
         self.push_scope(decl.span);
         let index_temp = self.new_temp(Ty::usize_ty());
+        // A `borrow` element aliases the iterable through one address
+        // temporary per loop. It is allocated before both the speculative and
+        // the real binding pass, exactly like the index temporary, so the two
+        // passes agree on its id.
+        let address_temp = self.new_temp(Ty::raw(element.clone()));
         let index_place = Place {
             base: ir::PlaceBase::Temp(index_temp),
             projections: Vec::new(),
@@ -463,8 +446,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 floor,
                 continue_floor,
             ));
-            let id = checker.bind_for_in_element(decl, &element, &iterable, &index_value);
-            checker.set_for_in_write(decl.borrow, id, &element, &iterable, &index_value);
+            let id = checker.bind_for_in_element(
+                decl,
+                &element,
+                &iterable,
+                &index_value,
+                address_temp,
+            );
             checker.check_block(&decl.body);
             checker.exits.pop();
             checker.pop_scope();
@@ -478,13 +466,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             continue_floor,
         ));
         self.switch_to(body_block);
-        let id = self.bind_for_in_element(decl, &element, &iterable, &index_value);
-        self.set_for_in_write(decl.borrow, id, &element, &iterable, &index_value);
+        self.bind_for_in_element(decl, &element, &iterable, &index_value, address_temp);
         self.check_block(&decl.body);
         if !self.is_terminated() {
-            if decl.borrow {
-                self.store_for_in_element(&element, &iterable, &index_value, id);
-            }
             self.terminate(Terminator::Goto(step_block));
         }
         self.pop_scope();

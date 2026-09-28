@@ -111,6 +111,25 @@ fn branching_creates_separate_blocks_and_a_join() {
 }
 
 #[test]
+fn a_deref_temp_place_carries_its_pointee_type() {
+    let place = Place {
+        base: PlaceBase::DerefTemp {
+            temp: 3,
+            ty: Ty::i32_ty(),
+        },
+        projections: Vec::new(),
+        ty: Ty::i32_ty(),
+    };
+    assert!(place.is_plain());
+    assert_eq!(place.ty, Ty::i32_ty());
+    assert_ne!(
+        place.base,
+        PlaceBase::Temp(3),
+        "a dereferenced alias is distinct from a plain temporary"
+    );
+}
+
+#[test]
 fn a_projected_place_reports_its_shape_and_type() {
     let place = Place {
         base: PlaceBase::Local("pair".to_owned()),

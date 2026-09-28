@@ -103,6 +103,19 @@ pub enum PlaceBase {
         /// The captured value's checked type.
         ty: Ty,
     },
+    /// A place reached by dereferencing a compiler temporary that holds its
+    /// address.
+    ///
+    /// A `for (borrow e in xs)` element is an alias of the iterable element: a
+    /// per-iteration temporary holds the element's address and every use of
+    /// the binding goes through it, so a write reaches the iterable
+    /// immediately and the assignment rules apply to the element itself.
+    DerefTemp {
+        /// The temporary holding the element address.
+        temp: TempId,
+        /// The type of the value the address points at.
+        ty: Ty,
+    },
 }
 
 /// One selection applied to a place.

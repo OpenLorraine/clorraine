@@ -176,6 +176,9 @@ impl<'a> Emitter<'a> {
                     format!("(__env->{field})")
                 }
             }
+            // The temporary holds the address of the aliased element, so the
+            // place is the dereferenced pointer.
+            PlaceBase::DerefTemp { temp, .. } => format!("(*__cl_tmp{temp})"),
         }
     }
 
@@ -208,6 +211,8 @@ impl<'a> Emitter<'a> {
             // The environment field carries its own captured type, so the
             // emitter spells a projected field without a site lookup.
             PlaceBase::EnvField { ty, .. } => ty.clone(),
+            // The alias carries the type of the value the address points at.
+            PlaceBase::DerefTemp { ty, .. } => ty.clone(),
         }
     }
 

@@ -382,7 +382,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         function.locals = self
             .bindings
             .iter()
-            .filter(|binding| binding.kind == BindingKind::Local)
+            // A base-overridden binding (a lambda capture or a borrow-element
+            // alias) never declares a C local: its places root at the override.
+            .filter(|binding| binding.kind == BindingKind::Local && binding.base.is_none())
             .map(|binding| ir::Local {
                 name: binding.name.clone(),
                 ty: binding.ty.clone(),

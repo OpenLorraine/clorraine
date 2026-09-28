@@ -517,17 +517,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks a `break`, recording the edge and running the scopes it leaves.
-    ///
-    /// A `for (borrow e in xs)` loop being broken writes its element back before
-    /// the jump, so the last write through the element view is not lost.
     pub(super) fn check_break(&mut self, _span: Span) {
         let Some(frame) = self.exits.last() else {
             return;
         };
         let break_block = frame.break_block;
         let floor = frame.scope_floor;
-        let write = frame.for_in.clone();
-        self.run_for_in_write(write);
         // The cleanup the break runs is part of the edge state, so it runs
         // before the edge is recorded; otherwise a loan a defer creates would
         // be missing from the state that joins after the loop.
@@ -541,19 +536,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Checks a `continue`, recording the edge and running the scopes it
     /// leaves on the way back to the loop head.
-    ///
-    /// As with `break`, a `borrow` element loop writes its element back before
-    /// continuing so the iteration's write reaches the iterable.
     pub(super) fn check_continue(&mut self, _span: Span) {
-        let found = self.exits.iter().rev().find_map(|frame| {
-            frame
-                .continue_block
-                .map(|block| (block, frame.continue_floor, frame.for_in.clone()))
-        });
-        let Some((continue_block, floor, write)) = found else {
+        let found = self
+            .exits
+            .iter()
+            .rev()
+            .find_map(|frame| frame.continue_block.map(|block| (block, frame.continue_floor)));
+        let Some((continue_block, floor)) = found else {
             return;
         };
-        self.run_for_in_write(write);
         self.emit_exit_cleanup(floor);
         // The cleanup the continue runs belongs to its edge, and the edge
         // returns to the loop head, so its state is recorded against the head's
@@ -561,14 +552,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let state = self.edge_state(floor);
         self.record_continue(continue_block, state);
         self.terminate(Terminator::Goto(continue_block));
-    }
-
-    /// Runs a recorded element write-back, when there is one.
-    fn run_for_in_write(&mut self, write: Option<ForInWrite>) {
-        let Some(write) = write else {
-            return;
-        };
-        self.store_for_in_element(&write.element, &write.iterable, &write.index, write.id);
     }
 
     /// Emits the cleanup of the scopes deeper than `floor`, innermost first.

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 07:32
-> **Progress**: 2/20 tasks (10%)
+> **Last Updated**: 2026-09-28 07:36
+> **Progress**: 7/20 tasks (35%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -67,11 +67,11 @@ component documents and the testing strategy.
 **Reference**: [03-01](03-01-borrow-element-alias.md) §Implementation Details · AR #2, AR #11
 **Objective**: Alias borrow elements through a per-iteration `raw` temp and delete the copy-back machinery.
 
-- [ ] 1.2.1 Add `PlaceBase::DerefTemp { temp, ty }` with a variant unit test; implement rendering/typing (the impl suite pins the emitted shape) — `compiler/src/ir/place.rs`, `compiler/src/ir/tests.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 1.2.2 Alias the borrow element through the temp address (refreshed each iteration) and mark the borrow binding used — `compiler/src/own/loops.rs`
-- [ ] 1.2.3 Delete `ForInWrite`, `set_for_in_write`, `store_for_in_element`, `run_for_in_write`, and the `break`/`continue` hooks — `compiler/src/own/flow.rs`, `compiler/src/own/loops.rs`, `compiler/src/own/statements.rs`
-- [ ] 1.2.4 Skip base-overridden local bindings (`kind == Local && base.is_none()`) in both `Function.locals` builders — `compiler/src/own.rs`, `compiler/src/own/lower.rs`
-- [ ] 1.2.5 Verify the GREEN phase: ST-1 – ST-7 pass and `make check` is green
+- [x] 1.2.1 Add `PlaceBase::DerefTemp { temp, ty }` with a variant unit test; implement rendering/typing (the impl suite pins the emitted shape) — `compiler/src/ir/place.rs`, `compiler/src/ir/tests.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-09-28 07:36)
+- [x] 1.2.2 Alias the borrow element through the temp address (refreshed each iteration) and mark the borrow binding used — `compiler/src/own/loops.rs` ✅ (completed: 2026-09-28 07:36)
+- [x] 1.2.3 Delete `ForInWrite`, `set_for_in_write`, `store_for_in_element`, `run_for_in_write`, and the `break`/`continue` hooks — `compiler/src/own/flow.rs`, `compiler/src/own/loops.rs`, `compiler/src/own/statements.rs` ✅ (completed: 2026-09-28 07:36)
+- [x] 1.2.4 Skip base-overridden local bindings (`kind == Local && base.is_none()`) in both `Function.locals` builders — `compiler/src/own.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-09-28 07:36)
+- [x] 1.2.5 Verify the GREEN phase: ST-1 – ST-7 pass and `make check` is green ✅ (completed: 2026-09-28 07:36)
 
 ### Step 1.3: Implementation Tests and Hardening
 
