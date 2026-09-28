@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 18:10
-> **Progress**: 0/24 tasks (0%)
+> **Last Updated**: 2026-09-28 18:12
+> **Progress**: 2/24 tasks (8%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -65,11 +65,11 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin fixed-array copy/move, self-assignment, and `len` behavior before any implementation.
 
 - [x] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/array_value_integrity_spec_test.rs` (ST-1 – ST-9, ST-22, ST-25, ST-26) ✅ (completed: 2026-09-28 18:10)
-- [ ] 1.1.2 Run the spec suite and record the red phase — the split recorded in `07-testing-strategy.md` (ST-1: wrong value; ST-2 – ST-5, ST-7, ST-8: the C compiler rejects the emitted C; ST-22, ST-25, ST-26: the `len` value is wrong; ST-6, ST-9: pass as guards; the release shape is pinned red by the Phase 1 implementation tests)
+- [~] 1.1.2 Run the spec suite and record the red phase — the split recorded in `07-testing-strategy.md` (ST-1: wrong value; ST-2 – ST-5, ST-7, ST-8: the C compiler rejects the emitted C; ST-22, ST-25, ST-26: the `len` value is wrong; ST-6, ST-9: pass as guards; the release shape is pinned red by the Phase 1 implementation tests) ✅ (completed: 2026-09-28 18:12) — red evidence: 3 pass (ST-6 `E10020` message, ST-9 call-return binding, ST-24 literal/array/growable lengths), 27 fail: ST-1/ST-22/ST-25/ST-26 wrong `len` value; ST-2 – ST-5, ST-7, ST-8, ST-16 – ST-18, ST-23 the C compiler rejects; ST-10 – ST-13, ST-15 wrong shape (`E10209` or base-element iterations); ST-19 – ST-21, ST-27 – ST-30 no `E10026`; deviation from the recorded split: ST-14 fails on the message type (`non-duplicable 'String'` pre-fix, the row type arrives with the fix) — the case is unchanged; the `07` split table now records ST-14 as a red case
 
 **Deliverables**:
-- [ ] Spec suite with the ST-1 – ST-9, ST-22, ST-25, ST-26 cases and the shared scratch/run helpers
-- [ ] Red-phase evidence recorded (suite output)
+- [x] Spec suite with the ST-1 – ST-9, ST-22, ST-25, ST-26 cases and the shared scratch/run helpers
+- [x] Red-phase evidence recorded (suite output)
 
 **Verify**: `make -C docker exec CMD="cargo test --test array_value_integrity_spec_test"`
 
@@ -114,7 +114,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin row iteration and row views before implementation.
 
 - [ ] 2.1.1 [spec-author] Add the element-loop specification tests to the suite (ST-10 – ST-15) — `compiler/tests/array_value_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase — ST-10 – ST-13, ST-15 fail (`E10209` or wrong iteration count); ST-14 passes as a guard
+- [ ] 2.1.2 Run the spec suite and record the red phase — ST-10 – ST-13, ST-15 fail (`E10209` or wrong iteration count); ST-14 fails with the base-element type in the `E10040` message
 
 **Deliverables**:
 - [ ] ST-10 – ST-15 in the spec suite

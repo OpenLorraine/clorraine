@@ -95,7 +95,8 @@ deviation is an oracle or test defect, never a reason to change a case.
 | Fails: C compiler rejects | ST-2 – ST-5, ST-7, ST-8, ST-16 – ST-18, ST-23 | `clc` accepts, `cc` reports array assignment / hidden out-parameter errors |
 | Fails: wrong shape or missing diagnostic | ST-10 – ST-13, ST-15 | `E10209` on the row index, or 6 base-element iterations |
 | Fails: missing rejection | ST-19 – ST-21, ST-27 – ST-30 | `clc` accepts (no `E10026`) |
-| Passes pre-fix (guards) | ST-6, ST-9, ST-14, ST-24 | `E10020`, call-return binding, `E10040`, and the view/growable lengths already correct; the call-reassignment release shape is pinned red by the Phase 1 implementation tests |
+| Fails: wrong element type in the message | ST-14 | rejection fires, but names the base element (`'String'`), not the row type (`'String[2]'`) |
+| Passes pre-fix (guards) | ST-6, ST-9, ST-24 | `E10020`, the call-return binding, and the view/growable lengths already correct; the call-reassignment release shape is pinned red by the Phase 1 implementation tests |
 
 ## Test Categories
 
