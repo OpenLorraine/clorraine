@@ -28,29 +28,29 @@ loop test never becomes false.
 
 ### Must Have
 
-- [ ] R1 — A sub-object read of an owned container passed to any non-`take`
+- [x] R1 — A sub-object read of an owned container passed to any non-`take`
   parameter is a lend or view: no scope temporary owns it, and no drop of the
   argument happens. This covers element reads at constant and runtime indices,
   fields of elements, elements reached through a `borrow` parameter, fields of a
   `borrow` struct, and template placeholders. (AR #6, AR #13)
-- [ ] R2 — An ownerless temporary passed to a non-`take` parameter (a call result,
+- [x] R2 — An ownerless temporary passed to a non-`take` parameter (a call result,
   such as `bytes(stringOf("hi"))`) keeps today's materialization and is released
   exactly once by the scope. (AR #6)
-- [ ] R3 — Move forms stay rejected unchanged: `take(arr[0])` and
+- [x] R3 — Move forms stay rejected unchanged: `take(arr[0])` and
   `let a: String = arr[0]` report `E10026` (partial moves are limited to top-level
   fields). (AR #2)
-- [ ] R4 — Every `for` nested inside any loop executes its own step: the C header
+- [x] R4 — Every `for` nested inside any loop executes its own step: the C header
   carries the true increment, `continue` resumes at the step, and no dead step
   block or duplicated loop is emitted. This covers element loops and three-clause
   loops inside `while`, `for`, and element loops. (AR #3, AR #7, AR #8)
-- [ ] R5 — Non-nested loops, sequential loops, and every existing accepted
+- [x] R5 — Non-nested loops, sequential loops, and every existing accepted
   program keep their current behavior and emitted C. (AR #7)
 
 ### Should Have
 
-- [ ] R6 — The emitted C stays deterministic: two emissions of the same program
+- [x] R6 — The emitted C stays deterministic: two emissions of the same program
   are byte-identical. (AR #10)
-- [ ] R7 — Every regression test that could hang fails with a bounded timeout
+- [x] R7 — Every regression test that could hang fails with a bounded timeout
   instead of blocking the suite. (AR #10)
 
 ### Won't Have (Out of Scope)
@@ -95,17 +95,17 @@ loop test never becomes false.
 
 ## Acceptance Criteria
 
-1. [ ] The DEF-16 reproducers (constant index, runtime index, borrow-param base,
+1. [x] The DEF-16 reproducers (constant index, runtime index, borrow-param base,
    struct-element field, borrow-struct field, unmarked/`const`/`borrow` owned
    params, template placeholder) build and run without a double free and return
    the specified values.
-2. [ ] The DEF-17 reproducers (element-in-element, three-clause-in-element,
+2. [x] The DEF-17 reproducers (element-in-element, three-clause-in-element,
    element-in-`while`, three-clause-in-`while`, `continue`, `break`) run to
    completion and return the specified sums.
-3. [ ] Ownerless temporaries still materialize and release exactly once; move
+3. [x] Ownerless temporaries still materialize and release exactly once; move
    forms still report `E10026`.
-4. [ ] Emitted C is deterministic and unchanged for non-nested programs.
-5. [ ] `make check` is green after every GREEN task; `make verify` reports all legs
+4. [x] Emitted C is deterministic and unchanged for non-nested programs.
+5. [x] `make check` is green after every GREEN task; `make verify` reports all legs
    passed before completion; host AddressSanitizer probes are clean at close-out.
-6. [ ] Documentation is updated: the `AGENTS.md` test naming map gains both suites,
+6. [x] Documentation is updated: the `AGENTS.md` test naming map gains both suites,
    the roadmap rows for `DEF-16`/`DEF-17` are Done, and `DEF-21` is filed.

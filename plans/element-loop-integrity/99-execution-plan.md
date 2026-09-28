@@ -2,8 +2,9 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 11:03
-> **Progress**: 15/16 tasks (94%)
+> **Last Updated**: 2026-09-28 11:05
+> **Progress**: 16/16 tasks (100%)
+> **Status**: ✅ COMPLETE — executed and verified 2026-09-28
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -164,7 +165,7 @@ verify).
 - [x] 3.1.1 Host AddressSanitizer probes over the fixed programs (every DEF-16 form and the DEF-17 nested loops); record the exits and report counts on this line ✅ (completed: 2026-09-28 11:01) — 19 programs (the ST-1 – ST-8 and ST-11 – ST-21 run cases; ST-9/ST-10 are compile-time rejections), all built with `clang -fsanitize=address`, `ASAN_OPTIONS=detect_leaks=0`: 0 AddressSanitizer reports; every exit matches the oracle (ST-8 prints `ab`; ST-13 traps `E11211`)
 - [x] 3.1.2 `make verify` green (all hosted-amiga legs) ✅ (completed: 2026-09-28 11:02) — `verify: all legs passed`; hosted-amiga run-fault: all six faults match
 - [x] 3.1.3 Update documentation: `AGENTS.md` test map, roadmap rows for `DEF-16`/`DEF-17` (and confirm `DEF-21` is filed, as recorded in the roadmap during planning), register closure note — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-28 11:03)
-- [ ] 3.1.4 Close-out: acceptance criteria checked, plan marked Done
+- [x] 3.1.4 Close-out: acceptance criteria checked, plan marked Done ✅ (completed: 2026-09-28 11:05) — all six acceptance criteria checked; every functional requirement marked met; `make verify` → all legs passed
 
 **Deliverables**:
 - ASan probes clean
