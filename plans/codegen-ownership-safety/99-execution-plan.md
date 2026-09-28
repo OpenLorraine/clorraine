@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 07:36
-> **Progress**: 7/20 tasks (35%)
+> **Last Updated**: 2026-09-28 07:40
+> **Progress**: 9/20 tasks (45%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -78,8 +78,8 @@ component documents and the testing strategy.
 **Reference**: [07](07-testing-strategy.md) §Test Categories
 **Objective**: Cover internals and the structural claims.
 
-- [ ] 1.3.1 Add implementation tests: no write-back and no spurious alias local; replacement read-back in one iteration; a slice iterable (`import { slice } from std.mem`); a name-collision and keyword-shadow case; a lambda-capture regression; a build-only freestanding compile of a borrow-element program; a run timeout in the suite helper — `compiler/tests/codegen_ownership_impl_test.rs`
-- [ ] 1.3.2 `make check` green after the new tests
+- [x] 1.3.1 Add implementation tests: no write-back and no spurious alias local; replacement read-back in one iteration; a slice iterable (`import { slice } from std.mem`); a name-collision and keyword-shadow case; a lambda-capture regression; a build-only freestanding compile of a borrow-element program; a run timeout in the suite helper — `compiler/tests/codegen_ownership_impl_test.rs` ✅ (completed: 2026-09-28 07:40)
+- [x] 1.3.2 `make check` green after the new tests ✅ (completed: 2026-09-28 07:40)
 
 **Deliverables**:
 - [ ] Borrow elements alias the iterable element on every exit path
