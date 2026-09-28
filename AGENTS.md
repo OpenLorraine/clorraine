@@ -79,6 +79,12 @@ in `CMD`).
   `compiler/tests/non_lexical_lifetimes_impl_test.rs` holds its implementation
   tests (accepted programs build and run; conflicts report once; diagnostics
   are deterministic).
+- `compiler/tests/codegen_ownership_spec_test.rs` holds the specification
+  tests for borrow-element aliasing and local shadowing (the element view is a
+  true alias on every exit path; every shadowing local gets its own identity),
+  and `compiler/tests/codegen_ownership_impl_test.rs` holds its implementation
+  tests (emitted-C shape, replacement read-back, slice iterables, sanitized
+  name collisions, a build-only freestanding compile, and a run timeout).
 - `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
   partial-move / drop coherence: it builds the emitted C and runs it, so a
   double free aborts in the C library.

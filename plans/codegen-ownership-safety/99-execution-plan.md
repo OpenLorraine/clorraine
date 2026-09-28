@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 08:03
-> **Progress**: 16/20 tasks (80%)
+> **Last Updated**: 2026-09-28 08:25
+> **Progress**: 20/20 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -82,9 +82,9 @@ component documents and the testing strategy.
 - [x] 1.3.2 `make check` green after the new tests ✅ (completed: 2026-09-28 07:40)
 
 **Deliverables**:
-- [ ] Borrow elements alias the iterable element on every exit path
-- [ ] The copy-in/write-back machinery is gone
-- [ ] All verification passing
+- [x] Borrow elements alias the iterable element on every exit path
+- [x] The copy-in/write-back machinery is gone
+- [x] All verification passing
 
 **Verify**: `make check`
 
@@ -126,9 +126,9 @@ component documents and the testing strategy.
 - [x] 2.3.2 `make check` green after the new tests ✅ (completed: 2026-09-28 08:03)
 
 **Deliverables**:
-- [ ] Every MOD-16 shadowing form compiles and behaves correctly
-- [ ] Diagnostics keep source names; emitted C names stay deterministic
-- [ ] All verification passing
+- [x] Every MOD-16 shadowing form compiles and behaves correctly
+- [x] Diagnostics keep source names; emitted C names stay deterministic
+- [x] All verification passing
 
 **Verify**: `make check`
 
@@ -144,15 +144,15 @@ component documents and the testing strategy.
 **Reference**: [00-index](00-index.md) §Minimum-Sufficient Baseline · [01](01-requirements.md) §Acceptance Criteria · AR #5
 **Objective**: Prove the defects are gone on the host oracle and close the plan.
 
-- [ ] 3.1.1 Run the host ASan probes per `07` §End-to-End Tests (plain loop, `return`-in-loop, struct write-through ST-3/ST-5, MOD-16, nested shadow, defer-local) and record the results on this line
-- [ ] 3.1.2 `make verify` green (all hosted-amiga legs)
-- [ ] 3.1.3 Update documentation: `AGENTS.md` test map, roadmap rows for `DEF-13`/`DEF-14` (and file `DEF-16` element-read materialization, `DEF-17` nested element loops, `DEF-18` move through a borrow element), register closure note — `AGENTS.md`, `plans/00-roadmap.md`
-- [ ] 3.1.4 Close-out: acceptance criteria checked, plan marked Done
+- [x] 3.1.1 Run the host ASan probes per `07` §End-to-End Tests (plain loop, `return`-in-loop, struct write-through ST-3/ST-5, MOD-16, nested shadow, defer-local) and record the results on this line ✅ (completed: 2026-09-28 08:25) — probes in `build/defs/phase3/` (`p_plain`, `p_return`, `p_st3`, `p_st5`, `p_st8`, `p_st9`, `p_st12`): exits 0, 0, 8, 16, 6, 4, 5 with clang AddressSanitizer and zero sanitizer reports
+- [x] 3.1.2 `make verify` green (all hosted-amiga legs) ✅ (completed: 2026-09-28 08:25) — `verify: all legs passed`, including the six runtime-fault programs under `vamos`
+- [x] 3.1.3 Update documentation: `AGENTS.md` test map, roadmap rows for `DEF-13`/`DEF-14` (and file `DEF-16` element-read materialization, `DEF-17` nested element loops, `DEF-18` move through a borrow element), register closure note — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-28 08:25) — `DEF-16`–`DEF-20` filed; roadmap rows `Done`; register closure note added
+- [x] 3.1.4 Close-out: acceptance criteria checked, plan marked Done ✅ (completed: 2026-09-28 08:25) — R1–R7 and all six acceptance criteria checked; 20/20 tasks
 
 **Deliverables**:
-- [ ] ASan hosts probes clean
-- [ ] `make verify` green
-- [ ] Documentation and roadmap synced
+- [x] ASan hosts probes clean
+- [x] `make verify` green
+- [x] Documentation and roadmap synced
 
 **Verify**: `make verify`
 

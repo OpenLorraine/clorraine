@@ -42,3 +42,12 @@
 **AR-11:** New IR place variant `PlaceBase::DerefTemp { temp, ty }`. Unique IR spelling: the first binding keeps its source name, colliding bindings use `name#<binding-index>`, assigned from the binding table for determinism. The table is not truncated when a scope closes (`compiler/src/own.rs:356`), so every binding declared so far in the function counts and sibling scopes get distinct spellings. The C emitter's `sanitize_identifier` plus `unique_local` still dedups the final C names.
 
 **AR-12:** New suites `compiler/tests/codegen_ownership_spec_test.rs` (specification cases) and `compiler/tests/codegen_ownership_impl_test.rs` (edges and internals), matching the recent per-feature test-file convention; `AGENTS.md` gains both entries.
+
+### Execution closure (2026-09-28)
+
+All 16 decisions held through execution. AR-2/AR-7 landed as designed; AR-3/AR-9
+gained the initializer-resolution rule confirmed by ST-16 (a shadowing
+initializer resolves to the outer binding) and the Phase 2 review; AR-5's
+verification ran in full (`make check` per task, host ASan probes at close-out,
+`make verify: all legs passed`). Separate defects found while executing were
+filed outside this plan: `DEF-16` – `DEF-20`.
