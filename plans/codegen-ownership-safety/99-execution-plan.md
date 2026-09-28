@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 07:40
+> **Last Updated**: 2026-09-28 07:53
 > **Progress**: 9/20 tasks (45%)
 > **CodeOps Artifact Schema**: 1
 
@@ -164,6 +164,21 @@ Phase 3 (hardening and close-out)
 ```
 
 ---
+
+## Quality Reviews
+
+### Phase 1 — Borrow Element Alias (2026-09-28)
+
+- Independent correctness review and an independent semantics review ran in
+  parallel on the phase diff (baseline `bee8acd0`, through commit `6ed5a15`).
+- RV-001 🟡 MINOR: the speculative element-loop pass kept an unused `let id`
+  binding, emitting a compiler warning — fixed.
+- RV-002 🟡 MINOR: `Binding.base`'s documentation named only lambda captures,
+  not the new element alias — fixed.
+- The semantics review reported no findings; differential ASan/LSan probes on
+  every exit path, replacement, partial moves, defers, and sequential loops
+  matched the baseline or improved on it.
+- No 🔴/🟠 findings, so no re-review is required.
 
 ## Success Criteria
 

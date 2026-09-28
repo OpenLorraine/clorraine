@@ -446,7 +446,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 floor,
                 continue_floor,
             ));
-            let id = checker.bind_for_in_element(
+            checker.bind_for_in_element(
                 decl,
                 &element,
                 &iterable,

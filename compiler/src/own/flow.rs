@@ -58,7 +58,9 @@ pub(super) struct Binding {
     /// parameter spelling.
     ///
     /// A lifted lambda binds its captures here, rooted at an environment field
-    /// instead of a C local. Every other binding leaves this `None`.
+    /// instead of a C local. A `for (borrow e in xs)` element binds here too,
+    /// rooted at the temporary that holds the element's address. Every other
+    /// binding leaves this `None`.
     pub(super) base: Option<ir::PlaceBase>,
 }
 
