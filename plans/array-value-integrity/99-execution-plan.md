@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 01:08
-> **Progress**: 7/24 tasks (29%)
+> **Last Updated**: 2026-09-29 01:09
+> **Progress**: 8/24 tasks (33%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -116,7 +116,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin row iteration and row views before implementation.
 
 - [x] 2.1.1 [spec-author] Add the element-loop specification tests to the suite (ST-10 – ST-15) — `compiler/tests/array_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 01:08)
-- [ ] 2.1.2 Run the spec suite and record the red phase — ST-10 – ST-13, ST-15 fail (`E10209` or wrong iteration count); ST-14 fails with the base-element type in the `E10040` message
+- [~] 2.1.2 Run the spec suite and record the red phase — ST-10 – ST-13, ST-15 fail (`E10209` or wrong iteration count); ST-14 fails with the base-element type in the `E10040` message ✅ (completed: 2026-09-29 01:09) — red evidence: the 12 Phase 1 cases stay green; ST-10 – ST-13 and ST-15 reject with `E10209` (`type 'i32' cannot be indexed`, the loop binds the base element); ST-14 rejects with `E10040` naming `non-duplicable 'String'` instead of the row type `'String[2]'`
 
 **Deliverables**:
 - [ ] ST-10 – ST-15 in the spec suite
