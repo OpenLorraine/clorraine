@@ -379,3 +379,198 @@ func main(): i32 {
     let output = compile_build_and_run("st7", source);
     assert_exit("st7", &output, 10);
 }
+
+/// A local in the function body shadows the parameter of the same name.
+///
+/// `doubled` reads the parameter `LIMIT`, then the local `LIMIT` shadows it;
+/// the returned value is the local, so `pick(3)` exits with `6`. A resolver
+/// that keys locals only by source name loses the parameter's value here.
+#[test]
+fn should_return_the_local_when_a_local_shadows_a_parameter() {
+    let source = r#"module codegen.own.st8;
+
+func pick(LIMIT: i32): i32 {
+    let doubled: i32 = LIMIT * 2;
+    let LIMIT: i32 = doubled;
+    return LIMIT;
+}
+
+func main(): i32 {
+    return pick(i32(3));
+}
+"#;
+    let output = compile_build_and_run("st8", source);
+    assert_exit("st8", &output, 6);
+}
+
+/// A local declared inside an `if` block shadows the outer local of the same
+/// name only inside that block.
+///
+/// The block's `x` is the one-character string; after the block the outer `x`
+/// is visible again, so `main` exits with the outer length `4`.
+#[test]
+fn should_read_the_outer_string_when_an_if_block_declares_a_shadowing_local() {
+    let source = r#"module codegen.own.st9;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let x: String = stringOf("aaaa");
+    if (len(x) == 4) {
+        let x: String = stringOf("b");
+        if (len(x) == 1) {
+        }
+    }
+    return i32(len(x));
+}
+"#;
+    let output = compile_build_and_run("st9", source);
+    assert_exit("st9", &output, 4);
+}
+
+/// Two sibling blocks may each declare a local with the same name and a
+/// different type.
+///
+/// The first block adds the integer `x = 7` to `total`; the second adds the
+/// length of the string `x`, so `main` exits with `8`. A code generator that
+/// keys locals by name alone collides the two variables.
+#[test]
+fn should_keep_both_locals_when_sibling_blocks_shadow_the_same_name() {
+    let source = r#"module codegen.own.st10;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let total: i32 = 0;
+    if (total == 0) {
+        let x: i32 = 7;
+        total = total + x;
+    }
+    if (total == 7) {
+        let x: String = stringOf("q");
+        total = total + i32(len(x));
+    }
+    return total;
+}
+"#;
+    let output = compile_build_and_run("st10", source);
+    assert_exit("st10", &output, 8);
+}
+
+/// The parameter `n` keeps its value across a loop that declares a local `n`.
+///
+/// The loop runs for `i = 0` and `i = 1`; each iteration adds the shadowing
+/// local (`n + i`) to `acc`, so `acc` becomes `5` then `11`. After the loop
+/// the parameter `n` is visible again and `acc + n` exits with `16`.
+#[test]
+fn should_read_the_parameter_after_the_loop_when_a_loop_body_shadows_it() {
+    let source = r#"module codegen.own.st11;
+
+func f(n: i32): i32 {
+    let acc: i32 = 0;
+    let i: i32 = 0;
+    while (i < 2) {
+        let n: i32 = n + i;
+        acc = acc + n;
+        i = i + 1;
+    }
+    return acc + n;
+}
+
+func main(): i32 {
+    return f(i32(5));
+}
+"#;
+    let output = compile_build_and_run("st11", source);
+    assert_exit("st11", &output, 16);
+}
+
+/// A local in a `defer` block shadows the outer local only inside the block.
+///
+/// The deferred block declares its own string `x`; the function returns the
+/// outer integer `x` after the defer body, so `main` exits with `5`.
+#[test]
+fn should_return_the_outer_value_when_a_defer_block_shadows_it() {
+    let source = r#"module codegen.own.st12;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let x: i32 = 5;
+    defer {
+        let x: String = stringOf("inner");
+        if (len(x) > 0) {
+        }
+    }
+    return x;
+}
+"#;
+    let output = compile_build_and_run("st12", source);
+    assert_exit("st12", &output, 5);
+}
+
+/// A `const` local shadows the parameter after its own initializer.
+///
+/// The initializer `n + 1` reads the parameter `n`, then the const `n`
+/// shadows it; `f(3)` exits with `4`.
+#[test]
+fn should_read_the_parameter_in_the_initializer_when_a_const_shadows_it() {
+    let source = r#"module codegen.own.st13;
+
+func f(n: i32): i32 {
+    const n: i32 = n + 1;
+    return n;
+}
+
+func main(): i32 {
+    return f(i32(3));
+}
+"#;
+    let output = compile_build_and_run("st13", source);
+    assert_exit("st13", &output, 4);
+}
+
+/// A local in a generic function shadows the parameter of the same name.
+///
+/// `pick` instantiates `T = i32`; the local `value` takes the fallback `3`
+/// and is returned, so `main` exits with `3`.
+#[test]
+fn should_return_the_local_when_a_generic_local_shadows_a_parameter() {
+    let source = r#"module codegen.own.st14;
+
+func pick<T>(value: T, fallback: T): T {
+    let value: T = fallback;
+    return value;
+}
+
+func main(): i32 {
+    return pick(i32(1), i32(3));
+}
+"#;
+    let output = compile_build_and_run("st14", source);
+    assert_exit("st14", &output, 3);
+}
+
+/// A local in a lambda body shadows the lambda's parameter of the same name.
+///
+/// The captured `base` is `2`, the argument is `3`; the body's local `x` is
+/// `x + base = 5`, so `main` exits with `5`.
+#[test]
+fn should_return_the_local_sum_when_a_lambda_body_shadows_its_parameter() {
+    let source = r#"module codegen.own.st15;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    let base: i32 = 2;
+    return apply(i32(3), [base] (x: i32) => {
+        let x: i32 = x + base;
+        return x;
+    });
+}
+"#;
+    let output = compile_build_and_run("st15", source);
+    assert_exit("st15", &output, 5);
+}

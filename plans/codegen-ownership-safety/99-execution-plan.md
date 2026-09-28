@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 07:53
-> **Progress**: 9/20 tasks (45%)
+> **Last Updated**: 2026-09-28 07:56
+> **Progress**: 11/20 tasks (55%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -100,8 +100,8 @@ component documents and the testing strategy.
 **Reference**: [03-02](03-02-local-identity.md) §Overview · [07](07-testing-strategy.md) ST-8 – ST-15 · AR #3, AR #9
 **Objective**: Pin shadowing behavior for every MOD-16 form before the identity change.
 
-- [ ] 2.1.1 [spec-author] Add the DEF-14 specification cases ST-8 – ST-15 — `compiler/tests/codegen_ownership_spec_test.rs`
-- [ ] 2.1.2 Verify the RED phase: the new cases fail for the defect reason (wrong value, segfault, or C build failure)
+- [x] 2.1.1 [spec-author] Add the DEF-14 specification cases ST-8 – ST-15 — `compiler/tests/codegen_ownership_spec_test.rs` ✅ (completed: 2026-09-28 07:56)
+- [x] 2.1.2 Verify the RED phase: the new cases fail for the defect reason (wrong value, segfault, or C build failure) ✅ (completed: 2026-09-28 07:56)
 
 ### Step 2.2: Implementation
 
