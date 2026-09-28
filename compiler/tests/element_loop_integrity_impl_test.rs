@@ -263,3 +263,136 @@ func main(): i32 {
         "ei3: the placeholder result should be released by the scope cleanup"
     );
 }
+
+/// Each nested element loop prints its own step in its own C header.
+///
+/// The outer header increments the outer index and the inner header increments
+/// the inner index. Exactly two structured `for` headers exist, and no dead
+/// labelled step block remains, so a nested loop can never be printed twice or
+/// re-enter its own pre-header as a step.
+#[test]
+fn should_emit_each_own_header_when_element_loops_are_nested() {
+    let source = r#"module codegen.elem.impl4;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let ys: i32[3] = [1, 2, 3];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        for (borrow y in ys) {
+            s = s + x + y;
+        }
+    }
+    return s;
+}
+"#;
+    let scratch = ScratchDir::new("ei4");
+    let emitted = emit_host("ei4", &scratch, source);
+    assert!(
+        emitted.contains("for (; (__cl_tmp0 < 2); __cl_tmp0 = (__cl_tmp0 + 1u))"),
+        "ei4: the outer header should carry the outer increment"
+    );
+    assert!(
+        emitted.contains("for (; (__cl_tmp2 < 3); __cl_tmp2 = (__cl_tmp2 + 1u))"),
+        "ei4: the inner header should carry the inner increment"
+    );
+    assert_eq!(
+        emitted.matches("for (; (").count(),
+        2,
+        "ei4: a nested loop must not be printed a second time"
+    );
+    assert!(
+        !emitted.contains("__cl_b"),
+        "ei4: no dead labelled step block should remain"
+    );
+}
+
+/// A nested three-clause `for` prints its own increment in its C header.
+///
+/// The inner header carries the increment of the inner loop variable (`j`), not
+/// the outer loop's index; with the outer step in its own header, the program
+/// terminates.
+#[test]
+fn should_emit_its_own_increment_when_a_three_clause_for_is_nested() {
+    let source = r#"module codegen.elem.impl5;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        for (let j: i32 = 0; j < 3; j = j + 1) {
+            s = s + x + j;
+        }
+    }
+    return s;
+}
+"#;
+    let scratch = ScratchDir::new("ei5");
+    let emitted = emit_host("ei5", &scratch, source);
+    assert!(
+        emitted.contains("for (; (j < 3); j = (i32)((u32)j + (u32)1))"),
+        "ei5: the inner header should carry the three-clause increment"
+    );
+    assert_eq!(
+        emitted.matches("for (; (").count(),
+        2,
+        "ei5: the nested loop must not be printed a second time"
+    );
+}
+
+/// Emitting the same nested program twice produces byte-identical C.
+///
+/// Determinism guards the emitter against order-dependent block selection when
+/// a loop's step is chosen. Both emissions read the same source path, so the
+/// embedded `#line` source name is identical and any difference is emitter
+/// behavior.
+#[test]
+fn should_emit_identical_c_when_the_same_nested_program_is_emitted_twice() {
+    let source = r#"module codegen.elem.impl6;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let ys: i32[3] = [1, 2, 3];
+    let s: i32 = 0;
+    for (borrow x in xs) {
+        for (borrow y in ys) {
+            s = s + x + y;
+        }
+    }
+    return s;
+}
+"#;
+    let scratch = ScratchDir::new("ei6");
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("ei6: cannot write the program: {err}"));
+    let mut emissions = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "ei6: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emissions.push(
+            std::fs::read_to_string(&c_path)
+                .unwrap_or_else(|err| panic!("ei6: cannot read {name}: {err}")),
+        );
+    }
+    assert!(
+        !emissions[0].trim().is_empty(),
+        "ei6: the emitted C is empty"
+    );
+    assert_eq!(
+        emissions[0], emissions[1],
+        "ei6: two emissions of the same program must be byte-identical"
+    );
+}
