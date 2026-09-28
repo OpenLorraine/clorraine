@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 11:01
-> **Progress**: 13/16 tasks (81%)
+> **Last Updated**: 2026-09-28 11:02
+> **Progress**: 14/16 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -162,7 +162,7 @@ verify).
 **Objective**: Prove memory safety end to end and close the plan.
 
 - [x] 3.1.1 Host AddressSanitizer probes over the fixed programs (every DEF-16 form and the DEF-17 nested loops); record the exits and report counts on this line ✅ (completed: 2026-09-28 11:01) — 19 programs (the ST-1 – ST-8 and ST-11 – ST-21 run cases; ST-9/ST-10 are compile-time rejections), all built with `clang -fsanitize=address`, `ASAN_OPTIONS=detect_leaks=0`: 0 AddressSanitizer reports; every exit matches the oracle (ST-8 prints `ab`; ST-13 traps `E11211`)
-- [ ] 3.1.2 `make verify` green (all hosted-amiga legs)
+- [x] 3.1.2 `make verify` green (all hosted-amiga legs) ✅ (completed: 2026-09-28 11:02) — `verify: all legs passed`; hosted-amiga run-fault: all six faults match
 - [ ] 3.1.3 Update documentation: `AGENTS.md` test map, roadmap rows for `DEF-16`/`DEF-17` (and confirm `DEF-21` is filed, as recorded in the roadmap during planning), register closure note — `AGENTS.md`, `plans/00-roadmap.md`
 - [ ] 3.1.4 Close-out: acceptance criteria checked, plan marked Done
 
