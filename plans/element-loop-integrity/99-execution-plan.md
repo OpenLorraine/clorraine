@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:50
-> **Progress**: 7/16 tasks (44%)
+> **Last Updated**: 2026-09-28 10:52
+> **Progress**: 8/16 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -111,7 +111,7 @@ verify).
 **Objective**: Extend the oracle with the nested-loop cases before the emitter change.
 
 - [x] 2.1.1 [spec-author] Add the DEF-17 specification cases ST-14 – ST-21 to `compiler/tests/element_loop_integrity_spec_test.rs` ✅ (completed: 2026-09-28 10:50)
-- [ ] 2.1.2 Verify the RED phase: ST-14 – ST-18 and ST-21 fail with the bounded-run timeout and ST-19/ST-20 pass; record per-case evidence on this line
+- [x] 2.1.2 Verify the RED phase: ST-14 – ST-18 and ST-21 fail with the bounded-run timeout and ST-19/ST-20 pass; record per-case evidence on this line ✅ (completed: 2026-09-28 10:52) — red evidence: six timeouts `did not finish within 30s` (ST-14 – ST-18, ST-21); ST-19/ST-20 pass; suite finished in 30.81s
 
 **Deliverables**:
 - Every DEF-17 case's red-phase state is recorded
