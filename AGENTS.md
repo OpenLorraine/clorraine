@@ -85,6 +85,13 @@ in `CMD`).
   and `compiler/tests/codegen_ownership_impl_test.rs` holds its implementation
   tests (emitted-C shape, replacement read-back, slice iterables, sanitized
   name collisions, a build-only freestanding compile, and a run timeout).
+- `compiler/tests/element_loop_integrity_spec_test.rs` holds the specification
+  tests for owned-element lends and nested-loop steps (an element read passed
+  to a parameter never double-frees; every nested `for` runs its own step; the
+  run cases share a bounded timeout), and
+  `compiler/tests/element_loop_integrity_impl_test.rs` holds its implementation
+  tests (emitted-C shape for element arguments, ownerless temporaries, and
+  template placeholders; nested loop headers; byte-identical re-emission).
 - `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
   partial-move / drop coherence: it builds the emitted C and runs it, so a
   double free aborts in the C library.

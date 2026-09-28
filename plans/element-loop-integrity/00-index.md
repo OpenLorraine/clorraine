@@ -1,7 +1,7 @@
 # Element Loop Integrity Implementation Plan
 
 > **Feature**: Fix the owned-element read double free (DEF-16) and the nested-loop step mis-selection (DEF-17) in the ownership checker and C emitter
-> **Status**: Planning Complete
+> **Status**: Complete — executed and verified 2026-09-28 (all 16 tasks done, ASan-clean, `make verify` all legs passed)
 > **Created**: 2026-09-28
 > **Implements**: DEF-16, DEF-17
 > **CodeOps Artifact Schema**: 1

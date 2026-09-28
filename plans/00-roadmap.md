@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-28 10:31
+> **Last Updated**: 2026-09-28 11:03
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -32,8 +32,8 @@
 | ↳ DEF-13 | `for (borrow e in xs)` double-frees a droppable element | — | [codegen-ownership-safety](codegen-ownership-safety/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed by the element-alias design (AR #2); 20/20 tasks; ASan probes clean; `make verify: all legs passed` |
 | ↳ DEF-14 | Local shadowing miscompiles (locals keyed by source name) | — | [codegen-ownership-safety](codegen-ownership-safety/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed by unique binding identity (AR #3); 20/20 tasks; ASan probes clean; `make verify: all legs passed` |
 | ↳ DEF-15 | Multi-extent element loops bind the base element, not the row | — | — | Backlog | ⬜ | 2026-09-27 | 🔴 critical, observed during codegen-ownership-safety recon; different root cause, needs a dedicated plan |
-| ↳ DEF-16 | Reading an owned array element as a view argument double-frees | — | [element-loop-integrity](element-loop-integrity/00-index.md) | Executing | 🔄 | 2026-09-28 | 🔴 critical, found in codegen-ownership-safety preflight; plan extends to every non-take mode and element-derived read (`own/lower.rs:659`); preflight passed (6 findings resolved) |
-| ↳ DEF-17 | Nested element loops hang (step-block mis-selection) | — | [element-loop-integrity](element-loop-integrity/00-index.md) | Executing | 🔄 | 2026-09-28 | 🔴 critical, found in codegen-ownership-safety preflight; plan covers every nested `for` (`codegen/control.rs:407`); preflight passed (6 findings resolved) |
+| ↳ DEF-16 | Reading an owned array element as a view argument double-frees | — | [element-loop-integrity](element-loop-integrity/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed and verified: element reads and their projections lend instead of materializing (`projects_from_place`); ASan-clean, `make verify` all legs passed |
+| ↳ DEF-17 | Nested element loops hang (step-block mis-selection) | — | [element-loop-integrity](element-loop-integrity/00-index.md) | Done | ✅ | 2026-09-28 | 🔴 critical, fixed and verified: the step block travels on `BranchShape::Loop` and the emitter prints it directly; every nested `for` form covered, `make verify` all legs passed |
 | ↳ DEF-18 | A `take`/move through a borrow element view steals the element | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in codegen-ownership-safety preflight: element bindings are `BindingKind::Local`, so the parameter move rules do not apply (`own/place.rs:185`) |
 | ↳ DEF-19 | `len` on an owned `String` silently yields 0 | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in codegen-ownership-safety Phase 2: the `len` lowering falls through to `0` for a `String` (`codegen/calls.rs:166`); the specification's implicit `String`→`str` widening should apply |
 | ↳ DEF-20 | `if (x != null) { let x: T = x; }` spuriously reports E10010 | — | — | Backlog | ⬜ | 2026-09-28 | 🟡 minor, found in the codegen-ownership-safety Phase 2 re-review: `check_nonnull_expr` resolves the initializer place after the shadowing declaration (`own/expr.rs:251`); diagnostic-only and pre-existing |

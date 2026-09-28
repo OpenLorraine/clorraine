@@ -1,7 +1,8 @@
 # Ambiguity Register: Element Loop Integrity (DEF-16, DEF-17)
 
 > **Status**: ✅ GATE PASSED — all 15 items resolved
-> **Last Updated**: 2026-09-28 09:10
+> **Closure**: plan executed and verified 2026-09-28 — all 16 tasks complete, no runtime ambiguities were added, acceptance criteria met (ASan-clean probes, `make verify` all legs passed)
+> **Last Updated**: 2026-09-28 11:03
 > **CodeOps Artifact Schema**: 1
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
