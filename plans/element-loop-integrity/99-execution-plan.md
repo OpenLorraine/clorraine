@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:53
-> **Progress**: 9/16 tasks (56%)
+> **Last Updated**: 2026-09-28 10:54
+> **Progress**: 10/16 tasks (62%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -124,7 +124,7 @@ verify).
 **Objective**: Carry the step block in the IR shape and delete the search.
 
 - [x] 2.2.1 Add `step: Option<BlockId>` to `BranchShape::Loop`, set it in `own/loops.rs` at all three construction sites, consume it in `emit_loop`, and delete `for_step_block` — `compiler/src/ir/control.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/control.rs` ✅ (completed: 2026-09-28 10:53)
-- [ ] 2.2.2 Verify the GREEN phase: ST-14 – ST-21 pass and `make check` is green
+- [x] 2.2.2 Verify the GREEN phase: ST-14 – ST-21 pass and `make check` is green ✅ (completed: 2026-09-28 10:54) — green evidence: all 21 spec cases pass; `make check` → 722 tests passed, 0 failed, 0 build warnings, spec check OK
 
 **Deliverables**:
 - Nested `for` loops terminate with their own step
