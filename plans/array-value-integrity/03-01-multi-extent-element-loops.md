@@ -174,4 +174,8 @@ cl_zero(&a);
 - Unit test for the raw pointer-to-array declaration (`raw T[M]`).
 - Specification tests ST-1 – ST-15, ST-25, ST-26 in `07-testing-strategy.md`.
 - Implementation tests for the emitted copy/move shape, the same-place no-op,
-  the call-into-temporary assignment shape, and the self-assignment save path.
+  the call-into-temporary assignment shape, and the counting-deleter release
+  sites. The save path stays in the emitter for a non-call right-hand side that
+  reads an owned target, but no accepted program reaches it today: an exact
+  same-place assignment is a no-op, an owned self-assignment reports `E10020`,
+  and a self-referencing call takes the temporary path.

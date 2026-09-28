@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 18:15
-> **Progress**: 4/24 tasks (17%)
+> **Last Updated**: 2026-09-28 18:18
+> **Progress**: 5/24 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -92,7 +92,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-4, AR-7
 **Objective**: Pin the emitted shapes and cover internals.
 
-- [ ] 1.3.1 Write implementation tests: `memcpy` copy shape, `cl_zero` after a move, the same-place no-op, the self-assignment save shape, the call-into-temporary assignment shape, `len` renderings, and counting-deleter release shape checks — `compiler/tests/array_value_integrity_impl_test.rs`
+- [x] 1.3.1 Write implementation tests: `memcpy` copy shape, `cl_zero` after a move, the same-place no-op, the self-assignment save shape, the call-into-temporary assignment shape, `len` renderings, and counting-deleter release shape checks — `compiler/tests/array_value_integrity_impl_test.rs` ✅ (completed: 2026-09-28 18:18) — 7/7 pass; deviation: the fixed-array save branch is unreachable from accepted programs today (an exact same-place assignment is a no-op, an owned self-assignment reports `E10020`, and a self-referencing call takes the temporary path), so no test pins it; it stays as the approved defensive shape (`AR-7`) and the release counts pin the reachable call path
 - [ ] 1.3.2 Full verification — `make check` (spec check plus the whole workspace)
 
 **Deliverables**:
