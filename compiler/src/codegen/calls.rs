@@ -148,6 +148,12 @@ impl Emitter<'_> {
                     let inner_c = self.value(inner);
                     return match &ty.kind {
                         TyKind::Str | TyKind::StaticStr => format!("({inner_c}).len"),
+                        // An owned `String` is a handle, not a view: its byte
+                        // count comes from the view the implicit `String` to
+                        // `str` widening builds.
+                        TyKind::Handle(name) if name == "String" => {
+                            format!("(cl_string_view({inner_c})).len")
+                        }
                         // The growable array keeps its element count in a
                         // `count` field, so `len` reads that field.
                         TyKind::Struct(struct_name, _) if struct_name == "Array" => {
@@ -156,11 +162,12 @@ impl Emitter<'_> {
                         TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
                             format!("({inner_c}).len")
                         }
+                        // The elements of a fixed array are its
+                        // first-dimension values; every later extent belongs
+                        // to the element type, so `len` reports the outermost
+                        // count.
                         TyKind::Array { extents, .. } => {
-                            let extent = extents
-                                .iter()
-                                .filter_map(|size| *size)
-                                .fold(1usize, usize::saturating_mul);
+                            let extent = extents.first().and_then(|size| *size).unwrap_or(0);
                             format!("{extent}")
                         }
                         _ => "0".to_owned(),

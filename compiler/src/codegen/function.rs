@@ -332,7 +332,10 @@ impl<'a> Emitter<'a> {
                 }
                 // A by-value fixed-array call is lowered through a hidden
                 // out-parameter: the call names the caller's destination as its
-                // trailing argument and the assignment itself is dropped.
+                // trailing argument and the assignment itself is dropped. The
+                // call writes into a fresh temporary first, because the callee
+                // may read the target (`s = dup(borrow s)`), so the old target
+                // is released only after the call has returned.
                 if let ValueKind::Call {
                     callee,
                     type_args,
@@ -340,14 +343,16 @@ impl<'a> Emitter<'a> {
                     receiver,
                 } = &value.kind
                 {
-                    if self.substitute(&target.ty).is_fixed_array() {
-                        self.emit_call(
+                    let ty = self.substitute(&target.ty);
+                    if ty.is_fixed_array() {
+                        self.emit_fixed_array_call_assign(
                             span,
+                            target,
+                            &ty,
                             callee,
                             type_args,
                             args,
                             receiver.as_deref(),
-                            Some(target),
                         );
                         return;
                     }
@@ -359,7 +364,15 @@ impl<'a> Emitter<'a> {
                 self.emit_reassigned_target_drop(target);
                 let target_c = self.place(target);
                 let source_c = self.place(source);
-                self.push(&format!("    {target_c} = {source_c};"));
+                // C cannot assign an array, so a fixed-array move copies the
+                // bytes instead; the zeroed source below empties the original.
+                if self.substitute(&target.ty).is_fixed_array() {
+                    self.push(&format!(
+                        "    memcpy(&({target_c}), &({source_c}), sizeof({target_c}));"
+                    ));
+                } else {
+                    self.push(&format!("    {target_c} = {source_c};"));
+                }
                 let source_ty = self.substitute(&source.ty);
                 self.emit_move_zero(&source_c, &source_ty);
             }
@@ -577,6 +590,10 @@ impl<'a> Emitter<'a> {
     fn emit_assign(&mut self, span: crate::span::Span, target: &Place, value: &Value) {
         let ty = self.substitute(&target.ty);
         self.emit_line_directive(span);
+        if ty.is_fixed_array() {
+            self.emit_fixed_array_assign(target, &ty, value);
+            return;
+        }
         if !self.emits_drop(&ty) {
             self.emit_guards(value);
             let target_c = self.place(target);
@@ -608,6 +625,102 @@ impl<'a> Emitter<'a> {
         let lowered = self.store_text(value, &ty);
         self.push(&format!("        {target_c} = {lowered};"));
         self.emit_drop_expr(&save, &ty);
+        self.push("    }");
+    }
+
+    /// Emits a whole-array copy for a fixed-array assignment.
+    ///
+    /// C arrays are not assignable, so the value's bytes travel with the C
+    /// runtime `memcpy`. A right-hand side that renders to the target itself
+    /// (`a = a;`) already holds the value, so only its guards can have an
+    /// effect. When the target owns elements and the right-hand side reads it,
+    /// the old value is saved into a zeroed local first, so it survives until
+    /// the copy is done and is then released once; an unread old target is
+    /// released before the copy. `sizeof(target)` is the byte count of the
+    /// whole array, which C computes from the declared type.
+    fn emit_fixed_array_assign(&mut self, target: &Place, ty: &Ty, value: &Value) {
+        let target_c = self.place(target);
+        let value_c = self.value(value);
+        if value_c == target_c {
+            self.emit_guards(value);
+            return;
+        }
+        if !self.needs_drop(ty) {
+            self.emit_guards(value);
+            let value_c = self.store_text(value, ty);
+            self.push(&format!(
+                "    memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
+            ));
+            return;
+        }
+        if !value_reads_base(value, target) {
+            // The right-hand side does not read the target, so the old value
+            // is released before the right-hand side is evaluated.
+            self.emit_drop(target);
+            self.emit_guards(value);
+            let value_c = self.store_text(value, ty);
+            self.push(&format!(
+                "    memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
+            ));
+            return;
+        }
+        // The right-hand side reads the target, so the old value must survive
+        // until the bytes have been copied. Save it by byte copy, copy the new
+        // value in, then release the saved old value.
+        let save = self.unique_local("__cl_save");
+        self.push("    {");
+        self.push(&format!(
+            "        {} = {};",
+            declarator(ty, &save),
+            self.empty_state(ty)
+        ));
+        self.push(&format!(
+            "        memcpy(&({save}), &({target_c}), sizeof({target_c}));"
+        ));
+        self.emit_guards(value);
+        let value_c = self.store_text(value, ty);
+        self.push(&format!(
+            "        memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
+        ));
+        self.emit_drop_expr(&save, ty);
+        self.push("    }");
+    }
+
+    /// Emits a fixed-array assignment whose right-hand side is a call.
+    ///
+    /// A by-value fixed-array call writes through a hidden trailing
+    /// out-parameter, so the result needs storage before the target is
+    /// released. The call runs into a fresh statement-local temporary first,
+    /// because the callee may read the target (`s = dup(borrow s)`); the old
+    /// target is then released and the temporary is moved into it by byte
+    /// copy, mirroring a fixed-array [`Statement::Move`]. The temporary is
+    /// zeroed afterwards so its handles are not released a second time.
+    fn emit_fixed_array_call_assign(
+        &mut self,
+        span: crate::span::Span,
+        target: &Place,
+        ty: &Ty,
+        callee: &str,
+        type_args: &[Ty],
+        args: &[ir::Value],
+        receiver: Option<&ir::Value>,
+    ) {
+        self.emit_line_directive(span);
+        let temp = self.unique_local("__cl_call");
+        self.push("    {");
+        self.push(&format!(
+            "        {} = {};",
+            declarator(ty, &temp),
+            self.empty_state(ty)
+        ));
+        let call = self.call_with_destination(callee, type_args, args, receiver, &temp);
+        self.push(&format!("        {call};"));
+        self.emit_reassigned_target_drop(target);
+        let target_c = self.place(target);
+        self.push(&format!(
+            "        memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+        ));
+        self.emit_move_zero(&temp, ty);
         self.push("    }");
     }
 
