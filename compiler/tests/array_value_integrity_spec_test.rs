@@ -13,13 +13,18 @@
 //! `len` reports the outermost element count for a multi-extent array and the
 //! byte count for an owned `String`.
 //!
+//! The element-loop batch makes the element form of `for` walk rows: a copy
+//! loop binds each row by value, a `borrow` loop writes through the row view,
+//! a slice of rows iterates its rows, nested loops visit every scalar once, and
+//! a copy loop over non-duplicable rows reports the row type by name.
+//!
 //! Cases whose answer is a compile-time rejection assert the diagnostic code
 //! and, where the message names a type or binding, the message text too. Some
 //! of those rejections pass before the implementation exists; they are the
 //! regression guards for behavior that must not change.
 //!
-//! Later phases extend this suite with the element-loop and projection cases;
-//! each phase's batch is fully green before its full workspace check runs.
+//! Later phases extend this suite with the projection cases; each phase's batch
+//! is fully green before its full workspace check runs.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -470,4 +475,136 @@ func main(): i32 {
 "#;
     let output = run_host("av26", source);
     assert_exit("av26", &output, 3);
+}
+
+/// A copy element loop walks rows and sums all three columns of each.
+///
+/// The two rows sum to `1+2+3 + 4+5+6 = 21`.
+#[test]
+fn should_sum_each_row_when_the_element_loop_copies_rows() {
+    let source = r#"module codegen.av.st10;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let s: i32 = 0;
+    for (row in m) {
+        s = s + row[0] + row[1] + row[2];
+    }
+    return s;
+}
+"#;
+    let output = run_host("av10", source);
+    assert_exit("av10", &output, 21);
+}
+
+/// A borrow element loop writes through the row view into the array.
+///
+/// Each row's first element grows by ten, so the two first-column values are
+/// `11` and `14` and the sum is `25`.
+#[test]
+fn should_write_through_the_view_when_a_borrow_element_loop_updates_a_row() {
+    let source = r#"module codegen.av.st11;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    for (borrow row in m) {
+        row[0] = row[0] + 10;
+    }
+    return m[0][0] + m[1][0];
+}
+"#;
+    let output = run_host("av11", source);
+    assert_exit("av11", &output, 25);
+}
+
+/// An element loop over three extents runs once per outermost row.
+///
+/// Each of the two rows contributes its first corner plus its far corner:
+/// `1+4` and `5+8`, so the sum is `18` and a six-iteration walk is wrong.
+#[test]
+fn should_iterate_once_per_row_when_rows_have_inner_extents() {
+    let source = r#"module codegen.av.st12;
+
+func main(): i32 {
+    let m3: i32[2][2][2] = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]];
+    let s: i32 = 0;
+    for (row in m3) {
+        s = s + row[0][0] + row[1][1];
+    }
+    return s;
+}
+"#;
+    let output = run_host("av12", source);
+    assert_exit("av12", &output, 18);
+}
+
+/// An element loop over a slice of rows walks the rows it views.
+///
+/// The slice contains both rows of the source array, and each contributes its
+/// second column: `2 + 5 = 7`.
+#[test]
+fn should_sum_the_second_column_when_the_iterable_is_a_slice_of_rows() {
+    let source = r#"module codegen.av.st13;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let xs: i32[][3] = slice(m, 0, len(m));
+    let s: i32 = 0;
+    for (row in xs) {
+        s = s + row[1];
+    }
+    return s;
+}
+"#;
+    let output = run_host("av13", source);
+    assert_exit("av13", &output, 7);
+}
+
+/// A copy element loop over non-duplicable rows reports E10040 and names the
+/// row type.
+#[test]
+fn should_reject_a_copy_element_loop_when_the_row_is_not_duplicable() {
+    let source = r#"module codegen.av.st14;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let fs: String[2][2] = [[stringOf("a"), stringOf("b")], [stringOf("c"), stringOf("d")]];
+    for (row in fs) {
+    }
+    return 0;
+}
+"#;
+    assert_rejected_with(
+        "av14",
+        source,
+        "E10040",
+        &["non-duplicable 'String[2]'"],
+    );
+}
+
+/// Nested element loops visit every scalar of a two-by-three array once.
+///
+/// The outer loop walks rows and the inner loop walks each row's elements, so
+/// the sum is `21`; a mis-selected inner form never advances or visits the
+/// scalars as rows.
+#[test]
+fn should_sum_every_scalar_when_element_loops_are_nested_over_rows() {
+    let source = r#"module codegen.av.st15;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let s: i32 = 0;
+    for (row in m) {
+        for (x in row) {
+            s = s + x;
+        }
+    }
+    return s;
+}
+"#;
+    let output = run_host("av15", source);
+    assert_exit("av15", &output, 21);
 }

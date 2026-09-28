@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 01:07
-> **Progress**: 6/24 tasks (25%)
+> **Last Updated**: 2026-09-29 01:08
+> **Progress**: 7/24 tasks (29%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -106,7 +106,8 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 
 ## Phase 2: Multi-extent element loops
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `5bc7fd1f1273254fe2ae4860c9c79f5502a9d601`
+> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs`, `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 2.1: Specification Tests
@@ -114,7 +115,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [03-01 §New Types](03-01-multi-extent-element-loops.md) · AR-1, AR-6
 **Objective**: Pin row iteration and row views before implementation.
 
-- [ ] 2.1.1 [spec-author] Add the element-loop specification tests to the suite (ST-10 – ST-15) — `compiler/tests/array_value_integrity_spec_test.rs`
+- [x] 2.1.1 [spec-author] Add the element-loop specification tests to the suite (ST-10 – ST-15) — `compiler/tests/array_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 01:08)
 - [ ] 2.1.2 Run the spec suite and record the red phase — ST-10 – ST-13, ST-15 fail (`E10209` or wrong iteration count); ST-14 fails with the base-element type in the `E10040` message
 
 **Deliverables**:
