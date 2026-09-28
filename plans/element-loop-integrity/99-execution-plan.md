@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 11:00
-> **Progress**: 12/16 tasks (75%)
+> **Last Updated**: 2026-09-28 11:01
+> **Progress**: 13/16 tasks (81%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -151,7 +151,9 @@ verify).
 
 ## Phase 3: Hardening and Close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `df6321e426d469d4fbe59265a3c41d784bd86f44`
+> **Expected modifications**: `plans/element-loop-integrity/99-execution-plan.md`, `plans/element-loop-integrity/00-ambiguity-register.md`, `plans/element-loop-integrity/01-requirements.md`, `plans/element-loop-integrity/00-index.md`, `plans/00-roadmap.md`, `AGENTS.md`
+> **Scope mode**: strict
 > **Lenses**: correctness, maintainability, standards (strict profile — docs-only phase; auditors skipped as not applicable)
 
 ### Step 3.1: End-to-End Evidence and Close-out
@@ -159,7 +161,7 @@ verify).
 **Reference**: [07](07-testing-strategy.md) §End-to-End Tests · [01](01-requirements.md) §Acceptance Criteria
 **Objective**: Prove memory safety end to end and close the plan.
 
-- [ ] 3.1.1 Host AddressSanitizer probes over the fixed programs (every DEF-16 form and the DEF-17 nested loops); record the exits and report counts on this line
+- [x] 3.1.1 Host AddressSanitizer probes over the fixed programs (every DEF-16 form and the DEF-17 nested loops); record the exits and report counts on this line ✅ (completed: 2026-09-28 11:01) — 19 programs (the ST-1 – ST-8 and ST-11 – ST-21 run cases; ST-9/ST-10 are compile-time rejections), all built with `clang -fsanitize=address`, `ASAN_OPTIONS=detect_leaks=0`: 0 AddressSanitizer reports; every exit matches the oracle (ST-8 prints `ab`; ST-13 traps `E11211`)
 - [ ] 3.1.2 `make verify` green (all hosted-amiga legs)
 - [ ] 3.1.3 Update documentation: `AGENTS.md` test map, roadmap rows for `DEF-16`/`DEF-17` (and confirm `DEF-21` is filed, as recorded in the roadmap during planning), register closure note — `AGENTS.md`, `plans/00-roadmap.md`
 - [ ] 3.1.4 Close-out: acceptance criteria checked, plan marked Done
