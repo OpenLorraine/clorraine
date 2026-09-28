@@ -1,11 +1,17 @@
-//! Implementation tests for the shape of element reads passed as arguments.
+//! Implementation tests for the shape of element reads passed as arguments and
+//! of nested loop steps.
 //!
-//! These cases cover what the specification suite cannot see: the emitted C for
-//! an element argument (the element is passed directly as a view, with no
-//! `__cl_owned` scope temporary), for an ownerless temporary argument (the
-//! temporary is still bound and released exactly once), and for a template
+//! The element-read cases cover what the specification suite cannot see: the
+//! emitted C for an element argument (the element is passed directly as a view,
+//! with no `__cl_owned` scope temporary), for an ownerless temporary argument
+//! (the temporary is still bound and released exactly once), and for a template
 //! placeholder over an element (the placeholder's concatenation result owns its
 //! storage, but the element read itself is not bound).
+//!
+//! The nested-loop cases cover the shape the specification suite cannot see:
+//! each nested `for` prints its own increment in its own header, with no dead
+//! labelled step block and no duplicated loop, and two emissions of one program
+//! are byte-identical.
 //!
 //! Every run goes through a helper with a time limit, so a loop regression
 //! fails the case instead of freezing the suite.

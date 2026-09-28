@@ -12,6 +12,12 @@
 //! out of its container stays limited to top-level fields. One case asserts the
 //! existing bounds trap for a runtime index.
 //!
+//! The suite also covers nested loops: a `for` loop inside any other loop must
+//! run its own step. The nested cases sum concrete values, exercise `continue`
+//! and `break`, and include non-nested regression loops. A loop whose step is
+//! mis-selected never terminates, so the time limit turns it into one failing
+//! case.
+//!
 //! Every run goes through a helper with a time limit, so a loop regression
 //! fails the case instead of freezing the suite.
 
