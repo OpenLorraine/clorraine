@@ -202,6 +202,13 @@ Phase 3 (hardening and close-out)
 - The semantics review confirmed `ir_name` uniqueness and determinism,
   diagnostics keep source names, and no other consumer keys by the wrong
   spelling.
+- Re-review (2026-09-28 08:17, scoped to the fix diff `5954d89..821b8a1`):
+  RV-001 resolved on every path; the assignment path is byte-identical and no
+  new correctness defect was found. RV-003 🟡 MINOR (the ST-16 test name did
+  not follow the behavior-when-condition shape) and RV-004 🟡 MINOR (a stale
+  `bind_value` summary line) were fixed. A pre-existing diagnostic-only gap
+  (`if (x != null) { let x: T = x; }` spuriously reports `E10010`) is filed as
+  `DEF-20`.
 
 ## Success Criteria
 

@@ -588,7 +588,7 @@ func main(): i32 {
 /// emptied and the function reads the moved four-byte string. A resolver that
 /// attaches the move to the new binding instead rejects the valid program.
 #[test]
-fn should_move_the_outer_value_into_the_shadowing_local() {
+fn should_move_the_outer_value_when_the_shadowing_initializer_names_it() {
     let source = r#"module codegen.own.st16;
 
 import { String, stringOf } from std.text;

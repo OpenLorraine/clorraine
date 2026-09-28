@@ -300,7 +300,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Checks a binding's initializer against nullability and moves or loans.
+    /// Applies an initializer's ownership effect to the binding it initializes.
     ///
     /// A view bound from a local or a parameter carries a loan of that owner:
     /// a `take` or `borrow` parameter is storage the callee may not move or

@@ -36,6 +36,7 @@
 | ↳ DEF-17 | Nested element loops hang (step-block mis-selection) | — | — | Backlog | ⬜ | 2026-09-28 | 🔴 critical, found in codegen-ownership-safety preflight: `for_step_block` picks the enclosing body as the step (`codegen/control.rs:407`); no harness timeout |
 | ↳ DEF-18 | A `take`/move through a borrow element view steals the element | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in codegen-ownership-safety preflight: element bindings are `BindingKind::Local`, so the parameter move rules do not apply (`own/place.rs:185`) |
 | ↳ DEF-19 | `len` on an owned `String` silently yields 0 | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in codegen-ownership-safety Phase 2: the `len` lowering falls through to `0` for a `String` (`codegen/calls.rs:166`); the specification's implicit `String`→`str` widening should apply |
+| ↳ DEF-20 | `if (x != null) { let x: T = x; }` spuriously reports E10010 | — | — | Backlog | ⬜ | 2026-09-28 | 🟡 minor, found in the codegen-ownership-safety Phase 2 re-review: `check_nonnull_expr` resolves the initializer place after the shadowing declaration (`own/expr.rs:251`); diagnostic-only and pre-existing |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)
