@@ -1,7 +1,7 @@
 # Ambiguity Register: Codegen Ownership Safety (DEF-13, DEF-14)
 
 > **Status**: ✅ GATE PASSED — all 16 items resolved
-> **Last Updated**: 2026-09-27 22:35
+> **Last Updated**: 2026-09-28 08:31
 > **CodeOps Artifact Schema**: 1
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |

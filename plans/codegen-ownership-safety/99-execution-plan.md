@@ -97,10 +97,10 @@ component documents and the testing strategy.
 
 ### Step 2.1: Specification Tests (RED)
 
-**Reference**: [03-02](03-02-local-identity.md) §Overview · [07](07-testing-strategy.md) ST-8 – ST-15 · AR #3, AR #9
+**Reference**: [03-02](03-02-local-identity.md) §Overview · [07](07-testing-strategy.md) ST-8 – ST-16 · AR #3, AR #9
 **Objective**: Pin shadowing behavior for every MOD-16 form before the identity change.
 
-- [x] 2.1.1 [spec-author] Add the DEF-14 specification cases ST-8 – ST-15 — `compiler/tests/codegen_ownership_spec_test.rs` ✅ (completed: 2026-09-28 07:56)
+- [x] 2.1.1 [spec-author] Add the DEF-14 specification cases ST-8 – ST-16 — `compiler/tests/codegen_ownership_spec_test.rs` ✅ (completed: 2026-09-28 07:56)
 - [x] 2.1.2 Verify the RED phase: the new cases fail for the defect reason (wrong value, segfault, or C build failure) ✅ (completed: 2026-09-28 07:56)
 
 > **Runtime note (2.2.3):** `len` on an owned `String` silently yields `0`
@@ -115,7 +115,7 @@ component documents and the testing strategy.
 
 - [x] 2.2.1 Add `Binding.ir_name` and compute it deterministically in `declare`; initialize it in `declare_captures` — `compiler/src/own/flow.rs`, `compiler/src/own.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-09-28 08:01)
 - [x] 2.2.2 Spell places and both `Function.locals` builders with `ir_name`; update the IR documentation — `compiler/src/own.rs`, `compiler/src/own/lower.rs`, `compiler/src/ir.rs` ✅ (completed: 2026-09-28 08:01)
-- [x] 2.2.3 Verify the GREEN phase: ST-8 – ST-15 pass and `make check` is green ✅ (completed: 2026-09-28 08:01)
+- [x] 2.2.3 Verify the GREEN phase: ST-8 – ST-16 pass and `make check` is green ✅ (completed: 2026-09-28 08:01)
 
 ### Step 2.3: Implementation Tests and Hardening
 
@@ -209,6 +209,18 @@ Phase 3 (hardening and close-out)
   `bind_value` summary line) were fixed. A pre-existing diagnostic-only gap
   (`if (x != null) { let x: T = x; }` spuriously reports `E10010`) is filed as
   `DEF-20`.
+
+### Phase 3 — Hardening and Close-out (2026-09-28)
+
+- Docs-only phase review (security and performance auditors skipped as not
+  applicable).
+- The review independently reproduced all seven ASan probes and `make verify`
+  (all legs passed, both new suites green).
+- RV-005/RV-006/RV-007 🟡 MINOR: the final oracle range `ST-8 – ST-15` did not
+  name ST-16; the roadmap and register `Last Updated` stamps were stale; and the
+  testing-strategy suite description overstated the oracle (it asserts the exit
+  code, not sanitizer output). All three fixed.
+- No 🔴/🟠 findings.
 
 ## Success Criteria
 

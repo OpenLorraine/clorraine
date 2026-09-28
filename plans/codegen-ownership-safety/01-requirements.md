@@ -103,7 +103,7 @@ and no persistent data or network surface (AR #15).
    (ST-1 – ST-7) pass.
 2. [x] The DEF-14 reproducers (MOD-16 example, nested shadowing, defer-local
    shadowing) build with `-Wall -Wextra -Werror` and run correctly; the spec
-   cases (ST-8 – ST-15) pass.
+   cases (ST-8 – ST-16) pass.
 3. [x] No dead copy-in/write-back code remains (R6).
 4. [x] Emitted C is deterministic (R5).
 5. [x] `make check` is green after every GREEN task; RED tasks verify by

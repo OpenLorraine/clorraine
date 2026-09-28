@@ -99,8 +99,8 @@ fix each fails the C build, segfaults, or returns the wrong value.
 | `compiler/tests/codegen_ownership_spec_test.rs` | ST-1 – ST-16 | Element alias and local identity |
 
 The suite follows the existing run-spec pattern: compile the source, build the
-emitted C with the strict warning set, run the binary, assert the exit code and
-that stderr carries no sanitizer or loader failure.
+emitted C with the strict warning set, run the binary, and assert the exit
+code; a mismatch reports the run's stderr.
 
 ### Implementation Tests (edge cases, internals)
 
