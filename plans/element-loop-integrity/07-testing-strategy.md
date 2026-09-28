@@ -59,12 +59,21 @@
 | ST-19 | Two sequential element loops: `xs=[1,2]`, `ys=[10,20,30]` | Exit 63 | R5 (regression) |
 | ST-20 | One top-level element loop over `[1,2]` | Exit 3 | R5 (regression) |
 | ST-21 | `for (borrow x in xs)` over `i32[2] = [1,2]` containing `for (let j = 0; j < 3; j = j + 1) { s = s + x + j; }` | Exit 15 (Σ(x+j)); terminates | R4 · AR #3 · `spec/05` three-clause `for` |
+| ST-22 | `for (let j = 0; j < 2; j = j + 1)` containing `for (borrow x in xs)` over `[1,2]`; `s = s + x` | Exit 6; terminates | R4 · AR #3 |
+| ST-23 | `for (let j = 0; j < 2; j = j + 1)` containing `for (let k = 0; k < 3; k = k + 1)`; `s = s + j + k` | Exit 9; terminates | R4 · AR #3 |
+| ST-24 | `do { for (borrow x in xs) { s = s + x; } k = k + 1; } while (k < 2)` over `[1,2]` | Exit 6; terminates | R4 · AR #3 |
+| ST-25 | `do { for (let j = 0; j < 3; j = j + 1) { s = s + j; } k = k + 1; } while (k < 2)` | Exit 6; terminates | R4 · AR #3 |
 
 > ST-1 – ST-8, ST-14 – ST-18, and ST-21 fail before the fix (double-free
 > aborts and bounded-run timeouts). ST-9 – ST-13 and ST-19 – ST-20 pass pre-fix:
 > the two rejection cases, the runtime trap, and the regression guards. Their
 > passing state in the red phase is expected and recorded; a deviation from
 > this split is an oracle or test defect, never a reason to change a case.
+> ST-22 – ST-25 complete the nesting matrix (element and three-clause `for`
+> inside `while`, `for`, `do`/`while`, and element loops); they were added
+> during the close-out review and share the already red-verified root cause
+> (any nested `for` mis-selects its step), so their green pass is the
+> recorded evidence.
 
 ## Test Categories
 
@@ -72,7 +81,7 @@
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/element_loop_integrity_spec_test.rs` | ST-1 – ST-21 | Element read ownership (03-01) and nested loop step (03-02) |
+| `compiler/tests/element_loop_integrity_spec_test.rs` | ST-1 – ST-25 | Element read ownership (03-01) and nested loop step (03-02) |
 
 The suite follows the existing ownership-spec pattern: compile with `clc`, build
 the emitted C under the fixed warning flags, run under a 30-second bound, assert

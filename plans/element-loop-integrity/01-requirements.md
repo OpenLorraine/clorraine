@@ -99,9 +99,9 @@ loop test never becomes false.
    struct-element field, borrow-struct field, unmarked/`const`/`borrow` owned
    params, template placeholder) build and run without a double free and return
    the specified values.
-2. [x] The DEF-17 reproducers (element-in-element, three-clause-in-element,
-   element-in-`while`, three-clause-in-`while`, `continue`, `break`) run to
-   completion and return the specified sums.
+2. [x] The DEF-17 reproducers (element and three-clause `for` inside element
+   loops, `while`, `for`, and `do`/`while`, plus `continue` and `break`) run
+   to completion and return the specified sums.
 3. [x] Ownerless temporaries still materialize and release exactly once; move
    forms still report `E10026`.
 4. [x] Emitted C is deterministic and unchanged for non-nested programs.

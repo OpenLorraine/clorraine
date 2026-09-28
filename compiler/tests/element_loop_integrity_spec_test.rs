@@ -763,3 +763,99 @@ func main(): i32 {
     let output = run_host("es21", source);
     assert_exit("es21", &output, 15);
 }
+
+/// An element loop inside a three-clause `for` advances once per outer step.
+///
+/// The outer loop runs for `j = 0` and `j = 1`, and the inner loop adds
+/// `1 + 2` each time, so the sum is `6`; the inner loop must run its own step
+/// while the outer loop advances independently.
+#[test]
+fn should_advance_the_element_loop_when_it_is_inside_a_three_clause_for() {
+    let source = r#"module codegen.elem.st22;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let s: i32 = 0;
+    for (let j: i32 = 0; j < 2; j = j + 1) {
+        for (borrow x in xs) {
+            s = s + x;
+        }
+    }
+    return s;
+}
+"#;
+    let output = run_host("es22", source);
+    assert_exit("es22", &output, 6);
+}
+
+/// Two nested three-clause `for` loops each advance their own index.
+///
+/// The outer loop runs for `j = 0` and `j = 1`; the inner adds `j + 0`,
+/// `j + 1`, and `j + 2` each time, so the sum is `3 + 6 = 9`. A mis-selected
+/// step in either loop hangs or repeats an iteration.
+#[test]
+fn should_advance_both_three_clause_loops_when_they_are_nested() {
+    let source = r#"module codegen.elem.st23;
+
+func main(): i32 {
+    let s: i32 = 0;
+    for (let j: i32 = 0; j < 2; j = j + 1) {
+        for (let k: i32 = 0; k < 3; k = k + 1) {
+            s = s + j + k;
+        }
+    }
+    return s;
+}
+"#;
+    let output = run_host("es23", source);
+    assert_exit("es23", &output, 9);
+}
+
+/// An element loop inside a `do`/`while` advances once per outer iteration.
+///
+/// The `do` body runs twice and the inner loop adds `1 + 2` each time, so the
+/// sum is `6`; the inner loop must terminate before the outer test runs again.
+#[test]
+fn should_advance_the_element_loop_when_it_is_inside_a_do_while() {
+    let source = r#"module codegen.elem.st24;
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let s: i32 = 0;
+    let k: i32 = 0;
+    do {
+        for (borrow x in xs) {
+            s = s + x;
+        }
+        k = k + 1;
+    } while (k < 2);
+    return s;
+}
+"#;
+    let output = run_host("es24", source);
+    assert_exit("es24", &output, 6);
+}
+
+/// A three-clause `for` inside a `do`/`while` advances its own index.
+///
+/// The `do` body runs twice and the inner loop adds `0 + 1 + 2` each time, so
+/// the sum is `6`; the inner loop must run its increment, not its initializer.
+#[test]
+fn should_advance_the_three_clause_loop_when_it_is_inside_a_do_while() {
+    let source = r#"module codegen.elem.st25;
+
+func main(): i32 {
+    let s: i32 = 0;
+    let k: i32 = 0;
+    do {
+        for (let j: i32 = 0; j < 3; j = j + 1) {
+            s = s + j;
+        }
+        k = k + 1;
+    } while (k < 2);
+    return s;
+}
+"#;
+    let output = run_host("es25", source);
+    assert_exit("es25", &output, 6);
+}
