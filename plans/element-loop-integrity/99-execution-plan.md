@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-28 10:44
-> **Progress**: 5/16 tasks (31%)
+> **Last Updated**: 2026-09-28 10:45
+> **Progress**: 6/16 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -87,7 +87,7 @@ verify).
 **Objective**: Pin the emitted shape and cover internals.
 
 - [x] 1.3.1 Write the element-read shape tests in `compiler/tests/element_loop_integrity_impl_test.rs` (no `__cl_owned` binding for an element argument; the owned-temporary path still binds and releases; the placeholder assertion pins the element-read shape: the concat result keeps its single owned binding while the element itself is not bound) ✅ (completed: 2026-09-28 10:44)
-- [ ] 1.3.2 Run the full gate: `make check` green and the workspace builds warning-free
+- [x] 1.3.2 Run the full gate: `make check` green and the workspace builds warning-free ✅ (completed: 2026-09-28 10:45) — gate evidence: 714 tests passed, 0 failed, 0 build warnings, spec check OK
 
 **Deliverables**:
 - Shape tests pass
