@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 22:35
-> **Progress**: 20/27 tasks (74%)
+> **Last Updated**: 2026-09-29 23:29
+> **Progress**: 27/27 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -329,7 +329,7 @@ unchanged (32 test binaries, 0 failures, 0 warnings).
 
 ## Phase 4: Close-out: acceptance, probes, documentation
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 1f4854b9e24b6699f78ca0965ed5aea4d7b9bffe
 > **Lenses**: correctness, maintainability, standards (strict profile — docs and evidence phase)
 
 ### Step 4.1: Evidence and Close-out
@@ -337,16 +337,38 @@ unchanged (32 test binaries, 0 failures, 0 warnings).
 **Reference**: [01 §Acceptance Criteria](01-requirements.md) · AR-12, AR-14
 **Objective**: Run the full acceptance gate, the leak probes, and close the records.
 
-- [ ] 4.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
-- [ ] 4.1.2 Host AddressSanitizer probes with leak detection on for ST-3, ST-4, ST-7, ST-24, ST-26, and ST-29 (owning temporaries and the owning conditional arguments)
-- [ ] 4.1.3 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-23` – `DEF-29` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md`
-- [ ] 4.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 27/27; final `make check`
-- [ ] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode
+- [x] 4.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-09-29 23:24)
+- [x] 4.1.2 Host AddressSanitizer probes with leak detection on for ST-3, ST-4, ST-7, ST-24, ST-26, and ST-29 (owning temporaries and the owning conditional arguments) ✅ (completed: 2026-09-29 23:28)
+- [x] 4.1.3 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-23` – `DEF-29` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-29 23:25)
+- [x] 4.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 27/27; final `make check` ✅ (completed: 2026-09-29 23:25)
+- [x] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode ✅ (completed: 2026-09-29 23:29)
+
+> **Phase 4 review (recorded 2026-09-29 23:29)**: independent review of the docs/evidence diff
+> (baseline tree `1f4854b9`; security and performance auditors skipped — docs-only diff, logged
+> per the quality profile). Every substantive claim verified against the repository and the
+> logs: the `make verify` legs, the six ASan probes re-run clean with leak detection on, the
+> final `make check` (32 suites, specification 30/30, implementation 31/31), the R1–R7 trace to
+> passing ST cases, the roadmap Done rows, and the 16 filed defects with unique IDs. Three
+> record-accuracy findings: the progress header was stale, the close-out timestamps were guessed
+> instead of taken from the logs, and the R1–R8 requirement bullets were unticked. The user
+> ruled: apply the corrections. The corrected record (real log times, 27/27, ticked
+> requirements) is the plan's final state; the corrections are mechanical and the reviewer
+> confirmed the underlying evidence, so no further pass is needed for this docs-only change.
 
 **Deliverables**:
-- [ ] `make verify` all legs passed
-- [ ] ASan probes clean with leak detection on
-- [ ] Documentation and roadmap synced; acceptance criteria checked
+- [x] `make verify` all legs passed
+- [x] ASan probes clean with leak detection on
+- [x] Documentation and roadmap synced; acceptance criteria checked
+
+**Close-out evidence**:
+- `make verify` (2026-09-29 23:24): `verify: all legs passed` — `make check`, the portable corpus
+  on hosted-amiga and FS-UAE, and the six runtime-fault programs under `vamos`.
+- Host AddressSanitizer probes (2026-09-29 23:24) with leak detection on: ST-3 (exit 3), ST-4 (3),
+  ST-7 (3), ST-24 (2), ST-26 (0), and ST-29 (2) — all with zero leak and zero ASan reports.
+- Documentation: `AGENTS.md` records both suites; the roadmap marks `DEF-23` – `DEF-29` Done with
+  the plan link; all five acceptance criteria in `01-requirements.md` are checked.
+- Final `make check` (2026-09-29 23:25): 32 suite binaries, 0 failures, 0 warnings; the
+  specification suite 30/30 and the implementation suite 31/31.
 
 **Verify**: `make verify`
 

@@ -1,7 +1,7 @@
 # Runtime Value Integrity Implementation Plan
 
 > **Feature**: Fix the seven filed runtime-value defects: a call-rooted element-loop iterable emits invalid C (`DEF-24`), an owning compiler temporary is never released (`DEF-23`), a fixed-array conditional value emits invalid C (`DEF-25`), a runtime-index callable-field receiver is never bounds-guarded (`DEF-26`), a func value with a fixed-array return carries the wrong C pointer type (`DEF-27`), a non-literal panic message fails the C compile (`DEF-28`), and a `take` argument in a guarded operand moves eagerly (`DEF-29`)
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-09-29
 > **Implements**: DEF-23, DEF-24, DEF-25, DEF-26, DEF-27, DEF-28, DEF-29
 > **CodeOps Artifact Schema**: 1

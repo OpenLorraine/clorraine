@@ -118,6 +118,15 @@ in `CMD`).
   unchanged), and `compiler/tests/borrow_view_and_shadowing_impl_test.rs` holds
   its implementation tests (one report per transfer, the shadowing binding
   usable after its declaration, and the `E10010`/`E10012` reporting shape).
+- `compiler/tests/runtime_value_integrity_spec_test.rs` holds the
+  **specification tests** for released statement temporaries and their view
+  lifetime, call-rooted element-loop iterables, conditional fixed-array values,
+  callable-field receiver guards, the func-pointer hidden destination, and the
+  panic message runtime, and
+  `compiler/tests/runtime_value_integrity_impl_test.rs` holds its
+  implementation tests (release and transfer-temp shapes, the iterable
+  temporary, the conditional branch store, the receiver traps, the func
+  declarator and destination, and the two-argument `cl_panic`).
 - `compiler/tests/freestanding_spec_test.rs` holds the **specification tests**
   for the `freestanding` profile: the m68k link-exit assertion and the host
   no-libc run.

@@ -25,13 +25,13 @@ specification, grammar, or registry change is authorized (AR-12).
 
 ### Must Have
 
-- [ ] **R1 — A call-rooted element-loop iterable compiles and runs (`DEF-24`).**
+- [x] **R1 — A call-rooted element-loop iterable compiles and runs (`DEF-24`).**
   `for (x in mk())` and `for (borrow e in mk())` materialize the call result once before
   the first iteration; reads, writes, and copies through the loop behave as for a place
   iterable, and the materialized value is released after the loop. (`spec/05` §9; AR-6)
   A call-rooted iterable whose type mentions a generic parameter keeps today's behavior
   (the `mentions_type_param` guard; AR-6, Won't Have).
-- [ ] **R2 — Owning compiler temporaries are released at statement end (`DEF-23`).**
+- [x] **R2 — Owning compiler temporaries are released at statement end (`DEF-23`).**
   A materialized temporary that owns a value is dropped at the end of the statement in
   reverse creation order; an unevaluated guard path leaves its temporary empty and its
   drop is a no-op. The release is emitted by a statement-position path (not the
@@ -47,7 +47,7 @@ specification, grammar, or registry change is authorized (AR-12).
   temporary — directly or through a call, conditional, or return — is a loan of that
   temporary; a use with no release-free path reports the existing `E10030`.
   (`spec/17-codegen.md:80`, D5/O2; `spec/16` BR-1; AR-5, AR-18)
-- [ ] **R3 — Fixed-array conditional values compile in the routed value positions
+- [x] **R3 — Fixed-array conditional values compile in the routed value positions
   (`DEF-25`).**
   `let c: i32[2] = ok ? a : b;`, `c = ok ? a : b;`, and `return ok ? a : b;` (through the
   fixed-array return emitter) store a fixed-array conditional through a branch that
@@ -61,28 +61,28 @@ specification, grammar, or registry change is authorized (AR-12).
   error `E10020`. `s = ok ? s : t;` keeps `s`'s old value when the condition holds, takes
   `t`'s value otherwise, and releases the old target exactly once; `s` stays initialized
   because it is the assignment target. (`spec/03` §3–4; AR-7, AR-16, AR-19)
-- [ ] **R4 — A runtime-index callable-field receiver is bounds-guarded (`DEF-26`).**
+- [x] **R4 — A runtime-index callable-field receiver is bounds-guarded (`DEF-26`).**
   `ops[i].run(1)` traps with `E11211` before the call when `i` is out of range, on the
   expression-statement, fixed-array-assign, and fixed-array-return paths, exactly like an
   ordinary runtime index. (AR-8)
-- [ ] **R5 — A `func` value with a fixed-array return carries the hidden out-param ABI
+- [x] **R5 — A `func` value with a fixed-array return carries the hidden out-param ABI
   (`DEF-27`).** Struct fields, locals, parameters, and discarded calls through those
   render `void (*)(params..., <destination>)`, and a call through a func value passes its
   destination (or a released discard temporary). A discarded call through a local
   func-typed callee resolves the callee's return type from the local's declared type.
   (`spec/17-codegen.md`, the by-value aggregate return rule; AR-9)
-- [ ] **R6 — A `str`, `String`, or literal panic message compiles (`DEF-28`).**
+- [x] **R6 — A `str`, `String`, or literal panic message compiles (`DEF-28`).**
   `panic(s)` with any of the three forms prints `panic: <message>` and aborts; the
   runtime takes pointer and length, so no NUL terminator is required. (`spec/17` panic
   row, D4/E4; AR-10, AR-17)
-- [ ] **R7 — A `take` argument in a guarded operand moves only when evaluated (`DEF-29`).**
+- [x] **R7 — A `take` argument in a guarded operand moves only when evaluated (`DEF-29`).**
   With `ok && sink(s)` and `ok == false`, the call and the move do not run and `s` stays
   owned; with `ok == true` the call runs and `s` moves exactly once. The same holds for
   both `?:` arms and for `||`. (AR-11)
 
 ### Should Have
 
-- [ ] **R8 — Guard behavior is unchanged.** Existing materialization shapes (index,
+- [x] **R8 — Guard behavior is unchanged.** Existing materialization shapes (index,
   division, float-to-int, slice operands), guard traps, laziness of unevaluated
   operands, `E10040` for a non-duplicable element loop without `borrow`, field-over-
   function precedence, scalar func values, and the null/ownership diagnostics keep their
@@ -154,12 +154,12 @@ secrets, persistent data, or network surface (AR-13).
 
 ## Acceptance Criteria
 
-1. [ ] Every requirement R1–R7 traces to at least one passing specification test case in
+1. [x] Every requirement R1–R7 traces to at least one passing specification test case in
    `runtime_value_integrity_spec_test.rs`; R8 is guarded by the existing suites
    (`array_value_integrity`, `element_loop_integrity`, `codegen_run_spec_test`).
-2. [ ] `make check` passes with no warnings; `make verify` reports all legs passed.
-3. [ ] The host probes run under AddressSanitizer with leak detection on for the owning
+2. [x] `make check` passes with no warnings; `make verify` reports all legs passed.
+3. [x] The host probes run under AddressSanitizer with leak detection on for the owning
    temporary cases (ST-3, ST-4, ST-7, ST-24, ST-26, ST-29) and report clean.
-4. [ ] `DEF-23` – `DEF-29` are marked Done in `plans/00-roadmap.md` with a link to this
-   plan; `DEF-30` – `DEF-32` remain filed as backlog defects.
-5. [ ] Documentation updated: `AGENTS.md` test map, roadmap rows.
+4. [x] `DEF-23` – `DEF-29` are marked Done in `plans/00-roadmap.md` with a link to this
+   plan; `DEF-30` – `DEF-45` remain filed as backlog defects.
+5. [x] Documentation updated: `AGENTS.md` test map, roadmap rows.
