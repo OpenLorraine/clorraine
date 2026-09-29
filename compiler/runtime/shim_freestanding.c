@@ -215,15 +215,10 @@ static inline void cl_trap(const char *code, const char *message)
 }
 
 /* The byte length of a NUL-terminated C string. The pointer forms of a panic
- * message keep printing their text through the length-based runtime. There is
- * no C library, so the scan is written here. */
+ * message keep printing their text through the length-based runtime. */
 static inline unsigned long cl_cstring_len(const char *text)
 {
-    unsigned long length = 0;
-    while (text[length] != '\0') {
-        length++;
-    }
-    return length;
+    return strlen(text);
 }
 
 /* Abort on a user-level panic. The message is passed as pointer and length, so

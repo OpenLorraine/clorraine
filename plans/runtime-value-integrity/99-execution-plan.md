@@ -297,6 +297,32 @@ check after `cl_panic` (recorded in the red-phase note).
 the implementation suite 26/26, the specification suite 30/30, and all pre-existing suites
 unchanged (32 test binaries, 0 failures, 0 warnings).
 
+> **Phase 3 review (recorded 2026-09-29 22:58)**: independent correctness/maintainability/
+> standards review of the phase diff (baseline tree `bcefe961`). Two critical and two major
+> findings, no minor-only batch: F1 the panic message argument's guards were never emitted
+> (`panic(mk()[1])` read NULL, `panic(xs[i])` skipped the bounds trap), F2 a lifted lambda
+> inherited the deferred move-out context and the deferred take temp was released although
+> transfer-owned (use-after-free), F3 the non-handle move-out comma operand tripped
+> `-Werror=unused-value`, F4 a `cstring` panic message regressed to an empty message with
+> `-Werror=pointer-sign`. Minor: F5 the `static str` empty return state, F6 the scalar
+> conditional family (DEF-34), F7 the freestanding newline comment. The user ruled: fix
+> F1–F5 and F7, extend `DEF-34` for F6 (commit `59088db`).
+>
+> **Phase 3 re-review (the one permitted pass, recorded 2026-09-29 22:58)**: scoped to the
+> fix diff (`1a871cc..59088db`). All five fixes verified: the panic argument's guards run
+> before the runtime call on every form (element projections, runtime indexes, division and
+> float guards, templates), the lambda body resets the deferred context and is ASan-clean,
+> the move-out spellings build warning-free for handle/struct/array types, the `cstring` and
+> `raw` messages print on host, hosted-amiga, and freestanding, and the `static str` tail
+> returns the empty view state. One new major: N1, the deferred take-call result is ownerless
+> where nothing adopts it and leaks (a discarded conditional or a mixed-arm by-value
+> argument). Minors: N2 the `DEF-34` wording, N3 the freestanding length helper duplicated
+> `strlen`. The user ruled: file N1 as `DEF-45` and fix N2/N3. Verification: `make check`
+> passes 32 suites with 0 failures and 0 warnings; the specification suite is 30/30, the
+> implementation suite 31/31; the reviewer's probes build warning-free and run
+> AddressSanitizer-clean. No further independent review is permitted for this phase (one
+> re-review); this block records the final dispositions.
+
 **Verify**: `make check`
 
 ---
