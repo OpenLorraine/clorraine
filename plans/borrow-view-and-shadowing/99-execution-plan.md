@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 13:13
-> **Progress**: 11/16 tasks (69%)
+> **Progress**: 12/16 tasks (75%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -156,11 +156,13 @@ updates.
 **Objective**: Pin the diagnostic shape and the post-declaration usability.
 
 - [x] 2.3.1 Add implementation tests: a single `E10010` report when one is due, the shadowing binding usable after its declaration, and the `E10012` null rule unchanged — `compiler/tests/borrow_view_and_shadowing_impl_test.rs` ✅ (completed: 2026-09-29 13:13)
-- [ ] 2.3.2 Full verification — `make check`
+- [x] 2.3.2 Full verification — `make check` ✅ (completed: 2026-09-29 13:13)
 
 **Deliverables**:
 - [x] Implementation tests pass
-- [ ] No regressions; no warnings
+- [x] No regressions; no warnings
+
+> **Full verification (recorded 2026-09-29 13:13)**: `make check` → spec check plus the full Rust workspace suite, all green (30 suites ok, no failures).
 
 **Verify**: `make check`
 
