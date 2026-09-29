@@ -13,7 +13,7 @@ ownership transfer reaches. Loop element bindings are created by
 `bind_for_in_element` (`own/loops.rs:302-367`) as `BindingKind::Local` with
 `Mode::Borrow` and a `DerefTemp` base that aliases the iterable element, so
 **none** of the existing parameter checks see them. The declaration path
-(`check_let` at `own/statements.rs:178-207`, `check_const` at `:256-281`)
+(`check_let` at `own/statements.rs:178-215`, `check_const` at `:262-287`)
 deliberately resolves the store and the ownership effect before the binding is
 declared, but runs `check_value_into` after it; `check_value_into` →
 `check_nonnull_expr` → `plain_binding` then resolves the initializer's name to
@@ -66,7 +66,7 @@ pub(super) fn move_place(&mut self, id: usize, projections: &[ir::Projection], s
     }
 ```
 
-The declaration order (`own/statements.rs:195-203`):
+The declaration order (`own/statements.rs:201-208`):
 
 ```rust
 let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);

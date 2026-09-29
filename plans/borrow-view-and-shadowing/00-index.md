@@ -99,9 +99,9 @@ func keep(flag: bool): i32 {
 
 ## Related Files
 
-- `compiler/src/own/place.rs` — `move_place`: the shared move decision
+- `compiler/src/own/place.rs` — `move_place` (the shared move decision) and `plain_binding`
 - `compiler/src/own/loops.rs` — `bind_for_in_element`: the borrow element binding
 - `compiler/src/own/statements.rs` — `check_let`, `check_const`: the declaration path
-- `compiler/src/own/expr.rs` — `check_value_into`, `check_nonnull_expr`, `plain_binding`
+- `compiler/src/own/expr.rs` — `check_value_into`, `check_nonnull_expr`
 - `compiler/tests/borrow_view_and_shadowing_spec_test.rs`, `compiler/tests/borrow_view_and_shadowing_impl_test.rs` — new suites
 - `compiler/src/own/tests.rs` — unit coverage for the rejection

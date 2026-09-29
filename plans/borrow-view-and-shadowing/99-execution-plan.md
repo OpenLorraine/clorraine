@@ -62,11 +62,11 @@ updates.
 **Reference**: [03-01 §Proposed Changes](03-01-borrow-view-moves.md) · AR-3, AR-4, AR-9, AR-13
 **Objective**: Pin the view-move rejection and the guard forms before any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/borrow_view_and_shadowing_spec_test.rs` (ST-1 – ST-8)
-- [ ] 1.1.2 Run the spec suite and record the red phase — ST-1 – ST-5 accepted pre-fix; ST-6 – ST-8 pass as guards
+- [ ] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/borrow_view_and_shadowing_spec_test.rs` (ST-1 – ST-8, ST-13)
+- [ ] 1.1.2 Run the spec suite and record the red phase — ST-1 – ST-5 accepted pre-fix; ST-6 – ST-8 and ST-13 pass as guards
 
 **Deliverables**:
-- [ ] Spec suite with the ST-1 – ST-8 cases and the shared scratch/run helpers
+- [ ] Spec suite with the ST-1 – ST-8 and ST-13 cases and the shared scratch/run helpers
 - [ ] Red-phase evidence recorded (suite output)
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`
@@ -77,7 +77,7 @@ updates.
 **Objective**: Reject an ownership transfer through a borrow element view at the shared move decision.
 
 - [ ] 1.2.1 Guard `move_place` against a `BindingKind::Local` binding with `Mode::Borrow`, reporting the `E10026` registry row — `compiler/src/own/place.rs`
-- [ ] 1.2.2 Run the spec suite and record the green phase — ST-1 – ST-8 pass
+- [ ] 1.2.2 Run the spec suite and record the green phase — ST-1 – ST-8 and ST-13 pass
 
 **Deliverables**:
 - [ ] Every move form through the view reports `E10026`; the guards stay accepted
@@ -111,11 +111,11 @@ updates.
 **Reference**: [03-02 §Proposed Changes](03-02-shadowed-narrowing.md) · AR-5, AR-6, AR-13
 **Objective**: Pin the shadowing acceptance and the unchanged null rules.
 
-- [ ] 2.1.1 [spec-author] Add the shadowed-narrowing specification tests to the suite (ST-9 – ST-12) — `compiler/tests/borrow_view_and_shadowing_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase — ST-9 and ST-10 report `E10010` pre-fix; ST-11 and ST-12 pass as guards
+- [ ] 2.1.1 [spec-author] Add the shadowed-narrowing specification tests to the suite (ST-9 – ST-12, ST-14) — `compiler/tests/borrow_view_and_shadowing_spec_test.rs`
+- [ ] 2.1.2 Run the spec suite and record the red phase — ST-9, ST-10, and ST-14 report `E10010` pre-fix; ST-11 and ST-12 pass as guards
 
 **Deliverables**:
-- [ ] ST-9 – ST-12 in the spec suite
+- [ ] ST-9 – ST-12 and ST-14 in the spec suite
 - [ ] Red-phase evidence recorded
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`
@@ -126,7 +126,7 @@ updates.
 **Objective**: Run the initializer's null check before the shadowing declaration.
 
 - [ ] 2.2.1 Move `check_value_into` before `declare_local` in `check_let` and `check_const` — `compiler/src/own/statements.rs`
-- [ ] 2.2.2 Run the spec suite and record the green phase — ST-9 – ST-12 pass
+- [ ] 2.2.2 Run the spec suite and record the green phase — ST-9 – ST-12 and ST-14 pass
 
 **Deliverables**:
 - [ ] The shadowing `let` and `const` forms compile; genuine null uses keep `E10010`

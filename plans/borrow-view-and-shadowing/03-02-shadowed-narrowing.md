@@ -13,7 +13,7 @@ spurious `E10010` (R2, R3; AR-5, AR-6).
 
 ### Current Architecture
 
-`check_let` (`own/statements.rs:178-207`) and `check_const` (`:256-281`) already
+`check_let` (`own/statements.rs:178-215`) and `check_const` (`:262-287`) already
 resolve the store shape and the ownership effect before declaring the binding —
 the file's own comment says the initializer must tie to the outer binding it may
 shadow. The null check is the exception: `check_value_into` runs **after**
@@ -94,7 +94,7 @@ func main(): i32 {
 
 ## Testing Requirements
 
-- Specification tests ST-9 – ST-12 in `07-testing-strategy.md`.
+- Specification tests ST-9 – ST-12 and ST-14 in `07-testing-strategy.md`.
 - Implementation tests pin that the initializer's diagnostic (when one is due)
   still reports once and that the shadowing binding itself is usable after the
   declaration.

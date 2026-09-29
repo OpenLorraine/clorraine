@@ -23,21 +23,16 @@ path marks the binding moved and the emitter nulls the borrowed element.
 ### Proposed Changes
 
 Add one guard to `move_place` before any state change: when the binding is a
-local borrow view, report `E10026` with the registry's message and help and
-return without recording a move or clearing projections.
+local borrow view, report the `E10026` registry row through the existing
+`report_element_move_limit` helper and return without recording a move or
+clearing projections.
 
 ```rust
 // A borrow element view never owns its element, so an ownership transfer
 // through it is the v1 element-move limit even though the view binds as a
 // local. (The borrowed-parameter rule below covers parameters.)
 if binding.kind == BindingKind::Local && binding.mode == Mode::Borrow {
-    let name = binding.name.clone();
-    self.error(
-        "E10026",
-        "partial moves are limited to top-level fields in v1",
-        "move the whole value instead",
-        span,
-    );
+    self.report_element_move_limit(span);
     return;
 }
 ```
@@ -120,8 +115,8 @@ func main(): i32 {
 
 ## Testing Requirements
 
-- Specification tests ST-1 – ST-5 (rejections) and ST-6 – ST-8 (guards) in
-  `07-testing-strategy.md`.
+- Specification tests ST-1 – ST-5 (rejections) and ST-6 – ST-8 and ST-13
+  (guards) in `07-testing-strategy.md`.
 - Unit coverage in `own::tests` for the view rejection and the unchanged
   copy-form binding.
 - Implementation tests pin that the rejection is a single report and that a

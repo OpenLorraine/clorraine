@@ -33,6 +33,11 @@
 > traceability comment quotes the behavior in **plain language** and never the
 > `ST-` id or a `plans/` path.
 
+> **Case numbering:** ST identifiers are stable across plan revisions; a case
+> added during review takes the next unused number and sits after the cases of
+> its phase. ST-13 pins the unchanged borrow-parameter guard (Phase 1) and
+> ST-14 pins the `== null` else-branch shadow (Phase 2).
+
 ### Phase 1 — Borrow-view moves (`03-01`)
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
@@ -45,6 +50,7 @@
 | ST-6 | `vlen(e)` lend plus a field read inside a borrow element loop over `String[2]` | accepted; the sum of both lengths (`3`) is returned | R4 · AR-13 · `spec/08` §5 |
 | ST-7 | `row[0] = row[0] + 10;` inside `for (borrow row in m)` for `m: i32[2][3]` | accepted; `m[0][0] + m[1][0] == 25` (writes reach the array) | R4 · AR-13 · `spec/08` §5 |
 | ST-8 | `let copy: i32[3] = row;` inside `for (row in m)` (copy-form binding) | accepted; the copy is an owned value | R4 · AR-13 · `spec/08` LOOP-1 |
+| ST-13 | A move out of a `borrow` parameter (not a view): a `take` argument, an owned-local binding, or a return through it | `E10034` (`cannot release or store borrowed parameter '{name}'`) | R4 · AR-13 · `spec/16` §2, §5 (BR-5) · `spec/14` |
 
 ### Phase 2 — Shadowed narrowing (`03-02`)
 
@@ -54,6 +60,7 @@
 | ST-10 | The same with `const b: Buffer = b;` | accepted (no `E10010`) | R3 · AR-6 · `spec/16` |
 | ST-11 | `use(b)` on a nullable binding with no `!= null` narrowing | `E10010` (`value 'b' may be null here`) | R4 · AR-13 · `spec/14` |
 | ST-12 | `if (b != null) { use(b); }` (no shadowing) | accepted | R4 · AR-13 · `spec/16` |
+| ST-14 | `if (b == null) { return 1; } else { let b: Buffer = b; ... }` (shadow in the else branch) | accepted (no `E10010`) | R2 · AR-5 · `spec/02` §5, `spec/16` §2 |
 
 ### Recorded red-phase predictions
 
@@ -63,8 +70,8 @@ is an oracle or test defect, never a reason to change a case.
 | State | Cases | Observed pre-fix (2026-09-29, host) |
 | ----- | ----- | ----------------------------------- |
 | Fails: missing rejection | ST-1 – ST-5 | `clc` accepts every move form |
-| Fails: spurious diagnostic | ST-9, ST-10 | `E10010` on the shadowing initializer |
-| Passes pre-fix (guards) | ST-6 – ST-8, ST-11, ST-12 | lends, writes, copy-form bindings, and the existing null rules already correct |
+| Fails: spurious diagnostic | ST-9, ST-10, ST-14 | `E10010` on the shadowing initializer |
+| Passes pre-fix (guards) | ST-6 – ST-8, ST-11 – ST-13 | lends, writes, copy-form bindings, the borrow-parameter rule, and the existing null rules already correct |
 
 ## Test Categories
 
@@ -72,7 +79,7 @@ is an oracle or test defect, never a reason to change a case.
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/borrow_view_and_shadowing_spec_test.rs` | ST-1 – ST-12 | `03-01`, `03-02` |
+| `compiler/tests/borrow_view_and_shadowing_spec_test.rs` | ST-1 – ST-14 | `03-01`, `03-02` |
 
 ### Implementation Tests (edge cases, internals)
 
