@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-29 21:26
+> **Last Updated**: 2026-09-29 22:20
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -56,6 +56,11 @@
 | ↳ DEF-37 | A `do`/`while` guarded condition never re-evaluates its value | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, pre-existing, found in the runtime-value-integrity Phase 1 re-review: the condition block's guard and store are emitted after the body, but the body's fall-through prints as `continue;`, so the test reads the initial empty temporary; `do { i = i + 1; } while (vlen(mk()[0]) == 2 && i < 3);` is accepted and crashes |
 | ↳ DEF-38 | A struct-literal conditional field emits invalid C | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, pre-existing, found in the runtime-value-integrity Phase 1 re-review: `Box { arr: ok ? a : b, tag: 1 }` emits `(ClBox){ (ok ? a : b), 1 }`, which C rejects; a distinct value position from DEF-32/DEF-33 |
 | ↳ DEF-39 | A re-materialized growable-array operand leaks in the embedded guard spelling | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the runtime-value-integrity Phase 1 re-review (R5): the embedded guard spelling skips the drop when the value has no expression form, so `while (i < 3 && mk()[0].count > 0)` with `mk(): Array<i32>[2]` leaks each iteration; the statement spelling drops the old value correctly |
+| ↳ DEF-40 | A captured func value called by name inside a capturing lambda resolves by name | — | — | Backlog | ⬜ | 2026-09-29 | 🟡 minor, pre-existing, found in the runtime-value-integrity Phase 2 re-review (R2): the lambda body's call renders the source name instead of the environment field, so the C build fails or a same-named module function is called |
+| ↳ DEF-41 | A module-level func-typed global called by name is not resolved to its symbol | — | — | Backlog | ⬜ | 2026-09-29 | 🟡 minor, pre-existing, found in the runtime-value-integrity Phase 2 re-review (R3): neither the lowering nor the emitter consults globals, so the call renders the bare source name |
+| ↳ DEF-42 | An implicit `String`→`str` widening is not emitted for a func-value argument | — | — | Backlog | ⬜ | 2026-09-29 | 🟡 minor, pre-existing, found in the runtime-value-integrity Phase 2 re-review (R4): the call-argument widening keys off declared function signatures, so a func-typed parameter receives `ClString` where `ClStr` is expected |
+| ↳ DEF-43 | A func type in return position spells an invalid C declarator | — | — | Backlog | ⬜ | 2026-09-29 | 🟡 minor, pre-existing, found in the runtime-value-integrity Phase 2 re-review (R5): `func(): func(i32): i32` emits an unnamed function-pointer prefix (`i32 (*)(i32) cl_..._make(void)`), which C rejects |
+| ↳ DEF-44 | A `borrow` mode in a func-type parameter is dropped | — | — | Backlog | ⬜ | 2026-09-29 | 🟡 minor, pre-existing, found in the runtime-value-integrity Phase 2 re-review (R6): the mode parses but is lost when the function type is resolved, so the pointer spells the handle by value while the callee takes the pointer |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

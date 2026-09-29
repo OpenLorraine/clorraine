@@ -208,6 +208,26 @@ receiver guards and the function-pointer ABI change no existing behavior.
 the implementation suite 15/15, the specification suite 24/24, and all pre-existing suites
 unchanged (32 test binaries, 0 failures, 0 warnings).
 
+> **Phase 2 review (recorded 2026-09-29 22:20)**: independent correctness/maintainability/
+> standards review of the phase diff (baseline tree `452e31c8`). Three major findings, no
+> critical: F1 a shadowed or sanitized func-typed local resolved to the wrong binding (the
+> phase-aggravated discard shape became a silent wrong call), F2 a nested receiver was
+> guarded against the product of the extents, F3 a fixed-array func parameter rendered as
+> its element type. The user ruled: fix all three (commit `cf65905`).
+>
+> **Phase 2 re-review (the one permitted pass, recorded 2026-09-29 22:20)**: scoped to the
+> fix diff (`f042a66..cf65905`). F2 and F3 verified; F1 held for locals but func-typed
+> parameters still resolved to the module callee (R1, major — a new hard C error on the
+> array-returning variant). Five pre-existing minors in the same family (R2–R6: captured func
+> value, module func global, `String`→`str` widening through a func value, func type in
+> return position, dropped `borrow` mode). The user ruled: fix R1 and file R2–R6. R1 is fixed
+> in commit `efab229`; its probes now run correctly (`f1_param_shadow` 1,
+> `f1_param_shadow_array` 2, `f1_param_shadow_generic` 1, `f1_param_text` 1,
+> `f1_before_decl` 15, `f1_discard_mix` 5), the specification suite passes 24/24, the
+> implementation suite 21/21, and `make check` passes 32 suites with 0 failures and 0
+> warnings. R2–R6 are filed as `DEF-40`–`DEF-44`. No further independent review is permitted
+> for this phase (one re-review); this block records the final dispositions.
+
 **Verify**: `make check`
 
 ---
