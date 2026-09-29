@@ -117,6 +117,31 @@ nested statement runs.
 the new implementation suite 8/8, the runtime value integrity specification suite 17/17, and
 all pre-existing suites unchanged (32 test binaries, 0 failures, 0 warnings).
 
+> **Phase 1 review (recorded 2026-09-29 21:26)**: independent correctness/maintainability/
+> standards review of the phase diff (baseline tree `472e4788`). Two critical and three major
+> findings, all ruled by the user: F1 a conditional's owned-arm move was invisible to the
+> checker (maybe-moved rule, AR-19; ST-6/ST-26 revised, ST-30 added), F2 the temporary view
+> lifetime missed call, conditional, and return derivations (completed provenance rule),
+> F3 a release was attached to one runtime path (per-path release copies), F4 a loop-header
+> temporary was re-materialized without releasing the previous value (release before the new
+> store), F5 a conditional argument with literal or duplicable arms (filed as `DEF-33`). The
+> fixes are commits `aafa1c0` and `6b6e703`.
+>
+> **Phase 1 re-review (the one permitted pass, recorded 2026-09-29 21:26)**: scoped to the
+> fix diff (`4ac201b..6b6e703`). F3 and F5 confirmed. F1/F2/F4 were incomplete against their
+> rulings: R1 a `Materialize` wrapper hid the owning temporary below it, R2 a generic
+> reborrow was not recognized as a lend source, R3 a conditional assigned to a projected
+> target was unmarked, R4 a conditional of ownerless elements bypassed `E10026`, R5 the
+> embedded guard spelling has no expression-form drop for a growable array. The user ruled:
+> fix R1–R4; file R5 and the pre-existing findings. R1–R4 are fixed in this round and the
+> reviewer's probes now reject with `E10030` (f2_slice, f2_slice_cond, f2_generic),
+> `E10020` (f1_field_use), and `E10026` (f1_take_elem); the specification suite passes 18/18,
+> the implementation suite 10/10, the ownership unit tests 59/59, and `make check` passes 32
+> suites with 0 failures and 0 warnings. R5 is filed as `DEF-39`; the pre-existing findings
+> are `DEF-34` (expanded to the scalar handle form), `DEF-37`, and `DEF-38`. No further
+> independent review is permitted for this phase (one re-review); this block records the
+> final dispositions.
+
 **Verify**: `make check`
 
 ---
