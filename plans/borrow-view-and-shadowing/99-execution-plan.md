@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 13:04
-> **Progress**: 1/16 tasks (6%)
+> **Last Updated**: 2026-09-29 13:05
+> **Progress**: 2/16 tasks (13%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -65,11 +65,13 @@ updates.
 **Objective**: Pin the view-move rejection and the guard forms before any implementation.
 
 - [x] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/borrow_view_and_shadowing_spec_test.rs` (ST-1 – ST-8, ST-13) ✅ (completed: 2026-09-29 13:04)
-- [ ] 1.1.2 Run the spec suite and record the red phase — ST-1 – ST-5 accepted pre-fix; ST-6 – ST-8 and ST-13 pass as guards
+- [x] 1.1.2 Run the spec suite and record the red phase — ST-1 – ST-5 accepted pre-fix; ST-6 – ST-8 and ST-13 pass as guards ✅ (completed: 2026-09-29 13:05)
 
 **Deliverables**:
-- [ ] Spec suite with the ST-1 – ST-8 and ST-13 cases and the shared scratch/run helpers
-- [ ] Red-phase evidence recorded (suite output)
+- [x] Spec suite with the ST-1 – ST-8 and ST-13 cases and the shared scratch/run helpers
+- [x] Red-phase evidence recorded (suite output)
+
+> **Red phase (recorded 2026-09-29 13:04)**: `cargo test --test borrow_view_and_shadowing_spec_test` → 6 passed / 5 failed. The five rejection cases fail as predicted (ST-1 – ST-5: the compiler accepts every move form); ST-6 – ST-8 and ST-13 pass as guards.
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`
 
