@@ -110,6 +110,14 @@ in `CMD`).
 - `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
   partial-move / drop coherence: it builds the emitted C and runs it, so a
   double free aborts in the C library.
+- `compiler/tests/borrow_view_and_shadowing_spec_test.rs` holds the
+  specification tests for borrow-element-view moves and shadowed narrowing (an
+  ownership transfer through a `for (borrow e in xs)` view reports `E10026` in
+  every move form; a `let` or `const` initializer shadowing a narrowed nullable
+  binding compiles; the null rules and the borrow-parameter rule are
+  unchanged), and `compiler/tests/borrow_view_and_shadowing_impl_test.rs` holds
+  its implementation tests (one report per transfer, the shadowing binding
+  usable after its declaration, and the `E10010`/`E10012` reporting shape).
 - `compiler/tests/freestanding_spec_test.rs` holds the **specification tests**
   for the `freestanding` profile: the m68k link-exit assertion and the host
   no-libc run.

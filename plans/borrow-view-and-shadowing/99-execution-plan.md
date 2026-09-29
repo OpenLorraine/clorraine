@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 13:13
-> **Progress**: 12/16 tasks (75%)
+> **Last Updated**: 2026-09-29 13:19
+> **Progress**: 14/16 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -172,7 +172,9 @@ updates.
 
 ## Phase 3: Close-out: acceptance, documentation
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: deb6baa4138093c3f2499d92a383b36d38875b4c
+> **Expected modification set**: `AGENTS.md`, `plans/00-roadmap.md`, `plans/borrow-view-and-shadowing/01-requirements.md`, `plans/borrow-view-and-shadowing/99-execution-plan.md`
+> **Scope mode**: strict
 > **Lenses**: correctness, maintainability, standards (strict profile — docs and evidence phase)
 
 ### Step 3.1: Evidence and Close-out
@@ -180,14 +182,16 @@ updates.
 **Reference**: [01 §Acceptance Criteria](01-requirements.md) · AR-8, AR-10, AR-12
 **Objective**: Run the full acceptance gate and close the records.
 
-- [ ] 3.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
-- [ ] 3.1.2 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-18`/`DEF-20` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md`
+- [x] 3.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-09-29 13:19)
+- [x] 3.1.2 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-18`/`DEF-20` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-29 13:19)
 - [ ] 3.1.3 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 16/16; final `make check`
 - [ ] 3.1.4 Phase review evidence and plan summary — commit per the active commit mode
 
 **Deliverables**:
-- [ ] `make verify` all legs passed
+- [x] `make verify` all legs passed
 - [ ] Documentation and roadmap synced; acceptance criteria checked
+
+> **Full acceptance (recorded 2026-09-29 13:19)**: `make verify` → `check` plus every hosted-amiga cross-toolchain leg, the vbcc build-only leg, the FS-UAE programs, and the six runtime-fault programs; `verify: all legs passed`.
 
 **Verify**: `make verify`
 
