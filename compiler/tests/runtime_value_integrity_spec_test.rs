@@ -192,6 +192,23 @@ fn assert_trap(tag: &str, output: &Output, code: &str) {
     );
 }
 
+/// Asserts the run aborted and wrote `panic: <message>` to its stderr.
+///
+/// A panicking run exits nonzero, and the message arrives byte for byte after
+/// the literal prefix `panic: `, so a message that carries no NUL terminator
+/// must survive the trip to the runtime.
+fn assert_panic(tag: &str, output: &Output, message: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag}: a panicking run must exit nonzero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("panic: {message}")),
+        "{tag}: expected `panic: {message}` on stderr; stderr:\n{stderr}"
+    );
+}
+
 /// Compiles `source` and returns the compiler output plus the C path.
 fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
     let scratch = ScratchDir::new(tag);
@@ -870,4 +887,144 @@ func main(): i32 {
 "#;
     let output = run_host("rvi17", source);
     assert_exit("rvi17", &output, 7);
+}
+
+/// A literal panic message aborts the program and prints the message.
+///
+/// The panic intrinsic never returns, so `main` needs no return statement; the
+/// process aborts after writing `panic: boom` to the diagnostic stream.
+#[test]
+fn should_abort_with_the_message_when_a_literal_panics() {
+    let source = r#"module codegen.rvi.st18;
+
+func main(): i32 {
+    panic("boom");
+}
+"#;
+    let output = run_host("rvi18", source);
+    assert_panic("rvi18", &output, "boom");
+}
+
+/// A `str` view panic message keeps its bytes without a NUL terminator.
+///
+/// The view comes from a function that returns its `str` parameter, so the
+/// runtime receives pointer and length rather than a NUL-terminated C string;
+/// the process aborts after writing `panic: boom`.
+#[test]
+fn should_abort_with_the_message_when_a_str_view_panics() {
+    let source = r#"module codegen.rvi.st19;
+
+func viewOf(s: str): str {
+    return s;
+}
+
+func main(): i32 {
+    panic(viewOf("boom"));
+}
+"#;
+    let output = run_host("rvi19", source);
+    assert_panic("rvi19", &output, "boom");
+}
+
+/// An owned `String` panic message aborts with its bytes.
+///
+/// The handle comes from `stringOf`, and the process aborts after writing
+/// `panic: owned` to the diagnostic stream.
+#[test]
+fn should_abort_with_the_message_when_an_owned_string_panics() {
+    let source = r#"module codegen.rvi.st20;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    panic(stringOf("owned"));
+}
+"#;
+    let output = run_host("rvi20", source);
+    assert_panic("rvi20", &output, "owned");
+}
+
+/// A `take` call under a false `&&` guard neither runs nor moves its argument.
+///
+/// The call counts itself in a global; the left operand is `false`, so the
+/// guarded call is skipped, the counter stays `0`, and the program exits `0`.
+#[test]
+fn should_skip_the_guarded_take_call_when_the_guard_is_false() {
+    let source = r#"module codegen.rvi.st21;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func sink(take s: String): bool {
+    calls = calls + 1;
+    return len(s) > 0;
+}
+
+func main(): i32 {
+    let s: String = stringOf("keep");
+    let ok: bool = false;
+    let r: bool = ok && sink(s);
+    return calls;
+}
+"#;
+    let output = run_host("rvi21", source);
+    assert_exit("rvi21", &output, 0);
+}
+
+/// A `take` call under a true `&&` guard runs once and moves its argument once.
+///
+/// The call counts itself in a global; the left operand is `true`, so the
+/// guarded call runs, the counter is `1`, and the single ownership transfer
+/// leaves no double release. The program exits `1`.
+#[test]
+fn should_run_the_guarded_take_call_once_when_the_guard_is_true() {
+    let source = r#"module codegen.rvi.st22;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func sink(take s: String): bool {
+    calls = calls + 1;
+    return len(s) > 0;
+}
+
+func main(): i32 {
+    let s: String = stringOf("keep");
+    let ok: bool = true;
+    let r: bool = ok && sink(s);
+    return calls;
+}
+"#;
+    let output = run_host("rvi22", source);
+    assert_exit("rvi22", &output, 1);
+}
+
+/// A conditional's un-chosen arm neither runs its `take` call nor moves.
+///
+/// `sinkCount` counts itself in a global; the condition is `false`, so the arm
+/// call is skipped, the counter stays `0`, and the program exits `0`.
+#[test]
+fn should_skip_the_arm_take_call_when_the_condition_selects_the_other_arm() {
+    let source = r#"module codegen.rvi.st23;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func sinkCount(take s: String): i32 {
+    calls = calls + 1;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("keep");
+    let cond: bool = false;
+    let r: i32 = cond ? sinkCount(s) : 0;
+    return calls;
+}
+"#;
+    let output = run_host("rvi23", source);
+    assert_exit("rvi23", &output, 0);
 }

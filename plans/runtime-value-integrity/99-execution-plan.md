@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 21:32
-> **Progress**: 15/27 tasks (56%)
+> **Last Updated**: 2026-09-29 22:27
+> **Progress**: 17/27 tasks (63%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -234,7 +234,7 @@ unchanged (32 test binaries, 0 failures, 0 warnings).
 
 ## Phase 3: Runtime boundary
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: bcefe96106febf637b752d491ad20ceb0c92dcc1
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 3.1: Specification Tests
@@ -242,12 +242,21 @@ unchanged (32 test binaries, 0 failures, 0 warnings).
 **Reference**: [03-03 §Proposed Changes](03-03-runtime-boundary.md) · AR-10, AR-11, AR-17
 **Objective**: Pin the panic message forms and the deferred guarded moves before any implementation.
 
-- [ ] 3.1.1 [spec-author] Add the runtime-boundary specification tests to the suite (ST-18 – ST-23) — `compiler/tests/runtime_value_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase — the panic-message builds and the guarded-move cases fail; the evaluated guarded call passes
+- [x] 3.1.1 [spec-author] Add the runtime-boundary specification tests to the suite (ST-18 – ST-23) — `compiler/tests/runtime_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 22:26)
+- [x] 3.1.2 Run the spec suite and record the red phase — the panic-message builds and the guarded-move cases fail; the evaluated guarded call passes ✅ (completed: 2026-09-29 22:26)
 
 **Deliverables**:
-- [ ] ST-18 – ST-23 in the spec suite
-- [ ] Red-phase evidence recorded
+- [x] ST-18 – ST-23 in the spec suite
+- [x] Red-phase evidence recorded
+
+**Red-phase evidence** (2026-09-29 22:26, `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`):
+30 tests, 25 passed / 5 failed. Failing: ST-18 – ST-20 (the C build rejects the emitted program: the
+diverging tail falls out of a non-void `main` as a bare `return;`, and the `str` form additionally
+passes a view where `cl_panic` takes `const char *`) and ST-21/ST-23 (the guard is `false` but the
+counter is `1`: the guarded call and its move ran eagerly). Passing pre-fix: ST-22 (the evaluated
+guarded call already runs once). Packet notes: the `&&` operand calls return `bool` (the frozen
+`spec/04` requires boolean operands; the plan row wrote the parameter list without a return type);
+the panics need the diverging-tail return handled alongside the new runtime signature.
 
 **Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
 
