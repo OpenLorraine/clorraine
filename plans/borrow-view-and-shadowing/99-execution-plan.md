@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 13:05
-> **Progress**: 2/16 tasks (13%)
+> **Last Updated**: 2026-09-29 13:04
+> **Progress**: 3/16 tasks (19%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -65,7 +65,7 @@ updates.
 **Objective**: Pin the view-move rejection and the guard forms before any implementation.
 
 - [x] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/borrow_view_and_shadowing_spec_test.rs` (ST-1 – ST-8, ST-13) ✅ (completed: 2026-09-29 13:04)
-- [x] 1.1.2 Run the spec suite and record the red phase — ST-1 – ST-5 accepted pre-fix; ST-6 – ST-8 and ST-13 pass as guards ✅ (completed: 2026-09-29 13:05)
+- [x] 1.1.2 Run the spec suite and record the red phase — ST-1 – ST-5 accepted pre-fix; ST-6 – ST-8 and ST-13 pass as guards ✅ (completed: 2026-09-29 13:04)
 
 **Deliverables**:
 - [x] Spec suite with the ST-1 – ST-8 and ST-13 cases and the shared scratch/run helpers
@@ -80,11 +80,11 @@ updates.
 **Reference**: [03-01 §Proposed Changes](03-01-borrow-view-moves.md) · AR-3, AR-7, AR-9
 **Objective**: Reject an ownership transfer through a borrow element view at the shared move decision.
 
-- [ ] 1.2.1 Guard `move_place` against a `BindingKind::Local` binding with `Mode::Borrow`, reporting the `E10026` registry row — `compiler/src/own/place.rs`
+- [x] 1.2.1 Guard `move_place` against a `BindingKind::Local` binding with `Mode::Borrow`, reporting the `E10026` registry row — `compiler/src/own/place.rs` ✅ (completed: 2026-09-29 13:04)
 - [ ] 1.2.2 Run the spec suite and record the green phase — ST-1 – ST-8 and ST-13 pass
 
 **Deliverables**:
-- [ ] Every move form through the view reports `E10026`; the guards stay accepted
+- [x] Every move form through the view reports `E10026`; the guards stay accepted
 - [ ] No regressions; no warnings
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`

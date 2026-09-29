@@ -182,6 +182,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn move_place(&mut self, id: usize, projections: &[ir::Projection], span: Span) {
         self.bindings[id].used = true;
         let binding = &self.bindings[id];
+        // A borrow element view never owns its element, so an ownership
+        // transfer through it is the v1 element-move limit even though the
+        // view binds as a local. (The borrowed-parameter rule below covers
+        // parameters.)
+        if binding.kind == BindingKind::Local && binding.mode == Mode::Borrow {
+            self.report_element_move_limit(span);
+            return;
+        }
         if binding.kind == BindingKind::Param
             && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)
         {
