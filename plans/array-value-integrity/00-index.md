@@ -1,7 +1,7 @@
 # Array Value Integrity Implementation Plan
 
 > **Feature**: Fix the remaining fixed-array value defects: multi-extent element loops bind the row (DEF-15), fixed-array value assignment emits invalid C (DEF-22), a projection over an array-returning call emits invalid C (DEF-21), and `len` on an owned `String` yields 0 (DEF-19)
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-09-28
 > **Implements**: DEF-15, DEF-19, DEF-21, DEF-22
 > **CodeOps Artifact Schema**: 1
