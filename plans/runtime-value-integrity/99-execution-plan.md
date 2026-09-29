@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 16:06
-> **Progress**: 1/27 tasks (4%)
+> **Last Updated**: 2026-09-29 16:07
+> **Progress**: 2/27 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -62,11 +62,18 @@ leak-detection probes, and the documentation/roadmap updates.
 **Objective**: Pin the iterable materialization, the temporary release and its view lifetime rule, and the conditional stores before any implementation.
 
 - [x] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/runtime_value_integrity_spec_test.rs` (ST-1 – ST-11, ST-24 – ST-29) ✅ (completed: 2026-09-29 16:06)
-- [ ] 1.1.2 Run the spec suite and record the red phase — the invalid-C, missing-release, and missing-lifetime-rejection cases fail; the guard cases pass
+- [x] 1.1.2 Run the spec suite and record the red phase — the invalid-C, missing-release, and missing-lifetime-rejection cases fail; the guard cases pass ✅ (completed: 2026-09-29 16:07)
 
 **Deliverables**:
-- [ ] Spec suite with the ST-1 – ST-11 and ST-24 – ST-29 cases and the shared scratch/run helpers (including `assert_trap`)
-- [ ] Red-phase evidence recorded (suite output)
+- [x] Spec suite with the ST-1 – ST-11 and ST-24 – ST-29 cases and the shared scratch/run helpers (including `assert_trap`)
+- [x] Red-phase evidence recorded (suite output)
+
+**Red-phase evidence** (2026-09-29 16:07, `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`):
+7 passed, 10 failed. Failing: the invalid-C group (ST-1, ST-2, ST-4 – ST-8, ST-10, ST-29) and
+the missing lifetime rejection (ST-25). ST-8 varies from the recorded prediction: the emitted C
+compiles, but the callee's out-parameter variable receives the decayed pointer and `main` exits
+`0` instead of `7` — still a red failure, with the observed variant recorded here. Passing
+pre-fix (the predicted regression guards): ST-3, ST-9, ST-11, ST-24, ST-26 – ST-28.
 
 **Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
 
