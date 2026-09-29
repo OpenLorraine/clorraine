@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 11:20
-> **Progress**: 0/16 tasks (0%)
+> **Last Updated**: 2026-09-29 13:04
+> **Progress**: 1/16 tasks (6%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -54,7 +54,9 @@ updates.
 
 ## Phase 1: Borrow-view moves
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: 0a6ac189aad54ff74e74ce9ae2ec73fc2b1acb37
+> **Expected modification set**: `compiler/tests/borrow_view_and_shadowing_spec_test.rs`, `compiler/tests/borrow_view_and_shadowing_impl_test.rs`, `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/tests.rs`, `plans/borrow-view-and-shadowing/99-execution-plan.md`
+> **Scope mode**: strict
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 1.1: Specification Tests
@@ -62,7 +64,7 @@ updates.
 **Reference**: [03-01 §Proposed Changes](03-01-borrow-view-moves.md) · AR-3, AR-4, AR-9, AR-13
 **Objective**: Pin the view-move rejection and the guard forms before any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/borrow_view_and_shadowing_spec_test.rs` (ST-1 – ST-8, ST-13)
+- [x] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/borrow_view_and_shadowing_spec_test.rs` (ST-1 – ST-8, ST-13) ✅ (completed: 2026-09-29 13:04)
 - [ ] 1.1.2 Run the spec suite and record the red phase — ST-1 – ST-5 accepted pre-fix; ST-6 – ST-8 and ST-13 pass as guards
 
 **Deliverables**:
