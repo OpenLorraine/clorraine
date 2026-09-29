@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 02:08
-> **Progress**: 11/24 tasks (46%)
+> **Last Updated**: 2026-09-29 02:10
+> **Progress**: 12/24 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -145,11 +145,11 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin the loop lowering, the pointer-to-array declaration, and cover internals.
 
 - [x] 2.3.1 Add implementation tests: unit coverage for `iterated_element` (fixed, slice, nested, single-extent), the emitted row copy in the loop body, and the pointer-to-array borrow-row declaration — `compiler/tests/array_value_integrity_impl_test.rs` ✅ (completed: 2026-09-29 02:09) — 3 unit tests in `types::tests` and 11 shape tests (`ai1` – `ai11`) pass
-- [ ] 2.3.2 Full verification — `make check`
+- [x] 2.3.2 Full verification — `make check` ✅ (completed: 2026-09-29 02:10) — `make check` exit 0: spec check OK (27 files, 104 compile-fail tests); 761 workspace tests passed, no failures or warnings
 
 **Deliverables**:
-- [ ] Implementation tests pass
-- [ ] No regressions; no warnings
+- [x] Implementation tests pass
+- [x] No regressions; no warnings
 
 **Verify**: `make check`
 
