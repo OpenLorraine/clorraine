@@ -751,3 +751,67 @@ fn a_shadowing_view_self_borrow_keeps_the_outer_loan() {
     );
     assert_eq!(error_codes(&source), vec!["E10031"]);
 }
+
+#[test]
+fn an_element_of_a_call_result_cannot_be_moved() {
+    // The call owns its storage only until the statement ends, so an element
+    // of the result has no owner the destination could take over.
+    let source = "module t;\n\
+        import { String, stringOf } from std.text;\n\
+        func mk(): String[2] {\n\
+            return [stringOf(\"ab\"), stringOf(\"cde\")];\n\
+        }\n\
+        func demo(): void {\n\
+            let s: String = mk()[0];\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10026"]);
+}
+
+#[test]
+fn a_nested_element_of_a_call_result_cannot_be_moved() {
+    // An index chain rooted in a call resolves to no place at all, so the
+    // element-move limit applies at any depth.
+    let source = "module t;\n\
+        import { String, stringOf } from std.text;\n\
+        func mk(): String[2][2] {\n\
+            return [[stringOf(\"ab\"), stringOf(\"cd\")], [stringOf(\"ef\"), stringOf(\"gh\")]];\n\
+        }\n\
+        func demo(): void {\n\
+            let s: String = mk()[0][0];\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10026"]);
+}
+
+#[test]
+fn a_place_element_moved_to_a_projected_target_is_rejected() {
+    // The element belongs to a local, but the target is a projected field, so
+    // the store is a partial move outside a top-level field.
+    let source = "module t;\n\
+        import { String, stringOf } from std.text;\n\
+        struct Holder { s: String; }\n\
+        func demo(): void {\n\
+            let a: String[2] = [stringOf(\"a\"), stringOf(\"bb\")];\n\
+            let h: Holder = Holder { s: stringOf(\"x\") };\n\
+            h.s = a[0];\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10026"]);
+}
+
+#[test]
+fn a_top_level_field_can_still_move_to_a_projected_target() {
+    // A top-level field is the one partial move v1 allows, so the move is
+    // recorded without reporting the element-move limit.
+    let source = "module t;\n\
+        import { String, stringOf } from std.text;\n\
+        struct Holder { s: String; }\n\
+        func demo(): void {\n\
+            let h: Holder = Holder { s: stringOf(\"x\") };\n\
+            let b: Holder = Holder { s: stringOf(\"y\") };\n\
+            b.s = h.s;\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
+}

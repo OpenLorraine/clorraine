@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 07:41
-> **Progress**: 17/24 tasks (71%)
+> **Progress**: 18/24 tasks (75%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -195,7 +195,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-5
 **Objective**: Pin the materialize shape, the short-circuit comma operand, the E10026 sites, and the element-move predicate.
 
-- [ ] 3.3.1 Add implementation tests: materialized temporary with the destination call, the short-circuit comma operand, the E10026 sites (assignment, field-target assignment, aggregate-literal field), and unit coverage for `is_ownerless_element_move` — `compiler/tests/array_value_integrity_impl_test.rs`
+- [x] 3.3.1 Add implementation tests: materialized temporary with the destination call, the short-circuit comma operand, the E10026 sites (assignment, field-target assignment, aggregate-literal field), and unit coverage for `is_ownerless_element_move` — `compiler/tests/array_value_integrity_impl_test.rs` ✅ (completed: 2026-09-29 07:42) — 4 ownership-stage unit tests (`own::tests`: call element, nested element, projected-target place element, top-level field guard) and 15 shape tests (`ai1` – `ai15`) pass
 - [ ] 3.3.2 Full verification — `make check`
 
 **Deliverables**:

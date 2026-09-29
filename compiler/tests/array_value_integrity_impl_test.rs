@@ -167,6 +167,27 @@ fn emit_build_run(tag: &str, source: &str) -> (Output, String) {
     (output, emitted)
 }
 
+/// Compiles a program that must be rejected and returns the compiler stderr.
+fn reject_stderr(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        scratch.path().join("out.c").display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
 /// Asserts the program exited with exactly `expected`, reporting its stderr.
 fn assert_exit(tag: &str, output: &Output, expected: i32) {
     assert_eq!(
@@ -553,4 +574,103 @@ func main(): i32 {
         "ai12: the guard bound should be the row count"
     );
     assert_exit("ai12", &output, 4);
+}
+
+/// A projection over a call result fills a temporary through the hidden
+/// out-parameter and then reads the element.
+///
+/// The call must not run twice and must not be rendered inline: the emitted
+/// statement passes the temporary as the call's destination and the read uses
+/// the temporary.
+#[test]
+fn should_fill_a_temporary_when_a_call_result_is_indexed() {
+    let source = r#"module codegen.av.impl13;
+
+func mk(): i32[2] {
+    return [7, 9];
+}
+
+func main(): i32 {
+    let x: i32 = mk()[1];
+    return x;
+}
+"#;
+    let (output, emitted) = emit_build_run("ai13", source);
+    assert!(
+        emitted.contains("cl_codegen_av_impl13_mk(__cl_tmp0);"),
+        "ai13: the call should write into the materialized temporary"
+    );
+    assert!(
+        emitted.contains("x = __cl_tmp0[1];"),
+        "ai13: the projection should read the temporary"
+    );
+    assert_exit("ai13", &output, 9);
+}
+
+/// A guarded call result stays inside the guard as a comma operand.
+///
+/// The call must not become a statement before the `if`: it runs only when the
+/// left operand of `&&` holds, so the emitted condition carries the call.
+#[test]
+fn should_keep_the_call_inside_the_guard_when_a_short_circuit_operand_indexes_it() {
+    let source = r#"module codegen.av.impl14;
+
+func boom(): i32[2] {
+    panic("boom");
+}
+
+func main(): i32 {
+    let ok: bool = false;
+    if (ok && boom()[0] == 1) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let (output, emitted) = emit_build_run("ai14", source);
+    assert!(
+        emitted.contains(
+            "(ok && ((cl_codegen_av_impl14_boom(__cl_tmp0)), (__cl_tmp0[0] == 1)))"
+        ),
+        "ai14: the call should be a comma operand inside the guarded condition"
+    );
+    assert_exit("ai14", &output, 0);
+}
+
+/// The element-move limit reports once, with the partial-move message, at a
+/// projected target.
+#[test]
+fn should_report_the_element_move_limit_once_at_a_projected_target() {
+    let source = r#"module codegen.av.impl15;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    s: String;
+}
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let h: Holder = Holder { s: stringOf("x") };
+    h.s = mk()[0];
+    return 0;
+}
+"#;
+    let stderr = reject_stderr("ai15", source);
+    assert_eq!(
+        stderr.matches("error E10026:").count(),
+        1,
+        "ai15: the limit should report exactly once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("partial moves are limited to top-level fields in v1"),
+        "ai15: the message should state the partial-move limit; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("move the whole value instead"),
+        "ai15: the help should name the remedy; stderr:\n{stderr}"
+    );
 }
