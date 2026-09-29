@@ -1,7 +1,7 @@
 # Borrow-View Moves and Shadowed Narrowing Implementation Plan
 
 > **Feature**: Reject ownership transfers through a `for (borrow e in xs)` element view (`DEF-18`), and resolve a shadowing initializer against the outer narrowed binding (`DEF-20`)
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-09-29
 > **Implements**: DEF-18, DEF-20
 > **CodeOps Artifact Schema**: 1

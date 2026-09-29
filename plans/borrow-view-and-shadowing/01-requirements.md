@@ -23,21 +23,21 @@ owns its element), `spec/14` (the `E10010` and `E10026` rows), and `spec/16`
 
 ### Must Have
 
-- [ ] **R1 — Moving through a borrow element view is rejected (`DEF-18`).**
+- [x] **R1 — Moving through a borrow element view is rejected (`DEF-18`).**
   An ownership transfer whose source is a `for (borrow e in xs)` element view —
   a `take` argument, an owned-local binding, a field path, an aggregate-literal
   field, or a return — reports `E10026` with the registry's message and help.
   (`spec/03` §3–4, `spec/08` §5; AR-3, AR-4, AR-7, AR-9)
-- [ ] **R2 — A narrowed shadowing initializer is accepted (`DEF-20`).**
+- [x] **R2 — A narrowed shadowing initializer is accepted (`DEF-20`).**
   `if (b != null) { let b: Buffer = b; ... }` compiles: the initializer's name
   resolves to the outer binding, whose non-null narrowing holds. (`spec/02`,
   `spec/16`; AR-5)
-- [ ] **R3 — The `const` shadowing form is accepted too.** The same program with
+- [x] **R3 — The `const` shadowing form is accepted too.** The same program with
   `const b: Buffer = b;` compiles for the same reason. (`spec/16`; AR-6)
 
 ### Should Have
 
-- [ ] **R4 — Guard behavior is unchanged.** Reads, lends, and writes through a
+- [x] **R4 — Guard behavior is unchanged.** Reads, lends, and writes through a
   borrow element view keep working; the copy-form loop binding keeps owning its
   copy; a move out of a `borrow` parameter keeps reporting `E10034`; a nullable
   use without a narrowing check keeps reporting `E10010`. (AR-13)
@@ -84,10 +84,11 @@ persistent data, or network surface (AR-11).
 
 ## Acceptance Criteria
 
-1. [ ] Every requirement R1–R4 traces to at least one passing specification
-   test case in `borrow_view_and_shadowing_spec_test.rs`.
-2. [ ] `make check` passes with no warnings; `make verify` reports all legs
+1. [x] Every requirement R1–R4 traces to at least one passing specification
+   test case in `borrow_view_and_shadowing_spec_test.rs` (R1: ST-1 – ST-5;
+   R2: ST-9, ST-14; R3: ST-10; R4: ST-6 – ST-8, ST-11 – ST-13).
+2. [x] `make check` passes with no warnings; `make verify` reports all legs
    passed.
-3. [ ] `DEF-18` and `DEF-20` are marked Done in `plans/00-roadmap.md` with a
+3. [x] `DEF-18` and `DEF-20` are marked Done in `plans/00-roadmap.md` with a
    link to this plan.
-4. [ ] Documentation updated: `AGENTS.md` test map, roadmap rows.
+4. [x] Documentation updated: `AGENTS.md` test map, roadmap rows.

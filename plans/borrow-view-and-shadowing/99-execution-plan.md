@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 13:19
-> **Progress**: 14/16 tasks (88%)
+> **Progress**: 15/16 tasks (94%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -184,12 +184,14 @@ updates.
 
 - [x] 3.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-09-29 13:19)
 - [x] 3.1.2 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-18`/`DEF-20` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-29 13:19)
-- [ ] 3.1.3 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 16/16; final `make check`
+- [x] 3.1.3 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 16/16; final `make check` ✅ (completed: 2026-09-29 13:19)
 - [ ] 3.1.4 Phase review evidence and plan summary — commit per the active commit mode
 
 **Deliverables**:
 - [x] `make verify` all legs passed
-- [ ] Documentation and roadmap synced; acceptance criteria checked
+- [x] Documentation and roadmap synced; acceptance criteria checked
+
+> **Acceptance check (recorded 2026-09-29 13:19)**: every requirement R1–R4 traces to passing spec cases (R1: ST-1 – ST-5; R2: ST-9, ST-14; R3: ST-10; R4: ST-6 – ST-8, ST-11 – ST-13); `make check` green with no warnings and `make verify` all legs passed; the roadmap rows are Done with the plan link; `AGENTS.md` carries both suites; final `make check` green (30 suites ok).
 
 > **Full acceptance (recorded 2026-09-29 13:19)**: `make verify` → `check` plus every hosted-amiga cross-toolchain leg, the vbcc build-only leg, the FS-UAE programs, and the six runtime-fault programs; `verify: all legs passed`.
 
