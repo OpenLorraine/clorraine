@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 07:48
-> **Progress**: 19/24 tasks (79%)
+> **Last Updated**: 2026-09-29 07:50
+> **Progress**: 20/24 tasks (83%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -209,7 +209,8 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 
 ## Phase 4: Close-out: probes, acceptance, documentation
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `bf15f2ff3d03daf7fbe7f1c1f984eb8ab81a1432`
+> **Expected modification set** (strict scope): `plans/array-value-integrity/99-execution-plan.md`, `plans/array-value-integrity/01-requirements.md`, `plans/array-value-integrity/00-index.md`, `plans/array-value-integrity/00-ambiguity-register.md`, `plans/00-roadmap.md`, `AGENTS.md`
 > **Lenses**: correctness, maintainability, standards (strict profile — docs and evidence phase)
 
 ### Step 4.1: Evidence and Close-out
@@ -217,7 +218,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [01 §Acceptance Criteria](01-requirements.md) · AR-8, AR-2, AR-4, AR-5
 **Objective**: Prove memory safety, run the full acceptance gate, and close the records.
 
-- [ ] 4.1.1 AddressSanitizer probes over the copy/move/projection programs (ST-2, ST-5, ST-7, ST-8, ST-16, ST-18, ST-23, ST-25, ST-26): emit, build with `clang -std=c99 -O0 -g -fsanitize=address`, run with `ASAN_OPTIONS=detect_leaks=0` (leak detection is off; the statement-temporary limitation is recorded as `DEF-23`), record the results on this line; count the emitted deleter call sites for the ST-25 and ST-26 release shapes (one per old element; the runs exit clean)
+- [~] 4.1.1 AddressSanitizer probes over the copy/move/projection programs (ST-2, ST-5, ST-7, ST-8, ST-16, ST-18, ST-23, ST-25, ST-26): emit, build with `clang -std=c99 -O0 -g -fsanitize=address`, run with `ASAN_OPTIONS=detect_leaks=0` (leak detection is off; the statement-temporary limitation is recorded as `DEF-23`), record the results on this line; count the emitted deleter call sites for the ST-25 and ST-26 release shapes (one per old element; the runs exit clean) ✅ (completed: 2026-09-29 07:50) — host-side ASan (clang 18; the pinned container's clang 14 has no ASan runtime): 9/9 programs built with `-fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=0`; 0 AddressSanitizer reports; exits match the oracle (ST-2/5/7/8 = 3, ST-16 = 9, ST-18 = 3, ST-23 = 0, ST-25 = 2, ST-26 = 3); each element of the ST-25/ST-26 destination has 3 emitted deleter sites (initializer guard, reassignment release, scope cleanup) with exactly one release at the reassignment
 - [ ] 4.1.2 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
 - [ ] 4.1.3 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-15`/`DEF-19`/`DEF-21`/`DEF-22` (done + plan link) and keep the `DEF-23`/`DEF-24` filings current, register closure note — `AGENTS.md`, `plans/00-roadmap.md`
 - [ ] 4.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 24/24; final `make check`
