@@ -52,7 +52,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         if let Some(target) = self.place_target(expr) {
             self.move_target(target, span);
+        } else if self.is_ownerless_element_move(expr) {
+            self.report_element_move_limit(span);
         }
+    }
+
+    /// True when the expression moves an element out of an ownerless call
+    /// result.
+    ///
+    /// The root of an index chain decides ownership: a local, parameter, or
+    /// global root is a place whose move is checked at the binding sites and
+    /// at projected-target assignments, while a call root owns its storage
+    /// only until the statement ends. Moving a non-duplicable element out of
+    /// a call result is the v1 element-move limit; a value with no element
+    /// selection is left to the ordinary field rules.
+    pub(super) fn is_ownerless_element_move(&self, expr: &Expr) -> bool {
+        fn roots_in_call(expr: &Expr) -> bool {
+            match &expr.kind {
+                ExprKind::Index { base, .. } | ExprKind::Member { base, .. } => roots_in_call(base),
+                ExprKind::Call { .. } => true,
+                _ => false,
+            }
+        }
+        fn selects_element(expr: &Expr) -> bool {
+            match &expr.kind {
+                ExprKind::Index { .. } => true,
+                ExprKind::Member { base, .. } => selects_element(base),
+                _ => false,
+            }
+        }
+        selects_element(expr) && roots_in_call(expr) && self.place_target(expr).is_none()
+    }
+
+    /// Reports the v1 element-move limit, naming the same remedy as a partial
+    /// move outside a top-level field.
+    pub(super) fn report_element_move_limit(&mut self, span: Span) {
+        self.error(
+            "E10026",
+            "partial moves are limited to top-level fields in v1",
+            "move the whole value instead",
+            span,
+        );
     }
 
     /// True when a call's callee expression lowers to a closure value.
@@ -298,6 +338,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
                 self.eval(value);
+                // A projected target consumes a non-duplicable element value:
+                // a place-rooted element is a partial move and reports E10026
+                // through the shared consume point, while an ownerless element
+                // is reported by the store preparation.
+                if !projections.is_empty() && self.place_target(value).is_some() {
+                    self.consume_owned_place(value, value.span);
+                }
                 if compound.is_some() {
                     self.read_place(id, &projections, target.span);
                 }
@@ -339,6 +386,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     );
                 }
                 self.eval(value);
+                if !projections.is_empty() && self.place_target(value).is_some() {
+                    self.consume_owned_place(value, value.span);
+                }
                 if self.is_loan_value(value) {
                     self.error(
                         "E10033",

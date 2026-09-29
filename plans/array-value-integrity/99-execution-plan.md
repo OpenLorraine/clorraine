@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 07:39
-> **Progress**: 15/24 tasks (63%)
+> **Last Updated**: 2026-09-29 07:41
+> **Progress**: 16/24 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -182,7 +182,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Materialize fixed-array call results before projections; reject ownerless element moves at every move decision.
 
 - [x] 3.2.1 Lift the fixed-array exclusion for call results in the materialize helpers and emit the destination call in both guard arms — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs` ✅ (completed: 2026-09-29 07:39) — ST-16 – ST-18 and ST-23 pass; authorized adjacent fixes: the `panic` literal now renders as the C string the runtime takes (`codegen/function.rs`; non-literal messages filed as `DEF-28`), a constant in-range index skips its dead bounds guard so a guarded short-circuit operand no longer folds one, and an always-panicking fixed-array function marks its hidden result parameter used
-- [ ] 3.2.2 Add `is_ownerless_element_move` and report `E10026` at the shared store preparation, the aggregate consume point, the `take` argument, and the return; cover projected-target assignments (local and global) by consuming the place value through the existing `consume_owned_place` after it is evaluated — `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`
+- [x] 3.2.2 Add `is_ownerless_element_move` and report `E10026` at the shared store preparation, the aggregate consume point, the `take` argument, and the return; cover projected-target assignments (local and global) by consuming the place value through the existing `consume_owned_place` after it is evaluated — `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs` ✅ (completed: 2026-09-29 07:41) — the seven rejection cases are single-report (checked at the overlapping projected-target sites)
 - [ ] 3.2.3 Run the spec suite and record the green phase — ST-1 – ST-30 pass
 
 **Deliverables**:

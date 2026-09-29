@@ -238,6 +238,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     source: self.target_place(&source),
                 };
             }
+            // An element read from a call result has no place to move out of,
+            // so storing it into an owned destination is the v1 element-move
+            // limit rather than an assign of a borrowed element.
+            if self.is_ownerless_element_move(value) {
+                self.report_element_move_limit(value.span);
+            }
         }
         PreparedStore::Assign {
             value: self.lower_value(value),
@@ -678,6 +684,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !self.sema.table.duplicable(&returns) && !returns.is_unknown() {
                 if let Some(target) = self.place_target(value) {
                     self.move_target(target, span);
+                } else if self.is_ownerless_element_move(value) {
+                    // The return type owns the value it receives, and an
+                    // element of a call result has no owner that outlives the
+                    // statement.
+                    self.report_element_move_limit(span);
                 }
             }
             if is_view(&returns) {
