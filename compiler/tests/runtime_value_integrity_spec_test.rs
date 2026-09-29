@@ -179,9 +179,7 @@ fn assert_exit(tag: &str, output: &Output, expected: i32) {
 
 /// Asserts the run aborted at the runtime guard for `code`.
 ///
-/// The suite's runtime-fault cases use this helper; the value cases here do
-/// not, so the helper carries a dead-code allowance until they arrive.
-#[allow(dead_code)]
+/// A trapped run exits nonzero and prints `error CODE:` on stderr.
 fn assert_trap(tag: &str, output: &Output, code: &str) {
     assert!(
         !output.status.success(),
@@ -705,4 +703,171 @@ func main(): i32 {
 }
 "#;
     assert_rejected_with("rvi30", source, "E10020", &["was moved"]);
+}
+
+/// A statement call through a field with an in-range receiver index runs.
+///
+/// The index selects the first entry of a two-entry array, so the call is
+/// reachable and the program finishes at its final `0` without a trap.
+#[test]
+fn should_run_the_statement_call_when_a_field_receiver_index_is_in_range() {
+    let source = r#"module codegen.rvi.st12;
+
+struct Ops {
+    run: func(i32): i32;
+}
+
+func bump(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    let ops: Ops[2] = [Ops { run: bump }, Ops { run: bump }];
+    let i: i32 = 0;
+    ops[i].run(1);
+    return 0;
+}
+"#;
+    let output = run_host("rvi12", source);
+    assert_exit("rvi12", &output, 0);
+}
+
+/// A statement call through a field traps before the call when the receiver
+/// index is out of range.
+///
+/// The array holds two entries and the index is `5`, so the receiver's bounds
+/// check must abort with the runtime fault before the field's function runs.
+#[test]
+fn should_trap_when_a_statement_call_field_receiver_index_is_out_of_range() {
+    let source = r#"module codegen.rvi.st13;
+
+struct Ops {
+    run: func(i32): i32;
+}
+
+func bump(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    let ops: Ops[2] = [Ops { run: bump }, Ops { run: bump }];
+    let i: i32 = 5;
+    ops[i].run(1);
+    return 0;
+}
+"#;
+    let output = run_host("rvi13", source);
+    assert_trap("rvi13", &output, "E11211");
+}
+
+/// A field call whose fixed-array result initializes a local traps on an
+/// out-of-range receiver index before the call.
+///
+/// The receiver index is `5` over a two-entry array, so the bounds check must
+/// abort before the field's function runs to fill the destination array.
+#[test]
+fn should_trap_when_an_array_assign_field_call_receiver_index_is_out_of_range() {
+    let source = r#"module codegen.rvi.st14;
+
+struct Ops {
+    run: func(i32): i32[2];
+}
+
+func pair(x: i32): i32[2] {
+    return [x, x + 1];
+}
+
+func main(): i32 {
+    let ops: Ops[2] = [Ops { run: pair }, Ops { run: pair }];
+    let i: i32 = 5;
+    let a: i32[2] = ops[i].run(1);
+    return a[0];
+}
+"#;
+    let output = run_host("rvi14", source);
+    assert_trap("rvi14", &output, "E11211");
+}
+
+/// A field call returned as a fixed array traps on an out-of-range receiver
+/// index before the call.
+///
+/// The receiver index is `5` over a two-entry array, so the bounds check must
+/// abort before the field's function runs and writes the returned array.
+#[test]
+fn should_trap_when_a_returned_field_call_receiver_index_is_out_of_range() {
+    let source = r#"module codegen.rvi.st15;
+
+struct Ops {
+    run: func(i32): i32[2];
+}
+
+func pair(x: i32): i32[2] {
+    return [x, x + 1];
+}
+
+func dispatch(i: i32): i32[2] {
+    let ops: Ops[2] = [Ops { run: pair }, Ops { run: pair }];
+    return ops[i].run(1);
+}
+
+func main(): i32 {
+    let a: i32[2] = dispatch(5);
+    return a[0];
+}
+"#;
+    let output = run_host("rvi15", source);
+    assert_trap("rvi15", &output, "E11211");
+}
+
+/// A struct field that returns a fixed array produces the function's result.
+///
+/// The field holds `pair`, the call passes `3`, and `pair` returns `[3, 4]`,
+/// so the second element is `4`. The emitted C must build under the strict
+/// warning flags with the destination parameter carried by the field's type.
+#[test]
+fn should_return_the_second_element_when_a_struct_field_returns_a_fixed_array() {
+    let source = r#"module codegen.rvi.st16;
+
+struct Maker {
+    make: func(i32): i32[2];
+}
+
+func pair(x: i32): i32[2] {
+    return [x, x + 1];
+}
+
+func main(): i32 {
+    let m: Maker = Maker { make: pair };
+    let a: i32[2] = m.make(3);
+    return a[1];
+}
+"#;
+    let output = run_host("rvi16", source);
+    assert_exit("rvi16", &output, 4);
+}
+
+/// A function stored in a local returns a fixed array, and a discarded call
+/// through the same value leaves the stored result intact.
+///
+/// The stored call fills `a` with `[3, 4]`; the discarded call runs afterwards
+/// and its result is dropped. The program returns `3 + 4`, so the discard must
+/// not disturb the earlier array and the emitted C must build under the strict
+/// warning flags.
+#[test]
+fn should_sum_the_stored_array_when_a_function_local_call_is_discarded() {
+    let source = r#"module codegen.rvi.st17;
+
+func pair(x: i32): i32[2] {
+    return [x, x + 1];
+}
+
+func main(): i32 {
+    let g: func(i32): i32[2] = pair;
+    let a: i32[2] = g(3);
+    g(3);
+    return a[0] + a[1];
+}
+"#;
+    let output = run_host("rvi17", source);
+    assert_exit("rvi17", &output, 7);
 }
