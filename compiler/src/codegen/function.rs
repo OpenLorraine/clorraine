@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::types::{resolve_ty, Ty, TyKind};
 
+use super::render::escape_c_string;
 use super::types::{c_type, declarator};
 use super::{
     is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
@@ -263,8 +264,12 @@ impl<'a> Emitter<'a> {
         if let Some(result) = self.result_var.clone() {
             // A fixed-array result is the hidden out-parameter the caller
             // passed in, so it already exists as a parameter and must not be
-            // redeclared as a local. Every other result is a hoisted local.
-            if !self.return_ty.is_fixed_array() {
+            // redeclared as a local. It may go unwritten when every path
+            // panics, so it is marked used to keep the emitted C free of
+            // `-Wunused-parameter`. Every other result is a hoisted local.
+            if self.return_ty.is_fixed_array() {
+                self.push("    if (sizeof(&__cl_ret)) { }");
+            } else {
                 let ret = self.return_ty.clone();
                 let empty = self.empty_state(&ret);
                 self.push(&format!("    {} = {};", declarator(&ret, &result), empty));
@@ -449,8 +454,8 @@ impl<'a> Emitter<'a> {
                 self.emit_line_directive(span);
                 let message = args
                     .first()
-                    .map(|arg| self.value(arg))
-                    .unwrap_or_else(|| "panic".to_owned());
+                    .map(|arg| self.panic_message(arg))
+                    .unwrap_or_else(|| "\"panic\"".to_owned());
                 self.push(&format!("    cl_panic({message});"));
             }
             _ => {
@@ -510,6 +515,19 @@ impl<'a> Emitter<'a> {
                 };
                 self.push(&format!("    {prefix}{call};"));
             }
+        }
+    }
+
+    /// Renders a `panic` message for the C runtime.
+    ///
+    /// The runtime takes a `const char *`, so a string literal is passed as
+    /// the NUL-terminated C string it already is. Every other argument keeps
+    /// its rendered spelling, whose conversion to the C string type is the
+    /// caller's responsibility.
+    fn panic_message(&self, arg: &Value) -> String {
+        match &arg.kind {
+            ValueKind::Str(text) => escape_c_string(text.as_bytes()),
+            _ => self.value(arg),
         }
     }
 

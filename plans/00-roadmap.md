@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-29 01:07
+> **Last Updated**: 2026-09-29 02:31
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -44,6 +44,7 @@
 | ↳ DEF-25 | A conditional fixed-array value emits invalid C | — | — | Backlog | ⬜ | 2026-09-28 | 🟠 major, found in the array-value-integrity Phase 1 review (RV-002): `let c: i32[2] = ok ? a : b;` is accepted and emits `memcpy(&(c), &((ok ? a : b)), ...)`; an array operand of `?:` decays to a pointer, so the C compiler rejects it; `s = ok ? s : t` also reaches the fixed-array save path. Needs a materialization design and owned-branch semantics |
 | ↳ DEF-26 | A callable-field receiver in a runtime index is not bounds-guarded | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 1 re-review (RR-002): `hs[i].run(1);` is accepted and reads out of bounds; the receiver is never guarded on the ordinary call path or the fixed-array call-assign path; pre-existing |
 | ↳ DEF-27 | An array-returning func-typed field emits the wrong C function pointer type | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 1 re-review (RR-003): a `func(i32): i32[2]` field renders `i32 (*)(i32)` while the callee uses the hidden out-parameter ABI, so accepted source fails C compilation; pre-existing |
+| ↳ DEF-28 | A non-literal `panic` message emits a view struct where the runtime takes a C string | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 3 (the ST-23 blocker; the string-literal form was fixed there): `panic(s)` with `s: str` or `String` renders a `ClStr` view while `cl_panic` takes `const char *`, so the C build fails; needs a NUL-termination rule or an explicit cstring conversion; pre-existing |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

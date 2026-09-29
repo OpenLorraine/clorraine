@@ -96,11 +96,32 @@ impl<'a> Emitter<'a> {
                 }
             }
             // A materialized operand is always evaluated where it stands, so
-            // its assignment runs as a statement before the guarded construct.
+            // it is filled by a statement before the guarded construct. A
+            // fixed-array call writes through its hidden out-parameter, so the
+            // temporary is the call's destination instead of an assignment
+            // target.
             ValueKind::Materialize { temp, value: inner } => {
                 self.emit_guards(inner);
-                let rendered = self.value(inner);
-                self.push(&format!("    __cl_tmp{temp} = {rendered};"));
+                let store = match &inner.kind {
+                    ValueKind::Call {
+                        callee,
+                        type_args,
+                        args,
+                        receiver,
+                    } if self.substitute(&inner.ty).is_fixed_array() => {
+                        let destination = format!("__cl_tmp{temp}");
+                        let call = self.call_with_destination(
+                            callee,
+                            type_args,
+                            args,
+                            receiver.as_deref(),
+                            &destination,
+                        );
+                        format!("{call};")
+                    }
+                    _ => format!("__cl_tmp{temp} = {};", self.value(inner)),
+                };
+                self.push(&format!("    {store}"));
             }
             ValueKind::Closure { captures, .. } => {
                 for capture in captures {
@@ -257,11 +278,32 @@ impl<'a> Emitter<'a> {
                 }
             }
             // A materialized operand inside a conditionally evaluated value
-            // (a short-circuit operand or a `?:` arm) carries its assignment
-            // as an expression, so the side effect runs only on that path.
+            // (a short-circuit operand or a `?:` arm) carries its side effect
+            // as an expression, so it runs only on that path. A fixed-array
+            // call writes through its hidden out-parameter, so the guard
+            // expression is the call itself; every guard's value is discarded
+            // ahead of the guarded value, so no result expression is needed.
             ValueKind::Materialize { temp, value: inner } => {
                 self.guard_expressions(inner, out);
-                out.push(format!("(__cl_tmp{temp} = {})", self.value(inner)));
+                let stored = match &inner.kind {
+                    ValueKind::Call {
+                        callee,
+                        type_args,
+                        args,
+                        receiver,
+                    } if self.substitute(&inner.ty).is_fixed_array() => {
+                        let destination = format!("__cl_tmp{temp}");
+                        self.call_with_destination(
+                            callee,
+                            type_args,
+                            args,
+                            receiver.as_deref(),
+                            &destination,
+                        )
+                    }
+                    _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
+                };
+                out.push(stored);
             }
             ValueKind::Closure { captures, .. } => {
                 for capture in captures {
@@ -334,6 +376,17 @@ impl<'a> Emitter<'a> {
                         .iter()
                         .filter_map(|size| *size)
                         .fold(1usize, usize::saturating_mul);
+                    // A constant index into a fixed array is already
+                    // range-checked when the program is validated, so the
+                    // emitted guard would be dead code. Leaving it out also
+                    // keeps a constant trap expression from folding inside a
+                    // short-circuit operand, where its value is discarded and
+                    // trips `-Wunused-value`.
+                    if let ValueKind::Int(value) = &index.kind {
+                        if *value >= 0 && (*value as u128) < extent as u128 {
+                            return None;
+                        }
+                    }
                     Some(bounds_condition(&index_c, signed, &extent.to_string()))
                 } else {
                     let base_c = self.value(base);

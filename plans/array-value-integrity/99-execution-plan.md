@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 02:29
-> **Progress**: 14/24 tasks (58%)
+> **Last Updated**: 2026-09-29 07:39
+> **Progress**: 15/24 tasks (63%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -159,7 +159,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 ## Phase 3: Projections and element moves
 
 > **Phase baseline tree**: `994941079167f07390ed7da08352a435b93142e4`
-> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`, `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`
+> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`, `compiler/src/codegen/function.rs` (authorized panic-literal fix), `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`, `plans/00-roadmap.md` (`DEF-28`)
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 3.1: Specification Tests
@@ -181,7 +181,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [03-02 §New Functions](03-02-array-value-projections.md) · AR-5
 **Objective**: Materialize fixed-array call results before projections; reject ownerless element moves at every move decision.
 
-- [ ] 3.2.1 Lift the fixed-array exclusion for call results in the materialize helpers and emit the destination call in both guard arms — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`
+- [x] 3.2.1 Lift the fixed-array exclusion for call results in the materialize helpers and emit the destination call in both guard arms — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs` ✅ (completed: 2026-09-29 07:39) — ST-16 – ST-18 and ST-23 pass; authorized adjacent fixes: the `panic` literal now renders as the C string the runtime takes (`codegen/function.rs`; non-literal messages filed as `DEF-28`), a constant in-range index skips its dead bounds guard so a guarded short-circuit operand no longer folds one, and an always-panicking fixed-array function marks its hidden result parameter used
 - [ ] 3.2.2 Add `is_ownerless_element_move` and report `E10026` at the shared store preparation, the aggregate consume point, the `take` argument, and the return; cover projected-target assignments (local and global) by consuming the place value through the existing `consume_owned_place` after it is evaluated — `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`
 - [ ] 3.2.3 Run the spec suite and record the green phase — ST-1 – ST-30 pass
 

@@ -516,8 +516,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// `10/d()`) is wrapped in a [`ValueKind::Materialize`] so both reads see
     /// the same value and the call runs once. The assignment that fills the
     /// temporary is emitted by the guard, which keeps it on the path where the
-    /// operand is actually evaluated. A fixed array cannot be assigned to a
-    /// temporary in C, so it is left alone as well.
+    /// operand is actually evaluated. A fixed array is left alone unless the
+    /// operand is a call: C cannot assign a place read to a temporary, but a
+    /// by-value fixed-array call is written through its hidden trailing
+    /// out-parameter, which the materialize guard arms emit.
     pub(super) fn materialize_guard_operand(&mut self, value: Value) -> Value {
         if is_pure_value(&value) || value.ty.is_closure() {
             return value;
@@ -525,7 +527,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if matches!(
             &value.ty.kind,
             TyKind::Array { extents, .. } if extents.iter().all(Option::is_some)
-        ) {
+        ) && !matches!(value.kind, ValueKind::Call { .. })
+        {
             return value;
         }
         // A type that still names a generic parameter cannot be declared as a
@@ -649,10 +652,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_pure_value(&value) || value.ty.is_closure() {
             return value;
         }
+        // A fixed-array call is let through for the same reason as in
+        // `materialize_guard_operand`: the call writes into the temporary
+        // through its hidden out-parameter, so no array assignment is emitted.
         if matches!(
             &value.ty.kind,
             TyKind::Array { extents, .. } if extents.iter().all(Option::is_some)
-        ) {
+        ) && !matches!(value.kind, ValueKind::Call { .. })
+        {
             return value;
         }
         if mentions_type_param(&value.ty) {
