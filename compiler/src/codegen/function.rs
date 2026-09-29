@@ -469,6 +469,11 @@ impl<'a> Emitter<'a> {
             }
             _ => {
                 self.emit_line_directive(span);
+                // A callable field's receiver may carry a runtime index, so
+                // its guards run before the call exactly like an argument's.
+                if let Some(receiver) = receiver {
+                    self.emit_guards(receiver);
+                }
                 for arg in args {
                     self.emit_guards(arg);
                 }
@@ -480,7 +485,7 @@ impl<'a> Emitter<'a> {
                 let array_result = match result {
                     Some(place) => self.substitute(&place.ty).is_fixed_array(),
                     None => self
-                        .callee_return_type(callee)
+                        .callee_result_type(callee, receiver)
                         .is_some_and(|ty| ty.is_fixed_array()),
                 };
                 if array_result {
@@ -494,7 +499,7 @@ impl<'a> Emitter<'a> {
                             &destination,
                         );
                         self.push(&format!("    {call};"));
-                    } else if let Some(ty) = self.callee_return_type(callee) {
+                    } else if let Some(ty) = self.callee_result_type(callee, receiver) {
                         let dest = self.unique_local("__cl_discard");
                         self.push("    {");
                         self.push(&format!(
@@ -592,6 +597,51 @@ impl<'a> Emitter<'a> {
             let ty = resolve_ty(&info.decl.returns, &names, &self.sema.table);
             self.substitute(&ty)
         })
+    }
+
+    /// The declared return type of a call whose callee is a value.
+    ///
+    /// A named function resolves by name. A callable field carries its
+    /// signature on the receiver value, and a func-typed local or parameter
+    /// resolves from the open function's declared type, so a fixed-array
+    /// result through a value gets the hidden destination exactly like a named
+    /// call.
+    pub(super) fn callee_result_type(
+        &self,
+        callee: &str,
+        receiver: Option<&ir::Value>,
+    ) -> Option<Ty> {
+        if let Some(receiver) = receiver {
+            if let TyKind::Func(signature) = &self.substitute(&receiver.ty).kind {
+                return Some(self.substitute(&signature.returns));
+            }
+        }
+        if let Some(ty) = self.callee_return_type(callee) {
+            return Some(ty);
+        }
+        let function = self.function?;
+        let declared = function
+            .locals
+            .iter()
+            .map(|local| (&local.name, &local.ty))
+            .chain(
+                function
+                    .params
+                    .iter()
+                    .map(|param| (&param.name, &param.ty)),
+            )
+            .find(|(name, _)| {
+                *name == callee
+                    || self
+                        .local_names
+                        .get(*name)
+                        .is_some_and(|c_name| c_name == callee)
+            })
+            .map(|(_, ty)| ty)?;
+        match &self.substitute(declared).kind {
+            TyKind::Func(signature) => Some(self.substitute(&signature.returns)),
+            _ => None,
+        }
     }
 
     /// Drops the previous value of an assignment target before it is overwritten.
@@ -832,6 +882,9 @@ impl<'a> Emitter<'a> {
                     declarator(ty, &temp),
                     self.empty_state(ty)
                 ));
+                if let Some(receiver) = receiver.as_deref() {
+                    self.emit_guards(receiver);
+                }
                 for arg in args {
                     self.emit_guards(arg);
                 }
@@ -888,7 +941,12 @@ impl<'a> Emitter<'a> {
         self.emit_line_directive(span);
         // An argument's guards (bounds, division, float, slice) run before the
         // call, exactly as they do on the ordinary call path; the call may only
-        // execute once its arguments are known to be valid.
+        // execute once its arguments are known to be valid. A callable field's
+        // receiver is guarded the same way, so a runtime receiver index traps
+        // before the call.
+        if let Some(receiver) = receiver {
+            self.emit_guards(receiver);
+        }
         for arg in args {
             self.emit_guards(arg);
         }

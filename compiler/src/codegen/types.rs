@@ -54,31 +54,40 @@ pub(super) fn c_type(ty: &Ty) -> String {
 ///
 /// A `func` value is a C function pointer, so it can be stored in a field and
 /// called through the field. An unnamed `ret (*)(params)` is a complete type
-/// usable in casts and `sizeof`.
+/// usable in casts and `sizeof`. A fixed-array return uses the hidden
+/// out-parameter ABI, so the pointer returns `void` and takes the destination
+/// as a trailing parameter.
 fn func_pointer_type(signature: &crate::types::FuncTy) -> String {
-    let returns = c_type(&signature.returns);
-    format!(
-        "{returns} (*)({})",
-        func_pointer_params(signature)
-    )
+    let (returns, params) = func_pointer_signature(signature);
+    format!("{returns} (*)({params})")
 }
 
 /// The spelling of a function-pointer declarator that names the pointer.
 fn func_pointer_declarator(signature: &crate::types::FuncTy, name: &str) -> String {
-    let returns = c_type(&signature.returns);
-    format!(
-        "{returns} (*{name})({})",
-        func_pointer_params(signature)
-    )
+    let (returns, params) = func_pointer_signature(signature);
+    format!("{returns} (*{name})({params})")
 }
 
-/// The comma-separated C parameter types of a function pointer, or `void`.
-fn func_pointer_params(signature: &crate::types::FuncTy) -> String {
-    if signature.params.is_empty() {
-        return "void".to_owned();
-    }
-    let params: Vec<String> = signature.params.iter().map(c_type).collect();
-    params.join(", ")
+/// The C return type and parameter list of a function pointer.
+///
+/// A fixed-array return becomes `void` plus a trailing destination parameter,
+/// spelled with the same declarator the callee declaration uses; a parameter
+/// of array type adjusts to its pointer form in C, so the two sides agree. The
+/// parameter list is `void` when there is none.
+fn func_pointer_signature(signature: &crate::types::FuncTy) -> (String, String) {
+    let mut params: Vec<String> = signature.params.iter().map(c_type).collect();
+    let returns = if signature.returns.is_fixed_array() {
+        params.push(declarator(&signature.returns, ""));
+        "void".to_owned()
+    } else {
+        c_type(&signature.returns)
+    };
+    let params = if params.is_empty() {
+        "void".to_owned()
+    } else {
+        params.join(", ")
+    };
+    (returns, params)
 }
 
 /// The C type of a handle: its contract ABI type, or an opaque `Cl<Name>`.

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 21:28
-> **Progress**: 10/27 tasks (37%)
+> **Last Updated**: 2026-09-29 21:31
+> **Progress**: 13/27 tasks (48%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -178,13 +178,17 @@ through the existing expression guard).
 **Reference**: [03-02 §Proposed Changes](03-02-callable-fields.md) · AR-8, AR-9
 **Objective**: Guard the receiver on every call path and render the hidden out-param ABI for func values.
 
-- [ ] 2.2.1 Guard the receiver wherever arguments are guarded: the statement call path, the fixed-array call assign path, and the fixed-array return path — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`
-- [ ] 2.2.2 Render the hidden destination ABI for the filed `func` spellings with a fixed-array return and resolve call destinations for func values (including the discard shape and the local func-typed callee lookup) — `compiler/src/codegen/types.rs`, `compiler/src/codegen/function.rs`
-- [ ] 2.2.3 Run the spec suite and record the green phase — ST-12 – ST-17 pass
+- [x] 2.2.1 Guard the receiver wherever arguments are guarded: the statement call path, the fixed-array call assign path, and the fixed-array return path — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-09-29 21:31)
+- [x] 2.2.2 Render the hidden destination ABI for the filed `func` spellings with a fixed-array return and resolve call destinations for func values (including the discard shape and the local func-typed callee lookup) — `compiler/src/codegen/types.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-29 21:31)
+- [x] 2.2.3 Run the spec suite and record the green phase — ST-12 – ST-17 pass ✅ (completed: 2026-09-29 21:31)
 
 **Deliverables**:
-- [ ] Runtime-index receivers trap; func values with fixed-array returns compile and run
-- [ ] No regressions; no warnings
+- [x] Runtime-index receivers trap; func values with fixed-array returns compile and run
+- [x] No regressions; no warnings
+
+**Green-phase evidence** (2026-09-29 21:31, `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`):
+24 passed, 0 failed; `make check` also passes (32 suite binaries, 0 failures, 0 warnings), so the
+receiver guards and the function-pointer ABI change no existing behavior.
 
 **Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
 

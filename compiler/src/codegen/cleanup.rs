@@ -391,7 +391,12 @@ impl<'a> Emitter<'a> {
                 receiver,
             } => {
                 // A returned fixed-array call writes straight into the same
-                // destination the enclosing function returns through.
+                // destination the enclosing function returns through. The
+                // callable field's receiver is guarded exactly as an argument
+                // is, so a runtime receiver index traps before the call.
+                if let Some(receiver) = receiver.as_deref() {
+                    self.emit_guards(receiver);
+                }
                 for arg in args {
                     self.emit_guards(arg);
                 }
