@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 22:27
-> **Progress**: 17/27 tasks (63%)
+> **Last Updated**: 2026-09-29 22:35
+> **Progress**: 20/27 tasks (74%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -265,13 +265,19 @@ the panics need the diverging-tail return handled alongside the new runtime sign
 **Reference**: [03-03 §Proposed Changes](03-03-runtime-boundary.md) · AR-10, AR-11, AR-17
 **Objective**: Carry pointer + length for panic messages and defer guarded take move-outs.
 
-- [ ] 3.2.1 Change `cl_panic` to take pointer + length in all three shims and render the three message forms (literal, `str`, `String`) once — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c`, `compiler/runtime/shim_freestanding.c`, `compiler/src/codegen/function.rs`
-- [ ] 3.2.2 Carry a take call's move-out places on the materialized value inside guarded operands and emit them only on the evaluated path — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/ir.rs`
-- [ ] 3.2.3 Run the spec suite and record the green phase — ST-18 – ST-23 pass
+- [x] 3.2.1 Change `cl_panic` to take pointer + length in all three shims and render the three message forms (literal, `str`, `String`) once — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c`, `compiler/runtime/shim_freestanding.c`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-29 22:34)
+- [x] 3.2.2 Carry a take call's move-out places on the materialized value inside guarded operands and emit them only on the evaluated path — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/ir.rs` ✅ (completed: 2026-09-29 22:34)
+- [x] 3.2.3 Run the spec suite and record the green phase — ST-18 – ST-23 pass ✅ (completed: 2026-09-29 22:34)
 
 **Deliverables**:
-- [ ] Panic messages compile and print; guarded take moves run only when evaluated
-- [ ] No regressions; no warnings
+- [x] Panic messages compile and print; guarded take moves run only when evaluated
+- [x] No regressions; no warnings
+
+**Green-phase evidence** (2026-09-29 22:34, `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`):
+30 passed, 0 failed; `make check` also passes (32 suite binaries, 0 failures, 0 warnings).
+Besides the two planned changes, the diverging `panic` tail needed the value-less return in a
+non-void function to yield the type's empty state, so the emitted C satisfies the return-type
+check after `cl_panic` (recorded in the red-phase note).
 
 **Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
 
@@ -280,12 +286,16 @@ the panics need the diverging-tail return handled alongside the new runtime sign
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-10, AR-11
 **Objective**: Pin the emitted panic call and the guarded move-out shape.
 
-- [ ] 3.3.1 Add implementation tests: the two-argument `cl_panic` for each message form, the move-out inside the guarded path only, and the once-only message rendering — `compiler/tests/runtime_value_integrity_impl_test.rs`
-- [ ] 3.3.2 Full verification — `make check`
+- [x] 3.3.1 Add implementation tests: the two-argument `cl_panic` for each message form, the move-out inside the guarded path only, and the once-only message rendering — `compiler/tests/runtime_value_integrity_impl_test.rs` ✅ (completed: 2026-09-29 22:35)
+- [x] 3.3.2 Full verification — `make check` ✅ (completed: 2026-09-29 22:35)
 
 **Deliverables**:
-- [ ] Implementation tests pass
-- [ ] No regressions; no warnings
+- [x] Implementation tests pass
+- [x] No regressions; no warnings
+
+**Full-verification evidence** (2026-09-29 22:35, `make check`): every workspace suite passed —
+the implementation suite 26/26, the specification suite 30/30, and all pre-existing suites
+unchanged (32 test binaries, 0 failures, 0 warnings).
 
 **Verify**: `make check`
 
