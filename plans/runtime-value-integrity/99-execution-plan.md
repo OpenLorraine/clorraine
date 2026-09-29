@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 16:18
-> **Progress**: 6/27 tasks (22%)
+> **Last Updated**: 2026-09-29 16:22
+> **Progress**: 8/27 tasks (30%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -106,12 +106,16 @@ nested statement runs.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-5, AR-7, AR-16
 **Objective**: Pin the emitted temporary release, iterable temporary, and branch store shapes.
 
-- [ ] 1.3.1 Add implementation tests: an inline statement-position release for an owning `__cl_tmpN` and the absence of a release for the take-call/literal-adoption transfer temps; the materialized iterable temporary; the conditional branch with per-arm guards in the assignment and return positions; the release-set unit test — `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/src/own/tests.rs`
-- [ ] 1.3.2 Full verification — `make check`
+- [x] 1.3.1 Add implementation tests: an inline statement-position release for an owning `__cl_tmpN` and the absence of a release for the take-call/literal-adoption transfer temps; the materialized iterable temporary; the conditional branch with per-arm guards in the assignment and return positions; the release-set unit test — `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/src/own/tests.rs` ✅ (completed: 2026-09-29 16:22)
+- [x] 1.3.2 Full verification — `make check` ✅ (completed: 2026-09-29 16:22)
 
 **Deliverables**:
-- [ ] Implementation tests pass
-- [ ] No regressions; no warnings
+- [x] Implementation tests pass
+- [x] No regressions; no warnings
+
+**Full-verification evidence** (2026-09-29 16:22, `make check`): every workspace suite passed —
+the new implementation suite 8/8, the runtime value integrity specification suite 17/17, and
+all pre-existing suites unchanged (32 test binaries, 0 failures, 0 warnings).
 
 **Verify**: `make check`
 
