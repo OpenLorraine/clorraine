@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 13:12
-> **Progress**: 9/16 tasks (56%)
+> **Progress**: 10/16 tasks (63%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -140,11 +140,13 @@ updates.
 **Objective**: Run the initializer's null check before the shadowing declaration.
 
 - [x] 2.2.1 Move `check_value_into` before `declare_local` in `check_let` and `check_const` — `compiler/src/own/statements.rs` ✅ (completed: 2026-09-29 13:12)
-- [ ] 2.2.2 Run the spec suite and record the green phase — ST-9 – ST-12 and ST-14 pass
+- [x] 2.2.2 Run the spec suite and record the green phase — ST-9 – ST-12 and ST-14 pass ✅ (completed: 2026-09-29 13:12)
 
 **Deliverables**:
 - [x] The shadowing `let` and `const` forms compile; genuine null uses keep `E10010`
 - [ ] No regressions; no warnings
+
+> **Green phase (recorded 2026-09-29 13:12)**: `cargo test --test borrow_view_and_shadowing_spec_test` → 16 passed / 0 failed. The `let` and `const` shadowing forms now compile; the un-narrowed use still reports `E10010`.
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`
 
