@@ -54,7 +54,7 @@ in `CMD`).
 | `docker/` | The pinned Amiga SDK: toolchain config, scripts, and the emulator wrappers |
 | `demo/` | The demo story (`story.ts`), a per-file scaffold (`cube.demo.ts`), the kept `clorraine.vim`, the recorder shim, and the committed poster; rendered media is gitignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript toolkit that renders the demo (headless Chrome, Shiki, VHS, ffmpeg) |
-| `plans/` | CodeOps artifacts: the feature plans (`plans/clorraine-compiler-mvp/`, `plans/clorraine-v1-language-completion/`, and the other `plans/clorraine-*` plans) and `plans/00-roadmap.md` (flat layout, no `codeops/` directory) |
+| `plans/` | CodeOps artifacts: the feature plans (one directory per plan) and `plans/00-roadmap.md` (flat layout, no `codeops/` directory) |
 | `spikes/`, `docs/` | Phase 1 toolchain spikes and findings records |
 
 ## Test naming map
@@ -101,6 +101,12 @@ in `CMD`).
   row, row-unit slice offsets and bounds, guard traps, and release counts);
   `iterated_element` and the element-move predicate have unit tests in
   `compiler/src/types/tests.rs` and `compiler/src/own/tests.rs`.
+- `compiler/tests/ownership_drop_spec_test.rs` holds the specification tests
+  for array ownership, classification, and drop (an element moved into an array
+  literal cannot be used again; a fixed array stays a lend candidate for return
+  elision; a fixed array is not nullable), and
+  `compiler/tests/ownership_drop_impl_test.rs` holds its implementation tests
+  (the emitted C runs against the host C library, so a double free aborts).
 - `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
   partial-move / drop coherence: it builds the emitted C and runs it, so a
   double free aborts in the C library.
