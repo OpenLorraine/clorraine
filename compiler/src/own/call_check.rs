@@ -272,11 +272,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !self.sema.table.duplicable(arg_ty) {
                     if let Some(target) = target {
                         self.move_target(target, span);
-                    } else if self.is_ownerless_element_move(expr) {
-                        // A `take` argument owns the value it receives, and an
-                        // element of a call result has no owner that outlives
-                        // the statement.
-                        self.report_element_move_limit(span);
+                    } else {
+                        let sources = self.conditional_move_sources(expr);
+                        if sources.is_empty() {
+                            if self.is_ownerless_element_move(expr) {
+                                // A `take` argument owns the value it receives,
+                                // and an element of a call result has no owner
+                                // that outlives the statement.
+                                self.report_element_move_limit(span);
+                            }
+                        } else {
+                            // The callee consumes whichever owned arm the
+                            // condition selects, so either arm may be gone.
+                            for source in sources {
+                                self.move_target(source, span);
+                            }
+                        }
                     }
                 }
             }

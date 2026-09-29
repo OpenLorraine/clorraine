@@ -961,10 +961,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A nested statement records its own starting length, so it drains only
     /// the temporaries it created; an enclosing statement's temporary stays
-    /// pending until that statement ends.
+    /// pending until that statement ends. A block that already left through a
+    /// terminator cannot run the drain: the releases were copied onto that
+    /// edge, and the pending list stays for the statement's other paths.
     fn drain_pending_releases(&mut self, floor: usize) {
+        if self.is_terminated() {
+            return;
+        }
         while self.pending_releases.len() > floor {
             let release = self.pending_releases.pop().expect("pending release");
+            self.release_temp(release);
+        }
+    }
+
+    /// The pending releases, newest first, as a copy.
+    ///
+    /// An edge that leaves the statement early carries a copy of the pending
+    /// releases; the pending list itself stays for the statement's other
+    /// paths, and the null-safe drops make the overlap harmless.
+    fn pending_release_copies(&self) -> Vec<Release> {
+        self.pending_releases.iter().rev().cloned().collect()
+    }
+
+    /// Emits the pending releases on an edge that leaves early.
+    fn emit_pending_release_copies(&mut self) {
+        for release in self.pending_release_copies() {
             self.release_temp(release);
         }
     }
@@ -985,24 +1006,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.emit(Statement::ReleaseTemp(release));
     }
 
-    /// Takes every pending release into a return's payload, newest first.
+    /// Records the release events a return's copied release list states.
     ///
-    /// A return leaves every enclosing statement, so its releases are all the
-    /// temporaries still pending. The return value is evaluated before the
-    /// releases run, so the terminator carries them.
-    fn take_pending_releases(&mut self) -> Vec<Release> {
-        let mut releases = Vec::new();
-        while let Some(release) = self.pending_releases.pop() {
-            let span = self.current_span;
+    /// The return terminator carries the releases to the emitter; the liveness
+    /// pass needs the same facts at the return's position, before the view use
+    /// a returned temporary derivation would record.
+    fn record_release_events(&mut self, releases: &[Release]) {
+        let span = self.current_span;
+        for release in releases {
             self.record_event(
                 LoanEventKind::Release {
                     owner: LoanOwner::Temp(release.temp),
                 },
                 span,
             );
-            releases.push(release);
         }
-        releases
     }
 
     /// Makes a block the current one.

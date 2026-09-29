@@ -373,14 +373,14 @@ func main(): i32 {
     assert_exit("rvi05", &output, 3);
 }
 
-/// A conditional that initializes an owned array moves the chosen arm and
-/// leaves the other arm owning its elements.
+/// A conditional that moves an owned array keeps the chosen arm's elements in
+/// the destination.
 ///
-/// With `true`, `c` takes `a`'s elements, so the second length is `2`; `b` is
-/// untouched, so its first length is `1`, and the total is `3`. A clean exit
-/// also proves both bindings release their elements exactly once.
+/// With `true`, `c` takes `a`'s elements, so the second length is `2`. Reading
+/// either arm afterwards is the moved-value error pinned by the separate
+/// rejection case.
 #[test]
-fn should_keep_the_unchosen_array_owned_when_a_conditional_moves_the_chosen_one() {
+fn should_move_the_chosen_array_when_a_conditional_selects_one() {
     let source = r#"module codegen.rvi.st6;
 
 import { String, stringOf } from std.text;
@@ -394,11 +394,11 @@ func main(): i32 {
     let a: String[2] = [stringOf("x"), stringOf("yy")];
     let b: String[2] = [stringOf("z"), stringOf("www")];
     let c: String[2] = ok ? a : b;
-    return vlen(c[1]) + vlen(b[0]);
+    return vlen(c[1]);
 }
 "#;
     let output = run_host("rvi06", source);
-    assert_exit("rvi06", &output, 3);
+    assert_exit("rvi06", &output, 2);
 }
 
 /// A conditional that reassigns an owned array takes the else arm and releases
@@ -579,12 +579,12 @@ func main(): i32 {
 }
 
 /// A `take` argument that is a conditional consumes and releases the chosen
-/// arm's elements while the other arm keeps owning its own.
+/// arm's elements.
 ///
 /// With `false`, the callee receives the second array; the first byte of each
 /// element there is `'f'` and `'h'`, so the callee sums `206` and the first
-/// array would give `196`. The first array still owns `"ab"`, whose length is
-/// `2`, and a clean exit proves each element is released once.
+/// array would give `196`. Reading either arm afterwards is the moved-value
+/// error pinned by the separate rejection case.
 #[test]
 fn should_consume_the_chosen_elements_when_a_conditional_is_a_take_argument() {
     let source = r#"module codegen.rvi.st26;
@@ -595,10 +595,6 @@ func eat(take arr: String[2]): i32 {
     return i32(bytes(arr[0])[0]) + i32(bytes(arr[1])[0]);
 }
 
-func vlen(s: str): i32 {
-    return i32(len(s));
-}
-
 func main(): i32 {
     let ok: bool = false;
     let a: String[2] = [stringOf("ab"), stringOf("cde")];
@@ -606,11 +602,11 @@ func main(): i32 {
     if (eat(ok ? a : b) != 206) {
         return 100;
     }
-    return vlen(a[0]);
+    return 0;
 }
 "#;
     let output = run_host("rvi26", source);
-    assert_exit("rvi26", &output, 2);
+    assert_exit("rvi26", &output, 0);
 }
 
 /// Indexing a conditional array result reads the chosen row's element.
@@ -687,4 +683,26 @@ func main(): i32 {
 "#;
     let output = run_host("rvi29", source);
     assert_exit("rvi29", &output, 2);
+}
+
+/// A conditional that consumes an owned arm leaves either arm maybe-moved.
+///
+/// The condition selects one arm at runtime, so the checker cannot know which
+/// arm the conditional emptied; reading either arm afterwards is the
+/// moved-value error.
+#[test]
+fn should_reject_a_later_arm_use_when_a_conditional_moves_an_owned_arm() {
+    let source = r#"module codegen.rvi.st30;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let ok: bool = false;
+    let a: String[2] = [stringOf("x"), stringOf("yy")];
+    let b: String[2] = [stringOf("z"), stringOf("www")];
+    let c: String[2] = ok ? a : b;
+    return i32(len(b[0]));
+}
+"#;
+    assert_rejected_with("rvi30", source, "E10020", &["was moved"]);
 }

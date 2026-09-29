@@ -128,6 +128,84 @@ impl<'a> Emitter<'a> {
         self.push("    }");
     }
 
+    /// Renders a null-safe drop of a C lvalue as an expression.
+    ///
+    /// A drop that must embed inside an expression — a guarded operand
+    /// re-materialized on a conditional path — cannot be a statement. A handle
+    /// becomes `(x ? (deleter(x), x = NULL) : 0)`; a fixed array joins its
+    /// element drops with commas; a struct joins its owned fields. Returns
+    /// `None` when the shape has no expression form (a growable array's
+    /// element loop), so the caller leaves the value as it is.
+    pub(super) fn drop_expr_text(&self, c_name: &str, ty: &Ty) -> Option<String> {
+        match &ty.kind {
+            TyKind::Handle(name) => {
+                let deleter = self.deleter_symbol(name);
+                let null = self.null_literal();
+                Some(format!(
+                    "({c_name} ? ({deleter}({c_name}), {c_name} = {null}) : 0)"
+                ))
+            }
+            TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
+                if !self.needs_drop(element) {
+                    return Some("0".to_owned());
+                }
+                let dims: Vec<usize> = extents.iter().filter_map(|size| *size).collect();
+                self.fixed_array_drop_expr(c_name, element, &dims)
+            }
+            // The growable container's element loop has no expression form.
+            TyKind::Struct(name, _) if name == "Array" => None,
+            TyKind::Struct(name, args) => self.struct_drop_expr(c_name, name, args),
+            _ => None,
+        }
+    }
+
+    /// Renders the element drops of a fixed array as one comma expression.
+    fn fixed_array_drop_expr(&self, c_name: &str, element: &Ty, extents: &[usize]) -> Option<String> {
+        match extents.split_first() {
+            None => self.drop_expr_text(c_name, element),
+            Some((head, tail)) => {
+                let mut parts = Vec::new();
+                for index in 0..*head {
+                    parts.push(self.fixed_array_drop_expr(
+                        &format!("{c_name}[{index}]"),
+                        element,
+                        tail,
+                    )?);
+                }
+                Some(parts.join(", "))
+            }
+        }
+    }
+
+    /// Renders the owned fields of a struct as one comma expression.
+    fn struct_drop_expr(&self, c_name: &str, name: &str, args: &[Ty]) -> Option<String> {
+        let fields = self
+            .sema
+            .table
+            .struct_fields(name)
+            .map(<[(String, Ty)]>::to_vec)
+            .unwrap_or_default();
+        let params = self
+            .sema
+            .table
+            .struct_type_params(name)
+            .unwrap_or(&[])
+            .to_vec();
+        let mut parts = Vec::new();
+        for (field, declared) in fields {
+            let field_ty = self.substitute(&substitute_instance(&declared, &params, args));
+            if !self.needs_drop(&field_ty) {
+                continue;
+            }
+            parts.push(self.drop_expr_text(&format!("{c_name}.{field}"), &field_ty)?);
+        }
+        if parts.is_empty() {
+            Some("0".to_owned())
+        } else {
+            Some(parts.join(", "))
+        }
+    }
+
     /// True when a value of this type can use the assignment scratch local to
     /// release its old value.
     ///

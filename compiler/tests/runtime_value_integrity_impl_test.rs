@@ -327,3 +327,63 @@ func main(): i32 {
         "if (__cl_save_1[0]) { FreeString(__cl_save_1[0]); }",
     );
 }
+
+/// A statement temporary is released on every path that leaves its statement,
+/// not only on the first return edge.
+#[test]
+fn should_release_a_statement_temporary_on_every_path() {
+    let source = r#"module impl.rvi.paths;
+import { String, stringOf } from std.text;
+func mk(): String[2] { return [stringOf("ab"), stringOf("cde")]; }
+func vlen(s: str): i32 { return i32(len(s)); }
+func main(): i32 {
+    if (vlen(mk()[0]) == 99) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("rviimpl-paths", source);
+    let branch = after("rviimpl-paths", &emitted, "if ((cl_impl_rvi_paths_vlen(");
+    assert_contains(
+        "rviimpl-paths",
+        branch,
+        "if (__cl_tmp0[0]) { FreeString(__cl_tmp0[0]); }",
+    );
+    let fallthrough = after("rviimpl-paths", branch, "} else {");
+    assert_contains(
+        "rviimpl-paths",
+        fallthrough,
+        "if (__cl_tmp0[0]) { FreeString(__cl_tmp0[0]); }",
+    );
+}
+
+/// A loop header temporary releases its previous value before the loop stores
+/// the next one.
+#[test]
+fn should_release_a_loop_header_temporary_before_rematerializing_it() {
+    let source = r#"module impl.rvi.loophead;
+import { String, stringOf } from std.text;
+func mk(): String[2] { return [stringOf("ab"), stringOf("cde")]; }
+func vlen(s: str): i32 { return i32(len(s)); }
+func main(): i32 {
+    let i: i32 = 0;
+    while (vlen(mk()[0]) == 2 && i < 3) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("rviimpl-loophead", source);
+    let head = after("rviimpl-loophead", &emitted, "while (1) {");
+    let drop = head
+        .find("if (__cl_tmp0[0]) { FreeString(__cl_tmp0[0]); }")
+        .unwrap_or_else(|| panic!("rviimpl-loophead: the loop head does not release the old temporary"));
+    let store = head
+        .find("cl_impl_rvi_loophead_mk(__cl_tmp0);")
+        .unwrap_or_else(|| panic!("rviimpl-loophead: the loop head does not re-materialize the temporary"));
+    assert!(
+        drop < store,
+        "rviimpl-loophead: the old value must be released before the new one is stored"
+    );
+}

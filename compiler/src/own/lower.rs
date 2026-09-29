@@ -40,6 +40,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // side-effecting operand (a call such as `a[next()]`) is
                 // stored once so the guard and the access inspect the same
                 // value instead of re-running the call.
+                // A conditional base is materialized into a temporary by the
+                // read path, and that store moves the chosen owned arm.
+                self.mark_read_conditional_move(base);
                 let base = self.lower_value(base);
                 let index = self.lower_value(index);
                 let base = self.materialize_guard_operand(base);
@@ -374,7 +377,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         self.pop_scope();
         if !self.is_terminated() {
-            let releases = self.take_pending_releases();
+            let releases = self.pending_release_copies();
+            self.record_release_events(&releases);
             self.terminate(Terminator::Return {
                 value: returned,
                 releases,
@@ -685,6 +689,112 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.lowered_view_provenance(base)
             }
             _ => Provenance::None,
+        }
+    }
+
+    /// The compiler temporaries a lowered view value reads its storage from.
+    ///
+    /// A view may derive from a statement temporary directly (a projection of
+    /// a materialized value), through a reborrow call whose single lend source
+    /// is such a value, or through a conditional whose arms derive from
+    /// different temporaries. Every such temporary is an owner: the view
+    /// carries a loan of it, so a use after the temporary's statement release
+    /// reports `E10030`.
+    pub(super) fn lowered_temp_owners(&self, value: &Value) -> BTreeSet<ir::TempId> {
+        let mut owners = BTreeSet::new();
+        self.collect_lowered_temp_owners(value, &mut owners);
+        owners
+    }
+
+    /// Collects the statement temporaries a lowered value reads through.
+    fn collect_lowered_temp_owners(&self, value: &Value, owners: &mut BTreeSet<ir::TempId>) {
+        match &value.kind {
+            ValueKind::Materialize { temp, .. } => {
+                owners.insert(*temp);
+            }
+            ValueKind::Temp(temp) => {
+                // A transfer temporary's value travels to a binding that owns
+                // it, so only a destination temporary is a loan owner.
+                if self.is_destination_temp(*temp) {
+                    owners.insert(*temp);
+                }
+            }
+            ValueKind::Index { base, .. } | ValueKind::Member { base, .. } => {
+                self.collect_lowered_temp_owners(base, owners);
+            }
+            ValueKind::Cast { value: inner, .. } => {
+                self.collect_lowered_temp_owners(inner, owners);
+            }
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_lowered_temp_owners(then_value, owners);
+                self.collect_lowered_temp_owners(else_value, owners);
+            }
+            ValueKind::Call { callee, args, .. } => {
+                if let Some(source) = self
+                    .lowered_lend_source(callee)
+                    .and_then(|index| args.get(index))
+                {
+                    self.collect_lowered_temp_owners(source, owners);
+                }
+            }
+            ValueKind::Intrinsic { name, args, .. } if name == "slice" => {
+                if let Some(source) = args.first() {
+                    self.collect_lowered_temp_owners(source, owners);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The argument a view-returning call reborrows, when it elides one.
+    ///
+    /// Mirrors the source-level provenance rule on the lowered call: a user
+    /// callee that returns an elided view and has exactly one lend parameter
+    /// reborrows that argument; a standard-library `ViewOf` effect names its
+    /// source argument directly. The lowered argument list already carries a
+    /// dot call's receiver first, so the parameter index is the argument
+    /// index.
+    fn lowered_lend_source(&self, callee: &str) -> Option<usize> {
+        match self.program.callee(callee) {
+            Some(Callee::User(decl)) => {
+                let type_params: Vec<String> = decl
+                    .type_params
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .collect();
+                let returns = resolve_ty(&decl.returns, &type_params, &self.sema.table);
+                if !is_elided_view(&returns) {
+                    return None;
+                }
+                let candidates: Vec<usize> = decl
+                    .params
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, param)| {
+                        param.mode != Mode::Take
+                            && is_lend_candidate(&resolve_ty(
+                                &param.ty,
+                                &type_params,
+                                &self.sema.table,
+                            ))
+                    })
+                    .map(|(index, _)| index)
+                    .collect();
+                if candidates.len() == 1 {
+                    Some(candidates[0])
+                } else {
+                    None
+                }
+            }
+            Some(Callee::Stdlib {
+                effect: StdlibEffect::ViewOf { arg, .. },
+                ..
+            }) => Some(arg),
+            _ => None,
         }
     }
 

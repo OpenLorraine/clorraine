@@ -290,6 +290,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
                 self.view_provenance(base)
             }
+            // A conditional's storage is the chosen arm's storage, so the
+            // provenance is shared only when both arms agree.
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                let then = self.view_provenance(then_value);
+                let otherwise = self.view_provenance(else_value);
+                if then == otherwise {
+                    then
+                } else {
+                    Provenance::None
+                }
+            }
             _ => Provenance::None,
         }
     }
@@ -317,7 +332,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Mirrors [`Self::view_provenance`] over the loan chain: a name or a
     /// projection inherits the loans of its base binding, a view-returning call
     /// inherits the loans at its single elision candidate, and an owner, a
-    /// literal, or a fresh view derivation carries none.
+    /// literal, or a fresh view derivation carries none. A conditional shares
+    /// the loans of both arms, because either arm's storage may be chosen.
     pub(super) fn view_loans(&self, expr: &Expr) -> BTreeSet<LoanId> {
         match &expr.kind {
             ExprKind::Name(name) => self
@@ -338,7 +354,56 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
                 self.view_loans(base)
             }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                let mut loans = self.view_loans(then_value);
+                loans.extend(self.view_loans(else_value));
+                loans
+            }
             _ => BTreeSet::new(),
+        }
+    }
+
+    /// The owners a view value's storage derives from.
+    ///
+    /// The set combines the source expression's own owners (one for a plain
+    /// derivation, the union of both arms for a conditional) with every
+    /// statement temporary the lowered value reads through, including a
+    /// projection carried through a reborrow call. A view binding creates one
+    /// loan per owner, so the same liveness rule protects storage owned by a
+    /// binding and storage owned by a statement temporary.
+    pub(super) fn view_owners(
+        &self,
+        expr: &Expr,
+        lowered: Option<&Value>,
+    ) -> BTreeSet<LoanOwner> {
+        let mut owners = BTreeSet::new();
+        self.collect_view_owners(expr, &mut owners);
+        if let Some(lowered) = lowered {
+            for temp in self.lowered_temp_owners(lowered) {
+                owners.insert(LoanOwner::Temp(temp));
+            }
+        }
+        owners
+    }
+
+    /// Collects the owners the source expression derives from, arm by arm.
+    fn collect_view_owners(&self, expr: &Expr, owners: &mut BTreeSet<LoanOwner>) {
+        if let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        {
+            self.collect_view_owners(then_value, owners);
+            self.collect_view_owners(else_value, owners);
+            return;
+        }
+        if let Some(owner) = owner_of(&self.view_provenance(expr)) {
+            owners.insert(owner);
         }
     }
 
@@ -749,4 +814,15 @@ fn element_index(expr: &Expr) -> Option<usize> {
 /// The identity of a module-level binding the name resolver resolved.
 fn global_id(global: crate::init_graph::GlobalRef) -> ir::GlobalId {
     ir::GlobalId::new(global.module, global.name)
+}
+
+/// The loan owner a provenance names, when it is a real owner.
+///
+/// Static storage and an unowned value name no owner, so they carry no loan.
+fn owner_of(provenance: &Provenance) -> Option<LoanOwner> {
+    match provenance {
+        Provenance::Local(id) | Provenance::Param(id) => Some(LoanOwner::Binding(*id)),
+        Provenance::Temp(temp) => Some(LoanOwner::Temp(*temp)),
+        _ => None,
+    }
 }

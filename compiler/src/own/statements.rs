@@ -46,9 +46,16 @@ enum BindingEffect {
         provenance: Provenance,
         kind: LoanKind,
         sources: BTreeSet<LoanId>,
+        owners: BTreeSet<LoanOwner>,
     },
     /// A non-duplicable value that names an existing place.
     Move { source: PlaceTarget },
+    /// A conditional that consumes one of its owned place arms.
+    ///
+    /// The runtime move is invisible to the walk, so every owned place arm
+    /// becomes maybe-moved: a later use of either reports the moved-value
+    /// error, exactly as if the value had been moved unconditionally.
+    ConditionalMove { sources: Vec<PlaceTarget> },
     /// A duplicable copy or a fresh value: no ownership effect.
     None,
 }
@@ -375,25 +382,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         lowered: Option<&Value>,
     ) -> BindingEffect {
         if is_view(target) {
-            let provenance = match self.view_provenance(value) {
-                Provenance::None => lowered
-                    .map(|lowered| self.lowered_view_provenance(lowered))
-                    .unwrap_or(Provenance::None),
-                provenance => provenance,
-            };
             return BindingEffect::View {
-                provenance,
+                provenance: match self.view_provenance(value) {
+                    Provenance::None => lowered
+                        .map(|lowered| self.lowered_view_provenance(lowered))
+                        .unwrap_or(Provenance::None),
+                    provenance => provenance,
+                },
                 kind: self.view_loan_kind(value),
                 sources: self.view_loans(value),
+                owners: self.view_owners(value, lowered),
             };
         }
         if self.sema.table.duplicable(target) {
             return BindingEffect::None;
         }
-        match self.place_target(value) {
-            Some(source) => BindingEffect::Move { source },
-            None => BindingEffect::None,
+        if let Some(source) = self.place_target(value) {
+            return BindingEffect::Move { source };
         }
+        let sources = self.conditional_move_sources(value);
+        if !sources.is_empty() {
+            return BindingEffect::ConditionalMove { sources };
+        }
+        BindingEffect::None
     }
 
     /// Records a prepared ownership effect on the binding that just declared.
@@ -401,36 +412,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match effect {
             BindingEffect::None => {}
             BindingEffect::Move { source } => self.move_target(source, span),
+            BindingEffect::ConditionalMove { sources } => {
+                for source in sources {
+                    // The assignment target is written by the conditional, so
+                    // it stays initialized; only the other arms are moves.
+                    if let PlaceTarget::Local(source_id, projections) = &source {
+                        if *source_id == id && projections.is_empty() {
+                            continue;
+                        }
+                    }
+                    self.move_target(source, span);
+                }
+            }
             BindingEffect::View {
                 provenance,
                 kind,
                 sources,
+                owners,
             } => {
-                let owner = match &provenance {
-                    Provenance::Local(owner) | Provenance::Param(owner) => {
-                        Some(LoanOwner::Binding(*owner))
-                    }
-                    Provenance::Temp(temp) => Some(LoanOwner::Temp(*temp)),
-                    _ => None,
-                };
-                if let Some(owner) = owner {
-                    if sources.is_empty() {
-                        let loans = match self.record_view_loan(owner, kind, span) {
-                            Some(loan) => BTreeSet::from([loan]),
-                            None => BTreeSet::new(),
-                        };
-                        self.set_binding_loans(id, loans);
-                    } else {
-                        for loan in &sources {
-                            self.record_event(LoanEventKind::Used { loan: *loan }, span);
+                let mut loans: BTreeSet<LoanId> = BTreeSet::new();
+                if sources.is_empty() {
+                    // A fresh derivation creates one loan per owner: a direct
+                    // owner, every arm of a conditional, and every statement
+                    // temporary the lowered value reads through.
+                    for owner in owners {
+                        if let Some(loan) = self.record_view_loan(owner, kind, span) {
+                            loans.insert(loan);
                         }
-                        self.set_binding_loans(id, sources);
                     }
                 } else {
-                    // A view of static storage, a global, or an unowned value
-                    // carries no loan, so a rebind to one clears any stale loan.
-                    self.set_binding_loans(id, BTreeSet::new());
+                    // An existing loan is shared; the binding's use of it keeps
+                    // the loan live. A binding owner behind the shared loans
+                    // needs no second loan; a temporary owner still does.
+                    for loan in &sources {
+                        self.record_event(LoanEventKind::Used { loan: *loan }, span);
+                    }
+                    loans.extend(sources);
+                    for owner in owners {
+                        if matches!(owner, LoanOwner::Temp(_)) {
+                            if let Some(loan) = self.record_view_loan(owner, kind, span) {
+                                loans.insert(loan);
+                            }
+                        }
+                    }
                 }
+                self.set_binding_loans(id, loans);
                 self.bindings[id].provenance = provenance;
             }
         }
@@ -694,6 +720,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // before the edge is recorded; otherwise a loan a defer creates would
         // be missing from the state that joins after the loop.
         self.emit_exit_cleanup(floor);
+        // The edge also carries the statement temporaries still pending: it
+        // leaves the statements that own them, so they die here on this path.
+        self.emit_pending_release_copies();
         let state = self.edge_state(floor);
         if let Some(frame) = self.exits.last_mut() {
             frame.record_break(state);
@@ -713,6 +742,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         };
         self.emit_exit_cleanup(floor);
+        // The continue edge leaves the statements that own the pending
+        // temporaries, so their releases run here; the loop head re-assigns
+        // its own temporary on the next iteration.
+        self.emit_pending_release_copies();
         // The cleanup the continue runs belongs to its edge, and the edge
         // returns to the loop head, so its state is recorded against the head's
         // block for the loop fixpoint to join into the entry.
@@ -739,7 +772,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A non-duplicable return value is an ownership transfer, so it runs the
     /// move rules: returning a lend parameter is `E10034`, and returning a
-    /// moved value is `E10020`.
+    /// moved value is `E10020`. The evaluated value runs before the statement
+    /// temporaries it read are released: the terminator carries a copy of the
+    /// pending releases, while the pending list stays for the statement's
+    /// other paths.
     pub(super) fn check_return(&mut self, value: Option<&'a Expr>, span: Span) {
         if let Some(value) = value {
             self.eval(value);
@@ -748,11 +784,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !self.sema.table.duplicable(&returns) && !returns.is_unknown() {
                 if let Some(target) = self.place_target(value) {
                     self.move_target(target, span);
-                } else if self.is_ownerless_element_move(value) {
-                    // The return type owns the value it receives, and an
-                    // element of a call result has no owner that outlives the
-                    // statement.
-                    self.report_element_move_limit(span);
+                } else {
+                    let sources = self.conditional_move_sources(value);
+                    if sources.is_empty() {
+                        if self.is_ownerless_element_move(value) {
+                            // The return type owns the value it receives, and
+                            // an element of a call result has no owner that
+                            // outlives the statement.
+                            self.report_element_move_limit(span);
+                        }
+                    } else {
+                        // A conditional return moves whichever owned arm the
+                        // condition selects, so either arm may be gone.
+                        for source in sources {
+                            self.move_target(source, span);
+                        }
+                    }
                 }
             }
             if is_view(&returns) {
@@ -773,17 +820,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             let lowered = self.lower_value(value);
+            // A view derived from a statement temporary cannot leave the
+            // function: the caller's use lies after the temporary's release.
+            // The loans are created at the return, the releases follow, and
+            // the use is recorded last, so the liveness rule reports `E10030`.
+            let temp_loans: Vec<LoanId> = if is_view(&returns) {
+                self.lowered_temp_owners(&lowered)
+                    .into_iter()
+                    .filter_map(|temp| {
+                        self.record_view_loan(LoanOwner::Temp(temp), LoanKind::Shared, span)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
             self.emit_return_cleanup();
-            // The return value is evaluated before the releases run, so the
-            // terminator carries every still-pending statement temporary.
-            let releases = self.take_pending_releases();
+            let releases = self.pending_release_copies();
+            self.record_release_events(&releases);
+            for loan in temp_loans {
+                self.record_event(LoanEventKind::Used { loan }, span);
+            }
             self.terminate(Terminator::Return {
                 value: Some(lowered),
                 releases,
             });
         } else {
             self.emit_return_cleanup();
-            let releases = self.take_pending_releases();
+            let releases = self.pending_release_copies();
+            self.record_release_events(&releases);
             self.terminate(Terminator::Return {
                 value: None,
                 releases,
@@ -791,7 +855,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 }
-
 
 /// The source span of a statement, used for the IR's `#line` facts.
 fn stmt_span(stmt: &Stmt) -> Span {

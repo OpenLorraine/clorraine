@@ -57,6 +57,63 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The owned place sources a conditional may move out of.
+    ///
+    /// A conditional's runtime value is its chosen arm. When an arm is a place
+    /// root of a non-duplicable type, consuming the conditional moves whichever
+    /// arm the condition selects, so the checker treats every such arm as
+    /// maybe-moved: a later use reports the moved-value error, exactly as a
+    /// conditional move does under move semantics. A nested conditional
+    /// recurses; a duplicable arm is copied, and a type that still mentions a
+    /// generic parameter is left to its instantiation.
+    pub(super) fn conditional_move_sources(&self, expr: &Expr) -> Vec<PlaceTarget> {
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        else {
+            return Vec::new();
+        };
+        let mut sources = Vec::new();
+        for arm in [then_value.as_ref(), else_value.as_ref()] {
+            if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                sources.extend(self.conditional_move_sources(arm));
+                continue;
+            }
+            let ty = self.ty(arm);
+            if self.sema.table.duplicable(&ty) || super::lower::mentions_type_param(&ty) {
+                continue;
+            }
+            if let Some(target) = self.place_target(arm) {
+                sources.push(target);
+            }
+        }
+        sources
+    }
+
+    /// Marks the owned arms a materialized conditional read may move.
+    ///
+    /// A read position that needs a place materializes a fixed-array
+    /// conditional through the branch-aware store, which moves the chosen arm.
+    /// The walk records the same maybe-moved effect the binding and return
+    /// paths record, so a later use of either arm is the moved-value error.
+    pub(super) fn mark_read_conditional_move(&mut self, expr: &Expr) {
+        if !matches!(expr.kind, ExprKind::Conditional { .. }) {
+            return;
+        }
+        let ty = self.ty(expr);
+        if !ty.is_fixed_array()
+            || self.sema.table.duplicable(&ty)
+            || super::lower::mentions_type_param(&ty)
+        {
+            return;
+        }
+        for source in self.conditional_move_sources(expr) {
+            self.move_target(source, expr.span);
+        }
+    }
+
     /// True when the expression moves an element out of an ownerless call
     /// result.
     ///
@@ -555,6 +612,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let element_ty = self.ty(target);
         let base_value = self.lower_value(base);
+        // An assignment through a conditional base materializes it, which
+        // moves the chosen owned arm.
+        self.mark_read_conditional_move(base);
         let index_value = self.lower_value(index);
         // A compound store reads the element and takes its address, so the
         // index and base appear in two guarded positions. An impure operand is

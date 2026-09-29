@@ -102,6 +102,7 @@ impl<'a> Emitter<'a> {
             // target.
             ValueKind::Materialize { temp, value: inner } => {
                 self.emit_guards(inner);
+                self.emit_reassigned_temp_drop(*temp, &inner.ty);
                 let store = match &inner.kind {
                     ValueKind::Call {
                         callee,
@@ -136,6 +137,24 @@ impl<'a> Emitter<'a> {
             }
             _ => {}
         }
+    }
+
+    /// Releases a temporary's previous value before it is re-materialized.
+    ///
+    /// A guarded operand inside a loop reuses one temporary, so the previous
+    /// iteration's value must be released before the new one is stored; the
+    /// drop is null-safe, so the first evaluation releases nothing.
+    fn emit_reassigned_temp_drop(&mut self, temp: crate::ir::TempId, ty: &Ty) {
+        let ty = self.substitute(ty);
+        if !self.needs_drop(&ty) {
+            return;
+        }
+        let place = crate::ir::Place {
+            base: crate::ir::PlaceBase::Temp(temp),
+            projections: Vec::new(),
+            ty,
+        };
+        self.emit_drop(&place);
     }
 
     /// Renders a value whose evaluation is conditional, with its guards
@@ -285,6 +304,12 @@ impl<'a> Emitter<'a> {
             // ahead of the guarded value, so no result expression is needed.
             ValueKind::Materialize { temp, value: inner } => {
                 self.guard_expressions(inner, out);
+                let inner_ty = self.substitute(&inner.ty);
+                if self.needs_drop(&inner_ty) {
+                    if let Some(drop) = self.drop_expr_text(&format!("__cl_tmp{temp}"), &inner_ty) {
+                        out.push(drop);
+                    }
+                }
                 let stored = match &inner.kind {
                     ValueKind::Call {
                         callee,
