@@ -328,3 +328,41 @@ fn the_shape_predicates_split_slices_from_fixed_arrays() {
     assert!(!Ty::scalar(U8).is_fixed_array());
     assert!(!Ty::array(Ty::scalar(U8), vec![]).is_slice());
 }
+
+#[test]
+fn a_multi_extent_array_iterates_its_rows() {
+    // A fixed grid iterates rows: only the first extent is stripped.
+    let grid = Ty::array(Ty::i32_ty(), vec![Some(2), Some(3)]);
+    assert_eq!(
+        grid.iterated_element(),
+        Ty::array(Ty::i32_ty(), vec![Some(3)])
+    );
+    // A slice of rows yields the same fixed row type.
+    let rows = Ty::array(Ty::i32_ty(), vec![None, Some(3)]);
+    assert_eq!(
+        rows.iterated_element(),
+        Ty::array(Ty::i32_ty(), vec![Some(3)])
+    );
+    // Three extents keep the two inner extents on the row.
+    let cube = Ty::array(Ty::i32_ty(), vec![Some(2), Some(2), Some(2)]);
+    assert_eq!(
+        cube.iterated_element(),
+        Ty::array(Ty::i32_ty(), vec![Some(2), Some(2)])
+    );
+}
+
+#[test]
+fn a_single_extent_array_or_slice_iterates_its_element() {
+    let list = Ty::array(Ty::i32_ty(), vec![Some(2)]);
+    assert_eq!(list.iterated_element(), Ty::i32_ty());
+    let slice = Ty::array(Ty::i32_ty(), vec![None]);
+    assert_eq!(slice.iterated_element(), Ty::i32_ty());
+}
+
+#[test]
+fn a_non_array_iterates_the_unknown_type() {
+    // The callers report or ignore the unknown element, so the derivation
+    // stays total for every other type.
+    assert!(Ty::i32_ty().iterated_element().is_unknown());
+    assert!(Ty::boolean().iterated_element().is_unknown());
+}

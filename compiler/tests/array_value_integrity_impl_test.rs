@@ -460,3 +460,64 @@ func main(): i32 {
     );
     assert_exit("ai9", &output, 1);
 }
+
+/// A copy element loop copies each row's bytes into the loop local.
+///
+/// The row local is a C array, so the per-iteration bind must be a byte copy
+/// from the row selected in the iterable; the sum then reads the copied row.
+#[test]
+fn should_copy_the_row_bytes_when_a_copy_element_loop_runs() {
+    let source = r#"module codegen.av.impl10;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let s: i32 = 0;
+    for (row in m) {
+        s = s + row[0] + row[1] + row[2];
+    }
+    return s;
+}
+"#;
+    let (output, emitted) = emit_build_run("ai10", source);
+    assert!(
+        emitted.contains("memcpy(&(row), &(m[__cl_tmp"),
+        "ai10: the row bind should copy bytes from the selected row"
+    );
+    assert!(
+        emitted.contains("sizeof(row))"),
+        "ai10: the row copy should use the row's own size"
+    );
+    assert_exit("ai10", &output, 21);
+}
+
+/// A borrow element loop declares the row address as a pointer to the row type.
+///
+/// The address temporary must be `T (*)[M]`, not `T *`: it points at a whole
+/// row, and the write through the view must reach the iterable's row.
+#[test]
+fn should_declare_a_pointer_to_array_when_a_borrow_element_loop_runs() {
+    let source = r#"module codegen.av.impl11;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    for (borrow row in m) {
+        row[0] = row[0] + 10;
+    }
+    return m[0][0] + m[1][0];
+}
+"#;
+    let (output, emitted) = emit_build_run("ai11", source);
+    assert!(
+        emitted.contains("i32 (*__cl_tmp"),
+        "ai11: the row address temporary should be a pointer to the row type"
+    );
+    assert!(
+        emitted.contains(")[3] = NULL;"),
+        "ai11: the pointer-to-array declaration should carry the row extent"
+    );
+    assert!(
+        emitted.contains("= &(m[__cl_tmp"),
+        "ai11: the temporary should take the selected row's address"
+    );
+    assert_exit("ai11", &output, 25);
+}
