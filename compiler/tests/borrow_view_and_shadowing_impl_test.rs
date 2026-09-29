@@ -304,7 +304,7 @@ func main(): i32 { return 0; }
 /// One un-narrowed use reports the null error once.
 ///
 /// The single call is the only nullable use in the program, so a second report
-/// would mean the initializer reorder double-reports.
+/// would mean the same use is diagnosed twice.
 #[test]
 fn should_report_a_single_null_use_when_one_un_narrowed_use_is_due() {
     let source = r#"module codegen.bvs.imp4;
@@ -382,5 +382,36 @@ func main(): i32 {
         count_reports(&stderr, "E10012"),
         1,
         "bvsimp6: expected exactly one E10012 report; stderr:\n{stderr}"
+    );
+}
+
+/// A shadowing initializer reading an un-narrowed outer binding is rejected.
+///
+/// Resolving the initializer before the declaration lets it see the outer
+/// binding, but an outer binding with no `!= null` check still holds a nullable
+/// value: the move into the new binding reports the null use exactly once.
+#[test]
+fn should_report_the_null_use_when_a_shadowing_initializer_reads_an_un_narrowed_outer_binding() {
+    let source = r#"module codegen.bvs.imp7;
+
+import { Buffer, bufferNew } from std.mem;
+
+func main(): i32 {
+    let b: Buffer? = bufferNew(8);
+    let b: Buffer = b;
+    return 0;
+}
+"#;
+    let (_scratch, output) = compile_only("bvsimp7", source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "bvsimp7: the front end accepted a shadowing read of an un-narrowed binding"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_reports(&stderr, "E10010"),
+        1,
+        "bvsimp7: expected exactly one E10010 report; stderr:\n{stderr}"
     );
 }

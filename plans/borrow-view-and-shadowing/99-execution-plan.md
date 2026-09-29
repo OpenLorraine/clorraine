@@ -144,7 +144,7 @@ updates.
 
 **Deliverables**:
 - [x] The shadowing `let` and `const` forms compile; genuine null uses keep `E10010`
-- [ ] No regressions; no warnings
+- [x] No regressions; no warnings
 
 > **Green phase (recorded 2026-09-29 13:12)**: `cargo test --test borrow_view_and_shadowing_spec_test` → 16 passed / 0 failed. The `let` and `const` shadowing forms now compile; the un-narrowed use still reports `E10010`.
 
@@ -163,6 +163,8 @@ updates.
 - [x] No regressions; no warnings
 
 > **Full verification (recorded 2026-09-29 13:13)**: `make check` → spec check plus the full Rust workspace suite, all green (30 suites ok, no failures).
+
+> **Phase 2 review (recorded 2026-09-29 13:17)**: independent correctness/maintainability/standards review of the phase diff (baseline tree `8077913`). No critical or major findings; the reviewer confirmed the reorder changes only the name the initializer resolves to, that the `if let` restructuring is equivalent, and that diagnostics order and IR are unchanged (probed boundary cases: un-narrowed shadowing initializer, field-path narrowing, nested shadowing, missing outer binding). Two minor findings, both resolved: RV-001 (the changed path lacked a guard case — added `bvsimp7`, a shadowing initializer reading an un-narrowed outer binding, expecting exactly one `E10010`; plus the `bvsimp4` rationale corrected) and RV-002 (the Step 2.2 "no regressions" box was unchecked after `make check` passed — checked).
 
 **Verify**: `make check`
 
