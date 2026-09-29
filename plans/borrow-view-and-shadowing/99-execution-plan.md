@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 13:04
-> **Progress**: 4/16 tasks (25%)
+> **Last Updated**: 2026-09-29 13:05
+> **Progress**: 5/16 tasks (31%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -96,11 +96,11 @@ updates.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-9, AR-13
 **Objective**: Pin the rejection's single report and the unchanged guard paths.
 
-- [ ] 1.3.1 Add implementation tests: single-report at a view move, the borrow-parameter `E10034` path unchanged, and unit coverage in `own::tests` for the view rejection and the copy-form binding — `compiler/tests/borrow_view_and_shadowing_impl_test.rs`, `compiler/src/own/tests.rs`
+- [x] 1.3.1 Add implementation tests: single-report at a view move, the borrow-parameter `E10034` path unchanged, and unit coverage in `own::tests` for the view rejection and the copy-form binding — `compiler/tests/borrow_view_and_shadowing_impl_test.rs`, `compiler/src/own/tests.rs` ✅ (completed: 2026-09-29 13:05)
 - [ ] 1.3.2 Full verification — `make check`
 
 **Deliverables**:
-- [ ] Implementation tests pass
+- [x] Implementation tests pass
 - [ ] No regressions; no warnings
 
 **Verify**: `make check`

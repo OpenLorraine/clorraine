@@ -815,3 +815,35 @@ fn a_top_level_field_can_still_move_to_a_projected_target() {
         func main(): i32 { return 0; }\n";
     assert!(error_codes(source).is_empty(), "{:?}", error_codes(source));
 }
+
+#[test]
+fn a_move_through_a_borrow_element_view_is_rejected() {
+    // The view never owns its element, so a `take` argument reading it is the
+    // v1 element-move limit rather than a lend of the view.
+    let source = with_view_helper(
+        "func demo(): void {\n\
+             let xs: String[2] = [$\"a{1}\", $\"bb{2}\"];\n\
+             for (borrow e in xs) {\n\
+                 consume(e);\n\
+             }\n\
+         }",
+    );
+    assert_eq!(error_codes(&source), vec!["E10026"]);
+}
+
+#[test]
+fn a_copy_form_element_binding_owns_its_copy() {
+    // Without `borrow`, each iteration copies the duplicable row, so reading
+    // the copy is an ordinary read of an owned local.
+    let source = with_view_helper(
+        "func demo(): void {\n\
+             let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];\n\
+             let sum: i32 = 0;\n\
+             for (row in m) {\n\
+                 let copy: i32[3] = row;\n\
+                 sum = sum + copy[0];\n\
+             }\n\
+         }",
+    );
+    assert!(error_codes(&source).is_empty(), "{:?}", error_codes(&source));
+}
