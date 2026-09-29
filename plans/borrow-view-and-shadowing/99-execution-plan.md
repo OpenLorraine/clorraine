@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 13:05
-> **Progress**: 5/16 tasks (31%)
+> **Progress**: 6/16 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -97,11 +97,13 @@ updates.
 **Objective**: Pin the rejection's single report and the unchanged guard paths.
 
 - [x] 1.3.1 Add implementation tests: single-report at a view move, the borrow-parameter `E10034` path unchanged, and unit coverage in `own::tests` for the view rejection and the copy-form binding — `compiler/tests/borrow_view_and_shadowing_impl_test.rs`, `compiler/src/own/tests.rs` ✅ (completed: 2026-09-29 13:05)
-- [ ] 1.3.2 Full verification — `make check`
+- [x] 1.3.2 Full verification — `make check` ✅ (completed: 2026-09-29 13:05)
 
 **Deliverables**:
 - [x] Implementation tests pass
-- [ ] No regressions; no warnings
+- [x] No regressions; no warnings
+
+> **Full verification (recorded 2026-09-29 13:05)**: `make check` → spec check plus the full Rust workspace suite, all green (351 lib tests, every spec/impl suite passing).
 
 **Verify**: `make check`
 
