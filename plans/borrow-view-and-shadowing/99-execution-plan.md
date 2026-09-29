@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 13:04
-> **Progress**: 3/16 tasks (19%)
+> **Progress**: 4/16 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -81,11 +81,13 @@ updates.
 **Objective**: Reject an ownership transfer through a borrow element view at the shared move decision.
 
 - [x] 1.2.1 Guard `move_place` against a `BindingKind::Local` binding with `Mode::Borrow`, reporting the `E10026` registry row — `compiler/src/own/place.rs` ✅ (completed: 2026-09-29 13:04)
-- [ ] 1.2.2 Run the spec suite and record the green phase — ST-1 – ST-8 and ST-13 pass
+- [x] 1.2.2 Run the spec suite and record the green phase — ST-1 – ST-8 and ST-13 pass ✅ (completed: 2026-09-29 13:04)
 
 **Deliverables**:
 - [x] Every move form through the view reports `E10026`; the guards stay accepted
 - [ ] No regressions; no warnings
+
+> **Green phase (recorded 2026-09-29 13:04)**: `cargo test --test borrow_view_and_shadowing_spec_test` → 11 passed / 0 failed. Every rejection case reports `E10026` and every guard case still passes.
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`
 
