@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 02:10
+> **Last Updated**: 2026-09-29 02:28
 > **Progress**: 12/24 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
@@ -107,8 +107,9 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 ## Phase 2: Multi-extent element loops
 
 > **Phase baseline tree**: `5bc7fd1f1273254fe2ae4860c9c79f5502a9d601`
-> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/render.rs`, `compiler/src/codegen/calls.rs` (authorized slice-guard fix), `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`
+> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/render.rs`, `compiler/src/codegen/calls.rs` (authorized slice-guard and row-slice fixes), `compiler/src/types/tests.rs` (unit tests), `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`, `plans/array-value-integrity/07-testing-strategy.md`
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
+> **Phase 2 review**: independent reviewer (generic-subagent fallback) on the diff vs `5bc7fd1f` — RV-201 🔴 / RV-202 🟠 flat-scalar row slices, fixed under explicit authorization in `dcb7078` (row-unit guard bound, stored length, and pointer offsets in `codegen/calls.rs`); the oracle gained ST-31 – ST-33 (lo > 0, sub-slice, over-long `hi` traps `E11211`) with red/green evidence and `ai12`; single re-review on the fix: `FIX ACCEPTED` — RR-201 plan-record sync applied, RR-202 (a nested array type argument through an explicit generic instantiation) recorded as a pre-existing limitation with no action — no blocking issue remains (2026-09-29 02:28)
 
 ### Step 2.1: Specification Tests
 
