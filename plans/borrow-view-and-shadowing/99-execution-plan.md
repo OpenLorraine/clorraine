@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 13:12
-> **Progress**: 8/16 tasks (50%)
+> **Progress**: 9/16 tasks (56%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -139,11 +139,11 @@ updates.
 **Reference**: [03-02 §Proposed Changes](03-02-shadowed-narrowing.md) · AR-5, AR-6
 **Objective**: Run the initializer's null check before the shadowing declaration.
 
-- [ ] 2.2.1 Move `check_value_into` before `declare_local` in `check_let` and `check_const` — `compiler/src/own/statements.rs`
+- [x] 2.2.1 Move `check_value_into` before `declare_local` in `check_let` and `check_const` — `compiler/src/own/statements.rs` ✅ (completed: 2026-09-29 13:12)
 - [ ] 2.2.2 Run the spec suite and record the green phase — ST-9 – ST-12 and ST-14 pass
 
 **Deliverables**:
-- [ ] The shadowing `let` and `const` forms compile; genuine null uses keep `E10010`
+- [x] The shadowing `let` and `const` forms compile; genuine null uses keep `E10010`
 - [ ] No regressions; no warnings
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`

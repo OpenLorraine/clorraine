@@ -186,10 +186,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .clone()
             .or(value_ty)
             .unwrap_or_else(Ty::unknown);
-        // The initializer is prepared before the binding is declared: a name
-        // the initializer reads must resolve to the outer binding the
-        // declaration may shadow, because the new name is not yet in scope in
-        // its own initializer.
+        // The initializer is prepared and checked before the binding is
+        // declared: a name the initializer reads must resolve to the outer
+        // binding the declaration may shadow, because the new name is not yet
+        // in scope in its own initializer. The null check consults the same
+        // pre-declaration scope, so a shadowing initializer under a narrowing
+        // sees the narrowed outer binding.
         let prepared = decl
             .value
             .as_ref()
@@ -198,14 +200,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .value
             .as_ref()
             .map(|value| self.prepare_binding_effect(&target, value));
+        if let Some(value) = &decl.value {
+            self.check_value_into(value, &target, decl.span);
+        }
         let id = self.declare_local(&decl.name, target.clone(), false, decl.name_span);
-        if let (Some(value), Some(prepared), Some(effect)) = (&decl.value, prepared, effect) {
+        if let (Some(prepared), Some(effect)) = (prepared, effect) {
             let init = PlaceState {
                 initialized: true,
                 ..PlaceState::default()
             };
             self.set_place(id, init);
-            self.check_value_into(value, &target, decl.span);
             self.apply_binding_effect(id, effect, decl.span);
             let place = self.binding_place(id);
             self.emit_prepared_store(place, prepared);
@@ -267,11 +271,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let value_ty = self.eval(&decl.value);
         let target = declared.or(Some(value_ty)).unwrap_or_else(Ty::unknown);
-        // As in `check_let`, the store and the ownership effect resolve before
-        // the binding is declared, so the initializer's names tie to the outer
-        // bindings they may shadow.
+        // As in `check_let`, the store, the ownership effect, and the null
+        // check resolve before the binding is declared, so the initializer's
+        // names tie to the outer bindings they may shadow.
         let prepared = self.prepare_store(&target, &decl.value);
         let effect = self.prepare_binding_effect(&target, &decl.value);
+        self.check_value_into(&decl.value, &target, decl.span);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         self.set_place(
             id,
@@ -280,7 +285,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ..PlaceState::default()
             },
         );
-        self.check_value_into(&decl.value, &target, decl.span);
         self.apply_binding_effect(id, effect, decl.span);
         let place = self.binding_place(id);
         self.emit_prepared_store(place, prepared);
