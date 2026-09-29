@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 16:07
-> **Progress**: 2/27 tasks (7%)
+> **Last Updated**: 2026-09-29 16:18
+> **Progress**: 6/27 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -82,14 +82,22 @@ pre-fix (the predicted regression guards): ST-3, ST-9, ST-11, ST-24, ST-26 – S
 **Reference**: [03-01 §Proposed Changes](03-01-materialization-and-temps.md) · AR-5, AR-6, AR-7, AR-16, AR-18
 **Objective**: Release owning destination temporaries at statement end with the temporary view lifetime rule, materialize call-rooted iterables, and store fixed-array conditionals through a branch.
 
-- [ ] 1.2.1 Add the statement-position release for owning destination temporaries (guard operands, the iterable temporary, the conditional read-position temporary) in reverse creation order; drain after each statement and before terminators; exclude the take-call and literal-adoption transfer temps; register the temporary as a loan owner so a later derived-view use reports `E10030` — `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs`, `compiler/src/own.rs`, `compiler/src/own/place.rs`, `compiler/src/own/liveness.rs`, `compiler/src/ir.rs`, `compiler/src/codegen/function.rs`
-- [ ] 1.2.2 Materialize a call-rooted element-loop iterable before the loop and read the temporary (generic-parameter iterables keep the `mentions_type_param` behavior) — `compiler/src/own/loops.rs`
-- [ ] 1.2.3 Make the shared fixed-array value assignment branch-aware for conditionals (per-arm guards, copy for duplicable arms, move for owned arms, target-name resolution to the saved value), extend the fixed-array return emitter with the same branch shape, extend the place-projection predicate so a conditional argument with place arms stays a forwarding value, and materialize conditional values in read positions — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/own/lower.rs`
-- [ ] 1.2.4 Run the spec suite and record the green phase — ST-1 – ST-11 and ST-24 – ST-29 pass
+- [x] 1.2.1 Add the statement-position release for owning destination temporaries (guard operands, the iterable temporary, the conditional read-position temporary) in reverse creation order; drain after each statement and before terminators; exclude the take-call and literal-adoption transfer temps; register the temporary as a loan owner so a later derived-view use reports `E10030` — `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs`, `compiler/src/own.rs`, `compiler/src/own/place.rs`, `compiler/src/own/liveness.rs`, `compiler/src/ir.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-29 16:18)
+- [x] 1.2.2 Materialize a call-rooted element-loop iterable before the loop and read the temporary (generic-parameter iterables keep the `mentions_type_param` behavior) — `compiler/src/own/loops.rs` ✅ (completed: 2026-09-29 16:18)
+- [x] 1.2.3 Make the shared fixed-array value assignment branch-aware for conditionals (per-arm guards, copy for duplicable arms, move for owned arms, target-name resolution to the saved value), extend the fixed-array return emitter with the same branch shape, extend the place-projection predicate so a conditional argument with place arms stays a forwarding value, and materialize conditional values in read positions — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-09-29 16:18)
+- [x] 1.2.4 Run the spec suite and record the green phase — ST-1 – ST-11 and ST-24 – ST-29 pass ✅ (completed: 2026-09-29 16:18)
 
 **Deliverables**:
-- [ ] Call-rooted iterables compile and run; owning destination temporaries are released with the view lifetime rule; conditional fixed-array values compile in the routed positions, the return position, and as a materialized argument
-- [ ] No regressions; no warnings
+- [x] Call-rooted iterables compile and run; owning destination temporaries are released with the view lifetime rule; conditional fixed-array values compile in the routed positions, the return position, and as a materialized argument
+- [x] No regressions; no warnings
+
+**Green-phase evidence** (2026-09-29 16:18, `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`):
+17 passed, 0 failed. The full workspace `make check` also passes with no warnings, so the
+release machinery, the iterable materialization, and the conditional branch stores introduced
+no regression. Two implementation findings were resolved on the way: the pre-existing
+`__cl_owned` binding must not adopt a projection of a released temporary (it would double-free),
+and the per-statement release floor keeps an enclosing statement's temporary pending while a
+nested statement runs.
 
 **Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
 
