@@ -387,3 +387,131 @@ func main(): i32 {
         "rviimpl-loophead: the old value must be released before the new one is stored"
     );
 }
+
+/// A runtime receiver index is bounds-guarded before the statement call.
+#[test]
+fn should_guard_a_field_receiver_in_the_statement_call() {
+    let source = r#"module impl.rvi.receiver;
+struct Ops { run: func(i32): i32; }
+func bump(x: i32): i32 { return x + 1; }
+func main(): i32 {
+    let ops: Ops[2] = [Ops { run: bump }, Ops { run: bump }];
+    let i: i32 = 5;
+    ops[i].run(1);
+    return 0;
+}
+"#;
+    let emitted = emit_host("rviimpl-receiver", source);
+    let trap = emitted
+        .find("if ((i < 0) || ((usize)(i) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");")
+        .unwrap_or_else(|| panic!("rviimpl-receiver: no receiver bounds trap"));
+    let call = emitted
+        .find("(ops[i].run)(1);")
+        .unwrap_or_else(|| panic!("rviimpl-receiver: no field call"));
+    assert!(
+        trap < call,
+        "rviimpl-receiver: the receiver trap must run before the call"
+    );
+}
+
+/// A runtime receiver index is bounds-guarded before a fixed-array call
+/// assignment.
+#[test]
+fn should_guard_a_field_receiver_in_the_fixed_array_assign() {
+    let source = r#"module impl.rvi.recvassign;
+struct Maker { make: func(i32): i32[2]; }
+func pair(x: i32): i32[2] { return [x, x + 1]; }
+func main(): i32 {
+    let ms: Maker[2] = [Maker { make: pair }, Maker { make: pair }];
+    let i: i32 = 5;
+    let a: i32[2] = ms[i].make(3);
+    return a[1];
+}
+"#;
+    let emitted = emit_host("rviimpl-recvassign", source);
+    let trap = emitted
+        .find("if ((i < 0) || ((usize)(i) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");")
+        .unwrap_or_else(|| panic!("rviimpl-recvassign: no receiver bounds trap"));
+    let call = emitted
+        .find("(ms[i].make)(3, __cl_call_1);")
+        .unwrap_or_else(|| panic!("rviimpl-recvassign: no field call with a destination"));
+    assert!(
+        trap < call,
+        "rviimpl-recvassign: the receiver trap must run before the call"
+    );
+}
+
+/// A runtime receiver index is bounds-guarded before a fixed-array return
+/// call, which writes through the hidden destination.
+#[test]
+fn should_guard_a_field_receiver_in_the_fixed_array_return() {
+    let source = r#"module impl.rvi.recvreturn;
+struct Maker { make: func(i32): i32[2]; }
+func pair(x: i32): i32[2] { return [x, x + 1]; }
+func pick(ms: Maker[2], i: i32): i32[2] {
+    return ms[i].make(3);
+}
+func main(): i32 {
+    let ms: Maker[2] = [Maker { make: pair }, Maker { make: pair }];
+    let r: i32[2] = pick(ms, 5);
+    return r[0];
+}
+"#;
+    let emitted = emit_host("rviimpl-recvreturn", source);
+    let trap = emitted
+        .find("if ((i < 0) || ((usize)(i) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");")
+        .unwrap_or_else(|| panic!("rviimpl-recvreturn: no receiver bounds trap"));
+    let call = emitted
+        .find("(ms[i].make)(3, __cl_ret);")
+        .unwrap_or_else(|| panic!("rviimpl-recvreturn: no returned field call with a destination"));
+    assert!(
+        trap < call,
+        "rviimpl-recvreturn: the receiver trap must run before the call"
+    );
+}
+
+/// A func value with a fixed-array return declares the hidden destination and
+/// a scalar-returning func value stays unchanged.
+#[test]
+fn should_render_the_hidden_destination_in_a_func_declarator() {
+    let source = r#"module impl.rvi.funcptr;
+struct Ops { run: func(i32): i32; }
+struct Maker { make: func(i32): i32[2]; }
+func bump(x: i32): i32 { return x + 1; }
+func pair(x: i32): i32[2] { return [x, x + 1]; }
+func main(): i32 {
+    let g: func(i32): i32[2] = pair;
+    let ops: Ops = Ops { run: bump };
+    let m: Maker = Maker { make: pair };
+    let a: i32[2] = g(3);
+    return a[0] + ops.run(1) + m.make(3)[0];
+}
+"#;
+    let emitted = emit_host("rviimpl-funcptr", source);
+    assert_contains("rviimpl-funcptr", &emitted, "void (*make)(i32, i32 [2]);");
+    assert_contains(
+        "rviimpl-funcptr",
+        &emitted,
+        "void (*g)(i32, i32 [2]) = NULL;",
+    );
+    assert_contains("rviimpl-funcptr", &emitted, "i32 (*run)(i32);");
+}
+
+/// A call through a func value passes the hidden destination, and a discarded
+/// call writes into a released discard array.
+#[test]
+fn should_pass_a_destination_to_a_func_value_call() {
+    let source = r#"module impl.rvi.funccall;
+func pair(x: i32): i32[2] { return [x, x + 1]; }
+func main(): i32 {
+    let g: func(i32): i32[2] = pair;
+    let a: i32[2] = g(3);
+    g(3);
+    return a[0] + a[1];
+}
+"#;
+    let emitted = emit_host("rviimpl-funccall", source);
+    assert_contains("rviimpl-funccall", &emitted, "g(3, __cl_call_1);");
+    let discard = after("rviimpl-funccall", &emitted, "i32 __cl_discard_1[2] = {0};");
+    assert_contains("rviimpl-funccall", discard, "g(3, __cl_discard_1);");
+}

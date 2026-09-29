@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 21:31
-> **Progress**: 13/27 tasks (48%)
+> **Last Updated**: 2026-09-29 21:32
+> **Progress**: 15/27 tasks (56%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -197,12 +197,16 @@ receiver guards and the function-pointer ABI change no existing behavior.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-8, AR-9
 **Objective**: Pin the emitted receiver traps and the pointer declarator.
 
-- [ ] 2.3.1 Add implementation tests: the `E11211` trap in the three call shapes, the `__cl_ret` pointer declarator, and the func-value destination — `compiler/tests/runtime_value_integrity_impl_test.rs`
-- [ ] 2.3.2 Full verification — `make check`
+- [x] 2.3.1 Add implementation tests: the `E11211` trap in the three call shapes, the `__cl_ret` pointer declarator, and the func-value destination — `compiler/tests/runtime_value_integrity_impl_test.rs` ✅ (completed: 2026-09-29 21:32)
+- [x] 2.3.2 Full verification — `make check` ✅ (completed: 2026-09-29 21:32)
 
 **Deliverables**:
-- [ ] Implementation tests pass
-- [ ] No regressions; no warnings
+- [x] Implementation tests pass
+- [x] No regressions; no warnings
+
+**Full-verification evidence** (2026-09-29 21:32, `make check`): every workspace suite passed —
+the implementation suite 15/15, the specification suite 24/24, and all pre-existing suites
+unchanged (32 test binaries, 0 failures, 0 warnings).
 
 **Verify**: `make check`
 
