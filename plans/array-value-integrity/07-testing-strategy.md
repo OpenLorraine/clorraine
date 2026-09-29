@@ -61,6 +61,9 @@
 | ST-13 | `for (row in xs) { s += row[1]; }` where `xs: i32[][3]` is `borrow m` from ST-1 | `7` (2 + 5); slice of rows | R1 · `spec/08` AR-3, §5 |
 | ST-14 | `for (row in fs)` where `fs: String[2][2]` and no `borrow` | `E10040` (`element loop requires 'borrow' for non-duplicable 'String[2]'`) | R1 · `spec/08` LOOP-3 |
 | ST-15 | `for (row in m) { for (x in row) { s += x; } }` for the ST-1 `m` | `21`; every inner iteration advances | R1 · `spec/08` §5 |
+| ST-31 | `let xs: i32[][3] = slice(m, 1, 2);` for the ST-1 `m`; then `xs[0][0]` | `4` (row one is `[4, 5, 6]`; offsets count rows) | R1 · AR-6 · `spec/08` AR-3, SL-2 |
+| ST-32 | `let a: i32[][3] = slice(m, 0, 2); let b: i32[][3] = slice(a, 1, 2);` then `b[0][2]` | `6` (a sub-slice keeps row units) | R1 · AR-6 · `spec/08` AR-3, SL-2 |
+| ST-33 | `let xs: i32[][3] = slice(m, 0, 3);` for the two-row ST-1 `m` | traps `E11211` at the slice guard (three rows exceed the two-row storage) | R1 · `spec/08` SL-2, IX-1 |
 
 ### Phase 3 — Projections and element moves (`03-02`)
 
@@ -94,6 +97,7 @@ deviation is an oracle or test defect, never a reason to change a case.
 | Fails: wrong `len` value | ST-1 (`6`), ST-22 (`0`), ST-25 (`0`), ST-26 (`0`) | runs, wrong result |
 | Fails: C compiler rejects | ST-2 – ST-5, ST-7, ST-8, ST-16 – ST-18, ST-23 | `clc` accepts, `cc` reports array assignment / hidden out-parameter errors |
 | Fails: wrong shape or missing diagnostic | ST-10 – ST-13, ST-15 | `E10209` on the row index, or 6 base-element iterations |
+| Fails: flat-scalar row slice | ST-31 – ST-33 | `slice` offsets and bounds count scalars: ST-31/ST-32 select the wrong row and ST-33 builds an over-long slice instead of trapping |
 | Fails: missing rejection | ST-19 – ST-21, ST-27 – ST-30 | `clc` accepts (no `E10026`) |
 | Fails: wrong element type in the message | ST-14 | rejection fires, but names the base element (`'String'`), not the row type (`'String[2]'`) |
 | Passes pre-fix (guards) | ST-6, ST-9, ST-24 | `E10020`, the call-return binding, and the view/growable lengths already correct; the call-reassignment release shape is pinned red by the Phase 1 implementation tests |
@@ -104,13 +108,13 @@ deviation is an oracle or test defect, never a reason to change a case.
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/array_value_integrity_spec_test.rs` | ST-1 – ST-30 | `03-01`, `03-02` |
+| `compiler/tests/array_value_integrity_spec_test.rs` | ST-1 – ST-33 | `03-01`, `03-02` |
 
 ### Implementation Tests (edge cases, internals)
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| `compiler/tests/array_value_integrity_impl_test.rs` | Emitted shape: `memcpy` copy, `cl_zero` after a move, the same-place no-op, the call-into-temporary assignment, the materialized temporary with the destination call, the short-circuit comma operand, both `len` renderings, the pointer-to-array row declaration, the call-argument bounds trap, and counting-deleter release shape checks (one emitted deleter call site per released element); `iterated_element` and `is_ownerless_element_move` unit coverage | High |
+| `compiler/tests/array_value_integrity_impl_test.rs` | Emitted shape: `memcpy` copy, `cl_zero` after a move, the same-place no-op, the call-into-temporary assignment, the materialized temporary with the destination call, the short-circuit comma operand, both `len` renderings, the pointer-to-array row declaration, the row-unit slice offset and length, the call-argument bounds trap, and counting-deleter release shape checks (one emitted deleter call site per released element); `iterated_element` and `is_ownerless_element_move` unit coverage | High |
 
 ### Integration Tests
 

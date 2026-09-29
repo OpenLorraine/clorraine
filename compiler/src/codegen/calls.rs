@@ -36,10 +36,10 @@ impl Emitter<'_> {
         let view = args.first()?;
         let lo = args.get(1)?;
         let hi = args.get(2)?;
-        let (_ptr, len) = self.slice_source(view);
+        let source = self.slice_source(view);
         let lo_c = self.value(lo);
         let hi_c = self.value(hi);
-        let upper = format!("(usize)({hi_c}) > {len}");
+        let upper = format!("(usize)({hi_c}) > {}", source.length);
         // A constant zero low bound can never exceed an unsigned high bound,
         // so the lower clause is skipped; emitting `0 > x` would be dead code
         // and trips `-Wtype-limits` on an unsigned high bound.
@@ -49,28 +49,72 @@ impl Emitter<'_> {
         })
     }
 
-    /// The pointer and length expressions of the storage a `slice` selects from.
+    /// The C pointer-to-array type and base-element type of a view of rows.
     ///
-    /// A growable slice or string view carries its own `ptr` and `len` fields.
-    /// A fixed array has no such fields, so its address decays to the element
-    /// pointer and its extent is a compile-time constant. This lets `slice`
-    /// accept a fixed array without emitting `(arr).ptr`, which is not C.
-    fn slice_source(&self, view: &Value) -> (String, String) {
+    /// A fixed or slice array with more than one extent has rows as its
+    /// elements, so its offsets and lengths count rows; the pointer addresses
+    /// a whole row (`T (*)[M]`). `None` for every shape that iterates scalars.
+    fn row_slice_types(&self, ty: &Ty) -> Option<(String, String)> {
+        let TyKind::Array { element, extents } = &ty.kind else {
+            return None;
+        };
+        if extents.len() < 2 {
+            return None;
+        }
+        let row = Ty::array((**element).clone(), extents[1..].to_vec());
+        let row_type = super::types::pointer_to_array_type(&row)?;
+        Some((row_type, c_type(element)))
+    }
+
+    /// The pointer, count, and stored-pointer cast of the storage a `slice`
+    /// selects from.
+    ///
+    /// A growable slice or string view carries its own `ptr` and `len` fields;
+    /// a view of rows measures both in rows, so its pointer is cast to a
+    /// pointer-to-array and offset row by row, then cast back to the
+    /// base-element pointer the view stores. A fixed array has no fields, so
+    /// its address decays to the element pointer and its extent is a
+    /// compile-time constant. This lets `slice` accept a fixed array without
+    /// emitting `(arr).ptr`, which is not C.
+    fn slice_source(&self, view: &Value) -> SliceSource {
         let ty = self.substitute(&view.ty);
         let value = self.value(view);
+        let rows = self.row_slice_types(&ty);
         match &ty.kind {
             TyKind::Array { extents, .. } if extents.iter().all(Option::is_some) => {
+                if let Some((row_type, base)) = rows {
+                    let count = extents.first().and_then(|size| *size).unwrap_or(0);
+                    return SliceSource {
+                        pointer: format!("({row_type}){value}"),
+                        length: format!("(usize){count}"),
+                        store_cast: Some(format!("({base} *)")),
+                    };
+                }
                 let extent = extents
                     .iter()
                     .filter_map(|size| *size)
                     .fold(1usize, usize::saturating_mul);
                 let element = self.intrinsic_element(None, Some(view));
-                (
-                    format!("({} *){value}", c_type(&element)),
-                    format!("(usize){extent}"),
-                )
+                SliceSource {
+                    pointer: format!("({} *){value}", c_type(&element)),
+                    length: format!("(usize){extent}"),
+                    store_cast: None,
+                }
             }
-            _ => (format!("({value}).ptr"), format!("(usize)(({value}).len)")),
+            _ => {
+                if let Some((row_type, base)) = rows {
+                    return SliceSource {
+                        pointer: format!("({row_type})({value}).ptr"),
+                        length: format!("(usize)(({value}).len)"),
+                        store_cast: Some(format!("({base} *)")),
+                    };
+                }
+                SliceSource {
+                    pointer: format!("({value}).ptr"),
+                    length: format!("(usize)(({value}).len)"),
+                    store_cast: None,
+                }
+            }
         }
     }
 
@@ -197,15 +241,24 @@ impl Emitter<'_> {
                 format!("((ClStr){{ {}, (usize)({}) }})", pointer, count)
             }
             "slice" => {
-                let (pointer, _len) = match args.first() {
+                let source = match args.first() {
                     Some(view) => self.slice_source(view),
-                    None => ("0".to_owned(), "0".to_owned()),
+                    None => SliceSource {
+                        pointer: "0".to_owned(),
+                        length: "0".to_owned(),
+                        store_cast: None,
+                    },
                 };
                 let low = self.intrinsic_arg(args, 1);
                 let high = self.intrinsic_arg(args, 2);
                 let element = self.intrinsic_element(type_arg, args.first());
+                let offset = format!("({}) + ({low})", source.pointer);
+                let stored = match &source.store_cast {
+                    Some(cast) => format!("{cast}({offset})"),
+                    None => offset,
+                };
                 format!(
-                    "((ClSlice_{}){{ ({pointer}) + ({low}), (usize)(({high}) - ({low})) }})",
+                    "((ClSlice_{}){{ {stored}, (usize)(({high}) - ({low})) }})",
                     type_key(&element)
                 )
             }
@@ -255,6 +308,18 @@ impl Emitter<'_> {
             _ => Ty::unknown(),
         }
     }
+}
+
+/// The pointer, element count, and stored-pointer cast of a slice source.
+struct SliceSource {
+    /// The pointer the slice offsets advance in elements; for a view of rows
+    /// it advances a whole row at a time.
+    pointer: String,
+    /// The number of elements the source holds.
+    length: String,
+    /// The cast that stores the offset pointer back in the view's
+    /// base-element field, when the pointer addresses rows.
+    store_cast: Option<String>,
 }
 
 /// The C scalar name a volatile intrinsic accesses, keyed by its name.

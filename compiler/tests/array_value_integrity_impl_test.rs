@@ -521,3 +521,36 @@ func main(): i32 {
     );
     assert_exit("ai11", &output, 25);
 }
+
+/// A row slice offsets its pointer in rows and stores the row count.
+///
+/// The source is a two-row fixed array; slicing rows one through two must
+/// advance the pointer a whole row, keep the length and the guard bound in
+/// rows, and cast the offset pointer back to the view's stored type.
+#[test]
+fn should_offset_in_rows_when_a_row_slice_is_built() {
+    let source = r#"module codegen.av.impl12;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let xs: i32[][3] = slice(m, 1, 2);
+    return xs[0][0];
+}
+"#;
+    let (output, emitted) = emit_build_run("ai12", source);
+    assert!(
+        emitted.contains("(i32 *)(((i32 (*)[3])m) + (1))"),
+        "ai12: the row pointer should advance by whole rows"
+    );
+    assert!(
+        emitted.contains("(usize)((2) - (1))"),
+        "ai12: the stored length should count rows"
+    );
+    assert!(
+        emitted.contains("(usize)(2) > (usize)2"),
+        "ai12: the guard bound should be the row count"
+    );
+    assert_exit("ai12", &output, 4);
+}

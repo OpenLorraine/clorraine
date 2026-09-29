@@ -182,6 +182,19 @@ fn assert_exit(tag: &str, output: &Output, expected: i32) {
     );
 }
 
+/// Asserts the run aborted at the runtime guard for `code`.
+fn assert_trap(tag: &str, output: &Output, code: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag}: a trapped run must exit nonzero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("error {code}:")),
+        "{tag}: expected the {code} trap; stderr:\n{stderr}"
+    );
+}
+
 /// Compiles `source` and returns the compiler output plus the C path.
 fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
     let scratch = ScratchDir::new(tag);
@@ -607,4 +620,66 @@ func main(): i32 {
 "#;
     let output = run_host("av15", source);
     assert_exit("av15", &output, 21);
+}
+
+/// A row slice that starts at one selects row one.
+///
+/// The slice covers the second row only, so its first element is four; an
+/// offset counted in scalars would land inside row zero instead.
+#[test]
+fn should_select_row_one_when_a_row_slice_starts_at_one() {
+    let source = r#"module codegen.av.st31;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let xs: i32[][3] = slice(m, 1, 2);
+    return xs[0][0];
+}
+"#;
+    let output = run_host("av31", source);
+    assert_exit("av31", &output, 4);
+}
+
+/// A sub-slice of a row slice keeps counting rows.
+///
+/// The first slice covers both rows and the second selects the last row, so
+/// the third element of its first row is six; an offset counted in scalars
+/// would read across a row boundary.
+#[test]
+fn should_select_row_one_when_a_row_slice_is_sub_sliced() {
+    let source = r#"module codegen.av.st32;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let a: i32[][3] = slice(m, 0, 2);
+    let b: i32[][3] = slice(a, 1, 2);
+    return b[0][2];
+}
+"#;
+    let output = run_host("av32", source);
+    assert_exit("av32", &output, 6);
+}
+
+/// A row slice wider than its storage traps at the slice guard.
+///
+/// The array holds two rows and the request asks for three, so building the
+/// slice must trap before any row is read or written.
+#[test]
+fn should_trap_when_a_row_slice_asks_for_more_rows_than_exist() {
+    let source = r#"module codegen.av.st33;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let xs: i32[][3] = slice(m, 0, 3);
+    return 0;
+}
+"#;
+    let output = run_host("av33", source);
+    assert_trap("av33", &output, "E11211");
 }
