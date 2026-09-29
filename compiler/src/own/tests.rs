@@ -847,3 +847,56 @@ fn a_copy_form_element_binding_owns_its_copy() {
     );
     assert!(error_codes(&source).is_empty(), "{:?}", error_codes(&source));
 }
+
+#[test]
+fn a_destination_temporary_joins_the_statement_release_set() {
+    // The element read of a call result materializes the call into a
+    // temporary the statement reads, so the statement ends by releasing it.
+    let source = with_view_helper(
+        "func mk(): String[2] { return [$\"a{1}\", $\"bb{2}\"]; }\n\
+         func demo(): i32 {\n\
+             let n: i32 = i32(len(mk()[0]));\n\
+             return n;\n\
+         }",
+    );
+    let (_, output) = compile(&source);
+    let output = output.expect("the clean program lowers");
+    let demo = output
+        .functions
+        .iter()
+        .find(|function| function.name == "demo")
+        .expect("the demo function is lowered");
+    assert!(
+        demo.blocks.iter().any(|block| block
+            .statements
+            .iter()
+            .any(|instr| matches!(&instr.statement, Statement::ReleaseTemp(release) if release.temp == 0))),
+        "expected the statement end to release the materialized temporary"
+    );
+}
+
+#[test]
+fn a_take_call_result_temporary_is_not_released() {
+    // The take call result travels into `r`, which owns it, so no statement
+    // release covers the temporary; releasing it would free the value twice.
+    let source = with_view_helper(
+        "func sink(take s: String): String { return s; }\n\
+         func demo(): i32 {\n\
+             let s: String = $\"x{1}\";\n\
+             let r: String = sink(s);\n\
+             return i32(len(r));\n\
+         }",
+    );
+    let (_, output) = compile(&source);
+    let output = output.expect("the clean program lowers");
+    assert!(
+        !output.functions.iter().any(|function| function
+            .blocks
+            .iter()
+            .any(|block| block
+                .statements
+                .iter()
+                .any(|instr| matches!(instr.statement, Statement::ReleaseTemp(_))))),
+        "a transfer temporary must not join the statement release set"
+    );
+}
