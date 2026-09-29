@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 13:12
-> **Progress**: 10/16 tasks (63%)
+> **Last Updated**: 2026-09-29 13:13
+> **Progress**: 11/16 tasks (69%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -155,11 +155,11 @@ updates.
 **Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-5, AR-13
 **Objective**: Pin the diagnostic shape and the post-declaration usability.
 
-- [ ] 2.3.1 Add implementation tests: a single `E10010` report when one is due, the shadowing binding usable after its declaration, and the `E10012` null rule unchanged — `compiler/tests/borrow_view_and_shadowing_impl_test.rs`
+- [x] 2.3.1 Add implementation tests: a single `E10010` report when one is due, the shadowing binding usable after its declaration, and the `E10012` null rule unchanged — `compiler/tests/borrow_view_and_shadowing_impl_test.rs` ✅ (completed: 2026-09-29 13:13)
 - [ ] 2.3.2 Full verification — `make check`
 
 **Deliverables**:
-- [ ] Implementation tests pass
+- [x] Implementation tests pass
 - [ ] No regressions; no warnings
 
 **Verify**: `make check`
