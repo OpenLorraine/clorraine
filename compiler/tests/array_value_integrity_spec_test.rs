@@ -18,13 +18,18 @@
 //! a slice of rows iterates its rows, nested loops visit every scalar once, and
 //! a copy loop over non-duplicable rows reports the row type by name.
 //!
+//! The projection batch makes a projection over an array-returning call run
+//! the call once into a compiler temporary and then read or lend the element;
+//! a guarded operand keeps the call lazy. Moving a non-duplicable element out
+//! of an array stays a compile-time limit in every move form — initializer,
+//! reassignment, field-target assignment, struct-literal field, `take`
+//! argument, and return — and the unchanged lengths of a string literal and a
+//! growable sequence are pinned as guards.
+//!
 //! Cases whose answer is a compile-time rejection assert the diagnostic code
 //! and, where the message names a type or binding, the message text too. Some
 //! of those rejections pass before the implementation exists; they are the
 //! regression guards for behavior that must not change.
-//!
-//! Later phases extend this suite with the projection cases; each phase's batch
-//! is fully green before its full workspace check runs.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -210,6 +215,11 @@ fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
         source_path.display().to_string(),
     ]);
     (scratch, output, c_path)
+}
+
+/// Asserts the front end rejects the program with `code` and writes no C.
+fn assert_rejected(tag: &str, source: &str, code: &str) {
+    assert_rejected_with(tag, source, code, &[]);
 }
 
 /// Asserts the front end rejects the program with `code`, that the message
@@ -682,4 +692,278 @@ func main(): i32 {
 "#;
     let output = run_host("av33", source);
     assert_trap("av33", &output, "E11211");
+}
+
+/// Indexing a call result reads the element without rerunning the call.
+///
+/// The call returns `[7, 9]` and the projection selects the second element, so
+/// the answer is nine and the call must be written into a temporary first.
+#[test]
+fn should_read_the_second_element_when_a_call_result_is_indexed() {
+    let source = r#"module codegen.av.st16;
+
+func mk(): i32[2] {
+    return [7, 9];
+}
+
+func main(): i32 {
+    let x: i32 = mk()[1];
+    return x;
+}
+"#;
+    let output = run_host("av16", source);
+    assert_exit("av16", &output, 9);
+}
+
+/// Chained indexing of a call result selects the inner element.
+///
+/// The call returns a two-by-three array and the projection selects row one,
+/// column two, which is six.
+#[test]
+fn should_read_the_inner_element_when_a_call_result_is_indexed_twice() {
+    let source = r#"module codegen.av.st17;
+
+func mk2(): i32[2][3] {
+    return [[1, 2, 3], [4, 5, 6]];
+}
+
+func main(): i32 {
+    return mk2()[1][2];
+}
+"#;
+    let output = run_host("av17", source);
+    assert_exit("av17", &output, 6);
+}
+
+/// A string element of a call result is lent to a view parameter.
+///
+/// The call returns `["ab", "cde"]`, the second element is lent, and its
+/// length is three; the call must run once behind the lend.
+#[test]
+fn should_read_the_string_element_when_a_call_result_is_passed_to_a_view() {
+    let source = r#"module codegen.av.st18;
+
+import { String, stringOf } from std.text;
+
+func vlen(borrow s: String): i32 {
+    return i32(len(s));
+}
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return vlen(mk()[1]);
+}
+"#;
+    let output = run_host("av18", source);
+    assert_exit("av18", &output, 3);
+}
+
+/// Binding an element of a call result to an owned local is rejected.
+///
+/// The element has no owner that outlives the statement, so moving it out is
+/// the element-move limit and reports E10026.
+#[test]
+fn should_reject_binding_an_element_when_the_array_comes_from_a_call() {
+    let source = r#"module codegen.av.st19;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let s: String = mk()[0];
+    return i32(len(s));
+}
+"#;
+    assert_rejected("av19", source, "E10026");
+}
+
+/// Moving an element of a call result into a `take` argument is rejected.
+#[test]
+fn should_reject_a_take_argument_when_the_element_comes_from_a_call() {
+    let source = r#"module codegen.av.st20;
+
+import { String, stringOf } from std.text;
+
+func consume(take s: String): void {
+}
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    consume(take mk()[0]);
+    return 0;
+}
+"#;
+    assert_rejected("av20", source, "E10026");
+}
+
+/// Returning an element of a call result from an owning return type is
+/// rejected.
+#[test]
+fn should_reject_a_return_when_the_element_comes_from_a_call() {
+    let source = r#"module codegen.av.st21;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func first(): String {
+    return mk()[0];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected("av21", source, "E10026");
+}
+
+/// A guarded projection skips the call when the guard is false.
+///
+/// The left operand is false, so the array-returning call in the right operand
+/// never runs and the program exits cleanly.
+#[test]
+fn should_skip_the_call_when_the_guarded_operand_is_not_evaluated() {
+    let source = r#"module codegen.av.st23;
+
+func boom(): i32[2] {
+    panic("boom");
+}
+
+func main(): i32 {
+    let ok: bool = false;
+    if (ok && boom()[0] == 1) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("av23", source);
+    assert_exit("av23", &output, 0);
+}
+
+/// `len` keeps its existing answers for a literal, an inferred array, and a
+/// growable sequence.
+///
+/// The literal has five bytes, the inferred array has two elements, and the
+/// growable sequence holds three, so the sum is ten. This case passes before
+/// the fix and guards the unchanged paths.
+#[test]
+fn should_report_string_literal_and_growable_lengths() {
+    let source = r#"module codegen.av.st24;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let g: Array<i32> = arrayNew<i32>();
+    g.push(1);
+    g.push(2);
+    g.push(3);
+    return i32(len("hello")) + i32(len([1, 2])) + i32(len(g));
+}
+"#;
+    let output = run_host("av24", source);
+    assert_exit("av24", &output, 10);
+}
+
+/// Reassigning an owning local from a call-result element is rejected.
+#[test]
+fn should_reject_a_reassignment_when_the_element_comes_from_a_call() {
+    let source = r#"module codegen.av.st27;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    s = mk()[0];
+    return i32(len(s));
+}
+"#;
+    assert_rejected("av27", source, "E10026");
+}
+
+/// A struct-literal field initialized from a call-result element is rejected.
+#[test]
+fn should_reject_a_struct_literal_field_when_the_element_comes_from_a_call() {
+    let source = r#"module codegen.av.st28;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    s: String;
+}
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let h: Holder = Holder { s: mk()[0] };
+    return 0;
+}
+"#;
+    assert_rejected("av28", source, "E10026");
+}
+
+/// A field-target assignment from a call-result element is rejected.
+#[test]
+fn should_reject_a_field_target_assignment_when_the_element_comes_from_a_call() {
+    let source = r#"module codegen.av.st29;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    s: String;
+}
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let h: Holder = Holder { s: stringOf("x") };
+    h.s = mk()[0];
+    return 0;
+}
+"#;
+    assert_rejected("av29", source, "E10026");
+}
+
+/// A field-target assignment from a place element is rejected.
+///
+/// The element belongs to a local array, but the target is a projected field,
+/// so the assignment is a partial move of a non-top-level place and reports
+/// E10026. The program is accepted before the fix, which is the defect.
+#[test]
+fn should_reject_a_field_target_assignment_when_the_element_reads_a_place() {
+    let source = r#"module codegen.av.st30;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    s: String;
+}
+
+func main(): i32 {
+    let a: String[2] = [stringOf("a"), stringOf("bb")];
+    let h: Holder = Holder { s: stringOf("x") };
+    h.s = a[0];
+    return 0;
+}
+"#;
+    assert_rejected("av30", source, "E10026");
 }

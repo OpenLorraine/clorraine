@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 02:28
-> **Progress**: 12/24 tasks (50%)
+> **Last Updated**: 2026-09-29 02:29
+> **Progress**: 13/24 tasks (54%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -158,7 +158,8 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 
 ## Phase 3: Projections and element moves
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `994941079167f07390ed7da08352a435b93142e4`
+> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`, `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 3.1: Specification Tests
@@ -166,7 +167,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [03-02 §Implementation Details](03-02-array-value-projections.md) · AR-5
 **Objective**: Pin call-result projections and the element-move rejections.
 
-- [ ] 3.1.1 [spec-author] Add the projection and element-move specification tests to the suite (ST-16 – ST-21, ST-23, ST-24, ST-27 – ST-30) — `compiler/tests/array_value_integrity_spec_test.rs`
+- [x] 3.1.1 [spec-author] Add the projection and element-move specification tests to the suite (ST-16 – ST-21, ST-23, ST-24, ST-27 – ST-30) — `compiler/tests/array_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 02:29)
 - [ ] 3.1.2 Run the spec suite and record the red phase — ST-16 – ST-21, ST-23, ST-27 – ST-30 fail (invalid C or missing `E10026`); ST-24 passes as a guard
 
 **Deliverables**:
