@@ -1,7 +1,7 @@
 # Ambiguity Register: Array Value Integrity
 
 > **Status**: ✅ GATE PASSED — all 12 items resolved
-> **Last Updated**: 2026-09-28 13:04
+> **Last Updated**: 2026-09-29 07:53
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
 |---|----------|-----------------|-------------------|---------------|--------|
@@ -17,6 +17,15 @@
 | 10 | Scope | DEF-18 (move through a borrow element view) and DEF-20 (spurious E10010) while this plan runs | include them / leave them filed for a second plan | Leave both filed; a second plan follows this one | ✅ Resolved |
 | 11 | Scope | `spec/` and the diagnostics registry | change them to fit the implementation / keep the frozen oracle | Keep the frozen specification and the registry unchanged; every expectation comes from the existing spec | ✅ Resolved |
 | 12 | Security & compliance | Security surface of this change | compiler-internal codegen only / new input or data path | Compiler-internal; no user input, no secrets, no persistent data, no network surface | ✅ Resolved |
+
+### Closure Note
+
+Execution honored all 12 items; no runtime ambiguity required a new entry. The
+phase reviews filed adjacent pre-existing defects instead (`DEF-25` – `DEF-29`),
+and each authorized adjacent fix (defect `DEF-28`'s literal `panic` form,
+`DEF-25`'s row-slice reachability correction, and the slice-guard, constant-index
+guard, and `__cl_ret` fixes) carries its ruling in the phase review blocks of
+`99-execution-plan.md`.
 
 ### Resolution Notes
 

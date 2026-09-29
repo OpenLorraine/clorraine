@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 07:52
-> **Progress**: 21/24 tasks (88%)
+> **Progress**: 22/24 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -220,7 +220,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 
 - [~] 4.1.1 AddressSanitizer probes over the copy/move/projection programs (ST-2, ST-5, ST-7, ST-8, ST-16, ST-18, ST-23, ST-25, ST-26): emit, build with `clang -std=c99 -O0 -g -fsanitize=address`, run with `ASAN_OPTIONS=detect_leaks=0` (leak detection is off; the statement-temporary limitation is recorded as `DEF-23`), record the results on this line; count the emitted deleter call sites for the ST-25 and ST-26 release shapes (one per old element; the runs exit clean) ✅ (completed: 2026-09-29 07:50) — host-side ASan (clang 18; the pinned container's clang 14 has no ASan runtime): 9/9 programs built with `-fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=0`; 0 AddressSanitizer reports; exits match the oracle (ST-2/5/7/8 = 3, ST-16 = 9, ST-18 = 3, ST-23 = 0, ST-25 = 2, ST-26 = 3); each element of the ST-25/ST-26 destination has 3 emitted deleter sites (initializer guard, reassignment release, scope cleanup) with exactly one release at the reassignment
 - [x] 4.1.2 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-09-29 07:52) — `make verify` exit 0, `verify: all legs passed`: spec check and the full workspace, the hosted-amiga corpus and the six runtime faults under `vamos`, the vbcc build-only leg, and the freestanding host and m68k link legs
-- [ ] 4.1.3 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-15`/`DEF-19`/`DEF-21`/`DEF-22` (done + plan link) and keep the `DEF-23`/`DEF-24` filings current, register closure note — `AGENTS.md`, `plans/00-roadmap.md`
+- [x] 4.1.3 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-15`/`DEF-19`/`DEF-21`/`DEF-22` (done + plan link) and keep the `DEF-23`/`DEF-24` filings current, register closure note — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-29 07:53) — the `AGENTS.md` test map names both suites; the four defect rows read Done with the fix summary; `DEF-23` – `DEF-29` stay filed; the register carries its closure note
 - [ ] 4.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 24/24; final `make check`
 - [ ] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode
 

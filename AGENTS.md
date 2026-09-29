@@ -92,6 +92,14 @@ in `CMD`).
   `compiler/tests/element_loop_integrity_impl_test.rs` holds its implementation
   tests (emitted-C shape for element arguments, ownerless temporaries, and
   template placeholders; nested loop headers; byte-identical re-emission).
+- `compiler/tests/array_value_integrity_spec_test.rs` holds the specification
+  tests for fixed-array values and `len` (copy, move, reassignment,
+  self-assignment, multi-extent row element loops, row-unit slices, call-result
+  projections, and the element-move limit), and
+  `compiler/tests/array_value_integrity_impl_test.rs` holds its implementation
+  tests (byte-copy and move shapes, the call temporary, the pointer-to-array
+  row, row-unit slice offsets and bounds, guard traps, release counts, and the
+  `iterated_element` unit coverage).
 - `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
   partial-move / drop coherence: it builds the emitted C and runs it, so a
   double free aborts in the C library.
