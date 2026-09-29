@@ -378,10 +378,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so the exit joins the pre-loop state.
     pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
         let iterable_ty = self.eval(&decl.iterable);
-        let element = match &iterable_ty.kind {
-            TyKind::Array { element, .. } => (**element).clone(),
-            _ => Ty::unknown(),
-        };
+        let element = iterable_ty.iterated_element();
         if !decl.borrow && !self.sema.table.duplicable(&element) {
             self.error(
                 "E10040",

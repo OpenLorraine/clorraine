@@ -197,10 +197,7 @@ impl Checker<'_, '_> {
     /// Checks an element `for` loop, binding the element type when known.
     fn check_for_in(&mut self, decl: &ForInStmt) {
         let iterable = self.check_value(&decl.iterable, None);
-        let element = match &iterable.kind {
-            TyKind::Array { element, .. } => (**element).clone(),
-            _ => Ty::unknown(),
-        };
+        let element = iterable.iterated_element();
         self.push_scope();
         self.declare(&decl.name, element);
         self.check_block(&decl.body);

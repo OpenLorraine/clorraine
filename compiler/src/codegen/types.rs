@@ -23,7 +23,10 @@ pub(super) fn c_type(ty: &Ty) -> String {
         TyKind::Scalar(scalar) => scalar_c_type(*scalar).to_owned(),
         TyKind::Str | TyKind::StaticStr => "ClStr".to_owned(),
         TyKind::CString => "char *".to_owned(),
-        TyKind::Raw(inner) => format!("{} *", c_type(inner)),
+        // A pointer to a row keeps the row's extents attached to the pointer:
+        // `T (*)[M]` points at a whole `T[M]`, while `T *` points at one `T`.
+        TyKind::Raw(inner) => pointer_to_array_type(inner)
+            .unwrap_or_else(|| format!("{} *", c_type(inner))),
         TyKind::Handle(name) => handle_type(name),
         TyKind::Enum(name) => format!("Cl{name}"),
         TyKind::Struct(name, args) => {
@@ -88,6 +91,50 @@ pub(super) fn handle_type(name: &str) -> String {
         .unwrap_or_else(|| format!("Cl{name}"))
 }
 
+/// The C extent suffix of a fixed array: `[M]`, `[M][K]`, or so on.
+///
+/// `None` for a non-array type or a slice, whose extent is a runtime length.
+fn fixed_extent_suffix(row: &Ty) -> Option<String> {
+    let TyKind::Array { extents, .. } = &row.kind else {
+        return None;
+    };
+    if extents.iter().any(Option::is_none) {
+        return None;
+    }
+    let mut suffix = String::new();
+    for extent in extents {
+        suffix.push_str(&format!("[{}]", extent.unwrap_or(0)));
+    }
+    Some(suffix)
+}
+
+/// The C spelling of a pointer-to-array type: `T (*)[M]` for a fixed row.
+///
+/// A row address (`raw T[M]`) needs the extent suffix attached to the pointer,
+/// not to the element type; `T (*)[M]` is a pointer to a whole row, while
+/// `T *` is a pointer to one element. `None` for a non-array type or a slice,
+/// which keeps the ordinary pointer spelling.
+pub(super) fn pointer_to_array_type(row: &Ty) -> Option<String> {
+    let TyKind::Array { element, .. } = &row.kind else {
+        return None;
+    };
+    Some(format!("{} (*){}", c_type(element), fixed_extent_suffix(row)?))
+}
+
+/// The C spelling of a pointer-to-array declarator that names the pointer:
+/// `T (*name)[M]` for a fixed row. `None` when the inner type is not a fixed
+/// array.
+pub(super) fn pointer_to_array_declarator(row: &Ty, name: &str) -> Option<String> {
+    let TyKind::Array { element, .. } = &row.kind else {
+        return None;
+    };
+    Some(format!(
+        "{} (*{name}){}",
+        c_type(element),
+        fixed_extent_suffix(row)?
+    ))
+}
+
 /// The C type of a scalar in generated code.
 pub(super) fn scalar_c_type(scalar: ScalarType) -> &'static str {
     match scalar {
@@ -115,7 +162,8 @@ pub(super) fn declarator(ty: &Ty, name: &str) -> String {
             }
             format!("{} {name}{suffix}", c_type(element))
         }
-        TyKind::Raw(inner) => format!("{} *{name}", c_type(inner)),
+        TyKind::Raw(inner) => pointer_to_array_declarator(inner, name)
+            .unwrap_or_else(|| format!("{} *{name}", c_type(inner))),
         TyKind::CString => format!("char *{name}"),
         TyKind::Func(signature) => func_pointer_declarator(signature, name),
         _ => format!("{} {name}", c_type(ty)),

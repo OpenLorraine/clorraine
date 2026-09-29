@@ -430,3 +430,33 @@ func main(): i32 {
     let (output, _emitted) = emit_build_run("ai8", source);
     assert_trap("ai8", &output, "E11211");
 }
+
+/// A slice with a constant zero low bound and a variable high bound builds
+/// cleanly.
+///
+/// The lower-bound clause `(usize)(0) > (usize)(hi)` is always false for an
+/// unsigned high bound, so it must not be emitted; otherwise the build fails
+/// `-Wtype-limits`. The program then reads the first element of the slice.
+#[test]
+fn should_build_when_a_slice_low_bound_is_the_constant_zero() {
+    let source = r#"module codegen.av.impl9;
+
+import { slice } from std.mem;
+
+func n(): usize {
+    return 4;
+}
+
+func main(): i32 {
+    let xs: u8[4] = [1, 2, 3, 4];
+    let v: u8[] = slice(xs, 0, n());
+    return i32(v[0]);
+}
+"#;
+    let (output, emitted) = emit_build_run("ai9", source);
+    assert!(
+        !emitted.contains("(usize)(0) > (usize)"),
+        "ai9: the always-false lower-bound comparison must not be emitted"
+    );
+    assert_exit("ai9", &output, 1);
+}

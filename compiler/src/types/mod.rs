@@ -303,6 +303,26 @@ impl Ty {
         matches!(&self.kind, TyKind::Array { extents, .. } if extents.iter().all(Option::is_some))
     }
 
+    /// The element one step of an element loop binds.
+    ///
+    /// A fixed or slice array with more than one extent iterates its rows: the
+    /// result keeps every extent after the first, so `T[N][M]` and `T[][M]`
+    /// both yield `T[M]`. A single-extent array or slice iterates its element
+    /// type unchanged. Any other type yields `Ty::unknown()`; the caller
+    /// reports or ignores it as before.
+    pub fn iterated_element(&self) -> Ty {
+        match &self.kind {
+            TyKind::Array { element, extents } => {
+                if extents.len() > 1 {
+                    Ty::array((**element).clone(), extents[1..].to_vec())
+                } else {
+                    (**element).clone()
+                }
+            }
+            _ => Ty::unknown(),
+        }
+    }
+
     /// Renders the type the way a diagnostic shows it.
     pub fn display(&self) -> String {
         let base = match &self.kind {

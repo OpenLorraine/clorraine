@@ -9,7 +9,7 @@
 use crate::ast::{BinaryOp, ScalarType};
 use crate::types::{Ty, TyKind};
 
-use super::types::scalar_c_type;
+use super::types::{pointer_to_array_type, scalar_c_type};
 
 /// The C condition of an index bounds guard.
 ///
@@ -29,7 +29,17 @@ pub(super) fn bounds_condition(index_c: &str, signed: bool, bound: &str) -> Stri
 pub(super) fn index_text(ty: &Ty, base: &str, index: &str) -> String {
     match &ty.kind {
         TyKind::Str | TyKind::StaticStr => format!("({base}).ptr[{index}]"),
-        TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
+        TyKind::Array { element, extents } if extents.iter().any(Option::is_none) => {
+            // A slice of rows keeps a base-element pointer; a row-typed
+            // access reinterprets the pointer as a pointer to the row, so
+            // the element read yields the whole row rather than one scalar.
+            // The row type keeps every extent after the first.
+            if extents.len() > 1 {
+                let row = Ty::array((**element).clone(), extents[1..].to_vec());
+                if let Some(row_type) = pointer_to_array_type(&row) {
+                    return format!("(({row_type})({base}).ptr)[{index}]");
+                }
+            }
             format!("({base}).ptr[{index}]")
         }
         _ => format!("{base}[{index}]"),

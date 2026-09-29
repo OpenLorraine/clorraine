@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 01:09
-> **Progress**: 8/24 tasks (33%)
+> **Last Updated**: 2026-09-29 02:08
+> **Progress**: 9/24 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -107,7 +107,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 ## Phase 2: Multi-extent element loops
 
 > **Phase baseline tree**: `5bc7fd1f1273254fe2ae4860c9c79f5502a9d601`
-> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs`, `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`
+> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/render.rs`, `compiler/src/codegen/calls.rs` (authorized slice-guard fix), `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 2.1: Specification Tests
@@ -129,7 +129,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Reference**: [03-01 §Implementation Details](03-01-multi-extent-element-loops.md) · AR-1
 **Objective**: Derive the row type from the remaining extents in both checkers, the lowering, and the borrow row's C declaration.
 
-- [ ] 2.2.1 Add `Ty::iterated_element`, use it in `sema/stmt.rs::check_for_in` and `own/loops.rs::check_for_in`/`bind_for_in_element`, and spell the borrow row's raw address temporary as a pointer-to-array — `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs`
+- [x] 2.2.1 Add `Ty::iterated_element`, use it in `sema/stmt.rs::check_for_in` and `own/loops.rs::check_for_in`/`bind_for_in_element`, and spell the borrow row's raw address temporary as a pointer-to-array — `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs` ✅ (completed: 2026-09-29 02:08) — a row access through a slice reinterprets its base-element pointer as a pointer-to-array (`codegen/render.rs`); authorized adjacent fix: the slice guard omits the lower-bound clause for a constant zero low bound (`codegen/calls.rs`), pinned by test `ai9`
 - [ ] 2.2.2 Run the spec suite and record the green phase — ST-1 – ST-15 pass
 
 **Deliverables**:

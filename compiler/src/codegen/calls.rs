@@ -39,9 +39,14 @@ impl Emitter<'_> {
         let (_ptr, len) = self.slice_source(view);
         let lo_c = self.value(lo);
         let hi_c = self.value(hi);
-        Some(format!(
-            "(usize)({lo_c}) > (usize)({hi_c}) || (usize)({hi_c}) > {len}"
-        ))
+        let upper = format!("(usize)({hi_c}) > {len}");
+        // A constant zero low bound can never exceed an unsigned high bound,
+        // so the lower clause is skipped; emitting `0 > x` would be dead code
+        // and trips `-Wtype-limits` on an unsigned high bound.
+        Some(match &lo.kind {
+            ValueKind::Int(0) => upper,
+            _ => format!("(usize)({lo_c}) > (usize)({hi_c}) || {upper}"),
+        })
     }
 
     /// The pointer and length expressions of the storage a `slice` selects from.
