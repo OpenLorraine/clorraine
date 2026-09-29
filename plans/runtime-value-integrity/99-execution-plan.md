@@ -1,0 +1,255 @@
+# Execution Plan: Runtime Value Integrity
+
+> **Document**: 99-execution-plan.md
+> **Parent**: [Index](00-index.md)
+> **Last Updated**: 2026-09-29 16:06
+> **Progress**: 1/27 tasks (4%)
+> **CodeOps Artifact Schema**: 1
+
+## Overview
+
+Fix the seven filed runtime-value defects in three feature phases: materialization and
+temporary release (DEF-24, DEF-23, DEF-25), callable-field integrity (DEF-26, DEF-27), and
+the runtime boundary (DEF-28, DEF-29). Each phase follows the mandatory
+specification-first ordering; the close-out phase runs the full acceptance gate, the
+leak-detection probes, and the documentation/roadmap updates.
+
+**🚨 Update this document after EACH completed task!**
+
+---
+
+## Implementation Phases
+
+| Phase | Title | Tasks |
+| ----- | ----- | ----- |
+| 1 | Materialization and temporary release | 8 |
+| 2 | Function-value call integrity | 7 |
+| 3 | Runtime boundary | 7 |
+| 4 | Close-out: acceptance, probes, documentation | 5 |
+
+**Total: 27 tasks across 4 phases**
+
+> **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
+>
+> The task checkboxes in the phase sections below are the **single source of truth** for
+> progress. Every task line appears exactly once in this document. The executing agent
+> MUST:
+>
+> 1. **On implementation:** mark the task `[~]` with a timestamp —
+>    `- [~] 1.1.1 Task description ⏳ (implemented: YYYY-MM-DD HH:MM)`
+> 2. **On verify pass:** promote it to `[x]` —
+>    `- [x] 1.1.1 Task description ✅ (completed: YYYY-MM-DD HH:MM)`
+> 3. **Update the Progress header** (`> **Progress**: X/Y tasks (Z%)`) and the Last
+>    Updated stamp after EVERY task — never batch updates. Only `[x]` counts as complete.
+> 4. **Resume** by scanning the phase sections top-to-bottom: the first `[~]` task is
+>    resumed first, else the first `[ ]` task.
+> 5. **On blocker:** mark the task `[!]` and append
+>    `Blocked: <short reason>` on the same line. The plan lifecycle is `Ready`,
+>    `Executing`, `Done`, or `Blocked`, derived from these markers.
+>
+> Timestamps come from `date '+%Y-%m-%d %H:%M'` — never invented.
+
+---
+
+## Phase 1: Materialization and temporary release
+
+> **Phase baseline tree**: 472e478872a619135a08d72eecbb85ba31b0c548
+> **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
+
+### Step 1.1: Specification Tests
+
+**Reference**: [03-01 §Proposed Changes](03-01-materialization-and-temps.md) · AR-5, AR-6, AR-7, AR-16, AR-18
+**Objective**: Pin the iterable materialization, the temporary release and its view lifetime rule, and the conditional stores before any implementation.
+
+- [x] 1.1.1 [spec-author] Write specification tests from the 07 ST cases — `compiler/tests/runtime_value_integrity_spec_test.rs` (ST-1 – ST-11, ST-24 – ST-29) ✅ (completed: 2026-09-29 16:06)
+- [ ] 1.1.2 Run the spec suite and record the red phase — the invalid-C, missing-release, and missing-lifetime-rejection cases fail; the guard cases pass
+
+**Deliverables**:
+- [ ] Spec suite with the ST-1 – ST-11 and ST-24 – ST-29 cases and the shared scratch/run helpers (including `assert_trap`)
+- [ ] Red-phase evidence recorded (suite output)
+
+**Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
+
+### Step 1.2: Implementation
+
+**Reference**: [03-01 §Proposed Changes](03-01-materialization-and-temps.md) · AR-5, AR-6, AR-7, AR-16, AR-18
+**Objective**: Release owning destination temporaries at statement end with the temporary view lifetime rule, materialize call-rooted iterables, and store fixed-array conditionals through a branch.
+
+- [ ] 1.2.1 Add the statement-position release for owning destination temporaries (guard operands, the iterable temporary, the conditional read-position temporary) in reverse creation order; drain after each statement and before terminators; exclude the take-call and literal-adoption transfer temps; register the temporary as a loan owner so a later derived-view use reports `E10030` — `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs`, `compiler/src/own.rs`, `compiler/src/own/place.rs`, `compiler/src/own/liveness.rs`, `compiler/src/ir.rs`, `compiler/src/codegen/function.rs`
+- [ ] 1.2.2 Materialize a call-rooted element-loop iterable before the loop and read the temporary (generic-parameter iterables keep the `mentions_type_param` behavior) — `compiler/src/own/loops.rs`
+- [ ] 1.2.3 Make the shared fixed-array value assignment branch-aware for conditionals (per-arm guards, copy for duplicable arms, move for owned arms, target-name resolution to the saved value), extend the fixed-array return emitter with the same branch shape, extend the place-projection predicate so a conditional argument with place arms stays a forwarding value, and materialize conditional values in read positions — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/own/lower.rs`
+- [ ] 1.2.4 Run the spec suite and record the green phase — ST-1 – ST-11 and ST-24 – ST-29 pass
+
+**Deliverables**:
+- [ ] Call-rooted iterables compile and run; owning destination temporaries are released with the view lifetime rule; conditional fixed-array values compile in the routed positions, the return position, and as a materialized argument
+- [ ] No regressions; no warnings
+
+**Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
+
+### Step 1.3: Implementation Tests & Hardening
+
+**Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-5, AR-7, AR-16
+**Objective**: Pin the emitted temporary release, iterable temporary, and branch store shapes.
+
+- [ ] 1.3.1 Add implementation tests: an inline statement-position release for an owning `__cl_tmpN` and the absence of a release for the take-call/literal-adoption transfer temps; the materialized iterable temporary; the conditional branch with per-arm guards in the assignment and return positions; the release-set unit test — `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/src/own/tests.rs`
+- [ ] 1.3.2 Full verification — `make check`
+
+**Deliverables**:
+- [ ] Implementation tests pass
+- [ ] No regressions; no warnings
+
+**Verify**: `make check`
+
+---
+
+## Phase 2: Function-value call integrity
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
+
+### Step 2.1: Specification Tests
+
+**Reference**: [03-02 §Proposed Changes](03-02-callable-fields.md) · AR-8, AR-9
+**Objective**: Pin the receiver bounds traps and the func-pointer ABI before any implementation.
+
+- [ ] 2.1.1 [spec-author] Add the callable-field specification tests to the suite (ST-12 – ST-17) — `compiler/tests/runtime_value_integrity_spec_test.rs`
+- [ ] 2.1.2 Run the spec suite and record the red phase — the trap and C-acceptance cases fail as predicted; the in-range guards pass
+
+**Deliverables**:
+- [ ] ST-12 – ST-17 in the spec suite
+- [ ] Red-phase evidence recorded
+
+**Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
+
+### Step 2.2: Implementation
+
+**Reference**: [03-02 §Proposed Changes](03-02-callable-fields.md) · AR-8, AR-9
+**Objective**: Guard the receiver on every call path and render the hidden out-param ABI for func values.
+
+- [ ] 2.2.1 Guard the receiver wherever arguments are guarded: the statement call path, the fixed-array call assign path, and the fixed-array return path — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`
+- [ ] 2.2.2 Render the hidden destination ABI for the filed `func` spellings with a fixed-array return and resolve call destinations for func values (including the discard shape and the local func-typed callee lookup) — `compiler/src/codegen/types.rs`, `compiler/src/codegen/function.rs`
+- [ ] 2.2.3 Run the spec suite and record the green phase — ST-12 – ST-17 pass
+
+**Deliverables**:
+- [ ] Runtime-index receivers trap; func values with fixed-array returns compile and run
+- [ ] No regressions; no warnings
+
+**Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
+
+### Step 2.3: Implementation Tests & Hardening
+
+**Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-8, AR-9
+**Objective**: Pin the emitted receiver traps and the pointer declarator.
+
+- [ ] 2.3.1 Add implementation tests: the `E11211` trap in the three call shapes, the `__cl_ret` pointer declarator, and the func-value destination — `compiler/tests/runtime_value_integrity_impl_test.rs`
+- [ ] 2.3.2 Full verification — `make check`
+
+**Deliverables**:
+- [ ] Implementation tests pass
+- [ ] No regressions; no warnings
+
+**Verify**: `make check`
+
+---
+
+## Phase 3: Runtime boundary
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
+
+### Step 3.1: Specification Tests
+
+**Reference**: [03-03 §Proposed Changes](03-03-runtime-boundary.md) · AR-10, AR-11, AR-17
+**Objective**: Pin the panic message forms and the deferred guarded moves before any implementation.
+
+- [ ] 3.1.1 [spec-author] Add the runtime-boundary specification tests to the suite (ST-18 – ST-23) — `compiler/tests/runtime_value_integrity_spec_test.rs`
+- [ ] 3.1.2 Run the spec suite and record the red phase — the panic-message builds and the guarded-move cases fail; the evaluated guarded call passes
+
+**Deliverables**:
+- [ ] ST-18 – ST-23 in the spec suite
+- [ ] Red-phase evidence recorded
+
+**Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
+
+### Step 3.2: Implementation
+
+**Reference**: [03-03 §Proposed Changes](03-03-runtime-boundary.md) · AR-10, AR-11, AR-17
+**Objective**: Carry pointer + length for panic messages and defer guarded take move-outs.
+
+- [ ] 3.2.1 Change `cl_panic` to take pointer + length in all three shims and render the three message forms (literal, `str`, `String`) once — `compiler/runtime/shim_host.c`, `compiler/runtime/shim_hosted_amiga.c`, `compiler/runtime/shim_freestanding.c`, `compiler/src/codegen/function.rs`
+- [ ] 3.2.2 Carry a take call's move-out places on the materialized value inside guarded operands and emit them only on the evaluated path — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/ir.rs`
+- [ ] 3.2.3 Run the spec suite and record the green phase — ST-18 – ST-23 pass
+
+**Deliverables**:
+- [ ] Panic messages compile and print; guarded take moves run only when evaluated
+- [ ] No regressions; no warnings
+
+**Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
+
+### Step 3.3: Implementation Tests & Hardening
+
+**Reference**: [07 §Test Categories](07-testing-strategy.md) · AR-10, AR-11
+**Objective**: Pin the emitted panic call and the guarded move-out shape.
+
+- [ ] 3.3.1 Add implementation tests: the two-argument `cl_panic` for each message form, the move-out inside the guarded path only, and the once-only message rendering — `compiler/tests/runtime_value_integrity_impl_test.rs`
+- [ ] 3.3.2 Full verification — `make check`
+
+**Deliverables**:
+- [ ] Implementation tests pass
+- [ ] No regressions; no warnings
+
+**Verify**: `make check`
+
+---
+
+## Phase 4: Close-out: acceptance, probes, documentation
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Lenses**: correctness, maintainability, standards (strict profile — docs and evidence phase)
+
+### Step 4.1: Evidence and Close-out
+
+**Reference**: [01 §Acceptance Criteria](01-requirements.md) · AR-12, AR-14
+**Objective**: Run the full acceptance gate, the leak probes, and close the records.
+
+- [ ] 4.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
+- [ ] 4.1.2 Host AddressSanitizer probes with leak detection on for ST-3, ST-4, ST-7, ST-24, ST-26, and ST-29 (owning temporaries and the owning conditional arguments)
+- [ ] 4.1.3 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-23` – `DEF-29` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md`
+- [ ] 4.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 27/27; final `make check`
+- [ ] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode
+
+**Deliverables**:
+- [ ] `make verify` all legs passed
+- [ ] ASan probes clean with leak detection on
+- [ ] Documentation and roadmap synced; acceptance criteria checked
+
+**Verify**: `make verify`
+
+---
+
+## Dependencies
+
+```
+Phase 1 (materialization and temporary release)
+    ↓
+Phase 2 (function-value call integrity)
+    ↓
+Phase 3 (runtime boundary)
+    ↓
+Phase 4 (close-out)
+```
+
+---
+
+## Success Criteria
+
+**Feature is complete when:**
+
+1. ✅ All phases completed
+2. ✅ All verification passing (`make check`, `make verify`)
+3. ✅ No warnings/errors
+4. ✅ No dead code — no unused parameters, functions, classes, or modules
+5. ✅ Security reviewed — compiler-internal change with no input, secret, or data path (AR-13)
+6. ✅ Documentation updated
+7. ✅ Code reviewed (strict-profile phase review)
+8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
