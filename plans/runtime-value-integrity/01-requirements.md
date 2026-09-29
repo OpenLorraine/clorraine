@@ -35,14 +35,18 @@ specification, grammar, or registry change is authorized (AR-12).
   A materialized temporary that owns a value is dropped at the end of the statement in
   reverse creation order; an unevaluated guard path leaves its temporary empty and its
   drop is a no-op. The release is emitted by a statement-position path (not the
-  scope-collected `Drop`), drains after each statement and before every terminator
-  (`return`, `break`, `continue`), and covers the destination materializations only: the
-  guard-operand temporaries, the iterable temporary, and the conditional read-position
-  temporary. Take-call result temporaries and aggregate-literal adoption temporaries are
-  transfer temps whose destination already owns the value and are excluded. A view
-  derived from a released temporary is a loan of that temporary; a use with no
-  release-free path reports the existing `E10030`. (`spec/17-codegen.md:80`, D5/O2;
-  `spec/16` BR-1; AR-5, AR-18)
+  scope-collected `Drop`): it drains after each statement, and every edge that leaves the
+  statement before its end (a `return`, `break`, or `continue`) carries the pending
+  releases, so every runtime path releases exactly what it created; the drops are
+  null-safe, so an overlapping release is harmless. A temporary that is re-materialized
+  inside a loop releases its previous value before the new one is stored. The release
+  covers the destination materializations only: the guard-operand temporaries, the
+  iterable temporary, and the conditional read-position temporary. Take-call result
+  temporaries and aggregate-literal adoption temporaries are transfer temps whose
+  destination already owns the value and are excluded. A view derived from such a
+  temporary — directly or through a call, conditional, or return — is a loan of that
+  temporary; a use with no release-free path reports the existing `E10030`.
+  (`spec/17-codegen.md:80`, D5/O2; `spec/16` BR-1; AR-5, AR-18)
 - [ ] **R3 — Fixed-array conditional values compile in the routed value positions
   (`DEF-25`).**
   `let c: i32[2] = ok ? a : b;`, `c = ok ? a : b;`, and `return ok ? a : b;` (through the
@@ -51,9 +55,12 @@ specification, grammar, or registry change is authorized (AR-12).
   arm. A conditional argument whose arms are places stays inline as a forwarding value,
   so a borrow parameter reads the caller's chosen storage and a take parameter consumes
   the chosen arm through the parameter pointer as today; the checker's place-projection
-  predicate is extended so no owning copy is bound. `s = ok ? s : t;` keeps `s`'s old
-  value when the condition holds, takes `t`'s value otherwise, and releases the old target
-  exactly once. (`spec/03` §3–4; AR-7, AR-16)
+  predicate is extended so no owning copy is bound. Consuming a conditional's owned arm
+  — an initializer, an assignment, a return, a take argument, or a materialized read —
+  leaves either owned place arm maybe-moved, so a later use of it reports the moved-value
+  error `E10020`. `s = ok ? s : t;` keeps `s`'s old value when the condition holds, takes
+  `t`'s value otherwise, and releases the old target exactly once; `s` stays initialized
+  because it is the assignment target. (`spec/03` §3–4; AR-7, AR-16, AR-19)
 - [ ] **R4 — A runtime-index callable-field receiver is bounds-guarded (`DEF-26`).**
   `ops[i].run(1)` traps with `E11211` before the call when `i` is out of range, on the
   expression-statement, fixed-array-assign, and fixed-array-return paths, exactly like an

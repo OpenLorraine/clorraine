@@ -42,7 +42,7 @@
 | ST-3 | `return vlen(mk()[1]);` with `mk(): String[2] = ["a", "bb"]` | accepted; returns `2`; the statement's temporary elements are released (ASan close-out) | R2 · AR-5 · `spec/17-codegen.md:80` |
 | ST-4 | `for (borrow s in mkStrings()) { total = total + vlen(s); }` with `mkStrings(): String[2] = ["a", "bb"]` | accepted; `total == 3`; the loop's materialized iterable is released after the loop (ASan close-out) | R1, R2 · AR-5, AR-6 · `spec/17-codegen.md:80` |
 | ST-5 | `let c: i32[2] = ok ? a : b;` (`ok == true`, `a = [1,2]`, `b = [3,4]`) | accepted; `c[0] + c[1] == 3` | R3 · AR-7 · `spec/03` §3–4 |
-| ST-6 | `let c: String[2] = ok ? a : b;` (`ok == true`) then `vlen(b[0])` | accepted; `c` holds `a`'s elements; `b` still owns its elements (returns `2 + 1 == 3`) | R3 · AR-7 · `spec/03` §3–4 |
+| ST-6 | `let c: String[2] = ok ? a : b;` (`ok == true`) then `vlen(c[1])` | accepted; `c` holds `a`'s elements (returns `2`); reading either arm afterwards is the moved-value error (ST-30) | R3 · AR-7, AR-19 · `spec/03` §3–4 |
 | ST-7 | `let ok = false; s = ok ? s : t;` with owned `String[2]` values | accepted; `s` takes `t`'s values; the old `s` is released exactly once (ASan close-out) | R3 · AR-7 · `spec/03` §4 |
 | ST-8 | `return ok ? a : b;` from a function returning `i32[2]` | accepted; the returned row is the chosen arm | R3 · AR-16 · `spec/03` §3 |
 | ST-9 | `eat(ok ? a : b)` where `eat(take arr: i32[2])` and `ok == false` | accepted; the call receives `b`'s bytes | R3 · AR-16 · `spec/03` §3 |
@@ -50,10 +50,16 @@
 | ST-11 | `if (false && vlen(mk()[0]) > 1) { return 1; } return 0;` with `mk(): String[2]` | accepted; returns `0`; the unevaluated temporary's release is a no-op (no drop of garbage) | R2 · AR-5 · `spec/17-codegen.md:80` |
 | ST-24 | `let n: i32 = i32(len(mk()[0])); return n;` with `mk(): String[2] = ["ab", "cde"]` | accepted; returns `2`; the temporary's elements are released after the statement (ASan close-out) | R2 · AR-18 · `spec/17-codegen.md:80` |
 | ST-25 | `let v: str = mk()[0]; return i32(len(v));` with `mk(): String[2]` | `E10030` — the view's use has no release-free path past the temporary's statement | R2 · AR-18 · `spec/16` BR-1 |
-| ST-26 | `eat(ok ? a : b)` where `eat(take arr: String[2])`, `ok == false`, `a = ["ab","cde"]`, `b = ["fg","hij"]`; then `return i32(len(a[0]));` | accepted; the call receives `b`'s elements and releases them; `a` still owns its elements (returns `2`; ASan clean) | R3 · AR-7, AR-16 · `spec/03` §3 |
+| ST-26 | `eat(ok ? a : b)` where `eat(take arr: String[2])`, `ok == false`, `a = ["ab","cde"]`, `b = ["fg","hij"]`; the callee sums the first bytes of the chosen elements | accepted; the call receives `b`'s elements and releases them (the sum is `206`, not `196`); a later read of either arm is the moved-value error (ST-30); ASan clean | R3 · AR-7, AR-16, AR-19 · `spec/03` §3 |
 | ST-27 | `let x: i32 = (ok ? a : b)[1];` with `a = [1,2]`, `b = [3,4]`, `ok == false` | accepted; returns `4` (the chosen row's element) | R3 · AR-16 · `spec/04` |
 | ST-28 | `for (x in ok ? a : b) { sum = sum + x; }` with `a = [1,2]`, `b = [3,4]`, `ok == false` | accepted; `sum == 7` | R3 · AR-16 · `spec/05` §9 |
 | ST-29 | `eat(ok ? a : b)` where `eat(borrow arr: String[2])`, `ok == false`, `a = ["ab","cde"]`, `b = ["fg","hij"]`; then `return i32(len(a[0]));` | accepted; the call reads `b`'s elements; both `a` and `b` still own their elements (returns `2`; ASan clean) | R3 · AR-16 · `spec/03` §3 |
+| ST-30 | `let c: String[2] = ok ? a : b;` then `return i32(len(b[0]));` | `E10020` — consuming a conditional's owned arm leaves either arm maybe-moved, so a later use is the moved-value error | R3 · AR-19 |
+
+> **Revision note (Phase 1 review, AR-19):** ST-6 and ST-26 were revised so no case reads an
+> arm a consumed conditional moved (the old expectation was unsound at runtime); ST-30 pins
+> the moved-value rejection. The revision is a user-approved oracle change recorded in the
+> Phase 1 review block of `99-execution-plan.md`.
 
 ### Phase 2 — Callable fields (`03-02`)
 
@@ -89,6 +95,7 @@ or test defect, never a reason to change a case.
 | Fails: abort-path build | ST-18 – ST-20 | the C compiler rejects `cl_panic(ClStr)` / `cl_panic(void *)` |
 | Fails: eager guarded call | ST-21, ST-23 | the counter is `1` where `0` is due |
 | Fails: missing lifetime rejection | ST-25 | the view binding is accepted and the expected `E10030` never appears |
+| Fails: missing maybe-moved rejection | ST-30 | the later arm use is accepted and the expected `E10020` never appears |
 | Passes pre-fix (guards) | ST-3, ST-9, ST-11, ST-12, ST-22, ST-24, ST-26, ST-27, ST-28 | ownerless reads, decayed conditional arguments and iterables, unevaluated guarded temporaries, in-range receiver calls, and evaluated guarded calls already run; ST-24/ST-26 release behavior is checked by the ASan close-out |
 
 ## Test Categories

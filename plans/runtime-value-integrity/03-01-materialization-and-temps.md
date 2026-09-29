@@ -45,25 +45,33 @@ construction.
 
 At the end of the statement the walk drains the pending list in reverse creation order
 through a **dedicated statement-position release**, not a scope-collected
-`Statement::Drop` (which would fire at scope end). The drain runs after each statement
-and, for a statement that terminates the block, before the terminator (`return`, `break`,
-`continue`), so an early exit still releases exactly what the statement created. Only the
-evaluated path matters: an unevaluated guard leaves the emitted temp in its empty state,
-and the release machinery already treats an empty handle as a no-op (the same guarantee
-that makes a moved-out binding's scope-end drop safe). `spec/17-codegen.md:80` and
-`spec/decisions.md:28` (D5, O2) are the oracle; the reverse creation order is stated at
-`spec/17-codegen.md:80` and `:212-213`.
+`Statement::Drop` (which would fire at scope end). The drain runs after each statement.
+An edge that leaves the statement before its normal end — a `return`, `break`, or
+`continue` — carries a copy of the pending releases, so every runtime path releases
+exactly what it created: a `return` carries its copy on the terminator, after the
+returned value has been evaluated; a `break` or `continue` emits its copy before the
+jump. Each drop is null-safe and empties its temporary, so a path that never evaluated a
+temporary releases nothing and an overlapping release on a later join is a no-op. A
+temporary a loop re-materializes releases its previous value before the new one is
+stored, so the overwrite never leaks. Only the evaluated path matters: an unevaluated
+guard leaves the emitted temp in its empty state, and the release machinery already
+treats an empty handle as a no-op (the same guarantee that makes a moved-out binding's
+scope-end drop safe). `spec/17-codegen.md:80` and `spec/decisions.md:28` (D5, O2) are the
+oracle; the reverse creation order is stated at `spec/17-codegen.md:80` and `:212-213`.
 
 **1a. A view of a released temporary cannot outlive its statement (AR-18).** A view
 derived from a statement-scoped temporary is a loan whose owner is that temporary. The
 statement-end release is recorded as a release event for the temporary owner, so the
-existing liveness pass reports `E10030` ("borrow of '…' does not live long enough") for any
-use of the view with no release-free path — the same rule that already protects a local
-owner. A use inside the same statement (for example `vlen(mk()[1])`) stays accepted, and
-the existing escape rules (`E10036` for a returned call-rooted view, `E10205` for a
-view-typed field) mean a temporary view cannot leave the function by another route. This
-extension of the existing provenance/loan records is the approved complexity surface
-(AR-18; gate packet in `00-preflight-report.md`).
+existing liveness pass reports `E10030` ("borrow of '…' does not live long enough") for
+any use of the view with no release-free path — the same rule that already protects a
+local owner. The derivation is recognized wherever it reaches the temporary: a direct
+projection (`mk()[0]`), a projection carried through a reborrow call, a conditional
+whose arms derive from temporaries, and a view returned from the function (whose use
+lies outside the callee). A use inside the same statement (for example `vlen(mk()[1])`)
+stays accepted, and the existing escape rules (`E10036` for a returned call-rooted view,
+`E10205` for a view-typed field) mean a temporary view cannot leave the function by
+another route. This extension of the existing provenance/loan records is the approved
+complexity surface (AR-18; gate packet in `00-preflight-report.md`).
 
 **2. Call-rooted iterable materialization (DEF-24; AR-6, AR-12).**
 `check_for_in` (`own/loops.rs:379-408`) uses `place_target` to test whether the iterable
@@ -109,7 +117,10 @@ with these rules:
 - With an owned destination, the existing save of the old target happens before the
   branch; an arm that names the assignment target reads the saved value, so
   `s = ok ? s : t;` keeps `s`'s old value when the condition holds and takes `t`'s value
-  otherwise, releasing the old target exactly once.
+  otherwise, releasing the old target exactly once. The assignment target stays
+  initialized; every other owned place arm becomes maybe-moved, so a later use of it
+  reports the moved-value error `E10020` (the same conservative rule the language uses
+  for any conditional consumption of an owned place).
 - An arm that is itself a conditional recurses.
 
 A read position that must be a place (an index base, an element source) and holds a
@@ -235,8 +246,11 @@ func main(): i32 {
 
 | Error Case | Handling Strategy | AR Ref |
 | ---------- | ----------------- | ------ |
-| Owning temporary left unreleased | Statement-position release in reverse creation order; empty state makes an unevaluated temp's release a no-op | AR-5, AR-18 |
-| A view derived from a released temporary used after its statement | Statement-scoped temporary loan plus the existing `E10030` liveness rule | AR-18 |
+| Owning temporary left unreleased | Statement-position release in reverse creation order; empty state makes an unevaluated temp's release a no-op; every early edge carries a copy so each runtime path releases once | AR-5, AR-18 |
+| A release on an early edge | The edge carries a copy of the pending releases; the later join's release is a null-safe no-op | AR-18 |
+| A re-materialized loop-header temporary | The previous value is released before the new one is stored | AR-18 |
+| A view derived from a released temporary used after its statement | Statement-scoped temporary loan plus the existing `E10030` liveness rule, recognized for direct, call-mediated, conditional, and returned derivations | AR-18 |
+| A later use of an owned conditional arm | Maybe-moved: the existing moved-value error `E10020` | AR-7, AR-19 |
 | A transfer temp included in the release set | Excluded by construction: only destination materializations register; a unit test pins the sites | AR-18 |
 | Call-rooted iterable | Materialized; accepted programs compile per `spec/05` §9 | AR-6 |
 | Call-rooted iterable whose type mentions a generic parameter | Keeps today's behavior under the `mentions_type_param` guard; recorded as a limitation | AR-6 |
@@ -246,6 +260,7 @@ func main(): i32 {
 | Fixed-array conditional in a read position | Materialized into a temporary first; the temporary joins the release list | AR-16 |
 | Fixed-array conditional in a return | The fixed-array return emitter stores the chosen arm into `__cl_ret` | AR-16 |
 | Conditional argument with place arms | Stays inline as a forwarding value; the place-projection predicate is extended so no owning copy is bound | AR-16 |
+| Conditional argument with a literal or duplicable arm | Out of scope; emits invalid C today, filed as `DEF-33` | AR-16 |
 | Conditional argument with a call arm | Out of scope; the decayed call result names no destination, filed as `DEF-32` | AR-16 |
 | Indexed fixed-array element target | Out of scope; `Statement::StorePointer` invalid today, filed as `DEF-31` | AR-16 |
 | Conditional arm calls | Arm guards and calls emitted inside the chosen branch only | AR-7 |
