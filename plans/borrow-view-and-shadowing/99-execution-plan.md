@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 13:19
-> **Progress**: 15/16 tasks (94%)
+> **Last Updated**: 2026-09-29 13:22
+> **Progress**: 16/16 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -173,7 +173,7 @@ updates.
 ## Phase 3: Close-out: acceptance, documentation
 
 > **Phase baseline tree**: deb6baa4138093c3f2499d92a383b36d38875b4c
-> **Expected modification set**: `AGENTS.md`, `plans/00-roadmap.md`, `plans/borrow-view-and-shadowing/01-requirements.md`, `plans/borrow-view-and-shadowing/99-execution-plan.md`
+> **Expected modification set**: `AGENTS.md`, `plans/00-roadmap.md`, `plans/borrow-view-and-shadowing/00-index.md`, `plans/borrow-view-and-shadowing/01-requirements.md`, `plans/borrow-view-and-shadowing/99-execution-plan.md`
 > **Scope mode**: strict
 > **Lenses**: correctness, maintainability, standards (strict profile — docs and evidence phase)
 
@@ -185,11 +185,13 @@ updates.
 - [x] 3.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-09-29 13:19)
 - [x] 3.1.2 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-18`/`DEF-20` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-29 13:19)
 - [x] 3.1.3 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 16/16; final `make check` ✅ (completed: 2026-09-29 13:19)
-- [ ] 3.1.4 Phase review evidence and plan summary — commit per the active commit mode
+- [x] 3.1.4 Phase review evidence and plan summary — commit per the active commit mode ✅ (completed: 2026-09-29 13:22)
 
 **Deliverables**:
 - [x] `make verify` all legs passed
 - [x] Documentation and roadmap synced; acceptance criteria checked
+
+> **Phase 3 review (recorded 2026-09-29 13:22)**: independent correctness/maintainability/standards review of the docs/evidence diff (baseline tree `deb6baa`; security/perf auditors skipped — docs-only, logged). No critical or major findings; every recorded claim verified against the repository and the logs (ST traceability, suite counts, red/green evidence, `make verify: all legs passed`, phase baselines). Two minor bookkeeping findings, both resolved: RV-001 (the progress header reached 16/16 and 3.1.4 closed on this commit) and RV-002 (`00-index.md` added to the phase's expected modification set).
 
 > **Acceptance check (recorded 2026-09-29 13:19)**: every requirement R1–R4 traces to passing spec cases (R1: ST-1 – ST-5; R2: ST-9, ST-14; R3: ST-10; R4: ST-6 – ST-8, ST-11 – ST-13); `make check` green with no warnings and `make verify` all legs passed; the roadmap rows are Done with the plan link; `AGENTS.md` carries both suites; final `make check` green (30 suites ok).
 
