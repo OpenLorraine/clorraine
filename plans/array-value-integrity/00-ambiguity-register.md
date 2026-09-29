@@ -21,11 +21,12 @@
 ### Closure Note
 
 Execution honored all 12 items; no runtime ambiguity required a new entry. The
-phase reviews filed adjacent pre-existing defects instead (`DEF-25` – `DEF-29`),
-and each authorized adjacent fix (defect `DEF-28`'s literal `panic` form,
-`DEF-25`'s row-slice reachability correction, and the slice-guard, constant-index
-guard, and `__cl_ret` fixes) carries its ruling in the phase review blocks of
-`99-execution-plan.md`.
+phase reviews and execution filed adjacent pre-existing defects instead
+(`DEF-25` – `DEF-29`). Each authorized adjacent fix carries its ruling in the
+phase review blocks of `99-execution-plan.md`: the save-branch reachability
+correction (`DEF-25`), the row-unit slice fix (Phase 2 review, RV-201/RV-202),
+the literal `panic` form (`DEF-28`), and the slice-guard, constant-index guard,
+and `__cl_ret` fixes.
 
 ### Resolution Notes
 

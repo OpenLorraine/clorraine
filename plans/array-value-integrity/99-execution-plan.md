@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 07:52
-> **Progress**: 23/24 tasks (96%)
+> **Last Updated**: 2026-09-29 07:56
+> **Progress**: 24/24 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -117,11 +117,11 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin row iteration and row views before implementation.
 
 - [x] 2.1.1 [spec-author] Add the element-loop specification tests to the suite (ST-10 – ST-15) — `compiler/tests/array_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 01:08)
-- [~] 2.1.2 Run the spec suite and record the red phase — ST-10 – ST-13, ST-15 fail (`E10209` or wrong iteration count); ST-14 fails with the base-element type in the `E10040` message ✅ (completed: 2026-09-29 01:09) — red evidence: the 12 Phase 1 cases stay green; ST-10 – ST-13 and ST-15 reject with `E10209` (`type 'i32' cannot be indexed`, the loop binds the base element); ST-14 rejects with `E10040` naming `non-duplicable 'String'` instead of the row type `'String[2]'`
+- [x] 2.1.2 Run the spec suite and record the red phase — ST-10 – ST-13, ST-15 fail (`E10209` or wrong iteration count); ST-14 fails with the base-element type in the `E10040` message ✅ (completed: 2026-09-29 01:09) — red evidence: the 12 Phase 1 cases stay green; ST-10 – ST-13 and ST-15 reject with `E10209` (`type 'i32' cannot be indexed`, the loop binds the base element); ST-14 rejects with `E10040` naming `non-duplicable 'String'` instead of the row type `'String[2]'`
 
 **Deliverables**:
-- [ ] ST-10 – ST-15 in the spec suite
-- [ ] Red-phase evidence recorded
+- [x] ST-10 – ST-15 in the spec suite
+- [x] Red-phase evidence recorded
 
 **Verify**: `make -C docker exec CMD="cargo test --test array_value_integrity_spec_test"`
 
@@ -169,11 +169,11 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin call-result projections and the element-move rejections.
 
 - [x] 3.1.1 [spec-author] Add the projection and element-move specification tests to the suite (ST-16 – ST-21, ST-23, ST-24, ST-27 – ST-30) — `compiler/tests/array_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 02:29)
-- [~] 3.1.2 Run the spec suite and record the red phase — ST-16 – ST-21, ST-23, ST-27 – ST-30 fail (invalid C or missing `E10026`); ST-24 passes as a guard ✅ (completed: 2026-09-29 02:30) — red evidence: 22 pass / 11 fail — ST-16 – ST-18 and ST-23 reject in C (the call renders inline); ST-19 – ST-21, ST-27 – ST-30 are accepted with no `E10026`; ST-24 passes as the guard
+- [x] 3.1.2 Run the spec suite and record the red phase — ST-16 – ST-21, ST-23, ST-27 – ST-30 fail (invalid C or missing `E10026`); ST-24 passes as a guard ✅ (completed: 2026-09-29 02:30) — red evidence: 22 pass / 11 fail — ST-16 – ST-18 and ST-23 reject in C (the call renders inline); ST-19 – ST-21, ST-27 – ST-30 are accepted with no `E10026`; ST-24 passes as the guard
 
 **Deliverables**:
-- [ ] ST-16 – ST-21, ST-23, ST-24, ST-27 – ST-30 in the spec suite
-- [ ] Red-phase evidence recorded
+- [x] ST-16 – ST-21, ST-23, ST-24, ST-27 – ST-30 in the spec suite
+- [x] Red-phase evidence recorded
 
 **Verify**: `make -C docker exec CMD="cargo test --test array_value_integrity_spec_test"`
 
@@ -212,22 +212,23 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 > **Phase baseline tree**: `bf15f2ff3d03daf7fbe7f1c1f984eb8ab81a1432`
 > **Expected modification set** (strict scope): `plans/array-value-integrity/99-execution-plan.md`, `plans/array-value-integrity/01-requirements.md`, `plans/array-value-integrity/00-index.md`, `plans/array-value-integrity/00-ambiguity-register.md`, `plans/00-roadmap.md`, `AGENTS.md`
 > **Lenses**: correctness, maintainability, standards (strict profile — docs and evidence phase)
+> **Phase 4 review**: independent reviewer (generic-subagent fallback; docs/evidence diff, so the add-on auditor skip is logged) on the diff vs `bf15f2ff` — `PASS WITH MINORS`: every evidence claim reproduced (ASan re-run, deleter counts, `make check`, `make verify`, R1 – R6 traceability, unchanged `spec/`); the bookkeeping minors are applied in this close-out (stale `[~]` marks promoted, deliverable boxes ticked, register note wording split, test-map clause corrected, `DEF-15` probe scope qualified) (2026-09-29 07:56)
 
 ### Step 4.1: Evidence and Close-out
 
 **Reference**: [01 §Acceptance Criteria](01-requirements.md) · AR-8, AR-2, AR-4, AR-5
 **Objective**: Prove memory safety, run the full acceptance gate, and close the records.
 
-- [~] 4.1.1 AddressSanitizer probes over the copy/move/projection programs (ST-2, ST-5, ST-7, ST-8, ST-16, ST-18, ST-23, ST-25, ST-26): emit, build with `clang -std=c99 -O0 -g -fsanitize=address`, run with `ASAN_OPTIONS=detect_leaks=0` (leak detection is off; the statement-temporary limitation is recorded as `DEF-23`), record the results on this line; count the emitted deleter call sites for the ST-25 and ST-26 release shapes (one per old element; the runs exit clean) ✅ (completed: 2026-09-29 07:50) — host-side ASan (clang 18; the pinned container's clang 14 has no ASan runtime): 9/9 programs built with `-fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=0`; 0 AddressSanitizer reports; exits match the oracle (ST-2/5/7/8 = 3, ST-16 = 9, ST-18 = 3, ST-23 = 0, ST-25 = 2, ST-26 = 3); each element of the ST-25/ST-26 destination has 3 emitted deleter sites (initializer guard, reassignment release, scope cleanup) with exactly one release at the reassignment
+- [x] 4.1.1 AddressSanitizer probes over the copy/move/projection programs (ST-2, ST-5, ST-7, ST-8, ST-16, ST-18, ST-23, ST-25, ST-26): emit, build with `clang -std=c99 -O0 -g -fsanitize=address`, run with `ASAN_OPTIONS=detect_leaks=0` (leak detection is off; the statement-temporary limitation is recorded as `DEF-23`), record the results on this line; count the emitted deleter call sites for the ST-25 and ST-26 release shapes (one per old element; the runs exit clean) ✅ (completed: 2026-09-29 07:50) — host-side ASan (clang 18; the pinned container's clang 14 has no ASan runtime): 9/9 programs built with `-fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=0`; 0 AddressSanitizer reports; exits match the oracle (ST-2/5/7/8 = 3, ST-16 = 9, ST-18 = 3, ST-23 = 0, ST-25 = 2, ST-26 = 3); each element of the ST-25/ST-26 destination has 3 emitted deleter sites (initializer guard, reassignment release, scope cleanup) with exactly one release at the reassignment
 - [x] 4.1.2 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-09-29 07:52) — `make verify` exit 0, `verify: all legs passed`: spec check and the full workspace, the hosted-amiga corpus and the six runtime faults under `vamos`, the vbcc build-only leg, and the freestanding host and m68k link legs
 - [x] 4.1.3 Update documentation: `AGENTS.md` test map (both new suites), roadmap rows for `DEF-15`/`DEF-19`/`DEF-21`/`DEF-22` (done + plan link) and keep the `DEF-23`/`DEF-24` filings current, register closure note — `AGENTS.md`, `plans/00-roadmap.md` ✅ (completed: 2026-09-29 07:53) — the `AGENTS.md` test map names both suites; the four defect rows read Done with the fix summary; `DEF-23` – `DEF-29` stay filed; the register carries its closure note
 - [x] 4.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 24/24; final `make check` ✅ (completed: 2026-09-29 07:54) — R1 – R6 checked with their passing cases; all five acceptance criteria checked; `00-index.md` status Complete; final `make check` exit 0 (spec check OK; 784 tests, no failures); the 24/24 header lands with 4.1.5
-- [ ] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode
+- [x] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode ✅ (completed: 2026-09-29 07:56) — the close-out commit records the Phase 4 review and the Plan Summary below
 
 **Deliverables**:
-- [ ] ASan-clean probes (configured run), release-count probes, and recorded results
-- [ ] `make verify` all legs passed
-- [ ] Documentation and roadmap synced; acceptance criteria checked
+- [x] ASan-clean probes (configured run), release-count probes, and recorded results
+- [x] `make verify` all legs passed
+- [x] Documentation and roadmap synced; acceptance criteria checked
 
 **Verify**: `make verify`
 
@@ -257,3 +258,23 @@ Phase 4 (close-out) ←────────────┘
 6. ✅ Documentation updated
 7. ✅ Code reviewed (strict-profile phase review)
 8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
+
+---
+
+## Plan Summary
+
+- All 24 tasks across four phases are verified. The plan fixed `DEF-15`,
+  `DEF-19`, `DEF-21`, and `DEF-22`, and execution and the phase reviews filed
+  five adjacent pre-existing defects (`DEF-25` – `DEF-29`).
+- Specification suite: 33/33 in `array_value_integrity_spec_test.rs`
+  (ST-1 – ST-30 plus the Phase 2 review cases ST-31 – ST-33). Shape tests:
+  15/15 (`ai1` – `ai15`), with unit tests in `types::tests` and `own::tests`.
+- `make check`: spec check OK (27 files, 104 compile-fail tests) and 784
+  workspace tests, no failures or warnings. `make verify`: all hosted-amiga,
+  vbcc, and freestanding legs passed. Host ASan probes: 9/9 clean with leak
+  detection off (`DEF-23` recorded).
+- Phase reviews: Phase 1 fixed a missing-guard regression and deferred the
+  conditional-value form (`DEF-25`); Phase 2 fixed flat-scalar row slices with
+  a new oracle batch and accepted the single re-review; Phase 3 passed with
+  minors (`DEF-29` filed); Phase 4 passed with bookkeeping minors applied.
+- No `spec/`, grammar, or diagnostics-registry change was made (AR-11).

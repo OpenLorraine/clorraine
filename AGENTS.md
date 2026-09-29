@@ -98,8 +98,9 @@ in `CMD`).
   projections, and the element-move limit), and
   `compiler/tests/array_value_integrity_impl_test.rs` holds its implementation
   tests (byte-copy and move shapes, the call temporary, the pointer-to-array
-  row, row-unit slice offsets and bounds, guard traps, release counts, and the
-  `iterated_element` unit coverage).
+  row, row-unit slice offsets and bounds, guard traps, and release counts);
+  `iterated_element` and the element-move predicate have unit tests in
+  `compiler/src/types/tests.rs` and `compiler/src/own/tests.rs`.
 - `compiler/tests/partial_move_impl_test.rs` holds **implementation tests** for
   partial-move / drop coherence: it builds the emitted C and runs it, so a
   double free aborts in the C library.
