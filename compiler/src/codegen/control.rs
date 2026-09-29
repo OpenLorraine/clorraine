@@ -223,8 +223,8 @@ impl<'a> Emitter<'a> {
                     self.emit_switch(function, span, value, arms, *default, *join, ctx);
                     current = *join;
                 }
-                Terminator::Return(value) => {
-                    self.emit_return(span, value.as_ref(), jump);
+                Terminator::Return { value, releases } => {
+                    self.emit_return(span, value.as_ref(), releases, jump);
                     return;
                 }
                 Terminator::Unreachable => return,

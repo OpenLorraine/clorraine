@@ -20,6 +20,19 @@ enum PreparedStore {
     Assign { value: Value },
 }
 
+impl PreparedStore {
+    /// The lowered value of an assignment store, for ownership reasoning.
+    ///
+    /// A move store's value travels as a place, not as a lowered value, so it
+    /// has none.
+    fn lowered(&self) -> Option<&Value> {
+        match self {
+            Self::Assign { value } => Some(value),
+            Self::Move { .. } => None,
+        }
+    }
+}
+
 /// The ownership effect an initializer has on the binding it initializes.
 ///
 /// Like [`PreparedStore`], the effect is resolved before the binding is
@@ -70,8 +83,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks one statement.
+    ///
+    /// The statement's own destination temporaries are released as soon as it
+    /// finishes: a nested statement records its own starting point, so it only
+    /// drains what it created and an enclosing statement's temporary stays
+    /// pending until that statement ends. A statement that leaves through a
+    /// terminator carries its releases itself, so the drain here finds nothing
+    /// left.
     pub(super) fn check_stmt(&mut self, stmt: &'a Stmt) {
         self.current_span = stmt_span(stmt);
+        let release_floor = self.pending_releases.len();
         match stmt {
             Stmt::Let(decl) => self.check_let(decl),
             Stmt::Const(decl) => self.check_const(decl),
@@ -93,6 +114,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             Stmt::Block(block) => self.check_block(block),
         }
+        self.drain_pending_releases(release_floor);
     }
 
     /// Checks an expression used as a statement and emits its run-time effect.
@@ -196,10 +218,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .value
             .as_ref()
             .map(|value| self.prepare_store(&target, value));
+        let lowered = prepared
+            .as_ref()
+            .and_then(PreparedStore::lowered);
         let effect = decl
             .value
             .as_ref()
-            .map(|value| self.prepare_binding_effect(&target, value));
+            .map(|value| self.prepare_binding_effect(&target, value, lowered));
         if let Some(value) = &decl.value {
             self.check_value_into(value, &target, decl.span);
         }
@@ -224,9 +249,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// transfer, so it lowers to a move that copies and then zeroes the
     /// source. Every other value lowers to an assign of the lowered value,
     /// which covers duplicable copies and fresh call results.
-    pub(super) fn emit_store(&mut self, target: Place, ty: &Ty, value: &'a Expr) {
+    pub(super) fn emit_store(&mut self, target: Place, ty: &Ty, value: &'a Expr) -> Option<Value> {
         let prepared = self.prepare_store(ty, value);
+        let lowered = prepared.lowered().cloned();
         self.emit_prepared_store(target, prepared);
+        lowered
     }
 
     /// Prepares a store before its target place exists.
@@ -275,7 +302,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // check resolve before the binding is declared, so the initializer's
         // names tie to the outer bindings they may shadow.
         let prepared = self.prepare_store(&target, &decl.value);
-        let effect = self.prepare_binding_effect(&target, &decl.value);
+        let lowered = prepared.lowered();
+        let effect = self.prepare_binding_effect(&target, &decl.value, lowered);
         self.check_value_into(&decl.value, &target, decl.span);
         let id = self.declare_local(&decl.name, target.clone(), true, decl.name_span);
         self.set_place(
@@ -317,8 +345,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// write while a use of the derived view is still reachable. A view value
     /// that already carries a loan shares it; a fresh derivation creates one.
     /// A writable view derived from a read-only loan is `E10041`.
-    pub(super) fn bind_value(&mut self, id: usize, target: &Ty, value: &Expr, span: Span) {
-        let effect = self.prepare_binding_effect(target, value);
+    pub(super) fn bind_value(
+        &mut self,
+        id: usize,
+        target: &Ty,
+        value: &Expr,
+        lowered: Option<&Value>,
+        span: Span,
+    ) {
+        let effect = self.prepare_binding_effect(target, value, lowered);
         self.apply_binding_effect(id, effect, span);
     }
 
@@ -329,11 +364,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// from that place. Resolving the effect before the binding is declared
     /// keeps a name the initializer reads tied to the outer binding the
     /// declaration may shadow, so the flow state and the emitted store agree
-    /// on which binding was moved or loaned.
-    fn prepare_binding_effect(&self, target: &Ty, value: &Expr) -> BindingEffect {
+    /// on which binding was moved or loaned. `lowered` is the initializer's
+    /// lowered value when it has one: a view over an ownerless value derives
+    /// from the statement temporary the lowering created, and only the lowered
+    /// value knows that temporary's identity.
+    fn prepare_binding_effect(
+        &self,
+        target: &Ty,
+        value: &Expr,
+        lowered: Option<&Value>,
+    ) -> BindingEffect {
         if is_view(target) {
+            let provenance = match self.view_provenance(value) {
+                Provenance::None => lowered
+                    .map(|lowered| self.lowered_view_provenance(lowered))
+                    .unwrap_or(Provenance::None),
+                provenance => provenance,
+            };
             return BindingEffect::View {
-                provenance: self.view_provenance(value),
+                provenance,
                 kind: self.view_loan_kind(value),
                 sources: self.view_loans(value),
             };
@@ -357,8 +406,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 kind,
                 sources,
             } => {
-                if let Provenance::Local(owner) | Provenance::Param(owner) = &provenance {
-                    let owner = *owner;
+                let owner = match &provenance {
+                    Provenance::Local(owner) | Provenance::Param(owner) => {
+                        Some(LoanOwner::Binding(*owner))
+                    }
+                    Provenance::Temp(temp) => Some(LoanOwner::Temp(*temp)),
+                    _ => None,
+                };
+                if let Some(owner) = owner {
                     if sources.is_empty() {
                         let loans = match self.record_view_loan(owner, kind, span) {
                             Some(loan) => BTreeSet::from([loan]),
@@ -389,17 +444,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// iteration. The loan request and the loan itself are recorded as events
     /// only on the reporting pass; whether the request conflicts with a live
     /// loan is decided by the liveness post-pass.
-    fn record_view_loan(&mut self, owner: usize, kind: LoanKind, span: Span) -> Option<LoanId> {
+    fn record_view_loan(&mut self, owner: LoanOwner, kind: LoanKind, span: Span) -> Option<LoanId> {
         let loan = self.intern_loan(LoanOrigin::new(owner, kind, span));
-        if self.report_diagnostics && kind == LoanKind::Exclusive && self.is_readonly_borrow(owner) {
-            let name = self.bindings[owner].name.clone();
-            self.error(
-                "E10041",
-                format!("cannot write through a view of read-only borrow '{name}'"),
-                "take the owner by `borrow`",
-                span,
-            );
-            return None;
+        if let LoanOwner::Binding(owner) = owner {
+            if self.report_diagnostics
+                && kind == LoanKind::Exclusive
+                && self.is_readonly_borrow(owner)
+            {
+                let name = self.bindings[owner].name.clone();
+                self.error(
+                    "E10041",
+                    format!("cannot write through a view of read-only borrow '{name}'"),
+                    "take the owner by `borrow`",
+                    span,
+                );
+                return None;
+            }
         }
         if self.report_diagnostics {
             self.record_event(LoanEventKind::Request { owner, kind }, span);
@@ -714,10 +774,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             let lowered = self.lower_value(value);
             self.emit_return_cleanup();
-            self.terminate(Terminator::Return(Some(lowered)));
+            // The return value is evaluated before the releases run, so the
+            // terminator carries every still-pending statement temporary.
+            let releases = self.take_pending_releases();
+            self.terminate(Terminator::Return {
+                value: Some(lowered),
+                releases,
+            });
         } else {
             self.emit_return_cleanup();
-            self.terminate(Terminator::Return(None));
+            let releases = self.take_pending_releases();
+            self.terminate(Terminator::Return {
+                value: None,
+                releases,
+            });
         }
     }
 }

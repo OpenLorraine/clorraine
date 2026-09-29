@@ -168,7 +168,9 @@ fn check_function_fills(
                     );
                 }
             }
-            Terminator::Return(Some(value)) => {
+            Terminator::Return {
+                value: Some(value), ..
+            } => {
                 check_value_fills(value, params, args, sema, block.terminator_span, diagnostics);
             }
             _ => {}

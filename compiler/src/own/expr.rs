@@ -358,14 +358,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     );
                 }
                 self.write_place(id, &projections, target.span);
-                if has_runtime_element(&projections) {
+                let lowered = if has_runtime_element(&projections) {
                     self.emit_indexed_store(target, value, compound);
+                    None
                 } else {
                     let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
-                    self.emit_assigned(place, &target_ty, value, compound);
-                }
+                    self.emit_assigned(place, &target_ty, value, compound)
+                };
                 if projections.is_empty() {
-                    self.bind_value(id, &target_ty, value, target.span);
+                    self.bind_value(id, &target_ty, value, lowered.as_ref(), target.span);
                 }
             }
             Some(PlaceTarget::Global(id, projections)) => {
@@ -402,7 +403,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.emit_indexed_store(target, value, compound);
                     } else {
                         let place = self.target_place(&PlaceTarget::Global(id, projections));
-                        self.emit_assigned(place, &target_ty, value, compound);
+                        let _ = self.emit_assigned(place, &target_ty, value, compound);
                     }
                 }
             }
@@ -489,11 +490,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         ty: &Ty,
         value: &'a Expr,
         compound: Option<BinaryOp>,
-    ) {
+    ) -> Option<Value> {
         match compound {
             Some(binary) => {
                 let right = self.lower_value(value);
-                self.emit_compound_store(binary, place, ty, right);
+                self.emit_compound_store(binary, place, ty, right.clone());
+                Some(right)
             }
             None => self.emit_store(place, ty, value),
         }
@@ -569,6 +571,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.materialize_guard_operand(index_value),
             )
         };
+        let base_value = self.materialize_read_conditional(base_value);
         let element = Value::new(
             element_ty.clone(),
             ValueKind::Index {

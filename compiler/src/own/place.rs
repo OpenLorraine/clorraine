@@ -129,7 +129,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             self.record_event(
                 LoanEventKind::Access {
-                    owner: id,
+                    owner: LoanOwner::Binding(id),
                     access: AccessKind::Write,
                 },
                 span,
@@ -206,7 +206,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let owner_mode = binding.mode;
         self.record_event(
             LoanEventKind::Access {
-                owner: id,
+                owner: LoanOwner::Binding(id),
                 access: AccessKind::Move,
             },
             span,

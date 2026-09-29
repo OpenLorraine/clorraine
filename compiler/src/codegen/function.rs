@@ -420,6 +420,15 @@ impl<'a> Emitter<'a> {
                 let value_c = self.value(value);
                 self.push(&format!("    (void)({value_c});"));
             }
+            Statement::ReleaseTemp(release) => {
+                self.emit_line_directive(span);
+                let place = crate::ir::Place {
+                    base: crate::ir::PlaceBase::Temp(release.temp),
+                    projections: Vec::new(),
+                    ty: release.ty.clone(),
+                };
+                self.emit_drop(&place);
+            }
             Statement::Borrow { .. }
             | Statement::Drop { .. }
             | Statement::Defer { .. }
@@ -657,6 +666,15 @@ impl<'a> Emitter<'a> {
     /// released before the copy. `sizeof(target)` is the byte count of the
     /// whole array, which C computes from the declared type.
     fn emit_fixed_array_assign(&mut self, target: &Place, ty: &Ty, value: &Value) {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        {
+            self.emit_fixed_array_conditional_assign(target, ty, condition, then_value, else_value);
+            return;
+        }
         let target_c = self.place(target);
         let value_c = self.value(value);
         if value_c == target_c {
@@ -702,6 +720,150 @@ impl<'a> Emitter<'a> {
         ));
         self.emit_drop_expr(&save, ty);
         self.push("    }");
+    }
+
+    /// Emits a fixed-array conditional into an assignment target.
+    ///
+    /// The condition is evaluated once and each arm runs inside its own
+    /// branch, so an arm's guards and calls execute only when the arm is
+    /// chosen. A duplicable destination takes a byte copy per arm. An owned
+    /// destination saves its old value first: it stays alive while the chosen
+    /// arm is stored, an arm that names the target copies the saved value
+    /// back, and the saved value is released once afterwards.
+    fn emit_fixed_array_conditional_assign(
+        &mut self,
+        target: &Place,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+    ) {
+        let target_c = self.place(target);
+        if !self.needs_drop(ty) {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("    if ({condition_c}) {{"));
+            self.emit_fixed_array_assign_arm(&target_c, ty, then_value, None);
+            self.push("    } else {");
+            self.emit_fixed_array_assign_arm(&target_c, ty, else_value, None);
+            self.push("    }");
+            return;
+        }
+        // The old target must survive until the chosen arm has been stored,
+        // because an arm may name the target itself. The old bytes are saved
+        // first and released after the branch; an arm that names the target
+        // copies the saved value back, which empties the save so its release
+        // is a no-op.
+        let save = self.unique_local("__cl_save");
+        self.push("    {");
+        self.push(&format!(
+            "        {} = {};",
+            declarator(ty, &save),
+            self.empty_state(ty)
+        ));
+        self.push(&format!(
+            "        memcpy(&({save}), &({target_c}), sizeof({target_c}));"
+        ));
+        self.emit_guards(condition);
+        let condition_c = self.value(condition);
+        self.push(&format!("        if ({condition_c}) {{"));
+        self.emit_fixed_array_assign_arm(&target_c, ty, then_value, Some(&save));
+        self.push("        } else {");
+        self.emit_fixed_array_assign_arm(&target_c, ty, else_value, Some(&save));
+        self.push("        }");
+        self.emit_drop_expr(&save, ty);
+        self.push("    }");
+    }
+
+    /// Emits one arm of a fixed-array conditional assignment.
+    ///
+    /// The arm is stored into `target_c`; `save` holds the destination's old
+    /// value while the branch runs, so an arm that names the destination can
+    /// restore it. A nested conditional recurses, and a call writes into a
+    /// fresh statement-local before its bytes are copied in, so a callee that
+    /// reads the destination still sees the old value.
+    fn emit_fixed_array_assign_arm(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        arm: &Value,
+        save: Option<&str>,
+    ) {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &arm.kind
+        {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("                if ({condition_c}) {{"));
+            self.emit_fixed_array_assign_arm(target_c, ty, then_value, save);
+            self.push("                } else {");
+            self.emit_fixed_array_assign_arm(target_c, ty, else_value, save);
+            self.push("                }");
+            return;
+        }
+        if self.value(arm) == target_c {
+            // The arm names the destination. Without a save the destination
+            // already holds its own value; with one, the old value is restored
+            // and the save emptied so the later release is a no-op.
+            if let Some(save) = save {
+                self.push(&format!(
+                    "                memcpy(&({target_c}), &({save}), sizeof({target_c}));"
+                ));
+                self.emit_move_zero(save, ty);
+            }
+            return;
+        }
+        match &arm.kind {
+            ValueKind::ArrayLit { elements, fill } => {
+                self.emit_array_assign_to(target_c, ty, elements, fill);
+            }
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } => {
+                let temp = self.unique_local("__cl_arm");
+                self.push(&format!(
+                    "                {} = {};",
+                    declarator(ty, &temp),
+                    self.empty_state(ty)
+                ));
+                for arg in args {
+                    self.emit_guards(arg);
+                }
+                let call = self.call_with_destination(
+                    callee,
+                    type_args,
+                    args,
+                    receiver.as_deref(),
+                    &temp,
+                );
+                self.push(&format!("                {call};"));
+                self.push(&format!(
+                    "                memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+                ));
+                self.emit_move_zero(&temp, ty);
+            }
+            _ => {
+                self.emit_guards(arm);
+                let arm_c = self.store_text(arm, ty);
+                self.push(&format!(
+                    "                memcpy(&({target_c}), &({arm_c}), sizeof({target_c}));"
+                ));
+                // An owned arm is a move: the bytes travel to the destination
+                // and the source is emptied, so only the chosen arm is moved.
+                if self.needs_drop(ty) {
+                    let source_ty = self.substitute(&arm.ty);
+                    if self.needs_drop(&source_ty) {
+                        self.emit_move_zero(&arm_c, &source_ty);
+                    }
+                }
+            }
+        }
     }
 
     /// Emits a fixed-array assignment whose right-hand side is a call.
@@ -887,7 +1049,9 @@ fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
                     note_value(label, &mut read);
                 }
             }
-            Terminator::Return(Some(value)) => note_value(value, &mut read),
+            Terminator::Return {
+                value: Some(value), ..
+            } => note_value(value, &mut read),
             _ => {}
         }
     }

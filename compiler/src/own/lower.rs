@@ -43,6 +43,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let base = self.lower_value(base);
                 let index = self.lower_value(index);
                 let base = self.materialize_guard_operand(base);
+                let base = self.materialize_read_conditional(base);
                 let index = self.materialize_guard_operand(index);
                 ValueKind::Index {
                     base: Box::new(base),
@@ -336,6 +337,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_bindings = std::mem::take(&mut self.bindings);
         let saved_state = std::mem::replace(&mut self.state, FlowState::default());
         let saved_temps = std::mem::take(&mut self.temps);
+        let saved_destinations = std::mem::take(&mut self.destination_temps);
+        let saved_releases = std::mem::take(&mut self.pending_releases);
         let saved_exits = std::mem::take(&mut self.exits);
         let saved_defers = std::mem::take(&mut self.defer_entries);
         let saved_events = std::mem::take(&mut self.events);
@@ -371,7 +374,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         self.pop_scope();
         if !self.is_terminated() {
-            self.terminate(Terminator::Return(returned));
+            let releases = self.take_pending_releases();
+            self.terminate(Terminator::Return {
+                value: returned,
+                releases,
+            });
         }
 
         let lambda_builder = std::mem::replace(
@@ -401,6 +408,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.bindings = saved_bindings;
         self.state = saved_state;
         self.temps = saved_temps;
+        self.destination_temps = saved_destinations;
+        self.pending_releases = saved_releases;
         self.exits = saved_exits;
         self.defer_entries = saved_defers;
         self.events = saved_events;
@@ -543,6 +552,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // the left operand short-circuits.
         let ty = value.ty.clone();
         let temp = self.new_temp(ty.clone());
+        self.mark_destination_temp(temp);
+        self.register_pending_release(temp, &ty);
         Value::new(
             ty,
             ValueKind::Materialize {
@@ -627,17 +638,92 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// rooted at the element address, and so is any projection over a local, a
     /// parameter, or a call-returned array stored in a place.
     ///
-    /// An ownerless temporary is not covered: a call returning a container owns
-    /// its elements only until the temporary is released, and no container
-    /// cleanup can see them, so such a value still needs the scope binding.
+    /// A destination materialization is covered too: the compiler releases it
+    /// at the end of the statement that created it, so a projection of it is
+    /// storage that release owns. The same holds for a conditional whose arms
+    /// both point into such storage, because the chosen arm is a projection of
+    /// it. An ownerless temporary that is not a destination (a transfer
+    /// temporary) is not covered: its value travels to a binding that owns it,
+    /// so a projection still needs that binding.
     fn projects_from_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(_) => true,
+            ValueKind::Materialize { .. } => true,
+            ValueKind::Temp(id) => self.is_destination_temp(*id),
             ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
                 self.projects_from_place(base)
             }
+            // A conditional whose arms both point into existing storage is a
+            // forwarding value: whichever arm the condition chooses lends
+            // storage the caller already owns, so binding an owning copy for
+            // it would create a second owner and double-free.
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.projects_from_place(then_value) && self.projects_from_place(else_value)
+            }
             _ => false,
         }
+    }
+
+    /// The provenance of a view whose storage a lowered value reads.
+    ///
+    /// A projection over a materialized value reads storage the compiler owns
+    /// through a statement temporary, so the view must carry a loan of that
+    /// temporary: releasing the temporary at the statement's end would
+    /// otherwise leave the view pointing into freed storage. A projection over
+    /// a place keeps the place's own provenance, which the source expression
+    /// already reports.
+    pub(super) fn lowered_view_provenance(&self, value: &Value) -> Provenance {
+        match &value.kind {
+            ValueKind::Materialize { temp, .. } | ValueKind::Temp(temp) => {
+                Provenance::Temp(*temp)
+            }
+            ValueKind::Index { base, .. } | ValueKind::Member { base, .. } => {
+                self.lowered_view_provenance(base)
+            }
+            _ => Provenance::None,
+        }
+    }
+
+    /// Materializes a fixed-array conditional a read position needs as a place.
+    ///
+    /// An index base must name storage to carry the chosen arm's ownership
+    /// decisions. A conditional has no storage of its own, so it is stored
+    /// through the branch-aware assignment into a fresh temporary and the read
+    /// goes through that temporary. A non-conditional value, a non-array type,
+    /// or a type that still mentions a generic parameter is returned
+    /// unchanged.
+    pub(super) fn materialize_read_conditional(&mut self, value: Value) -> Value {
+        let is_conditional = matches!(value.kind, ValueKind::Conditional { .. });
+        if !is_conditional || !value.ty.is_fixed_array() || mentions_type_param(&value.ty) {
+            return value;
+        }
+        let ty = value.ty.clone();
+        self.materialize_value_type(value, ty)
+    }
+
+    /// Stores a value into a fresh temporary and returns the temporary value.
+    ///
+    /// The assignment is emitted eagerly into the current block, so it runs
+    /// where the lowered expression is evaluated. When the temporary's type
+    /// owns storage it joins the statement's pending release list.
+    pub(super) fn materialize_value_type(&mut self, value: Value, ty: Ty) -> Value {
+        let temp = self.new_temp(ty.clone());
+        self.mark_destination_temp(temp);
+        self.register_pending_release(temp, &ty);
+        let place = Place {
+            base: ir::PlaceBase::Temp(temp),
+            projections: Vec::new(),
+            ty: ty.clone(),
+        };
+        self.emit(Statement::Assign {
+            target: place,
+            value,
+        });
+        Value::new(ty, ValueKind::Temp(temp))
     }
 
     /// Stores an impure operand in a compiler temporary before it is used twice.

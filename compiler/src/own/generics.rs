@@ -482,6 +482,7 @@ pub fn collect_ir_instances(
                     | Statement::MoveOut { .. }
                     | Statement::Borrow { .. }
                     | Statement::Drop { .. }
+                    | Statement::ReleaseTemp(_)
                     | Statement::Defer { .. }
                     | Statement::ScopeEnd { .. }
                     | Statement::ScopeExit { .. }
@@ -496,7 +497,9 @@ pub fn collect_ir_instances(
                         walk_value(label, program, sema, mono);
                     }
                 }
-                Terminator::Return(Some(value)) => walk_value(value, program, sema, mono),
+                Terminator::Return {
+                    value: Some(value), ..
+                } => walk_value(value, program, sema, mono),
                 _ => {}
             }
         }

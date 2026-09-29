@@ -28,8 +28,8 @@ use crate::borrow::{
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ffi::{self, UnsafeOp};
 use crate::ir::{
-    self, BlockId, BranchShape, Builder, LoopKind, Place, Statement, Terminator, Value, ValueKind,
-    ValuePiece,
+    self, BlockId, BranchShape, Builder, LoopKind, Place, Release, Statement, Terminator, Value,
+    ValueKind, ValuePiece,
 };
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
@@ -54,7 +54,7 @@ use flow::{
     Binding, BindingKind, DeferEntry, ExitFrame, FlowState, PlaceState, PlaceTarget,
     Scope,
 };
-use liveness::{AccessKind, LoanEvent, LoanEventKind, LoanId, LoanOrigin, Position};
+use liveness::{AccessKind, LoanEvent, LoanEventKind, LoanId, LoanOrigin, LoanOwner, Position};
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -205,6 +205,23 @@ struct FunctionChecker<'a, 'd> {
     /// Next name suffix for a compiler-owned temporary local that takes an
     /// unnamed owned call result so the scope cleanup can release it.
     next_owned_temp: u32,
+    /// Destination temporaries of the statement currently being checked, in
+    /// creation order.
+    ///
+    /// A value stored into a compiler temporary to be read later in the same
+    /// statement owns its storage only until the statement ends. Every
+    /// destination materialization whose type needs a drop joins this list, and
+    /// the statement's end drains it in reverse creation order. Transfer
+    /// temporaries (a take-call result, an aggregate-literal adoption) never
+    /// join: their destination already owns the value.
+    pending_releases: Vec<Release>,
+    /// Which temporaries are destinations the compiler releases at the
+    /// statement's end, parallel to `temps`.
+    ///
+    /// A projection of such a temporary reads storage the release will free,
+    /// so no second owner may be bound for it. A transfer temporary is not a
+    /// destination: its value travels to a binding that owns it.
+    destination_temps: Vec<bool>,
     /// False while lowering a deferred block, whose bindings are not kept in
     /// the function's local list, so an owned temporary must not be bound
     /// there.
@@ -273,6 +290,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             defer_anchor: None,
             next_registration: 0,
             next_owned_temp: 0,
+            pending_releases: Vec::new(),
+            destination_temps: Vec::new(),
             materialize_owned_temporaries: true,
             report_diagnostics: true,
             lifted: Vec::new(),
@@ -297,7 +316,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.elision_postlude();
         self.report_unused_locals();
         if !self.is_terminated() {
-            self.builder.terminate(Terminator::Return(None));
+            self.builder
+                .terminate(Terminator::Return {
+                    value: None,
+                    releases: Vec::new(),
+                });
         }
         let mut function = self.builder.finish();
         function.locals = self
@@ -396,7 +419,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             match action {
                 CleanupAction::Release(id) => {
                     let span = self.current_span;
-                    self.record_event(LoanEventKind::Release { owner: id }, span);
+                    self.record_event(
+                        LoanEventKind::Release {
+                            owner: LoanOwner::Binding(id),
+                        },
+                        span,
+                    );
                     if self.bindings[id].needs_drop {
                         let place = self.binding_place(id);
                         let order = self.bindings[id].registration;
@@ -466,6 +494,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_scopes = self.scopes.clone();
         let saved_defers = self.defer_entries.len();
         let saved_temps = self.temps.len();
+        let saved_releases = self.pending_releases.len();
         let saved_anchor = self.defer_anchor;
         if self.defer_anchor.is_none() {
             self.defer_anchor = Some(anchor);
@@ -481,6 +510,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes = saved_scopes;
         self.defer_entries.truncate(saved_defers);
         self.temps.truncate(saved_temps);
+        self.destination_temps.truncate(saved_temps);
+        self.pending_releases.truncate(saved_releases);
         // A temporary the deferred block materialized is no longer a binding,
         // so its state must not be inherited by a later local that reuses the
         // id.
@@ -514,6 +545,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_defers = self.defer_entries.len();
         let saved_exits = self.exits.len();
         let saved_temps = self.temps.len();
+        let saved_releases = self.pending_releases.clone();
         let saved_report = self.report_diagnostics;
         self.report_diagnostics = false;
         let (entry, stable_post) = 'fixpoint: {
@@ -556,6 +588,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_entries.truncate(saved_defers);
         self.exits.truncate(saved_exits);
         self.temps.truncate(saved_temps);
+        self.destination_temps.truncate(saved_temps);
+        self.pending_releases = saved_releases;
         self.report_diagnostics = saved_report;
         let mut entry = entry;
         entry.drop_bindings_from(saved_bindings);
@@ -884,11 +918,91 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Records a compiler-created temporary and returns its id.
     ///
     /// A temporary is declared with the locals and named `__cl_tmp<N>` by the
-    /// emitter. It has no binding, so it takes no part in the ownership walk.
+    /// emitter. It has no binding, so it takes no part in the ownership walk
+    /// except through the release list below.
     fn new_temp(&mut self, ty: Ty) -> ir::TempId {
         let id = self.temps.len() as ir::TempId;
         self.temps.push(ty);
+        self.destination_temps.push(false);
         id
+    }
+
+    /// Marks a temporary as a destination the statement end releases.
+    fn mark_destination_temp(&mut self, temp: ir::TempId) {
+        if let Some(entry) = self.destination_temps.get_mut(temp as usize) {
+            *entry = true;
+        }
+    }
+
+    /// True when a temporary is a destination the statement end releases.
+    fn is_destination_temp(&self, temp: ir::TempId) -> bool {
+        self.destination_temps
+            .get(temp as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// Registers a destination temporary for release at the statement's end.
+    ///
+    /// Only a temporary whose type owns storage joins the pending list; a
+    /// scalar or view temporary has no storage to free. The statement's end
+    /// drains the list in reverse creation order through a dedicated inline
+    /// release, so the storage dies with the statement that created it.
+    fn register_pending_release(&mut self, temp: ir::TempId, ty: &Ty) {
+        if self.owns_drop(ty) {
+            self.pending_releases.push(Release {
+                temp,
+                ty: ty.clone(),
+            });
+        }
+    }
+
+    /// Drains destination temporaries created since `floor`, newest first.
+    ///
+    /// A nested statement records its own starting length, so it drains only
+    /// the temporaries it created; an enclosing statement's temporary stays
+    /// pending until that statement ends.
+    fn drain_pending_releases(&mut self, floor: usize) {
+        while self.pending_releases.len() > floor {
+            let release = self.pending_releases.pop().expect("pending release");
+            self.release_temp(release);
+        }
+    }
+
+    /// Emits one statement-temporary release and records it for the liveness
+    /// pass.
+    ///
+    /// The release event names the temporary as an owner, so a view derived
+    /// from it is rejected when a later use has no release-free path.
+    fn release_temp(&mut self, release: Release) {
+        let span = self.current_span;
+        self.record_event(
+            LoanEventKind::Release {
+                owner: LoanOwner::Temp(release.temp),
+            },
+            span,
+        );
+        self.emit(Statement::ReleaseTemp(release));
+    }
+
+    /// Takes every pending release into a return's payload, newest first.
+    ///
+    /// A return leaves every enclosing statement, so its releases are all the
+    /// temporaries still pending. The return value is evaluated before the
+    /// releases run, so the terminator carries them.
+    fn take_pending_releases(&mut self) -> Vec<Release> {
+        let mut releases = Vec::new();
+        while let Some(release) = self.pending_releases.pop() {
+            let span = self.current_span;
+            self.record_event(
+                LoanEventKind::Release {
+                    owner: LoanOwner::Temp(release.temp),
+                },
+                span,
+            );
+            releases.push(release);
+        }
+        releases
     }
 
     /// Makes a block the current one.

@@ -29,7 +29,7 @@ fn a_straight_line_function_keeps_one_block_with_an_explicit_exit() {
         scope: 0,
         order: 0,
     });
-    builder.terminate(Terminator::Return(None));
+    builder.terminate(Terminator::Return { value: None, releases: Vec::new() });
     let function = builder.finish();
 
     assert_eq!(function.entry, 0);
@@ -46,7 +46,7 @@ fn a_straight_line_function_keeps_one_block_with_an_explicit_exit() {
     ));
     assert!(matches!(
         function.blocks[0].terminator,
-        Terminator::Return(None)
+        Terminator::Return { value: None, releases: _ }
     ));
 }
 
@@ -56,7 +56,7 @@ fn a_statement_and_terminator_carry_their_source_span() {
     let span = Span::default();
     builder.set_span(span);
     builder.emit(Statement::Nop);
-    builder.terminate(Terminator::Return(None));
+    builder.terminate(Terminator::Return { value: None, releases: Vec::new() });
     let function = builder.finish();
     assert_eq!(function.blocks[0].statements[0].span, span);
     assert_eq!(function.blocks[0].terminator_span, span);
@@ -96,7 +96,7 @@ fn branching_creates_separate_blocks_and_a_join() {
     builder.switch_to(else_block);
     builder.terminate(Terminator::Goto(join));
     builder.switch_to(join);
-    builder.terminate(Terminator::Return(None));
+    builder.terminate(Terminator::Return { value: None, releases: Vec::new() });
 
     let function = builder.finish();
     assert_eq!(function.blocks.len(), 4);
@@ -106,7 +106,7 @@ fn branching_creates_separate_blocks_and_a_join() {
     ));
     assert!(matches!(
         function.blocks[3].terminator,
-        Terminator::Return(None)
+        Terminator::Return { value: None, releases: _ }
     ));
 }
 

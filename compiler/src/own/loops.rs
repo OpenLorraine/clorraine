@@ -406,6 +406,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let index_value = Value::new(Ty::usize_ty(), ValueKind::Temp(index_temp));
         let iterable = self.lower_value(&decl.iterable);
+        let iterable = self.materialize_for_in_iterable(&decl.iterable, iterable);
         self.emit(Statement::Assign {
             target: index_place.clone(),
             value: Value::new(Ty::usize_ty(), ValueKind::Int(0)),
@@ -480,6 +481,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.state = join_breaks(entry, &frame);
         self.switch_to(exit);
         self.pop_scope();
+    }
+
+    /// Materializes an ownerless iterable so the loop reads one stored value.
+    ///
+    /// A place-rooted iterable already names storage, so it is used as it is.
+    /// An ownerless value — a call result, a literal, or a conditional — has
+    /// no storage of its own, and the loop reads its length and its elements,
+    /// so leaving it inline would evaluate it once per iteration and render an
+    /// invalid element expression. The value is stored once into a temporary
+    /// before the loop, and the temporary is released after the loop
+    /// statement. A type that still mentions a generic parameter keeps the
+    /// inline behavior: the uninstantiated body cannot spell the temporary's
+    /// C type.
+    fn materialize_for_in_iterable(&mut self, expr: &Expr, value: Value) -> Value {
+        if self.place_target(expr).is_some() || super::lower::mentions_type_param(&value.ty) {
+            return value;
+        }
+        let ty = value.ty.clone();
+        self.materialize_value_type(value, ty)
     }
 
     /// The `index < len(iterable)` condition of an element loop.

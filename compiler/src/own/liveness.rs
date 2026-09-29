@@ -24,6 +24,20 @@ use crate::span::Span;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LoanId(pub(super) usize);
 
+/// The storage a loan refers to.
+///
+/// Most owners are named bindings, but a view may also derive from a statement
+/// temporary that the compiler releases at the end of its statement; that
+/// temporary is an owner too, so a use of the view after the release is the
+/// same outlives-its-owner error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum LoanOwner {
+    /// The binding with this index in the checker's binding table.
+    Binding(usize),
+    /// The compiler temporary with this index in the function's temp list.
+    Temp(ir::TempId),
+}
+
 /// What makes a loan's identity stable across every pass over a function.
 ///
 /// A loan is created by one source derivation, so its owner, permission, and
@@ -34,8 +48,8 @@ pub(super) struct LoanId(pub(super) usize);
 /// to the loan the reporting pass created.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct LoanOrigin {
-    /// Index of the binding that owns the storage.
-    pub(super) owner: usize,
+    /// The storage the loan points into.
+    pub(super) owner: LoanOwner,
     /// The permission the loan grants.
     pub(super) kind: LoanKind,
     /// Start byte offset of the derivation that created the loan.
@@ -46,7 +60,7 @@ pub(super) struct LoanOrigin {
 
 impl LoanOrigin {
     /// The origin of a loan created by a derivation at `span`.
-    pub(super) fn new(owner: usize, kind: LoanKind, span: Span) -> Self {
+    pub(super) fn new(owner: LoanOwner, kind: LoanKind, span: Span) -> Self {
         Self {
             owner,
             kind,
@@ -76,8 +90,8 @@ pub(super) enum LoanEventKind {
     Created {
         /// The new loan.
         loan: LoanId,
-        /// Index of the binding that owns the storage.
-        owner: usize,
+        /// The storage the loan points into.
+        owner: LoanOwner,
         /// The permission the loan grants.
         kind: LoanKind,
     },
@@ -89,22 +103,22 @@ pub(super) enum LoanEventKind {
     },
     /// A binding that owns storage was written or moved.
     Access {
-        /// Index of the owner binding.
-        owner: usize,
+        /// The owner binding.
+        owner: LoanOwner,
         /// How the owner was accessed.
         access: AccessKind,
     },
     /// A persistent loan was created, or a `borrow` argument lent an owner.
     Request {
-        /// Index of the owner binding.
-        owner: usize,
+        /// The storage the new loan would point into.
+        owner: LoanOwner,
         /// The permission the new loan would grant.
         kind: LoanKind,
     },
     /// An owner's storage stopped existing on this edge.
     Release {
-        /// Index of the owner binding.
-        owner: usize,
+        /// The storage that was released.
+        owner: LoanOwner,
     },
 }
 
@@ -153,7 +167,7 @@ fn terminator_successors(terminator: &Terminator) -> Vec<BlockId> {
             out.push(*default);
             out
         }
-        Terminator::Return(_) | Terminator::Unreachable => Vec::new(),
+        Terminator::Return { .. } | Terminator::Unreachable => Vec::new(),
     }
 }
 
@@ -186,8 +200,8 @@ struct Analysis {
     positions: Vec<Position>,
     /// The position index of each position.
     position_index: BTreeMap<Position, usize>,
-    /// The owner binding of each loan.
-    owners: BTreeMap<LoanId, usize>,
+    /// The owner of each loan.
+    owners: BTreeMap<LoanId, LoanOwner>,
     /// The permission each loan grants.
     kinds: BTreeMap<LoanId, LoanKind>,
     /// The creation span of each loan.
@@ -197,7 +211,7 @@ struct Analysis {
     /// The use positions of each loan.
     uses: BTreeMap<LoanId, BTreeSet<Position>>,
     /// The release positions of each owner.
-    releases: BTreeMap<usize, BTreeSet<Position>>,
+    releases: BTreeMap<LoanOwner, BTreeSet<Position>>,
     /// Forward edges of the position graph.
     adjacency: Vec<Vec<usize>>,
     /// Backward edges of the position graph.
@@ -312,10 +326,14 @@ impl Analysis {
                 continue;
             }
             let span = self.spans.get(loan).copied().unwrap_or_default();
+            let subject = match owner {
+                LoanOwner::Binding(_) => format!("'{}'", display(*owner, names)),
+                LoanOwner::Temp(_) => "a statement temporary".to_owned(),
+            };
             push(
                 diagnostics,
                 "E10030",
-                format!("borrow of '{}' does not live long enough", display(*owner, names)),
+                format!("borrow of {subject} does not live long enough"),
                 "finish the use before the owner's scope ends",
                 span,
             );
@@ -330,7 +348,7 @@ impl Analysis {
     /// release-free path — not merely the existence of one release before a use
     /// — keeps a loop-local owner safe: the next iteration's use is reached
     /// from a fresh creation before the release, so it stays valid.
-    fn escapes_owner(&self, loan: &LoanId, owner: usize) -> bool {
+    fn escapes_owner(&self, loan: &LoanId, owner: LoanOwner) -> bool {
         let Some(uses) = self.uses.get(loan) else {
             return false;
         };
@@ -358,7 +376,7 @@ impl Analysis {
     /// True when an owner access hits a live loan at one position.
     fn access_conflicts(
         &self,
-        owner: usize,
+        owner: LoanOwner,
         access: AccessKind,
         live: &BTreeMap<LoanId, BTreeSet<Position>>,
         position: Position,
@@ -376,7 +394,7 @@ impl Analysis {
     /// True when a loan request hits a live loan at one position.
     fn request_conflicts(
         &self,
-        owner: usize,
+        owner: LoanOwner,
         kind: LoanKind,
         live: &BTreeMap<LoanId, BTreeSet<Position>>,
         position: Position,
@@ -456,8 +474,8 @@ fn append_entry(
 
 /// The loan facts the region computation and the reports need.
 struct Facts {
-    /// The owner binding of each loan.
-    owners: BTreeMap<LoanId, usize>,
+    /// The owner of each loan.
+    owners: BTreeMap<LoanId, LoanOwner>,
     /// The permission each loan grants.
     kinds: BTreeMap<LoanId, LoanKind>,
     /// The creation span of each loan.
@@ -467,7 +485,7 @@ struct Facts {
     /// The use positions of each loan.
     uses: BTreeMap<LoanId, BTreeSet<Position>>,
     /// The release positions of each owner.
-    releases: BTreeMap<usize, BTreeSet<Position>>,
+    releases: BTreeMap<LoanOwner, BTreeSet<Position>>,
 }
 
 /// Collects the loan identity and access facts from the recorded log.
@@ -553,12 +571,15 @@ fn closure_avoiding(
     seen
 }
 
-/// The written name of a binding, for a diagnostic message.
-fn display(owner: usize, names: &BTreeMap<usize, String>) -> String {
-    names
-        .get(&owner)
-        .cloned()
-        .unwrap_or_else(|| String::from("?"))
+/// The written name of an owner, for a diagnostic message.
+fn display(owner: LoanOwner, names: &BTreeMap<usize, String>) -> String {
+    match owner {
+        LoanOwner::Binding(id) => names
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| String::from("?")),
+        LoanOwner::Temp(_) => String::from("?"),
+    }
 }
 
 /// Pushes one error diagnostic at a source span.
@@ -578,7 +599,7 @@ mod tests {
             span: Span::default(),
             kind: LoanEventKind::Created {
                 loan: LoanId(loan),
-                owner,
+                owner: LoanOwner::Binding(owner),
                 kind: LoanKind::Shared,
             },
         }
@@ -599,7 +620,7 @@ mod tests {
             position: Position { block, index },
             span: Span::default(),
             kind: LoanEventKind::Access {
-                owner,
+                owner: LoanOwner::Binding(owner),
                 access: kind,
             },
         }
@@ -610,7 +631,9 @@ mod tests {
         LoanEvent {
             position: Position { block, index },
             span: Span::default(),
-            kind: LoanEventKind::Release { owner },
+            kind: LoanEventKind::Release {
+                owner: LoanOwner::Binding(owner),
+            },
         }
     }
 

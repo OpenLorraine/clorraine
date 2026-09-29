@@ -233,7 +233,7 @@ fn the_lowered_ir_has_a_branch_a_drop_and_a_join() {
     assert!(demo
         .blocks
         .iter()
-        .any(|block| matches!(block.terminator, Terminator::Return(_))));
+        .any(|block| matches!(block.terminator, Terminator::Return { .. })));
 }
 
 #[test]

@@ -337,7 +337,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                         self.record_event(
                             LoanEventKind::Request {
-                                owner,
+                                owner: LoanOwner::Binding(owner),
                                 kind: LoanKind::Exclusive,
                             },
                             span,

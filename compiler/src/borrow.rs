@@ -38,6 +38,12 @@ pub enum Provenance {
     Local(usize),
     /// The value is derived from the module-level binding with this name.
     Global(String),
+    /// The value is derived from the compiler temporary with this id.
+    ///
+    /// A temporary the compiler materialized for a statement owns its storage
+    /// until the statement ends, so a view that reads through it may not be
+    /// used later.
+    Temp(crate::ir::TempId),
 }
 
 /// True for a type that is a view over other storage.

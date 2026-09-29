@@ -57,6 +57,21 @@ pub type ScopeId = usize;
 /// Index of a compiler-created temporary inside a function.
 pub type TempId = u32;
 
+/// One compiler temporary released at the end of the statement that made it.
+///
+/// A destination materialization stores a value into a temporary the statement
+/// reads; once the statement finishes, the temporary's value is dead and its
+/// storage must be released. The release travels on the statement list (or on
+/// the terminator that leaves the statement) rather than in the scope cleanup,
+/// because a scope-collected drop would run at the end of the whole scope.
+#[derive(Clone, Debug)]
+pub struct Release {
+    /// The temporary released.
+    pub temp: TempId,
+    /// The temporary's type, needed to drop its value.
+    pub ty: Ty,
+}
+
 /// The permission a [`Statement::Borrow`] records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LoanKind {
@@ -347,6 +362,14 @@ pub enum Statement {
         /// shared with `defer` entries so a scope's cleanup can interleave.
         order: u32,
     },
+    /// Release a statement temporary inline, where statement execution reaches
+    /// it.
+    ///
+    /// A destination materialization's value lives only for the statement that
+    /// created it, so its release is emitted in place rather than routed into
+    /// a scope's cleanup ladder. The release is null-safe, so an unevaluated
+    /// guarded path leaves the temporary empty and the release is a no-op.
+    ReleaseTemp(Release),
     /// A registered cleanup entry. The referenced block holds the deferred
     /// statements and joins the scope's ladder in registration order.
     Defer {
@@ -422,7 +445,17 @@ pub enum Terminator {
         join: BlockId,
     },
     /// Leave the function with an optional value.
-    Return(Option<Value>),
+    ///
+    /// The value is evaluated first and then the `releases` run, so a
+    /// statement temporary a returned expression reads is freed only after the
+    /// value has left it. A return with no value simply runs the releases.
+    Return {
+        /// The returned value, when the function returns one.
+        value: Option<Value>,
+        /// Statement temporaries released after the value is evaluated, in
+        /// reverse creation order.
+        releases: Vec<Release>,
+    },
     /// No successor; only reachable in a malformed graph.
     Unreachable,
 }

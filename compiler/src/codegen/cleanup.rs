@@ -250,10 +250,13 @@ impl<'a> Emitter<'a> {
     /// A function with a cleanup ladder stores the value in the result variable
     /// and jumps to the innermost scope label it leaves, so the ladder can drop
     /// the scopes on the way out. A function without one returns directly.
+    /// Statement temporaries the returned expression read are released after
+    /// the value has been evaluated and before control leaves.
     pub(super) fn emit_return(
         &mut self,
         span: crate::span::Span,
         value: Option<&ir::Value>,
+        releases: &[ir::Release],
         jump: Option<usize>,
     ) {
         self.emit_line_directive(span);
@@ -266,25 +269,43 @@ impl<'a> Emitter<'a> {
                 // declares, exactly as a store into a `str` place does.
                 let ret_ty = self.return_ty.clone();
                 let lowered = self.store_text(value, &ret_ty);
-                if let Some(result) = self.result_var.clone() {
-                    self.push(&format!("    {result} = {lowered};"));
-                    // Returning an owned place transfers it to the caller, so
-                    // the source is emptied before the cleanup ladder runs;
-                    // otherwise the callee would release what it just handed
-                    // back.
-                    if let ValueKind::Place(place) = &value.kind {
-                        let ty = self.substitute(&place.ty);
-                        if self.needs_drop(&ty) {
-                            let source = self.place(place);
-                            self.emit_move_zero(&source, &ty);
+                match self.result_var.clone() {
+                    Some(result) => {
+                        self.push(&format!("    {result} = {lowered};"));
+                        // Returning an owned place transfers it to the caller,
+                        // so the source is emptied before the cleanup ladder
+                        // runs; otherwise the callee would release what it just
+                        // handed back.
+                        if let ValueKind::Place(place) = &value.kind {
+                            let ty = self.substitute(&place.ty);
+                            if self.needs_drop(&ty) {
+                                let source = self.place(place);
+                                self.emit_move_zero(&source, &ty);
+                            }
                         }
                     }
-                } else {
-                    self.push(&format!("    return {lowered};"));
-                    return;
+                    None if !releases.is_empty() => {
+                        // Without a cleanup ladder the value would return
+                        // directly, and a release cannot run after a `return`.
+                        // The value is stored in a block-local first, so the
+                        // releases run after it has been read.
+                        let local = self.unique_local("__cl_return");
+                        let decl = super::types::declarator(&ret_ty, &local);
+                        self.push("    {");
+                        self.push(&format!("        {decl} = {lowered};"));
+                        self.emit_temp_releases(releases);
+                        self.push(&format!("        return {local};"));
+                        self.push("    }");
+                        return;
+                    }
+                    None => {
+                        self.push(&format!("    return {lowered};"));
+                        return;
+                    }
                 }
             }
         }
+        self.emit_temp_releases(releases);
         if let Some(label) = jump {
             self.push(&format!("    goto __cl_c{label};"));
         } else if self.return_ty.is_fixed_array() {
@@ -298,16 +319,51 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Drops every statement temporary a return carries, in list order.
+    ///
+    /// The checker records the releases newest first, and each drop is
+    /// null-safe and empties its temporary, so an unevaluated guarded path
+    /// releases nothing and a second drop would be a no-op.
+    fn emit_temp_releases(&mut self, releases: &[ir::Release]) {
+        for release in releases {
+            let place = ir::Place {
+                base: ir::PlaceBase::Temp(release.temp),
+                projections: Vec::new(),
+                ty: release.ty.clone(),
+            };
+            self.emit_drop(&place);
+        }
+    }
+
     /// Copies a by-value fixed-array return into the hidden out-parameter.
     ///
     /// C cannot assign or return an array, so the value is written to the
     /// caller's destination element by element. An array literal writes its
     /// elements through [`Emitter::emit_array_assign_to`]; a returned owned
     /// place is copied element by element and then emptied, so the scope
-    /// cleanup does not release the value the caller now owns.
+    /// cleanup does not release the value the caller now owns. A conditional
+    /// evaluates only its chosen arm into the destination.
     fn emit_fixed_array_return(&mut self, value: &ir::Value) {
+        self.emit_fixed_array_return_arm(value);
+    }
+
+    /// Emits one arm or value of a fixed-array return.
+    fn emit_fixed_array_return_arm(&mut self, value: &ir::Value) {
         let ty = self.return_ty.clone();
         match &value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.emit_guards(condition);
+                let condition_c = self.value(condition);
+                self.push(&format!("    if ({condition_c}) {{"));
+                self.emit_fixed_array_return_arm(then_value);
+                self.push("    } else {");
+                self.emit_fixed_array_return_arm(else_value);
+                self.push("    }");
+            }
             ValueKind::ArrayLit { elements, fill } => {
                 self.emit_array_assign_to("__cl_ret", &ty, elements, fill);
             }
@@ -447,7 +503,7 @@ fn successors(terminator: &Terminator) -> Vec<BlockId> {
             targets.push(*default);
             targets
         }
-        Terminator::Return(_) | Terminator::Unreachable => Vec::new(),
+        Terminator::Return { .. } | Terminator::Unreachable => Vec::new(),
     }
 }
 
