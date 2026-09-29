@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 02:29
-> **Progress**: 13/24 tasks (54%)
+> **Progress**: 14/24 tasks (58%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -168,7 +168,7 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Pin call-result projections and the element-move rejections.
 
 - [x] 3.1.1 [spec-author] Add the projection and element-move specification tests to the suite (ST-16 – ST-21, ST-23, ST-24, ST-27 – ST-30) — `compiler/tests/array_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 02:29)
-- [ ] 3.1.2 Run the spec suite and record the red phase — ST-16 – ST-21, ST-23, ST-27 – ST-30 fail (invalid C or missing `E10026`); ST-24 passes as a guard
+- [~] 3.1.2 Run the spec suite and record the red phase — ST-16 – ST-21, ST-23, ST-27 – ST-30 fail (invalid C or missing `E10026`); ST-24 passes as a guard ✅ (completed: 2026-09-29 02:30) — red evidence: 22 pass / 11 fail — ST-16 – ST-18 and ST-23 reject in C (the call renders inline); ST-19 – ST-21, ST-27 – ST-30 are accepted with no `E10026`; ST-24 passes as the guard
 
 **Deliverables**:
 - [ ] ST-16 – ST-21, ST-23, ST-24, ST-27 – ST-30 in the spec suite
