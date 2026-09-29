@@ -759,3 +759,100 @@ func main(): i32 {
     assert_contains("rviimpl-takearm", assignment, "sinkCount(s)");
     assert_contains("rviimpl-takearm", assignment, "(s = NULL)");
 }
+
+/// A panic message that reads a call-result element emits the call and the
+/// read before the panic, not a bare NULL handle.
+#[test]
+fn should_guard_a_panic_message_argument() {
+    let source = r#"module impl.rvi.panicguard;
+import { String, stringOf } from std.text;
+func mk(): String[2] { return [stringOf("ab"), stringOf("cde")]; }
+func main(): i32 {
+    panic(mk()[1]);
+}
+"#;
+    let emitted = emit_host("rviimpl-panicguard", source);
+    assert_contains("rviimpl-panicguard", &emitted, "cl_impl_rvi_panicguard_mk(__cl_tmp0);");
+    assert_contains(
+        "rviimpl-panicguard",
+        &emitted,
+        "ClString __cl_panic_msg_1 = __cl_tmp0[1];",
+    );
+}
+
+/// A panic message with a runtime index emits the bounds trap first.
+#[test]
+fn should_guard_a_runtime_index_panic_message() {
+    let source = r#"module impl.rvi.panicindex;
+func main(): i32 {
+    let i: i32 = 5;
+    let xs: str[2] = ["ab", "cd"];
+    panic(xs[i]);
+    return 0;
+}
+"#;
+    let emitted = emit_host("rviimpl-panicindex", source);
+    let trap = emitted
+        .find("if ((i < 0) || ((usize)(i) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");")
+        .unwrap_or_else(|| panic!("rviimpl-panicindex: no bounds trap"));
+    let panic = emitted
+        .find("ClStr __cl_panic_msg_1 = xs[i];")
+        .unwrap_or_else(|| panic!("rviimpl-panicindex: no hoisted message"));
+    assert!(
+        trap < panic,
+        "rviimpl-panicindex: the bounds trap must run before the message read"
+    );
+}
+
+/// A guarded struct `take` argument is emptied with a plain call operand, so
+/// the emitted C stays warning-free.
+#[test]
+fn should_empty_a_struct_take_argument_with_a_plain_comma() {
+    let source = r#"module impl.rvi.structtake;
+import { String, stringOf } from std.text;
+struct Box { name: String; n: i32; }
+func sink(take b: Box): bool { return true; }
+func main(): i32 {
+    let ok: bool = false;
+    let b: Box = Box { name: stringOf("x"), n: 1 };
+    let r: bool = ok && sink(b);
+    return 0;
+}
+"#;
+    let emitted = emit_host("rviimpl-structtake", source);
+    let assignment = line_with("rviimpl-structtake", &emitted, "r = (ok &&");
+    assert_contains("rviimpl-structtake", assignment, "sink(b)");
+    assert_contains("rviimpl-structtake", assignment, "(cl_zero(&b))");
+}
+
+/// A C string panic message measures its length at the call.
+#[test]
+fn should_measure_a_cstring_panic_message() {
+    let source = r#"module impl.rvi.paniccstr;
+func passes(s: cstring): cstring { return s; }
+func main(): i32 {
+    panic(passes("boom"));
+}
+"#;
+    let emitted = emit_host("rviimpl-paniccstr", source);
+    assert_contains(
+        "rviimpl-paniccstr",
+        &emitted,
+        "cl_panic((const unsigned char *)(__cl_panic_msg_1), (usize)cl_cstring_len((const char *)(__cl_panic_msg_1)));",
+    );
+}
+
+/// A `static str` function whose only tail is a panic returns the empty view
+/// state, so the emitted C satisfies the return-type check.
+#[test]
+fn should_return_the_empty_view_state_after_a_diverging_panic() {
+    let source = r#"module impl.rvi.statictail;
+func f(): static str { panic("x"); }
+func main(): i32 {
+    let s: static str = f();
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("rviimpl-statictail", source);
+    assert_contains("rviimpl-statictail", &emitted, "return (ClStr){0};");
+}

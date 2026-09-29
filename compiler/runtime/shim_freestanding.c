@@ -214,10 +214,23 @@ static inline void cl_trap(const char *code, const char *message)
     cl_exit(1);
 }
 
+/* The byte length of a NUL-terminated C string. The pointer forms of a panic
+ * message keep printing their text through the length-based runtime. There is
+ * no C library, so the scan is written here. */
+static inline unsigned long cl_cstring_len(const char *text)
+{
+    unsigned long length = 0;
+    while (text[length] != '\0') {
+        length++;
+    }
+    return length;
+}
+
 /* Abort on a user-level panic. The message is passed as pointer and length, so
  * a view or handle needs no NUL terminator. The bytes are copied into the
- * fixed report buffer, so a message longer than the buffer is truncated; the
- * prefix and the newline are always written. */
+ * fixed report buffer with room reserved for the newline, so a message longer
+ * than the buffer is truncated while the prefix and the newline are always
+ * written. */
 static inline void cl_panic(const unsigned char *message, unsigned long len)
 {
     char buffer[256];
@@ -225,14 +238,12 @@ static inline void cl_panic(const unsigned char *message, unsigned long len)
     unsigned long at = 0;
     unsigned long index;
     at = cl_copy_into(buffer, at, limit, "panic: ");
-    for (index = 0; index < len && at < limit; index++) {
+    for (index = 0; index < len && at + 1 < limit; index++) {
         buffer[at] = (char)message[index];
         at++;
     }
-    if (at < limit) {
-        buffer[at] = '\n';
-        at++;
-    }
+    buffer[at] = '\n';
+    at++;
     cl_write_bytes(2, buffer, at);
     cl_exit(1);
 }

@@ -543,6 +543,10 @@ impl<'a> Emitter<'a> {
             self.push("    cl_panic((const unsigned char *)\"panic\", (usize)5);");
             return;
         };
+        // The message argument may carry runtime guards and a deferred
+        // materialization (an element read or an index), so they run first,
+        // exactly as they do for a call argument.
+        self.emit_guards(arg);
         if let ValueKind::Str(text) = &arg.kind {
             let escaped = escape_c_string(text.as_bytes());
             self.push(&format!(
@@ -566,6 +570,14 @@ impl<'a> Emitter<'a> {
             TyKind::Str | TyKind::StaticStr => {
                 self.push(&format!(
                     "        cl_panic((const unsigned char *)({local}).ptr, (usize)(({local}).len));"
+                ));
+            }
+            TyKind::CString | TyKind::Raw(_) => {
+                // A C string pointer is NUL-terminated, so its byte length is
+                // measured at the call. This keeps the pointer forms printing
+                // their text, as they did before the length-based runtime.
+                self.push(&format!(
+                    "        cl_panic((const unsigned char *)({local}), (usize)cl_cstring_len((const char *)({local})));"
                 ));
             }
             _ => {

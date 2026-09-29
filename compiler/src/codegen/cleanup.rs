@@ -483,7 +483,9 @@ impl<'a> Emitter<'a> {
                 self.null_literal().to_owned()
             }
             // A view returns its pointer-and-length struct in its empty state.
-            TyKind::Str | TyKind::Struct(..) => format!("({}){{0}}", super::types::c_type(&ret)),
+            TyKind::Str | TyKind::StaticStr | TyKind::Struct(..) => {
+                format!("({}){{0}}", super::types::c_type(&ret))
+            }
             TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
                 format!("({}){{0}}", super::types::c_type(&ret))
             }

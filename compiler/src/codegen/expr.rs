@@ -369,7 +369,9 @@ impl<'a> Emitter<'a> {
             TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString => {
                 format!("({c_name} = {})", self.null_literal())
             }
-            _ => format!("(cl_zero(&{c_name}), 0)"),
+            // A call operand has a side effect, so a plain comma operand
+            // carries it without an unused-value warning for either side.
+            _ => format!("(cl_zero(&{c_name}))"),
         }
     }
 

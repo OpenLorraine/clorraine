@@ -75,6 +75,13 @@ static inline void cl_trap(const char *code, const char *message)
     exit(20);
 }
 
+/* The byte length of a NUL-terminated C string. The pointer forms of a panic
+ * message keep printing their text through the length-based runtime. */
+static inline unsigned long cl_cstring_len(const char *text)
+{
+    return (unsigned long)strlen(text);
+}
+
 /* Leave the process after a user-level panic. The message is passed as pointer
  * and length, so a view or handle needs no NUL terminator; the bytes are
  * written exactly as they are. */

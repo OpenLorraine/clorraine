@@ -103,10 +103,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // so the consumed places must not be emptied now: the
                         // move-outs travel on the materialized value and the
                         // guard emitter runs them after the call, on the
-                        // evaluated path only.
+                        // evaluated path only. The result is a transfer
+                        // temporary: its destination owns the value, so the
+                        // temporary itself is not released.
                         let temp = self.new_temp(ty.clone());
-                        self.mark_destination_temp(temp);
-                        self.register_pending_release(temp, &ty);
                         let value = Value::new(ty.clone(), kind);
                         return Value::new(
                             ty,
@@ -387,6 +387,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_names = std::mem::take(&mut self.binding_names);
         let saved_continues = std::mem::take(&mut self.continue_states);
         let saved_defer = self.defer_anchor;
+        let saved_move_outs = self.defer_move_outs;
         let saved_registration = self.next_registration;
         let saved_owned_temp = self.next_owned_temp;
         let saved_returns = self.returns.clone();
@@ -394,6 +395,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.next_registration = 0;
         self.next_owned_temp = 0;
         self.defer_anchor = None;
+        // A lifted lambda body is evaluated when the closure is called, not
+        // where the closure literal is written, so the enclosing operand's
+        // deferred move-out context does not apply inside it.
+        self.defer_move_outs = 0;
         self.returns = ret.clone();
 
         let body_span = match body {
@@ -459,6 +464,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.binding_names = saved_names;
         self.continue_states = saved_continues;
         self.defer_anchor = saved_defer;
+        self.defer_move_outs = saved_move_outs;
         self.next_registration = saved_registration;
         self.next_owned_temp = saved_owned_temp;
         self.returns = saved_returns;
