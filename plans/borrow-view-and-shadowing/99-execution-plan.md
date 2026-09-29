@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 13:05
-> **Progress**: 6/16 tasks (38%)
+> **Last Updated**: 2026-09-29 13:12
+> **Progress**: 8/16 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -113,7 +113,9 @@ updates.
 
 ## Phase 2: Shadowed narrowing
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 80779131e34df9e3845b1c064a0a5ce3cc5ac90f
+> **Expected modification set**: `compiler/tests/borrow_view_and_shadowing_spec_test.rs`, `compiler/tests/borrow_view_and_shadowing_impl_test.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/tests.rs`, `plans/borrow-view-and-shadowing/99-execution-plan.md`
+> **Scope mode**: strict
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 2.1: Specification Tests
@@ -121,12 +123,14 @@ updates.
 **Reference**: [03-02 §Proposed Changes](03-02-shadowed-narrowing.md) · AR-5, AR-6, AR-13
 **Objective**: Pin the shadowing acceptance and the unchanged null rules.
 
-- [ ] 2.1.1 [spec-author] Add the shadowed-narrowing specification tests to the suite (ST-9 – ST-12, ST-14) — `compiler/tests/borrow_view_and_shadowing_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase — ST-9, ST-10, and ST-14 report `E10010` pre-fix; ST-11 and ST-12 pass as guards
+- [x] 2.1.1 [spec-author] Add the shadowed-narrowing specification tests to the suite (ST-9 – ST-12, ST-14) — `compiler/tests/borrow_view_and_shadowing_spec_test.rs` ✅ (completed: 2026-09-29 13:12)
+- [x] 2.1.2 Run the spec suite and record the red phase — ST-9, ST-10, and ST-14 report `E10010` pre-fix; ST-11 and ST-12 pass as guards ✅ (completed: 2026-09-29 13:12)
 
 **Deliverables**:
-- [ ] ST-9 – ST-12 and ST-14 in the spec suite
-- [ ] Red-phase evidence recorded
+- [x] ST-9 – ST-12 and ST-14 in the spec suite
+- [x] Red-phase evidence recorded
+
+> **Red phase (recorded 2026-09-29 13:12)**: `cargo test --test borrow_view_and_shadowing_spec_test` → 13 passed / 3 failed. The three shadowing cases fail as predicted (ST-9, ST-10, ST-14: spurious `E10010` on the initializer); ST-11 and ST-12 pass as guards.
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_view_and_shadowing_spec_test"`
 

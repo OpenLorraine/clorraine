@@ -1,4 +1,5 @@
-//! Runnable specification tests for moves through a borrow element view.
+//! Runnable specification tests for moves through a borrow element view and
+//! for a shadowing initializer under a null narrowing.
 //!
 //! Each case compiles a small Clorraine program with the built `clc` binary,
 //! builds the emitted C with the host C compiler under the fixed warning flags,
@@ -11,6 +12,12 @@
 //! field, and a return — is a compile-time rejection with the element-move
 //! diagnostic, while reads, lends, writes, and the copy-form loop binding stay
 //! accepted. Moving out of a `borrow` parameter keeps its own diagnostic.
+//!
+//! The narrowing batch covers a declaration that shadows a narrowed nullable
+//! binding: its initializer must resolve to the outer binding before the new
+//! name exists, so the `let` and `const` shadowing forms compile under a
+//! `!= null` check (and under the `else` of an `== null` check), while a use
+//! outside any narrowing keeps its null rejection.
 //!
 //! Cases whose answer is a compile-time rejection assert the diagnostic code
 //! and the message text. The rejection cases fail before the implementation
@@ -471,4 +478,126 @@ func leave(borrow s: String): String {
 func main(): i32 { return 0; }
 "#;
     assert_rejected("bvs13c", source, "E10034");
+}
+
+/// A shadowing `let` initializer reads the narrowed outer binding.
+///
+/// The `!= null` check narrows the outer `b`, and the declaration's own
+/// initializer must see that narrowing: its name resolves before the new
+/// binding exists, so the program compiles and returns zero.
+#[test]
+fn should_accept_when_a_shadowing_let_initializer_reads_the_narrowed_outer_binding() {
+    let source = r#"module codegen.bvs.st9;
+
+import { Buffer, bufferNew } from std.mem;
+
+func main(): i32 {
+    let b: Buffer? = bufferNew(8);
+    if (b != null) {
+        let b: Buffer = b;
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_host("bvs9", source);
+    assert_exit("bvs9", &output, 0);
+}
+
+/// A shadowing `const` initializer reads the narrowed outer binding too.
+///
+/// The declaration order is the same for `const`, so the narrowed outer value
+/// flows into the new immutable binding and the program returns zero.
+#[test]
+fn should_accept_when_a_shadowing_const_initializer_reads_the_narrowed_outer_binding() {
+    let source = r#"module codegen.bvs.st10;
+
+import { Buffer, bufferNew } from std.mem;
+
+func main(): i32 {
+    let b: Buffer? = bufferNew(8);
+    if (b != null) {
+        const b: Buffer = b;
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_host("bvs10", source);
+    assert_exit("bvs10", &output, 0);
+}
+
+/// A nullable binding used without a narrowing check keeps its rejection.
+///
+/// The call reaches a parameter that needs a non-null `Buffer`, and no
+/// `!= null` check narrows `b`, so the compiler reports the null-use error at
+/// the argument.
+#[test]
+fn should_report_the_null_use_when_a_nullable_binding_is_used_without_a_narrowing_check() {
+    let source = r#"module codegen.bvs.st11;
+
+import { Buffer, bufferNew } from std.mem;
+
+func use(b: Buffer): i32 { return 0; }
+
+func main(): i32 {
+    let b: Buffer? = bufferNew(8);
+    return use(b);
+}
+"#;
+    assert_rejected_with(
+        "bvs11",
+        source,
+        "E10010",
+        &["value 'b' may be null here"],
+    );
+}
+
+/// A narrowing check alone makes the use valid.
+///
+/// The `!= null` check narrows the outer binding for the body, and the use
+/// inside it needs no shadowing declaration; the program returns zero.
+#[test]
+fn should_accept_when_a_narrowing_check_guards_the_use_without_shadowing() {
+    let source = r#"module codegen.bvs.st12;
+
+import { Buffer, bufferNew } from std.mem;
+
+func use(b: Buffer): i32 { return 0; }
+
+func main(): i32 {
+    let b: Buffer? = bufferNew(8);
+    if (b != null) {
+        return use(b);
+    }
+    return 1;
+}
+"#;
+    let output = run_host("bvs12", source);
+    assert_exit("bvs12", &output, 0);
+}
+
+/// The `else` of an `== null` check narrows the shadowing initializer too.
+///
+/// Inside the `else` branch the outer `b` is known non-null, so the shadowing
+/// declaration's initializer reads the narrowed outer binding and the program
+/// compiles.
+#[test]
+fn should_accept_when_a_shadowing_initializer_reads_the_else_branch_narrowing() {
+    let source = r#"module codegen.bvs.st14;
+
+import { Buffer, bufferNew } from std.mem;
+
+func main(): i32 {
+    let b: Buffer? = bufferNew(8);
+    if (b == null) {
+        return 1;
+    } else {
+        let b: Buffer = b;
+        return 0;
+    }
+}
+"#;
+    let output = run_host("bvs14", source);
+    assert_exit("bvs14", &output, 0);
 }
