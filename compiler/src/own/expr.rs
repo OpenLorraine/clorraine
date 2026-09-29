@@ -114,6 +114,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a conditional arm is an ownerless element move.
+    ///
+    /// A conditional whose arms read elements out of ownerless call results
+    /// can consume only one element at runtime, and no arm has a place to move
+    /// out of, so the same v1 element-move limit applies as for a plain
+    /// element read. A nested conditional recurses.
+    pub(super) fn conditional_ownerless_element_move(&self, expr: &Expr) -> bool {
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        else {
+            return false;
+        };
+        [then_value.as_ref(), else_value.as_ref()]
+            .into_iter()
+            .any(|arm| {
+                if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                    self.conditional_ownerless_element_move(arm)
+                } else {
+                    self.is_ownerless_element_move(arm)
+                }
+            })
+    }
+
     /// True when the expression moves an element out of an ownerless call
     /// result.
     ///
@@ -398,9 +424,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026
                 // through the shared consume point, while an ownerless element
-                // is reported by the store preparation.
-                if !projections.is_empty() && self.place_target(value).is_some() {
-                    self.consume_owned_place(value, value.span);
+                // is reported by the store preparation. A conditional moves
+                // whichever owned arm it selects, so every arm becomes
+                // maybe-moved except an arm that names the target path itself.
+                if !projections.is_empty() {
+                    if self.place_target(value).is_some() {
+                        self.consume_owned_place(value, value.span);
+                    } else {
+                        for source in self.conditional_move_sources(value) {
+                            if let PlaceTarget::Local(source_id, source_projections) = &source {
+                                if *source_id == id && source_projections == &projections {
+                                    continue;
+                                }
+                            }
+                            self.move_target(source, value.span);
+                        }
+                    }
                 }
                 if compound.is_some() {
                     self.read_place(id, &projections, target.span);

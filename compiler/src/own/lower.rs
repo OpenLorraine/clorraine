@@ -709,8 +709,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Collects the statement temporaries a lowered value reads through.
     fn collect_lowered_temp_owners(&self, value: &Value, owners: &mut BTreeSet<ir::TempId>) {
         match &value.kind {
-            ValueKind::Materialize { temp, .. } => {
-                owners.insert(*temp);
+            ValueKind::Materialize { temp, value: inner } => {
+                // A view-typed temporary owns no storage and is never released,
+                // so only an owning temporary is a loan owner; the wrapped
+                // value may itself read through a temporary (a slice of an
+                // element of a call result), so the walk continues into it.
+                if self.owns_drop(&value.ty) {
+                    owners.insert(*temp);
+                }
+                self.collect_lowered_temp_owners(inner, owners);
             }
             ValueKind::Temp(temp) => {
                 // A transfer temporary's value travels to a binding that owns
@@ -767,7 +774,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .map(|param| param.name.clone())
                     .collect();
                 let returns = resolve_ty(&decl.returns, &type_params, &self.sema.table);
-                if !is_elided_view(&returns) {
+                // A generic reborrow returns its type parameter, which is the
+                // view at the call site; only a call whose result is a view
+                // reaches this collector, so the parameter return qualifies.
+                if !is_elided_view(&returns)
+                    && !returns.is_param()
+                    && !mentions_type_param(&returns)
+                {
                     return None;
                 }
                 let candidates: Vec<usize> = decl
@@ -776,11 +789,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .enumerate()
                     .filter(|(_, param)| {
                         param.mode != Mode::Take
-                            && is_lend_candidate(&resolve_ty(
+                            && (is_lend_candidate(&resolve_ty(
                                 &param.ty,
                                 &type_params,
                                 &self.sema.table,
-                            ))
+                            )) || mentions_type_param(&resolve_ty(
+                                &param.ty,
+                                &type_params,
+                                &self.sema.table,
+                            )))
                     })
                     .map(|(index, _)| index)
                     .collect();

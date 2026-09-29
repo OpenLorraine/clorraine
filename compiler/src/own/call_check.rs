@@ -275,7 +275,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     } else {
                         let sources = self.conditional_move_sources(expr);
                         if sources.is_empty() {
-                            if self.is_ownerless_element_move(expr) {
+                            if self.is_ownerless_element_move(expr)
+                                || self.conditional_ownerless_element_move(expr)
+                            {
                                 // A `take` argument owns the value it receives,
                                 // and an element of a call result has no owner
                                 // that outlives the statement.

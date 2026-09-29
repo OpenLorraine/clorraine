@@ -900,3 +900,72 @@ fn a_take_call_result_temporary_is_not_released() {
         "a transfer temporary must not join the statement release set"
     );
 }
+
+#[test]
+fn a_view_through_a_slice_of_a_call_result_reports_e10030() {
+    // The slice's source is materialized, so the view reads through the
+    // call-result temporary; using it after the statement outlives the release.
+    let source = "module t;\n\
+        import { String, stringOf, bytes } from std.text;\n\
+        import { slice } from std.mem;\n\
+        func mk(): String[2] { return [$\"a{1}\", $\"bb{2}\"]; }\n\
+        func demo(): i32 {\n\
+            let v: u8[] = slice(bytes(mk()[0]), 0, 1);\n\
+            return i32(v[0]);\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10030"]);
+}
+
+#[test]
+fn a_generic_reborrow_of_a_call_result_reports_e10030() {
+    // The reborrow returns its type parameter; at the call site the view reads
+    // through the call-result temporary, so the loan must be kept.
+    let source = "module t;\n\
+        import { String, stringOf, bytes } from std.text;\n\
+        func mk(): String[2] { return [$\"a{1}\", $\"bb{2}\"]; }\n\
+        func ident<T>(x: T): T { return x; }\n\
+        func vlen(s: str): i32 { return i32(len(s)); }\n\
+        func demo(): i32 {\n\
+            let v: str = ident(mk()[0]);\n\
+            return vlen(v);\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10030"]);
+}
+
+#[test]
+fn a_projected_conditional_store_marks_its_arms() {
+    // The field write consumes whichever owned arm the condition selects, so a
+    // later use of either arm is the moved-value error.
+    let source = "module t;\n\
+        import { String, stringOf } from std.text;\n\
+        func vlen(s: str): i32 { return i32(len(s)); }\n\
+        struct Box { arr: String[2]; tag: i32; }\n\
+        func demo(): i32 {\n\
+            let ok: bool = false;\n\
+            let a: String[2] = [$\"x{1}\", $\"yy{2}\"];\n\
+            let b: String[2] = [$\"z{3}\", $\"www{4}\"];\n\
+            let s: Box = Box { arr: [$\"p{5}\", $\"q{6}\"], tag: 1 };\n\
+            s.arr = ok ? a : b;\n\
+            return vlen(b[0]);\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10020"]);
+}
+
+#[test]
+fn a_conditional_of_ownerless_elements_reports_the_move_limit() {
+    // No arm of the conditional has a place to move out of, so consuming the
+    // chosen element is the v1 element-move limit rather than a valid move.
+    let source = "module t;\n\
+        import { String, stringOf } from std.text;\n\
+        func mk(): String[2] { return [$\"a{1}\", $\"bb{2}\"]; }\n\
+        func eatS(take s: String): i32 { return i32(len(s)); }\n\
+        func demo(): i32 {\n\
+            let ok: bool = false;\n\
+            return eatS(ok ? mk()[0] : mk()[1]);\n\
+        }\n\
+        func main(): i32 { return 0; }\n";
+    assert_eq!(error_codes(source), vec!["E10026"]);
+}

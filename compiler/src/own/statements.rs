@@ -278,8 +278,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             // An element read from a call result has no place to move out of,
             // so storing it into an owned destination is the v1 element-move
-            // limit rather than an assign of a borrowed element.
-            if self.is_ownerless_element_move(value) {
+            // limit rather than an assign of a borrowed element. A conditional
+            // whose arms are such reads hits the same limit.
+            if self.is_ownerless_element_move(value)
+                || self.conditional_ownerless_element_move(value)
+            {
                 self.report_element_move_limit(value.span);
             }
         }
@@ -787,7 +790,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     let sources = self.conditional_move_sources(value);
                     if sources.is_empty() {
-                        if self.is_ownerless_element_move(value) {
+                        if self.is_ownerless_element_move(value)
+                            || self.conditional_ownerless_element_move(value)
+                        {
                             // The return type owns the value it receives, and
                             // an element of a call result has no owner that
                             // outlives the statement.
