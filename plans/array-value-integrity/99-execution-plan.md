@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-09-29 02:08
-> **Progress**: 9/24 tasks (38%)
+> **Progress**: 10/24 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -130,12 +130,12 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 **Objective**: Derive the row type from the remaining extents in both checkers, the lowering, and the borrow row's C declaration.
 
 - [x] 2.2.1 Add `Ty::iterated_element`, use it in `sema/stmt.rs::check_for_in` and `own/loops.rs::check_for_in`/`bind_for_in_element`, and spell the borrow row's raw address temporary as a pointer-to-array — `compiler/src/types/mod.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/types.rs` ✅ (completed: 2026-09-29 02:08) — a row access through a slice reinterprets its base-element pointer as a pointer-to-array (`codegen/render.rs`); authorized adjacent fix: the slice guard omits the lower-bound clause for a constant zero low bound (`codegen/calls.rs`), pinned by test `ai9`
-- [ ] 2.2.2 Run the spec suite and record the green phase — ST-1 – ST-15 pass
+- [x] 2.2.2 Run the spec suite and record the green phase — ST-1 – ST-15 pass ✅ (completed: 2026-09-29 02:08) — green evidence: 18/18 spec cases pass (ST-1 – ST-9, ST-22, ST-25, ST-26 from Phase 1 plus ST-10 – ST-15); copy and view rows, the slice of rows, and the named row type in E10040 are pinned
 
 **Deliverables**:
-- [ ] Rows bind as `T[M]` for `T[N][M]` and `T[][M]`; the copy and view forms both work
-- [ ] The borrow row address temporary is declared as a C pointer-to-array
-- [ ] `E10040` names the row type
+- [x] Rows bind as `T[M]` for `T[N][M]` and `T[][M]`; the copy and view forms both work
+- [x] The borrow row address temporary is declared as a C pointer-to-array
+- [x] `E10040` names the row type
 
 **Verify**: `make -C docker exec CMD="cargo test --test array_value_integrity_spec_test"`
 
