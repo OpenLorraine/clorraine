@@ -85,7 +85,7 @@ updates.
 
 **Deliverables**:
 - [x] Every move form through the view reports `E10026`; the guards stay accepted
-- [ ] No regressions; no warnings
+- [x] No regressions; no warnings
 
 > **Green phase (recorded 2026-09-29 13:04)**: `cargo test --test borrow_view_and_shadowing_spec_test` → 11 passed / 0 failed. Every rejection case reports `E10026` and every guard case still passes.
 
@@ -104,6 +104,8 @@ updates.
 - [x] No regressions; no warnings
 
 > **Full verification (recorded 2026-09-29 13:05)**: `make check` → spec check plus the full Rust workspace suite, all green (351 lib tests, every spec/impl suite passing).
+
+> **Phase 1 review (recorded 2026-09-29 13:08)**: independent correctness/maintainability/standards review of the phase diff (baseline tree `0a6ac18`). No critical or major findings; no correctness findings in the guard or tests. One minor bookkeeping finding RV-001 (the Step 1.2 "no regressions" deliverable box was left unchecked after `make check` passed) — resolved by checking it. The reviewer independently re-ran both new suites, the `own::tests` unit tests, and `make check`, and probed `target/debug/clc` directly (single report per transfer, `E10034` intact, writes/lends accepted).
 
 **Verify**: `make check`
 
