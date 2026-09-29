@@ -432,7 +432,17 @@ impl<'a> Emitter<'a> {
         }
         match callee {
             "text" => self.text_call(args.first()),
-            _ => format!("{callee}({argument_list})"),
+            _ => {
+                // A func-typed local is called through its own C spelling, so
+                // the compiler's local names map resolves it; every other
+                // unresolved name is a compiler-known helper spelled as-is.
+                let spelled = self
+                    .local_names
+                    .get(callee)
+                    .cloned()
+                    .unwrap_or_else(|| callee.to_owned());
+                format!("{spelled}({argument_list})")
+            }
         }
     }
 

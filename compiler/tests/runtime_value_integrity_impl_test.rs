@@ -515,3 +515,89 @@ func main(): i32 {
     let discard = after("rviimpl-funccall", &emitted, "i32 __cl_discard_1[2] = {0};");
     assert_contains("rviimpl-funccall", discard, "g(3, __cl_discard_1);");
 }
+
+/// A func-typed local whose name matches a module function is called through
+/// its own binding, not the module function.
+#[test]
+fn should_call_the_local_func_value_when_its_name_matches_a_function() {
+    let source = r#"module impl.rvi.modname;
+func run(x: i32): i32 { return 99; }
+func pair(x: i32): i32[2] { return [x, x + 1]; }
+func main(): i32 {
+    let run: func(i32): i32[2] = pair;
+    let a: i32[2] = run(3);
+    return a[0];
+}
+"#;
+    let emitted = emit_host("rviimpl-modname", source);
+    assert_contains("rviimpl-modname", &emitted, "run_0(3, __cl_call_1);");
+    assert!(
+        !emitted.contains("cl_impl_rvi_modname_run(3,"),
+        "rviimpl-modname: the local binding shadows the module function"
+    );
+}
+
+/// A shadowing func-typed local is called through the inner binding.
+#[test]
+fn should_call_the_inner_func_value_when_locals_shadow() {
+    let source = r#"module impl.rvi.shadow;
+func ten(x: i32): i32 { return 10; }
+func one(x: i32): i32 { return 1; }
+func main(): i32 {
+    let g: func(i32): i32 = ten;
+    if (true) {
+        let g: func(i32): i32 = one;
+        return g(0);
+    }
+    return g(0);
+}
+"#;
+    let emitted = emit_host("rviimpl-shadow", source);
+    assert_contains("rviimpl-shadow", &emitted, "g_1(0);");
+    assert_contains("rviimpl-shadow", &emitted, "g(0);");
+}
+
+/// A nested field receiver is guarded against the first extent, not the
+/// product of every extent.
+#[test]
+fn should_guard_a_nested_field_receiver_with_the_first_extent() {
+    let source = r#"module impl.rvi.nestedrecv;
+struct Ops { run: func(i32): i32; }
+func bump(x: i32): i32 { return x + 1; }
+func main(): i32 {
+    let grid: Ops[2][2] = [[Ops { run: bump }, Ops { run: bump }], [Ops { run: bump }, Ops { run: bump }]];
+    let i: i32 = 3;
+    grid[i][0].run(1);
+    return 0;
+}
+"#;
+    let emitted = emit_host("rviimpl-nestedrecv", source);
+    let trap = emitted
+        .find("if ((i < 0) || ((usize)(i) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");")
+        .unwrap_or_else(|| panic!("rviimpl-nestedrecv: no first-extent receiver trap"));
+    let call = emitted
+        .find("(grid[i][0].run)(1);")
+        .unwrap_or_else(|| panic!("rviimpl-nestedrecv: no nested field call"));
+    assert!(
+        trap < call,
+        "rviimpl-nestedrecv: the receiver trap must run before the call"
+    );
+}
+
+/// A fixed-array func parameter keeps its array declarator, so it is
+/// compatible with the callee it receives.
+#[test]
+fn should_render_a_fixed_array_func_parameter_with_its_declarator() {
+    let source = r#"module impl.rvi.arrayparam;
+func sum(pair: i32[2]): i32 { return pair[0] + pair[1]; }
+func apply(f: func(i32[2]): i32, v: i32[2]): i32 {
+    return f(v);
+}
+func main(): i32 {
+    let v: i32[2] = [3, 4];
+    return apply(sum, v);
+}
+"#;
+    let emitted = emit_host("rviimpl-arrayparam", source);
+    assert_contains("rviimpl-arrayparam", &emitted, "i32 (*f)(i32 [2])");
+}

@@ -601,11 +601,11 @@ impl<'a> Emitter<'a> {
 
     /// The declared return type of a call whose callee is a value.
     ///
-    /// A named function resolves by name. A callable field carries its
-    /// signature on the receiver value, and a func-typed local or parameter
-    /// resolves from the open function's declared type, so a fixed-array
-    /// result through a value gets the hidden destination exactly like a named
-    /// call.
+    /// A func-typed local or parameter wins over a same-named module function,
+    /// because a binding shadows a module name; the local's signature then
+    /// decides whether a fixed-array result needs the hidden destination. A
+    /// callable field carries its signature on the receiver value. Every other
+    /// callee resolves as a named function.
     pub(super) fn callee_result_type(
         &self,
         callee: &str,
@@ -616,32 +616,32 @@ impl<'a> Emitter<'a> {
                 return Some(self.substitute(&signature.returns));
             }
         }
-        if let Some(ty) = self.callee_return_type(callee) {
-            return Some(ty);
+        if let Some(function) = self.function {
+            let declared = function
+                .locals
+                .iter()
+                .map(|local| (&local.name, &local.ty))
+                .chain(
+                    function
+                        .params
+                        .iter()
+                        .map(|param| (&param.name, &param.ty)),
+                )
+                .find(|(name, _)| {
+                    *name == callee
+                        || self
+                            .local_names
+                            .get(*name)
+                            .is_some_and(|c_name| c_name == callee)
+                })
+                .map(|(_, ty)| ty);
+            if let Some(ty) = declared {
+                if let TyKind::Func(signature) = &self.substitute(ty).kind {
+                    return Some(self.substitute(&signature.returns));
+                }
+            }
         }
-        let function = self.function?;
-        let declared = function
-            .locals
-            .iter()
-            .map(|local| (&local.name, &local.ty))
-            .chain(
-                function
-                    .params
-                    .iter()
-                    .map(|param| (&param.name, &param.ty)),
-            )
-            .find(|(name, _)| {
-                *name == callee
-                    || self
-                        .local_names
-                        .get(*name)
-                        .is_some_and(|c_name| c_name == callee)
-            })
-            .map(|(_, ty)| ty)?;
-        match &self.substitute(declared).kind {
-            TyKind::Func(signature) => Some(self.substitute(&signature.returns)),
-            _ => None,
-        }
+        self.callee_return_type(callee)
     }
 
     /// Drops the previous value of an assignment target before it is overwritten.

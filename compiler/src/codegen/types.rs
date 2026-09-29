@@ -71,11 +71,16 @@ fn func_pointer_declarator(signature: &crate::types::FuncTy, name: &str) -> Stri
 /// The C return type and parameter list of a function pointer.
 ///
 /// A fixed-array return becomes `void` plus a trailing destination parameter,
-/// spelled with the same declarator the callee declaration uses; a parameter
-/// of array type adjusts to its pointer form in C, so the two sides agree. The
+/// spelled with the same declarator the callee declaration uses. An array
+/// parameter keeps its declarator spelling (which C adjusts to its pointer
+/// form), so a fixed-array parameter matches the callee it receives. The
 /// parameter list is `void` when there is none.
 fn func_pointer_signature(signature: &crate::types::FuncTy) -> (String, String) {
-    let mut params: Vec<String> = signature.params.iter().map(c_type).collect();
+    let mut params: Vec<String> = signature
+        .params
+        .iter()
+        .map(|ty| declarator(ty, "").trim().to_owned())
+        .collect();
     let returns = if signature.returns.is_fixed_array() {
         params.push(declarator(&signature.returns, ""));
         "void".to_owned()

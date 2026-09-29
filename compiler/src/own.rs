@@ -656,7 +656,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             Provenance::None
         };
-        let ir_name = self.unique_ir_name(name);
+        let ir_name = self.unique_ir_name(name, kind);
         self.bindings.push(Binding {
             name: name.to_owned(),
             ir_name,
@@ -685,9 +685,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// shadows it appends `#<binding-index>`. The binding table is not
     /// truncated when a scope closes, so every binding declared so far in the
     /// function counts and sibling scopes get distinct spellings even though
-    /// neither shadows the other.
-    fn unique_ir_name(&self, name: &str) -> String {
-        if self.bindings.iter().any(|binding| binding.name == name) {
+    /// neither shadows the other. A local whose name matches a module-level
+    /// callee is suffixed too: the emitter would otherwise resolve a call
+    /// through that binding to the same-named function, and the local must win
+    /// because it shadows the module name.
+    fn unique_ir_name(&self, name: &str, kind: BindingKind) -> String {
+        let shadowed = self.bindings.iter().any(|binding| binding.name == name);
+        let masks_callee = kind == BindingKind::Local && self.program.callee(name).is_some();
+        if shadowed || masks_callee {
             format!("{name}#{}", self.bindings.len())
         } else {
             name.to_owned()

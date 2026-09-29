@@ -397,10 +397,10 @@ impl<'a> Emitter<'a> {
         match &ty.kind {
             TyKind::Array { extents, .. } => {
                 if extents.iter().all(Option::is_some) {
-                    let extent = extents
-                        .iter()
-                        .filter_map(|size| *size)
-                        .fold(1usize, usize::saturating_mul);
+                    // The index selects the outermost dimension, so the bound
+                    // is the first extent; the constant-index check and the
+                    // semantic layer use the same bound.
+                    let extent = extents.first().and_then(|size| *size).unwrap_or(0);
                     // A constant index into a fixed array is already
                     // range-checked when the program is validated, so the
                     // emitted guard would be dead code. Leaving it out also

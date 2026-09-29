@@ -140,7 +140,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         type_args: &'a [crate::ast::Type],
         args: &'a [Arg],
     ) -> LoweredCall {
-        let name = self.callee_name(callee).unwrap_or_default();
+        // A name that resolves to a func-typed local or parameter is called
+        // through its binding, so the IR carries the binding's own spelling;
+        // that keeps a shadowing or sanitized local distinct from any module
+        // function of the same written name.
+        let mut local_callee = false;
+        let name = match &callee.kind {
+            ExprKind::Name(written) => match self.lookup(written) {
+                Some(id) if matches!(self.bindings[id].ty.kind, TyKind::Func(_)) => {
+                    local_callee = true;
+                    self.bindings[id].ir_name.clone()
+                }
+                _ => written.clone(),
+            },
+            _ => self.callee_name(callee).unwrap_or_default(),
+        };
         let receiver = self.func_field_receiver(callee);
         let mut values: Vec<Value> = Vec::new();
         let mut arg_types: Vec<Ty> = Vec::new();
@@ -166,8 +180,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // the callee never does. A `take` argument is skipped: the callee owns
         // it, and the move-out empties the caller's binding. A call through a
         // `func`-typed field has no declared parameter modes, so the same-named
-        // global function's modes must not be applied to it.
-        if receiver.is_none() {
+        // global function's modes must not be applied to it; a func-typed
+        // local or parameter has none either.
+        if receiver.is_none() && !local_callee {
             if let Some(modes) = self.callee_modes(&name) {
                 for (value, mode) in values.iter_mut().zip(modes) {
                     let pending =
