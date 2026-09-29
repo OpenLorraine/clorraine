@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 16:22
-> **Progress**: 8/27 tasks (30%)
+> **Last Updated**: 2026-09-29 21:28
+> **Progress**: 10/27 tasks (37%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -148,7 +148,7 @@ all pre-existing suites unchanged (32 test binaries, 0 failures, 0 warnings).
 
 ## Phase 2: Function-value call integrity
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 452e31c896d392d469f33589369f7762d3dacc37
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
 
 ### Step 2.1: Specification Tests
@@ -156,12 +156,20 @@ all pre-existing suites unchanged (32 test binaries, 0 failures, 0 warnings).
 **Reference**: [03-02 §Proposed Changes](03-02-callable-fields.md) · AR-8, AR-9
 **Objective**: Pin the receiver bounds traps and the func-pointer ABI before any implementation.
 
-- [ ] 2.1.1 [spec-author] Add the callable-field specification tests to the suite (ST-12 – ST-17) — `compiler/tests/runtime_value_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase — the trap and C-acceptance cases fail as predicted; the in-range guards pass
+- [x] 2.1.1 [spec-author] Add the callable-field specification tests to the suite (ST-12 – ST-17) — `compiler/tests/runtime_value_integrity_spec_test.rs` ✅ (completed: 2026-09-29 21:28)
+- [x] 2.1.2 Run the spec suite and record the red phase — the trap and C-acceptance cases fail as predicted; the in-range guards pass ✅ (completed: 2026-09-29 21:28)
 
 **Deliverables**:
-- [ ] ST-12 – ST-17 in the spec suite
-- [ ] Red-phase evidence recorded
+- [x] ST-12 – ST-17 in the spec suite
+- [x] Red-phase evidence recorded
+
+**Red-phase evidence** (2026-09-29 21:28, `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`):
+24 tests, 19 passed / 5 failed. Failing: ST-13 (the out-of-range statement call runs unguarded, so
+the `E11211` trap text never appears), ST-14 and ST-15 (their result type is `func(i32): i32[2]`,
+so the C build fails on the func-pointer ABI before the missing trap can surface — the observed
+variant of the predicted missing-trap failure), and ST-16/ST-17 (invalid C: the func pointer lacks
+the hidden destination parameter). Passing pre-fix: ST-12 (the in-range receiver call already runs
+through the existing expression guard).
 
 **Verify**: `make -C docker exec CMD="cargo test --test runtime_value_integrity_spec_test"`
 
