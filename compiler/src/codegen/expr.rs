@@ -409,6 +409,12 @@ impl<'a> Emitter<'a> {
             let target = self.value(receiver);
             return format!("({target})({argument_list})");
         }
+        // A func-typed binding shadows a module function of the same written
+        // name, so the call goes through the binding's own C local before any
+        // function or helper name is resolved.
+        if let Some(spelled) = self.func_binding_spelling(callee) {
+            return format!("{spelled}({argument_list})");
+        }
         if let Some(info) = self.resolve_function(callee) {
             let symbol = if type_args.is_empty() {
                 self.function_symbol(&info.module, callee)
@@ -457,6 +463,38 @@ impl<'a> Emitter<'a> {
         let param = function.params.iter().find(|param| param.name == callee)?;
         let ty = self.substitute(&param.ty);
         ty.is_closure().then_some(ty)
+    }
+
+    /// The C spelling of a func-typed local or parameter the callee names.
+    ///
+    /// A func-typed binding shadows a module function of the same written
+    /// name. The binding is found by its IR spelling, which the lowering puts
+    /// in the call for a local callee; a shadowing local takes a suffixed IR
+    /// name, so a module call written before the local's declaration still
+    /// resolves by function name.
+    fn func_binding_spelling(&self, callee: &str) -> Option<String> {
+        let function = self.function?;
+        let declared = function
+            .locals
+            .iter()
+            .map(|local| (&local.name, &local.ty))
+            .chain(
+                function
+                    .params
+                    .iter()
+                    .map(|param| (&param.name, &param.ty)),
+            );
+        for (name, ty) in declared {
+            if name == callee && matches!(self.substitute(ty).kind, TyKind::Func(_)) {
+                return Some(
+                    self.local_names
+                        .get(name)
+                        .cloned()
+                        .unwrap_or_else(|| name.clone()),
+                );
+            }
+        }
+        None
     }
 
     /// Renders a lambda value.

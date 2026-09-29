@@ -601,3 +601,43 @@ func main(): i32 {
     let emitted = emit_host("rviimpl-arrayparam", source);
     assert_contains("rviimpl-arrayparam", &emitted, "i32 (*f)(i32 [2])");
 }
+
+/// A func-typed parameter that shadows a module function is called through
+/// the parameter, not the module function.
+#[test]
+fn should_call_the_parameter_when_it_shadows_a_module_function() {
+    let source = r#"module impl.rvi.paramshadow;
+func run(x: i32): i32 { return 99; }
+func one(x: i32): i32 { return 1; }
+func invoke(run: func(i32): i32): i32 {
+    return run(0);
+}
+func main(): i32 {
+    return invoke(one);
+}
+"#;
+    let emitted = emit_host("rviimpl-paramshadow", source);
+    assert_contains("rviimpl-paramshadow", &emitted, "return run(0);");
+    assert!(
+        !emitted.contains("cl_impl_rvi_paramshadow_run(0)"),
+        "rviimpl-paramshadow: the parameter shadows the module function"
+    );
+}
+
+/// A module function called before a same-named local is declared still
+/// resolves to the function; the later local resolves to its own binding.
+#[test]
+fn should_resolve_a_module_call_before_a_shadowing_local_is_declared() {
+    let source = r#"module impl.rvi.beforedecl;
+func run(x: i32): i32 { return 15; }
+func one(x: i32): i32 { return 1; }
+func main(): i32 {
+    let a: i32 = run(0);
+    let run: func(i32): i32 = one;
+    return a + run(0);
+}
+"#;
+    let emitted = emit_host("rviimpl-beforedecl", source);
+    assert_contains("rviimpl-beforedecl", &emitted, "cl_impl_rvi_beforedecl_run(0)");
+    assert_contains("rviimpl-beforedecl", &emitted, "run_1(0)");
+}

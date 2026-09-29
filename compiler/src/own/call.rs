@@ -149,6 +149,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Name(written) => match self.lookup(written) {
                 Some(id) if matches!(self.bindings[id].ty.kind, TyKind::Func(_)) => {
                     local_callee = true;
+                    // Calling the binding reads it, so an unused-local warning
+                    // would be spurious.
+                    self.bindings[id].used = true;
                     self.bindings[id].ir_name.clone()
                 }
                 _ => written.clone(),
@@ -171,7 +174,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let explicit: Vec<Ty> = type_args.iter().map(|arg| self.resolve(arg)).collect();
         let resolved = if explicit.is_empty() {
-            self.infer_call_types(&name, &arg_types).unwrap_or_default()
+            // A func-typed binding has no declared generic parameters, so no
+            // type inference runs for its call even when a same-named module
+            // function would infer one.
+            if local_callee {
+                Vec::new()
+            } else {
+                self.infer_call_types(&name, &arg_types).unwrap_or_default()
+            }
         } else {
             explicit
         };
