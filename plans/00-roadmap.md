@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-09-29 02:31
+> **Last Updated**: 2026-09-29 07:48
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -45,6 +45,7 @@
 | ↳ DEF-26 | A callable-field receiver in a runtime index is not bounds-guarded | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 1 re-review (RR-002): `hs[i].run(1);` is accepted and reads out of bounds; the receiver is never guarded on the ordinary call path or the fixed-array call-assign path; pre-existing |
 | ↳ DEF-27 | An array-returning func-typed field emits the wrong C function pointer type | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 1 re-review (RR-003): a `func(i32): i32[2]` field renders `i32 (*)(i32)` while the callee uses the hidden out-parameter ABI, so accepted source fails C compilation; pre-existing |
 | ↳ DEF-28 | A non-literal `panic` message emits a view struct where the runtime takes a C string | — | — | Backlog | ⬜ | 2026-09-29 | 🟠 major, found in the array-value-integrity Phase 3 (the ST-23 blocker; the string-literal form was fixed there): `panic(s)` with `s: str` or `String` renders a `ClStr` view while `cl_panic` takes `const char *`, so the C build fails; needs a NUL-termination rule or an explicit cstring conversion; pre-existing |
+| ↳ DEF-29 | A guarded operand's fixed-array call with a `take` argument runs eagerly | — | — | Backlog | ⬜ | 2026-09-29 | 🟡 minor, found in the array-value-integrity Phase 3 review (RV-301): a `take` argument lowers the call into a temporary plus an eagerly emitted move-out, so a short-circuit operand no longer defers the call; pre-existing (verified against the phase baseline); needs a deferred move-out design, not a local fix |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

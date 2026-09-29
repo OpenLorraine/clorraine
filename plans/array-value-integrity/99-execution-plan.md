@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-29 07:43
+> **Last Updated**: 2026-09-29 07:48
 > **Progress**: 19/24 tasks (79%)
 > **CodeOps Artifact Schema**: 1
 
@@ -159,8 +159,9 @@ probes, the full acceptance gate, and the documentation/roadmap updates.
 ## Phase 3: Projections and element moves
 
 > **Phase baseline tree**: `994941079167f07390ed7da08352a435b93142e4`
-> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`, `compiler/src/codegen/function.rs` (authorized panic-literal fix), `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`, `plans/00-roadmap.md` (`DEF-28`)
+> **Expected modification set** (strict scope): `compiler/tests/array_value_integrity_spec_test.rs`, `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/call_check.rs`, `compiler/src/codegen/function.rs` (authorized panic-literal fix), `compiler/src/own/tests.rs` (unit tests), `compiler/tests/array_value_integrity_impl_test.rs`, `plans/array-value-integrity/99-execution-plan.md`, `plans/00-roadmap.md` (`DEF-28`)
 > **Lenses**: correctness, maintainability, standards (strict profile — independent review of the phase diff)
+> **Phase 3 review**: independent reviewer (generic-subagent fallback) on the diff vs `99494107` — `PASS WITH MINORS`, no blocking issue; RV-301 🟡 a guarded operand's fixed-array call with a `take` argument runs eagerly (pre-existing, verified against the phase baseline; filed `DEF-29`), RV-302 🟡 a defensive cross-check in `is_ownerless_element_move` is redundant (left in place); the materialize lift, both guard arms, the five `E10026` sites, and the four authorized adjacent fixes were verified sound (2026-09-29 07:48)
 
 ### Step 3.1: Specification Tests
 
