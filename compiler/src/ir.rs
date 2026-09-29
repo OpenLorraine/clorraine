@@ -260,11 +260,19 @@ pub enum ValueKind {
     /// run on a path the program never takes. The assignment is emitted where
     /// the guarded value's guards are emitted, and the value itself reads the
     /// temporary.
+    ///
+    /// A call with `take` arguments inside such an operand cannot empty its
+    /// argument at lowering time, because that would run the move on a path
+    /// the program never takes. The move-out places travel here instead, and
+    /// the guard emitter empties them on the evaluated path, after the call.
     Materialize {
         /// The compiler temporary that receives the value.
         temp: TempId,
         /// The value assigned to the temporary.
         value: Box<Value>,
+        /// The `take` argument places emptied after the call, on the
+        /// evaluated path only.
+        move_outs: Vec<Place>,
     },
 }
 

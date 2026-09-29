@@ -214,10 +214,26 @@ static inline void cl_trap(const char *code, const char *message)
     cl_exit(1);
 }
 
-/* Abort on a user-level panic. */
-static inline void cl_panic(const char *message)
+/* Abort on a user-level panic. The message is passed as pointer and length, so
+ * a view or handle needs no NUL terminator. The bytes are copied into the
+ * fixed report buffer, so a message longer than the buffer is truncated; the
+ * prefix and the newline are always written. */
+static inline void cl_panic(const unsigned char *message, unsigned long len)
 {
-    cl_report(2, "panic: ", "", message);
+    char buffer[256];
+    unsigned long limit = (unsigned long)sizeof buffer;
+    unsigned long at = 0;
+    unsigned long index;
+    at = cl_copy_into(buffer, at, limit, "panic: ");
+    for (index = 0; index < len && at < limit; index++) {
+        buffer[at] = (char)message[index];
+        at++;
+    }
+    if (at < limit) {
+        buffer[at] = '\n';
+        at++;
+    }
+    cl_write_bytes(2, buffer, at);
     cl_exit(1);
 }
 

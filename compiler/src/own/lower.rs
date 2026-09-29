@@ -98,6 +98,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     };
                     if move_outs.is_empty() {
                         kind
+                    } else if self.defer_move_outs > 0 {
+                        // The operand is evaluated only on its guard's path,
+                        // so the consumed places must not be emptied now: the
+                        // move-outs travel on the materialized value and the
+                        // guard emitter runs them after the call, on the
+                        // evaluated path only.
+                        let temp = self.new_temp(ty.clone());
+                        self.mark_destination_temp(temp);
+                        self.register_pending_release(temp, &ty);
+                        let value = Value::new(ty.clone(), kind);
+                        return Value::new(
+                            ty,
+                            ValueKind::Materialize {
+                                temp,
+                                value: Box::new(value),
+                                move_outs,
+                            },
+                        );
                     } else {
                         // The call consumes a `take` argument before the
                         // enclosing statement continues, so the result is
@@ -120,7 +138,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // side-effecting one is stored once and the guard and the
                 // operation share it.
                 let left = self.lower_value(left);
-                let right = self.lower_value(right);
+                // The right operand of `&&`/`||` runs only when the left
+                // decides to evaluate it, so a `take` move-out inside it must
+                // wait for that path.
+                let right = if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+                    self.defer_move_outs += 1;
+                    let right = self.lower_value(right);
+                    self.defer_move_outs -= 1;
+                    right
+                } else {
+                    self.lower_value(right)
+                };
                 let (left, right) = if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
                     (
                         self.materialize_guard_operand(left),
@@ -154,11 +182,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 condition,
                 then_value,
                 else_value,
-            } => ValueKind::Conditional {
-                condition: Box::new(self.lower_value(condition)),
-                then_value: Box::new(self.lower_value(then_value)),
-                else_value: Box::new(self.lower_value(else_value)),
-            },
+            } => {
+                let condition = self.lower_value(condition);
+                // Each arm runs only when the condition selects it, so a
+                // `take` move-out inside an arm must wait for that path.
+                self.defer_move_outs += 1;
+                let then_value = self.lower_value(then_value);
+                let else_value = self.lower_value(else_value);
+                self.defer_move_outs -= 1;
+                ValueKind::Conditional {
+                    condition: Box::new(condition),
+                    then_value: Box::new(then_value),
+                    else_value: Box::new(else_value),
+                }
+            }
             ExprKind::StructLiteral { name, fields, .. } => {
                 let mut lowered = Vec::with_capacity(fields.len());
                 for field in fields {
@@ -563,6 +600,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ValueKind::Materialize {
                 temp,
                 value: Box::new(value),
+                move_outs: Vec::new(),
             },
         )
     }
@@ -709,7 +747,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Collects the statement temporaries a lowered value reads through.
     fn collect_lowered_temp_owners(&self, value: &Value, owners: &mut BTreeSet<ir::TempId>) {
         match &value.kind {
-            ValueKind::Materialize { temp, value: inner } => {
+            ValueKind::Materialize {
+                temp,
+                value: inner,
+                move_outs: _,
+            } => {
                 // A view-typed temporary owns no storage and is never released,
                 // so only an owning temporary is a loan owner; the wrapped
                 // value may itself read through a temporary (a slice of an

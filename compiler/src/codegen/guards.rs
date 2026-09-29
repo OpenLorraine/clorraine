@@ -100,7 +100,11 @@ impl<'a> Emitter<'a> {
             // fixed-array call writes through its hidden out-parameter, so the
             // temporary is the call's destination instead of an assignment
             // target.
-            ValueKind::Materialize { temp, value: inner } => {
+            ValueKind::Materialize {
+                temp,
+                value: inner,
+                move_outs,
+            } => {
                 self.emit_guards(inner);
                 self.emit_reassigned_temp_drop(*temp, &inner.ty);
                 let store = match &inner.kind {
@@ -123,6 +127,13 @@ impl<'a> Emitter<'a> {
                     _ => format!("__cl_tmp{temp} = {};", self.value(inner)),
                 };
                 self.push(&format!("    {store}"));
+                // The call's `take` arguments are emptied only now, on the
+                // evaluated path, so a skipped guard leaves them owned.
+                for place in move_outs {
+                    let source = self.place(place);
+                    let ty = self.substitute(&place.ty);
+                    self.emit_move_zero(&source, &ty);
+                }
             }
             ValueKind::Closure { captures, .. } => {
                 for capture in captures {
@@ -302,7 +313,11 @@ impl<'a> Emitter<'a> {
             // call writes through its hidden out-parameter, so the guard
             // expression is the call itself; every guard's value is discarded
             // ahead of the guarded value, so no result expression is needed.
-            ValueKind::Materialize { temp, value: inner } => {
+            ValueKind::Materialize {
+                temp,
+                value: inner,
+                move_outs,
+            } => {
                 self.guard_expressions(inner, out);
                 let inner_ty = self.substitute(&inner.ty);
                 if self.needs_drop(&inner_ty) {
@@ -329,6 +344,11 @@ impl<'a> Emitter<'a> {
                     _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
                 };
                 out.push(stored);
+                // The call runs only when this operand is evaluated, so its
+                // `take` move-outs are emptied here, after the store.
+                for place in move_outs {
+                    out.push(self.move_zero_expr(place));
+                }
             }
             ValueKind::Closure { captures, .. } => {
                 for capture in captures {

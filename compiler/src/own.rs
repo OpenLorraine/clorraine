@@ -215,6 +215,12 @@ struct FunctionChecker<'a, 'd> {
     /// temporaries (a take-call result, an aggregate-literal adoption) never
     /// join: their destination already owns the value.
     pending_releases: Vec<Release>,
+    /// Nesting depth of the operands that are evaluated only conditionally.
+    ///
+    /// Inside a `&&`/`||` right operand or a `?:` arm, a call's `take`
+    /// move-out must not run eagerly: it is carried on the materialized value
+    /// and emitted on the evaluated path instead.
+    defer_move_outs: u32,
     /// Which temporaries are destinations the compiler releases at the
     /// statement's end, parallel to `temps`.
     ///
@@ -291,6 +297,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             next_registration: 0,
             next_owned_temp: 0,
             pending_releases: Vec::new(),
+            defer_move_outs: 0,
             destination_temps: Vec::new(),
             materialize_owned_temporaries: true,
             report_diagnostics: true,

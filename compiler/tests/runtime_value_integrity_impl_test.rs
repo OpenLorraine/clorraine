@@ -641,3 +641,121 @@ func main(): i32 {
     assert_contains("rviimpl-beforedecl", &emitted, "cl_impl_rvi_beforedecl_run(0)");
     assert_contains("rviimpl-beforedecl", &emitted, "run_1(0)");
 }
+
+/// The first emitted line containing `needle`.
+///
+/// Fails the case when no line contains it, so a shape assertion names the
+/// construct it expected to find.
+fn line_with<'a>(tag: &str, text: &'a str, needle: &str) -> &'a str {
+    text.lines()
+        .find(|line| line.contains(needle))
+        .unwrap_or_else(|| panic!("{tag}: no emitted line contains {needle:?}"))
+}
+
+/// A literal panic message passes its bytes and length directly.
+#[test]
+fn should_pass_a_pointer_and_length_for_a_literal_panic() {
+    let source = r#"module impl.rvi.paniclit;
+func main(): i32 {
+    panic("boom");
+}
+"#;
+    let emitted = emit_host("rviimpl-paniclit", source);
+    assert_contains(
+        "rviimpl-paniclit",
+        &emitted,
+        "cl_panic((const unsigned char *)\"boom\", (usize)4);",
+    );
+}
+
+/// A `str` view panic message is evaluated once and passed by pointer and
+/// length.
+#[test]
+fn should_hoist_and_pass_a_str_view_panic_message() {
+    let source = r#"module impl.rvi.panicstr;
+func viewOf(s: str): str { return s; }
+func main(): i32 {
+    panic(viewOf("boom"));
+}
+"#;
+    let emitted = emit_host("rviimpl-panicstr", source);
+    assert_contains(
+        "rviimpl-panicstr",
+        &emitted,
+        "ClStr __cl_panic_msg_1 = cl_impl_rvi_panicstr_viewOf(cl_str(\"boom\"));",
+    );
+    assert_contains(
+        "rviimpl-panicstr",
+        &emitted,
+        "cl_panic((const unsigned char *)(__cl_panic_msg_1).ptr, (usize)((__cl_panic_msg_1).len));",
+    );
+}
+
+/// An owned `String` panic message is evaluated once and passed through the
+/// string accessors.
+#[test]
+fn should_hoist_and_pass_an_owned_string_panic_message() {
+    let source = r#"module impl.rvi.panicown;
+import { String, stringOf } from std.text;
+func main(): i32 {
+    panic(stringOf("owned"));
+}
+"#;
+    let emitted = emit_host("rviimpl-panicown", source);
+    assert_contains(
+        "rviimpl-panicown",
+        &emitted,
+        "ClString __cl_panic_msg_1 = cl_std_text_stringOf(cl_str(\"owned\"));",
+    );
+    assert_contains(
+        "rviimpl-panicown",
+        &emitted,
+        "cl_panic((const unsigned char *)cl_string_ptr(__cl_panic_msg_1), (usize)cl_string_len(__cl_panic_msg_1));",
+    );
+    assert_eq!(
+        emitted.matches("cl_std_text_stringOf(cl_str(").count(),
+        1,
+        "rviimpl-panicown: the message expression must be evaluated once"
+    );
+}
+
+/// A guarded `&&` operand moves its `take` argument inside the evaluated
+/// path, not before the guard.
+#[test]
+fn should_move_a_take_argument_only_on_the_guarded_path() {
+    let source = r#"module impl.rvi.takeguard;
+import { String, stringOf } from std.text;
+let calls: i32 = 0;
+func sink(take s: String): bool { calls = calls + 1; return true; }
+func main(): i32 {
+    let ok: bool = false;
+    let s: String = stringOf("x");
+    let r: bool = ok && sink(s);
+    return calls;
+}
+"#;
+    let emitted = emit_host("rviimpl-takeguard", source);
+    let assignment = line_with("rviimpl-takeguard", &emitted, "r = (ok &&");
+    assert_contains("rviimpl-takeguard", assignment, "sink(s)");
+    assert_contains("rviimpl-takeguard", assignment, "(s = NULL)");
+}
+
+/// A conditional arm moves its `take` argument only inside the chosen arm.
+#[test]
+fn should_move_a_take_argument_only_on_the_chosen_arm() {
+    let source = r#"module impl.rvi.takearm;
+import { String, stringOf } from std.text;
+let calls: i32 = 0;
+func sinkCount(take s: String): i32 { calls = calls + 1; return i32(len(s)); }
+func main(): i32 {
+    let cond: bool = false;
+    let s: String = stringOf("x");
+    let r: i32 = cond ? sinkCount(s) : 0;
+    return calls;
+}
+"#;
+    let emitted = emit_host("rviimpl-takearm", source);
+    let assignment = line_with("rviimpl-takearm", &emitted, "r = (cond ?");
+    assert_contains("rviimpl-takearm", assignment, "sinkCount(s)");
+    assert_contains("rviimpl-takearm", assignment, "(s = NULL)");
+}

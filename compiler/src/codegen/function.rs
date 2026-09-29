@@ -461,11 +461,7 @@ impl<'a> Emitter<'a> {
             }
             "panic" => {
                 self.emit_line_directive(span);
-                let message = args
-                    .first()
-                    .map(|arg| self.panic_message(arg))
-                    .unwrap_or_else(|| "\"panic\"".to_owned());
-                self.push(&format!("    cl_panic({message});"));
+                self.emit_panic(args.first());
             }
             _ => {
                 self.emit_line_directive(span);
@@ -534,15 +530,49 @@ impl<'a> Emitter<'a> {
 
     /// Renders a `panic` message for the C runtime.
     ///
-    /// The runtime takes a `const char *`, so a string literal is passed as
-    /// the NUL-terminated C string it already is. Every other argument keeps
-    /// its rendered spelling, whose conversion to the C string type is the
-    /// caller's responsibility.
-    fn panic_message(&self, arg: &Value) -> String {
-        match &arg.kind {
-            ValueKind::Str(text) => escape_c_string(text.as_bytes()),
-            _ => self.value(arg),
+    /// The runtime takes a pointer and a length, so no NUL terminator is
+    /// required. A string literal's bytes live in static storage and are
+    /// passed directly. Every other form is evaluated once into a
+    /// block-local of its own type, so the pointer and the length read the
+    /// same value and a side-effecting message expression runs once: a `str`
+    /// view passes its pointer and length, an owned `String` passes its
+    /// handle through the string accessors, and any other type keeps today's
+    /// behavior.
+    fn emit_panic(&mut self, arg: Option<&Value>) {
+        let Some(arg) = arg else {
+            self.push("    cl_panic((const unsigned char *)\"panic\", (usize)5);");
+            return;
+        };
+        if let ValueKind::Str(text) = &arg.kind {
+            let escaped = escape_c_string(text.as_bytes());
+            self.push(&format!(
+                "    cl_panic((const unsigned char *){escaped}, (usize){});",
+                text.len()
+            ));
+            return;
         }
+        let ty = self.substitute(&arg.ty);
+        let local = self.unique_local("__cl_panic_msg");
+        let decl = declarator(&ty, &local);
+        let lowered = self.store_text(arg, &ty);
+        self.push("    {");
+        self.push(&format!("        {decl} = {lowered};"));
+        match &ty.kind {
+            TyKind::Handle(name) if name == "String" => {
+                self.push(&format!(
+                    "        cl_panic((const unsigned char *)cl_string_ptr({local}), (usize)cl_string_len({local}));"
+                ));
+            }
+            TyKind::Str | TyKind::StaticStr => {
+                self.push(&format!(
+                    "        cl_panic((const unsigned char *)({local}).ptr, (usize)(({local}).len));"
+                ));
+            }
+            _ => {
+                self.push(&format!("        cl_panic({local}, (usize)0);"));
+            }
+        }
+        self.push("    }");
     }
 
     /// The declared parameter modes of a known user or `ffi` function.

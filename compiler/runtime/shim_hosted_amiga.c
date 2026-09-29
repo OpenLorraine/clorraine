@@ -75,10 +75,14 @@ static inline void cl_trap(const char *code, const char *message)
     exit(20);
 }
 
-/* Leave the process after a user-level panic. */
-static inline void cl_panic(const char *message)
+/* Leave the process after a user-level panic. The message is passed as pointer
+ * and length, so a view or handle needs no NUL terminator; the bytes are
+ * written exactly as they are. */
+static inline void cl_panic(const unsigned char *message, unsigned long len)
 {
-    printf("panic: %s\n", message);
+    fwrite("panic: ", 1, 7, stdout);
+    fwrite(message, 1, (size_t)len, stdout);
+    fwrite("\n", 1, 1, stdout);
     fflush(stdout);
     exit(20);
 }

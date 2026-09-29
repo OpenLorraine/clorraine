@@ -356,6 +356,23 @@ impl<'a> Emitter<'a> {
         format!("({left_c} {} {right_c})", binary_token(op))
     }
 
+    /// The move-out of a place as a comma-expression operand.
+    ///
+    /// A deferred `take` move-out must run inside the expression that
+    /// evaluates a guarded operand, so the place is emptied with the same
+    /// spelling `Statement::MoveOut` uses: a handle becomes `(place = NULL)`,
+    /// every other type `(cl_zero(&place), 0)`.
+    pub(super) fn move_zero_expr(&self, place: &Place) -> String {
+        let c_name = self.place(place);
+        let ty = self.substitute(&place.ty);
+        match &ty.kind {
+            TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString => {
+                format!("({c_name} = {})", self.null_literal())
+            }
+            _ => format!("(cl_zero(&{c_name}), 0)"),
+        }
+    }
+
     /// Renders a call to a user function, an FFI function, or a helper.
     ///
     /// A call whose callee is a `func`-typed field renders the field as the

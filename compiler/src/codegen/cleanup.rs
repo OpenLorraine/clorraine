@@ -314,8 +314,15 @@ impl<'a> Emitter<'a> {
             self.push("    return;");
         } else if let Some(result) = self.result_var.clone() {
             self.push(&format!("    return {result};"));
-        } else {
+        } else if self.return_ty.is_void() {
             self.push("    return;");
+        } else {
+            // A value-less return in a non-void function is unreachable: it is
+            // the tail after a diverging `panic`, or a body with no return on
+            // some path. Returning the type's empty state keeps the emitted C
+            // valid without changing any reachable behavior.
+            let value = self.empty_return_value();
+            self.push(&format!("    return {value};"));
         }
     }
 
@@ -460,8 +467,18 @@ impl<'a> Emitter<'a> {
             self.push(&format!("    return {result};"));
             return;
         }
+        let value = self.empty_return_value();
+        self.push(&format!("    return {value};"));
+    }
+
+    /// The C empty-state value of the declared return type.
+    ///
+    /// A handle, raw pointer, `cstring`, or func value is the null literal; a
+    /// view or struct is its all-zero brace form; a slice is its zero struct;
+    /// every scalar is `0`.
+    fn empty_return_value(&self) -> String {
         let ret = self.return_ty.clone();
-        let value = match &ret.kind {
+        match &ret.kind {
             TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString | TyKind::Func(_) => {
                 self.null_literal().to_owned()
             }
@@ -471,8 +488,7 @@ impl<'a> Emitter<'a> {
                 format!("({}){{0}}", super::types::c_type(&ret))
             }
             _ => "0".to_owned(),
-        };
-        self.push(&format!("    return {value};"));
+        }
     }
 }
 
