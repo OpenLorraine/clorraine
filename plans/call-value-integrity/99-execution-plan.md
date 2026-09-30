@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-01 01:53
-> **Progress**: 15/39 tasks (38%)
+> **Progress**: 17/39 tasks (44%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -210,13 +210,21 @@ fields.
 **Reference**: [07](07-testing-strategy.md) §Implementation Tests
 **Objective**: Pin the emitted shapes and run the phase verification.
 
-- [ ] 2.3.1 Write implementation tests (element-store byte copy, materialized argument/projection, struct field store) — `compiler/tests/call_value_integrity_impl_test.rs`
-- [ ] 2.3.2 Full verification — `make check`
+- [x] 2.3.1 Write implementation tests (element-store byte copy, materialized argument/projection, struct field store) — `compiler/tests/call_value_integrity_impl_test.rs` ✅ (completed: 2026-10-01 01:46)
+- [x] 2.3.2 Full verification — `make check` ✅ (completed: 2026-10-01 01:46)
+
+**Implementation tests (2026-10-01 01:46):** `cargo test --test
+call_value_integrity_impl_test` — 28 passed / 0 failed (9 new emitted-shape pins: constant- and
+runtime-index row byte copies, a runtime-index literal store, a runtime-index conditional branch
+store, a conditional call-argument local, a conditional literal-argument local, a projection
+temporary, a struct-literal argument local, and a returned struct-literal local). The Phase-1 pin
+that reserved the aggregate-initializer form for a fixed-array field was replaced by the store-form
+pin. Full `make check` — 34 suites, 0 failures, 0 warnings.
 
 **Deliverables**:
-- [ ] ST-9 – ST-17 and ST-41 pass; at least one case per Phase-2 defect failed first (red phase
+- [x] ST-9 – ST-17 and ST-41 pass; at least one case per Phase-2 defect failed first (red phase
   recorded); pre-passing cases recorded as regression pins
-- [ ] `make check` passes with no warnings
+- [x] `make check` passes with no warnings
 
 **Verify**: `make check`
 

@@ -11,6 +11,13 @@
 //! temporary, because the callee's parameter cleanup owns the value. A
 //! conditional return branches into the result, and a struct literal with an
 //! owned conditional field stores every field in source order.
+//!
+//! Fixed-array values have no C assignment, so a row store copies bytes
+//! through one shared core (a literal stores element by element and a
+//! conditional branches per arm), a duplicable fixed-array argument or
+//! projection materializes into a named local, and a struct literal with a
+//! fixed-array field stores its fields instead of using an aggregate
+//! initializer.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -619,4 +626,236 @@ func main(): i32 {
     assert_contains("cviimpl-fplace", tail, "b = NULL;");
     let tag = after("cviimpl-fplace", tail, "c.name = b;");
     assert_contains("cviimpl-fplace", tag, "c.tag = 1;");
+}
+
+/// A constant-index row store copies the array bytes instead of assigning,
+/// through the same core the run-time path uses.
+#[test]
+fn should_byte_copy_a_row_when_a_constant_index_stores_a_fixed_array() {
+    let source = r#"module impl.cvi.rowconst;
+func main(): i32 {
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let value: i32[2] = [5, 6];
+    rows[0] = value;
+    return rows[0][0];
+}
+"#;
+    let emitted = emit_host("cviimpl-rowconst", source);
+    assert_contains(
+        "cviimpl-rowconst",
+        &emitted,
+        "memcpy(&(rows[0]), &(value), sizeof(rows[0]));",
+    );
+}
+
+/// A run-time-index row store guards the index first, then copies the bytes
+/// through the dereferenced element pointer.
+#[test]
+fn should_byte_copy_a_row_when_a_runtime_index_stores_a_fixed_array() {
+    let source = r#"module impl.cvi.rowruntime;
+func runtimeIndex(): i32 {
+    return 1;
+}
+func main(): i32 {
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let value: i32[2] = [5, 6];
+    let i: i32 = runtimeIndex();
+    rows[i] = value;
+    return rows[1][0];
+}
+"#;
+    let emitted = emit_host("cviimpl-rowruntime", source);
+    let guarded = after(
+        "cviimpl-rowruntime",
+        &emitted,
+        "cl_trap(\"E11211\", \"index out of range\");",
+    );
+    assert_contains(
+        "cviimpl-rowruntime",
+        guarded,
+        "memcpy(&((*(&(rows[i])))), &(value), sizeof((*(&(rows[i])))));",
+    );
+}
+
+/// A run-time-index row literal stores element by element; a brace list is
+/// not a C assignment value.
+#[test]
+fn should_store_an_array_literal_element_by_element_at_a_runtime_index() {
+    let source = r#"module impl.cvi.rowliteral;
+func runtimeIndex(): i32 {
+    return 1;
+}
+func main(): i32 {
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let x: i32 = 7;
+    let y: i32 = 8;
+    let i: i32 = runtimeIndex();
+    rows[i] = [x, y];
+    return rows[1][0];
+}
+"#;
+    let emitted = emit_host("cviimpl-rowliteral", source);
+    assert_contains("cviimpl-rowliteral", &emitted, "(*(&(rows[i])))[0] = x;");
+    assert_contains("cviimpl-rowliteral", &emitted, "(*(&(rows[i])))[1] = y;");
+    assert!(
+        !emitted.contains("= { x, y }"),
+        "cviimpl-rowliteral: an array literal must not render as a brace list in a store"
+    );
+}
+
+/// A run-time-index conditional copies each arm's bytes inside its branch.
+#[test]
+fn should_branch_store_each_row_arm_when_a_runtime_index_takes_a_conditional() {
+    let source = r#"module impl.cvi.rowcond;
+func runtimeIndex(): i32 {
+    return 1;
+}
+func main(): i32 {
+    let ok: bool = true;
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let a: i32[2] = [5, 6];
+    let b: i32[2] = [7, 8];
+    let i: i32 = runtimeIndex();
+    rows[i] = ok ? a : b;
+    return rows[1][0];
+}
+"#;
+    let emitted = emit_host("cviimpl-rowcond", source);
+    let branch = after("cviimpl-rowcond", &emitted, "if (ok) {");
+    assert_contains(
+        "cviimpl-rowcond",
+        branch,
+        "memcpy(&((*(&(rows[i])))), &(a), sizeof((*(&(rows[i])))));",
+    );
+    let alternate = after("cviimpl-rowcond", branch, "} else {");
+    assert_contains(
+        "cviimpl-rowcond",
+        alternate,
+        "memcpy(&((*(&(rows[i])))), &(b), sizeof((*(&(rows[i])))));",
+    );
+}
+
+/// A conditional array argument with call arms materializes into a named
+/// local; the call writes through its hidden destination before the copy.
+#[test]
+fn should_materialize_a_conditional_call_argument_into_a_local() {
+    let source = r#"module impl.cvi.argcall;
+func mkA(): i32[2] {
+    return [1, 2];
+}
+func mkB(): i32[2] {
+    return [3, 4];
+}
+func eat(a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+func main(): i32 {
+    let ok: bool = true;
+    return eat(ok ? mkA() : mkB());
+}
+"#;
+    let emitted = emit_host("cviimpl-argcall", source);
+    assert_contains("cviimpl-argcall", &emitted, "i32 __cl_owned0[2] = {0};");
+    assert_contains("cviimpl-argcall", &emitted, "if (ok) {");
+    assert_contains("cviimpl-argcall", &emitted, "cl_impl_cvi_argcall_mkA(__cl_arm");
+    assert_contains("cviimpl-argcall", &emitted, "cl_impl_cvi_argcall_mkB(__cl_arm");
+    assert_contains("cviimpl-argcall", &emitted, "eat(__cl_owned0);");
+}
+
+/// A conditional array argument with literal arms stores each chosen arm's
+/// elements into the materialized local.
+#[test]
+fn should_materialize_a_conditional_literal_argument_element_by_element() {
+    let source = r#"module impl.cvi.argliteral;
+func eat(a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+func main(): i32 {
+    let ok: bool = true;
+    return eat(ok ? [10, 20] : [30, 40]);
+}
+"#;
+    let emitted = emit_host("cviimpl-argliteral", source);
+    assert_contains("cviimpl-argliteral", &emitted, "i32 __cl_owned0[2] = {0};");
+    assert_contains("cviimpl-argliteral", &emitted, "__cl_owned0[0] = 10;");
+    assert_contains("cviimpl-argliteral", &emitted, "__cl_owned0[1] = 20;");
+    assert_contains("cviimpl-argliteral", &emitted, "__cl_owned0[0] = 30;");
+    assert_contains("cviimpl-argliteral", &emitted, "__cl_owned0[1] = 40;");
+    assert_contains("cviimpl-argliteral", &emitted, "eat(__cl_owned0);");
+}
+
+/// An array literal behind a projection materializes into a compiler
+/// temporary, so the element read names a real place.
+#[test]
+fn should_materialize_an_array_literal_projection_into_a_temporary() {
+    let source = r#"module impl.cvi.projection;
+func pick(x: i32): i32 {
+    return x;
+}
+func main(): i32 {
+    let a: i32 = 2;
+    let b: i32 = 3;
+    let first: i32 = [a, b][0];
+    return first * 10 + pick([a, b][1]);
+}
+"#;
+    let emitted = emit_host("cviimpl-projection", source);
+    assert_contains("cviimpl-projection", &emitted, "i32 __cl_tmp0[2] = {0};");
+    assert_contains("cviimpl-projection", &emitted, "__cl_tmp0[0] = a;");
+    assert_contains("cviimpl-projection", &emitted, "__cl_tmp0[1] = b;");
+    assert_contains("cviimpl-projection", &emitted, "first = __cl_tmp0[0];");
+    assert_contains("cviimpl-projection", &emitted, "pick(__cl_tmp1[1])");
+}
+
+/// A struct-literal argument with a fixed-array field materializes into a
+/// named local and stores its fields.
+#[test]
+fn should_materialize_a_struct_literal_argument_with_a_fixed_array_field() {
+    let source = r#"module impl.cvi.argstruct;
+struct Box { arr: i32[2]; tag: i32; }
+func eat(box: Box): i32 {
+    return box.arr[0] + box.arr[1] + box.tag;
+}
+func main(): i32 {
+    let ok: bool = true;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    return eat(Box { arr: ok ? a : b, tag: 1 });
+}
+"#;
+    let emitted = emit_host("cviimpl-argstruct", source);
+    assert_contains("cviimpl-argstruct", &emitted, "ClBox __cl_owned0 = {0};");
+    let branch = after("cviimpl-argstruct", &emitted, "if (ok) {");
+    assert_contains(
+        "cviimpl-argstruct",
+        branch,
+        "memcpy(&(__cl_owned0.arr), &(a), sizeof(__cl_owned0.arr));",
+    );
+    assert_contains("cviimpl-argstruct", branch, "__cl_owned0.tag = 1;");
+    assert_contains("cviimpl-argstruct", &emitted, "eat(__cl_owned0);");
+}
+
+/// A returned struct literal with a fixed-array field stores its fields into
+/// the return local before the release ladder.
+#[test]
+fn should_store_the_fields_of_a_returned_struct_literal_with_a_fixed_array_field() {
+    let source = r#"module impl.cvi.retliteral;
+struct Box { arr: i32[2]; tag: i32; }
+func make(a: i32[2]): Box {
+    return Box { arr: a, tag: 2 };
+}
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    let box: Box = make(a);
+    return box.arr[0] + box.arr[1] + box.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-retliteral", source);
+    assert_contains(
+        "cviimpl-retliteral",
+        &emitted,
+        "memcpy(&(__cl_return_1.arr), &(a), sizeof(__cl_return_1.arr));",
+    );
+    assert_contains("cviimpl-retliteral", &emitted, "__cl_return_1.tag = 2;");
+    assert_contains("cviimpl-retliteral", &emitted, "return __cl_return_1;");
 }
