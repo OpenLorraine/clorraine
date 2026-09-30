@@ -1083,6 +1083,9 @@ impl<'a> Emitter<'a> {
             self.emit_guards(field);
             let lowered = self.store_text(field, &field_ty);
             self.push(&format!("    {field_c} = {lowered};"));
+            if self.needs_drop(&field_ty) {
+                self.emit_arm_source_moves(field, &field_ty);
+            }
         }
     }
 
@@ -1135,6 +1138,14 @@ impl<'a> Emitter<'a> {
         save: Option<&str>,
     ) {
         self.emit_guards(condition);
+        // A condition whose evaluation consumed the destination already
+        // transferred the old value to the callee, so the saved old value must
+        // be emptied rather than released again.
+        if let Some(save) = save {
+            if self.arm_consumes_target(condition, target_c) {
+                self.emit_move_zero(save, ty);
+            }
+        }
         let condition_c = self.value(condition);
         self.push(&format!("        if ({condition_c}) {{"));
         self.emit_conditional_move_arm(target_c, ty, then_value, save);
@@ -1164,6 +1175,13 @@ impl<'a> Emitter<'a> {
         } = &arm.kind
         {
             self.emit_guards(condition);
+            // A condition whose evaluation consumed the destination already
+            // transferred the old value to the callee.
+            if let Some(save) = save {
+                if self.arm_consumes_target(condition, target_c) {
+                    self.emit_move_zero(save, ty);
+                }
+            }
             let condition_c = self.value(condition);
             self.push(&format!("            if ({condition_c}) {{"));
             self.emit_conditional_move_arm(target_c, ty, then_value, save);
@@ -1179,13 +1197,36 @@ impl<'a> Emitter<'a> {
             }
             return;
         }
+        // A struct-literal arm is built in a fresh local through per-field
+        // stores, so a conditional field evaluates its condition once and a
+        // target-reading condition still sees the old destination. A struct
+        // with a fixed-array field keeps the initializer form until the
+        // fixed-array store machinery reaches struct fields.
+        if let ValueKind::StructLit { fields, .. } = &arm.kind {
+            if !fields
+                .iter()
+                .any(|(_, field)| self.substitute(&field.ty).is_fixed_array())
+            {
+                let local = self.unique_local("__cl_arm");
+                self.push("            {");
+                self.push(&format!(
+                    "                {} = {};",
+                    declarator(ty, &local),
+                    self.empty_state(ty)
+                ));
+                self.emit_struct_literal_fields(&local, ty, fields);
+                self.push(&format!("                {target_c} = {local};"));
+                self.push("            }");
+                return;
+            }
+        }
         match &arm.kind {
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
                 self.emit_guards(arm);
                 let call = self.value(arm);
                 self.push(&format!("            {target_c} = {call};"));
             }
-            ValueKind::Materialize { move_outs, .. } => {
+            ValueKind::Materialize { .. } => {
                 self.emit_guards(arm);
                 let temp = self.value(arm);
                 self.push(&format!("            {target_c} = {temp};"));
@@ -1194,7 +1235,7 @@ impl<'a> Emitter<'a> {
                 // transferred the old value to the callee, so the saved old
                 // value must be emptied rather than released again.
                 if let Some(save) = save {
-                    if move_outs.iter().any(|place| self.place(place) == target_c) {
+                    if self.arm_consumes_target(arm, target_c) {
                         self.emit_move_zero(save, ty);
                     }
                 }
@@ -1205,6 +1246,82 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("            {target_c} = {arm_c};"));
                 self.emit_arm_source_moves(arm, ty);
             }
+        }
+    }
+
+    /// True when evaluating a value consumes the destination lvalue through a
+    /// deferred `take` move-out.
+    ///
+    /// The scan walks the whole subtree, because a `take` call inside a
+    /// condition or a nested arm consumes the destination before the branch
+    /// that stores the new value runs. The comparison is on the rendered C
+    /// lvalue, so it matches the branch store's own target spelling.
+    fn arm_consumes_target(&self, value: &Value, target_c: &str) -> bool {
+        match &value.kind {
+            ValueKind::Materialize {
+                value: inner,
+                move_outs,
+                ..
+            } => {
+                move_outs.iter().any(|place| self.place(place) == target_c)
+                    || self.arm_consumes_target(inner, target_c)
+            }
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.arm_consumes_target(condition, target_c)
+                    || self.arm_consumes_target(then_value, target_c)
+                    || self.arm_consumes_target(else_value, target_c)
+            }
+            ValueKind::Member { base, .. } => self.arm_consumes_target(base, target_c),
+            ValueKind::Index { base, index } => {
+                self.arm_consumes_target(base, target_c)
+                    || self.arm_consumes_target(index, target_c)
+            }
+            ValueKind::Unary { operand, .. } => self.arm_consumes_target(operand, target_c),
+            ValueKind::Binary { left, right, .. } => {
+                self.arm_consumes_target(left, target_c)
+                    || self.arm_consumes_target(right, target_c)
+            }
+            ValueKind::Cast { value: inner, .. } => self.arm_consumes_target(inner, target_c),
+            ValueKind::Call { args, receiver, .. } => {
+                receiver
+                    .as_deref()
+                    .is_some_and(|receiver| self.arm_consumes_target(receiver, target_c))
+                    || args
+                        .iter()
+                        .any(|arg| self.arm_consumes_target(arg, target_c))
+            }
+            ValueKind::Intrinsic { args, .. } => args
+                .iter()
+                .any(|arg| self.arm_consumes_target(arg, target_c)),
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .any(|(_, field)| self.arm_consumes_target(field, target_c)),
+            ValueKind::ArrayLit { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| self.arm_consumes_target(element, target_c))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.arm_consumes_target(fill, target_c))
+            }
+            ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                ValuePiece::Literal(_) => false,
+                ValuePiece::Placeholder(inner) => self.arm_consumes_target(inner, target_c),
+            }),
+            ValueKind::Closure { captures, .. } => captures
+                .iter()
+                .any(|capture| self.arm_consumes_target(capture, target_c)),
+            ValueKind::ClosureCall { callable, args } => {
+                self.arm_consumes_target(callable, target_c)
+                    || args
+                        .iter()
+                        .any(|arg| self.arm_consumes_target(arg, target_c))
+            }
+            _ => false,
         }
     }
 
@@ -1219,11 +1336,16 @@ impl<'a> Emitter<'a> {
     /// copied transfer temporary a no-op.
     fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
         match &arm.kind {
-            ValueKind::Place(_)
-            | ValueKind::Temp(_)
-            | ValueKind::Member { .. }
-            | ValueKind::Index { .. }
-            | ValueKind::Materialize { .. } => {
+            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => {
+                let source = self.value(arm);
+                self.emit_move_zero(&source, ty);
+            }
+            // A projection is a move source only when it roots at storage the
+            // caller owns; a field of a fresh call result has no caller
+            // storage to empty.
+            ValueKind::Member { .. } | ValueKind::Index { .. }
+                if arm_has_storage_root(arm) =>
+            {
                 let source = self.value(arm);
                 self.emit_move_zero(&source, ty);
             }
@@ -1234,19 +1356,6 @@ impl<'a> Emitter<'a> {
                         self.emit_arm_source_moves(field, &field_ty);
                     }
                 }
-            }
-            ValueKind::Conditional {
-                condition,
-                then_value,
-                else_value,
-            } => {
-                self.emit_guards(condition);
-                let condition_c = self.value(condition);
-                self.push(&format!("            if ({condition_c}) {{"));
-                self.emit_arm_source_moves(then_value, ty);
-                self.push("            } else {");
-                self.emit_arm_source_moves(else_value, ty);
-                self.push("            }");
             }
             _ => {}
         }
@@ -1452,6 +1561,22 @@ fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
         .map(|local| local.name.clone())
         .filter(|name| !read.contains(name))
         .collect()
+}
+
+/// True when a lowered value reads caller-owned storage a move must empty.
+///
+/// A place or compiler temporary is storage; a member or element whose base
+/// chain roots at one is a projection of that storage. A fresh call result or
+/// literal owns no caller storage, so a field of a call result is copied
+/// without being emptied.
+pub(super) fn arm_has_storage_root(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => true,
+        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+            arm_has_storage_root(base)
+        }
+        _ => false,
+    }
 }
 
 /// True when a value reads any part of the place rooted at `target`'s base.

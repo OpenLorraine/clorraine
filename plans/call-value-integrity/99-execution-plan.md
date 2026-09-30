@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-30 23:54
+> **Last Updated**: 2026-10-01 00:36
 > **Progress**: 8/39 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
@@ -143,6 +143,21 @@ directions, RV-4, RV-5 shapes) run clean under
 compiles again (its residual double-free is the pre-existing mixed-shape issue owned by Phase 2).
 `cargo test --test call_value_integrity_spec_test` 29/29, `call_value_integrity_impl_test`
 16/16 (five new emitted-shape pins), `make check` 34 suites, 0 failures, 0 warnings.
+
+**Re-review (one permitted pass, scoped to the fix diff `235582d..aab9d08`, 2026-10-01):** the
+five fixes hold for the reported shapes; the re-review surfaced three new major findings, which
+the user ruled to fix:
+
+| Finding | Severity | Fix |
+| ------- | -------- | --- |
+| F1: emptying a member/index arm unconditionally emitted `mk().name = NULL;` for a field of a fresh call result (invalid C) and re-ran the call | 🟠 major | The source move is gated on a storage root (a place or temporary, or a projection over one); a field of a fresh call result is copied without being emptied |
+| F2: the composite-arm zero pass re-evaluated a condition that read the destination, so it emptied the wrong arm (ASan double-free) | 🟠 major | A struct-literal arm is built in a fresh local through per-field stores, so a conditional field's condition is evaluated once by the branch store |
+| F3: the save-empty test inspected only the direct arm, so a `take` call inside a nested condition consumed the destination before the saved value was released (ASan double-free) | 🟠 major | The whole arm subtree is scanned for deferred move-outs naming the destination, and the saved value is emptied when the outer or a nested condition consumes it |
+
+**F1–F3 verification (2026-10-01):** host AddressSanitizer probes for the three shapes plus the
+five original probes run clean (`ASAN_OPTIONS=detect_leaks=1`); the call-field shape compiles
+again; `call_value_integrity_impl_test` 19/19 (four new pins); `make check` 34 suites, 0
+failures, 0 warnings. No third review per the one-re-review cap.
 
 ---
 

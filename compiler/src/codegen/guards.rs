@@ -10,6 +10,7 @@ use crate::ast::{BinaryOp, ScalarType};
 use crate::ir::{Value, ValueKind, ValuePiece};
 use crate::types::{is_signed_scalar, Ty, TyKind};
 
+use super::function::arm_has_storage_root;
 use super::render::{bounds_condition, signed_min};
 use super::types::scalar_of;
 use super::Emitter;
@@ -284,19 +285,19 @@ impl<'a> Emitter<'a> {
             return self.conditional_move_expr(target_c, ty, condition, then_value, else_value);
         }
         let value_text = self.guarded_value(arm);
-        match &arm.kind {
-            ValueKind::Place(_)
-            | ValueKind::Temp(_)
-            | ValueKind::Member { .. }
-            | ValueKind::Index { .. }
-            | ValueKind::Materialize { .. } => {
-                let source = self.value(arm);
-                format!(
-                    "({target_c} = {value_text}, {})",
-                    self.move_zero_text_expr(&source, ty)
-                )
-            }
-            _ => format!("({target_c} = {value_text})"),
+        let storage = matches!(
+            &arm.kind,
+            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. }
+        ) || ((matches!(&arm.kind, ValueKind::Member { .. } | ValueKind::Index { .. }))
+            && arm_has_storage_root(arm));
+        if storage {
+            let source = self.value(arm);
+            format!(
+                "({target_c} = {value_text}, {})",
+                self.move_zero_text_expr(&source, ty)
+            )
+        } else {
+            format!("({target_c} = {value_text})")
         }
     }
 

@@ -362,9 +362,111 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("cviimpl-composite", source);
-    assert_contains("cviimpl-composite", &emitted, "c = (ClBox){ __cl_tmp0, 2 };");
-    let tail = after("cviimpl-composite", &emitted, "c = (ClBox){ __cl_tmp0, 2 };");
-    assert_contains("cviimpl-composite", tail, "__cl_tmp0 = NULL;");
+    assert_contains("cviimpl-composite", &emitted, "ClBox __cl_arm");
+    let arm = after("cviimpl-composite", &emitted, "ClBox __cl_arm");
+    assert_contains("cviimpl-composite", arm, ".name = __cl_tmp0;");
+    assert_contains("cviimpl-composite", arm, "c = __cl_arm");
+    let store_at = arm
+        .find(".name = __cl_tmp0;")
+        .unwrap_or_else(|| panic!("cviimpl-composite: the field is not stored"));
+    let stored = &arm[store_at..];
+    let zero_at = stored
+        .find("__cl_tmp0 = NULL;")
+        .unwrap_or_else(|| panic!("cviimpl-composite: the source temporary is not emptied"));
+    let move_at = stored
+        .find("c = __cl_arm")
+        .unwrap_or_else(|| panic!("cviimpl-composite: the local is not moved in"));
+    assert!(
+        zero_at < move_at,
+        "cviimpl-composite: the source must be emptied before the local is moved in"
+    );
+}
+
+/// A field read from a fresh call result is copied without being emptied: it
+/// has no caller storage, and re-rendering the call would duplicate its side
+/// effect (and produce an invalid assignment to an rvalue).
+#[test]
+fn should_copy_a_field_of_a_call_result_without_emptying_it() {
+    let source = r#"module impl.cvi.callfield;
+import { String, stringOf } from std.text;
+struct Box { name: String; tag: i32; }
+func mk(): Box { return Box { name: stringOf("ab"), tag: 1 }; }
+func main(): i32 {
+    let ok: bool = true;
+    let b: String = stringOf("cde");
+    let c: String = ok ? mk().name : b;
+    return i32(len(c));
+}
+"#;
+    let emitted = emit_host("cviimpl-callfield", source);
+    assert_contains("cviimpl-callfield", &emitted, "c = cl_impl_cvi_callfield_mk().name;");
+    assert!(
+        !emitted.contains("mk().name = NULL"),
+        "cviimpl-callfield: a field of a call result has no caller storage to empty"
+    );
+}
+
+/// A composite arm whose conditional field reads the destination evaluates
+/// that condition once, because the field is stored by the branch store.
+#[test]
+fn should_store_a_nested_condition_once_in_a_composite_arm() {
+    let source = r#"module impl.cvi.condread;
+import { String, stringOf } from std.text;
+struct Box { name: String; tag: i32; }
+func main(): i32 {
+    let ok: bool = true;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("cde");
+    let d: Box = Box { name: stringOf("zz"), tag: 9 };
+    let c: Box = Box { name: stringOf("qq"), tag: 0 };
+    c = ok ? Box { name: (c.tag == 0) ? a : b, tag: 1 } : d;
+    return i32(len(c.name)) + c.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-condread", source);
+    assert_contains("cviimpl-condread", &emitted, "ClBox __cl_arm");
+    let arm = after("cviimpl-condread", &emitted, "ClBox __cl_arm");
+    assert_contains("cviimpl-condread", arm, ".name = a;");
+    assert_contains("cviimpl-condread", arm, ".name = b;");
+    assert_contains("cviimpl-condread", arm, "c = __cl_arm");
+    assert_eq!(
+        arm.matches("c.tag == 0").count(),
+        1,
+        "cviimpl-condread: the condition must be evaluated once, for the branch store only"
+    );
+}
+
+/// A nested condition that consumes the destination empties the saved old
+/// value, because the callee already owns it.
+#[test]
+fn should_empty_the_save_when_a_nested_condition_consumes_the_destination() {
+    let source = r#"module impl.cvi.condconsume;
+import { String, stringOf } from std.text;
+func sink(take s: String): String { return s; }
+func main(): i32 {
+    let outer: bool = true;
+    let b: String = stringOf("cde");
+    let s: String = stringOf("ab");
+    s = outer ? (len(sink(s)) > 0 ? b : b) : b;
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("cviimpl-condconsume", source);
+    let tail = after("cviimpl-condconsume", &emitted, "ClString __cl_save_1 = s;");
+    let call_at = tail
+        .find("cl_impl_cvi_condconsume_sink(s);")
+        .unwrap_or_else(|| panic!("cviimpl-condconsume: the consuming call is absent"));
+    let consumed = &tail[call_at..];
+    let zero_at = consumed
+        .find("__cl_save_1 = NULL;")
+        .unwrap_or_else(|| panic!("cviimpl-condconsume: the saved value is not emptied"));
+    let drop_at = consumed
+        .find("if (__cl_save_1)")
+        .unwrap_or_else(|| panic!("cviimpl-condconsume: the saved value has no release"));
+    assert!(
+        zero_at < drop_at,
+        "cviimpl-condconsume: the consumed destination's saved value must be emptied before its release"
+    );
 }
 
 /// A `take` conditional argument inside a short-circuit operand is filled and
