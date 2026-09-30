@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 01:38
-> **Progress**: 10/39 tasks (26%)
+> **Last Updated**: 2026-10-01 01:53
+> **Progress**: 15/39 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -193,11 +193,17 @@ pre-passes, so there are no new regression pins; the 29 Phase-1 cases pass.
 **Reference**: [03-02](03-02-fixed-array-value-positions.md) §Proposed Changes 1–4
 **Objective**: Give every fixed-array value position a valid C place.
 
-- [ ] 2.2.1 Element stores: refactor the fixed-array assign core to a rendered target and route constant- and runtime-index element stores through it; return the full element type from the projected type — `compiler/src/own/expr.rs`, `compiler/src/own.rs`, `compiler/src/codegen/function.rs` (DEF-31)
-- [ ] 2.2.2 Materialize duplicable fixed-array values and struct literals with a place-less field at place-requiring positions (gate the skip) — `compiler/src/own/lower.rs` (AR #11; DEF-32, DEF-33, DEF-38)
-- [ ] 2.2.3 Materialize fixed-array literal sources at projections (value and argument forms) — `compiler/src/own/lower.rs`, `compiler/src/codegen/expr.rs` (DEF-35)
-- [ ] 2.2.4 Struct-literal initialization: materialize when any field lacks an initializer form; zero-init then store every field in source order (single rule) — `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs` (AR #7; DEF-38)
-- [ ] 2.2.5 Run the specification tests — verify they PASS (green phase)
+- [x] 2.2.1 Element stores: refactor the fixed-array assign core to a rendered target and route constant- and runtime-index element stores through it; return the full element type from the projected type — `compiler/src/own/expr.rs`, `compiler/src/own.rs`, `compiler/src/codegen/function.rs` (DEF-31) ✅ (completed: 2026-10-01 01:45)
+- [x] 2.2.2 Materialize duplicable fixed-array values and struct literals with a place-less field at place-requiring positions (gate the skip) — `compiler/src/own/lower.rs` (AR #11; DEF-32, DEF-33, DEF-38) ✅ (completed: 2026-10-01 01:45)
+- [x] 2.2.3 Materialize fixed-array literal sources at projections (value and argument forms) — `compiler/src/own/lower.rs`, `compiler/src/codegen/expr.rs` (DEF-35) ✅ (completed: 2026-10-01 01:45)
+- [x] 2.2.4 Struct-literal initialization: materialize when any field lacks an initializer form; zero-init then store every field in source order (single rule) — `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs` (AR #7; DEF-38) ✅ (completed: 2026-10-01 01:45)
+- [x] 2.2.5 Run the specification tests — verify they PASS (green phase) ✅ (completed: 2026-10-01 01:45)
+
+**Green phase (2026-10-01 01:45):** `cargo test --test call_value_integrity_spec_test` — 44
+passed / 0 failed (15 Phase-2 cases green). Full `make check` passed (34 suites, 0 failures, 0
+warnings); the Phase-1 impl pin that reserved the aggregate-initializer form for a fixed-array
+field was updated to the new store form, as the fixed-array store machinery now reaches struct
+fields.
 
 ### Step 2.3: Implementation Tests & Hardening
 

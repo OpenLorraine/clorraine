@@ -766,13 +766,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// The type a projection chain reaches from a local binding.
+    ///
+    /// An element projection removes the outermost extent but keeps the
+    /// remaining ones, so indexing a `T[M][N]` reaches `T[N]`, not the base
+    /// scalar. Keeping the array type matters for a store: an assignment to a
+    /// row is a whole-array copy, not a scalar assignment.
     fn projected_type(&self, id: usize, projections: &[ir::Projection]) -> Ty {
         let mut ty = self.bindings[id].ty.clone();
         for projection in projections {
             ty = match projection {
                 ir::Projection::Field(field) => self.member_type(&ty, field),
                 ir::Projection::Element(_) => match &ty.kind {
-                    TyKind::Array { element, .. } => (**element).clone(),
+                    TyKind::Array { element, extents } => match extents.split_first() {
+                        Some((_, tail)) if !tail.is_empty() => {
+                            Ty::array((**element).clone(), tail.to_vec())
+                        }
+                        _ => (**element).clone(),
+                    },
                     _ => Ty::unknown(),
                 },
             };

@@ -392,11 +392,20 @@ impl<'a> Emitter<'a> {
                 // The pointer expression carries the element's run-time index,
                 // so its guards (including the bounds check) must run first.
                 self.emit_guards(pointer);
-                self.emit_guards(value);
                 let pointer_c = self.value(pointer);
                 let pointer_ty = self.substitute(&pointer.ty);
-                let value_c = self.store_text(value, &pointer_ty);
-                self.push(&format!("    *({pointer_c}) = {value_c};"));
+                if pointer_ty.is_fixed_array() {
+                    // A fixed-array element is not assignable in C, so the
+                    // store goes through the byte-copy/branch-store core
+                    // against the dereferenced pointer. The pointer may alias
+                    // the value, so the old bytes are always saved.
+                    let target_c = format!("(*({pointer_c}))");
+                    self.emit_fixed_array_assign_to(&target_c, &pointer_ty, value, true);
+                } else {
+                    self.emit_guards(value);
+                    let value_c = self.store_text(value, &pointer_ty);
+                    self.push(&format!("    *({pointer_c}) = {value_c};"));
+                }
             }
             Statement::Call {
                 callee,
@@ -713,12 +722,19 @@ impl<'a> Emitter<'a> {
             self.emit_fixed_array_assign(target, &ty, value);
             return;
         }
+        // A literal with a field that has no C initializer form stores its
+        // fields through statements, whether or not the type owns anything;
+        // a fixed-array field is such a field even for a duplicable type.
+        if let ValueKind::StructLit { fields, .. } = &value.kind {
+            if self.struct_literal_needs_stores(fields) {
+                self.emit_struct_literal_store(target, &ty, fields);
+                return;
+            }
+        }
         if self.needs_drop(&ty) {
             // An owned conditional moves the chosen arm into the destination
             // per path: a value expression would copy the handle and leave the
-            // arm owning the same storage. A struct literal with an owned
-            // conditional field stores its fields instead, so the field's
-            // chosen arm moves too.
+            // arm owning the same storage.
             if let ValueKind::Conditional {
                 condition,
                 then_value,
@@ -734,12 +750,6 @@ impl<'a> Emitter<'a> {
                     else_value,
                 );
                 return;
-            }
-            if let ValueKind::StructLit { fields, .. } = &value.kind {
-                if self.struct_literal_needs_stores(fields) {
-                    self.emit_struct_literal_store(target, &ty, fields);
-                    return;
-                }
             }
         }
         if !self.emits_drop(&ty) {
@@ -778,25 +788,96 @@ impl<'a> Emitter<'a> {
 
     /// Emits a whole-array copy for a fixed-array assignment.
     ///
-    /// C arrays are not assignable, so the value's bytes travel with the C
-    /// runtime `memcpy`. A right-hand side that renders to the target itself
-    /// (`a = a;`) already holds the value, so only its guards can have an
-    /// effect. When the target owns elements and the right-hand side reads it,
-    /// the old value is saved into a zeroed local first, so it survives until
-    /// the copy is done and is then released once; an unread old target is
-    /// released before the copy. `sizeof(target)` is the byte count of the
-    /// whole array, which C computes from the declared type.
+    /// The target place is rendered and delegated to
+    /// [`Self::emit_fixed_array_assign_to`] together with whether the value
+    /// reads it, so a value that reads the target survives until the copy has
+    /// run.
     fn emit_fixed_array_assign(&mut self, target: &Place, ty: &Ty, value: &Value) {
+        let target_c = self.place(target);
+        let reads_target = value_reads_base(value, target);
+        self.emit_fixed_array_assign_to(&target_c, ty, value, reads_target);
+    }
+
+    /// Emits a whole-array store into a rendered C lvalue.
+    ///
+    /// C arrays are not assignable, so the bytes travel with `memcpy`. A
+    /// literal stores element by element, a conditional branches per arm, and
+    /// a by-value call writes into a temporary first, because the callee may
+    /// read the target. A right-hand side that renders to the target itself
+    /// (`a = a;`) already holds the value, so only its guards can have an
+    /// effect. When the target owns elements and the value may read it
+    /// (`reads_target`), the old bytes are saved into a zeroed local first and
+    /// released once after the copy; otherwise the old value is released
+    /// before the copy. The rendered form lets a run-time element target, a
+    /// struct-literal field, and a plain place share one core.
+    fn emit_fixed_array_assign_to(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        value: &Value,
+        reads_target: bool,
+    ) {
         if let ValueKind::Conditional {
             condition,
             then_value,
             else_value,
         } = &value.kind
         {
-            self.emit_fixed_array_conditional_assign(target, ty, condition, then_value, else_value);
+            self.emit_fixed_array_conditional_assign(
+                target_c,
+                ty,
+                condition,
+                then_value,
+                else_value,
+            );
             return;
         }
-        let target_c = self.place(target);
+        if let ValueKind::ArrayLit { elements, fill } = &value.kind {
+            // An array literal has one initializer per element, so it is
+            // stored element by element; a `memcpy` cannot name its braces.
+            if self.needs_drop(ty) {
+                self.emit_drop_expr(target_c, ty);
+            }
+            self.emit_array_assign_to(target_c, ty, elements, fill);
+            return;
+        }
+        if let ValueKind::Call {
+            callee,
+            type_args,
+            args,
+            receiver,
+        } = &value.kind
+        {
+            // A by-value fixed-array call writes through a hidden out-parameter,
+            // so it needs storage before the target is released. The call runs
+            // into a fresh temporary first, because the callee may read the
+            // target.
+            if let Some(receiver) = receiver.as_deref() {
+                self.emit_guards(receiver);
+            }
+            for arg in args {
+                self.emit_guards(arg);
+            }
+            let temp = self.unique_local("__cl_call");
+            self.push("    {");
+            self.push(&format!(
+                "        {} = {};",
+                declarator(ty, &temp),
+                self.empty_state(ty)
+            ));
+            let call =
+                self.call_with_destination(callee, type_args, args, receiver.as_deref(), &temp);
+            self.push(&format!("        {call};"));
+            if self.needs_drop(ty) {
+                self.emit_drop_expr(target_c, ty);
+            }
+            self.push(&format!(
+                "        memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+            ));
+            self.emit_move_zero(&temp, ty);
+            self.push("    }");
+            return;
+        }
         let value_c = self.value(value);
         if value_c == target_c {
             self.emit_guards(value);
@@ -810,10 +891,10 @@ impl<'a> Emitter<'a> {
             ));
             return;
         }
-        if !value_reads_base(value, target) {
-            // The right-hand side does not read the target, so the old value
-            // is released before the right-hand side is evaluated.
-            self.emit_drop(target);
+        if !reads_target {
+            // The value does not read the target, so the old value is released
+            // before the value is evaluated.
+            self.emit_drop_expr(target_c, ty);
             self.emit_guards(value);
             let value_c = self.store_text(value, ty);
             self.push(&format!(
@@ -821,9 +902,9 @@ impl<'a> Emitter<'a> {
             ));
             return;
         }
-        // The right-hand side reads the target, so the old value must survive
-        // until the bytes have been copied. Save it by byte copy, copy the new
-        // value in, then release the saved old value.
+        // The value reads the target, so the old value must survive until the
+        // bytes have been copied. Save it by byte copy, copy the new value in,
+        // then release the saved old value.
         let save = self.unique_local("__cl_save");
         self.push("    {");
         self.push(&format!(
@@ -843,7 +924,7 @@ impl<'a> Emitter<'a> {
         self.push("    }");
     }
 
-    /// Emits a fixed-array conditional into an assignment target.
+    /// Emits a fixed-array conditional into a rendered target.
     ///
     /// The condition is evaluated once and each arm runs inside its own
     /// branch, so an arm's guards and calls execute only when the arm is
@@ -853,13 +934,12 @@ impl<'a> Emitter<'a> {
     /// back, and the saved value is released once afterwards.
     fn emit_fixed_array_conditional_assign(
         &mut self,
-        target: &Place,
+        target_c: &str,
         ty: &Ty,
         condition: &Value,
         then_value: &Value,
         else_value: &Value,
     ) {
-        let target_c = self.place(target);
         if !self.needs_drop(ty) {
             self.emit_guards(condition);
             let condition_c = self.value(condition);
@@ -992,23 +1072,25 @@ impl<'a> Emitter<'a> {
 
     /// True when a struct literal needs the per-field store form.
     ///
-    /// A C aggregate initializer cannot move an owned conditional's chosen
-    /// arm, so a field whose value is such a conditional must be stored by a
-    /// statement that can branch. The trigger is deliberately narrow: only a
-    /// field that owns storage and is a conditional selects the store form. A
-    /// fixed-array field keeps the initializer form until the fixed-array
-    /// store machinery reaches struct fields; storing one as a plain
-    /// assignment would not be valid C.
-    fn struct_literal_needs_stores(&self, fields: &[(String, Value)]) -> bool {
-        if fields
-            .iter()
-            .any(|(_, field)| self.substitute(&field.ty).is_fixed_array())
-        {
-            return false;
-        }
+    /// A C aggregate initializer cannot name a fixed-array field, and it
+    /// cannot move an owned conditional's chosen arm; a nested literal that
+    /// itself needs stores has no initializer form either. Any of those makes
+    /// the whole literal store every field through statements, in source
+    /// order, which a C initializer cannot mix with without reordering
+    /// side-effecting fields.
+    pub(super) fn struct_literal_needs_stores(&self, fields: &[(String, Value)]) -> bool {
         fields.iter().any(|(_, field)| {
-            self.needs_drop(&self.substitute(&field.ty))
-                && matches!(field.kind, ValueKind::Conditional { .. })
+            let field_ty = self.substitute(&field.ty);
+            if field_ty.is_fixed_array()
+                || (self.needs_drop(&field_ty)
+                    && matches!(field.kind, ValueKind::Conditional { .. }))
+            {
+                return true;
+            }
+            if let ValueKind::StructLit { fields, .. } = &field.kind {
+                return self.struct_literal_needs_stores(fields);
+            }
+            false
         })
     }
 
@@ -1051,10 +1133,13 @@ impl<'a> Emitter<'a> {
     /// Stores every field of a struct literal into a rendered C lvalue, in
     /// source order.
     ///
-    /// An owned conditional field branches through
-    /// [`Self::emit_conditional_move_assign`] so the chosen arm moves into the
-    /// field; every other field is stored as a plain assignment.
-    fn emit_struct_literal_fields(
+    /// A fixed-array field goes through the fixed-array store core, because C
+    /// cannot assign an array field. A nested literal that needs stores is
+    /// stored field by field into the field lvalue. An owned conditional field
+    /// branches through [`Self::emit_conditional_move_assign`] so the chosen
+    /// arm moves into the field; every other field is stored as a plain
+    /// assignment, and a moved source is emptied.
+    pub(super) fn emit_struct_literal_fields(
         &mut self,
         target_c: &str,
         _ty: &Ty,
@@ -1063,6 +1148,16 @@ impl<'a> Emitter<'a> {
         for (name, field) in fields {
             let field_ty = self.substitute(&field.ty);
             let field_c = format!("{target_c}.{name}");
+            if field_ty.is_fixed_array() {
+                self.emit_fixed_array_assign_to(&field_c, &field_ty, field, false);
+                continue;
+            }
+            if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
+                if self.struct_literal_needs_stores(inner) {
+                    self.emit_struct_literal_fields(&field_c, &field_ty, inner);
+                    continue;
+                }
+            }
             if self.needs_drop(&field_ty) {
                 if let ValueKind::Conditional {
                     condition,

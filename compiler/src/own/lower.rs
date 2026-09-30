@@ -46,7 +46,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let base = self.lower_value(base);
                 let index = self.lower_value(index);
                 let base = self.materialize_guard_operand(base);
-                let base = self.materialize_read_conditional(base);
+                let base = self.materialize_read_place(base);
                 let index = self.materialize_guard_operand(index);
                 ValueKind::Index {
                     base: Box::new(base),
@@ -721,6 +721,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// it. An ownerless temporary that is not a destination (a transfer
     /// temporary) is not covered: its value travels to a binding that owns it,
     /// so a projection still needs that binding.
+    fn value_needs_place(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => false,
+            ValueKind::Conditional { .. } | ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => {
+                value.ty.is_fixed_array()
+            }
+            ValueKind::StructLit { fields, .. } => fields.iter().any(|(_, field)| {
+                field.ty.is_fixed_array() || self.value_needs_place(field)
+            }),
+            _ => false,
+        }
+    }
+
+    /// True when a projection of a value roots into existing storage.
     fn projects_from_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(_) => true,
@@ -891,17 +905,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Materializes a fixed-array conditional a read position needs as a place.
+    /// Materializes a fixed-array read source that needs a place.
     ///
-    /// An index base must name storage to carry the chosen arm's ownership
-    /// decisions. A conditional has no storage of its own, so it is stored
-    /// through the branch-aware assignment into a fresh temporary and the read
-    /// goes through that temporary. A non-conditional value, a non-array type,
-    /// or a type that still mentions a generic parameter is returned
-    /// unchanged.
-    pub(super) fn materialize_read_conditional(&mut self, value: Value) -> Value {
-        let is_conditional = matches!(value.kind, ValueKind::Conditional { .. });
-        if !is_conditional || !value.ty.is_fixed_array() || mentions_type_param(&value.ty) {
+    /// An index base must name storage: a conditional base carries the chosen
+    /// arm's ownership decisions, and a brace list has no C place at all, so
+    /// neither can be indexed directly. Both are stored through the ordinary
+    /// assignment into a fresh temporary and the read goes through that
+    /// temporary. A value that already names storage, a non-array type, or a
+    /// type that still mentions a generic parameter is returned unchanged.
+    pub(super) fn materialize_read_place(&mut self, value: Value) -> Value {
+        let needs_place = value.ty.is_fixed_array()
+            && matches!(
+                value.kind,
+                ValueKind::Conditional { .. } | ValueKind::ArrayLit { .. }
+            )
+            && !mentions_type_param(&value.ty);
+        if !needs_place {
             return value;
         }
         let ty = value.ty.clone();
@@ -994,7 +1013,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         }
         if value.ty.is_closure()
-            || self.sema.table.duplicable(&value.ty)
+            || (self.sema.table.duplicable(&value.ty) && !self.value_needs_place(&value))
             || is_view(&value.ty)
             || self.projects_from_place(&value)
             || !self.report_diagnostics

@@ -506,10 +506,10 @@ func main(): i32 {
     assert_contains("cviimpl-guardarg", guarded, "(c = NULL)");
 }
 
-/// A struct literal with a fixed-array field keeps the aggregate-initializer
-/// form, because a plain field store cannot assign a C array.
+/// A struct literal with a fixed-array field stores every field, because a C
+/// aggregate initializer cannot name an array field.
 #[test]
-fn should_keep_the_initializer_form_for_a_struct_literal_with_a_fixed_array_field() {
+fn should_store_every_field_when_a_struct_literal_has_a_fixed_array_field() {
     let source = r#"module impl.cvi.mixedfield;
 import { String, stringOf } from std.text;
 struct Box { name: String; nums: i32[2]; }
@@ -522,10 +522,11 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("cviimpl-mixed", source);
-    assert_contains("cviimpl-mixed", &emitted, "(ClBox){");
+    assert_contains("cviimpl-mixed", &emitted, "c.nums[0] = 1;");
+    assert_contains("cviimpl-mixed", &emitted, "c.nums[1] = 2;");
     assert!(
-        !emitted.contains("c.nums = {"),
-        "cviimpl-mixed: a fixed-array field cannot be stored as a plain assignment"
+        !emitted.contains("(ClBox){"),
+        "cviimpl-mixed: the literal must store its fields instead of using an aggregate initializer"
     );
 }
 

@@ -264,13 +264,21 @@ impl<'a> Emitter<'a> {
             if self.return_ty.is_fixed_array() {
                 self.emit_fixed_array_return(value);
             } else {
-                // An owned conditional return moves the chosen arm into the
-                // result per path. A result variable keeps the ordinary tail:
-                // the releases and the ladder jump below run with the value
-                // already stored.
+                // A literal whose fields need stores, and an owned conditional,
+                // move the chosen value into the result per path. A result
+                // variable keeps the ordinary tail: the releases and the ladder
+                // jump below run with the value already stored.
                 let ret_ty = self.return_ty.clone();
-                let mut conditional_stored = false;
-                if self.needs_drop(&ret_ty) {
+                let mut value_stored = false;
+                if let ValueKind::StructLit { fields, .. } = &value.kind {
+                    if self.struct_literal_needs_stores(fields) {
+                        if self.emit_struct_literal_return(&ret_ty, fields, releases) {
+                            return;
+                        }
+                        value_stored = true;
+                    }
+                }
+                if !value_stored && self.needs_drop(&ret_ty) {
                     if let ValueKind::Conditional {
                         condition,
                         then_value,
@@ -286,10 +294,10 @@ impl<'a> Emitter<'a> {
                         ) {
                             return;
                         }
-                        conditional_stored = true;
+                        value_stored = true;
                     }
                 }
-                if !conditional_stored {
+                if !value_stored {
                     self.emit_guards(value);
                     // A returned `String` widens to the `str` view the return
                     // type declares, exactly as a store into a `str` place does.
@@ -385,6 +393,37 @@ impl<'a> Emitter<'a> {
             self.empty_state(ret_ty)
         ));
         self.emit_conditional_move_assign(&local, ret_ty, condition, then_value, else_value);
+        self.emit_temp_releases(releases);
+        self.push(&format!("        return {local};"));
+        self.push("    }");
+        true
+    }
+
+    /// Emits a struct literal that needs per-field stores as a return value.
+    ///
+    /// With a result variable the fields are stored into it and the caller
+    /// continues with the releases and the ladder jump, so `false` is
+    /// returned. Without one the literal is built in a block-local, the
+    /// statement releases run after it has been read, and the block returns the
+    /// local; `true` means the whole return was emitted.
+    fn emit_struct_literal_return(
+        &mut self,
+        ret_ty: &Ty,
+        fields: &[(String, ir::Value)],
+        releases: &[ir::Release],
+    ) -> bool {
+        if let Some(result) = self.result_var.clone() {
+            self.emit_struct_literal_fields(&result, ret_ty, fields);
+            return false;
+        }
+        let local = self.unique_local("__cl_return");
+        let decl = super::types::declarator(ret_ty, &local);
+        self.push("    {");
+        self.push(&format!(
+            "        {decl} = {};",
+            self.empty_state(ret_ty)
+        ));
+        self.emit_struct_literal_fields(&local, ret_ty, fields);
         self.emit_temp_releases(releases);
         self.push(&format!("        return {local};"));
         self.push("    }");

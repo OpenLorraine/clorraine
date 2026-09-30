@@ -676,7 +676,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.materialize_guard_operand(index_value),
             )
         };
-        let base_value = self.materialize_read_conditional(base_value);
+        let base_value = self.materialize_read_place(base_value);
         let element = Value::new(
             element_ty.clone(),
             ValueKind::Index {
