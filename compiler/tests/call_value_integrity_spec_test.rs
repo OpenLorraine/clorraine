@@ -15,6 +15,13 @@
 //! cases. A move-only element arm stays the `E10026` limit, while a duplicable
 //! element arm copies.
 //!
+//! The fixed-array batch stores a row through a constant or runtime index,
+//! passes a conditional array argument whose arms are calls, literals, or
+//! places, projects an array literal in value and argument positions, and
+//! initializes a struct-literal array field from a conditional. The conditional
+//! store also reads the un-chosen arm afterwards, so its exit code proves the
+//! un-chosen arm kept its own storage.
+//!
 //! Every run case asserts an exit code that proves the chosen value was read
 //! correctly, and a double release aborts in the C library, so a clean exit
 //! also pins release-once. The rejection case asserts the diagnostic code and
@@ -977,4 +984,397 @@ func main(): i32 {
 "#;
     let output = run_host("cvi37cf", source);
     assert_exit("cvi37cf", &output, 4);
+}
+
+/// A runtime row index stores a fixed-array value in the selected row.
+///
+/// The rows start as `[[1, 2], [3, 4]]` and the stored row is `[5, 6]`. The
+/// index comes from a call, so the store must land in row one; reading row one
+/// back gives `5 * 10 + 6 = 56`, while a store that landed in row zero would
+/// leave `34`.
+#[test]
+fn should_store_the_value_in_the_second_row_when_a_runtime_index_selects_it() {
+    let source = r#"module codegen.cvi.st9;
+
+func runtimeIndex(): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let value: i32[2] = [5, 6];
+    let i: i32 = runtimeIndex();
+    rows[i] = value;
+    return rows[1][0] * 10 + rows[1][1];
+}
+"#;
+    let output = run_host("cvi09", source);
+    assert_exit("cvi09", &output, 56);
+}
+
+/// A constant row index stores a fixed-array value in the first row.
+///
+/// The rows start as `[[1, 2], [3, 4]]` and the stored row is `[5, 6]`.
+/// Reading row zero back gives `5 * 10 + 6 = 56`, while a store that landed in
+/// row one would leave `12`.
+#[test]
+fn should_store_the_value_in_the_first_row_when_a_constant_index_selects_it() {
+    let source = r#"module codegen.cvi.st10;
+
+func main(): i32 {
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let value: i32[2] = [5, 6];
+    rows[0] = value;
+    return rows[0][0] * 10 + rows[0][1];
+}
+"#;
+    let output = run_host("cvi10", source);
+    assert_exit("cvi10", &output, 56);
+}
+
+/// A runtime row index stores an array literal built from variables.
+///
+/// The rows start as `[[1, 2], [3, 4]]`; the literal `[x, y]` holds `7` and
+/// `8`, so row one reads back as `7 * 10 + 8 = 78`. A store that landed in row
+/// zero would leave `12`.
+#[test]
+fn should_store_the_row_when_a_runtime_index_takes_an_array_literal() {
+    let source = r#"module codegen.cvi.st11;
+
+func runtimeIndex(): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let x: i32 = 7;
+    let y: i32 = 8;
+    let i: i32 = runtimeIndex();
+    rows[i] = [x, y];
+    return rows[1][0] * 10 + rows[1][1];
+}
+"#;
+    let output = run_host("cvi11", source);
+    assert_exit("cvi11", &output, 78);
+}
+
+/// A conditional row store takes the `then` arm and leaves the un-chosen arm
+/// intact.
+///
+/// The rows start as `[[1, 2], [3, 4]]`, `a` is `[5, 6]`, and `b` is `[7, 8]`.
+/// With `ok` true row one becomes `[5, 6]`, so the store reads back as
+/// `5 * 10 = 50`; the un-chosen `b` still reads `7`, giving `57`. A copy that
+/// aliased the arms or emptied the un-chosen one would change the answer.
+#[test]
+fn should_take_the_then_row_when_a_conditional_selects_a_row_arm() {
+    let source = r#"module codegen.cvi.st12;
+
+func runtimeIndex(): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let a: i32[2] = [5, 6];
+    let b: i32[2] = [7, 8];
+    let i: i32 = runtimeIndex();
+    rows[i] = ok ? a : b;
+    return rows[1][0] * 10 + b[0];
+}
+"#;
+    let output = run_host("cvi12t", source);
+    assert_exit("cvi12t", &output, 57);
+}
+
+/// A conditional row store takes the `else` arm and leaves the un-chosen arm
+/// intact.
+///
+/// The rows start as `[[1, 2], [3, 4]]`, `a` is `[5, 6]`, and `b` is `[7, 8]`.
+/// With `ok` false row one becomes `[7, 8]`, so the store reads back as
+/// `7 * 10 = 70`; the un-chosen `a` still reads `5`, giving `75`. A copy that
+/// aliased the arms or emptied the un-chosen one would change the answer.
+#[test]
+fn should_take_the_else_row_when_a_conditional_selects_a_row_arm() {
+    let source = r#"module codegen.cvi.st12;
+
+func runtimeIndex(): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let ok: bool = false;
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let a: i32[2] = [5, 6];
+    let b: i32[2] = [7, 8];
+    let i: i32 = runtimeIndex();
+    rows[i] = ok ? a : b;
+    return rows[1][0] * 10 + a[0];
+}
+"#;
+    let output = run_host("cvi12f", source);
+    assert_exit("cvi12f", &output, 75);
+}
+
+/// A conditional array argument whose `then` arm is a call passes the chosen
+/// call's values.
+///
+/// `mkA` returns `[1, 2]` and `mkB` returns `[3, 4]`; with `ok` true the callee
+/// sums the `mkA` result, so the exit code is `3`.
+#[test]
+fn should_sum_the_then_call_when_a_conditional_is_an_array_argument() {
+    let source = r#"module codegen.cvi.st13;
+
+func mkA(): i32[2] {
+    return [1, 2];
+}
+
+func mkB(): i32[2] {
+    return [3, 4];
+}
+
+func eat(a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    return eat(ok ? mkA() : mkB());
+}
+"#;
+    let output = run_host("cvi13t", source);
+    assert_exit("cvi13t", &output, 3);
+}
+
+/// A conditional array argument whose `else` arm is a call passes the chosen
+/// call's values.
+///
+/// `mkA` returns `[1, 2]` and `mkB` returns `[3, 4]`; with `ok` false the
+/// callee sums the `mkB` result, so the exit code is `7`.
+#[test]
+fn should_sum_the_else_call_when_a_conditional_is_an_array_argument() {
+    let source = r#"module codegen.cvi.st13;
+
+func mkA(): i32[2] {
+    return [1, 2];
+}
+
+func mkB(): i32[2] {
+    return [3, 4];
+}
+
+func eat(a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+
+func main(): i32 {
+    let ok: bool = false;
+    return eat(ok ? mkA() : mkB());
+}
+"#;
+    let output = run_host("cvi13f", source);
+    assert_exit("cvi13f", &output, 7);
+}
+
+/// A conditional array argument whose `then` arm is a literal passes the
+/// chosen literal's values.
+///
+/// The arms are `[10, 20]` and `[30, 40]`; with `ok` true the callee sums the
+/// first, so the exit code is `30`.
+#[test]
+fn should_sum_the_then_literal_when_a_conditional_is_an_array_argument() {
+    let source = r#"module codegen.cvi.st14;
+
+func eat(a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    return eat(ok ? [10, 20] : [30, 40]);
+}
+"#;
+    let output = run_host("cvi14t", source);
+    assert_exit("cvi14t", &output, 30);
+}
+
+/// A conditional array argument whose `else` arm is a literal passes the
+/// chosen literal's values.
+///
+/// The arms are `[10, 20]` and `[30, 40]`; with `ok` false the callee sums the
+/// second, so the exit code is `70`.
+#[test]
+fn should_sum_the_else_literal_when_a_conditional_is_an_array_argument() {
+    let source = r#"module codegen.cvi.st14;
+
+func eat(a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+
+func main(): i32 {
+    let ok: bool = false;
+    return eat(ok ? [10, 20] : [30, 40]);
+}
+"#;
+    let output = run_host("cvi14f", source);
+    assert_exit("cvi14f", &output, 70);
+}
+
+/// An array call result used as an argument gives the callee its values.
+///
+/// `mkA` returns `[1, 2]`; the callee receives a place for the result and sums
+/// it, so the exit code is `3`.
+#[test]
+fn should_sum_the_call_result_when_an_array_call_is_an_argument() {
+    let source = r#"module codegen.cvi.st15;
+
+func mkA(): i32[2] {
+    return [1, 2];
+}
+
+func sink(a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+
+func main(): i32 {
+    return sink(mkA());
+}
+"#;
+    let output = run_host("cvi15", source);
+    assert_exit("cvi15", &output, 3);
+}
+
+/// An array literal can be projected in value position and as a call argument.
+///
+/// `[a, b]` is `[2, 3]`; the value position reads the first element and the
+/// call argument passes the second through `pick`. The answer combines both
+/// reads as `2 * 10 + 3 = 23`, and the emitted C must build without a
+/// diagnostic.
+#[test]
+fn should_read_the_element_when_an_array_literal_is_projected() {
+    let source = r#"module codegen.cvi.st16;
+
+func pick(x: i32): i32 {
+    return x;
+}
+
+func main(): i32 {
+    let a: i32 = 2;
+    let b: i32 = 3;
+    let first: i32 = [a, b][0];
+    return first * 10 + pick([a, b][1]);
+}
+"#;
+    let output = run_host("cvi16", source);
+    assert_exit("cvi16", &output, 23);
+}
+
+/// A struct-literal array field takes the `then` arm of a conditional.
+///
+/// `arr: ok ? a : b` stores `[1, 2]` with `ok` true and `tag` is `1`; the field
+/// reads back as `1 * 10 + 2 + 1 = 13`, so both the array field and the scalar
+/// field are initialized.
+#[test]
+fn should_take_the_then_row_when_a_conditional_fills_a_struct_literal_array_field() {
+    let source = r#"module codegen.cvi.st17;
+
+struct Box {
+    arr: i32[2];
+    tag: i32;
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    let box: Box = Box { arr: ok ? a : b, tag: 1 };
+    return box.arr[0] * 10 + box.arr[1] + box.tag;
+}
+"#;
+    let output = run_host("cvi17t", source);
+    assert_exit("cvi17t", &output, 13);
+}
+
+/// A struct-literal array field takes the `else` arm of a conditional.
+///
+/// `arr: ok ? a : b` stores `[3, 4]` with `ok` false and `tag` is `1`; the
+/// field reads back as `3 * 10 + 4 + 1 = 35`, so both the array field and the
+/// scalar field are initialized.
+#[test]
+fn should_take_the_else_row_when_a_conditional_fills_a_struct_literal_array_field() {
+    let source = r#"module codegen.cvi.st17;
+
+struct Box {
+    arr: i32[2];
+    tag: i32;
+}
+
+func main(): i32 {
+    let ok: bool = false;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    let box: Box = Box { arr: ok ? a : b, tag: 1 };
+    return box.arr[0] * 10 + box.arr[1] + box.tag;
+}
+"#;
+    let output = run_host("cvi17f", source);
+    assert_exit("cvi17f", &output, 35);
+}
+
+/// A struct literal in argument position carries the `then` array into the
+/// callee.
+///
+/// The literal's `arr` is `[1, 2]` with `ok` true and `tag` is `1`; the callee
+/// reads `1 * 10 + 2 + 1 = 13`, and the emitted C must build and run.
+#[test]
+fn should_read_the_then_struct_when_a_struct_literal_is_an_argument() {
+    let source = r#"module codegen.cvi.st41;
+
+struct Box {
+    arr: i32[2];
+    tag: i32;
+}
+
+func eat(box: Box): i32 {
+    return box.arr[0] * 10 + box.arr[1] + box.tag;
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    return eat(Box { arr: ok ? a : b, tag: 1 });
+}
+"#;
+    let output = run_host("cvi41t", source);
+    assert_exit("cvi41t", &output, 13);
+}
+
+/// A struct literal in argument position carries the `else` array into the
+/// callee.
+///
+/// The literal's `arr` is `[3, 4]` with `ok` false and `tag` is `1`; the callee
+/// reads `3 * 10 + 4 + 1 = 35`, and the emitted C must build and run.
+#[test]
+fn should_read_the_else_struct_when_a_struct_literal_is_an_argument() {
+    let source = r#"module codegen.cvi.st41;
+
+struct Box {
+    arr: i32[2];
+    tag: i32;
+}
+
+func eat(box: Box): i32 {
+    return box.arr[0] * 10 + box.arr[1] + box.tag;
+}
+
+func main(): i32 {
+    let ok: bool = false;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    return eat(Box { arr: ok ? a : b, tag: 1 });
+}
+"#;
+    let output = run_host("cvi41f", source);
+    assert_exit("cvi41f", &output, 35);
 }

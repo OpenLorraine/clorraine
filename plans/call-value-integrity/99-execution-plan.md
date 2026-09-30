@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 00:36
-> **Progress**: 8/39 tasks (21%)
+> **Last Updated**: 2026-10-01 01:38
+> **Progress**: 10/39 tasks (26%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -163,16 +163,30 @@ failures, 0 warnings. No third review per the one-re-review cap.
 
 ## Phase 2: Fixed-Array Value Positions
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `3237bc667633feeaff72952c4fbd84b7385f1900` (recorded 2026-10-01 01:35
+> from a temporary-index snapshot of committed, staged, unstaged, and untracked phase-start state)
 > **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `compiler/tests/call_value_integrity_spec_test.rs`,
+> `compiler/src/own/{expr,lower}.rs`, `compiler/src/own.rs`, `compiler/src/codegen/{expr,function}.rs`,
+> `compiler/tests/call_value_integrity_impl_test.rs`, `plans/call-value-integrity/*`
 
 ### Step 2.1: Specification Tests
 
 **Reference**: [03-02](03-02-fixed-array-value-positions.md) §Proposed Changes 1–4 · AR #7, #11, #13
 **Objective**: Pin the fixed-array store, argument, projection, and struct-field behavior from ST-9 – ST-17 and ST-41.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-9 – ST-17 and ST-41 — `compiler/tests/call_value_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the specification tests — verify at least one case per Phase-2 defect fails before implementation (red phase); record pre-passing cases as regression pins
+- [x] 2.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-9 – ST-17 and ST-41 — `compiler/tests/call_value_integrity_spec_test.rs` ✅ (completed: 2026-10-01 01:38)
+- [x] 2.1.2 Run the specification tests — verify at least one case per Phase-2 defect fails before implementation (red phase); record pre-passing cases as regression pins ✅ (completed: 2026-10-01 01:38)
+
+**Red phase (2026-10-01 01:38):** 29 passed / 15 failed on the unmodified compiler
+(`cargo test --test call_value_integrity_spec_test`). Every failure is a host-C build rejection of
+the emitted translation unit: the five element-store cases (runtime and constant index, literal
+and conditional arms; DEF-31) emit `assignment to expression with array type` or an
+array-literal syntax error; the three conditional/plain call-argument cases (DEF-32) emit a call
+missing its destination argument; the two conditional literal-argument cases (DEF-33) emit the
+array-literal syntax error; the projection case (DEF-35) emits the same; the four struct-literal
+cases (DEF-38) emit an integer-from-pointer initializer with missing braces. No Phase-2 case
+pre-passes, so there are no new regression pins; the 29 Phase-1 cases pass.
 
 ### Step 2.2: Implementation
 
