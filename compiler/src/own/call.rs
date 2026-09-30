@@ -328,8 +328,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A duplicable `take` argument is copied, so the caller keeps its value;
     /// a handle or aggregate is moved and its place must be emptied after the
-    /// call. Only a plain place argument can be emptied; a fresh call result
-    /// already transfers ownership and has no caller binding to clear.
+    /// call. A plain place is the caller's binding; a conditional argument (or
+    /// any materialized operand) travels through a compiler temporary, and the
+    /// caller's copy of the value in that temporary is emptied the same way
+    /// once the callee owns it. A fresh call result already transfers ownership
+    /// and has no caller storage to clear.
     pub(super) fn take_move_out_places(&self, name: &str, args: &[Value]) -> Vec<Place> {
         let Some(modes) = self.callee_modes(name) else {
             return Vec::new();
@@ -339,8 +342,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if mode != Mode::Take || self.sema.table.duplicable(&arg.ty) {
                 continue;
             }
-            if let ValueKind::Place(place) = &arg.kind {
-                places.push(place.clone());
+            match &arg.kind {
+                ValueKind::Place(place) => places.push(place.clone()),
+                ValueKind::Temp(temp) | ValueKind::Materialize { temp, .. } => {
+                    places.push(Place {
+                        base: ir::PlaceBase::Temp(*temp),
+                        projections: Vec::new(),
+                        ty: arg.ty.clone(),
+                    });
+                }
+                _ => {}
             }
         }
         places

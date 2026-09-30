@@ -365,6 +365,15 @@ impl<'a> Emitter<'a> {
     pub(super) fn move_zero_expr(&self, place: &Place) -> String {
         let c_name = self.place(place);
         let ty = self.substitute(&place.ty);
+        self.move_zero_text_expr(&c_name, &ty)
+    }
+
+    /// The move-out of an already-rendered C lvalue as a comma operand.
+    ///
+    /// A deferred conditional store empties its chosen arm inside the store
+    /// expression, where the source is already rendered and cannot be turned
+    /// back into a place. The spelling matches [`Self::move_zero_expr`].
+    pub(super) fn move_zero_text_expr(&self, c_name: &str, ty: &Ty) -> String {
         match &ty.kind {
             TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString => {
                 format!("({c_name} = {})", self.null_literal())

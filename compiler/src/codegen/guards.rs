@@ -107,26 +107,52 @@ impl<'a> Emitter<'a> {
             } => {
                 self.emit_guards(inner);
                 self.emit_reassigned_temp_drop(*temp, &inner.ty);
-                let store = match &inner.kind {
-                    ValueKind::Call {
-                        callee,
-                        type_args,
-                        args,
-                        receiver,
-                    } if self.substitute(&inner.ty).is_fixed_array() => {
+                if let ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } = &inner.kind
+                {
+                    // A deferred conditional operand fills the temporary
+                    // through the owned branch store, so the chosen arm moves
+                    // and the skipped arm is never evaluated. A fixed-array
+                    // conditional has no expression form; the fallback keeps
+                    // the renderer total.
+                    let ty = self.substitute(&inner.ty);
+                    if !ty.is_fixed_array() && self.needs_drop(&ty) {
                         let destination = format!("__cl_tmp{temp}");
-                        let call = self.call_with_destination(
+                        self.emit_conditional_move_assign(
+                            &destination,
+                            &ty,
+                            condition,
+                            then_value,
+                            else_value,
+                        );
+                    } else {
+                        self.push(&format!("    __cl_tmp{temp} = {};", self.value(inner)));
+                    }
+                } else {
+                    let store = match &inner.kind {
+                        ValueKind::Call {
                             callee,
                             type_args,
                             args,
-                            receiver.as_deref(),
-                            &destination,
-                        );
-                        format!("{call};")
-                    }
-                    _ => format!("__cl_tmp{temp} = {};", self.value(inner)),
-                };
-                self.push(&format!("    {store}"));
+                            receiver,
+                        } if self.substitute(&inner.ty).is_fixed_array() => {
+                            let destination = format!("__cl_tmp{temp}");
+                            let call = self.call_with_destination(
+                                callee,
+                                type_args,
+                                args,
+                                receiver.as_deref(),
+                                &destination,
+                            );
+                            format!("{call};")
+                        }
+                        _ => format!("__cl_tmp{temp} = {};", self.value(inner)),
+                    };
+                    self.push(&format!("    {store}"));
+                }
                 // The call's `take` arguments are emptied only now, on the
                 // evaluated path, so a skipped guard leaves them owned.
                 for place in move_outs {
@@ -217,6 +243,60 @@ impl<'a> Emitter<'a> {
                     format!("(({}), {})", guards.join(", "), rendered)
                 }
             }
+        }
+    }
+
+    /// Renders an owned conditional store as one expression.
+    ///
+    /// The expression spelling is used where the conditional is evaluated only
+    /// on some paths, so the store cannot be a statement: the chosen arm moves
+    /// into the destination through a nested ternary, and that arm's source is
+    /// emptied in the same comma expression. The arm's own guards embed where
+    /// the arm is evaluated, so the condition decides what runs.
+    fn conditional_move_expr(
+        &self,
+        target_c: &str,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+    ) -> String {
+        format!(
+            "({} ? {} : {})",
+            self.guarded_value(condition),
+            self.conditional_move_arm_expr(target_c, ty, then_value),
+            self.conditional_move_arm_expr(target_c, ty, else_value)
+        )
+    }
+
+    /// Renders one arm of an expression-form owned conditional store.
+    ///
+    /// A call arm produces a fresh value. A place, temporary, or materialized
+    /// call result is copied into the destination and then emptied, so only the
+    /// chosen arm is moved. A nested conditional recurses.
+    fn conditional_move_arm_expr(&self, target_c: &str, ty: &Ty, arm: &Value) -> String {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &arm.kind
+        {
+            return self.conditional_move_expr(target_c, ty, condition, then_value, else_value);
+        }
+        let value_text = self.guarded_value(arm);
+        match &arm.kind {
+            ValueKind::Place(_)
+            | ValueKind::Temp(_)
+            | ValueKind::Member { .. }
+            | ValueKind::Index { .. }
+            | ValueKind::Materialize { .. } => {
+                let source = self.value(arm);
+                format!(
+                    "({target_c} = {value_text}, {})",
+                    self.move_zero_text_expr(&source, ty)
+                )
+            }
+            _ => format!("({target_c} = {value_text})"),
         }
     }
 
@@ -318,32 +398,60 @@ impl<'a> Emitter<'a> {
                 value: inner,
                 move_outs,
             } => {
-                self.guard_expressions(inner, out);
                 let inner_ty = self.substitute(&inner.ty);
-                if self.needs_drop(&inner_ty) {
-                    if let Some(drop) = self.drop_expr_text(&format!("__cl_tmp{temp}"), &inner_ty) {
+                let destination = format!("__cl_tmp{temp}");
+                let owned_conditional = self.needs_drop(&inner_ty)
+                    && !inner_ty.is_fixed_array()
+                    && matches!(inner.kind, ValueKind::Conditional { .. });
+                if let (
+                    true,
+                    ValueKind::Conditional {
+                        condition,
+                        then_value,
+                        else_value,
+                    },
+                ) = (owned_conditional, &inner.kind)
+                {
+                    // The conditional moves its chosen arm. Its condition's
+                    // guards embed with the store expression, and each arm's
+                    // guards embed where the arm is evaluated, so nothing is
+                    // hoisted out of the conditionally evaluated path.
+                    if let Some(drop) = self.drop_expr_text(&destination, &inner_ty) {
                         out.push(drop);
                     }
-                }
-                let stored = match &inner.kind {
-                    ValueKind::Call {
-                        callee,
-                        type_args,
-                        args,
-                        receiver,
-                    } if self.substitute(&inner.ty).is_fixed_array() => {
-                        let destination = format!("__cl_tmp{temp}");
-                        self.call_with_destination(
+                    out.push(self.conditional_move_expr(
+                        &destination,
+                        &inner_ty,
+                        condition,
+                        then_value,
+                        else_value,
+                    ));
+                } else {
+                    self.guard_expressions(inner, out);
+                    if self.needs_drop(&inner_ty) {
+                        if let Some(drop) = self.drop_expr_text(&destination, &inner_ty) {
+                            out.push(drop);
+                        }
+                    }
+                    let stored = match &inner.kind {
+                        ValueKind::Call {
                             callee,
                             type_args,
                             args,
-                            receiver.as_deref(),
-                            &destination,
-                        )
-                    }
-                    _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
-                };
-                out.push(stored);
+                            receiver,
+                        } if self.substitute(&inner.ty).is_fixed_array() => {
+                            self.call_with_destination(
+                                callee,
+                                type_args,
+                                args,
+                                receiver.as_deref(),
+                                &destination,
+                            )
+                        }
+                        _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
+                    };
+                    out.push(stored);
+                }
                 // The call runs only when this operand is evaluated, so its
                 // `take` move-outs are emptied here, after the store.
                 for place in move_outs {

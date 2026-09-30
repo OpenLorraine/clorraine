@@ -995,8 +995,17 @@ impl<'a> Emitter<'a> {
     /// A C aggregate initializer cannot move an owned conditional's chosen
     /// arm, so a field whose value is such a conditional must be stored by a
     /// statement that can branch. The trigger is deliberately narrow: only a
-    /// field that owns storage and is a conditional selects the store form.
+    /// field that owns storage and is a conditional selects the store form. A
+    /// fixed-array field keeps the initializer form until the fixed-array
+    /// store machinery reaches struct fields; storing one as a plain
+    /// assignment would not be valid C.
     fn struct_literal_needs_stores(&self, fields: &[(String, Value)]) -> bool {
+        if fields
+            .iter()
+            .any(|(_, field)| self.substitute(&field.ty).is_fixed_array())
+        {
+            return false;
+        }
         fields.iter().any(|(_, field)| {
             self.needs_drop(&self.substitute(&field.ty))
                 && matches!(field.kind, ValueKind::Conditional { .. })
@@ -1007,9 +1016,10 @@ impl<'a> Emitter<'a> {
     ///
     /// Every field is stored in source order, because a C aggregate initializer
     /// cannot mix with later stores without reordering side-effecting fields.
-    /// The old target is dropped first; when a field's value reads the target,
-    /// the old value is saved instead and released after the stores, exactly as
-    /// the value-assignment scratch path orders it.
+    /// A target that no field reads is dropped first. When a field's value
+    /// reads the target, the whole literal is built in a fresh local first, so
+    /// every field still reads the old value; the old target is released after
+    /// the fields have been evaluated, and the local is then moved in.
     fn emit_struct_literal_store(
         &mut self,
         target: &Place,
@@ -1025,15 +1035,16 @@ impl<'a> Emitter<'a> {
             self.emit_struct_literal_fields(&target_c, ty, fields);
             return;
         }
-        let save = self.unique_local("__cl_save");
+        let local = self.unique_local("__cl_lit");
         self.push("    {");
         self.push(&format!(
             "        {} = {};",
-            declarator(ty, &save),
-            target_c
+            declarator(ty, &local),
+            self.empty_state(ty)
         ));
-        self.emit_struct_literal_fields(&target_c, ty, fields);
-        self.emit_drop_expr(&save, ty);
+        self.emit_struct_literal_fields(&local, ty, fields);
+        self.emit_drop(target);
+        self.push(&format!("        {target_c} = {local};"));
         self.push("    }");
     }
 
@@ -1174,20 +1185,70 @@ impl<'a> Emitter<'a> {
                 let call = self.value(arm);
                 self.push(&format!("            {target_c} = {call};"));
             }
-            ValueKind::Materialize { .. } => {
+            ValueKind::Materialize { move_outs, .. } => {
                 self.emit_guards(arm);
                 let temp = self.value(arm);
                 self.push(&format!("            {target_c} = {temp};"));
                 self.emit_move_zero(&temp, ty);
+                // An arm whose call consumed the destination already
+                // transferred the old value to the callee, so the saved old
+                // value must be emptied rather than released again.
+                if let Some(save) = save {
+                    if move_outs.iter().any(|place| self.place(place) == target_c) {
+                        self.emit_move_zero(save, ty);
+                    }
+                }
             }
             _ => {
                 self.emit_guards(arm);
                 let arm_c = self.store_text(arm, ty);
                 self.push(&format!("            {target_c} = {arm_c};"));
-                if arm_reads_storage(arm) {
-                    self.emit_move_zero(&arm_c, ty);
+                self.emit_arm_source_moves(arm, ty);
+            }
+        }
+    }
+
+    /// Empties the storage an arm's rendered value copied into the destination.
+    ///
+    /// A place or compiler temporary is copied and then zeroed, so the
+    /// destination is the only owner. A composite value is rendered as an
+    /// initializer that copies every storage-reading field, so each such source
+    /// is emptied after the store; a fresh call or literal field has no caller
+    /// storage to empty. A nested conditional empties only the arm its
+    /// condition selects. This is what makes the statement-end release of a
+    /// copied transfer temporary a no-op.
+    fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
+        match &arm.kind {
+            ValueKind::Place(_)
+            | ValueKind::Temp(_)
+            | ValueKind::Member { .. }
+            | ValueKind::Index { .. }
+            | ValueKind::Materialize { .. } => {
+                let source = self.value(arm);
+                self.emit_move_zero(&source, ty);
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    let field_ty = self.substitute(&field.ty);
+                    if self.needs_drop(&field_ty) {
+                        self.emit_arm_source_moves(field, &field_ty);
+                    }
                 }
             }
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.emit_guards(condition);
+                let condition_c = self.value(condition);
+                self.push(&format!("            if ({condition_c}) {{"));
+                self.emit_arm_source_moves(then_value, ty);
+                self.push("            } else {");
+                self.emit_arm_source_moves(else_value, ty);
+                self.push("            }");
+            }
+            _ => {}
         }
     }
 
@@ -1391,21 +1452,6 @@ fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
         .map(|local| local.name.clone())
         .filter(|name| !read.contains(name))
         .collect()
-}
-
-/// True when a lowered arm reads storage that a move must empty.
-///
-/// A place or compiler temporary is storage; a member or index chain over one
-/// is a projection of that storage. A call or literal produces a fresh value
-/// and owns no caller storage, so it is not emptied after the store.
-fn arm_reads_storage(value: &Value) -> bool {
-    match &value.kind {
-        ValueKind::Place(_) | ValueKind::Temp(_) => true,
-        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
-            arm_reads_storage(base)
-        }
-        _ => false,
-    }
 }
 
 /// True when a value reads any part of the place rooted at `target`'s base.

@@ -345,6 +345,156 @@ func main(): i32 {
     );
 }
 
+/// A composite conditional arm empties every storage source it copied into
+/// the destination, so the statement-end release is a no-op.
+#[test]
+fn should_empty_a_composite_arm_source_after_the_store() {
+    let source = r#"module impl.cvi.composite;
+import { String, stringOf } from std.text;
+struct Box { name: String; tag: i32; }
+func sink(take s: String): String { return s; }
+func main(): i32 {
+    let ok: bool = true;
+    let s: String = stringOf("ab");
+    let b: Box = Box { name: stringOf("cde"), tag: 1 };
+    let c: Box = ok ? Box { name: sink(s), tag: 2 } : b;
+    return i32(len(c.name)) + c.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-composite", source);
+    assert_contains("cviimpl-composite", &emitted, "c = (ClBox){ __cl_tmp0, 2 };");
+    let tail = after("cviimpl-composite", &emitted, "c = (ClBox){ __cl_tmp0, 2 };");
+    assert_contains("cviimpl-composite", tail, "__cl_tmp0 = NULL;");
+}
+
+/// A `take` conditional argument inside a short-circuit operand is filled and
+/// consumed only on the evaluated path, so a skipped path runs no arm.
+#[test]
+fn should_defer_a_take_conditional_argument_to_the_evaluated_path() {
+    let source = r#"module impl.cvi.guardarg;
+import { String, stringOf } from std.text;
+func eat(take s: String): i32 { return i32(len(s)); }
+func boom(take s: String): String { return s; }
+func main(): i32 {
+    let ok: bool = true;
+    let s: String = stringOf("ab");
+    let c: String = stringOf("cde");
+    if (false && eat(ok ? boom(s) : c) > 0) {
+        return 1;
+    }
+    return 7;
+}
+"#;
+    let emitted = emit_host("cviimpl-guardarg", source);
+    let main = after(
+        "cviimpl-guardarg",
+        &emitted,
+        "cl_impl_cvi_guardarg_main(void)\n{",
+    );
+    let guard_at = main
+        .find("if ((0 &&")
+        .unwrap_or_else(|| panic!("cviimpl-guardarg: the guarded operand is not embedded"));
+    let before = &main[..guard_at];
+    assert!(
+        !before.contains("boom(") && !before.contains("eat("),
+        "cviimpl-guardarg: the guarded operands must not run before the guard"
+    );
+    let guarded = after("cviimpl-guardarg", main, "if ((0 &&");
+    assert_contains("cviimpl-guardarg", guarded, "eat(__cl_tmp");
+    assert_contains("cviimpl-guardarg", guarded, "(c = NULL)");
+}
+
+/// A struct literal with a fixed-array field keeps the aggregate-initializer
+/// form, because a plain field store cannot assign a C array.
+#[test]
+fn should_keep_the_initializer_form_for_a_struct_literal_with_a_fixed_array_field() {
+    let source = r#"module impl.cvi.mixedfield;
+import { String, stringOf } from std.text;
+struct Box { name: String; nums: i32[2]; }
+func main(): i32 {
+    let ok: bool = true;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("cde");
+    let c: Box = Box { name: ok ? a : b, nums: [1, 2] };
+    return i32(len(c.name)) + c.nums[0];
+}
+"#;
+    let emitted = emit_host("cviimpl-mixed", source);
+    assert_contains("cviimpl-mixed", &emitted, "(ClBox){");
+    assert!(
+        !emitted.contains("c.nums = {"),
+        "cviimpl-mixed: a fixed-array field cannot be stored as a plain assignment"
+    );
+}
+
+/// A struct literal whose field reads the target is built in a fresh local
+/// first, so the old target survives until every field has been evaluated.
+#[test]
+fn should_build_a_target_reading_struct_literal_in_a_fresh_local() {
+    let source = r#"module impl.cvi.readtarget;
+import { String, stringOf } from std.text;
+struct Box { name: String; tag: i32; }
+func main(): i32 {
+    let ok: bool = true;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("cde");
+    let c: Box = Box { name: stringOf("zz"), tag: 1 };
+    c = Box { name: ok ? a : b, tag: c.tag + 1 };
+    return i32(len(c.name)) + c.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-readtarget", source);
+    let main = after(
+        "cviimpl-readtarget",
+        &emitted,
+        "cl_impl_cvi_readtarget_main(void)\n{",
+    );
+    let head = main
+        .find("ClBox __cl_lit")
+        .unwrap_or_else(|| panic!("cviimpl-readtarget: the literal is not built in a local"));
+    let body = &main[head..];
+    let field_store = body
+        .find(".name = a;")
+        .unwrap_or_else(|| panic!("cviimpl-readtarget: the conditional field is not stored"));
+    let old_drop = body
+        .find("if (c.name) { FreeString(c.name); }")
+        .unwrap_or_else(|| panic!("cviimpl-readtarget: the old target is not released"));
+    assert!(
+        field_store < old_drop,
+        "cviimpl-readtarget: every field must be evaluated before the old target is released"
+    );
+    assert_contains("cviimpl-readtarget", body, "c = __cl_lit");
+}
+
+/// An arm whose call consumed the destination empties the saved old value
+/// instead of releasing the value the callee already owns.
+#[test]
+fn should_empty_the_saved_value_when_an_arm_consumes_the_destination() {
+    let source = r#"module impl.cvi.consumed;
+import { String, stringOf } from std.text;
+func sink(take s: String): String { return s; }
+func main(): i32 {
+    let ok: bool = true;
+    let b: String = stringOf("cde");
+    let s: String = stringOf("ab");
+    s = ok ? sink(s) : b;
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("cviimpl-consumed", source);
+    let tail = after("cviimpl-consumed", &emitted, "s = __cl_tmp0;");
+    let zero_at = tail
+        .find("__cl_save_1 = NULL;")
+        .unwrap_or_else(|| panic!("cviimpl-consumed: the saved value is not emptied"));
+    let drop_at = tail
+        .find("if (__cl_save_1)")
+        .unwrap_or_else(|| panic!("cviimpl-consumed: the saved value has no release"));
+    assert!(
+        zero_at < drop_at,
+        "cviimpl-consumed: the consumed destination's saved value must be emptied before its release"
+    );
+}
+
 /// The same struct-literal rule moves a place arm and empties it.
 #[test]
 fn should_store_a_struct_literal_conditional_field_from_a_place_arm() {

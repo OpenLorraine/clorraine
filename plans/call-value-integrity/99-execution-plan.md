@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-30 19:43
+> **Last Updated**: 2026-09-30 23:54
 > **Progress**: 8/39 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
@@ -122,6 +122,27 @@ transfer temporary changed (release-on-discard + adoption zeroing); its coverage
 - [x] `make check` passes with no warnings
 
 **Verify**: `make check`
+
+### Phase 1 Review (post-phase quality step)
+
+**Reviewer:** correctness-reviewer (strict profile), phase diff against baseline tree
+`d606000124794de3146191c65e34afc28c44a856`; scope mode strict; lenses
+correctness / maintainability / standards.
+
+| Finding | Severity | User ruling | Fix |
+| ------- | -------- | ----------- | --- |
+| RV-1: a composite conditional arm (`ok ? Box { name: sink(s), tag: 2 } : b`) copied a transfer temporary and the statement release then freed it (ASan heap-use-after-free) | 🔴 critical | Fix now (2026-09-30) | `emit_arm_source_moves` empties every storage source a rendered arm copied, recursing into struct-literal fields and nested conditionals |
+| RV-2: a `take` conditional argument was materialized eagerly, so a short-circuit operand ran it on a skipped path | 🟠 major | Fix now | A deferred operand stores into a non-releasing argument temporary through the expression-form owned conditional store; the enclosing call's move-out empties it after the call |
+| RV-3: the struct-literal store form emitted invalid C for a fixed-array field | 🟠 major | Fix now | The store form is gated off while any field is a fixed array; the aggregate-initializer form stays. The residual pre-existing double-free for that mixed shape belongs to the fixed-array field work in `03-02` |
+| RV-4: the struct-literal store form double-freed the old target when a field read it | 🟠 major | Fix now | The literal is built in a fresh local first, then the old target is released and the local moved in |
+| RV-5: an arm whose `take` call consumed the destination left the saved value to be released | 🟠 major | Fix now | The saved value is emptied when an arm's deferred move-outs name the destination |
+
+**Fix verification (2026-09-30):** the five host AddressSanitizer probes (RV-1, RV-2 both `ok`
+directions, RV-4, RV-5 shapes) run clean under
+`cc -std=c99 -O0 -g -fsanitize=address` with `ASAN_OPTIONS=detect_leaks=1`; RV-3's shape
+compiles again (its residual double-free is the pre-existing mixed-shape issue owned by Phase 2).
+`cargo test --test call_value_integrity_spec_test` 29/29, `call_value_integrity_impl_test`
+16/16 (five new emitted-shape pins), `make check` 34 suites, 0 failures, 0 warnings.
 
 ---
 

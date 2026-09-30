@@ -614,6 +614,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
+    /// Materializes a `take` conditional argument into a non-releasing
+    /// temporary.
+    ///
+    /// The callee's parameter cleanup owns the argument, so the caller never
+    /// releases the temporary; the call empties it through a move-out after the
+    /// call runs. That move-out also leaves the empty state the branch store's
+    /// own save and release expect. An operand that is evaluated only sometimes
+    /// (the right side of `&&`/`||`, or an arm of `?:`) defers the branch store
+    /// to its guard, so a skipped path never runs an arm or the call.
+    fn materialize_take_conditional(&mut self, value: Value) -> Value {
+        let ty = value.ty.clone();
+        if self.defer_move_outs > 0 {
+            let temp = self.new_temp(ty.clone());
+            return Value::new(
+                ty,
+                ValueKind::Materialize {
+                    temp,
+                    value: Box::new(value),
+                    move_outs: Vec::new(),
+                },
+            );
+        }
+        self.materialize_value(value)
+    }
+
     /// Stores a value in a compiler temporary and returns the temporary value.
     ///
     /// The assignment is emitted into the current block, so the temporary is
@@ -964,7 +989,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !value.ty.is_unknown()
                 && !mentions_type_param(&value.ty)
             {
-                return self.materialize_value(value);
+                return self.materialize_take_conditional(value);
             }
             return value;
         }
