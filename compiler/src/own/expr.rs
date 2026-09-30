@@ -275,6 +275,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for field in fields {
                     self.eval(&field.value);
                     self.consume_owned_place(&field.value, field.value.span);
+                    // An owned conditional field is an owning destination: the
+                    // chosen arm moves into the field, so every owned place arm
+                    // counts as maybe-moved afterwards.
+                    for source in self.conditional_move_sources(&field.value) {
+                        self.move_target(source, field.value.span);
+                    }
                 }
             }
             ExprKind::ArrayLiteral { elements, fill } => {

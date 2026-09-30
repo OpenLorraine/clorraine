@@ -1,0 +1,369 @@
+//! Implementation tests for the emitted shape of owned conditional stores and
+//! deferred take-call temporaries.
+//!
+//! The specification suite proves *what* a program computes; these cases prove
+//! *how* the emitter spells it. An owned conditional stores the chosen arm
+//! through a branch, empties that arm's source, and releases the destination's
+//! saved old value exactly once; a self-naming arm restores the save instead.
+//! A deferred take-call result releases its temporary when the value is
+//! discarded and empties the temporary when a destination adopts it. A `take`
+//! argument that is a conditional travels through a non-releasing argument
+//! temporary, because the callee's parameter cleanup owns the value. A
+//! conditional return branches into the result, and a struct literal with an
+//! owned conditional field stores every field in source order.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// Temporary directory that removes itself when the test finishes.
+struct ScratchDir {
+    path: PathBuf,
+}
+
+impl ScratchDir {
+    /// Creates a unique directory for one test process and tag.
+    fn new(tag: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "clc-cviimpl-{}-{tag}-{sequence}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path)
+            .unwrap_or_else(|err| panic!("cannot create {}: {err}", path.display()));
+        Self { path }
+    }
+
+    /// Path of the scratch directory.
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Runs the built compiler with the given arguments.
+fn run_clc(args: &[String]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args(args)
+        .output()
+        .expect("failed to spawn the compiler binary")
+}
+
+/// Emits one host-profile program and asserts the front end accepted it.
+///
+/// Returns the emitted translation unit. These cases are about what the
+/// emitter produces for accepted programs, so a rejection is a failure.
+fn emit_host(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    emitted
+}
+
+/// The text after the first occurrence of `needle`.
+///
+/// Fails the case when the needle is absent, so a shape assertion always names
+/// the construct it expected to find.
+fn after<'a>(tag: &str, text: &'a str, needle: &str) -> &'a str {
+    let start = text
+        .find(needle)
+        .unwrap_or_else(|| panic!("{tag}: the emitted C does not contain {needle:?}"));
+    &text[start + needle.len()..]
+}
+
+/// Asserts the text contains a fragment.
+fn assert_contains(tag: &str, text: &str, needle: &str) {
+    assert!(
+        text.contains(needle),
+        "{tag}: the emitted C does not contain {needle:?}"
+    );
+}
+
+/// A fresh owned binding takes the chosen arm through a branch and empties it.
+#[test]
+fn should_branch_store_an_owned_conditional_into_a_fresh_binding() {
+    let source = r#"module impl.cvi.branch;
+import { String, stringOf } from std.text;
+func main(): i32 {
+    let ok: bool = true;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("cde");
+    let c: String = ok ? a : b;
+    return i32(len(c));
+}
+"#;
+    let emitted = emit_host("cviimpl-branch", source);
+    assert_contains("cviimpl-branch", &emitted, "if (ok) {");
+    assert_contains("cviimpl-branch", &emitted, "c = a;");
+    assert_contains("cviimpl-branch", &emitted, "a = NULL;");
+    assert_contains("cviimpl-branch", &emitted, "} else {");
+    assert_contains("cviimpl-branch", &emitted, "c = b;");
+    assert_contains("cviimpl-branch", &emitted, "b = NULL;");
+    assert!(
+        !emitted.contains("c = (ok ?"),
+        "cviimpl-branch: an owned conditional must not render as a value expression"
+    );
+}
+
+/// Replacing a live owned destination saves the old value and releases it once.
+#[test]
+fn should_save_and_release_the_old_value_when_an_owned_conditional_replaces_it() {
+    let source = r#"module impl.cvi.replace;
+import { String, stringOf } from std.text;
+func main(): i32 {
+    let ok: bool = true;
+    let b: String = stringOf("cde");
+    let s: String = stringOf("ab");
+    s = ok ? s : b;
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("cviimpl-replace", source);
+    assert_contains("cviimpl-replace", &emitted, "ClString __cl_save_1 = s;");
+    let tail = after("cviimpl-replace", &emitted, "} else {");
+    assert_contains(
+        "cviimpl-replace",
+        tail,
+        "if (__cl_save_1) { FreeString(__cl_save_1); }",
+    );
+}
+
+/// An arm that names the destination restores the saved value and empties the
+/// save, so the single release after the branch is a no-op.
+#[test]
+fn should_restore_a_self_naming_arm_and_empty_the_saved_value() {
+    let source = r#"module impl.cvi.self;
+import { String, stringOf } from std.text;
+func main(): i32 {
+    let ok: bool = true;
+    let b: String = stringOf("cde");
+    let s: String = stringOf("ab");
+    s = ok ? s : b;
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("cviimpl-self", source);
+    assert_contains("cviimpl-self", &emitted, "s = __cl_save_1;");
+    let tail = after("cviimpl-self", &emitted, "s = __cl_save_1;");
+    assert_contains("cviimpl-self", tail, "__cl_save_1 = NULL;");
+}
+
+/// An owned aggregate arm moves with the aggregate zero, not a null handle.
+#[test]
+fn should_zero_an_owned_aggregate_arm_with_the_aggregate_zero() {
+    let source = r#"module impl.cvi.aggregate;
+import { String, stringOf } from std.text;
+struct Box { name: String; tag: i32; }
+func main(): i32 {
+    let ok: bool = true;
+    let a: Box = Box { name: stringOf("ab"), tag: 1 };
+    let b: Box = Box { name: stringOf("cde"), tag: 1 };
+    let c: Box = ok ? a : b;
+    return i32(len(c.name)) + c.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-agg", source);
+    assert_contains("cviimpl-agg", &emitted, "c = a;");
+    assert_contains("cviimpl-agg", &emitted, "cl_zero(&a);");
+    assert_contains("cviimpl-agg", &emitted, "c = b;");
+    assert_contains("cviimpl-agg", &emitted, "cl_zero(&b);");
+}
+
+/// A nested conditional branches inside the chosen outer arm only.
+#[test]
+fn should_evaluate_only_the_chosen_arm_of_a_nested_conditional() {
+    let source = r#"module impl.cvi.nested;
+import { String, stringOf } from std.text;
+func mk(): String { return stringOf("wxyz"); }
+func main(): i32 {
+    let ok1: bool = true;
+    let ok2: bool = false;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("cde");
+    let c: String = ok1 ? (ok2 ? a : b) : mk();
+    return i32(len(c));
+}
+"#;
+    let emitted = emit_host("cviimpl-nested", source);
+    let outer = after("cviimpl-nested", &emitted, "if (ok1) {");
+    assert_contains("cviimpl-nested", outer, "if (ok2) {");
+    assert_contains("cviimpl-nested", outer, "c = a;");
+    assert_contains("cviimpl-nested", outer, "a = NULL;");
+    assert_contains("cviimpl-nested", outer, "c = b;");
+    assert_contains("cviimpl-nested", outer, "b = NULL;");
+    let else_arm = after("cviimpl-nested", outer, "} else {");
+    assert_contains("cviimpl-nested", else_arm, "c = cl_impl_cvi_nested_mk();");
+}
+
+/// A discarded deferred take-call result releases its temporary at the
+/// statement's end.
+#[test]
+fn should_release_a_discarded_transfer_temporary_after_the_statement() {
+    let source = r#"module impl.cvi.discard;
+import { String, stringOf } from std.text;
+func sink(take s: String): String { return s; }
+func main(): i32 {
+    let ok: bool = true;
+    let s: String = stringOf("ab");
+    let t: String = stringOf("cde");
+    ok ? sink(s) : t;
+    return i32(len(t));
+}
+"#;
+    let emitted = emit_host("cviimpl-discard", source);
+    assert_contains(
+        "cviimpl-discard",
+        &emitted,
+        "__cl_tmp0 = cl_impl_cvi_discard_sink(s)",
+    );
+    let tail = after("cviimpl-discard", &emitted, "(void)((ok ?");
+    assert_contains(
+        "cviimpl-discard",
+        tail,
+        "if (__cl_tmp0) { FreeString(__cl_tmp0); }",
+    );
+}
+
+/// A binding that adopts a deferred take-call result empties the temporary, so
+/// the statement release is a no-op.
+#[test]
+fn should_adopt_a_transfer_temporary_in_a_binding_and_empty_it() {
+    let source = r#"module impl.cvi.adopt;
+import { String, stringOf } from std.text;
+func sink(take s: String): String { return s; }
+func main(): i32 {
+    let ok: bool = true;
+    let s: String = stringOf("ab");
+    let t: String = stringOf("cde");
+    let r: String = ok ? sink(s) : t;
+    return i32(len(r));
+}
+"#;
+    let emitted = emit_host("cviimpl-adopt", source);
+    assert_contains("cviimpl-adopt", &emitted, "r = __cl_tmp0;");
+    let tail = after("cviimpl-adopt", &emitted, "r = __cl_tmp0;");
+    assert_contains("cviimpl-adopt", tail, "__cl_tmp0 = NULL;");
+}
+
+/// A `take` conditional argument travels through a non-releasing temporary:
+/// the callee owns the value, so the caller releases nothing.
+#[test]
+fn should_pass_a_take_conditional_through_a_non_releasing_argument_temporary() {
+    let source = r#"module impl.cvi.takearg;
+import { String, stringOf } from std.text;
+func eat(take s: String): i32 { return i32(len(s)); }
+func main(): i32 {
+    let ok: bool = true;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("cde");
+    return eat(ok ? a : b);
+}
+"#;
+    let emitted = emit_host("cviimpl-takearg", source);
+    assert_contains("cviimpl-takearg", &emitted, "__cl_tmp0 = a;");
+    assert_contains("cviimpl-takearg", &emitted, "a = NULL;");
+    assert_contains("cviimpl-takearg", &emitted, "__cl_tmp0 = b;");
+    assert_contains("cviimpl-takearg", &emitted, "eat(__cl_tmp0);");
+    assert!(
+        !emitted.contains("FreeString(__cl_tmp0)"),
+        "cviimpl-takearg: the callee owns the argument, so the caller must not release it"
+    );
+}
+
+/// A conditional return branches into the result and empties the chosen arm.
+#[test]
+fn should_branch_store_a_conditional_into_the_return_result() {
+    let source = r#"module impl.cvi.ret;
+import { String, stringOf } from std.text;
+func sink(take s: String): String { return s; }
+func pick(ok: bool, take s: String, take t: String): String {
+    return ok ? sink(s) : t;
+}
+func main(): i32 {
+    return i32(len(pick(false, stringOf("ab"), stringOf("cde"))));
+}
+"#;
+    let emitted = emit_host("cviimpl-ret", source);
+    assert_contains("cviimpl-ret", &emitted, "ClString __cl_save_1 = __cl_ret;");
+    assert_contains("cviimpl-ret", &emitted, "__cl_ret = __cl_tmp0;");
+    assert_contains("cviimpl-ret", &emitted, "__cl_tmp0 = NULL;");
+    assert_contains("cviimpl-ret", &emitted, "__cl_ret = t;");
+    assert_contains("cviimpl-ret", &emitted, "t = NULL;");
+    assert_contains("cviimpl-ret", &emitted, "return __cl_ret;");
+}
+
+/// A struct literal with an owned conditional field stores its fields in
+/// source order instead of rendering an aggregate initializer.
+#[test]
+fn should_store_the_fields_of_a_struct_literal_with_a_conditional_field() {
+    let source = r#"module impl.cvi.field;
+import { String, stringOf } from std.text;
+struct Box { name: String; tag: i32; }
+func sink(take s: String): String { return s; }
+func main(): i32 {
+    let ok: bool = true;
+    let s: String = stringOf("ab");
+    let t: String = stringOf("cde");
+    let c: Box = Box { name: ok ? sink(s) : t, tag: 1 };
+    return i32(len(c.name)) + c.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-field", source);
+    assert_contains("cviimpl-field", &emitted, "c.name = __cl_tmp0;");
+    assert_contains("cviimpl-field", &emitted, "c.name = t;");
+    let tail = after("cviimpl-field", &emitted, "c.name = t;");
+    assert_contains("cviimpl-field", tail, "c.tag = 1;");
+    assert!(
+        !emitted.contains("(ClBox){"),
+        "cviimpl-field: a conditional field must not be rendered in an aggregate initializer"
+    );
+}
+
+/// The same struct-literal rule moves a place arm and empties it.
+#[test]
+fn should_store_a_struct_literal_conditional_field_from_a_place_arm() {
+    let source = r#"module impl.cvi.fieldplace;
+import { String, stringOf } from std.text;
+struct Box { name: String; tag: i32; }
+func main(): i32 {
+    let ok: bool = false;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("cde");
+    let c: Box = Box { name: ok ? a : b, tag: 1 };
+    return i32(len(c.name)) + c.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-fplace", source);
+    let tail = after("cviimpl-fplace", &emitted, "c.name = a;");
+    assert_contains("cviimpl-fplace", tail, "a = NULL;");
+    assert_contains("cviimpl-fplace", tail, "c.name = b;");
+    assert_contains("cviimpl-fplace", tail, "b = NULL;");
+    let tag = after("cviimpl-fplace", tail, "c.name = b;");
+    assert_contains("cviimpl-fplace", tag, "c.tag = 1;");
+}

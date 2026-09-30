@@ -12,7 +12,7 @@
 use std::collections::BTreeSet;
 
 use crate::ir::{self, BlockId, Place, Statement, Terminator, ValueKind};
-use crate::types::TyKind;
+use crate::types::{Ty, TyKind};
 
 use super::Emitter;
 
@@ -264,43 +264,69 @@ impl<'a> Emitter<'a> {
             if self.return_ty.is_fixed_array() {
                 self.emit_fixed_array_return(value);
             } else {
-                self.emit_guards(value);
-                // A returned `String` widens to the `str` view the return type
-                // declares, exactly as a store into a `str` place does.
+                // An owned conditional return moves the chosen arm into the
+                // result per path. A result variable keeps the ordinary tail:
+                // the releases and the ladder jump below run with the value
+                // already stored.
                 let ret_ty = self.return_ty.clone();
-                let lowered = self.store_text(value, &ret_ty);
-                match self.result_var.clone() {
-                    Some(result) => {
-                        self.push(&format!("    {result} = {lowered};"));
-                        // Returning an owned place transfers it to the caller,
-                        // so the source is emptied before the cleanup ladder
-                        // runs; otherwise the callee would release what it just
-                        // handed back.
-                        if let ValueKind::Place(place) = &value.kind {
-                            let ty = self.substitute(&place.ty);
-                            if self.needs_drop(&ty) {
-                                let source = self.place(place);
-                                self.emit_move_zero(&source, &ty);
+                let mut conditional_stored = false;
+                if self.needs_drop(&ret_ty) {
+                    if let ValueKind::Conditional {
+                        condition,
+                        then_value,
+                        else_value,
+                    } = &value.kind
+                    {
+                        if self.emit_conditional_move_return(
+                            &ret_ty,
+                            condition,
+                            then_value,
+                            else_value,
+                            releases,
+                        ) {
+                            return;
+                        }
+                        conditional_stored = true;
+                    }
+                }
+                if !conditional_stored {
+                    self.emit_guards(value);
+                    // A returned `String` widens to the `str` view the return
+                    // type declares, exactly as a store into a `str` place does.
+                    let lowered = self.store_text(value, &ret_ty);
+                    match self.result_var.clone() {
+                        Some(result) => {
+                            self.push(&format!("    {result} = {lowered};"));
+                            // Returning an owned place transfers it to the
+                            // caller, so the source is emptied before the
+                            // cleanup ladder runs; otherwise the callee would
+                            // release what it just handed back.
+                            if let ValueKind::Place(place) = &value.kind {
+                                let ty = self.substitute(&place.ty);
+                                if self.needs_drop(&ty) {
+                                    let source = self.place(place);
+                                    self.emit_move_zero(&source, &ty);
+                                }
                             }
                         }
-                    }
-                    None if !releases.is_empty() => {
-                        // Without a cleanup ladder the value would return
-                        // directly, and a release cannot run after a `return`.
-                        // The value is stored in a block-local first, so the
-                        // releases run after it has been read.
-                        let local = self.unique_local("__cl_return");
-                        let decl = super::types::declarator(&ret_ty, &local);
-                        self.push("    {");
-                        self.push(&format!("        {decl} = {lowered};"));
-                        self.emit_temp_releases(releases);
-                        self.push(&format!("        return {local};"));
-                        self.push("    }");
-                        return;
-                    }
-                    None => {
-                        self.push(&format!("    return {lowered};"));
-                        return;
+                        None if !releases.is_empty() => {
+                            // Without a cleanup ladder the value would return
+                            // directly, and a release cannot run after a
+                            // `return`. The value is stored in a block-local
+                            // first, so the releases run after it has been read.
+                            let local = self.unique_local("__cl_return");
+                            let decl = super::types::declarator(&ret_ty, &local);
+                            self.push("    {");
+                            self.push(&format!("        {decl} = {lowered};"));
+                            self.emit_temp_releases(releases);
+                            self.push(&format!("        return {local};"));
+                            self.push("    }");
+                            return;
+                        }
+                        None => {
+                            self.push(&format!("    return {lowered};"));
+                            return;
+                        }
                     }
                 }
             }
@@ -324,6 +350,45 @@ impl<'a> Emitter<'a> {
             let value = self.empty_return_value();
             self.push(&format!("    return {value};"));
         }
+    }
+
+    /// Emits an owned conditional return through the branch store.
+    ///
+    /// With a cleanup ladder the result variable receives the chosen arm and
+    /// the caller continues with the releases and the ladder jump, so `false`
+    /// is returned. Without one the value is stored in a block-local, the
+    /// statement releases run after it has been read, and the block returns the
+    /// local; `true` means the whole return was emitted.
+    fn emit_conditional_move_return(
+        &mut self,
+        ret_ty: &Ty,
+        condition: &ir::Value,
+        then_value: &ir::Value,
+        else_value: &ir::Value,
+        releases: &[ir::Release],
+    ) -> bool {
+        if let Some(result) = self.result_var.clone() {
+            self.emit_conditional_move_assign(
+                &result,
+                ret_ty,
+                condition,
+                then_value,
+                else_value,
+            );
+            return false;
+        }
+        let local = self.unique_local("__cl_return");
+        let decl = super::types::declarator(ret_ty, &local);
+        self.push("    {");
+        self.push(&format!(
+            "        {decl} = {};",
+            self.empty_state(ret_ty)
+        ));
+        self.emit_conditional_move_assign(&local, ret_ty, condition, then_value, else_value);
+        self.emit_temp_releases(releases);
+        self.push(&format!("        return {local};"));
+        self.push("    }");
+        true
     }
 
     /// Drops every statement temporary a return carries, in list order.

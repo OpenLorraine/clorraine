@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-09-30 15:38
-> **Progress**: 2/39 tasks (5%)
+> **Last Updated**: 2026-09-30 19:43
+> **Progress**: 8/39 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -87,25 +87,39 @@ plus the emitted-shape implementation pin.
 **Reference**: [03-01](03-01-scalar-conditional-ownership.md) §Proposed Changes 1–3 · AR #2, #19
 **Objective**: Emit the branch store for owned conditionals (handles and owned aggregates; places, calls, and mixed arms).
 
-- [ ] 1.2.1 Owned conditional branch store: destination predicate (non-array `needs_drop`, aggregates included), old-target/save and self-naming-arm rules, nested arms, arm sources, and emission — `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`, `compiler/src/codegen/function.rs`
-- [ ] 1.2.2 Transfer temporary release registration (release-on-discard) and adoption move-out at binding, assignment, `take` argument (non-releasing argument temporary), `return`, and struct-literal field — `compiler/src/own/lower.rs`, `compiler/src/own.rs`, `compiler/src/codegen/calls.rs`, `compiler/src/codegen/expr.rs`, `compiler/src/codegen/cleanup.rs`
-- [ ] 1.2.3 Update the two existing pins that assert the old transfer behavior — `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/src/own/tests.rs` (AR #15)
-- [ ] 1.2.4 Run the specification tests — verify they PASS (green phase); a failing case means the implementation is wrong
+- [x] 1.2.1 Owned conditional branch store: destination predicate (non-array `needs_drop`, aggregates included), old-target/save and self-naming-arm rules, nested arms, arm sources, and emission — `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-09-30 19:41)
+- [x] 1.2.2 Transfer temporary release registration (release-on-discard) and adoption move-out at binding, assignment, `take` argument (non-releasing argument temporary), `return`, and struct-literal field — `compiler/src/own/lower.rs`, `compiler/src/own.rs`, `compiler/src/codegen/calls.rs`, `compiler/src/codegen/expr.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-09-30 19:41)
+- [x] 1.2.3 Update the two existing pins that assert the old transfer behavior — `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/src/own/tests.rs` (AR #15) ✅ (completed: 2026-09-30 19:41)
+- [x] 1.2.4 Run the specification tests — verify they PASS (green phase); a failing case means the implementation is wrong ✅ (completed: 2026-09-30 19:41)
+
+**Task 1.2.3 note (mechanical correction):** both pins were re-run and still describe the
+post-fix behavior, so no assertion edit was needed. The eager (non-deferred) take-call path is
+deliberately unchanged: its temporary never joins the release set, so
+`should_not_release_a_take_call_result_temporary` and
+`a_take_call_result_temporary_is_not_released` stay accurate. Only the deferred conditional
+transfer temporary changed (release-on-discard + adoption zeroing); its coverage lands in task
+1.3.1. AR #15's update authorization therefore remains unused.
+
+**Green phase (2026-09-30 19:41):** `cargo test --test call_value_integrity_spec_test` —
+29 passed / 0 failed; full `make check` also passed (33 suites, 0 failures).
 
 ### Step 1.3: Implementation Tests & Hardening
 
 **Reference**: [07](07-testing-strategy.md) §Implementation Tests · AR #15
 **Objective**: Pin the emitted shapes and run the phase verification.
 
-- [ ] 1.3.1 Write implementation tests (branch-store shape, arm zeroing, transfer registration/release, argument temporary) — `compiler/tests/call_value_integrity_impl_test.rs`
-- [ ] 1.3.2 Full verification — `make check`
+- [x] 1.3.1 Write implementation tests (branch-store shape, arm zeroing, transfer registration/release, argument temporary) — `compiler/tests/call_value_integrity_impl_test.rs` ✅ (completed: 2026-09-30 19:43)
+- [x] 1.3.2 Full verification — `make check` ✅ (completed: 2026-09-30 19:43)
+
+**Implementation tests (2026-09-30 19:43):** `cargo test --test call_value_integrity_impl_test`
+— 11 passed / 0 failed; full `make check` — 34 suites, 0 failures, 0 warnings.
 
 **Deliverables**:
-- [ ] Roadmap rows `DEF-30` – `DEF-45` set to Executing with the plan link (AR #18)
-- [ ] ST-1 – ST-8 and ST-32 – ST-37 pass; at least one case per Phase-1 defect failed first (red
+- [x] Roadmap rows `DEF-30` – `DEF-45` set to Executing with the plan link (AR #18)
+- [x] ST-1 – ST-8 and ST-32 – ST-37 pass; at least one case per Phase-1 defect failed first (red
   phase recorded); ST-4/ST-7/ST-8 recorded as regression pins
-- [ ] The two updated pins pass; the closed plans' specification suites are unchanged
-- [ ] `make check` passes with no warnings
+- [x] The two updated pins pass; the closed plans' specification suites are unchanged
+- [x] `make check` passes with no warnings
 
 **Verify**: `make check`
 

@@ -103,10 +103,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // so the consumed places must not be emptied now: the
                         // move-outs travel on the materialized value and the
                         // guard emitter runs them after the call, on the
-                        // evaluated path only. The result is a transfer
-                        // temporary: its destination owns the value, so the
-                        // temporary itself is not released.
+                        // evaluated path only. The temporary joins the
+                        // statement's release set, so a path that discards the
+                        // value releases it exactly once; an adopting
+                        // destination moves the value out and empties the
+                        // temporary, which makes that release a no-op.
                         let temp = self.new_temp(ty.clone());
+                        self.register_pending_release(temp, &ty);
                         let value = Value::new(ty.clone(), kind);
                         return Value::new(
                             ty,
@@ -948,8 +951,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// iteration, and the assignment releases the previous value, so the wider
     /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
-        if take
-            || value.ty.is_closure()
+        if take {
+            // A `take` argument transfers ownership to the callee, so a
+            // conditional must not pass one arm directly: the chosen arm has to
+            // move into an argument temporary and the caller's arm be emptied.
+            // The temporary is not released by the caller; the callee's
+            // parameter cleanup owns the value.
+            if matches!(value.kind, ValueKind::Conditional { .. })
+                && !value.ty.is_fixed_array()
+                && !self.sema.table.duplicable(&value.ty)
+                && !is_view(&value.ty)
+                && !value.ty.is_unknown()
+                && !mentions_type_param(&value.ty)
+            {
+                return self.materialize_value(value);
+            }
+            return value;
+        }
+        if value.ty.is_closure()
             || self.sema.table.duplicable(&value.ty)
             || is_view(&value.ty)
             || self.projects_from_place(&value)

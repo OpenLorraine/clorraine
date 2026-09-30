@@ -713,6 +713,35 @@ impl<'a> Emitter<'a> {
             self.emit_fixed_array_assign(target, &ty, value);
             return;
         }
+        if self.needs_drop(&ty) {
+            // An owned conditional moves the chosen arm into the destination
+            // per path: a value expression would copy the handle and leave the
+            // arm owning the same storage. A struct literal with an owned
+            // conditional field stores its fields instead, so the field's
+            // chosen arm moves too.
+            if let ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } = &value.kind
+            {
+                let target_c = self.place(target);
+                self.emit_conditional_move_assign(
+                    &target_c,
+                    &ty,
+                    condition,
+                    then_value,
+                    else_value,
+                );
+                return;
+            }
+            if let ValueKind::StructLit { fields, .. } = &value.kind {
+                if self.struct_literal_needs_stores(fields) {
+                    self.emit_struct_literal_store(target, &ty, fields);
+                    return;
+                }
+            }
+        }
         if !self.emits_drop(&ty) {
             self.emit_guards(value);
             let target_c = self.place(target);
@@ -961,6 +990,207 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// True when a struct literal needs the per-field store form.
+    ///
+    /// A C aggregate initializer cannot move an owned conditional's chosen
+    /// arm, so a field whose value is such a conditional must be stored by a
+    /// statement that can branch. The trigger is deliberately narrow: only a
+    /// field that owns storage and is a conditional selects the store form.
+    fn struct_literal_needs_stores(&self, fields: &[(String, Value)]) -> bool {
+        fields.iter().any(|(_, field)| {
+            self.needs_drop(&self.substitute(&field.ty))
+                && matches!(field.kind, ValueKind::Conditional { .. })
+        })
+    }
+
+    /// Emits a struct literal as per-field stores into an owned destination.
+    ///
+    /// Every field is stored in source order, because a C aggregate initializer
+    /// cannot mix with later stores without reordering side-effecting fields.
+    /// The old target is dropped first; when a field's value reads the target,
+    /// the old value is saved instead and released after the stores, exactly as
+    /// the value-assignment scratch path orders it.
+    fn emit_struct_literal_store(
+        &mut self,
+        target: &Place,
+        ty: &Ty,
+        fields: &[(String, Value)],
+    ) {
+        let target_c = self.place(target);
+        let reads_target = fields
+            .iter()
+            .any(|(_, field)| value_reads_base(field, target));
+        if !reads_target {
+            self.emit_drop(target);
+            self.emit_struct_literal_fields(&target_c, ty, fields);
+            return;
+        }
+        let save = self.unique_local("__cl_save");
+        self.push("    {");
+        self.push(&format!(
+            "        {} = {};",
+            declarator(ty, &save),
+            target_c
+        ));
+        self.emit_struct_literal_fields(&target_c, ty, fields);
+        self.emit_drop_expr(&save, ty);
+        self.push("    }");
+    }
+
+    /// Stores every field of a struct literal into a rendered C lvalue, in
+    /// source order.
+    ///
+    /// An owned conditional field branches through
+    /// [`Self::emit_conditional_move_assign`] so the chosen arm moves into the
+    /// field; every other field is stored as a plain assignment.
+    fn emit_struct_literal_fields(
+        &mut self,
+        target_c: &str,
+        _ty: &Ty,
+        fields: &[(String, Value)],
+    ) {
+        for (name, field) in fields {
+            let field_ty = self.substitute(&field.ty);
+            let field_c = format!("{target_c}.{name}");
+            if self.needs_drop(&field_ty) {
+                if let ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } = &field.kind
+                {
+                    self.emit_conditional_move_assign(
+                        &field_c,
+                        &field_ty,
+                        condition,
+                        then_value,
+                        else_value,
+                    );
+                    continue;
+                }
+            }
+            self.emit_guards(field);
+            let lowered = self.store_text(field, &field_ty);
+            self.push(&format!("    {field_c} = {lowered};"));
+        }
+    }
+
+    /// Emits an owned conditional store through one branch per arm.
+    ///
+    /// The destination is saved first, because an arm may name it: that arm
+    /// restores the saved value and empties the save, so the single release
+    /// after the branch is a no-op. A fresh destination saves its empty state,
+    /// which releases nothing. Only the chosen arm's source is evaluated and
+    /// emptied, so the destination owns exactly one value.
+    pub(super) fn emit_conditional_move_assign(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+    ) {
+        let save = self.unique_local("__cl_save");
+        self.push("    {");
+        self.push(&format!(
+            "        {} = {};",
+            declarator(ty, &save),
+            target_c
+        ));
+        self.emit_conditional_move_store(
+            target_c,
+            ty,
+            condition,
+            then_value,
+            else_value,
+            Some(&save),
+        );
+        self.emit_drop_expr(&save, ty);
+        self.push("    }");
+    }
+
+    /// Emits the branch of an owned conditional store into a rendered lvalue.
+    ///
+    /// The condition is evaluated once before the branch. Each arm is emitted
+    /// by [`Self::emit_conditional_move_arm`]; a nested conditional recurses
+    /// through the same rule, so the arm that runs is the only one evaluated.
+    fn emit_conditional_move_store(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+        save: Option<&str>,
+    ) {
+        self.emit_guards(condition);
+        let condition_c = self.value(condition);
+        self.push(&format!("        if ({condition_c}) {{"));
+        self.emit_conditional_move_arm(target_c, ty, then_value, save);
+        self.push("        } else {");
+        self.emit_conditional_move_arm(target_c, ty, else_value, save);
+        self.push("        }");
+    }
+
+    /// Emits one arm of an owned conditional store.
+    ///
+    /// A call arm assigns its result directly, because the call produces a
+    /// fresh value. A deferred call temporary is moved into the destination and
+    /// emptied, so the statement-end release is a no-op. A place arm is copied
+    /// and then emptied, so only the chosen arm is moved. An arm that names the
+    /// destination restores the saved value when a save exists.
+    fn emit_conditional_move_arm(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        arm: &Value,
+        save: Option<&str>,
+    ) {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &arm.kind
+        {
+            self.emit_guards(condition);
+            let condition_c = self.value(condition);
+            self.push(&format!("            if ({condition_c}) {{"));
+            self.emit_conditional_move_arm(target_c, ty, then_value, save);
+            self.push("            } else {");
+            self.emit_conditional_move_arm(target_c, ty, else_value, save);
+            self.push("            }");
+            return;
+        }
+        if self.value(arm) == target_c {
+            if let Some(save) = save {
+                self.push(&format!("            {target_c} = {save};"));
+                self.emit_move_zero(save, ty);
+            }
+            return;
+        }
+        match &arm.kind {
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
+                self.emit_guards(arm);
+                let call = self.value(arm);
+                self.push(&format!("            {target_c} = {call};"));
+            }
+            ValueKind::Materialize { .. } => {
+                self.emit_guards(arm);
+                let temp = self.value(arm);
+                self.push(&format!("            {target_c} = {temp};"));
+                self.emit_move_zero(&temp, ty);
+            }
+            _ => {
+                self.emit_guards(arm);
+                let arm_c = self.store_text(arm, ty);
+                self.push(&format!("            {target_c} = {arm_c};"));
+                if arm_reads_storage(arm) {
+                    self.emit_move_zero(&arm_c, ty);
+                }
+            }
+        }
+    }
+
     /// Emits a fixed-array assignment whose right-hand side is a call.
     ///
     /// A by-value fixed-array call writes through a hidden trailing
@@ -1161,6 +1391,21 @@ fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
         .map(|local| local.name.clone())
         .filter(|name| !read.contains(name))
         .collect()
+}
+
+/// True when a lowered arm reads storage that a move must empty.
+///
+/// A place or compiler temporary is storage; a member or index chain over one
+/// is a projection of that storage. A call or literal produces a fresh value
+/// and owns no caller storage, so it is not emptied after the store.
+fn arm_reads_storage(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Place(_) | ValueKind::Temp(_) => true,
+        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+            arm_reads_storage(base)
+        }
+        _ => false,
+    }
 }
 
 /// True when a value reads any part of the place rooted at `target`'s base.
