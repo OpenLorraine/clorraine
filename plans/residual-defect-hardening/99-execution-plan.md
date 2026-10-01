@@ -1,0 +1,282 @@
+# Execution Plan: Residual Defect Hardening
+
+> **Document**: 99-execution-plan.md
+> **Parent**: [Index](00-index.md)
+> **Last Updated**: 2026-10-01 14:30
+> **Progress**: 0/38 tasks (0%)
+> **CodeOps Artifact Schema**: 1
+
+## Overview
+
+Fix the four residual filed defects DEF-46 – DEF-49 in four implementation phases (flat array
+literal types and the deferred row store, the multi-extent return copy, the loop-condition
+owned-call release, substitution-aware ownership) plus a close-out phase, following the
+specification-first ordering. Governing designs:
+[03-01](03-01-flat-array-literal-types.md), [03-02](03-02-multi-extent-return-copy.md),
+[03-03](03-03-loop-condition-owned-call-release.md),
+[03-04](03-04-substitution-aware-ownership.md). Specification cases:
+[07](07-testing-strategy.md). Decisions: `00-ambiguity-register.md`.
+
+**🚨 Update this document after EACH completed task!**
+
+---
+
+## Implementation Phases
+
+| Phase | Title | Tasks |
+| ----- | ----- | ----- |
+| 1 | Flat Array Literal Types and the Deferred Row Store | 8 |
+| 2 | Multi-Extent Return Copy | 6 |
+| 3 | Loop-Condition Owned-Call Release | 7 |
+| 4 | Substitution-Aware Ownership | 12 |
+| 5 | Close-out | 5 |
+
+**Total: 38 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the
+task-size criteria in the make-plan skill's quality checklist)
+
+> **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
+>
+> The task checkboxes in the phase sections below are the **single source of truth** for
+> progress. Every task line appears exactly once in this document. The executing agent MUST:
+>
+> 1. **On implementation:** mark the task `[~]` with a timestamp —
+>    `- [~] 1.1.1 Task description ⏳ (implemented: YYYY-MM-DD HH:MM)`
+> 2. **On verify pass:** promote it to `[x]` —
+>    `- [x] 1.1.1 Task description ✅ (completed: YYYY-MM-DD HH:MM)`. Every implementation task
+>    runs `make check` before it is promoted; the close-out runs `make verify` (AR #6).
+> 3. **Update the Progress header** (`> **Progress**: X/Y tasks (Z%)`) and the Last Updated
+>    stamp after EVERY task — never batch updates. Only `[x]` counts as complete.
+> 4. **Resume** by scanning the phase sections top-to-bottom: the first `[~]` task is resumed
+>    first, else the first `[ ]` task.
+> 5. **On blocker:** mark the task `[!]` and append `Blocked: <short reason>` on the same line.
+>    The plan lifecycle is `Ready`, `Executing`, `Done`, or `Blocked`, derived from these markers.
+>
+> Timestamps come from `date '+%Y-%m-%d %H:%M'` — never invented. Failure to keep the marks
+> current means progress is invisible after crashes, context resets, or session handoffs.
+
+---
+
+## Phase 1: Flat Array Literal Types and the Deferred Row Store
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
+> committed, staged, unstaged, and untracked phase-start state)_
+> **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `compiler/src/types/mod.rs`,
+> `compiler/src/codegen/guards.rs`, `compiler/src/types/` unit tests,
+> `compiler/tests/residual_defect_hardening_{spec,impl}_test.rs`,
+> `plans/residual-defect-hardening/*`
+
+### Step 1.1: Specification Tests
+
+**Reference**: [03-01](03-01-flat-array-literal-types.md) §Proposed Changes 1–3 · AR #3, #9
+**Objective**: Pin the flat literal type and the deferred row store from ST-1 – ST-5.
+
+- [ ] 1.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-1 – ST-5 and ST-17 — `compiler/tests/residual_defect_hardening_spec_test.rs`
+- [ ] 1.1.2 Run the specification tests — verify ST-1, ST-2, ST-3, ST-4, and ST-17 fail before implementation (invalid C / type mismatch) and record ST-5 as the pre-passing regression pin (red phase)
+
+### Step 1.2: Implementation
+
+**Reference**: [03-01](03-01-flat-array-literal-types.md) §`Ty::array` folding, §`array_row_expr`
+**Objective**: Make the no-context literal flat and give every deferred row shape an expression store.
+
+- [ ] 1.2.1 Fold a fixed-array element into the extents in `Ty::array` and route `substitute` through it (slice elements and slice outer extents unchanged) — `compiler/src/types/mod.rs`
+- [ ] 1.2.2 Add `array_row_expr` (conditional with a common-typed arm tail, place with the place-aware move zero, call, closure-call, fallback) and route non-literal rows and fills through it — `compiler/src/codegen/guards.rs`
+- [ ] 1.2.3 Run the specification tests — verify ST-1 – ST-5 and ST-17 pass (green phase)
+
+### Step 1.3: Implementation Tests & Hardening
+
+**Objective**: Pin the emitted shapes and the no-regression edges.
+
+- [ ] 1.3.1 Write implementation tests: the flat declarator (`i32 lit[2][2]`), the per-row expressions (mixed-arm conditional, fill form, adjusted-parameter row), and byte-identical re-emission — `compiler/tests/residual_defect_hardening_impl_test.rs`
+- [ ] 1.3.2 Unit tests: a nested fixed element folds; `substitute(T[2], T = i32[3])` is flat; a slice element and a slice outer extent do not; update the depth-cap and nested-array tests to build their shape with an explicit `TyKind::Array` — `compiler/src/types/` test block
+- [ ] 1.3.3 Full verification — `make check`
+
+**Deliverables**:
+- [ ] The no-context literal has the flat fixed-array type and the C declarator carries every extent
+- [ ] A deferred literal with a conditional, place, or call row compiles to valid C
+- [ ] ST-1 – ST-5 and ST-17 pass; all verification passing
+
+**Verify**: `make check`
+
+---
+
+## Phase 2: Multi-Extent Return Copy
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `compiler/src/codegen/function.rs`,
+> `compiler/src/codegen/cleanup.rs`, `compiler/tests/residual_defect_hardening_{spec,impl}_test.rs`,
+> `plans/residual-defect-hardening/*`
+
+### Step 2.1: Specification Tests
+
+**Reference**: [03-02](03-02-multi-extent-return-copy.md) §Proposed Changes · AR #12
+**Objective**: Pin the multi-extent owned and duplicable return from ST-6 – ST-7.
+
+- [ ] 2.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-6 – ST-7 — `compiler/tests/residual_defect_hardening_spec_test.rs`
+- [ ] 2.1.2 Run the specification tests — verify both fail before implementation (invalid C) (red phase)
+
+### Step 2.2: Implementation
+
+**Reference**: [03-02](03-02-multi-extent-return-copy.md) §Return arm
+**Objective**: Delegate the place branch to the fixed-array store core.
+
+- [ ] 2.2.1 Promote `emit_fixed_array_assign_to` to sibling visibility and delegate the return place branch — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`
+- [ ] 2.2.2 Run the specification tests — verify ST-6 – ST-7 pass (green phase)
+
+### Step 2.3: Implementation Tests & Hardening
+
+- [ ] 2.3.1 Write implementation tests for the return `memcpy` shape and the source emptying — `compiler/tests/residual_defect_hardening_impl_test.rs`
+- [ ] 2.3.2 Full verification — `make check`
+
+**Deliverables**:
+- [ ] Every extent of a returned fixed-array place is copied and the owned source is emptied once
+- [ ] ST-6 – ST-7 pass; all verification passing
+
+**Verify**: `make check`
+
+---
+
+## Phase 3: Loop-Condition Owned-Call Release
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `compiler/src/own/loops.rs`,
+> `compiler/src/ir/guards.rs`, `compiler/tests/residual_defect_hardening_{spec,impl}_test.rs`,
+> `plans/residual-defect-hardening/*`
+
+### Step 3.1: Specification Tests
+
+**Reference**: [03-03](03-03-loop-condition-owned-call-release.md) §Proposed Changes · AR #5, #10
+**Objective**: Pin the condition evaluation and leak-freedom from ST-8 – ST-9.
+
+- [ ] 3.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-8 – ST-9 — `compiler/tests/residual_defect_hardening_spec_test.rs`
+- [ ] 3.1.2 Run the specification tests and record the pre-fix AddressSanitizer probe of ST-8 (leak-only red phase); the exit codes alone cannot show the failure
+
+### Step 3.2: Implementation
+
+**Reference**: [03-03](03-03-loop-condition-owned-call-release.md) §Proposed Changes 1–2
+**Objective**: Materialize owned call results in the three loop conditions and select the guarded path.
+
+- [ ] 3.2.1 Add the condition walk that materializes owned call results (`owns_drop`; the substitution-aware phase widens it with `maybe_owns`; skip a call already stored by a `Materialize`) and call it at the three condition lowering points — `compiler/src/own/loops.rs`
+- [ ] 3.2.2 Make `value_needs_guards` report a `Materialize` as needing guards — `compiler/src/ir/guards.rs`
+- [ ] 3.2.3 Run the specification tests — verify ST-8 – ST-9 pass (green phase) and the ST-8 probe is clean
+
+### Step 3.3: Implementation Tests & Hardening
+
+- [ ] 3.3.1 Write implementation tests: the guarded flag-first form for `while`, `do`, and `for`; a non-owning condition keeps the inline spelling; the guarded fixed-array condition emits one temp and one release; a `for` step holding a materialize drops to the flat form — `compiler/tests/residual_defect_hardening_impl_test.rs`
+- [ ] 3.3.2 Full verification — `make check`
+
+**Deliverables**:
+- [ ] An owned call result in any loop condition is evaluated per iteration, dropped before a re-store, and released after the loop
+- [ ] ST-8 – ST-9 pass; the pre-fix leak is recorded; all verification passing (ST-18 lands in Phase 4)
+
+**Verify**: `make check`
+
+---
+
+## Phase 4: Substitution-Aware Ownership
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `compiler/src/ir/mono.rs`,
+> `compiler/src/ir.rs`, `compiler/src/own.rs`,
+> `compiler/src/own/{lower,expr,statements,loops,instance_check,call,call_check,place,flow}.rs`,
+> `compiler/src/codegen/function.rs`, `compiler/tests/residual_defect_hardening_{spec,impl}_test.rs`,
+> `plans/residual-defect-hardening/*`
+
+### Step 4.1: Specification Tests
+
+**Reference**: [03-04](03-04-substitution-aware-ownership.md) §The site table · AR #17, #11
+**Objective**: Pin one case per duty kind and per suppression site from ST-10 – ST-16.
+
+- [ ] 4.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-10 – ST-16 and ST-18 – ST-22 (ST-14 rewritten for site `own/lower.rs:619`) — `compiler/tests/residual_defect_hardening_spec_test.rs`
+- [ ] 4.1.2 Run the specification tests and record the pre-fix AddressSanitizer probes of ST-10 (the filed take-parameter leak) and ST-19 (the take-argument double-free) plus the ST-12 observation; the exit codes alone cannot show the failure
+
+### Step 4.2: Implementation
+
+**Reference**: [03-04](03-04-substitution-aware-ownership.md) §Proposed Changes 1–5
+**Objective**: Deposit the five duty kinds and discharge them per instance.
+
+- [ ] 4.2.1 Add `maybe_owns` and register maybe-owning bindings and temporaries for drop and release, keeping the `mode == Mode::Take` parameter gate — `compiler/src/own.rs`
+- [ ] 4.2.2 Emit the move shape for param-typed place stores and `take` argument places, add the codegen non-owning branch (plain copy, no zero), and empty a param-typed take place through the argument move-out — `compiler/src/own/{statements,lower,call_check,call}.rs`, `compiler/src/codegen/function.rs`
+- [ ] 4.2.3 Add the `RequiresDuplicable` record (with the per-function carrier into `Monomorphization`) and the moved-if-owning marker in `PlaceState` with its `read_place` detection, clear-on-write, and join merge — `compiler/src/ir/mono.rs`, `compiler/src/own.rs`, `compiler/src/own/{expr,place,flow}.rs`
+- [ ] 4.2.4 Discharge `RequiresDuplicable` in the per-instance audit (`E10020` once per function and binding) — `compiler/src/own/instance_check.rs`
+- [ ] 4.2.5 Remove the five materialization skips (guard operand, two-use operand, read place, `take`/owned argument, for-in iterable) and widen the loop-condition walk's predicate with `maybe_owns` — `compiler/src/own/lower.rs`, `compiler/src/own/loops.rs`
+- [ ] 4.2.6 Add the loan-owner predicate site for maybe-owning temporaries and run the bounded reachability probe; record the result (an explicit acceptance ruling is required first if reachable) — `compiler/src/own/lower.rs`
+- [ ] 4.2.7 Run the specification tests — verify ST-10 – ST-16 and ST-18 – ST-22 pass (green phase) and the ST-10, ST-18, and ST-19 probes are clean
+
+### Step 4.3: Implementation Tests & Hardening
+
+- [ ] 4.3.1 Write implementation tests: the maybe-owning drop, the non-owning no-op move branch, the emptied `take` place, and `E10020` reported once per function and binding — `compiler/tests/residual_defect_hardening_impl_test.rs`
+- [ ] 4.3.2 Unit tests: `maybe_owns`; the parameter-mode gate; the `RequiresDuplicable` discharge; the loan-owner probe; a scalar instance emits no release — `compiler/src/own/` test blocks
+- [ ] 4.3.3 Full verification — `make check`
+
+**Deliverables**:
+- [ ] An owning instance releases and moves correctly (including `take` argument places); a `borrow` parameter is never dropped; a non-owning instance keeps its values and behavior unchanged
+- [ ] A body that reuses a moved-if-owning source reports `E10020` once per function and binding, at the body's use
+- [ ] Every site in the 03-04 table is covered by its mapped case or the task 4.2.6 probe
+- [ ] ST-10 – ST-16 and ST-18 – ST-22 pass; all verification passing
+
+**Verify**: `make check`
+
+---
+
+## Phase 5: Close-out
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `AGENTS.md`, `plans/00-roadmap.md`,
+> `plans/residual-defect-hardening/*`, `build/` (gitignored probes)
+
+### Step 5.1: Acceptance, Probes, and Synchronization
+
+- [ ] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
+- [ ] 5.1.2 Host AddressSanitizer probes for the four defects: the ST-4 owned deferred literal (DEF-46), ST-6 (DEF-47), ST-8/ST-9/ST-18 (DEF-48), ST-10/ST-11/ST-14/ST-15/ST-16/ST-19/ST-21 (DEF-49), with leak detection on — `build/closeout-probes/` (AR #6)
+- [ ] 5.1.3 Update documentation: the `AGENTS.md` test map (both new suites) and the roadmap rows for DEF-46 – DEF-49 (Done with this plan linked) — `AGENTS.md`, `plans/00-roadmap.md` (AR #7, #10)
+- [ ] 5.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the plan status Complete and the progress header to 38/38; final `make check`
+- [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
+
+**Deliverables**:
+- [ ] `make verify` all legs passed
+- [ ] ASan probes clean with leak detection on
+- [ ] Documentation and roadmap synced; acceptance criteria checked
+
+**Verify**: `make verify`
+
+---
+
+## Dependencies
+
+```
+Phase 1 (flat literal types + row store)
+    ↓  (the flat type is a precondition for the multi-extent shapes)
+Phase 2 (return copy)
+    ↓
+Phase 3 (loop-condition release)
+    ↓  (the condition walk's ownership predicate and its param-typed case, ST-18)
+Phase 4 (substitution-aware ownership)
+    ↓
+Phase 5 (close-out)
+```
+
+Phase 4 runs last so the generic-ownership diff is reviewed on its own. It consumes two earlier
+artifacts: the flat type from `substitute` (Phase 1) and the condition walk whose ownership
+predicate Phase 4 widens with `maybe_owns` (the generic-loop case ST-18 lands in Phase 4's
+red/green set). Phases 2 and 3 may swap order if execution finds it useful; the spec-first
+ordering within each phase is fixed.
+
+---
+
+## Success Criteria
+
+**Feature is complete when:**
+
+1. ✅ All phases completed
+2. ✅ All verification passing (`make check` per task, `make verify` at close-out)
+3. ✅ No warnings/errors
+4. ✅ No dead code — no unused parameters, functions, classes, or modules
+5. ✅ Security hardened — N/A (no input surface changes); recorded in the register
+6. ✅ Documentation updated (test map and roadmap)
+7. ✅ Code reviewed (strict profile; the phase review runs per phase)
+8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
