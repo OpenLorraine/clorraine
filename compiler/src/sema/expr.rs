@@ -19,7 +19,7 @@ use crate::profile::Profile;
 use crate::span::Span;
 use crate::types::{
     implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite,
-    ClosureTy, FuncTy, Ty, TyKind,
+    ClosureTy, FuncParam, FuncTy, Ty, TyKind,
 };
 
 use super::Checker;
@@ -189,7 +189,14 @@ impl Checker<'_, '_> {
 
         if infos.is_empty() {
             Ty::func(FuncTy {
-                params: param_types,
+                params: param_types
+                    .iter()
+                    .cloned()
+                    .map(|ty| FuncParam {
+                        ty,
+                        mode: crate::ast::Mode::None,
+                    })
+                    .collect(),
                 returns: Box::new(returns),
             })
         } else {

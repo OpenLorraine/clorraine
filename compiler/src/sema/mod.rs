@@ -538,7 +538,10 @@ fn mentions_heap_string(ty: &Ty) -> bool {
         TyKind::Raw(inner) => mentions_heap_string(inner),
         TyKind::Struct(_, args) => args.iter().any(mentions_heap_string),
         TyKind::Func(signature) => {
-            signature.params.iter().any(mentions_heap_string)
+            signature
+                .params
+                .iter()
+                .any(|param| mentions_heap_string(&param.ty))
                 || mentions_heap_string(&signature.returns)
         }
         TyKind::Closure(closure) => {

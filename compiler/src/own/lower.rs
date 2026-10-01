@@ -312,7 +312,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // closure carries it on its type; a capture-less one is a `func`.
         let (param_tys, ret) = match &ty.kind {
             TyKind::Closure(closure) => (closure.params.clone(), (*closure.returns).clone()),
-            TyKind::Func(signature) => (signature.params.clone(), (*signature.returns).clone()),
+            TyKind::Func(signature) => (
+                signature.params.iter().map(|param| param.ty.clone()).collect(),
+                (*signature.returns).clone(),
+            ),
             _ => (Vec::new(), Ty::void()),
         };
         self.lift_lambda(site, params, &param_tys, ret.clone(), body);
@@ -603,7 +606,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if matches!(
             &value.ty.kind,
             TyKind::Array { extents, .. } if extents.iter().all(Option::is_some)
-        ) && !matches!(value.kind, ValueKind::Call { .. })
+        ) && !matches!(
+            value.kind,
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+        )
         {
             return value;
         }
@@ -648,7 +654,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let deferred = self.defer_move_outs > 0
             && match &value.kind {
                 ValueKind::Conditional { .. } => !self.sema.table.duplicable(&value.ty),
-                ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => true,
+                ValueKind::ArrayLit { .. }
+                | ValueKind::Call { .. }
+                | ValueKind::ClosureCall { .. } => true,
                 _ => false,
             };
         if deferred {
@@ -743,7 +751,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn value_needs_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => false,
-            ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => value.ty.is_fixed_array(),
+            ValueKind::ArrayLit { .. }
+            | ValueKind::Call { .. }
+            | ValueKind::ClosureCall { .. } => value.ty.is_fixed_array(),
             // A fixed-array conditional has no C value form. A struct
             // conditional does not either when an arm stores its fields,
             // because a C `?:` copies bytes and cannot name a fixed-array
@@ -1031,7 +1041,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if matches!(
             &value.ty.kind,
             TyKind::Array { extents, .. } if extents.iter().all(Option::is_some)
-        ) && !matches!(value.kind, ValueKind::Call { .. })
+        ) && !matches!(
+            value.kind,
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+        )
         {
             return value;
         }
@@ -1160,7 +1173,10 @@ pub(super) fn mentions_type_param(ty: &Ty) -> bool {
         TyKind::Array { element, .. } => mentions_type_param(element),
         TyKind::Struct(_, args) => args.iter().any(mentions_type_param),
         TyKind::Func(signature) => {
-            signature.params.iter().any(mentions_type_param)
+            signature
+                .params
+                .iter()
+                .any(|param| mentions_type_param(&param.ty))
                 || mentions_type_param(&signature.returns)
         }
         TyKind::Closure(closure) => {

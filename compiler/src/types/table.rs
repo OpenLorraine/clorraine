@@ -9,11 +9,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{CallableBound, Expr, Item, QualifiedName, ScalarType, Type, TypeKind, TypeParam};
+use crate::ast::{
+    CallableBound, Expr, Item, Mode, QualifiedName, ScalarType, Type, TypeKind, TypeParam,
+};
 use crate::consts::ConstFolder;
 use crate::load::Loaded;
 
-use super::{int_literal_value, substitute_instance, FuncTy, Ty, TyKind};
+use super::{int_literal_value, substitute_instance, FuncParam, FuncTy, Ty, TyKind};
 
 /// A function signature collected from a declaration.
 #[derive(Clone, Debug)]
@@ -46,9 +48,22 @@ pub struct TypeParamSig {
 
 impl FuncSig {
     /// The function-pointer type of this signature.
+    ///
+    /// The modes are zipped back with the parameter types, so a declared
+    /// `borrow` parameter keeps its mode in the function type. A signature
+    /// whose mode list is shorter than its parameter list (the default shape)
+    /// leaves the missing entries mode-less.
     pub fn ty(&self) -> FuncTy {
         FuncTy {
-            params: self.params.clone(),
+            params: self
+                .params
+                .iter()
+                .enumerate()
+                .map(|(index, ty)| FuncParam {
+                    ty: ty.clone(),
+                    mode: self.modes.get(index).copied().unwrap_or(Mode::None),
+                })
+                .collect(),
             returns: Box::new(self.returns.clone()),
         }
     }
@@ -503,7 +518,10 @@ fn resolve_callable_bound(
         params: bound
             .params
             .iter()
-            .map(|param| resolve_ty(param, type_params, table))
+            .map(|param| FuncParam {
+                ty: resolve_ty(param, type_params, table),
+                mode: Mode::None,
+            })
             .collect(),
         returns: Box::new(resolve_ty(&bound.returns, type_params, table)),
     }
@@ -558,7 +576,10 @@ where
         TypeKind::Function { params, returns } => TyKind::Func(FuncTy {
             params: params
                 .iter()
-                .map(|param| resolve_ty_with(&param.ty, type_params, table, fold))
+                .map(|param| FuncParam {
+                    ty: resolve_ty_with(&param.ty, type_params, table, fold),
+                    mode: param.mode,
+                })
                 .collect(),
             returns: Box::new(resolve_ty_with(returns, type_params, table, fold)),
         }),

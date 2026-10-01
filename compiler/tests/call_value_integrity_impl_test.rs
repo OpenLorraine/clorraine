@@ -1058,3 +1058,154 @@ func main(): i32 {
         "cviimpl-boxarr: an array of array-field struct literals must not use a brace list"
     );
 }
+
+/// A function type in return position nests the pointer declarator.
+#[test]
+fn should_nest_the_declarator_when_a_function_returns_a_function_pointer() {
+    let source = r#"module impl.cvi.p3ret;
+func double(x: i32): i32 { return x * 2; }
+func make(): func(i32): i32 { return double; }
+func main(): i32 {
+    return make()(4);
+}
+"#;
+    let emitted = emit_host("cviimpl-p3ret", source);
+    assert_contains(
+        "cviimpl-p3ret",
+        &emitted,
+        "static i32 (*cl_impl_cvi_p3ret_make(void))(i32)",
+    );
+    assert_contains(
+        "cviimpl-p3ret",
+        &emitted,
+        "(cl_impl_cvi_p3ret_make())(4)",
+    );
+}
+
+/// A closure struct field and its lifted function share the hidden-destination
+/// signature, and the closure call passes the destination after the
+/// environment.
+#[test]
+fn should_share_the_destination_signature_between_a_closure_field_and_its_lambda() {
+    let source = r#"module impl.cvi.p3closure;
+func apply<F: func(i32): i32[2]>(x: i32, f: F): i32 {
+    let r: i32[2] = f(x);
+    return r[1];
+}
+func main(): i32 {
+    let base: i32 = 10;
+    return apply(5, [base] (x: i32) => { return [x, x + base]; });
+}
+"#;
+    let emitted = emit_host("cviimpl-p3closure", source);
+    assert_contains(
+        "cviimpl-p3closure",
+        &emitted,
+        "void (*fn)(struct ClEnv_0 *__env, i32, i32 __cl_ret[2]);",
+    );
+    assert_contains(
+        "cviimpl-p3closure",
+        &emitted,
+        "static void cl_lambda_0(struct ClEnv_0 *__env, i32 x, i32 __cl_ret[2])",
+    );
+    assert_contains(
+        "cviimpl-p3closure",
+        &emitted,
+        "((f).fn((f).env, x, __cl_call_1));",
+    );
+}
+
+/// A func-typed binding that returns a fixed array declares the hidden
+/// destination and calls through it.
+#[test]
+fn should_declare_and_call_a_fixed_array_func_value_with_a_destination() {
+    let source = r#"module impl.cvi.p3kind;
+func pair(x: i32): i32[2] { return [x, x + 1]; }
+func main(): i32 {
+    let g: func(i32): i32[2] = pair;
+    let a: i32[2] = g(3);
+    return a[1];
+}
+"#;
+    let emitted = emit_host("cviimpl-p3kind", source);
+    assert_contains(
+        "cviimpl-p3kind",
+        &emitted,
+        "void (*g)(i32, i32 __cl_ret[2]) = NULL;",
+    );
+    assert_contains("cviimpl-p3kind", &emitted, "g(3, __cl_call_1);");
+}
+
+/// A call by name through a lambda capture reaches the environment field, and a
+/// module-level func-typed global reaches its own symbol.
+#[test]
+fn should_spell_a_captured_call_and_a_global_call_by_their_own_storage() {
+    let source = r#"module impl.cvi.p3names;
+func step(x: i32): i32 { return x + 100; }
+let global_fn: func(i32): i32 = step;
+func main(): i32 {
+    let step: func(i32): i32 = (x: i32) => x + 1;
+    let captured: i32 = ([step] (y: i32) => step(y))(4);
+    return captured + global_fn(3);
+}
+"#;
+    let emitted = emit_host("cviimpl-p3names", source);
+    assert_contains("cviimpl-p3names", &emitted, "(__env->step)(y)");
+    assert_contains(
+        "cviimpl-p3names",
+        &emitted,
+        "cl_impl_cvi_p3names_global_fn(3)",
+    );
+}
+
+/// A func-value call widens a `String` argument to the `str` view its own
+/// signature expects.
+#[test]
+fn should_widen_a_string_argument_for_a_func_value_parameter() {
+    let source = r#"module impl.cvi.p3widen;
+import { String, stringOf } from std.text;
+import { print } from std.io;
+func main(): i32 {
+    let s: String = stringOf("hi");
+    let show: func(str): void = print;
+    show(s);
+    return 0;
+}
+"#;
+    let emitted = emit_host("cviimpl-p3widen", source);
+    assert_contains("cviimpl-p3widen", &emitted, "show(cl_string_view(s));");
+}
+
+/// A `borrow` parameter of a function type is the pointer to the value, and
+/// the call site passes the address through a binding and through a field.
+#[test]
+fn should_pass_the_address_for_a_borrow_func_value_parameter() {
+    let source = r#"module impl.cvi.p3borrow;
+import { String, stringOf } from std.text;
+struct Entity { name: String; }
+struct Ops { run: func(borrow Entity): void; }
+func nudge(borrow e: Entity): void { }
+func main(): i32 {
+    let e: Entity = Entity { name: stringOf("x") };
+    let bump: func(borrow Entity): void = nudge;
+    bump(e);
+    let ops: Ops = Ops { run: nudge };
+    ops.run(e);
+    return 0;
+}
+"#;
+    let emitted = emit_host("cviimpl-p3borrow", source);
+    assert_contains(
+        "cviimpl-p3borrow",
+        &emitted,
+        "static void cl_impl_cvi_p3borrow_nudge(ClEntity *e)",
+    );
+    assert_contains(
+        "cviimpl-p3borrow",
+        &emitted,
+        "void (*bump)(ClEntity *) = NULL;",
+    );
+    assert_contains("cviimpl-p3borrow", &emitted, "bump(&(e));");
+    assert_contains("cviimpl-p3borrow", &emitted, "void (*run)(ClEntity *);");
+    assert_contains("cviimpl-p3borrow", &emitted, "(ops.run)(&(e));");
+}

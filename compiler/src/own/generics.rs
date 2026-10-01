@@ -149,7 +149,7 @@ fn record_struct_type(ty: &Ty, sema: &SemaOutput, mono: &mut Monomorphization) {
         TyKind::Raw(inner) => record_struct_type(inner, sema, mono),
         TyKind::Func(signature) => {
             for param in &signature.params {
-                record_struct_type(param, sema, mono);
+                record_struct_type(&param.ty, sema, mono);
             }
             record_struct_type(&signature.returns, sema, mono);
         }
@@ -166,7 +166,11 @@ fn is_concrete(ty: &Ty) -> bool {
         TyKind::Raw(inner) => is_concrete(inner),
         TyKind::Struct(_, args) => args.iter().all(is_concrete),
         TyKind::Func(signature) => {
-            signature.params.iter().all(is_concrete) && is_concrete(&signature.returns)
+            signature
+                .params
+                .iter()
+                .all(|param| is_concrete(&param.ty))
+                && is_concrete(&signature.returns)
         }
         _ => true,
     }

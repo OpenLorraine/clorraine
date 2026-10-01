@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{Expr, ExprKind, ScalarType};
+use crate::ast::{Expr, ExprKind, Mode, ScalarType};
 
 mod table;
 
@@ -75,11 +75,39 @@ pub enum TyKind {
     Unknown,
 }
 
+/// One parameter of a function-pointer signature.
+///
+/// The mode travels with the parameter type because a `borrow` parameter
+/// reaches the callee as a pointer, so two signatures that differ only in a
+/// parameter mode are different types.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FuncParam {
+    /// Parameter type.
+    pub ty: Ty,
+    /// Parameter mode.
+    pub mode: Mode,
+}
+
+impl FuncParam {
+    /// The source-like spelling of the parameter, including its mode.
+    ///
+    /// The mode is rendered so a signature mismatch between `func(Entity)` and
+    /// `func(borrow Entity)` names the difference that caused it.
+    pub fn display(&self) -> String {
+        match self.mode {
+            Mode::None => self.ty.display(),
+            Mode::Const => format!("const {}", self.ty.display()),
+            Mode::Borrow => format!("borrow {}", self.ty.display()),
+            Mode::Take => format!("take {}", self.ty.display()),
+        }
+    }
+}
+
 /// A function-pointer signature.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FuncTy {
-    /// Parameter types in order.
-    pub params: Vec<Ty>,
+    /// Parameter types and modes in order.
+    pub params: Vec<FuncParam>,
     /// Return type.
     pub returns: Box<Ty>,
 }
@@ -354,7 +382,7 @@ impl Ty {
                 text
             }
             TyKind::Func(signature) => {
-                let params: Vec<String> = signature.params.iter().map(Ty::display).collect();
+                let params: Vec<String> = signature.params.iter().map(FuncParam::display).collect();
                 format!("func({}): {}", params.join(", "), signature.returns.display())
             }
             TyKind::Closure(closure) => {
@@ -423,7 +451,10 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
                 params: signature
                     .params
                     .iter()
-                    .map(|param| substitute(param, bindings))
+                    .map(|param| FuncParam {
+                        ty: substitute(&param.ty, bindings),
+                        mode: param.mode,
+                    })
                     .collect(),
                 returns: Box::new(substitute(&signature.returns, bindings)),
             }),
@@ -559,7 +590,8 @@ fn contains_param(ty: &Ty) -> bool {
         TyKind::Raw(inner) => contains_param(inner),
         TyKind::Struct(_, args) => args.iter().any(contains_param),
         TyKind::Func(signature) => {
-            signature.params.iter().any(contains_param) || contains_param(&signature.returns)
+            signature.params.iter().any(|param| contains_param(&param.ty))
+                || contains_param(&signature.returns)
         }
         TyKind::Closure(closure) => {
             closure.params.iter().any(contains_param) || contains_param(&closure.returns)
@@ -579,7 +611,11 @@ pub fn contains_closure(ty: &Ty) -> bool {
         TyKind::Raw(inner) => contains_closure(inner),
         TyKind::Struct(_, args) => args.iter().any(contains_closure),
         TyKind::Func(signature) => {
-            signature.params.iter().any(contains_closure) || contains_closure(&signature.returns)
+            signature
+                .params
+                .iter()
+                .any(|param| contains_closure(&param.ty))
+                || contains_closure(&signature.returns)
         }
         _ => false,
     }

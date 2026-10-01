@@ -122,13 +122,38 @@ impl Emitter<'_> {
     /// writable lends and widening a `String` to a `str` view where required.
     ///
     /// A `borrow` parameter of a non-duplicable struct lowers to `T *`, so the
-    /// caller passes the address of its place. A `str` parameter accepts a
-    /// `String` argument through the implicit widening, which lowers to a view
-    /// over the owned bytes. Every other argument, and every `ffi` argument, is
-    /// passed as its value.
-    pub(super) fn call_arguments(&self, callee: &str, args: &[Value]) -> String {
-        let modes = self.callee_modes(callee);
-        let param_types = self.callee_param_types(callee);
+    /// caller passes the address of its place. A call through a `func` value
+    /// takes its parameter types and modes from `func_ty`, so a `borrow`
+    /// parameter passes the address too, and a `str` parameter widens a
+    /// `String` argument exactly as a declared signature does. A `str`
+    /// parameter accepts a `String` argument through the implicit widening,
+    /// which lowers to a view over the owned bytes. Every other argument, and
+    /// every `ffi` argument, is passed as its value.
+    pub(super) fn call_arguments(
+        &self,
+        callee: &str,
+        args: &[Value],
+        func_ty: Option<&Ty>,
+    ) -> String {
+        let (modes, param_types) = match func_ty.and_then(|ty| match &self.substitute(ty).kind {
+            TyKind::Func(signature) => Some((
+                signature
+                    .params
+                    .iter()
+                    .map(|param| param.mode)
+                    .collect::<Vec<_>>(),
+                signature
+                    .params
+                    .iter()
+                    .map(|param| param.ty.clone())
+                    .collect::<Vec<_>>(),
+            )),
+            _ => None,
+        }) {
+            Some((modes, types)) => (Some(modes), Some(types)),
+            // A declared function or an FFI callee keeps its own signature.
+            None => (self.callee_modes(callee), self.callee_param_types(callee)),
+        };
         let user_call = self.resolve_function(callee).is_some();
         let rendered: Vec<String> = args
             .iter()
@@ -136,15 +161,17 @@ impl Emitter<'_> {
             .map(|(index, arg)| {
                 let expected = param_types.as_ref().and_then(|types| types.get(index));
                 let text = self.argument_text(arg, expected);
-                let pointer = user_call
-                    && modes
-                        .as_ref()
-                        .and_then(|modes| modes.get(index))
-                        .is_some_and(|mode| {
-                            *mode == Mode::Borrow
-                                && matches!(arg.ty.kind, TyKind::Struct(..))
-                                && !self.sema.table.duplicable(&arg.ty)
-                        });
+                let mode = modes.as_ref().and_then(|modes| modes.get(index)).copied();
+                let pointer = if func_ty.is_some() {
+                    // A function type has no duplicability table here: its
+                    // `borrow` parameter is the pointer to the value.
+                    mode == Some(Mode::Borrow)
+                } else {
+                    user_call
+                        && mode == Some(Mode::Borrow)
+                        && matches!(arg.ty.kind, TyKind::Struct(..))
+                        && !self.sema.table.duplicable(&arg.ty)
+                };
                 if pointer {
                     format!("&({text})")
                 } else {

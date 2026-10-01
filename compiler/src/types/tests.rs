@@ -302,7 +302,10 @@ fn type_predicates_and_display_match_the_surface_spelling() {
     assert_eq!(Ty::handle("String").display(), "String");
     assert_eq!(Ty::unknown().display(), "?");
     let signature = FuncTy {
-        params: vec![Ty::i32_ty()],
+        params: vec![FuncParam {
+            ty: Ty::i32_ty(),
+            mode: Mode::None,
+        }],
         returns: Box::new(Ty::boolean()),
     };
     assert_eq!(Ty::func(signature).display(), "func(i32): bool");

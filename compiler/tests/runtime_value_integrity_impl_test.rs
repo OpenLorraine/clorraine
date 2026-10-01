@@ -491,11 +491,15 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("rviimpl-funcptr", source);
-    assert_contains("rviimpl-funcptr", &emitted, "void (*make)(i32, i32 [2]);");
     assert_contains(
         "rviimpl-funcptr",
         &emitted,
-        "void (*g)(i32, i32 [2]) = NULL;",
+        "void (*make)(i32, i32 __cl_ret[2]);",
+    );
+    assert_contains(
+        "rviimpl-funcptr",
+        &emitted,
+        "void (*g)(i32, i32 __cl_ret[2]) = NULL;",
     );
     assert_contains("rviimpl-funcptr", &emitted, "i32 (*run)(i32);");
 }

@@ -17,7 +17,7 @@ use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece
 use crate::types::{resolve_ty, Ty, TyKind};
 
 use super::render::escape_c_string;
-use super::types::{c_type, declarator};
+use super::types::{declarator, function_declarator};
 use super::{
     is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
 };
@@ -151,6 +151,12 @@ impl<'a> Emitter<'a> {
         self.function = Some(function);
         self.current_module = function.module.clone();
         self.return_ty = function.ret.clone();
+        // A by-value fixed-array return is written into the hidden trailing
+        // out-parameter, so the caller's destination is the result on every
+        // path, with or without a cleanup ladder.
+        if self.return_ty.is_fixed_array() {
+            self.result_var = Some("__cl_ret".to_owned());
+        }
 
         for param in &function.params {
             let c_name = sanitize_identifier(&param.name);
@@ -194,29 +200,25 @@ impl<'a> Emitter<'a> {
     /// A capturing lambda's function takes a leading `struct ClEnv_<site> *`
     /// named `__env`; a capture-less one has only the lambda parameters. The
     /// function is always `static`, because a lifted lambda is reached only
-    /// through its value, never by name from another translation unit.
+    /// through its value, never by name from another translation unit. The
+    /// shared declarator adds the hidden destination for a by-value
+    /// fixed-array return and nests a func-typed return, so the lifted
+    /// function's signature cannot drift from the value that calls it.
     pub(super) fn lifted_signature(
         &self,
         function: &ir::Function,
         site: usize,
         capturing: bool,
     ) -> String {
-        let ret = if function.ret.is_void() {
-            "void".to_owned()
-        } else {
-            c_type(&function.ret)
-        };
-        let mut params: Vec<String> = Vec::new();
-        if capturing {
-            params.push(format!("struct ClEnv_{site} *__env"));
-        }
-        for param in &function.params {
-            params.push(declarator(&param.ty, &sanitize_identifier(&param.name)));
-        }
-        if params.is_empty() {
-            params.push("void".to_owned());
-        }
-        format!("static {ret} cl_lambda_{site}({})", params.join(", "))
+        let params: Vec<String> = function
+            .params
+            .iter()
+            .map(|param| declarator(&param.ty, &sanitize_identifier(&param.name)))
+            .collect();
+        let env = capturing.then(|| format!("struct ClEnv_{site} *__env"));
+        let signature =
+            function_declarator(&function.ret, params, &format!("cl_lambda_{site}"), env);
+        format!("static {signature}")
     }
 
     /// Writes the hoisted local declarations, the temporaries, and the result.
@@ -463,6 +465,29 @@ impl<'a> Emitter<'a> {
             Statement::Discard { value } => {
                 self.emit_line_directive(span);
                 self.emit_guards(value);
+                // A discarded fixed-array closure call has no C expression
+                // result, so it writes into a statement-local destination that
+                // the cleanup releases when the elements own storage.
+                if value.ty.is_fixed_array() {
+                    if let ValueKind::ClosureCall { callable, args } = &value.kind {
+                        let ty = self.substitute(&value.ty);
+                        let dest = self.unique_local("__cl_discard");
+                        self.push("    {");
+                        self.push(&format!(
+                            "        {} = {};",
+                            declarator(&ty, &dest),
+                            self.empty_state(&ty)
+                        ));
+                        let call =
+                            self.closure_call_with_destination(callable, args, Some(&dest));
+                        self.push(&format!("        {call};"));
+                        if self.needs_drop(&ty) {
+                            self.emit_drop_expr(&dest, &ty);
+                        }
+                        self.push("    }");
+                        return;
+                    }
+                }
                 let value_c = self.value(value);
                 self.push(&format!("    (void)({value_c});"));
             }
@@ -704,6 +729,47 @@ impl<'a> Emitter<'a> {
                 return Some(self.substitute(&signature.returns));
             }
         }
+        if let Some(ty) = self.func_value_type(callee) {
+            if let TyKind::Func(signature) = &ty.kind {
+                return Some(self.substitute(&signature.returns));
+            }
+        }
+        self.callee_return_type(callee)
+    }
+
+    /// The function type of a call whose callee is a func value.
+    ///
+    /// A callable receiver (a struct field or a call result), a func-typed
+    /// local or parameter, a lambda capture, and a module-level func-typed
+    /// global all carry the signature the argument renderer needs. A declared
+    /// function, an `ffi` function, and an intrinsic yield `None`, so those
+    /// calls keep the declared-signature path.
+    pub(super) fn callee_func_type(&self, callee: &str, receiver: Option<&ir::Value>) -> Option<Ty> {
+        if let Some(receiver) = receiver {
+            let ty = self.substitute(&receiver.ty);
+            if matches!(ty.kind, TyKind::Func(_)) {
+                return Some(ty);
+            }
+        }
+        if let Some(ty) = self.func_value_type(callee) {
+            return Some(ty);
+        }
+        self.globals
+            .iter()
+            .find(|(id, info)| {
+                id.name == callee
+                    && id.module == self.current_module
+                    && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
+            })
+            .map(|(_, info)| self.substitute(&info.ty))
+    }
+
+    /// The checked type of a func-typed local, parameter, or lambda capture.
+    ///
+    /// The declaration order mirrors the call-resolution order in the
+    /// lowering: a local or parameter shadows a capture, which shadows a
+    /// module name. `None` when the name is not a func-typed binding.
+    pub(super) fn func_value_type(&self, name: &str) -> Option<Ty> {
         if let Some(function) = self.function {
             let declared = function
                 .locals
@@ -714,22 +780,27 @@ impl<'a> Emitter<'a> {
                         .params
                         .iter()
                         .map(|param| (&param.name, &param.ty)),
-                )
-                .find(|(name, _)| {
-                    *name == callee
-                        || self
-                            .local_names
-                            .get(*name)
-                            .is_some_and(|c_name| c_name == callee)
-                })
-                .map(|(_, ty)| ty);
-            if let Some(ty) = declared {
-                if let TyKind::Func(signature) = &self.substitute(ty).kind {
-                    return Some(self.substitute(&signature.returns));
+                );
+            for (local, ty) in declared {
+                if local == name
+                    || self
+                        .local_names
+                        .get(local)
+                        .is_some_and(|c_name| c_name == name)
+                {
+                    let ty = self.substitute(ty);
+                    return matches!(ty.kind, TyKind::Func(_)).then_some(ty);
                 }
             }
         }
-        self.callee_return_type(callee)
+        let site = self.function?.lambda_site?;
+        let closure = self.sema.closures.get(&site)?;
+        let capture = closure
+            .captures
+            .iter()
+            .find(|capture| capture.name == name)?;
+        let ty = self.substitute(&capture.ty);
+        matches!(ty.kind, TyKind::Func(_)).then_some(ty)
     }
 
     /// Drops the previous value of an assignment target before it is overwritten.
@@ -937,6 +1008,33 @@ impl<'a> Emitter<'a> {
             self.push("    }");
             return;
         }
+        if let ValueKind::ClosureCall { callable, args } = &value.kind {
+            // A lifted closure with a by-value fixed-array return uses the same
+            // hidden out-parameter ABI, with the destination after the
+            // environment and the lambda's own arguments.
+            self.emit_guards(callable);
+            for arg in args {
+                self.emit_guards(arg);
+            }
+            let temp = self.unique_local("__cl_call");
+            self.push("    {");
+            self.push(&format!(
+                "        {} = {};",
+                declarator(ty, &temp),
+                self.empty_state(ty)
+            ));
+            let call = self.closure_call_with_destination(callable, args, Some(&temp));
+            self.push(&format!("        {call};"));
+            if self.needs_drop(ty) {
+                self.emit_drop_expr(target_c, ty);
+            }
+            self.push(&format!(
+                "        memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+            ));
+            self.emit_move_zero(&temp, ty);
+            self.push("    }");
+            return;
+        }
         let value_c = self.value(value);
         if value_c == target_c {
             self.emit_guards(value);
@@ -1107,6 +1205,24 @@ impl<'a> Emitter<'a> {
                     receiver.as_deref(),
                     &temp,
                 );
+                self.push(&format!("                {call};"));
+                self.push(&format!(
+                    "                memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+                ));
+                self.emit_move_zero(&temp, ty);
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                let temp = self.unique_local("__cl_arm");
+                self.push(&format!(
+                    "                {} = {};",
+                    declarator(ty, &temp),
+                    self.empty_state(ty)
+                ));
+                self.emit_guards(callable);
+                for arg in args {
+                    self.emit_guards(arg);
+                }
+                let call = self.closure_call_with_destination(callable, args, Some(&temp));
                 self.push(&format!("                {call};"));
                 self.push(&format!(
                     "                memcpy(&({target_c}), &({temp}), sizeof({target_c}));"

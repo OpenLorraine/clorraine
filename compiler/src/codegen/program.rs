@@ -13,7 +13,10 @@ use crate::load::Module;
 use crate::profile::Profile;
 use crate::types::{resolve_ty, substitute_instance, CaptureMode, Ty, TyKind};
 
-use super::types::{c_type, collect_slice_types, declarator, mangle_module, scalar_of, type_key};
+use super::types::{
+    c_type, collect_slice_types, declarator, function_declarator, mangle_module, scalar_of,
+    type_key,
+};
 use super::{Emitter, FuncInfo};
 
 impl<'a> Emitter<'a> {
@@ -264,21 +267,19 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    {};", declarator(&ty, field)));
             }
             self.push("};");
-            let ret = if info.returns.is_void() {
-                "void".to_owned()
-            } else {
-                c_type(&info.returns)
-            };
+            // The field's declarator shares the lifted function's signature
+            // builder, so the environment prefix, a by-value fixed-array
+            // return's hidden destination, and a nested func-typed return all
+            // spell the same way on both sides.
             let params: Vec<String> = info.params.iter().map(c_type).collect();
-            let param_list = if params.is_empty() {
-                "void".to_owned()
-            } else {
-                params.join(", ")
-            };
+            let field = function_declarator(
+                &info.returns,
+                params,
+                "(*fn)",
+                Some(format!("struct ClEnv_{site} *__env")),
+            );
             self.push(&format!("typedef struct ClClosure_{site} {{"));
-            self.push(&format!(
-                "    {ret} (*fn)(struct ClEnv_{site} *, {param_list});"
-            ));
+            self.push(&format!("    {field};"));
             self.push(&format!("    struct ClEnv_{site} *env;"));
             self.push(&format!("}} ClClosure_{site};"));
             self.push("");

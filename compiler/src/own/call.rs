@@ -104,9 +104,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A call such as `c.f(0)` where `f` is a `func` field is a call through
     /// the field, not a method taking the receiver: the field itself is the
-    /// callable value. Returning `None` for a non-field callee keeps the
-    /// ordinary dot-call path unchanged.
+    /// callable value. A call whose callee is itself a func-typed call
+    /// (`make()(4)`) is called through the returned value the same way.
+    /// Returning `None` for every other callee keeps the ordinary dot-call
+    /// path unchanged.
     pub(super) fn func_field_receiver(&mut self, callee: &'a Expr) -> Option<Value> {
+        // A callee that is itself a call has no stored field type; its own
+        // recorded result type decides whether it is called through.
+        if matches!(callee.kind, ExprKind::Call { .. }) {
+            if matches!(self.ty(callee).kind, TyKind::Func(_)) {
+                return Some(self.lower_value(callee));
+            }
+            return None;
+        }
         let field_ty = self.callee_field_type(callee)?;
         if !matches!(field_ty.kind, TyKind::Func(_)) {
             return None;

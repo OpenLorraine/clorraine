@@ -161,6 +161,20 @@ impl<'a> Emitter<'a> {
                             );
                             format!("{call};")
                         }
+                        // A fixed-array closure call also writes through a
+                        // hidden destination, which the lifted function takes
+                        // after its environment and arguments.
+                        ValueKind::ClosureCall { callable, args }
+                            if inner_ty.is_fixed_array() =>
+                        {
+                            let destination = format!("__cl_tmp{temp}");
+                            let call = self.closure_call_with_destination(
+                                callable,
+                                args,
+                                Some(&destination),
+                            );
+                            format!("{call};")
+                        }
                         _ => format!("__cl_tmp{temp} = {};", self.value(inner)),
                     };
                     self.push(&format!("    {store}"));

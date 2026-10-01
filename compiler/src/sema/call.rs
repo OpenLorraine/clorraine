@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::ast::{Arg, Expr, ExprKind, Type};
 use crate::span::Span;
-use crate::types::{implicit_conversion, FuncSig, Ty, TyKind};
+use crate::types::{implicit_conversion, FuncParam, FuncSig, Ty, TyKind};
 
 use super::Checker;
 
@@ -80,7 +80,7 @@ impl Checker<'_, '_> {
         let callee_ty = self.check_value(callee, None);
         if let TyKind::Func(signature) = &callee_ty.kind {
             let signature = signature.clone();
-            self.check_args(args, &signature.params);
+            self.check_args_func(args, &signature.params);
             return (*signature.returns).clone();
         }
         for arg in args {
@@ -230,7 +230,13 @@ impl Checker<'_, '_> {
                 // A capturing closure satisfies a callable bound by signature;
                 // the synchronous call is what makes its environment valid.
                 (TyKind::Closure(found), TyKind::Func(want)) => {
-                    found.params == want.params && found.returns == want.returns
+                    found.params.len() == want.params.len()
+                        && found
+                            .params
+                            .iter()
+                            .zip(&want.params)
+                            .all(|(found, want)| *found == want.ty)
+                        && found.returns == want.returns
                 }
                 _ => false,
             };
@@ -311,8 +317,12 @@ impl Checker<'_, '_> {
             if let Some(field_ty) = self.field_type(base, name) {
                 return match &field_ty.kind {
                     TyKind::Func(signature) => Some(DotCall::Field(FuncSig {
-                        params: signature.params.clone(),
-                        modes: Vec::new(),
+                        params: signature
+                            .params
+                            .iter()
+                            .map(|param| param.ty.clone())
+                            .collect(),
+                        modes: signature.params.iter().map(|param| param.mode).collect(),
                         returns: (*signature.returns).clone(),
                         type_params: Vec::new(),
                     })),
@@ -356,6 +366,17 @@ impl Checker<'_, '_> {
     /// An arity mismatch is left alone: no diagnostic in this phase owns it.
     fn check_args(&mut self, args: &[Arg], params: &[Ty]) {
         self.check_args_impl(args, params, &[], false);
+    }
+
+    /// Checks a call's arguments against a func-value parameter list.
+    ///
+    /// A call through a `func(...)` value keeps the modes its type carries, so
+    /// a `take` parameter still moves the argument and a `borrow` parameter
+    /// still accepts the lend.
+    fn check_args_func(&mut self, args: &[Arg], params: &[FuncParam]) {
+        let types: Vec<Ty> = params.iter().map(|param| param.ty.clone()).collect();
+        let modes: Vec<crate::ast::Mode> = params.iter().map(|param| param.mode).collect();
+        self.check_args_impl(args, &types, &modes, false);
     }
 
     /// Like [`Self::check_args`] for a direct call of a named function.
@@ -492,7 +513,7 @@ pub(crate) fn match_param(
         TyKind::Func(signature) => {
             if let TyKind::Func(arg_signature) = &arg.kind {
                 for (inner, arg_inner) in signature.params.iter().zip(&arg_signature.params) {
-                    match_param(inner, arg_inner, declared, inferred);
+                    match_param(&inner.ty, &arg_inner.ty, declared, inferred);
                 }
                 match_param(&signature.returns, &arg_signature.returns, declared, inferred);
             }

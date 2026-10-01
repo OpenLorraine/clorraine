@@ -574,6 +574,17 @@ impl<'a> Emitter<'a> {
                 );
                 self.push(&format!("    {call};"));
             }
+            ValueKind::ClosureCall { callable, args } => {
+                // A returned fixed-array closure call writes straight into the
+                // caller's out-parameter, after the environment and the
+                // lambda's own arguments.
+                self.emit_guards(callable);
+                for arg in args {
+                    self.emit_guards(arg);
+                }
+                let call = self.closure_call_with_destination(callable, args, Some("__cl_ret"));
+                self.push(&format!("    {call};"));
+            }
             _ => {
                 // A form other than a literal or a place has no C array value
                 // to copy. Keep the generic store, so an unsupported form fails

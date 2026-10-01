@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 07:28
-> **Progress**: 19/39 tasks (49%)
+> **Last Updated**: 2026-10-01 07:41
+> **Progress**: 26/39 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -319,24 +319,43 @@ so there are no new regression pins; the 44 Phase-1/2 cases pass.
 **Reference**: [03-03](03-03-func-pointers-and-callable-resolution.md) §Proposed Changes 1–5
 **Objective**: Use the shared declarator everywhere and resolve func-value callees.
 
-- [ ] 3.2.1 Declarator reuse: one shared signature builder (optional environment prefix, hidden destination), return position, closure struct field, lifted-lambda signature with `result_var`, and destination-aware closure call sites — `compiler/src/codegen.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/program.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs` (DEF-30, DEF-43)
-- [ ] 3.2.2 Capture and module-global resolution for calls by name (lowering and emission) — `compiler/src/own/call.rs`, `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs` (DEF-40, DEF-41)
-- [ ] 3.2.3 Func-value expected parameter types and widening, with the resolved callee type passed into the argument renderer — `compiler/src/codegen/calls.rs`, `compiler/src/codegen/function.rs` (AR #12; DEF-42)
-- [ ] 3.2.4 Function-type parameter modes: `FuncParam { ty, mode }` in `FuncTy`; `FuncSig::ty`, `resolve_ty_with`, and the callable-bound path zip modes; mode-aware signature; exact-signature equality (mode mismatch = `E10210`) and display; all `TyKind::Func` consumers; call-site pointer passing from the resolved callee type — `compiler/src/types/mod.rs`, `compiler/src/types/table.rs`, `compiler/src/sema/{expr,call,mod}.rs`, `compiler/src/own/{lower,generics,call}.rs`, `compiler/src/abi.rs`, `compiler/src/codegen/{types,calls,function}.rs` (AR #4, #14; DEF-44)
-- [ ] 3.2.5 Run the specification tests — verify they PASS (green phase)
+- [x] 3.2.1 Declarator reuse: one shared signature builder (optional environment prefix, hidden destination), return position, closure struct field, lifted-lambda signature with `result_var`, and destination-aware closure call sites — `compiler/src/codegen.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/program.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs` (DEF-30, DEF-43) ✅ (completed: 2026-10-01 07:41)
+- [x] 3.2.2 Capture and module-global resolution for calls by name (lowering and emission) — `compiler/src/own/call.rs`, `compiler/src/codegen/expr.rs`, `compiler/src/codegen/function.rs` (DEF-40, DEF-41) ✅ (completed: 2026-10-01 07:41)
+- [x] 3.2.3 Func-value expected parameter types and widening, with the resolved callee type passed into the argument renderer — `compiler/src/codegen/calls.rs`, `compiler/src/codegen/function.rs` (AR #12; DEF-42) ✅ (completed: 2026-10-01 07:41)
+- [x] 3.2.4 Function-type parameter modes: `FuncParam { ty, mode }` in `FuncTy`; `FuncSig::ty`, `resolve_ty_with`, and the callable-bound path zip modes; mode-aware signature; exact-signature equality (mode mismatch = `E10210`) and display; all `TyKind::Func` consumers; call-site pointer passing from the resolved callee type — `compiler/src/types/mod.rs`, `compiler/src/types/table.rs`, `compiler/src/sema/{expr,call,mod}.rs`, `compiler/src/own/{lower,generics,call}.rs`, `compiler/src/abi.rs`, `compiler/src/codegen/{types,calls,function}.rs` (AR #4, #14; DEF-44) ✅ (completed: 2026-10-01 07:41)
+- [x] 3.2.5 Run the specification tests — verify they PASS (green phase) ✅ (completed: 2026-10-01 07:41)
+
+**Green phase (2026-10-01 07:41):** `cargo test --test call_value_integrity_spec_test` — 55
+passed / 0 failed (11 Phase-3 cases green). The shared declarator (`function_declarator`) now builds
+the named function, closure field, lifted lambda, and value-position spellings from one place, so
+`func(): func(i32): i32` nests (`i32 (*make(void))(i32)`) and a fixed-array return appends
+`__cl_ret` everywhere; a fixed-array closure call passes the destination after the environment and
+its own arguments. Calls by name resolve to a capture's environment field, to a func-typed local,
+and to a module-level func-typed global, and the func value's own signature drives `str` widening
+and `borrow` address passing. `FuncTy` carries `FuncParam { ty, mode }`, so the exact-signature
+comparison now reports `E10210` for a mode mismatch and the display renders the mode. The closed
+plan's `runtime_value_integrity_impl_test.rs` pin for the unnamed hidden destination was updated in
+place to the named form (AR #15).
 
 ### Step 3.3: Implementation Tests & Hardening
 
 **Reference**: [07](07-testing-strategy.md) §Implementation Tests
 **Objective**: Pin the emitted shapes and run the phase verification.
 
-- [ ] 3.3.1 Write implementation tests (declarator shapes, capture/global spelling, widening, borrow pointer) — `compiler/tests/call_value_integrity_impl_test.rs`
-- [ ] 3.3.2 Full verification — `make check`
+- [x] 3.3.1 Write implementation tests (declarator shapes, capture/global spelling, widening, borrow pointer) — `compiler/tests/call_value_integrity_impl_test.rs` ✅ (completed: 2026-10-01 07:41)
+- [x] 3.3.2 Full verification — `make check` ✅ (completed: 2026-10-01 07:41)
+
+**Implementation tests (2026-10-01 07:41):** `cargo test --test
+call_value_integrity_impl_test` — 42 passed / 0 failed (6 new emitted-shape pins: the nested
+return declarator and its call, the shared closure-field/lifted-lambda destination signature and
+the closure call destination, a fixed-array func-value declaration and destination call, the
+capture and global call spellings, the func-value `String` widening, and the `borrow` pointer
+through a binding and a field). Full `make check` — 34 suites, 0 failures, 0 warnings.
 
 **Deliverables**:
-- [ ] ST-18 – ST-25, ST-39, and ST-40 pass; at least one case per Phase-3 defect failed first (red
+- [x] ST-18 – ST-25, ST-39, and ST-40 pass; at least one case per Phase-3 defect failed first (red
   phase recorded); pre-passing cases recorded as regression pins
-- [ ] `make check` passes with no warnings
+- [x] `make check` passes with no warnings
 
 **Verify**: `make check`
 

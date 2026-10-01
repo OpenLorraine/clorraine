@@ -35,7 +35,7 @@ mod render;
 mod types;
 
 use cleanup::Action;
-use types::{c_type, declarator, mangle_module};
+use types::{declarator, function_declarator, mangle_module};
 
 /// Everything the emitter needs about one function with a body.
 pub(super) struct FuncInfo<'a> {
@@ -400,14 +400,6 @@ impl<'a> Emitter<'a> {
         let storage = if decl.exported { "" } else { "static " };
         let ret = resolve_ty(&decl.returns, &type_param_names(decl), &self.sema.table);
         let ret = substitute_in(&ret, subst);
-        // C cannot return an array by value, so a by-value fixed-array return
-        // is lowered through a hidden trailing out-parameter: the function
-        // becomes `void` and the caller passes its destination storage.
-        let ret_c = if ret.is_void() || ret.is_fixed_array() {
-            "void".to_owned()
-        } else {
-            c_type(&ret)
-        };
         let mut params: Vec<String> = Vec::new();
         for param in &decl.params {
             let ty = resolve_ty(&param.ty, &type_param_names(decl), &self.sema.table);
@@ -419,13 +411,10 @@ impl<'a> Emitter<'a> {
                 params.push(declarator(&ty, &c_name));
             }
         }
-        if ret.is_fixed_array() {
-            params.push(declarator(&ret, "__cl_ret"));
-        }
-        if params.is_empty() {
-            params.push("void".to_owned());
-        }
-        format!("{storage}{ret_c} {symbol}({})", params.join(", "))
+        // The shared declarator adds the hidden destination for a by-value
+        // fixed-array return and nests a func-typed return in place.
+        let signature = function_declarator(&ret, params, symbol, None);
+        format!("{storage}{signature}")
     }
 
     /// Resolves a called function name against the emitting module.

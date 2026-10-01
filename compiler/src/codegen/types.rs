@@ -54,45 +54,86 @@ pub(super) fn c_type(ty: &Ty) -> String {
 ///
 /// A `func` value is a C function pointer, so it can be stored in a field and
 /// called through the field. An unnamed `ret (*)(params)` is a complete type
-/// usable in casts and `sizeof`. A fixed-array return uses the hidden
-/// out-parameter ABI, so the pointer returns `void` and takes the destination
-/// as a trailing parameter.
+/// usable in casts and `sizeof`.
 fn func_pointer_type(signature: &crate::types::FuncTy) -> String {
-    let (returns, params) = func_pointer_signature(signature);
-    format!("{returns} (*)({params})")
+    function_declarator(
+        &signature.returns,
+        func_pointer_params(signature),
+        "(*)",
+        None,
+    )
 }
 
 /// The spelling of a function-pointer declarator that names the pointer.
 fn func_pointer_declarator(signature: &crate::types::FuncTy, name: &str) -> String {
-    let (returns, params) = func_pointer_signature(signature);
-    format!("{returns} (*{name})({params})")
+    function_declarator(
+        &signature.returns,
+        func_pointer_params(signature),
+        &format!("(*{name})"),
+        None,
+    )
 }
 
-/// The C return type and parameter list of a function pointer.
+/// The parameter declarations of a function pointer, without names.
 ///
-/// A fixed-array return becomes `void` plus a trailing destination parameter,
-/// spelled with the same declarator the callee declaration uses. An array
-/// parameter keeps its declarator spelling (which C adjusts to its pointer
-/// form), so a fixed-array parameter matches the callee it receives. The
-/// parameter list is `void` when there is none.
-fn func_pointer_signature(signature: &crate::types::FuncTy) -> (String, String) {
-    let mut params: Vec<String> = signature
+/// A function-pointer type lists only each parameter's type, so the same
+/// spelling fits a field, a cast, or a nested return. A `borrow` parameter
+/// reaches the callee as a pointer to the value, exactly as the named-function
+/// ABI spells a writable lend.
+fn func_pointer_params(signature: &crate::types::FuncTy) -> Vec<String> {
+    signature
         .params
         .iter()
-        .map(|ty| declarator(ty, "").trim().to_owned())
-        .collect();
-    let returns = if signature.returns.is_fixed_array() {
-        params.push(declarator(&signature.returns, ""));
-        "void".to_owned()
-    } else {
-        c_type(&signature.returns)
-    };
-    let params = if params.is_empty() {
+        .map(|param| match param.mode {
+            crate::ast::Mode::Borrow => declarator(&Ty::raw(param.ty.clone()), "").trim().to_owned(),
+            _ => declarator(&param.ty, "").trim().to_owned(),
+        })
+        .collect()
+}
+
+/// Builds a full C function declarator with the shared ABI rules.
+///
+/// `name` is the declared name in place, so a nested declarator can be built
+/// by passing an already-suffixed name: a function returning a function pointer
+/// passes the pointer's own `name(params)` text. `params` are the rendered
+/// parameter declarations and `env` is an optional leading environment
+/// parameter (a capturing lambda's struct pointer). A fixed-array return
+/// appends the hidden `__cl_ret` destination parameter and returns `void`,
+/// exactly as the named-function ABI spells it; a function-typed return nests
+/// the pointer declarator around the name.
+pub(super) fn function_declarator(
+    returns: &Ty,
+    params: Vec<String>,
+    name: &str,
+    env: Option<String>,
+) -> String {
+    let mut params = params;
+    if let Some(env) = env {
+        params.insert(0, env);
+    }
+    if returns.is_fixed_array() {
+        params.push(declarator(returns, "__cl_ret"));
+        return format!("void {name}({})", parameter_list(params));
+    }
+    if let TyKind::Func(signature) = &returns.kind {
+        let pointer = format!("(*{name}({}))", parameter_list(params));
+        return function_declarator(
+            &signature.returns,
+            func_pointer_params(signature),
+            &pointer,
+            None,
+        );
+    }
+    format!("{} {name}({})", c_type(returns), parameter_list(params))
+}
+
+/// Joins a rendered parameter list, spelling an empty list as `void`.
+fn parameter_list(params: Vec<String>) -> String {
+    if params.is_empty() {
         "void".to_owned()
     } else {
         params.join(", ")
-    };
-    (returns, params)
+    }
 }
 
 /// The C type of a handle: its contract ABI type, or an opaque `Cl<Name>`.

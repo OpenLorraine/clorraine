@@ -77,7 +77,11 @@ pub fn ffi_type_with(ty: &Ty, enum_backing: Option<crate::ast::ScalarType>) -> S
 /// [`crate::codegen`]'s own spelling.
 fn ffi_function_pointer(signature: &crate::types::FuncTy) -> String {
     let returns = ffi_type(&signature.returns);
-    let params: Vec<String> = signature.params.iter().map(ffi_type).collect();
+    let params: Vec<String> = signature
+        .params
+        .iter()
+        .map(|param| ffi_type(&param.ty))
+        .collect();
     if params.is_empty() {
         format!("{returns} (*)(void)")
     } else {

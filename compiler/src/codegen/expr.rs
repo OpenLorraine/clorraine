@@ -12,7 +12,7 @@ use crate::ast::{BinaryOp, ScalarType, UnaryOp};
 use crate::ir::{
     Place, PlaceBase, Projection, Value, ValueKind, ValuePiece,
 };
-use crate::types::{is_signed_scalar, scalar_bits, Ty, TyKind};
+use crate::types::{is_signed_scalar, scalar_bits, CaptureMode, Ty, TyKind};
 
 use super::render::{
     binary_token, element_type, escape_c_string, float_literal, index_text, unsigned_c,
@@ -425,9 +425,13 @@ impl<'a> Emitter<'a> {
         receiver: Option<&Value>,
         destination: Option<&str>,
     ) -> String {
+        // A call through a func value takes its parameter types and modes from
+        // the value's own signature, so a `borrow` parameter and a `str`
+        // widening reach the argument renderer.
+        let func_ty = self.callee_func_type(callee, receiver);
         let mut rendered: Vec<String> = Vec::new();
         if !args.is_empty() {
-            rendered.push(self.call_arguments(callee, args));
+            rendered.push(self.call_arguments(callee, args, func_ty.as_ref()));
         }
         if let Some(destination) = destination {
             rendered.push(destination.to_owned());
@@ -493,13 +497,16 @@ impl<'a> Emitter<'a> {
         ty.is_closure().then_some(ty)
     }
 
-    /// The C spelling of a func-typed local or parameter the callee names.
+    /// The C spelling of a func-typed name the callee refers to.
     ///
     /// A func-typed binding shadows a module function of the same written
     /// name. The binding is found by its IR spelling, which the lowering puts
     /// in the call for a local callee; a shadowing local takes a suffixed IR
     /// name, so a module call written before the local's declaration still
-    /// resolves by function name.
+    /// resolves by function name. Inside a lifted lambda, a captured
+    /// func-typed binding is reached through the environment, and a
+    /// module-level func-typed global resolves to its own symbol, so neither
+    /// call falls through to a same-named function or a bare name.
     fn func_binding_spelling(&self, callee: &str) -> Option<String> {
         let function = self.function?;
         let declared = function
@@ -522,7 +529,31 @@ impl<'a> Emitter<'a> {
                 );
             }
         }
-        None
+        if let Some(site) = function.lambda_site {
+            if let Some(closure) = self.sema.closures.get(&site) {
+                if let Some(capture) = closure.captures.iter().find(|cap| cap.name == callee) {
+                    if matches!(self.substitute(&capture.ty).kind, TyKind::Func(_)) {
+                        // A copied capture is the field itself; a borrow
+                        // capture holds the enclosing frame's address, so the
+                        // call dereferences the field first.
+                        return Some(match capture.mode {
+                            CaptureMode::Copy => format!("(__env->{callee})"),
+                            CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow => {
+                                format!("(*__env->{callee})")
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        self.globals
+            .iter()
+            .find(|(id, info)| {
+                id.name == callee
+                    && id.module == self.current_module
+                    && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
+            })
+            .map(|(id, _)| self.global_symbol(&id.module, &id.name))
     }
 
     /// Renders a lambda value.
@@ -546,11 +577,26 @@ impl<'a> Emitter<'a> {
     /// two-word value once into a C temporary expression and calls through the
     /// pointer with the environment as the first argument.
     fn closure_call(&self, callable: &Value, args: &[Value]) -> String {
-        let argument_list = args
-            .iter()
-            .map(|arg| self.value(arg))
-            .collect::<Vec<String>>()
-            .join(", ");
+        self.closure_call_with_destination(callable, args, None)
+    }
+
+    /// Renders a closure call, optionally passing a fixed-array destination.
+    ///
+    /// A lifted function with a by-value fixed-array return takes the caller's
+    /// destination as one extra trailing argument, after the environment and
+    /// the lambda's own arguments, exactly like a named call's hidden
+    /// out-parameter.
+    pub(super) fn closure_call_with_destination(
+        &self,
+        callable: &Value,
+        args: &[Value],
+        destination: Option<&str>,
+    ) -> String {
+        let mut rendered: Vec<String> = args.iter().map(|arg| self.value(arg)).collect();
+        if let Some(destination) = destination {
+            rendered.push(destination.to_owned());
+        }
+        let argument_list = rendered.join(", ");
         if let ValueKind::Closure { site, captures } = &callable.kind {
             if captures.is_empty() {
                 return format!("cl_lambda_{site}({argument_list})");
