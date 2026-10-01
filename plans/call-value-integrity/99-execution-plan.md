@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 10:27
+> **Last Updated**: 2026-10-01 11:03
 > **Progress**: 34/39 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
@@ -505,6 +505,20 @@ and `emit_array_assign_to`, plus a place-aware zero in `emit_arm_source_moves`; 
 existing pin updated in place (the struct-literal return now spells the adjusted source `a` instead
 of the buggy `&(a)` — AR #15 precedent); F1–F4 probes build under `-Werror` and exit correctly;
 `make check` 34 suites, 0 failures, 0 warnings. Fix diff re-reviewed once (see below).
+
+**Fix-diff re-review (2026-10-01 11:03):** verdict — F1–F4 are correct and complete; strict
+`-Werror` probes plus ASan/UBSan clean; plain locals, projections, struct fields, `__cl_ret`,
+guard temporaries, and call/closure temporaries keep the correct object spelling; `array_source_address`
+adjusts only bare place-root parameters; byte counts correct for `T[M]` and `T[M][K]`; `make check`
+green. Two new findings, both pre-existing and outside the fix:
+
+| # | Severity | Finding | Disposition |
+| - | -------- | ------- | ----------- |
+| G1 | 🟠 major | Generic instantiations never get a scope cleanup: ownership is decided before substitution (`needs_drop` is false for a type parameter), so a generic body that owns a value leaks every allocation (probe `f3_generic_move` exits correctly but ASan reports 23 leaked bytes; the non-generic twin is clean) | Filed as DEF-49 (Backlog, substitution-aware cleanup; DEF-12 class) |
+| G2 | 🟡 minor (latent) | `cleanup.rs` built `ArrayTarget::object("__cl_ret")` for a C-adjusted out-parameter, violating the target invariant; harmless today because only `.text` is read, but any future `.address`/`.bytes` use reproduces F1/F4 | Fixed: `ArrayTarget::parameter("__cl_ret", bytes)` now spells the adjusted destination; affected suites green |
+
+The re-review was the final Phase 4 pass; no third review. G1 is tracked separately, G2 is
+probe-verified within the phase.
 
 ---
 

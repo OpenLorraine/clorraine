@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-01 10:27
+> **Last Updated**: 2026-10-01 11:03
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -65,6 +65,7 @@
 | ↳ DEF-46 | A deferred array literal with a nested non-literal fixed-array row emits invalid C | — | [call-value-integrity](call-value-integrity/00-index.md) | Backlog | ⬜ | 2026-10-01 07:10 | 🟠 major, found in the call-value-integrity Phase 2 re-review (RR2-2): `ok && [c ? rows[0] : rows[1], [5, 6]][0][0] == 1` emits `__cl_tmp0[0] = (c ? rows[0] : rows[1])` and `__cl_tmp0[1] = { 5, 6 }` inside the guard comma expression; the deferred literal needs an expression-form store for a nested non-literal row (a memcpy/conditional comma form or pre-materialization outside the comma expression); reproduces on the pre-fix compiler, so it is a pre-existing gap of the deferred array-literal spelling rather than a regression |
 | ↳ DEF-47 | A multi-extent fixed-array return of a place emits an array assignment | — | [call-value-integrity](call-value-integrity/00-index.md) | Backlog | ⬜ | 2026-10-01 10:27 | 🟡 minor, pre-existing, found in the call-value-integrity Phase 4 review (F5): `return a` for `String[2][2]` emits `__cl_ret[0] = a[0];`, which C rejects (assignment to an array type); the fixed-array return copy needs to recurse one extent per level like the array-literal store core; filed out of the Phase 4 zero-only change |
 | ↳ DEF-48 | An unguarded loop condition holding an owned call result leaks | — | [call-value-integrity](call-value-integrity/00-index.md) | Backlog | ⬜ | 2026-10-01 10:27 | 🟡 minor, pre-existing, found in the call-value-integrity Phase 4 review (F6): `do { ... } while (grow().count > 0 && i < 3)` emits the owned call directly in the header with no drop because the condition carries no guards, so the container's buffer leaks each test; needs a release for an owned call result in an unguarded loop header |
+| ↳ DEF-49 | Generic instantiations never get a scope cleanup | — | [call-value-integrity](call-value-integrity/00-index.md) | Backlog | ⬜ | 2026-10-01 11:03 | 🟠 major, pre-existing, found in the call-value-integrity Phase 4 fix-diff re-review (G1): ownership and the cleanup ladder are decided before type substitution (`needs_drop` is false for a type parameter at `codegen/drop.rs:265`), so a generic body that owns a value (`func copy<T>(take a: T[2])`) emits no release and leaks every allocation while computing correct values; needs substitution-aware cleanup for recorded instances (the deferred DEF-12 generic-substitution class) |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

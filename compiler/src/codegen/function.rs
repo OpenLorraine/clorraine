@@ -1976,7 +1976,7 @@ impl<'a> Emitter<'a> {
     /// `name[0]` has every extent but the first, so `sizeof(name[0])` times the
     /// first extent is the whole array's size without a `sizeof` on the
     /// adjusted pointer itself.
-    fn array_param_bytes(&self, c_name: &str, ty: &Ty) -> String {
+    pub(super) fn array_param_bytes(&self, c_name: &str, ty: &Ty) -> String {
         let TyKind::Array { extents, .. } = &ty.kind else {
             return format!("sizeof({c_name}[0])");
         };
@@ -2042,6 +2042,19 @@ impl ArrayTarget {
             text: text.to_owned(),
             address: format!("&({text})"),
             bytes: format!("sizeof({text})"),
+        }
+    }
+
+    /// The target of a C-adjusted array parameter named by `text`.
+    ///
+    /// The parameter is a pointer to the array's first element, so its name
+    /// is already the address; `bytes` comes from the element type, because
+    /// `sizeof` would measure the adjusted pointer.
+    pub(super) fn parameter(text: &str, bytes: String) -> Self {
+        Self {
+            text: text.to_owned(),
+            address: text.to_owned(),
+            bytes,
         }
     }
 
