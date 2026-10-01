@@ -172,7 +172,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(ir::Projection::Element(_)) => {
                     place.initialized = true;
                     place.moved = false;
-                    place.moved_if_owning.clear();
+                    // Only the written element and its sub-paths are cleared;
+                    // a whole-binding consume or another element stays.
+                    place
+                        .moved_if_owning
+                        .retain(|path| path.first() != first.as_ref());
                     place.narrowed.clear();
                 }
             }
@@ -259,7 +263,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// Shared by the read funnel and the borrow-argument check, which reads a
     /// place without the full read walk. A whole use conflicts with any
-    /// consumed path; a projected use only with its own path or an ancestor.
+    /// consumed path; a projected use conflicts with a consumed path it
+    /// contains or is contained by.
     pub(super) fn note_maybe_moved_use(
         &mut self,
         id: usize,
@@ -271,10 +276,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         if projections.is_empty()
-            || state
-                .moved_if_owning
-                .iter()
-                .any(|path| path.is_empty() || projections.starts_with(path))
+            || state.moved_if_owning.iter().any(|path| {
+                path.is_empty()
+                    || projections.starts_with(path)
+                    || path.starts_with(projections)
+            })
         {
             self.record_requires_duplicable(id, span);
         }

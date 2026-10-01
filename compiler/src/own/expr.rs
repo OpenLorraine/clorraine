@@ -351,6 +351,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         for source in self.maybe_owning_move_sources(element) {
                             self.mark_moved_if_owning(source);
                         }
+                    } else {
+                        for source in self.conditional_move_sources(element) {
+                            // A projected arm (an array row) travels through
+                            // the literal's row store, not the scalar
+                            // partial-move rule, so only a whole-binding arm
+                            // is marked here.
+                            if let PlaceTarget::Local(_, projections) = &source {
+                                if projections.is_empty() {
+                                    self.move_target(source, element.span);
+                                }
+                            }
+                        }
                     }
                 }
                 if let Some(fill) = fill {

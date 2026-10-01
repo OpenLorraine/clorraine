@@ -1323,6 +1323,90 @@ func main(): i32 {
     assert_exit("rdh31", &output, 4);
 }
 
+/// An element write keeps an unrelated consumed path for the duty.
+#[test]
+fn should_reject_a_later_whole_use_after_an_element_write_kept_a_consumed_path() {
+    let source = r#"module spec.rdh.st32;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(borrow v: T[2]): i32 {
+    return 0;
+}
+
+func f<T>(take xs: T[2], take y: T): i32 {
+    let b: T[2] = xs;
+    xs[0] = y;
+    sink<T>(borrow xs);
+    return 0;
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("c")];
+    let y: String = stringOf("z");
+    return f<String>(xs, y);
+}
+"#;
+    assert_rejected_with("rdh32", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// An ancestor use of a consumed sub-path is rejected.
+#[test]
+fn should_reject_an_ancestor_use_after_a_projected_move() {
+    let source = r#"module spec.rdh.st33;
+
+import { String, stringOf } from std.text;
+
+struct Inner<T> {
+    w: T;
+}
+
+struct Outer<T> {
+    v: Inner<T>;
+}
+
+func sink<T>(borrow v: Inner<T>): i32 {
+    return 0;
+}
+
+func f<T>(take p: Outer<T>): i32 {
+    let b: T = p.v.w;
+    sink<T>(borrow p.v);
+    return 0;
+}
+
+func main(): i32 {
+    let p: Outer<String> = Outer<String> { v: Inner<String> { w: stringOf("ab") } };
+    return f<String>(p);
+}
+"#;
+    assert_rejected_with("rdh33", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// A later use after a concrete conditional array move is rejected.
+#[test]
+fn should_reject_a_later_use_after_a_concrete_conditional_array_move() {
+    let source = r#"module spec.rdh.st34;
+
+import { String, stringOf } from std.text;
+
+func sink(borrow s: String): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let a: String = stringOf("ab");
+    let b: String = stringOf("c");
+    let s: String = stringOf("d");
+    let xs: String[2] = [c ? a : b, s];
+    sink(borrow a);
+    return 0;
+}
+"#;
+    assert_rejected_with("rdh34", source, "E10020", &["was moved and cannot be used"]);
+}
+
 /// A later use after a conditional generic move is rejected when owning.
 ///
 /// `pick` moves `a` into `b` through `c ? a : a` and then lends `a`; under

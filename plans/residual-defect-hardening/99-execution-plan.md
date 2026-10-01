@@ -352,6 +352,18 @@ task-size criteria in the make-plan skill's quality checklist)
 > **RV-23 (filed):** a generic call inside a lifted lambda in a generic body is not re-walked with
 > the enclosing instance, so the nested instance is never emitted. Filed as roadmap `DEF-52`
 > (pre-existing; likely predates this plan).
+>
+> **Phase 4 re-review (2026-10-01 23:55):** scoped to the fix diff. RV-25 (the element write
+> cleared unrelated consumed paths — a regression from the RV-13 fix), RV-26 (an ancestor use of a
+> consumed path was missed), and RV-27 (concrete conditional array arms unmarked) were fixed: the
+> element write retains unrelated paths, the matcher also conflicts when the consumed path is a
+> descendant of the use, and the concrete array-literal arm marks whole-binding arms while
+> projected rows keep their row store. Three pre-existing defects adjacent to the fixed code were
+> filed: RV-28 → `DEF-53` (ownerless element take double-frees), RV-29 → `DEF-54` (a generic-struct
+> borrow argument uses the unsubstituted type and emits invalid C), RV-30 → `DEF-55` (a returned
+> field of a fresh call result leaks its siblings). RV-15/17/18/19/20/21/22 verified correct;
+> RV-13/14/16 completed by the three fixes. `make check` 36 suites, 0 failures; spec 50/50;
+> impl 26/26.
 
 **Verify**: `make check`
 
