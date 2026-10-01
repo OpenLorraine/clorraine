@@ -896,15 +896,30 @@ mod tests {
         assert!(table.duplicable(&Ty::array(owner(), vec![None])));
         // A fixed array is owned storage, so it follows its element.
         assert!(!table.duplicable(&Ty::array(owner(), vec![Some(2)])));
-        // A nested array recurses to its innermost element.
-        assert!(table.duplicable(&Ty::array(
-            Ty::array(Ty::i32_ty(), vec![Some(2)]),
-            vec![Some(3)]
-        )));
-        assert!(!table.duplicable(&Ty::array(
-            Ty::array(owner(), vec![Some(2)]),
-            vec![Some(3)]
-        )));
+        // A nested array recurses to its innermost element. The shape is built
+        // directly because the array constructor now folds a fixed element
+        // under a fixed outer extent into one flat extent list.
+        let nested = |element: Ty| Ty {
+            kind: TyKind::Array {
+                element: Box::new(element),
+                extents: vec![Some(2)],
+            },
+            nullable: false,
+        };
+        assert!(table.duplicable(&Ty {
+            kind: TyKind::Array {
+                element: Box::new(nested(Ty::i32_ty())),
+                extents: vec![Some(3)],
+            },
+            nullable: false,
+        }));
+        assert!(!table.duplicable(&Ty {
+            kind: TyKind::Array {
+                element: Box::new(nested(owner())),
+                extents: vec![Some(3)],
+            },
+            nullable: false,
+        }));
         // A raw pointer copies, so an array of pointers is duplicable even
         // when the pointee owns a resource.
         assert!(table.duplicable(&Ty::array(Ty::raw(owner()), vec![Some(1)])));
@@ -913,9 +928,18 @@ mod tests {
     #[test]
     fn duplicability_stops_recursing_at_the_depth_cap() {
         let table = TypeTable::default();
+        // The shape is built directly: the array constructor folds a fixed
+        // element under a fixed outer extent, so repeated construction would
+        // collapse into one flat extent list and never reach the cap.
         let mut nested = Ty::handle("String");
         for _ in 0..40 {
-            nested = Ty::array(nested, vec![Some(1)]);
+            nested = Ty {
+                kind: TyKind::Array {
+                    element: Box::new(nested),
+                    extents: vec![Some(1)],
+                },
+                nullable: false,
+            };
         }
         // Past the cap the check assumes a copy instead of recursing without
         // bound, so a pathologically deep type still terminates.

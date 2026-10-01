@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 14:54
-> **Progress**: 5/38 tasks (13%)
+> **Last Updated**: 2026-10-01 14:57
+> **Progress**: 8/38 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -91,14 +91,14 @@ task-size criteria in the make-plan skill's quality checklist)
 
 **Objective**: Pin the emitted shapes and the no-regression edges.
 
-- [ ] 1.3.1 Write implementation tests: the flat declarator (`i32 lit[2][2]`), the per-row expressions (mixed-arm conditional, fill form, adjusted-parameter row), and byte-identical re-emission — `compiler/tests/residual_defect_hardening_impl_test.rs`
-- [ ] 1.3.2 Unit tests: a nested fixed element folds; `substitute(T[2], T = i32[3])` is flat; a slice element and a slice outer extent do not; update the depth-cap and nested-array tests to build their shape with an explicit `TyKind::Array` — `compiler/src/types/` test block
-- [ ] 1.3.3 Full verification — `make check`
+- [x] 1.3.1 Write implementation tests: the flat declarator (`i32 lit[2][2]`), the per-row expressions (mixed-arm conditional, fill form, adjusted-parameter row), and byte-identical re-emission — `compiler/tests/residual_defect_hardening_impl_test.rs` ✅ (completed: 2026-10-01 14:56)
+- [x] 1.3.2 Unit tests: a nested fixed element folds; `substitute(T[2], T = i32[3])` is flat; a slice element and a slice outer extent do not; update the depth-cap and nested-array tests to build their shape with an explicit `TyKind::Array` — `compiler/src/types/` test block ✅ (completed: 2026-10-01 14:56)
+- [x] 1.3.3 Full verification — `make check` ✅ (completed: 2026-10-01 14:57)
 
 **Deliverables**:
-- [ ] The no-context literal has the flat fixed-array type and the C declarator carries every extent
-- [ ] A deferred literal with a conditional, place, or call row compiles to valid C
-- [ ] ST-1 – ST-5 and ST-17 pass; all verification passing
+- [x] The no-context literal has the flat fixed-array type and the C declarator carries every extent
+- [x] A deferred literal with a conditional, place, or call row compiles to valid C
+- [x] ST-1 – ST-5 and ST-17 pass; all verification passing
 
 **Verify**: `make check`
 

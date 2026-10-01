@@ -256,6 +256,54 @@ fn substitution_replaces_parameters_inside_arrays_pointers_and_struct_args() {
 }
 
 #[test]
+fn a_fixed_array_element_folds_into_the_extents() {
+    // A fixed row under a fixed outer extent is one flat type, the shape the C
+    // declarator and the row stores assume.
+    let nested = Ty::array(Ty::array(Ty::i32_ty(), vec![Some(3)]), vec![Some(2)]);
+    assert_eq!(nested, Ty::array(Ty::i32_ty(), vec![Some(2), Some(3)]));
+    assert_eq!(nested.display(), "i32[2][3]");
+    // Folding an already-flat type is a no-op with the new extent outermost.
+    let flat = Ty::array(Ty::i32_ty(), vec![Some(2), Some(3)]);
+    assert_eq!(
+        Ty::array(flat, vec![Some(4)]),
+        Ty::array(Ty::i32_ty(), vec![Some(4), Some(2), Some(3)])
+    );
+}
+
+#[test]
+fn a_slice_element_or_outer_extent_never_folds() {
+    // An array of slices is a different type from a slice of rows.
+    let slices = Ty::array(Ty::array(Ty::i32_ty(), vec![None]), vec![Some(2)]);
+    assert_eq!(slices.display(), "i32[][2]");
+    assert_eq!(
+        slices.iterated_element(),
+        Ty::array(Ty::i32_ty(), vec![None])
+    );
+    // A slice outer extent keeps its fixed-array element inside the slice.
+    let rows = Ty::array(Ty::array(Ty::i32_ty(), vec![Some(3)]), vec![None]);
+    assert!(!rows.is_fixed_array());
+    assert_eq!(
+        rows.iterated_element(),
+        Ty::array(Ty::i32_ty(), vec![Some(3)])
+    );
+}
+
+#[test]
+fn substitution_folds_a_fixed_array_binding_flat() {
+    use std::collections::BTreeMap;
+    let mut bindings = BTreeMap::new();
+    bindings.insert("T".to_owned(), Ty::array(Ty::i32_ty(), vec![Some(3)]));
+    let substituted = substitute(
+        &Ty::array(ty(TyKind::Param("T".to_owned())), vec![Some(2)]),
+        &bindings,
+    );
+    assert_eq!(
+        substituted,
+        Ty::array(Ty::i32_ty(), vec![Some(2), Some(3)])
+    );
+}
+
+#[test]
 fn substitution_leaves_unbound_and_parameter_free_types_alone() {
     use std::collections::BTreeMap;
     let mut bindings = BTreeMap::new();
