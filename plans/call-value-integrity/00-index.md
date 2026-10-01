@@ -1,7 +1,7 @@
 # Call Value Integrity Implementation Plan
 
 > **Feature**: Fix the sixteen filed defects DEF-30 – DEF-45 in the Clorraine compiler (owned conditionals including aggregates, fixed-array value positions, func-pointer emission and resolution, guard/cleanup emission)
-> **Status**: Planning Complete
+> **Status**: Complete — executed and verified 2026-10-01 (39/39 tasks, spec 62/62, impl 61/61, ASan probes clean, `make verify` all legs passed)
 > **Created**: 2026-09-30 08:51
 > **Implements**: DEF-30, DEF-31, DEF-32, DEF-33, DEF-34, DEF-35, DEF-36, DEF-37, DEF-38, DEF-39, DEF-40, DEF-41, DEF-42, DEF-43, DEF-44, DEF-45
 > **CodeOps Artifact Schema**: 1

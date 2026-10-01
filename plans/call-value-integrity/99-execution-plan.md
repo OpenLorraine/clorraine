@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 11:23
-> **Progress**: 38/39 tasks (97%)
+> **Last Updated**: 2026-10-01 11:28
+> **Progress**: 39/39 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -539,7 +539,7 @@ probe-verified within the phase.
 - [x] 5.1.2 Host AddressSanitizer probes for the memory-safety defects DEF-34, DEF-36, DEF-37, DEF-39, and DEF-45: build with `clang -std=c99 -O0 -g -fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=1` (host side; the pinned container has no ASan runtime), using the probe programs in `07-testing-strategy.md` (AR #16) ✅ (completed: 2026-10-01 11:20)
 - [x] 5.1.3 Update documentation: `AGENTS.md` test map (both new suites) and the roadmap rows for `DEF-30` – `DEF-45` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` (AR #18) ✅ (completed: 2026-10-01 11:22)
 - [x] 5.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 39/39; final `make check` ✅ (completed: 2026-10-01 11:23)
-- [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
+- [x] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode ✅ (completed: 2026-10-01 11:28)
 
 **Acceptance evidence (2026-10-01 11:18):** `make verify` passed every leg — `make check`
 (`./spec/check.sh` plus `cargo test --workspace`, 34 suites, 0 failures), the hosted-amiga
@@ -595,3 +595,52 @@ Phase 5 (close-out)
 6. ✅ Documentation updated
 7. ✅ Code reviewed (strict-profile phase reviews per the exec-plan skill)
 8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
+
+## Plan Summary
+
+**Outcome (2026-10-01):** all sixteen filed defects DEF-30 – DEF-45 are fixed with no
+specification change. The final suites carry 62 specification cases and 61 emitted-shape
+implementation pins; `make verify` passed every hosted-amiga and freestanding leg; and the eleven
+host AddressSanitizer probes for the memory-safety defects (DEF-34, 36, 37, 39, 45) run clean
+with leak detection on.
+
+**Phase reviews (strict profile, correctness lens):** each implementation phase closed with an
+independent review of its phase diff. The recorded findings and dispositions live inline above:
+Phase 1 (RV-1 – RV-5, then the re-review F1 – F3), Phase 2 (RV2-1 – RV2-7, then the re-review
+RR2-1 and RR2-2), Phase 3 (RV3-1 – RV3-5, then the re-review RR3-1 – RR3-5), and Phase 4
+(F1 – F4, then the re-review G1 and G2). Every accepted fix was probe-verified and committed,
+and the single permitted re-review per phase was respected. The close-out phase itself was
+reviewed the same way (below); that review raised no critical or major finding.
+
+**Follow-ups filed (Backlog):** DEF-46 (a deferred array literal with a nested non-literal row),
+DEF-47 (a multi-extent fixed-array return of a place), DEF-48 (an unguarded loop condition
+holding an owned call result), and DEF-49 (a generic body never gets a scope cleanup). The
+`take`-in-a-func-type shape remains the recorded accepted-but-unhandled Won't Have.
+
+**Final state:** 39/39 tasks; all five acceptance criteria checked; the `AGENTS.md` test map and
+`plans/00-roadmap.md` synced with the Done rows for DEF-30 – DEF-45.
+
+### Phase 5 Review (post-phase quality step)
+
+> **Phase baseline ref**: `450b0339d7ab436454f3c08ac0db93e5ece1da5b` · **Reviewed diff**:
+> `450b0339..worktree` · **Scope mode**: strict · **Reviewer**: correctness (strict default; the
+> scoped reviewer agent is manual-only in this environment, so the review ran on an independent
+> generic subagent with the full packet) · **Recorded**: 2026-10-01 11:24
+
+The independent review re-checked every acceptance record against the repository and the logs:
+the phase diff stayed inside the expected modification set (no compiler source, spec oracle,
+golden data, or test file touched); `make verify` matches its log (34 suites, the corpus and
+FS-UAE legs, the six runtime faults, `verify: all legs passed`); the eleven ASan probes match the
+harness and exit with their documented codes under leak detection on (a deliberate-leak control
+reproduced); the final `make check` is 34 suites with the specification suite 62/62 and the
+implementation suite 61/61; the roadmap rows and the `AGENTS.md` map are accurate; and every
+completion timestamp matches its commit and log. No critical or major finding; two minors:
+
+| # | Severity | Finding | Disposition |
+| - | -------- | ------- | ----------- |
+| RV-001 | 🟡 minor | The testing strategy described probe success as "Exit 0" although the probes carry their case value in the exit code | Fixed: the wording now reads "an exit with the case's expected value and no AddressSanitizer output" |
+| RV-002 | 🟡 minor | The plan summary's final state was forward-looking while task 5.1.5 was open | Resolved at promotion: task 5.1.5 is `[x]`, the header reads 39/39, and the index status reads Complete |
+
+No re-review is required (no critical/major fix). This review is the phase's post-phase quality
+step; security and performance auditors were skipped, logged here per the quality profile, because
+the phase diff is docs and evidence only.

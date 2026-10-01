@@ -153,7 +153,8 @@ ASAN_OPTIONS=detect_leaks=1 ./<program>.asan
 Probe programs, one per memory-safety defect: ST-1/ST-32/ST-33 shapes (DEF-34), ST-26 (DEF-36),
 ST-27/ST-38 (DEF-37), ST-29 (DEF-39), and a function-scoped or looped discard shape for DEF-45
 (the plain main-scoped ST-7/ST-8 temporaries are still reachable at exit, so leak detection stays
-quiet there). "Exit 0 and no AddressSanitizer output" asserts leak-freedom and no double-free.
+quiet there). "An exit with the case's expected value and no AddressSanitizer output" asserts
+leak-freedom and no double-free.
 
 ## Verification Checklist
 
