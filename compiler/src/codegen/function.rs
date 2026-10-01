@@ -1699,6 +1699,14 @@ impl<'a> Emitter<'a> {
                 }
                 continue;
             }
+            // A struct-literal element whose fields need stores has no C
+            // initializer form; it is stored per field into the element.
+            if let ValueKind::StructLit { fields, .. } = &value.kind {
+                if self.struct_literal_needs_stores(fields) {
+                    self.emit_struct_literal_fields(&sub, element, fields);
+                    continue;
+                }
+            }
             self.emit_guards(value);
             let lowered = self.store_text(value, element);
             self.push(&format!("    {sub} = {lowered};"));

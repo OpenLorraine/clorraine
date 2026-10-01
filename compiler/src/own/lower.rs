@@ -643,13 +643,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// stores eagerly, because only its statement form exists.
     fn materialize_take_place(&mut self, value: Value) -> Value {
         let ty = value.ty.clone();
+        // An owned conditional has an expression form in a guard; a
+        // duplicable struct conditional does not, so it stores eagerly.
         let deferred = self.defer_move_outs > 0
-            && matches!(
-                value.kind,
-                ValueKind::Conditional { .. }
-                    | ValueKind::ArrayLit { .. }
-                    | ValueKind::Call { .. }
-            );
+            && match &value.kind {
+                ValueKind::Conditional { .. } => !self.sema.table.duplicable(&value.ty),
+                ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => true,
+                _ => false,
+            };
         if deferred {
             let temp = self.new_temp(ty.clone());
             return Value::new(
@@ -742,8 +743,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn value_needs_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => false,
-            ValueKind::Conditional { .. } | ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => {
-                value.ty.is_fixed_array()
+            ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => value.ty.is_fixed_array(),
+            // A fixed-array conditional has no C value form. A struct
+            // conditional does not either when an arm stores its fields,
+            // because a C `?:` copies bytes and cannot name a fixed-array
+            // field; the value is stored per arm instead.
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                if value.ty.is_fixed_array() {
+                    return true;
+                }
+                matches!(&value.ty.kind, TyKind::Struct(..))
+                    && (self.value_needs_place(then_value) || self.value_needs_place(else_value))
             }
             ValueKind::StructLit { fields, .. } => fields.iter().any(|(_, field)| {
                 field.ty.is_fixed_array() || self.value_needs_place(field)
@@ -1053,8 +1067,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // stored into an argument temporary. A conditional fixed-array
             // value keeps its array-decay spelling, which is already a C
             // expression.
+            // A fixed-array conditional keeps its array-decay spelling, which
+            // is already a C expression; every other place-less value is
+            // stored into an argument temporary first.
             if self.value_needs_place(&value)
-                && !matches!(value.kind, ValueKind::Conditional { .. })
+                && !(value.ty.is_fixed_array()
+                    && matches!(value.kind, ValueKind::Conditional { .. }))
                 && !value.ty.is_unknown()
                 && !mentions_type_param(&value.ty)
             {

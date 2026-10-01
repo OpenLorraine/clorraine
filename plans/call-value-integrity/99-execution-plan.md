@@ -256,6 +256,26 @@ literal) run clean with `ASAN_OPTIONS=detect_leaks=1`; `call_value_integrity_spe
 `call_value_integrity_impl_test` 33/33 (five new emitted-shape pins), `make check` 34 suites, 0
 failures, 0 warnings. One re-review of the fix diff follows (single permitted pass).
 
+**Re-review (single permitted pass, fix diff `f3a44ad..2c6cd5c`, 2026-10-01):** RV2-1, RV2-2
+(top-level literal projection), RV2-3, RV2-5, RV2-6, and RV2-7 verified fixed with no new
+critical or major regressions; adoption zeroing and deferred arm sources are clean under
+AddressSanitizer. RV2-4 was confirmed for bindings, struct-literal arguments, and returns, but two
+same-class remainders surfaced (both reproduce on the pre-fix compiler, so they are gaps in the
+fix, not regressions):
+
+| Finding | Severity | User ruling | Disposition |
+| ------- | -------- | ----------- | ----------- |
+| RR2-1: a duplicable struct conditional as the argument itself (`eat(ok ? Box { arr: a } : Box { arr: b })`, non-`take` and `take`) rendered a C ternary of aggregate initializers | 🟠 major | Fix now (2026-10-01) | Fixed: `value_needs_place` reports a struct conditional whose arm stores fields, so the argument materializes and the per-arm/per-field store runs; `materialize_take_place` defers only an owned conditional in a guard; `emit_array_assign_to` stores a struct-literal element field by field |
+| RR2-2: a nested non-literal fixed-array row inside a deferred array literal (`ok && [c ? rows[0] : rows[1], [5, 6]][0][0] == 1`) emits a brace list and a row ternary inside the guard comma expression | 🟠 major | File as a follow-up | Filed as `DEF-46` in the roadmap (Backlog) with the repro and suggested fix (an expression-form store for a nested row, or pre-materialization outside the comma expression) |
+
+**RR2 verification (2026-10-01 07:10):** host AddressSanitizer probes for the argument and `take`
+conditional-struct forms and the struct-element array literal run clean
+(`ASAN_OPTIONS=detect_leaks=1`); the full fix-probe set is clean; `call_value_integrity_spec_test`
+44/44; `call_value_integrity_impl_test` 36/36 (three new emitted-shape pins); `make check` 34
+suites, 0 failures, 0 warnings. The review budget is exhausted (phase review + one fix-diff
+re-review); RR2-1 ships probe-verified without a third pass, and RR2-2 is filed rather than
+fixed.
+
 **Recorded, not fixed (out of phase):** the `DEF-36` array-parameter zero walk (Phase 4) still
 mis-zeroes a by-reference array parameter when a Phase-2 return path reaches it; a *conditional*
 fixed-array index base inside a guarded operand still materializes eagerly (the pre-existing

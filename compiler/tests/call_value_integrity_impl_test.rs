@@ -988,3 +988,73 @@ func main(): i32 {
         "cviimpl-armstruct: a conditional of array-field literals must not render as a C ternary"
     );
 }
+
+/// A duplicable struct conditional passed as an argument materializes and
+/// stores each arm per field, instead of rendering a C ternary of aggregate
+/// initializers.
+#[test]
+fn should_materialize_a_conditional_struct_argument_into_a_local() {
+    let source = r#"module impl.cvi.armarg;
+struct Box { arr: i32[2]; tag: i32; }
+func eat(b: Box): i32 {
+    return b.arr[0] + b.arr[1] + b.tag;
+}
+func main(): i32 {
+    let ok: bool = true;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    return eat(ok ? Box { arr: a, tag: 1 } : Box { arr: b, tag: 2 });
+}
+"#;
+    let emitted = emit_host("cviimpl-armarg", source);
+    assert_contains("cviimpl-armarg", &emitted, "ClBox __cl_owned0 = {0};");
+    let branch = after("cviimpl-armarg", &emitted, "if (ok) {");
+    assert_contains("cviimpl-armarg", branch, "ClBox __cl_arm");
+    assert_contains("cviimpl-armarg", branch, "memcpy(&(__cl_arm");
+    assert_contains("cviimpl-armarg", branch, "eat(__cl_owned0);");
+    assert!(
+        !emitted.contains("(ok ? (ClBox)"),
+        "cviimpl-armarg: a struct conditional argument must not render as a C ternary"
+    );
+}
+
+/// The same conditional materializes for a `take` argument.
+#[test]
+fn should_materialize_a_conditional_struct_take_argument_into_a_local() {
+    let source = r#"module impl.cvi.armtake;
+struct Box { arr: i32[2]; tag: i32; }
+func eat(take b: Box): i32 {
+    return b.arr[0] + b.arr[1] + b.tag;
+}
+func main(): i32 {
+    let ok: bool = true;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    return eat(ok ? Box { arr: a, tag: 1 } : Box { arr: b, tag: 2 });
+}
+"#;
+    let emitted = emit_host("cviimpl-armtake", source);
+    assert_contains("cviimpl-armtake", &emitted, "ClBox __cl_tmp0 = {0};");
+    assert_contains("cviimpl-armtake", &emitted, "eat(__cl_tmp0);");
+}
+
+/// A struct-literal element of an array literal that stores its fields is
+/// written per field into the element.
+#[test]
+fn should_store_a_struct_literal_element_field_by_field() {
+    let source = r#"module impl.cvi.boxarr;
+struct Box { arr: i32[2]; tag: i32; }
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    let boxes: Box[2] = [Box { arr: a, tag: 3 }, Box { arr: a, tag: 4 }];
+    return boxes[0].tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-boxarr", source);
+    assert_contains("cviimpl-boxarr", &emitted, "boxes[0].tag = 3;");
+    assert_contains("cviimpl-boxarr", &emitted, "boxes[1].tag = 4;");
+    assert!(
+        !emitted.contains("= { { "),
+        "cviimpl-boxarr: an array of array-field struct literals must not use a brace list"
+    );
+}
