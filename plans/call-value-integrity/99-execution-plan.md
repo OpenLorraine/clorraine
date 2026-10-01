@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 09:04
-> **Progress**: 30/39 tasks (77%)
+> **Last Updated**: 2026-10-01 09:11
+> **Progress**: 32/39 tasks (82%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -447,8 +447,13 @@ unchanged).
 
 - [x] 4.2.1 Array-parameter copy and zero walk on both the source and the target of a move; `is_pointer_param` and the parameter ABI stay unchanged; `cl_zero` stays for true locals — `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/cleanup.rs` (the return and guarded move-out paths reuse the same place-aware zero) (AR #10; DEF-36) ✅ (completed: 2026-10-01 09:06)
 - [x] 4.2.2 Goto-free flag-first do-while when the condition carries guards (fall-through, `continue`, and embedded-only guards all reach the guards/test; unguarded keeps today's emission) — `compiler/src/codegen/control.rs` (AR #8; DEF-37) ✅ (completed: 2026-10-01 09:04)
-- [ ] 4.2.3 Growable-array drop expression form for element types that need no drop; the limitation for drop-needing elements is recorded in Won't Have and pinned — `compiler/src/codegen/drop.rs`, `compiler/src/codegen/guards.rs` (AR #9; DEF-39)
-- [ ] 4.2.4 Run the specification tests — verify they PASS (green phase)
+- [x] 4.2.3 Growable-array drop expression form for element types that need no drop; the limitation for drop-needing elements is recorded in Won't Have and pinned — `compiler/src/codegen/drop.rs`, `compiler/src/codegen/guards.rs` (AR #9; DEF-39) ✅ (completed: 2026-10-01 09:11)
+- [x] 4.2.4 Run the specification tests — verify they PASS (green phase) ✅ (completed: 2026-10-01 09:11)
+
+**Green phase (2026-10-01 09:11):** all 62 specification cases pass
+(`cargo test --test call_value_integrity_spec_test`); the guard expression now drops each
+`Array<i32>` element's buffer and resets its count before re-materializing `growable()`
+(`__cl_tmp0[0].data ? (FreeBuffer(__cl_tmp0[0].data), __cl_tmp0[0].data = NULL, __cl_tmp0[0].count = 0) : 0`).
 
 ### Step 4.3: Implementation Tests & Hardening
 

@@ -152,8 +152,23 @@ impl<'a> Emitter<'a> {
                 let dims: Vec<usize> = extents.iter().filter_map(|size| *size).collect();
                 self.fixed_array_drop_expr(c_name, element, &dims)
             }
-            // The growable container's element loop has no expression form.
-            TyKind::Struct(name, _) if name == "Array" => None,
+            // A growable container whose element needs no drop releases its
+            // buffer and resets the count as one expression, so a guarded
+            // operand can drop the previous value before re-materializing it.
+            // The element loop has no C expression form, so a drop-needing
+            // element keeps the null form and the caller skips the drop.
+            TyKind::Struct(name, args) if name == "Array" && args.len() == 1 => {
+                let element = self.substitute(&args[0]);
+                if self.needs_drop(&element) {
+                    return None;
+                }
+                let data = format!("{c_name}.data");
+                let deleter = self.deleter_symbol("Buffer");
+                let null = self.null_literal();
+                Some(format!(
+                    "({data} ? ({deleter}({data}), {data} = {null}, {c_name}.count = 0) : 0)"
+                ))
+            }
             TyKind::Struct(name, args) => self.struct_drop_expr(c_name, name, args),
             _ => None,
         }
