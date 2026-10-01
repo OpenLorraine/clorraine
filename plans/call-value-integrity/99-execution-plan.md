@@ -469,9 +469,9 @@ parameter copy/zero on both sides, the parameter return walk, the flag-first do-
 unguarded `do`/`while` pin, the growable drop expression, and the drop-needing element skip).
 
 **Deliverables**:
-- [ ] ST-26 – ST-31 and ST-38 pass; at least one case per Phase-4 defect failed first (red phase
+- [x] ST-26 – ST-31 and ST-38 pass; at least one case per Phase-4 defect failed first (red phase
   recorded); pre-passing cases recorded as regression pins
-- [ ] `make check` passes with no warnings
+- [x] `make check` passes with no warnings
 
 **Verify**: `make check`
 
