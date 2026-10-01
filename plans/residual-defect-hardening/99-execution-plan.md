@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 14:30
-> **Progress**: 0/38 tasks (0%)
+> **Last Updated**: 2026-10-01 14:51
+> **Progress**: 2/38 tasks (5%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -58,8 +58,8 @@ task-size criteria in the make-plan skill's quality checklist)
 
 ## Phase 1: Flat Array Literal Types and the Deferred Row Store
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: `0fd5f8f8959648e0841b3d68337ffd13ee1cc2b3` (recorded 2026-10-01 14:48;
+> Phase 1 starts on the plan-set commit)
 > **Lenses**: compiler-and-language (strict profile)
 > **Scope mode**: strict · **Expected modification set**: `compiler/src/types/mod.rs`,
 > `compiler/src/codegen/guards.rs`, `compiler/src/types/` unit tests,
@@ -71,8 +71,10 @@ task-size criteria in the make-plan skill's quality checklist)
 **Reference**: [03-01](03-01-flat-array-literal-types.md) §Proposed Changes 1–3 · AR #3, #9
 **Objective**: Pin the flat literal type and the deferred row store from ST-1 – ST-5.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-1 – ST-5 and ST-17 — `compiler/tests/residual_defect_hardening_spec_test.rs`
-- [ ] 1.1.2 Run the specification tests — verify ST-1, ST-2, ST-3, ST-4, and ST-17 fail before implementation (invalid C / type mismatch) and record ST-5 as the pre-passing regression pin (red phase)
+- [x] 1.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-1 – ST-5 and ST-17 — `compiler/tests/residual_defect_hardening_spec_test.rs` ✅ (completed: 2026-10-01 14:51)
+- [x] 1.1.2 Run the specification tests — verify ST-1, ST-2, ST-3, ST-4, and ST-17 fail before implementation (invalid C / type mismatch) and record ST-5 as the pre-passing regression pin (red phase) ✅ (completed: 2026-10-01 14:51)
+
+> **Red-phase record (2026-10-01 14:51):** 8 fail / 3 pass. Failing: ST-1 (then, else, short-circuit — invalid C from the nested `i32 lit[2]` declarator and the brace-assignment row stores), ST-2 (invalid C: `i32 lit[2]` with brace row stores), ST-3 (both arms — `E10200 cannot convert 'i32[2][2]' to 'i32[2][2]'` from the nested-vs-flat mismatch), ST-4 (both arms — invalid C on the owned rows). Passing pre-implementation: the two ST-5 pins (slice-element literal runs; longer row rejected `E10215`) and ST-17. Note: ST-17 was expected red in the task text but already passes — the `let`-form fill with a conditional row is stored correctly by the statement core today, so it stays as a regression pin for the helper routing (documented per the spec-first pre-passing rule).
 
 ### Step 1.2: Implementation
 
