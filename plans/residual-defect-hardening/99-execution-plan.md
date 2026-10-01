@@ -334,6 +334,25 @@ task-size criteria in the make-plan skill's quality checklist)
 - [x] Every site in the 03-04 table is covered by its mapped case or the task 4.2.6 probe
 - [x] ST-10 – ST-16 and ST-18 – ST-22 pass; all verification passing
 
+> **Phase 4 review record (2026-10-01 23:35):** independent review found nine 🔴 and two 🟠
+> (RV-13 .. RV-23) plus a test gap (RV-24); the user approved fixing RV-13..RV-22 and adding
+> tests, and filing RV-23 as a pre-existing residual. Fixed in the follow-up commit:
+> projection-aware maybe-moved markers with a borrow-argument use hook (RV-13, RV-16, RV-17,
+> RV-20; the duty record now carries its declared type so base-overridden bindings are judged);
+> take-argument element place extraction (RV-14); the return of a projected place empties
+> through the arm walk (RV-15); the take-conditional gate widens to maybe-owning (RV-18); the
+> materializer binds an ownerless maybe-owning non-take argument (RV-21); `unread_locals` ignores
+> a drop that no-ops at the instance (RV-22); and the host and hosted-amiga runtime shims
+> zero-fill newly reserved buffer capacity, so the stdlib `push` writes into the canonical empty
+> state (RV-19; the modification set now includes
+> `compiler/runtime/shim_{host,hosted_amiga}.c`). Ten specification cases and one implementation
+> case pin the shapes; strict-LSan and `MALLOC_PERTURB_` probes are clean; `make check` 36 suites,
+> 0 failures; spec 47/47; impl 26/26.
+>
+> **RV-23 (filed):** a generic call inside a lifted lambda in a generic body is not re-walked with
+> the enclosing instance, so the nested instance is never emitted. Filed as roadmap `DEF-52`
+> (pre-existing; likely predates this plan).
+
 **Verify**: `make check`
 
 ---

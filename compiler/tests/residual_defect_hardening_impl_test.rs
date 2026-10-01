@@ -850,6 +850,26 @@ func main(): i32 {
     assert_contains("rdhimpl-p4reject", &stderr, "'a' was moved and cannot be used");
 }
 
+/// A duplicable instance keeps the unused marker on a maybe-owning local.
+#[test]
+fn should_mark_a_duplicable_instance_local_unused() {
+    let source = r#"module impl.rdh.p4unused;
+
+func f<T>(take a: T): i32 {
+    let b: T = a;
+    return 0;
+}
+
+func main(): i32 {
+    return f<i32>(3);
+}
+"#;
+    let emitted = emit_host("rdhimpl-p4unused", source);
+    // The `i32` instance emits no drop for `b`, so the local is unread and
+    // must carry the `sizeof` marker or the strict C build fails.
+    assert_contains("rdhimpl-p4unused", &emitted, "if (sizeof(b)) { }");
+}
+
 /// A view over a maybe-owning temporary cannot outlive its release.
 #[test]
 fn should_reject_a_view_outliving_a_maybe_owning_temporary() {

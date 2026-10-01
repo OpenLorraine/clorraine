@@ -42,7 +42,7 @@ pub fn check(
 ) {
     check_view_fields(loaded, sema, mono, diagnostics);
     check_fill_instances(program, functions, sema, mono, diagnostics);
-    check_duplicable_requirements(program, functions, sema, mono, diagnostics);
+    check_duplicable_requirements(program, sema, mono, diagnostics);
 }
 
 /// Reports the duplicability duty when an instance substitutes an owning type.
@@ -54,7 +54,6 @@ pub fn check(
 /// instantiation.
 fn check_duplicable_requirements(
     program: &ProgramInfo,
-    functions: &[Function],
     sema: &SemaOutput,
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
@@ -63,28 +62,9 @@ fn check_duplicable_requirements(
         let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
             continue;
         };
-        let Some(function) = functions.iter().find(|function| function.name == decl.name)
-        else {
-            continue;
-        };
-        // The binding may be a local or a parameter; both carry a declared type
-        // that mentions the parameter to substitute.
-        let declared = if let Some(local) = function
-            .locals
-            .iter()
-            .find(|local| local.name == requirement.binding)
-        {
-            local.ty.clone()
-        } else if let Some(param) = function
-            .params
-            .iter()
-            .find(|param| param.name == requirement.binding)
-        {
-            param.ty.clone()
-        } else {
-            continue;
-        };
-        let declared = &declared;
+        // The record carries the declared type, so a base-overridden binding
+        // without a local entry is still judged.
+        let declared = &requirement.ty;
         if !mentions_type_param(declared) {
             continue;
         }

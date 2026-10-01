@@ -223,7 +223,7 @@ impl<'a> Emitter<'a> {
 
     /// Writes the hoisted local declarations, the temporaries, and the result.
     fn emit_local_declarations(&mut self, function: &'a ir::Function) {
-        let unread = unread_locals(function);
+        let unread = unread_locals(function, |ty| self.needs_drop(&self.substitute(ty)));
         let mut written: BTreeSet<String> = BTreeSet::new();
         for local in &function.locals {
             if !written.insert(local.name.clone()) {
@@ -1730,7 +1730,7 @@ impl<'a> Emitter<'a> {
     /// storage to empty. A nested conditional empties only the arm its
     /// condition selects. This is what makes the statement-end release of a
     /// copied transfer temporary a no-op.
-    fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
+    pub(super) fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
         match &arm.kind {
             ValueKind::Place(place) => {
                 let source = self.value(arm);
@@ -2103,8 +2103,13 @@ impl ArrayTarget {
 /// a move source, a dropped place, and a terminator's condition or return. A
 /// local reached only from a write is absent from the result, so the emitter
 /// can mark it unused and keep the generated C free of
-/// `-Wunused-but-set-variable`.
-fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
+/// `-Wunused-but-set-variable`. `drop_reads` decides whether a drop actually
+/// reads its place at this instance: a maybe-owning type that substitutes to a
+/// duplicable one emits no drop, so the local stays unread.
+fn unread_locals(
+    function: &ir::Function,
+    drop_reads: impl Fn(&Ty) -> bool,
+) -> BTreeSet<String> {
     let mut read: BTreeSet<String> = BTreeSet::new();
     for block in &function.blocks {
         for instr in &block.statements {
@@ -2124,7 +2129,11 @@ fn unread_locals(function: &ir::Function) -> BTreeSet<String> {
                     }
                 }
                 Statement::Discard { value } => note_value(value, &mut read),
-                Statement::Drop { place, .. } => note_place(place, &mut read),
+                Statement::Drop { place, .. } => {
+                    if drop_reads(&place.ty) {
+                        note_place(place, &mut read);
+                    }
+                }
                 _ => {}
             }
         }

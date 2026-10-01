@@ -891,7 +891,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     moved: a.moved || b.moved,
                     // A maybe-owning consume on either path survives the join,
                     // so a later use still deposits the duty.
-                    moved_if_owning: a.moved_if_owning || b.moved_if_owning,
+                    moved_if_owning: a
+                        .moved_if_owning
+                        .union(&b.moved_if_owning)
+                        .cloned()
+                        .collect(),
                     partial: a.partial.union(&b.partial).cloned().collect(),
                     initialized: a.initialized && b.initialized,
                     initialized_fields,

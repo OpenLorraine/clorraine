@@ -326,9 +326,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.consume_owned_place(&field.value, field.value.span);
                     // An owned conditional field is an owning destination: the
                     // chosen arm moves into the field, so every owned place arm
-                    // counts as maybe-moved afterwards.
-                    for source in self.conditional_move_sources(&field.value) {
-                        self.move_target(source, field.value.span);
+                    // counts as maybe-moved afterwards; a maybe-owning field
+                    // records the duplicability duty instead.
+                    let field_ty = self.ty(&field.value);
+                    if self.maybe_owns(&field_ty) {
+                        for source in self.maybe_owning_move_sources(&field.value) {
+                            self.mark_moved_if_owning(source);
+                        }
+                    } else {
+                        for source in self.conditional_move_sources(&field.value) {
+                            self.move_target(source, field.value.span);
+                        }
                     }
                 }
             }
@@ -336,6 +344,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for element in elements {
                     self.eval(element);
                     self.consume_owned_place(element, element.span);
+                    // An owned conditional element moves its chosen arm into
+                    // the element; a maybe-owning element records the duty.
+                    let element_ty = self.ty(element);
+                    if self.maybe_owns(&element_ty) {
+                        for source in self.maybe_owning_move_sources(element) {
+                            self.mark_moved_if_owning(source);
+                        }
+                    }
                 }
                 if let Some(fill) = fill {
                     self.eval(fill);
@@ -486,13 +502,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     if self.place_target(value).is_some() {
                         self.consume_owned_place(value, value.span);
                     } else {
-                        for source in self.conditional_move_sources(value) {
+                        let value_ty = self.ty(value);
+                        let maybe_owning = self.maybe_owns(&value_ty);
+                        let sources = if maybe_owning {
+                            self.maybe_owning_move_sources(value)
+                        } else {
+                            self.conditional_move_sources(value)
+                        };
+                        for source in sources {
                             if let PlaceTarget::Local(source_id, source_projections) = &source {
                                 if *source_id == id && source_projections == &projections {
                                     continue;
                                 }
                             }
-                            self.move_target(source, value.span);
+                            if maybe_owning {
+                                self.mark_moved_if_owning(source);
+                            } else {
+                                self.move_target(source, value.span);
+                            }
                         }
                     }
                 }

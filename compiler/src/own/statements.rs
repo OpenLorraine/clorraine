@@ -821,14 +821,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.eval(value);
             let returns = self.returns.clone();
             self.check_value_into(value, &returns, span);
-            if !self.sema.table.duplicable(&returns) && !returns.is_unknown() {
+            let maybe_owning = self.maybe_owns(&returns);
+            if (!self.sema.table.duplicable(&returns) || maybe_owning) && !returns.is_unknown() {
                 if let Some(target) = self.place_target(value) {
-                    self.move_target(target, span);
+                    if maybe_owning {
+                        self.mark_moved_if_owning(target);
+                    } else {
+                        self.move_target(target, span);
+                    }
                 } else {
-                    let sources = self.conditional_move_sources(value);
+                    let sources = if maybe_owning {
+                        self.maybe_owning_move_sources(value)
+                    } else {
+                        self.conditional_move_sources(value)
+                    };
                     if sources.is_empty() {
-                        if self.is_ownerless_element_move(value)
-                            || self.conditional_ownerless_element_move(value)
+                        if !maybe_owning
+                            && (self.is_ownerless_element_move(value)
+                                || self.conditional_ownerless_element_move(value))
                         {
                             // The return type owns the value it receives, and
                             // an element of a call result has no owner that
@@ -837,9 +847,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                     } else {
                         // A conditional return moves whichever owned arm the
-                        // condition selects, so either arm may be gone.
+                        // condition selects, so either arm may be gone; a
+                        // maybe-owning return records the duty instead.
                         for source in sources {
-                            self.move_target(source, span);
+                            if maybe_owning {
+                                self.mark_moved_if_owning(source);
+                            } else {
+                                self.move_target(source, span);
+                            }
                         }
                     }
                 }

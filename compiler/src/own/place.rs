@@ -24,9 +24,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let name = self.bindings[id].name.clone();
         // A later use after a store that only moves for an owning instance
         // records the duplicability duty; a duplicable instance stays accepted.
-        if state.moved_if_owning {
-            self.record_requires_duplicable(id, span);
-        }
+        self.note_maybe_moved_use(id, projections, span);
         if state.moved {
             self.error(
                 "E10020",
@@ -158,7 +156,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     place.initialized_fields.clear();
                     place.partial.clear();
                     place.moved = false;
-                    place.moved_if_owning = false;
+                    place.moved_if_owning.clear();
                     place.narrowed.clear();
                 }
                 Some(ir::Projection::Field(field)) => {
@@ -167,11 +165,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     place.partial.remove(field);
                     place.moved = false;
+                    place.moved_if_owning
+                        .retain(|path| path.first() != first.as_ref());
                     place.narrowed.retain(|path| path.first() != first.as_ref());
                 }
                 Some(ir::Projection::Element(_)) => {
                     place.initialized = true;
                     place.moved = false;
+                    place.moved_if_owning.clear();
                     place.narrowed.clear();
                 }
             }
@@ -253,6 +254,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
     }
 
+    /// Records the duplicability duty when a use reaches a consumed
+    /// maybe-owning path.
+    ///
+    /// Shared by the read funnel and the borrow-argument check, which reads a
+    /// place without the full read walk. A whole use conflicts with any
+    /// consumed path; a projected use only with its own path or an ancestor.
+    pub(super) fn note_maybe_moved_use(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        span: Span,
+    ) {
+        let state = self.state.place(id);
+        if state.moved_if_owning.is_empty() {
+            return;
+        }
+        if projections.is_empty()
+            || state
+                .moved_if_owning
+                .iter()
+                .any(|path| path.is_empty() || projections.starts_with(path))
+        {
+            self.record_requires_duplicable(id, span);
+        }
+    }
+
     /// Records that a maybe-owning whole binding was consumed by a store.
     ///
     /// The flow keeps its copy semantics for a type that mentions a parameter,
@@ -261,9 +288,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// [`Self::record_requires_duplicable`].
     pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget) {
         if let PlaceTarget::Local(id, projections) = target {
-            if projections.is_empty() {
-                self.with_place(id, |place| place.moved_if_owning = true);
-            }
+            self.with_place(id, |place| {
+                place.moved_if_owning.insert(projections);
+            });
         }
     }
 
@@ -279,9 +306,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let ir_name = self.bindings[id].ir_name.clone();
+        let declared = self.bindings[id].ty.clone();
         self.duplicable_requirements.push(ir::RequiresDuplicable {
             function: self.decl.name.clone(),
             binding: ir_name,
+            ty: declared,
             span,
         });
     }

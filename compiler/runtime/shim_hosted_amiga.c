@@ -243,10 +243,14 @@ void cl_buffer_reserve(void *handle, ULONG cap)
     if (cap <= buffer->cap) {
         return;
     }
+    ULONG old_cap = buffer->cap;
     unsigned char *grown = (unsigned char *)realloc(buffer->data, (size_t)cap);
     if (grown == NULL) {
         cl_trap("E1", "out of memory");
     }
+    /* The grown region is fresh storage; zero it so a container element store
+     * reads the canonical empty state instead of allocator garbage. */
+    memset(grown + old_cap, 0, (size_t)(cap - old_cap));
     buffer->data = grown;
     buffer->cap = cap;
 }

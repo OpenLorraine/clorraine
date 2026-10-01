@@ -326,15 +326,17 @@ impl<'a> Emitter<'a> {
                     match self.result_var.clone() {
                         Some(result) => {
                             self.push(&format!("    {result} = {lowered};"));
-                            // Returning an owned place transfers it to the
+                            // Returning an owned value transfers it to the
                             // caller, so the source is emptied before the
                             // cleanup ladder runs; otherwise the callee would
-                            // release what it just handed back.
-                            if let ValueKind::Place(place) = &value.kind {
-                                let ty = self.substitute(&place.ty);
-                                if self.needs_drop(&ty) {
-                                    let source = self.place(place);
-                                    self.emit_move_zero_place(place, &source, &ty);
+                            // release what it just handed back. A projected
+                            // place (a field or an element) is emptied through
+                            // the same arm walk, and a duplicable instance's
+                            // source owns nothing to empty.
+                            if self.needs_drop(&ret_ty) {
+                                let source_ty = self.substitute(&value.ty);
+                                if self.needs_drop(&source_ty) {
+                                    self.emit_arm_source_moves(value, &source_ty);
                                 }
                             }
                         }

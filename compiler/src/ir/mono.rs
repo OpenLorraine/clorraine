@@ -109,6 +109,11 @@ pub struct RequiresDuplicable {
     pub function: String,
     /// The unique IR spelling of the binding whose later use conflicts.
     pub binding: String,
+    /// The binding's declared type, substituted per instance by the audit.
+    ///
+    /// A base-overridden binding (a for-in borrow element or a capture) has no
+    /// local entry to look up, so the record carries the type itself.
+    pub ty: Ty,
     /// The conflicting use, for the body-site diagnostic.
     pub span: Span,
 }

@@ -742,10 +742,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let Some(source) = self.value_place(&value) else {
             return value;
         };
-        if self.sema.table.duplicable(&value.ty) || mentions_type_param(&value.ty) {
+        // A maybe-owning value moves through the same shape: the emitted move
+        // copies and zeroes only for an owning instance.
+        if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
         }
-        let ty = value.ty.clone();
+        let ty = self.materialized_ty(&value);
         let id = self.new_temp(ty.clone());
         let target = Place {
             base: ir::PlaceBase::Temp(id),
@@ -765,12 +767,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// base is itself a place (`(b).value`) the whole path is a place and can be
     /// moved. The field projection is appended so the resolved place matches the
     /// ownership walk's `place_target`.
-    fn value_place(&self, value: &Value) -> Option<Place> {
+    pub(super) fn value_place(&self, value: &Value) -> Option<Place> {
         match &value.kind {
             ValueKind::Place(place) => Some(place.clone()),
             ValueKind::Member { base, name } => {
                 let mut place = self.value_place(base)?;
                 place.projections.push(ir::Projection::Field(name.clone()));
+                place.ty = value.ty.clone();
+                Some(place)
+            }
+            ValueKind::Index { base, index } => {
+                let mut place = self.value_place(base)?;
+                let projection = match &index.kind {
+                    ValueKind::Int(value) => {
+                        ir::Projection::Element(usize::try_from(*value).ok())
+                    }
+                    _ => ir::Projection::Element(None),
+                };
+                place.projections.push(projection);
                 place.ty = value.ty.clone();
                 Some(place)
             }
@@ -1141,7 +1155,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // parameter cleanup owns the value.
             if matches!(value.kind, ValueKind::Conditional { .. })
                 && !value.ty.is_fixed_array()
-                && !self.sema.table.duplicable(&value.ty)
+                && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
                 && !is_view(&value.ty)
                 && !value.ty.is_unknown()
             {
@@ -1150,7 +1164,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         }
         if value.ty.is_closure()
-            || (self.sema.table.duplicable(&value.ty) && !self.value_needs_place(&value))
+            || (self.sema.table.duplicable(&value.ty)
+                && !self.maybe_owns(&value.ty)
+                && !self.value_needs_place(&value))
             || is_view(&value.ty)
             || self.projects_from_place(&value)
             || !self.report_diagnostics

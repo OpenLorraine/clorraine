@@ -1066,6 +1066,263 @@ func main(): i32 {
     assert_exit("rdh21", &output, 1);
 }
 
+/// A later use after a projected field move is rejected when owning.
+#[test]
+fn should_reject_a_later_use_after_a_projected_field_move() {
+    let source = r#"module spec.rdh.st23;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func sink(borrow s: String): i32 {
+    return 0;
+}
+
+func f<T>(take p: Box<T>): i32 {
+    let b: T = p.v;
+    sink(borrow p.v);
+    return 0;
+}
+
+func main(): i32 {
+    let b: Box<String> = Box<String> { v: stringOf("ab") };
+    return f<String>(b);
+}
+"#;
+    assert_rejected_with("rdh23", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// A later use after a projected element move is rejected when owning.
+#[test]
+fn should_reject_a_later_use_after_a_projected_element_move() {
+    let source = r#"module spec.rdh.st23;
+
+import { String, stringOf } from std.text;
+
+func sink(borrow s: String): i32 {
+    return 0;
+}
+
+func f<T>(take xs: T[2]): i32 {
+    let b: T = xs[0];
+    sink(borrow xs[0]);
+    return 0;
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("c")];
+    return f<String>(xs);
+}
+"#;
+    assert_rejected_with("rdh23b", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// A second take call after an element was consumed is rejected.
+#[test]
+fn should_reject_a_second_take_call_when_the_element_was_consumed() {
+    let source = r#"module spec.rdh.st24;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take v: T): i32 {
+    return 0;
+}
+
+func f<T>(take xs: T[2]): i32 {
+    let a: i32 = sink<T>(xs[0]);
+    let b: i32 = sink<T>(xs[1]);
+    return a + b;
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("c")];
+    return f<String>(xs);
+}
+"#;
+    assert_rejected_with("rdh24", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// A returned projected element moves out of the take row once.
+#[test]
+fn should_move_the_returned_element_when_a_take_row_returns_it() {
+    let source = r#"module spec.rdh.st25;
+
+import { String, stringOf } from std.text;
+
+func first<T>(take xs: T[2]): T {
+    return xs[0];
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("cde")];
+    let s: String = first<String>(xs);
+    return i32(len(s));
+}
+"#;
+    let output = run_host("rdh25", source);
+    assert_exit("rdh25", &output, 2);
+}
+
+/// A later use after a conditional aggregate move is rejected.
+#[test]
+fn should_reject_a_later_use_after_a_conditional_aggregate_move() {
+    let source = r#"module spec.rdh.st26;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func sink(borrow s: String): i32 {
+    return 0;
+}
+
+func f<T>(take a: T, take b: T, c: bool): i32 {
+    let box: Box<T> = Box<T> { v: c ? a : b };
+    sink(borrow a);
+    return 0;
+}
+
+func main(): i32 {
+    let s1: String = stringOf("ab");
+    let s2: String = stringOf("c");
+    return f<String>(s1, s2, true);
+}
+"#;
+    assert_rejected_with("rdh26", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// A later use after a struct-literal place move is rejected.
+#[test]
+fn should_reject_a_later_use_after_a_struct_literal_place_move() {
+    let source = r#"module spec.rdh.st27;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func sink(borrow s: String): i32 {
+    return 0;
+}
+
+func f<T>(take a: T): i32 {
+    let box: Box<T> = Box<T> { v: a };
+    sink(borrow a);
+    return 0;
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    return f<String>(s);
+}
+"#;
+    assert_rejected_with("rdh27", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// A conditional take argument moves the chosen arm into the callee.
+#[test]
+fn should_take_the_chosen_arm_when_a_conditional_is_a_take_argument() {
+    let source = r#"module spec.rdh.st28;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take v: T): i32 {
+    return 0;
+}
+
+func f<T>(take a: T, take b: T, c: bool): i32 {
+    return sink<T>(c ? a : b);
+}
+
+func main(): i32 {
+    let s1: String = stringOf("ab");
+    let s2: String = stringOf("c");
+    return f<String>(s1, s2, true);
+}
+"#;
+    let output = run_host("rdh28", source);
+    assert_exit("rdh28", &output, 0);
+}
+
+/// Pushing owned elements grows the container and keeps every element.
+#[test]
+fn should_keep_owned_elements_when_a_container_is_pushed() {
+    let source = r#"module spec.rdh.st29;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    a.push(stringOf("c"));
+    return i32(a.count);
+}
+"#;
+    let output = run_host("rdh29", source);
+    assert_exit("rdh29", &output, 2);
+}
+
+/// A later use after a borrow-element move is rejected.
+#[test]
+fn should_reject_a_later_use_after_a_borrow_element_move() {
+    let source = r#"module spec.rdh.st30;
+
+import { String, stringOf } from std.text;
+
+func sink(borrow s: String): i32 {
+    return 0;
+}
+
+func f<T>(take xs: T[2]): i32 {
+    for (borrow e in xs) {
+        let b: T = e;
+        sink(borrow e);
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("c")];
+    return f<String>(xs);
+}
+"#;
+    assert_rejected_with("rdh30", source, "E10020", &["was moved and cannot be used"]);
+}
+
+/// An ownerless borrowed call result is bound and released.
+#[test]
+fn should_release_an_ownerless_borrowed_call_result() {
+    let source = r#"module spec.rdh.st31;
+
+import { String, stringOf } from std.text;
+
+func sink(borrow s: String): i32 {
+    return i32(len(s));
+}
+
+func mk(): String {
+    return stringOf("abcd");
+}
+
+func f<T>(mkv: func(): T): i32 {
+    return sink(borrow mkv());
+}
+
+func main(): i32 {
+    return f<String>(mk);
+}
+"#;
+    let output = run_host("rdh31", source);
+    assert_exit("rdh31", &output, 4);
+}
+
 /// A later use after a conditional generic move is rejected when owning.
 ///
 /// `pick` moves `a` into `b` through `c ? a : a` and then lends `a`; under

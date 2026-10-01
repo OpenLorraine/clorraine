@@ -366,7 +366,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         ty: arg.ty.clone(),
                     });
                 }
-                _ => {}
+                // A projected place rooted in caller storage (`p.v`, `xs[0]`)
+                // is emptied the same way; a projection over a fresh call
+                // result has no caller storage and is skipped.
+                _ => {
+                    if let Some(place) = self.value_place(arg) {
+                        places.push(place);
+                    }
+                }
             }
         }
         places

@@ -319,6 +319,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             Mode::Borrow => {
+                // A borrow reads the place, so a later use of a consumed
+                // maybe-owning path records the duplicability duty here.
+                if let Some(PlaceTarget::Local(id, projections)) = &target {
+                    let (id, projections) = (*id, projections.clone());
+                    self.note_maybe_moved_use(id, &projections, span);
+                }
                 if let Some(PlaceTarget::Global(id, _)) = &target {
                     if !self.global_is_const(id) {
                         self.error(
