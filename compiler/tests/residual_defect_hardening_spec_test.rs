@@ -522,3 +522,53 @@ func main(): i32 {
     let output = run_host("rdh17", source);
     assert_exit("rdh17", &output, 34);
 }
+
+/// A returned multi-extent owned parameter copies every row and empties it.
+///
+/// `copy` takes `src` and returns it by value; the caller reads row one's
+/// first string (length two) and row zero's second string (length one), so
+/// the exit code is `221`. A copy that landed in one extent, or a double
+/// release of a moved string, would fail the build, abort, or change the
+/// answer.
+#[test]
+fn should_copy_every_row_when_a_multi_extent_owned_parameter_returns() {
+    let source = r#"module spec.rdh.st6;
+
+import { String, stringOf } from std.text;
+
+func copy(take a: String[2][2]): String[2][2] {
+    return a;
+}
+
+func main(): i32 {
+    let src: String[2][2] = [[stringOf("ab"), stringOf("c")], [stringOf("de"), stringOf("f")]];
+    let out: String[2][2] = copy(src);
+    return i32(len(out[0][0])) * 100 + i32(len(out[1][0])) * 10 + i32(len(out[0][1]));
+}
+"#;
+    let output = run_host("rdh06", source);
+    assert_exit("rdh06", &output, 221);
+}
+
+/// A returned multi-extent duplicable parameter copies every row.
+///
+/// `copy` takes `src` and returns it by value; with no release needed the
+/// operation is a plain byte copy. The exit code `142` proves both rows
+/// travelled.
+#[test]
+fn should_copy_every_row_when_a_multi_extent_duplicable_parameter_returns() {
+    let source = r#"module spec.rdh.st7;
+
+func copy(take a: i32[2][2]): i32[2][2] {
+    return a;
+}
+
+func main(): i32 {
+    let src: i32[2][2] = [[1, 2], [3, 4]];
+    let out: i32[2][2] = copy(src);
+    return out[0][0] * 100 + out[1][1] * 10 + out[0][1];
+}
+"#;
+    let output = run_host("rdh07", source);
+    assert_exit("rdh07", &output, 142);
+}

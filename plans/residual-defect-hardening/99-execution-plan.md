@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 16:05
-> **Progress**: 8/38 tasks (21%)
+> **Last Updated**: 2026-10-01 16:18
+> **Progress**: 14/38 tasks (37%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -111,6 +111,13 @@ task-size criteria in the make-plan skill's quality checklist)
 > emitted-shape count pins added. Repros confirmed before/after: the take-call row segfaulted and
 > now exits 7; the call row failed `-Werror=unused-value` and now builds and exits 7.
 > `make check`: 36 suites, 0 failures; spec 14/14; impl 9/9.
+>
+> **Re-review (2026-10-01 16:15):** scoped to the fix diff — **No findings**; RV-1 .. RV-4
+> confirmed resolved (each new test fails against the pre-fix compiler; the take-call row runs
+> once, call rows build under `-Werror`, no guard is dropped from any element shape, the
+> re-materialized temporary drops before the element stores). Phase 1 closed. Non-finding noted
+> for separate triage: a fixed-array conditional used as a short-circuited index base is still
+> materialized eagerly (pre-existing on the phase base, outside this plan's four defects).
 
 **Verify**: `make check`
 
@@ -118,7 +125,7 @@ task-size criteria in the make-plan skill's quality checklist)
 
 ## Phase 2: Multi-Extent Return Copy
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `b61ef344bac725bc4427780f3269ef3efaf6cd49` (recorded 2026-10-01 16:15)
 > **Lenses**: compiler-and-language (strict profile)
 > **Scope mode**: strict · **Expected modification set**: `compiler/src/codegen/function.rs`,
 > `compiler/src/codegen/cleanup.rs`, `compiler/tests/residual_defect_hardening_{spec,impl}_test.rs`,
@@ -129,25 +136,31 @@ task-size criteria in the make-plan skill's quality checklist)
 **Reference**: [03-02](03-02-multi-extent-return-copy.md) §Proposed Changes · AR #12
 **Objective**: Pin the multi-extent owned and duplicable return from ST-6 – ST-7.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-6 – ST-7 — `compiler/tests/residual_defect_hardening_spec_test.rs`
-- [ ] 2.1.2 Run the specification tests — verify both fail before implementation (invalid C) (red phase)
+- [x] 2.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-6 – ST-7 — `compiler/tests/residual_defect_hardening_spec_test.rs` ✅ (completed: 2026-10-01 16:16)
+- [x] 2.1.2 Run the specification tests — verify both fail before implementation (invalid C) (red phase) ✅ (completed: 2026-10-01 16:16)
+
+> **Red-phase record (2026-10-01 16:16):** both ST-6 and ST-7 fail on the unmodified compiler at the host C build: `error: assignment to expression with array type` (the per-extent `__cl_ret[0] = a[0];` spelling).
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-02](03-02-multi-extent-return-copy.md) §Return arm
 **Objective**: Delegate the place branch to the fixed-array store core.
 
-- [ ] 2.2.1 Promote `emit_fixed_array_assign_to` to sibling visibility and delegate the return place branch — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs`
-- [ ] 2.2.2 Run the specification tests — verify ST-6 – ST-7 pass (green phase)
+- [x] 2.2.1 Promote `emit_fixed_array_assign_to` to sibling visibility and delegate the return place branch — `compiler/src/codegen/function.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-10-01 16:16)
+- [x] 2.2.2 Run the specification tests — verify ST-6 – ST-7 pass (green phase) ✅ (completed: 2026-10-01 16:16)
+
+> **Green-phase record (2026-10-01 16:16):** `residual_defect_hardening_spec_test` 16/16; the returned place now emits one `memcpy(__cl_ret, a, (sizeof(__cl_ret[0]) * 2));` and, for an owned source, a single element-wise `cl_zero` walk.
 
 ### Step 2.3: Implementation Tests & Hardening
 
-- [ ] 2.3.1 Write implementation tests for the return `memcpy` shape and the source emptying — `compiler/tests/residual_defect_hardening_impl_test.rs`
-- [ ] 2.3.2 Full verification — `make check`
+- [x] 2.3.1 Write implementation tests for the return `memcpy` shape and the source emptying — `compiler/tests/residual_defect_hardening_impl_test.rs` ✅ (completed: 2026-10-01 16:18)
+- [x] 2.3.2 Full verification — `make check` ✅ (completed: 2026-10-01 16:18)
+
+> **Full-verification record (2026-10-01 16:18):** `make check` 36 suites, 0 failures. Two pre-existing implementation tests pinned the old per-extent return spelling and were updated to the new byte-copy contract as part of this task (`call_value_integrity_impl_test.rs` returned-parameter case; `runtime_value_integrity_impl_test.rs` conditional-return case); these are implementation-shape tests, not the immutable specification oracle.
 
 **Deliverables**:
-- [ ] Every extent of a returned fixed-array place is copied and the owned source is emptied once
-- [ ] ST-6 – ST-7 pass; all verification passing
+- [x] Every extent of a returned fixed-array place is copied and the owned source is emptied once
+- [x] ST-6 – ST-7 pass; all verification passing
 
 **Verify**: `make check`
 

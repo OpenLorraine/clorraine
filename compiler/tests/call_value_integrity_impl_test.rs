@@ -1479,10 +1479,10 @@ func main(): i32 {
     );
 }
 
-/// A fixed-array parameter returned to the caller is copied element by element
-/// and then emptied through the element walk.
+/// A fixed-array parameter returned to the caller is copied by bytes in one
+/// operation and then emptied through the element walk.
 #[test]
-fn should_walk_the_returned_elements_when_a_fixed_array_parameter_returns() {
+fn should_copy_the_returned_array_when_a_fixed_array_parameter_returns() {
     let source = r#"module impl.cvi.p4return;
 import { String, stringOf } from std.text;
 
@@ -1496,9 +1496,18 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("cviimpl-p4return", source);
-    assert_contains("cviimpl-p4return", &emitted, "__cl_ret[0] = a[0];");
+    assert_contains(
+        "cviimpl-p4return",
+        &emitted,
+        "memcpy(__cl_ret, a, (sizeof(__cl_ret[0]) * 2));",
+    );
     assert_contains("cviimpl-p4return", &emitted, "cl_zero(&a[0]);");
     assert_contains("cviimpl-p4return", &emitted, "cl_zero(&a[1]);");
+    // The previous per-extent spelling assigned an array, which C rejects.
+    assert!(
+        !emitted.contains("__cl_ret[0] = a[0];"),
+        "cviimpl-p4return: a returned array must not use an array assignment"
+    );
     assert!(
         !emitted.contains("cl_zero(&a);"),
         "cviimpl-p4return: the adjusted parameter must not reach cl_zero directly"

@@ -281,11 +281,17 @@ func main(): i32 {
 "#;
     let emitted = emit_host("rviimpl-retcond", source);
     let branch = after("rviimpl-retcond", &emitted, "if (ok) {");
-    assert_contains("rviimpl-retcond", branch, "__cl_ret[0] = a[0];");
-    assert_contains("rviimpl-retcond", branch, "__cl_ret[1] = a[1];");
+    assert_contains(
+        "rviimpl-retcond",
+        branch,
+        "memcpy(__cl_ret, &(a), (sizeof(__cl_ret[0]) * 2));",
+    );
     let else_branch = after("rviimpl-retcond", branch, "} else {");
-    assert_contains("rviimpl-retcond", else_branch, "__cl_ret[0] = b[0];");
-    assert_contains("rviimpl-retcond", else_branch, "__cl_ret[1] = b[1];");
+    assert_contains(
+        "rviimpl-retcond",
+        else_branch,
+        "memcpy(__cl_ret, &(b), (sizeof(__cl_ret[0]) * 2));",
+    );
 }
 
 /// A conditional that reassigns an owned array saves the old target, moves the

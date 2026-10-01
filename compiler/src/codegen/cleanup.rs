@@ -504,8 +504,9 @@ impl<'a> Emitter<'a> {
     ///
     /// C cannot assign or return an array, so the value is written to the
     /// caller's destination element by element. An array literal writes its
-    /// elements through [`Emitter::emit_array_assign_to`]; a returned owned
-    /// place is copied element by element and then emptied, so the scope
+    /// elements through [`Emitter::emit_array_assign_to`]; a returned place
+    /// travels through the statement store core, which copies every extent by
+    /// bytes and empties the source once when it owns elements, so the scope
     /// cleanup does not release the value the caller now owns. A conditional
     /// evaluates only its chosen arm into the destination.
     fn emit_fixed_array_return(&mut self, value: &ir::Value) {
@@ -536,22 +537,17 @@ impl<'a> Emitter<'a> {
                 );
                 self.emit_array_assign_to(&destination, &ty, elements, fill);
             }
-            ValueKind::Place(place) => {
-                self.emit_guards(value);
-                let source = self.place(place);
-                let extent = match &ty.kind {
-                    TyKind::Array { extents, .. } => {
-                        extents.first().and_then(|size| *size).unwrap_or(0)
-                    }
-                    _ => 0,
-                };
-                for index in 0..extent {
-                    self.push(&format!("    __cl_ret[{index}] = {source}[{index}];"));
-                }
-                let source_ty = self.substitute(&place.ty);
-                if self.needs_drop(&source_ty) {
-                    self.emit_move_zero_place(place, &source, &source_ty);
-                }
+            ValueKind::Place(_) => {
+                // The statement store core already copies every extent by
+                // bytes, releases the (empty) destination first when the type
+                // owns elements, and empties the source once. The caller's
+                // destination is the hidden out-parameter, never the source, so
+                // `reads_target` is fixed false.
+                let destination = super::function::ArrayTarget::parameter(
+                    "__cl_ret",
+                    self.array_param_bytes("__cl_ret", &ty),
+                );
+                self.emit_fixed_array_assign_to(&destination, &ty, value, false);
             }
             ValueKind::Call {
                 callee,

@@ -247,6 +247,64 @@ func main(): i32 {
     assert_absent("rdhimpl-param", &emitted, "cl_zero(&a)");
 }
 
+/// A returned owned multi-extent place copies every extent and empties it.
+#[test]
+fn should_copy_every_extent_when_an_owned_place_returns() {
+    let source = r#"module impl.rdh.ret6;
+
+import { String, stringOf } from std.text;
+
+func copy(take a: String[2][2]): String[2][2] {
+    return a;
+}
+
+func main(): i32 {
+    let src: String[2][2] = [[stringOf("ab"), stringOf("c")], [stringOf("de"), stringOf("f")]];
+    let out: String[2][2] = copy(src);
+    return i32(len(out[0][0]));
+}
+"#;
+    let emitted = emit_host("rdhimpl-retowned", source);
+    // One whole-array byte copy from the adjusted parameter name, sized from
+    // the element type because `sizeof` would measure the pointer.
+    assert_contains(
+        "rdhimpl-retowned",
+        &emitted,
+        "memcpy(__cl_ret, a, (sizeof(__cl_ret[0]) * 2));",
+    );
+    // The source is emptied element by element, once.
+    assert_contains("rdhimpl-retowned", &emitted, "cl_zero(&a[0][0]);");
+    assert_contains("rdhimpl-retowned", &emitted, "cl_zero(&a[1][1]);");
+    // The old per-extent spelling assigned an array in C.
+    assert_absent("rdhimpl-retowned", &emitted, "__cl_ret[0] = a[0];");
+}
+
+/// A returned duplicable multi-extent place copies every extent and keeps it.
+#[test]
+fn should_copy_every_extent_when_a_duplicable_place_returns() {
+    let source = r#"module impl.rdh.ret7;
+
+func copy(take a: i32[2][2]): i32[2][2] {
+    return a;
+}
+
+func main(): i32 {
+    let src: i32[2][2] = [[1, 2], [3, 4]];
+    let out: i32[2][2] = copy(src);
+    return out[0][0] * 100 + out[1][1] * 10 + out[0][1];
+}
+"#;
+    let emitted = emit_host("rdhimpl-retdup", source);
+    assert_contains(
+        "rdhimpl-retdup",
+        &emitted,
+        "memcpy(__cl_ret, a, (sizeof(__cl_ret[0]) * 2));",
+    );
+    // A duplicable source keeps its values.
+    assert_absent("rdhimpl-retdup", &emitted, "cl_zero(&a[");
+    assert_absent("rdhimpl-retdup", &emitted, "__cl_ret[0] = a[0];");
+}
+
 /// A call row runs once and carries no discarded comma tail.
 #[test]
 fn should_call_a_call_row_once_without_a_value_tail() {

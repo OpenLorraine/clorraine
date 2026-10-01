@@ -967,7 +967,7 @@ impl<'a> Emitter<'a> {
     /// released once after the copy; otherwise the old value is released
     /// before the copy. The rendered form lets a run-time element target, a
     /// struct-literal field, and a plain place share one core.
-    fn emit_fixed_array_assign_to(
+    pub(super) fn emit_fixed_array_assign_to(
         &mut self,
         target: &ArrayTarget,
         ty: &Ty,
