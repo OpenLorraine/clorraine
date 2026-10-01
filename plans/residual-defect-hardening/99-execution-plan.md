@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 14:57
+> **Last Updated**: 2026-10-01 16:05
 > **Progress**: 8/38 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
@@ -99,6 +99,18 @@ task-size criteria in the make-plan skill's quality checklist)
 - [x] The no-context literal has the flat fixed-array type and the C declarator carries every extent
 - [x] A deferred literal with a conditional, place, or call row compiles to valid C
 - [x] ST-1 – ST-5 and ST-17 pass; all verification passing
+
+> **Phase 1 review record (2026-10-01 16:05):** independent review found RV-1 (🔴 critical) and
+> RV-2 (🟠 major) plus RV-3/RV-4 (🟡 minor); the user approved the recommended fixes (option
+> "Fix both + minors, then re-review"). Fixed in the follow-up commit: **RV-1** — the deferred
+> literal no longer walks its elements twice, so a materialized take-call row runs once and
+> empties its source once; **RV-2** — a row call expression no longer appends a discarded comma
+> value (the conditional arm wrapper supplies the common value), so call rows build under
+> `-Werror`; **RV-3** — the unreachable scalar fallback for rows was removed and the helper doc
+> aligned; **RV-4** — three specification cases (call row, call arm, take-call row) and two
+> emitted-shape count pins added. Repros confirmed before/after: the take-call row segfaulted and
+> now exits 7; the call row failed `-Werror=unused-value` and now builds and exits 7.
+> `make check`: 36 suites, 0 failures; spec 14/14; impl 9/9.
 
 **Verify**: `make check`
 

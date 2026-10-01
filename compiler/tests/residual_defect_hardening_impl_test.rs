@@ -247,6 +247,67 @@ func main(): i32 {
     assert_absent("rdhimpl-param", &emitted, "cl_zero(&a)");
 }
 
+/// A call row runs once and carries no discarded comma tail.
+#[test]
+fn should_call_a_call_row_once_without_a_value_tail() {
+    let source = r#"module impl.rdh.callrow;
+
+func make(): i32[2] {
+    return [7, 8];
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let hit: bool = ok && [make(), [5, 6]][0][0] == 7;
+    return hit ? 7 : 9;
+}
+"#;
+    let emitted = emit_host("rdhimpl-callrow", source);
+    let calls = emitted
+        .matches("cl_impl_rdh_callrow_make(__cl_tmp0[0])")
+        .count();
+    assert_eq!(
+        calls, 1,
+        "rdhimpl-callrow: the row call must run exactly once"
+    );
+    // A discarded `0` right operand would fail the strict unused-value build.
+    assert_absent("rdhimpl-callrow", &emitted, "make(__cl_tmp0[0]), 0)");
+}
+
+/// A take-call row materializes exactly once and empties its source once.
+#[test]
+fn should_materialize_a_take_call_row_once() {
+    let source = r#"module impl.rdh.takecallrow;
+
+import { String, stringOf } from std.text;
+
+func consume(take src: String): i32[2] {
+    return [1, i32(len(src))];
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let src: String = stringOf("ab");
+    let hit: bool = ok && [consume(src), [5, 6]][0][0] == 1;
+    return hit ? 7 : 9;
+}
+"#;
+    let emitted = emit_host("rdhimpl-takecall", source);
+    let calls = emitted
+        .matches("cl_impl_rdh_takecallrow_consume(src, __cl_tmp0)")
+        .count();
+    assert_eq!(
+        calls, 1,
+        "rdhimpl-takecall: the take call must run exactly once"
+    );
+    let moves = emitted.matches("(src = NULL)").count();
+    assert_eq!(
+        moves, 1,
+        "rdhimpl-takecall: the source must empty exactly once"
+    );
+}
+
 /// A conditional fill stores its row through the per-row store forms.
 #[test]
 fn should_store_each_row_when_a_fill_value_is_conditional() {

@@ -337,8 +337,9 @@ impl<'a> Emitter<'a> {
     /// C place. It becomes a comma expression instead, in source order, with
     /// its guards embedded where the row is evaluated and its owned source
     /// emptied after the copy. A conditional row nests, and a call row writes
-    /// through the row's hidden destination. Returns `None` for a shape with no
-    /// expression form, so the caller can fall back to the scalar store.
+    /// through the row's hidden destination. Returns `None` only when the row's
+    /// literal form has no expression form; the caller propagates that to the
+    /// deferred store's own fallback.
     fn array_row_expr(&self, target_c: &str, row_ty: &Ty, value: &Value) -> Option<String> {
         match &value.kind {
             ValueKind::ArrayLit { elements, fill } => {
@@ -384,18 +385,19 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Wraps a row-writing call with its guards and a common result value.
+    /// Wraps a row-writing call with its guards.
     ///
     /// The call writes the row through its hidden destination, so the
-    /// expression only has to run the call; the trailing `0` gives the
-    /// expression a value a surrounding ternary operand can share.
+    /// expression only has to run the call. No value tail is appended: a
+    /// discarded `0` would trip the unused-value warning in the strict build,
+    /// and a conditional arm wraps the whole row with the value it needs.
     fn row_call_expr(&self, value: &Value, call: &str) -> String {
         let mut guards: Vec<String> = Vec::new();
         self.guard_expressions(value, &mut guards);
         if guards.is_empty() {
-            format!("({call}, 0)")
+            call.to_owned()
         } else {
-            format!("(({}), {call}, 0)", guards.join(", "))
+            format!("(({}), {call})", guards.join(", "))
         }
     }
 
@@ -466,10 +468,8 @@ impl<'a> Emitter<'a> {
                 // A whole row that is not itself a literal is stored through
                 // the row expression, which keeps its guards on the path that
                 // evaluates the row.
-                if let Some(row) = self.array_row_expr(&sub, element_ty, value) {
-                    parts.push(row);
-                    continue;
-                }
+                parts.push(self.array_row_expr(&sub, element_ty, value)?);
+                continue;
             }
             let mut guards: Vec<String> = Vec::new();
             self.guard_expressions(value, &mut guards);
@@ -511,28 +511,16 @@ impl<'a> Emitter<'a> {
                 });
             }
             // A non-literal fill row also uses the expression form, for every
-            // index the prefix did not cover. When the shape has no expression
-            // form, the scalar fill store below stays the fallback.
-            let mut rows: Vec<String> = Vec::new();
-            let mut complete = true;
+            // index the prefix did not cover.
             for index in prefix..extent {
                 let sub = format!("{target_c}[{index}]");
-                match self.array_row_expr(&sub, element_ty, fill) {
-                    Some(row) => rows.push(row),
-                    None => {
-                        complete = false;
-                        break;
-                    }
-                }
+                parts.push(self.array_row_expr(&sub, element_ty, fill)?);
             }
-            if complete {
-                parts.extend(rows);
-                return Some(if parts.is_empty() {
-                    "0".to_owned()
-                } else {
-                    parts.join(", ")
-                });
-            }
+            return Some(if parts.is_empty() {
+                "0".to_owned()
+            } else {
+                parts.join(", ")
+            });
         }
         let mut guards: Vec<String> = Vec::new();
         self.guard_expressions(fill, &mut guards);
@@ -679,7 +667,16 @@ impl<'a> Emitter<'a> {
                         else_value,
                     ));
                 } else {
-                    self.guard_expressions(inner, out);
+                    // A deferred literal embeds each element's own guards in
+                    // its store, so walking the literal here would materialize
+                    // a side-effecting element twice and empty a `take` source
+                    // before the second evaluation. The previous temporary is
+                    // dropped before the element stores run.
+                    let literal_stores = inner_ty.is_fixed_array()
+                        && matches!(&inner.kind, ValueKind::ArrayLit { .. });
+                    if !literal_stores {
+                        self.guard_expressions(inner, out);
+                    }
                     if self.needs_drop(&inner_ty) {
                         if let Some(drop) = self.drop_expr_text(&destination, &inner_ty) {
                             out.push(drop);

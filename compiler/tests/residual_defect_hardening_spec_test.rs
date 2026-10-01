@@ -385,6 +385,83 @@ func main(): i32 {
     assert_exit("rdh04f", &output, 9);
 }
 
+/// A guarded deferred literal selects a call row.
+///
+/// The first row is `make()`, which returns `[7, 8]`; with `ok` true the read
+/// element is `7`, so the exit code is `7`. The row is written through the
+/// call's hidden destination, and the emitted C must build under the strict
+/// warning flags.
+#[test]
+fn should_take_a_call_row_when_a_guarded_literal_holds_one() {
+    let source = r#"module spec.rdh.st1;
+
+func make(): i32[2] {
+    return [7, 8];
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let hit: bool = ok && [make(), [5, 6]][0][0] == 7;
+    return hit ? 7 : 9;
+}
+"#;
+    let output = run_host("rdh01c", source);
+    assert_exit("rdh01c", &output, 7);
+}
+
+/// A guarded deferred literal selects a call arm inside a conditional row.
+///
+/// With `c` true the first row is `make()`, whose first element is `7`, so the
+/// comparison holds and the exit code is `7`. The call arm is wrapped with the
+/// place arm's common value, and the emitted C must build under the strict
+/// warning flags.
+#[test]
+fn should_take_the_call_arm_when_a_conditional_row_selects_it() {
+    let source = r#"module spec.rdh.st1;
+
+func make(): i32[2] {
+    return [7, 8];
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let c: bool = true;
+    let rows: i32[2][2] = [[1, 2], [3, 4]];
+    let hit: bool = ok && [c ? make() : rows[0], [5, 6]][0][0] == 7;
+    return hit ? 7 : 9;
+}
+"#;
+    let output = run_host("rdh01cc", source);
+    assert_exit("rdh01cc", &output, 7);
+}
+
+/// A guarded deferred literal runs a take-call row exactly once.
+///
+/// `consume` takes its argument and returns a row whose second element is the
+/// argument's length, so a second call would read the emptied source and
+/// crash. The program must exit with the row's first element.
+#[test]
+fn should_run_a_take_call_row_once_when_a_guarded_literal_holds_one() {
+    let source = r#"module spec.rdh.st1;
+
+import { String, stringOf } from std.text;
+
+func consume(take src: String): i32[2] {
+    return [1, i32(len(src))];
+}
+
+func main(): i32 {
+    let ok: bool = true;
+    let src: String = stringOf("ab");
+    let hit: bool = ok && [consume(src), [5, 6]][0][0] == 1;
+    return hit ? 7 : 9;
+}
+"#;
+    let output = run_host("rdh01m", source);
+    assert_exit("rdh01m", &output, 7);
+}
+
 /// A literal whose element is a slice keeps its slice elements.
 ///
 /// `pair` is inferred from two slices; the first has length two, so the exit
