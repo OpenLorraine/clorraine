@@ -137,6 +137,14 @@ in `CMD`).
 - `compiler/tests/freestanding_spec_test.rs` holds the **specification tests**
   for the `freestanding` profile: the m68k link-exit assertion and the host
   no-libc run.
+- `compiler/tests/residual_defect_hardening_spec_test.rs` holds the
+  **specification tests** for the four residual defects (flat array literal
+  types and the deferred row store, the multi-extent return copy, the
+  loop-condition owned-call release, and substitution-aware ownership), and
+  `compiler/tests/residual_defect_hardening_impl_test.rs` holds their
+  **implementation tests** (emitted shapes per instance, the non-owning no-op
+  branches, the emptied take-argument place, the single `E10020` report, the
+  nested-instance declaration, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

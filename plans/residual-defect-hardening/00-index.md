@@ -1,7 +1,7 @@
 # Residual Defect Hardening Implementation Plan
 
 > **Feature**: Fix the four remaining filed defects DEF-46 – DEF-49 in the Clorraine compiler (flat no-context array literal types and the deferred-row store, the multi-extent fixed-array return copy, the unguarded loop-condition owned-call release, and substitution-aware ownership for generic instances)
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-10-01 13:16
 > **Implements**: DEF-46, DEF-47, DEF-48, DEF-49
 > **CodeOps Artifact Schema**: 1

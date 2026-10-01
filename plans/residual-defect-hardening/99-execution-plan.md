@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 20:48
-> **Progress**: 33/38 tasks (87%)
+> **Last Updated**: 2026-10-01 23:59
+> **Progress**: 38/38 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -371,23 +371,31 @@ task-size criteria in the make-plan skill's quality checklist)
 
 ## Phase 5: Close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `262b5ba9fb73766bebe0036f9681fd5b8956c2a9` (recorded 2026-10-01 23:58)
 > **Lenses**: compiler-and-language (strict profile)
 > **Scope mode**: strict · **Expected modification set**: `AGENTS.md`, `plans/00-roadmap.md`,
 > `plans/residual-defect-hardening/*`, `build/` (gitignored probes)
 
 ### Step 5.1: Acceptance, Probes, and Synchronization
 
-- [ ] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
-- [ ] 5.1.2 Host AddressSanitizer probes for the four defects: the ST-4 owned deferred literal (DEF-46), ST-6 (DEF-47), ST-8/ST-9/ST-18 (DEF-48), ST-10/ST-11/ST-14/ST-15/ST-16/ST-19/ST-21 (DEF-49), with leak detection on — `build/closeout-probes/` (AR #6)
-- [ ] 5.1.3 Update documentation: the `AGENTS.md` test map (both new suites) and the roadmap rows for DEF-46 – DEF-49 (Done with this plan linked) — `AGENTS.md`, `plans/00-roadmap.md` (AR #7, #10)
-- [ ] 5.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the plan status Complete and the progress header to 38/38; final `make check`
-- [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
+- [x] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-10-01 23:58)
+- [x] 5.1.2 Host AddressSanitizer probes for the four defects: the ST-4 owned deferred literal (DEF-46), ST-6 (DEF-47), ST-8/ST-9/ST-18 (DEF-48), ST-10/ST-11/ST-14/ST-15/ST-16/ST-19/ST-21 (DEF-49), with leak detection on — `build/closeout-probes/` (AR #6) ✅ (completed: 2026-10-01 23:58)
+- [x] 5.1.3 Update documentation: the `AGENTS.md` test map (both new suites) and the roadmap rows for DEF-46 – DEF-49 (Done with this plan linked) — `AGENTS.md`, `plans/00-roadmap.md` (AR #7, #10) ✅ (completed: 2026-10-01 23:58)
+- [x] 5.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the plan status Complete and the progress header to 38/38; final `make check` ✅ (completed: 2026-10-01 23:59)
+- [x] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode ✅ (completed: 2026-10-01 23:59)
+
+> **Close-out record (2026-10-01 23:59):** `make verify` passed every leg (`check` 36 suites,
+> hosted-amiga corpus, FS-UAE capture, the six runtime faults). Twelve host ASan close-out probes
+> built under `build/closeout-probes/` with leak detection on, all clean at their expected exit
+> codes (ST-4, ST-6, ST-8, ST-9, ST-18, ST-10, ST-11, ST-14, ST-15, ST-16, ST-19, ST-21); the
+> pre-fix leaks were recorded in the phase records. `spec/` has zero changes and no diagnostic
+> code was added (R7, R8 verified by diff). `AGENTS.md` maps both new suites; the roadmap DEF-46 –
+> DEF-49 rows are Done with this plan linked, and DEF-50 – DEF-55 record the filed residuals.
 
 **Deliverables**:
-- [ ] `make verify` all legs passed
-- [ ] ASan probes clean with leak detection on
-- [ ] Documentation and roadmap synced; acceptance criteria checked
+- [x] `make verify` all legs passed
+- [x] ASan probes clean with leak detection on
+- [x] Documentation and roadmap synced; acceptance criteria checked
 
 **Verify**: `make verify`
 
