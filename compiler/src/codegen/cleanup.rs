@@ -334,7 +334,7 @@ impl<'a> Emitter<'a> {
                                 let ty = self.substitute(&place.ty);
                                 if self.needs_drop(&ty) {
                                     let source = self.place(place);
-                                    self.emit_move_zero(&source, &ty);
+                                    self.emit_move_zero_place(place, &source, &ty);
                                 }
                             }
                         }
@@ -546,7 +546,7 @@ impl<'a> Emitter<'a> {
                 }
                 let source_ty = self.substitute(&place.ty);
                 if self.needs_drop(&source_ty) {
-                    self.emit_move_zero(&source, &source_ty);
+                    self.emit_move_zero_place(place, &source, &source_ty);
                 }
             }
             ValueKind::Call {

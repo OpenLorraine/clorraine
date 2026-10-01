@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 08:58
-> **Progress**: 28/39 tasks (72%)
+> **Last Updated**: 2026-10-01 09:06
+> **Progress**: 29/39 tasks (74%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -415,8 +415,11 @@ another independent pass. The `take`-in-a-func-type double free stays the record
 > from a temporary-index snapshot of committed, staged, unstaged, and untracked phase-start state)
 > **Lenses**: compiler-and-language (strict profile)
 > **Scope mode**: strict · **Expected modification set**: `compiler/tests/call_value_integrity_spec_test.rs`,
-> `compiler/src/codegen/{function,control,drop,guards}.rs`,
+> `compiler/src/codegen/{function,control,drop,guards,cleanup}.rs`,
 > `compiler/tests/call_value_integrity_impl_test.rs`, `plans/call-value-integrity/*`
+> (`cleanup.rs` added during 4.2.1: the return and guarded move-out paths zero a
+> C-adjusted array parameter through the same place-aware walk, a necessary
+> correction of the same defect surface)
 
 ### Step 4.1: Specification Tests
 
@@ -442,7 +445,7 @@ unchanged).
 **Reference**: [03-04](03-04-guards-and-cleanup.md) §Proposed Changes 1–3
 **Objective**: Correct the parameter zero walk, the do-while condition entry, and the embedded growable drop.
 
-- [ ] 4.2.1 Array-parameter copy and zero walk on both the source and the target of a move; `is_pointer_param` and the parameter ABI stay unchanged; `cl_zero` stays for true locals — `compiler/src/codegen/function.rs` (AR #10; DEF-36)
+- [x] 4.2.1 Array-parameter copy and zero walk on both the source and the target of a move; `is_pointer_param` and the parameter ABI stay unchanged; `cl_zero` stays for true locals — `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/cleanup.rs` (the return and guarded move-out paths reuse the same place-aware zero) (AR #10; DEF-36) ✅ (completed: 2026-10-01 09:06)
 - [ ] 4.2.2 Goto-free flag-first do-while when the condition carries guards (fall-through, `continue`, and embedded-only guards all reach the guards/test; unguarded keeps today's emission) — `compiler/src/codegen/control.rs` (AR #8; DEF-37)
 - [ ] 4.2.3 Growable-array drop expression form for element types that need no drop; the limitation for drop-needing elements is recorded in Won't Have and pinned — `compiler/src/codegen/drop.rs`, `compiler/src/codegen/guards.rs` (AR #9; DEF-39)
 - [ ] 4.2.4 Run the specification tests — verify they PASS (green phase)

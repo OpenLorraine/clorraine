@@ -373,21 +373,44 @@ impl<'a> Emitter<'a> {
                 let source_c = self.place(source);
                 // C cannot assign an array, so a fixed-array move copies the
                 // bytes instead; the zeroed source below empties the original.
+                // A fixed-array parameter is adjusted to a pointer to its
+                // first element, so the parameter name already is the array's
+                // address and the byte count comes from the element type.
                 if self.substitute(&target.ty).is_fixed_array() {
+                    let target_param = self.is_array_param_place(target);
+                    let source_param = self.is_array_param_place(source);
+                    let target_value = if target_param {
+                        target_c.clone()
+                    } else {
+                        format!("&({target_c})")
+                    };
+                    let source_value = if source_param {
+                        source_c.clone()
+                    } else {
+                        format!("&({source_c})")
+                    };
+                    let bytes = if !target_param {
+                        format!("sizeof({target_c})")
+                    } else if !source_param {
+                        format!("sizeof({source_c})")
+                    } else {
+                        let target_ty = self.substitute(&target.ty);
+                        self.array_param_bytes(&target_c, &target_ty)
+                    };
                     self.push(&format!(
-                        "    memcpy(&({target_c}), &({source_c}), sizeof({target_c}));"
+                        "    memcpy({target_value}, {source_value}, {bytes});"
                     ));
                 } else {
                     self.push(&format!("    {target_c} = {source_c};"));
                 }
                 let source_ty = self.substitute(&source.ty);
-                self.emit_move_zero(&source_c, &source_ty);
+                self.emit_move_zero_place(source, &source_c, &source_ty);
             }
             Statement::MoveOut { place } => {
                 self.emit_line_directive(span);
                 let source = self.place(place);
                 let ty = self.substitute(&place.ty);
-                self.emit_move_zero(&source, &ty);
+                self.emit_move_zero_place(place, &source, &ty);
             }
             Statement::StorePointer { pointer, value } => {
                 self.emit_line_directive(span);
@@ -1871,6 +1894,66 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    {source} = {null};"));
             }
             _ => self.push(&format!("    cl_zero(&{source});")),
+        }
+    }
+
+    /// True when a place is the root of a fixed-array parameter.
+    ///
+    /// C adjusts an array parameter to a pointer to its first element, so the
+    /// parameter name is the array's address: `&(name)` would address the
+    /// pointer slot and `sizeof(name)` would be the pointer's size. A
+    /// projection reaches a real element or row object, which needs no
+    /// adjustment, so only the bare root counts.
+    fn is_array_param_place(&self, place: &Place) -> bool {
+        place.projections.is_empty()
+            && matches!(place.base, ir::PlaceBase::Param(_))
+            && self.substitute(&place.ty).is_fixed_array()
+    }
+
+    /// The byte count of a fixed array through its C-adjusted parameter name.
+    ///
+    /// `name[0]` has every extent but the first, so `sizeof(name[0])` times the
+    /// first extent is the whole array's size without a `sizeof` on the
+    /// adjusted pointer itself.
+    fn array_param_bytes(&self, c_name: &str, ty: &Ty) -> String {
+        let TyKind::Array { extents, .. } = &ty.kind else {
+            return format!("sizeof({c_name}[0])");
+        };
+        let first = extents.first().and_then(|extent| *extent).unwrap_or(1);
+        format!("(sizeof({c_name}[0]) * {first})")
+    }
+
+    /// Zeroes a moved-out place, walking a parameter's elements when the place
+    /// is a C-adjusted fixed-array parameter.
+    ///
+    /// A parameter name cannot be passed to `cl_zero`: the macro would take
+    /// `sizeof` of the adjusted pointer. The element walk zeroes each deepest
+    /// element instead, which empties every handle the move transferred.
+    pub(super) fn emit_move_zero_place(&mut self, place: &Place, source: &str, ty: &Ty) {
+        if self.is_array_param_place(place) {
+            let TyKind::Array { element, extents } = &ty.kind else {
+                return;
+            };
+            let dims: Vec<usize> = extents.iter().filter_map(|extent| *extent).collect();
+            self.emit_array_param_zero(source, element, &dims);
+            return;
+        }
+        self.emit_move_zero(source, ty);
+    }
+
+    /// Emits one `cl_zero` per deepest element of a fixed array.
+    fn emit_array_param_zero(&mut self, c_name: &str, element: &Ty, extents: &[usize]) {
+        match extents.split_first() {
+            None => self.push(&format!("    cl_zero(&{c_name});")),
+            Some((head, tail)) => {
+                for index in 0..*head {
+                    self.emit_array_param_zero(
+                        &format!("{c_name}[{index}]"),
+                        element,
+                        tail,
+                    );
+                }
+            }
         }
     }
 }

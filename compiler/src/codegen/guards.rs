@@ -184,7 +184,7 @@ impl<'a> Emitter<'a> {
                 for place in move_outs {
                     let source = self.place(place);
                     let ty = self.substitute(&place.ty);
-                    self.emit_move_zero(&source, &ty);
+                    self.emit_move_zero_place(place, &source, &ty);
                 }
             }
             ValueKind::Closure { captures, .. } => {
