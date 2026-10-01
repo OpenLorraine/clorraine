@@ -305,6 +305,197 @@ func main(): i32 {
     assert_absent("rdhimpl-retdup", &emitted, "__cl_ret[0] = a[0];");
 }
 
+/// An owned call in a `while` condition moves into a loop temporary.
+#[test]
+fn should_release_a_while_condition_call_when_it_owns_the_result() {
+    let source = r#"module impl.rdh.p3while;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (grow().count > 0 && i < 3) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3while", source);
+    // A materialized operand cannot live in the header, so the loop becomes
+    // `while (1)` with the store, the previous-value drop, and the test inside.
+    assert_contains("rdhimpl-p3while", &emitted, "while (1) {");
+    let calls = emitted.matches("cl_impl_rdh_p3while_grow()").count();
+    assert_eq!(calls, 1, "rdhimpl-p3while: the condition call runs once");
+    assert_contains(
+        "rdhimpl-p3while",
+        &emitted,
+        "if (!(((__cl_tmp0.count > 0) && (i < 3)))) break;",
+    );
+    // Each re-store drops the previous value and the last value is released.
+    let drops = emitted
+        .matches("if (__cl_tmp0.data) { FreeBuffer(__cl_tmp0.data); }")
+        .count();
+    assert_eq!(drops, 2, "rdhimpl-p3while: one re-store drop and one final release");
+}
+
+/// An unguarded `do while` holding an owned call takes the flag-first form.
+#[test]
+fn should_run_a_first_flagged_pass_when_an_unguarded_do_while_holds_an_owned_call() {
+    let source = r#"module impl.rdh.p3dowhile;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (grow().count > 0 && i < 3);
+    return i;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3do", source);
+    assert_contains("rdhimpl-p3do", &emitted, "i32 __cl_first_1 = 0;");
+    assert_contains("rdhimpl-p3do", &emitted, "for (;;) {");
+    assert_contains("rdhimpl-p3do", &emitted, "if (__cl_first_1) {");
+    assert_contains("rdhimpl-p3do", &emitted, "__cl_first_1 = 1;");
+    assert_contains(
+        "rdhimpl-p3do",
+        &emitted,
+        "if (!(((__cl_tmp0.count > 0) && (i < 3)))) break;",
+    );
+}
+
+/// An owned call in a `for` condition moves the test into the body.
+#[test]
+fn should_release_a_for_condition_call_when_it_owns_the_result() {
+    let source = r#"module impl.rdh.p3for;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    for (i = 0; grow().count > 0 && i < 3; i = i + 1) {
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3for", source);
+    // The step still prints in the header; the condition moved into the body.
+    assert_contains("rdhimpl-p3for", &emitted, "for (; ; i = (i32)((u32)i + (u32)1)) {");
+    assert_contains(
+        "rdhimpl-p3for",
+        &emitted,
+        "if (!(((__cl_tmp0.count > 0) && (i < 3)))) break;",
+    );
+}
+
+/// A condition call that owns nothing keeps the inline header spelling.
+#[test]
+fn should_keep_the_inline_spelling_when_a_condition_call_owns_nothing() {
+    let source = r#"module impl.rdh.p3nonown;
+
+func count(): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (count() > 0 && i < 3) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3nonown", source);
+    assert_contains(
+        "rdhimpl-p3nonown",
+        &emitted,
+        "while (((cl_impl_rdh_p3nonown_count() > 0) && (i < 3))) {",
+    );
+    assert_absent("rdhimpl-p3nonown", &emitted, "__cl_tmp");
+}
+
+/// A fixed-array call condition materializes one temp and needs no release.
+#[test]
+fn should_materialize_a_fixed_array_condition_once() {
+    let source = r#"module impl.rdh.p3fixed;
+
+func mk2(): i32[2] {
+    return [5, 7];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && mk2()[0] == 5) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3fixed", source);
+    assert_contains("rdhimpl-p3fixed", &emitted, "i32 __cl_tmp0[2] = {0};");
+    let calls = emitted
+        .matches("cl_impl_rdh_p3fixed_mk2(__cl_tmp0)")
+        .count();
+    assert_eq!(
+        calls, 1,
+        "rdhimpl-p3fixed: the fixed-array condition call writes one temp"
+    );
+    assert_contains(
+        "rdhimpl-p3fixed",
+        &emitted,
+        "((cl_impl_rdh_p3fixed_mk2(__cl_tmp0)), (__cl_tmp0[0] == 5))",
+    );
+    // A duplicable fixed array needs no release.
+    assert_absent("rdhimpl-p3fixed", &emitted, "FreeString(__cl_tmp0");
+}
+
+/// A `for` step holding a materialize drops to the flat label-and-goto form.
+#[test]
+fn should_drop_to_the_flat_form_when_a_for_step_holds_a_materialize() {
+    let source = r#"module impl.rdh.p3forstep;
+
+func mk(): i32[3] {
+    return [0, 1, 2];
+}
+
+func idx(): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    for (i = 0; i < 3; i = i + mk()[idx()]) {
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3forstep", source);
+    // The step's guarded index cannot print in a C `for` header, so the whole
+    // loop becomes labels and gotos.
+    assert_contains("rdhimpl-p3forstep", &emitted, "goto __cl_b1;");
+    assert_contains("rdhimpl-p3forstep", &emitted, "cl_trap(\"E11211\", \"index out of range\");");
+    assert_absent("rdhimpl-p3forstep", &emitted, "for (; ;");
+}
+
 /// A call row runs once and carries no discarded comma tail.
 #[test]
 fn should_call_a_call_row_once_without_a_value_tail() {

@@ -11,11 +11,13 @@ use crate::types::TyKind;
 
 use super::{Value, ValueKind, ValuePiece};
 
-/// True when evaluating a value emits a runtime guard before it can run.
+/// True when evaluating a value cannot live in a structured loop header.
 ///
 /// A guard is a division check, a bounds check, or a float-to-integer range
-/// check. A structured loop keeps its shape only when its header holds no such
-/// guard; the emitter moves the guard into the body otherwise.
+/// check. A materialized operand also counts: its store, its drop of a previous
+/// value, and its release are statements, so the condition has to move into the
+/// loop body. A structured loop keeps its shape only when its header carries
+/// neither; the emitter moves the work into the body otherwise.
 pub fn value_needs_guards(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Binary { op, left, right } => {
@@ -66,7 +68,10 @@ pub fn value_needs_guards(value: &Value) -> bool {
             ValuePiece::Literal(_) => false,
             ValuePiece::Placeholder(inner) => value_needs_guards(inner),
         }),
-        ValueKind::Materialize { value, .. } => value_needs_guards(value),
+        // A materialized operand is always evaluated where it stands, so it is
+        // filled by a statement before the construct; a loop header cannot
+        // carry that statement.
+        ValueKind::Materialize { .. } => true,
         ValueKind::Closure { captures, .. } => captures.iter().any(value_needs_guards),
         ValueKind::ClosureCall { callable, args } => {
             value_needs_guards(callable) || args.iter().any(value_needs_guards)

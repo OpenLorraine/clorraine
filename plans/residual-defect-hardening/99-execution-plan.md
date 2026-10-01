@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 16:18
-> **Progress**: 14/38 tasks (37%)
+> **Last Updated**: 2026-10-01 16:30
+> **Progress**: 21/38 tasks (55%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -176,7 +176,7 @@ task-size criteria in the make-plan skill's quality checklist)
 
 ## Phase 3: Loop-Condition Owned-Call Release
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `5d697a6f76b983238b0d03842b3a614abbac454b` (recorded 2026-10-01 16:26)
 > **Lenses**: compiler-and-language (strict profile)
 > **Scope mode**: strict · **Expected modification set**: `compiler/src/own/loops.rs`,
 > `compiler/src/ir/guards.rs`, `compiler/tests/residual_defect_hardening_{spec,impl}_test.rs`,
@@ -187,26 +187,39 @@ task-size criteria in the make-plan skill's quality checklist)
 **Reference**: [03-03](03-03-loop-condition-owned-call-release.md) §Proposed Changes · AR #5, #10
 **Objective**: Pin the condition evaluation and leak-freedom from ST-8 – ST-9.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-8 – ST-9 — `compiler/tests/residual_defect_hardening_spec_test.rs`
-- [ ] 3.1.2 Run the specification tests and record the pre-fix AddressSanitizer probe of ST-8 (leak-only red phase); the exit codes alone cannot show the failure
+- [x] 3.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-8 – ST-9 — `compiler/tests/residual_defect_hardening_spec_test.rs` ✅ (completed: 2026-10-01 16:27)
+- [x] 3.1.2 Run the specification tests and record the pre-fix AddressSanitizer probe of ST-8 (leak-only red phase); the exit codes alone cannot show the failure ✅ (completed: 2026-10-01 16:27)
+
+> **Red-phase record (2026-10-01 16:27):** the three new cases pass pre-implementation (leak-only
+> pin): the condition call is printed inline in the header
+> (`while ((cl_spec_rdh_st8_grow().count > 0) && (i < 3))`). Pre-fix host ASan probe
+> (`clang -fsanitize=address`, `ASAN_OPTIONS=detect_leaks=1`): **96 bytes leaked in 8
+> allocations** (three container builds plus their buffers).
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-loop-condition-owned-call-release.md) §Proposed Changes 1–2
 **Objective**: Materialize owned call results in the three loop conditions and select the guarded path.
 
-- [ ] 3.2.1 Add the condition walk that materializes owned call results (`owns_drop`; the substitution-aware phase widens it with `maybe_owns`; skip a call already stored by a `Materialize`) and call it at the three condition lowering points — `compiler/src/own/loops.rs`
-- [ ] 3.2.2 Make `value_needs_guards` report a `Materialize` as needing guards — `compiler/src/ir/guards.rs`
-- [ ] 3.2.3 Run the specification tests — verify ST-8 – ST-9 pass (green phase) and the ST-8 probe is clean
+- [x] 3.2.1 Add the condition walk that materializes owned call results (`owns_drop`; the substitution-aware phase widens it with `maybe_owns`; skip a call already stored by a `Materialize`) and call it at the three condition lowering points — `compiler/src/own/loops.rs` ✅ (completed: 2026-10-01 16:30)
+- [x] 3.2.2 Make `value_needs_guards` report a `Materialize` as needing guards — `compiler/src/ir/guards.rs` ✅ (completed: 2026-10-01 16:30)
+- [x] 3.2.3 Run the specification tests — verify ST-8 – ST-9 pass (green phase) and the ST-8 probe is clean ✅ (completed: 2026-10-01 16:30)
+
+> **Green-phase record (2026-10-01 16:30):** the three cases pass; the emitted `while` is
+> `while (1)` with the previous-value drop and the re-store in the body, the `do while` takes the
+> flag-first `for (;;)` form, and the `for` keeps its step in the header. Post-fix host ASan probe
+> of ST-8: exits `3`, **no leak report**.
 
 ### Step 3.3: Implementation Tests & Hardening
 
-- [ ] 3.3.1 Write implementation tests: the guarded flag-first form for `while`, `do`, and `for`; a non-owning condition keeps the inline spelling; the guarded fixed-array condition emits one temp and one release; a `for` step holding a materialize drops to the flat form — `compiler/tests/residual_defect_hardening_impl_test.rs`
-- [ ] 3.3.2 Full verification — `make check`
+- [x] 3.3.1 Write implementation tests: the guarded flag-first form for `while`, `do`, and `for`; a non-owning condition keeps the inline spelling; the guarded fixed-array condition emits one temp and one release; a `for` step holding a materialize drops to the flat form — `compiler/tests/residual_defect_hardening_impl_test.rs` ✅ (completed: 2026-10-01 16:30)
+- [x] 3.3.2 Full verification — `make check` ✅ (completed: 2026-10-01 16:30)
+
+> **Full-verification record (2026-10-01 16:30):** `make check` 36 suites, 0 failures.
 
 **Deliverables**:
-- [ ] An owned call result in any loop condition is evaluated per iteration, dropped before a re-store, and released after the loop
-- [ ] ST-8 – ST-9 pass; the pre-fix leak is recorded; all verification passing (ST-18 lands in Phase 4)
+- [x] An owned call result in any loop condition is evaluated per iteration, dropped before a re-store, and released after the loop
+- [x] ST-8 – ST-9 pass; the pre-fix leak is recorded; all verification passing (ST-18 lands in Phase 4)
 
 **Verify**: `make check`
 

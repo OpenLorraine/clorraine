@@ -572,3 +572,92 @@ func main(): i32 {
     let output = run_host("rdh07", source);
     assert_exit("rdh07", &output, 142);
 }
+
+/// An unguarded `while` condition holding an owned call runs and releases it.
+///
+/// Every test calls `grow`, which builds a fresh growable array, and reads its
+/// count. The body runs exactly three times, so the exit code is `3`. The
+/// per-iteration buffer leak is invisible to the exit code; it is pinned by
+/// the recorded AddressSanitizer probe.
+#[test]
+fn should_run_three_times_when_an_unguarded_while_condition_holds_an_owned_call() {
+    let source = r#"module spec.rdh.st8;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (grow().count > 0 && i < 3) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdh08", source);
+    assert_exit("rdh08", &output, 3);
+}
+
+/// An unguarded `do while` condition re-runs after `continue`.
+///
+/// The body increments `i` and a `continue` skips the rest, so the condition
+/// is evaluated again each time; the body runs three times and the exit code
+/// is `3`. The leak is pinned by the recorded AddressSanitizer probe.
+#[test]
+fn should_re_evaluate_when_an_unguarded_do_while_condition_holds_an_owned_call() {
+    let source = r#"module spec.rdh.st9;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        if (i == 2) {
+            continue;
+        }
+    } while (grow().count > 0 && i < 3);
+    return i;
+}
+"#;
+    let output = run_host("rdh09d", source);
+    assert_exit("rdh09d", &output, 3);
+}
+
+/// An unguarded `for` condition holding an owned call runs once per test.
+///
+/// The step increments `i`, the condition calls `grow` every test, and the
+/// loop ends when `i` reaches three.
+#[test]
+fn should_run_three_times_when_an_unguarded_for_condition_holds_an_owned_call() {
+    let source = r#"module spec.rdh.st9;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    for (i = 0; grow().count > 0 && i < 3; i = i + 1) {
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdh09f", source);
+    assert_exit("rdh09f", &output, 3);
+}
