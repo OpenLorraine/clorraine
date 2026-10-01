@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 20:42
-> **Progress**: 30/38 tasks (79%)
+> **Last Updated**: 2026-10-01 20:48
+> **Progress**: 33/38 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -313,15 +313,26 @@ task-size criteria in the make-plan skill's quality checklist)
 
 ### Step 4.3: Implementation Tests & Hardening
 
-- [ ] 4.3.1 Write implementation tests: the maybe-owning drop, the non-owning no-op move branch, the emptied `take` place, and `E10020` reported once per function and binding — `compiler/tests/residual_defect_hardening_impl_test.rs`
-- [ ] 4.3.2 Unit tests: `maybe_owns`; the parameter-mode gate; the `RequiresDuplicable` discharge; the loan-owner probe; a scalar instance emits no release — `compiler/src/own/` test blocks
-- [ ] 4.3.3 Full verification — `make check`
+- [x] 4.3.1 Write implementation tests: the maybe-owning drop, the non-owning no-op move branch, the emptied `take` place, and `E10020` reported once per function and binding — `compiler/tests/residual_defect_hardening_impl_test.rs` ✅ (completed: 2026-10-01 20:48)
+- [x] 4.3.2 Unit tests: `maybe_owns`; the parameter-mode gate; the `RequiresDuplicable` discharge; the loan-owner probe; a scalar instance emits no release — `compiler/src/own/` test blocks ✅ (completed: 2026-10-01 20:48)
+- [x] 4.3.3 Full verification — `make check` ✅ (completed: 2026-10-01 20:48)
+
+> **Hardening record (2026-10-01 20:48):** implementation tests pin the per-instance release and
+> move shapes (`cl_keep__String` releases, `cl_keep__i32` no-ops; `dup__String` empties,
+> `dup__i32` copies; the owning caller empties its take place, the duplicable one keeps it), the
+> single `E10020` report, the nested-instance declaration, and the loan-owner `E10030` rejection.
+> Unit tests cover `maybe_owns_ty`, the discharge (once for an owning instance, accepted for a
+> duplicable one), and the borrow parameter gate. `make check` 36 suites, 0 failures; spec 37/37;
+> impl 25/25; lib 364/364. Two substitution gaps surfaced by the full run and were fixed: a
+> dot-call result type in a non-generic caller and an indexed element of one are substituted
+> before a materialized temporary is declared (`materialized_ty`), so the emitted C never names a
+> bare type parameter.
 
 **Deliverables**:
-- [ ] An owning instance releases and moves correctly (including `take` argument places); a `borrow` parameter is never dropped; a non-owning instance keeps its values and behavior unchanged
-- [ ] A body that reuses a moved-if-owning source reports `E10020` once per function and binding, at the body's use
-- [ ] Every site in the 03-04 table is covered by its mapped case or the task 4.2.6 probe
-- [ ] ST-10 – ST-16 and ST-18 – ST-22 pass; all verification passing
+- [x] An owning instance releases and moves correctly (including `take` argument places); a `borrow` parameter is never dropped; a non-owning instance keeps its values and behavior unchanged
+- [x] A body that reuses a moved-if-owning source reports `E10020` once per function and binding, at the body's use
+- [x] Every site in the 03-04 table is covered by its mapped case or the task 4.2.6 probe
+- [x] ST-10 – ST-16 and ST-18 – ST-22 pass; all verification passing
 
 **Verify**: `make check`
 

@@ -101,6 +101,48 @@ fn assert_absent(tag: &str, text: &str, needle: &str) {
     );
 }
 
+/// The emitted text of one function definition, up to its closing brace.
+///
+/// The section ends at the first `}` in column zero, so an assertion stays
+/// inside a single emitted function. `start` should include the definition's
+/// `{` so a prototype is not matched first.
+fn function_section<'a>(tag: &str, text: &'a str, start: &str) -> &'a str {
+    let start_index = text
+        .find(start)
+        .unwrap_or_else(|| panic!("{tag}: the emitted C does not contain {start:?}"));
+    let rest = &text[start_index..];
+    let end = rest
+        .find("\n}")
+        .map(|offset| offset + 2)
+        .unwrap_or(rest.len());
+    &rest[..end]
+}
+
+/// Compiles `source` and returns the compiler output.
+///
+/// Used by the rejection cases, which assert the diagnostic and that no
+/// translation unit is written.
+fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let emitted_exists = c_path.exists();
+    assert!(
+        !(output.status.code() != Some(0) && emitted_exists),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+    (scratch, output)
+}
+
 /// A no-context literal declares one flat array with every extent.
 #[test]
 fn should_declare_a_flat_array_when_a_literal_has_no_context() {
@@ -666,6 +708,217 @@ func main(): i32 {
         "rdhimpl-fill",
         &emitted,
         "memcpy(&(g[1]), &(b), sizeof(g[1]));",
+    );
+}
+
+/// A maybe-owning take parameter releases only in the owning instance.
+#[test]
+fn should_release_a_maybe_owning_parameter_only_when_the_instance_owns() {
+    let source = r#"module impl.rdh.p4keep;
+
+import { String, stringOf } from std.text;
+
+func keep<T>(take a: T[2]): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("c")];
+    let n: i32 = keep<String>(xs);
+    let ys: i32[2] = [1, 2];
+    let m: i32 = keep<i32>(ys);
+    return n + m;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p4keep", source);
+    assert_contains(
+        "rdhimpl-p4keep",
+        &emitted,
+        "static i32 cl_keep__i32(i32 a[2])",
+    );
+    // The `String` instance releases both elements; the `i32` instance emits
+    // no release at all.
+    let releases = emitted.matches("FreeString(a[").count();
+    assert_eq!(
+        releases, 2,
+        "rdhimpl-p4keep: only the owning instance releases the parameter"
+    );
+}
+
+/// A generic move copies in place without emptying a duplicable instance.
+#[test]
+fn should_copy_without_emptying_when_a_generic_move_is_duplicable() {
+    let source = r#"module impl.rdh.p4dup;
+
+import { String, stringOf } from std.text;
+
+func dup<T>(take a: T): T {
+    let b: T = a;
+    return b;
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let t: String = dup<String>(s);
+    let u: i32 = dup<i32>(3);
+    return u + i32(len(t));
+}
+"#;
+    let emitted = emit_host("rdhimpl-p4dup", source);
+    let string_body =
+        function_section("rdhimpl-p4dup", &emitted, "static ClString cl_dup__String(ClString a)\n{");
+    let int_body = function_section("rdhimpl-p4dup", &emitted, "static i32 cl_dup__i32(i32 a)\n{");
+    // The owning instance moves out of `a`; the duplicable one copies.
+    assert_contains("rdhimpl-p4dup", string_body, "b = a;");
+    assert_contains("rdhimpl-p4dup", string_body, "a = NULL;");
+    assert_contains("rdhimpl-p4dup", int_body, "b = a;");
+    assert_absent("rdhimpl-p4dup", int_body, "a = NULL;");
+}
+
+/// A take argument place is emptied only in the owning instance.
+#[test]
+fn should_empty_a_take_argument_place_only_when_the_instance_owns() {
+    let source = r#"module impl.rdh.p4caller;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take v: T): i32 {
+    return 0;
+}
+
+func caller<T>(take a: T): i32 {
+    return sink<T>(a);
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let x: i32 = caller<String>(s);
+    let y: i32 = caller<i32>(2);
+    return x + y;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p4caller", source);
+    let string_body = function_section(
+        "rdhimpl-p4caller",
+        &emitted,
+        "static i32 cl_caller__String(ClString a)\n{",
+    );
+    let int_body =
+        function_section("rdhimpl-p4caller", &emitted, "static i32 cl_caller__i32(i32 a)\n{");
+    // The owning instance empties the caller's place after the callee took it;
+    // the duplicable instance keeps its copy.
+    assert_contains("rdhimpl-p4caller", string_body, "cl_sink__String(a);");
+    assert_contains("rdhimpl-p4caller", string_body, "a = NULL;");
+    assert_contains("rdhimpl-p4caller", int_body, "cl_sink__i32(a);");
+    assert_absent("rdhimpl-p4caller", int_body, "a = NULL;");
+}
+
+/// A later use after a generic move reports E10020 exactly once.
+#[test]
+fn should_report_e10020_once_when_a_later_use_needs_duplicability() {
+    let source = r#"module impl.rdh.p4reject;
+
+import { String, stringOf } from std.text;
+
+func sink(borrow v: String): i32 {
+    return i32(len(v));
+}
+
+func reuse<T>(take a: T): i32 {
+    let b: T = a;
+    sink(borrow a);
+    return 0;
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    return reuse<String>(s);
+}
+"#;
+    let (_scratch, output) = compile_only("rdhimpl-p4reject", source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "rdhimpl-p4reject: the owning instance must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let reports = stderr.matches("error E10020:").count();
+    assert_eq!(
+        reports, 1,
+        "rdhimpl-p4reject: one report per function and binding; stderr:\n{stderr}"
+    );
+    assert_contains("rdhimpl-p4reject", &stderr, "'a' was moved and cannot be used");
+}
+
+/// A view over a maybe-owning temporary cannot outlive its release.
+#[test]
+fn should_reject_a_view_outliving_a_maybe_owning_temporary() {
+    let source = r#"module impl.rdh.p4loan;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func first<T>(mk: func(): T[2]): T {
+    let view: T[] = slice(mk(), 0, 1);
+    return view[0];
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return i32(len(first<String>(mkString)));
+}
+"#;
+    let (_scratch, output) = compile_only("rdhimpl-p4loan", source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "rdhimpl-p4loan: the outliving view must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_contains("rdhimpl-p4loan", &stderr, "error E10030:");
+    assert_contains(
+        "rdhimpl-p4loan",
+        &stderr,
+        "borrow of a statement temporary does not live long enough",
+    );
+}
+
+/// A generic body calling a generic emits the nested instance.
+#[test]
+fn should_declare_the_nested_instance_when_a_generic_calls_a_generic() {
+    let source = r#"module impl.rdh.p4nested;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take v: T): i32 {
+    return 0;
+}
+
+func pass<T>(mk: func(): T): i32 {
+    return sink<T>(mk());
+}
+
+func mkString(): String {
+    return stringOf("abcd");
+}
+
+func main(): i32 {
+    return pass<String>(mkString);
+}
+"#;
+    let emitted = emit_host("rdhimpl-p4nested", source);
+    assert_contains(
+        "rdhimpl-p4nested",
+        &emitted,
+        "static i32 cl_sink__String(",
+    );
+    assert_contains(
+        "rdhimpl-p4nested",
+        &emitted,
+        "cl_sink__String(",
     );
 }
 

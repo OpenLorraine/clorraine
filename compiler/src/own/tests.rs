@@ -9,6 +9,24 @@ use super::test_support::{compile, error_codes, reports, with_view_helper};
 use crate::ir::{Statement, Terminator};
 
 #[test]
+fn maybe_owns_covers_parameter_mentions_but_never_views() {
+    use super::maybe_owns_ty;
+    use crate::types::{Ty, TyKind};
+    let param = Ty {
+        kind: TyKind::Param("T".to_owned()),
+        nullable: false,
+    };
+    // A bare parameter and a fixed array of one may own once substituted.
+    assert!(maybe_owns_ty(&param));
+    assert!(maybe_owns_ty(&Ty::array(param.clone(), vec![Some(2)])));
+    // A view never owns, and a parameter-free scalar cannot.
+    assert!(!maybe_owns_ty(&Ty::array(param, vec![None])));
+    assert!(!maybe_owns_ty(&Ty::i32_ty()));
+    assert!(!maybe_owns_ty(&Ty::unknown()));
+    assert!(!maybe_owns_ty(&Ty::void()));
+}
+
+#[test]
 fn a_move_on_one_branch_survives_the_join() {
     let source = with_view_helper(
         "func demo(flag: bool): void {\n\

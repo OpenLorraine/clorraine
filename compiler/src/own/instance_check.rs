@@ -522,6 +522,69 @@ func main(): i32 { return 0; }
         assert_eq!(errors_of(source, "E10215").len(), 1);
     }
 
+    /// A later use after a maybe-owning move reports once for the owning
+    /// instance.
+    #[test]
+    fn a_later_use_reports_the_duplicability_duty_once() {
+        let source = r#"module test;
+import { String, stringOf } from std.text;
+func sink(borrow v: String): i32 { return i32(len(v)); }
+func reuse<T>(take a: T): i32 {
+    let b: T = a;
+    sink(borrow a);
+    return 0;
+}
+func demo(): void {
+    let s: String = stringOf("x");
+    let n: i32 = reuse<String>(s);
+}
+func main(): i32 { return 0; }
+"#;
+        let messages = errors_of(source, "E10020");
+        assert_eq!(messages.len(), 1, "unexpected messages: {messages:?}");
+        assert!(messages[0].contains("'a'"), "unexpected message: {}", messages[0]);
+    }
+
+    /// The same body instantiated with a duplicable type stays accepted.
+    #[test]
+    fn a_duplicable_instance_keeps_the_later_use_accepted() {
+        let source = r#"module test;
+func sink(borrow v: i32): i32 { return v; }
+func reuse<T>(take a: T): i32 {
+    let b: T = a;
+    sink(borrow a);
+    return sink(borrow b);
+}
+func demo(): void {
+    let n: i32 = reuse<i32>(3);
+}
+func main(): i32 { return 0; }
+"#;
+        assert!(
+            errors_of(source, "E10020").is_empty(),
+            "a duplicable instance must stay accepted"
+        );
+    }
+
+    /// A `borrow` parameter never becomes maybe-owning, so its ownsership is
+    /// left to the caller.
+    #[test]
+    fn a_borrow_parameter_is_never_maybe_owning() {
+        let source = r#"module test;
+import { String, stringOf } from std.text;
+func peek<T>(borrow a: T): i32 { return 1; }
+func demo(): i32 {
+    let s: String = stringOf("x");
+    return peek<String>(s) + i32(len(s));
+}
+func main(): i32 { return 0; }
+"#;
+        assert!(
+            errors_of(source, "E10020").is_empty(),
+            "a borrow parameter must keep the caller's value usable"
+        );
+    }
+
     /// A fill that is a return value is reached through the terminator walk.
     #[test]
     fn a_fill_in_a_return_terminator_is_audited() {

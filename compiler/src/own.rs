@@ -131,6 +131,15 @@ pub fn check(
     }
 }
 
+/// True when a type may own once a type argument is substituted.
+///
+/// A type that mentions a type parameter is maybe-owning unless it is a view,
+/// unknown, or void. The predicate is free-standing so the checker and its
+/// tests share one definition.
+fn maybe_owns_ty(ty: &Ty) -> bool {
+    lower::mentions_type_param(ty) && !is_view(ty) && !ty.is_unknown() && !ty.is_void()
+}
+
 /// Checks one function body and lowers it to the typed control-flow IR.
 struct FunctionChecker<'a, 'd> {
     /// Program-wide ownership facts.
@@ -753,10 +762,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// `declare_param` applies its own `take` gate, so a `borrow` parameter or
     /// an out-slot never becomes maybe-owning.
     fn maybe_owns(&self, ty: &Ty) -> bool {
-        lower::mentions_type_param(ty)
-            && !is_view(ty)
-            && !ty.is_unknown()
-            && !ty.is_void()
+        maybe_owns_ty(ty)
     }
 
     /// The IR place for a binding.

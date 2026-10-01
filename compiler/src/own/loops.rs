@@ -510,7 +510,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.place_target(expr).is_some() {
             return value;
         }
-        let ty = value.ty.clone();
+        let ty = self.materialized_ty(&value);
         self.materialize_value_type(value, ty)
     }
 

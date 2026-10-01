@@ -589,6 +589,49 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Defers a side-effecting guarded operand into a temporary, evaluated once.
     ///
+    /// The declared type of a materialized temporary.
+    ///
+    /// A call expression's recorded type may still name the callee's type
+    /// parameters (a dot call on a generic receiver), so the temporary would
+    /// be declared with the unsubstituted type. The call's concrete type
+    /// arguments substitute it; every other value keeps its type.
+    pub(super) fn materialized_ty(&self, value: &Value) -> Ty {
+        let ty = value.ty.clone();
+        if !mentions_type_param(&ty) {
+            return ty;
+        }
+        match &value.kind {
+            ValueKind::Call {
+                callee, type_args, ..
+            } => {
+                let Some(Callee::User(decl)) = self.program.callee(callee) else {
+                    return ty;
+                };
+                if type_args.is_empty() || decl.type_params.len() != type_args.len() {
+                    return ty;
+                }
+                let bindings: BTreeMap<String, Ty> = decl
+                    .type_params
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .zip(type_args.iter().cloned())
+                    .collect();
+                crate::types::substitute(&ty, &bindings)
+            }
+            // The recorded element type of a dot-call result still names the
+            // callee's parameter; the base's resolved type supplies the
+            // concrete element instead.
+            ValueKind::Index { base, .. } => {
+                let element = self.materialized_ty(base).iterated_element();
+                if !element.is_unknown() {
+                    return element;
+                }
+                ty
+            }
+            _ => ty,
+        }
+    }
+
     /// A runtime guard and the operation it protects both read the operand. An
     /// operand with no side effect is safe to render twice, so it is returned
     /// unchanged. A side-effecting one (a call such as `a[next()]` or
@@ -620,7 +663,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // here: an operand inside `&&`/`||`/`?:` is evaluated only on the path
         // that reaches it, so a statement emitted now would run it even when
         // the left operand short-circuits.
-        let ty = value.ty.clone();
+        let ty = self.materialized_ty(&value);
         let temp = self.new_temp(ty.clone());
         self.mark_destination_temp(temp);
         self.register_pending_release(temp, &ty);
@@ -645,7 +688,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// guard, so a skipped path never runs an arm or the call. A struct literal
     /// stores eagerly, because only its statement form exists.
     fn materialize_take_place(&mut self, value: Value) -> Value {
-        let ty = value.ty.clone();
+        let ty = self.materialized_ty(&value);
         // An owned conditional has an expression form in a guard; a
         // duplicable struct conditional does not, so it stores eagerly.
         let deferred = self.defer_move_outs > 0
@@ -676,7 +719,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// computed before the construct that reads it. The temporary is an
     /// unnamed compiler slot, so it takes no part in the ownership walk.
     pub(super) fn materialize_value(&mut self, value: Value) -> Value {
-        let ty = value.ty.clone();
+        let ty = self.materialized_ty(&value);
         let id = self.new_temp(ty.clone());
         let place = Place {
             base: ir::PlaceBase::Temp(id),
@@ -980,7 +1023,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !needs_place {
             return value;
         }
-        let ty = value.ty.clone();
+        let ty = self.materialized_ty(&value);
         // An array literal inside a conditionally evaluated operand must not be
         // filled while the enclosing expression is lowered: the guard emitter
         // stores it where the operand is actually evaluated, so a short circuit
@@ -1118,7 +1161,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let name = format!("__cl_owned{}", self.next_owned_temp);
         self.next_owned_temp += 1;
-        let id = self.declare_local(&name, value.ty.clone(), false, self.current_span);
+        let decl_ty = self.materialized_ty(&value);
+        let id = self.declare_local(&name, decl_ty, false, self.current_span);
         self.move_binding_to_body_scope(id, &name);
         self.set_place(
             id,
