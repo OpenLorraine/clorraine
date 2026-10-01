@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 11:20
-> **Progress**: 36/39 tasks (92%)
+> **Last Updated**: 2026-10-01 11:22
+> **Progress**: 37/39 tasks (95%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -537,7 +537,7 @@ probe-verified within the phase.
 
 - [x] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-10-01 11:18)
 - [x] 5.1.2 Host AddressSanitizer probes for the memory-safety defects DEF-34, DEF-36, DEF-37, DEF-39, and DEF-45: build with `clang -std=c99 -O0 -g -fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=1` (host side; the pinned container has no ASan runtime), using the probe programs in `07-testing-strategy.md` (AR #16) ✅ (completed: 2026-10-01 11:20)
-- [ ] 5.1.3 Update documentation: `AGENTS.md` test map (both new suites) and the roadmap rows for `DEF-30` – `DEF-45` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` (AR #18)
+- [x] 5.1.3 Update documentation: `AGENTS.md` test map (both new suites) and the roadmap rows for `DEF-30` – `DEF-45` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` (AR #18) ✅ (completed: 2026-10-01 11:22)
 - [ ] 5.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 39/39; final `make check`
 - [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
 

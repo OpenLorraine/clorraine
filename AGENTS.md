@@ -127,6 +127,13 @@ in `CMD`).
   implementation tests (release and transfer-temp shapes, the iterable
   temporary, the conditional branch store, the receiver traps, the func
   declarator and destination, and the two-argument `cl_panic`).
+- `compiler/tests/call_value_integrity_spec_test.rs` holds the **specification
+  tests** for owned conditional stores, fixed-array value positions, func
+  pointers and callable resolution, and guard/cleanup emission, and
+  `compiler/tests/call_value_integrity_impl_test.rs` holds its implementation
+  tests (branch-store and transfer-temporary shapes, element-store byte copies,
+  materialized value positions, declarator and callee resolution, parameter
+  copy/zero walks, the flag-first do-while, and the growable drop expression).
 - `compiler/tests/freestanding_spec_test.rs` holds the **specification tests**
   for the `freestanding` profile: the m68k link-exit assertion and the host
   no-libc run.
