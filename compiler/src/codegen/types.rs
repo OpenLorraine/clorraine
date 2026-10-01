@@ -2,22 +2,35 @@
 //!
 //! The mapping is the codegen contract table: fixed-width typedefs, view
 //! structs, contract-table handle types, user aggregates, and the FFI ABI. The
-//! functions here are pure, so a caller can spell a type without touching the
-//! output buffer.
+//! functions here are pure spellings: the type table is passed in so a
+//! function type can apply the named-parameter rule to a `borrow` parameter,
+//! and no function touches the output buffer.
 
 use std::collections::BTreeMap;
 
 use crate::abi;
-use crate::ast::ScalarType;
-use crate::types::{Ty, TyKind};
+use crate::ast::{Mode, ScalarType};
+use crate::types::{Ty, TyKind, TypeTable};
 
 /// Replaces the dots of a dotted module path with underscores.
 pub(super) fn mangle_module(module: &str) -> String {
     module.replace('.', "_")
 }
 
+/// True when a parameter lowers to a C pointer rather than a value.
+///
+/// A writable lend of a non-duplicable struct must reach the caller's storage,
+/// so it becomes a `T *`; a duplicable struct lend binds a copy and stays by
+/// value, matching the unnecessary-lend warning. A handle already is a pointer
+/// and a view is passed by value, so neither is affected. The named-function
+/// ABI and a function-pointer type both spell their parameters this way, so a
+/// func value's C type matches every function it can hold.
+pub(super) fn is_pointer_param(ty: &Ty, mode: Mode, table: &TypeTable) -> bool {
+    mode == Mode::Borrow && matches!(ty.kind, TyKind::Struct(..)) && !table.duplicable(ty)
+}
+
 /// The C spelling of a type in a value position.
-pub(super) fn c_type(ty: &Ty) -> String {
+pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
     match &ty.kind {
         TyKind::Void => "void".to_owned(),
         TyKind::Scalar(scalar) => scalar_c_type(*scalar).to_owned(),
@@ -25,8 +38,8 @@ pub(super) fn c_type(ty: &Ty) -> String {
         TyKind::CString => "char *".to_owned(),
         // A pointer to a row keeps the row's extents attached to the pointer:
         // `T (*)[M]` points at a whole `T[M]`, while `T *` points at one `T`.
-        TyKind::Raw(inner) => pointer_to_array_type(inner)
-            .unwrap_or_else(|| format!("{} *", c_type(inner))),
+        TyKind::Raw(inner) => pointer_to_array_type(inner, table)
+            .unwrap_or_else(|| format!("{} *", c_type(inner, table))),
         TyKind::Handle(name) => handle_type(name),
         TyKind::Enum(name) => format!("Cl{name}"),
         TyKind::Struct(name, args) => {
@@ -38,12 +51,12 @@ pub(super) fn c_type(ty: &Ty) -> String {
         }
         TyKind::Array { element, extents } => {
             if extents.iter().all(Option::is_some) {
-                c_type(element)
+                c_type(element, table)
             } else {
                 format!("ClSlice_{}", type_key(element))
             }
         }
-        TyKind::Func(signature) => func_pointer_type(signature),
+        TyKind::Func(signature) => func_pointer_type(signature, table),
         TyKind::Closure(closure) => closure_type(closure.id),
         TyKind::Param(name) => format!("Cl{name}"),
         TyKind::Unknown => "i32".to_owned(),
@@ -55,22 +68,24 @@ pub(super) fn c_type(ty: &Ty) -> String {
 /// A `func` value is a C function pointer, so it can be stored in a field and
 /// called through the field. An unnamed `ret (*)(params)` is a complete type
 /// usable in casts and `sizeof`.
-fn func_pointer_type(signature: &crate::types::FuncTy) -> String {
+fn func_pointer_type(signature: &crate::types::FuncTy, table: &TypeTable) -> String {
     function_declarator(
         &signature.returns,
-        func_pointer_params(signature),
+        func_pointer_params(signature, table),
         "(*)",
         None,
+        table,
     )
 }
 
 /// The spelling of a function-pointer declarator that names the pointer.
-fn func_pointer_declarator(signature: &crate::types::FuncTy, name: &str) -> String {
+fn func_pointer_declarator(signature: &crate::types::FuncTy, name: &str, table: &TypeTable) -> String {
     function_declarator(
         &signature.returns,
-        func_pointer_params(signature),
+        func_pointer_params(signature, table),
         &format!("(*{name})"),
         None,
+        table,
     )
 }
 
@@ -78,15 +93,21 @@ fn func_pointer_declarator(signature: &crate::types::FuncTy, name: &str) -> Stri
 ///
 /// A function-pointer type lists only each parameter's type, so the same
 /// spelling fits a field, a cast, or a nested return. A `borrow` parameter
-/// reaches the callee as a pointer to the value, exactly as the named-function
-/// ABI spells a writable lend.
-fn func_pointer_params(signature: &crate::types::FuncTy) -> Vec<String> {
+/// follows [`is_pointer_param`]: a non-duplicable struct lend is the pointer
+/// to the value, exactly as the named-function ABI spells it, and every other
+/// parameter stays by value.
+fn func_pointer_params(signature: &crate::types::FuncTy, table: &TypeTable) -> Vec<String> {
     signature
         .params
         .iter()
-        .map(|param| match param.mode {
-            crate::ast::Mode::Borrow => declarator(&Ty::raw(param.ty.clone()), "").trim().to_owned(),
-            _ => declarator(&param.ty, "").trim().to_owned(),
+        .map(|param| {
+            if is_pointer_param(&param.ty, param.mode, table) {
+                declarator(&Ty::raw(param.ty.clone()), "", table)
+                    .trim()
+                    .to_owned()
+            } else {
+                declarator(&param.ty, "", table).trim().to_owned()
+            }
         })
         .collect()
 }
@@ -106,25 +127,27 @@ pub(super) fn function_declarator(
     params: Vec<String>,
     name: &str,
     env: Option<String>,
+    table: &TypeTable,
 ) -> String {
     let mut params = params;
     if let Some(env) = env {
         params.insert(0, env);
     }
     if returns.is_fixed_array() {
-        params.push(declarator(returns, "__cl_ret"));
+        params.push(declarator(returns, "__cl_ret", table));
         return format!("void {name}({})", parameter_list(params));
     }
     if let TyKind::Func(signature) = &returns.kind {
         let pointer = format!("(*{name}({}))", parameter_list(params));
         return function_declarator(
             &signature.returns,
-            func_pointer_params(signature),
+            func_pointer_params(signature, table),
             &pointer,
             None,
+            table,
         );
     }
-    format!("{} {name}({})", c_type(returns), parameter_list(params))
+    format!("{} {name}({})", c_type(returns, table), parameter_list(params))
 }
 
 /// Joins a rendered parameter list, spelling an empty list as `void`.
@@ -169,23 +192,31 @@ fn fixed_extent_suffix(row: &Ty) -> Option<String> {
 /// not to the element type; `T (*)[M]` is a pointer to a whole row, while
 /// `T *` is a pointer to one element. `None` for a non-array type or a slice,
 /// which keeps the ordinary pointer spelling.
-pub(super) fn pointer_to_array_type(row: &Ty) -> Option<String> {
+pub(super) fn pointer_to_array_type(row: &Ty, table: &TypeTable) -> Option<String> {
     let TyKind::Array { element, .. } = &row.kind else {
         return None;
     };
-    Some(format!("{} (*){}", c_type(element), fixed_extent_suffix(row)?))
+    Some(format!(
+        "{} (*){}",
+        c_type(element, table),
+        fixed_extent_suffix(row)?
+    ))
 }
 
 /// The C spelling of a pointer-to-array declarator that names the pointer:
 /// `T (*name)[M]` for a fixed row. `None` when the inner type is not a fixed
 /// array.
-pub(super) fn pointer_to_array_declarator(row: &Ty, name: &str) -> Option<String> {
+pub(super) fn pointer_to_array_declarator(
+    row: &Ty,
+    name: &str,
+    table: &TypeTable,
+) -> Option<String> {
     let TyKind::Array { element, .. } = &row.kind else {
         return None;
     };
     Some(format!(
         "{} (*{name}){}",
-        c_type(element),
+        c_type(element, table),
         fixed_extent_suffix(row)?
     ))
 }
@@ -208,20 +239,20 @@ pub(super) fn scalar_c_type(scalar: ScalarType) -> &'static str {
 }
 
 /// A declaration of `name` with type `ty`, handling array suffixes.
-pub(super) fn declarator(ty: &Ty, name: &str) -> String {
+pub(super) fn declarator(ty: &Ty, name: &str, table: &TypeTable) -> String {
     match &ty.kind {
         TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
             let mut suffix = String::new();
             for extent in extents {
                 suffix.push_str(&format!("[{}]", extent.unwrap_or(0)));
             }
-            format!("{} {name}{suffix}", c_type(element))
+            format!("{} {name}{suffix}", c_type(element, table))
         }
-        TyKind::Raw(inner) => pointer_to_array_declarator(inner, name)
-            .unwrap_or_else(|| format!("{} *{name}", c_type(inner))),
+        TyKind::Raw(inner) => pointer_to_array_declarator(inner, name, table)
+            .unwrap_or_else(|| format!("{} *{name}", c_type(inner, table))),
         TyKind::CString => format!("char *{name}"),
-        TyKind::Func(signature) => func_pointer_declarator(signature, name),
-        _ => format!("{} {name}", c_type(ty)),
+        TyKind::Func(signature) => func_pointer_declarator(signature, name, table),
+        _ => format!("{} {name}", c_type(ty, table)),
     }
 }
 
@@ -304,45 +335,51 @@ mod tests {
 
     #[test]
     fn view_and_handle_types_use_their_emitted_names() {
+        let table = TypeTable::default();
         assert_eq!(
-            c_type(&Ty {
-                kind: TyKind::Str,
-                nullable: false,
-            }),
+            c_type(
+                &Ty {
+                    kind: TyKind::Str,
+                    nullable: false,
+                },
+                &table
+            ),
             "ClStr"
         );
-        assert_eq!(c_type(&Ty::handle("String")), "ClString");
-        assert_eq!(c_type(&Ty::handle("File")), "BPTR");
-        assert_eq!(c_type(&Ty::handle("Buffer")), "ClBuffer");
-        assert_eq!(c_type(&Ty::struct_("Point")), "ClPoint");
+        assert_eq!(c_type(&Ty::handle("String"), &table), "ClString");
+        assert_eq!(c_type(&Ty::handle("File"), &table), "BPTR");
+        assert_eq!(c_type(&Ty::handle("Buffer"), &table), "ClBuffer");
+        assert_eq!(c_type(&Ty::struct_("Point"), &table), "ClPoint");
     }
 
     #[test]
     fn arrays_and_pointers_get_a_declarator_suffix() {
+        let table = TypeTable::default();
         let array = Ty::array(Ty::scalar(ScalarType::U32), vec![Some(2)]);
-        assert_eq!(declarator(&array, "xs"), "u32 xs[2]");
+        assert_eq!(declarator(&array, "xs", &table), "u32 xs[2]");
         let slice = Ty::array(Ty::scalar(ScalarType::U8), vec![None]);
-        assert_eq!(c_type(&slice), "ClSlice_u8");
-        assert_eq!(declarator(&slice, "bytes"), "ClSlice_u8 bytes");
+        assert_eq!(c_type(&slice, &table), "ClSlice_u8");
+        assert_eq!(declarator(&slice, "bytes", &table), "ClSlice_u8 bytes");
         let raw = Ty {
             kind: TyKind::Raw(Box::new(Ty::scalar(ScalarType::U32))),
             nullable: false,
         };
-        assert_eq!(declarator(&raw, "p"), "u32 *p");
+        assert_eq!(declarator(&raw, "p", &table), "u32 *p");
     }
 
     #[test]
     fn instantiated_struct_keys_compose_over_nested_arguments() {
+        let table = TypeTable::default();
         let pair_i32 = Ty::struct_with("Pair", vec![Ty::i32_ty()]);
         assert_eq!(type_key(&pair_i32), "Pair__i32");
-        assert_eq!(c_type(&pair_i32), "ClPair__i32");
+        assert_eq!(c_type(&pair_i32, &table), "ClPair__i32");
 
         let nested = Ty::struct_with("Pair", vec![pair_i32]);
         assert_eq!(type_key(&nested), "Pair__Pair__i32");
-        assert_eq!(c_type(&nested), "ClPair__Pair__i32");
+        assert_eq!(c_type(&nested, &table), "ClPair__Pair__i32");
 
         assert_eq!(type_key(&Ty::struct_("Point")), "Point");
-        assert_eq!(c_type(&Ty::struct_("Point")), "ClPoint");
+        assert_eq!(c_type(&Ty::struct_("Point"), &table), "ClPoint");
     }
 
     #[test]

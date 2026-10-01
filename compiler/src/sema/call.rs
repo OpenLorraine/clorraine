@@ -78,15 +78,59 @@ impl Checker<'_, '_> {
             }
         }
         let callee_ty = self.check_value(callee, None);
-        if let TyKind::Func(signature) = &callee_ty.kind {
-            let signature = signature.clone();
-            self.check_args_func(args, &signature.params);
-            return (*signature.returns).clone();
+        match &callee_ty.kind {
+            TyKind::Func(signature) => {
+                let signature = signature.clone();
+                self.check_args_func(args, &signature.params);
+                return (*signature.returns).clone();
+            }
+            // A direct call of a capturing lambda literal goes through the
+            // ephemeral two-word value. Its call result is the closure's own
+            // return type, so a fixed-array result reaches the guard, the
+            // discard, and the argument positions with its real type.
+            TyKind::Closure(closure) => {
+                let params: Vec<FuncParam> = closure
+                    .params
+                    .iter()
+                    .cloned()
+                    .map(|ty| FuncParam {
+                        ty,
+                        mode: crate::ast::Mode::None,
+                    })
+                    .collect();
+                self.check_args_func(args, &params);
+                return (*closure.returns).clone();
+            }
+            // A callable-bound type parameter is called through its bound, so
+            // the call has the bound's parameter types and return type even
+            // though the parameter itself is opaque.
+            TyKind::Param(name) if self.callable_bound_params.iter().any(|p| p == name) => {
+                if let Some(bound) = self.current_callable_bound(name) {
+                    self.check_args_func(args, &bound.params);
+                    return (*bound.returns).clone();
+                }
+            }
+            _ => {}
         }
         for arg in args {
             self.check_value(&arg.value, None);
         }
         Ty::unknown()
+    }
+
+    /// The resolved callable bound of the current function's type parameter.
+    ///
+    /// The bound is collected with the function's signature, so a call through
+    /// the parameter sees the same parameter types and return type the bound
+    /// declares. `None` outside a function body or for an unbounded parameter.
+    fn current_callable_bound(&self, name: &str) -> Option<crate::types::FuncTy> {
+        let function = self.function_name.as_deref()?;
+        let signature = self.table.function(&self.module.name, function)?;
+        signature
+            .type_params
+            .iter()
+            .find(|param| param.name == name)
+            .and_then(|param| param.bound.clone())
     }
 
     /// Types a call of a generic function, checking its type arguments.
@@ -285,7 +329,10 @@ impl Checker<'_, '_> {
     fn check_dot_call(&mut self, receiver: Ty, name: &str, args: &[Arg], span: Span) -> Ty {
         match self.dot_call(&receiver, name) {
             Some(DotCall::Field(signature)) => {
-                self.check_args(args, &signature.params);
+                // A callable field carries its own parameter modes, so a
+                // `take` argument still moves and a call-site marker still
+                // matches, exactly as on a named call.
+                self.check_args_impl(args, &signature.params, &signature.modes, false);
                 signature.returns
             }
             Some(DotCall::Function(signature)) => {

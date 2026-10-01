@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 07:41
+> **Last Updated**: 2026-10-01 08:31
 > **Progress**: 26/39 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
@@ -358,6 +358,54 @@ through a binding and a field). Full `make check` — 34 suites, 0 failures, 0 w
 - [x] `make check` passes with no warnings
 
 **Verify**: `make check`
+
+**Phase 3 Review (post-phase quality step, 2026-10-01 07:51):** the correctness reviewer
+(correctness-reviewer, strict scope, compiler-and-language lens) reviewed the phase diff
+`4a1b54d4..HEAD`; the green phase and the six defect fixes were confirmed, and five findings were
+raised (probes under the gitignored `build/rv3-review/`):
+
+| Finding | Severity | Statement | Status |
+| ------- | -------- | --------- | ------ |
+| RV3-1 | 🔴 critical | A func type spells a `borrow` parameter as a pointer for every type, while a named function pointer-lowers only a non-duplicable struct, so a matching assignment emits incompatible C types (debug build failure; release silent wrong ABI) | Awaiting ruling |
+| RV3-2 | 🟠 major | A fixed-array closure call inside a conditionally evaluated operand goes through the expression-guard path, which lacks the destination arm, so it emits a destination-less lifted-lambda call | Awaiting ruling |
+| RV3-3 | 🟠 major | `callee_result_type` never resolves a module-level func-typed global, so a discarded fixed-array call through one omits the hidden destination | Awaiting ruling |
+| RV3-4 | 🟠 major | `callee_result_type` never resolves a closure-typed callable parameter, so a discarded fixed-array call through one omits the hidden destination | Awaiting ruling |
+| RV3-5 | 🟡 minor | A callable field call drops the field's parameter modes (`dot_call` populates `modes`, `check_dot_call` ignores them), so a marker/take mismatch on `ops.run(...)` is not diagnosed as it is on a named call | Report-only |
+
+**RV3 fix verification (2026-10-01 08:06):** user ruling "Fix all five". RV3-1: `is_pointer_param`
+moved to `compiler/src/codegen/types.rs` and applied in `func_pointer_params`, with the type table
+threaded through `c_type`/`declarator`/`function_declarator`/`pointer_to_array_type`/
+`pointer_to_array_declarator`/`index_text`, and `call_arguments` applying the same rule at the call
+site; the func type now spells exactly like every function it can hold (`dupborrow` compiles and
+exits 1, `dupborrow2` exits 2, `scalarborrow` compiles and exits 0). RV3-2: a fixed-array
+`ClosureCall` arm in `guard_expressions` (`guardarr` exits 7). RV3-3: `callee_result_type` now
+resolves through `callee_func_type` including globals (`discardglobal` exits 0). RV3-4: the
+`closure_param_type` fallback in `callee_result_type` (`discardclosure2` exits 0). RV3-5: the type
+stage passes field modes to `check_args_impl` and `check_call_expr` validates markers against the
+field's modes (`markerfield` and `markernamed` each report one `E10039`). Five impl pins added
+(47/47), `make check` 34 suites, 0 failures, 0 warnings.
+
+**RV3 re-review (single permitted pass on the fix diff `a2d5499..worktree`, 2026-10-01 08:18):**
+RV3-1, RV3-3, and RV3-4 verified fixed; RV3-2's named arm verified but related guard shapes remain
+as left/pre-existing findings; RV3-5 verified for markers, with the added move enforcement not
+honored by the lowering. The reviewer raised a fix-introduced regression and four left/pre-existing
+findings (classified against a baseline binary; all four reproduce on `a2d5499`):
+
+| Finding | Severity | Class | Statement | Status |
+| ------- | -------- | ----- | --------- | ------ |
+| RR3-1 | 🟠 major | Fix-introduced regression | When a closure-typed generic parameter shares a name with a module function, `callee_result_type` takes the closure's return type while `render_call` calls the module function, so a discarded fixed-array result emits destination-less C (baseline compiled) | Fixed: `render_call` tests the closure parameter before the named lookup |
+| RR3-2 | 🟠 major | Left/pre-existing | The field-call fix marks a non-duplicable `take` argument as moved in the checker, but lowering still skips field modes, so no move-out is emitted and both sides free the value (double free; the design records `take`-in-a-func-type as having no ownership semantics) | Fixed as recorded: the move enforcement is reverted (marker validation stays); the `take`-in-a-func-type program remains the recorded Won't Have and still aborts, exactly as on the reviewed baseline |
+| RR3-3 | 🟠 major | Left/pre-existing | A direct call of a capturing lambda literal is typed `Unknown`, so the guard, discarded, and argument positions emit a destination-less fixed-array call | Fixed: a `TyKind::Closure` arm in the type stage's `check_call` returns the closure's own return type |
+| RR3-4 | 🟠 major | Left/pre-existing | A fixed-array call through a callable-bound parameter in a conditionally evaluated operand decides the destination from the recorded `Unknown` type instead of the resolved callee signature | Fixed: a callable-bound `TyKind::Param` arm in `check_call` types the call from the collected bound, so the guard materializes and passes the destination |
+| RR3-5 | 🟡 minor | Left/pre-existing | A capturing closure's fixed-array parameter spells the field parameter with `c_type` but the lifted function with `declarator`, so the closure value is initialized with an incompatible pointer | Fixed: closure field parameters use the declarator spelling, matching `func_pointer_params` and the lifted lambda |
+
+**RR3 fix verification (2026-10-01 08:31):** probes for all five findings plus the earlier
+regression probes run clean: `rr3-nameshadow`/`2`/`3` (0/15/15), `rr3-guardcap` (0),
+`rr3-condcap` (5), `rr3-capdiscard` (0), `rr3-caparg` (20), `rr3-capreturn`/`capcall` (15),
+`rr3-condplain` (5), `rr3-guardparam` (7), `rr3-guardglobal` (7), `rr3-closurearr` (17),
+`rr3-fieldborrow`/`globalborrow` (0). Four new impl pins (51/51); `make check` 34 suites, 0
+failures, 0 warnings. The re-review budget is exhausted: these fixes ship probe-verified without
+another independent pass. The `take`-in-a-func-type double free stays the recorded Won't Have.
 
 ---
 

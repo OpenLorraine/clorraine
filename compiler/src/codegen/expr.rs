@@ -46,7 +46,7 @@ impl<'a> Emitter<'a> {
             ValueKind::Index { base, index } => {
                 let base_c = self.value(base);
                 let index_c = self.value(index);
-                index_text(&self.substitute(&base.ty), &base_c, &index_c)
+                index_text(&self.substitute(&base.ty), &base_c, &index_c, &self.sema.table)
             }
             ValueKind::Unary { op, operand } => self.unary(*op, operand, value),
             // A short-circuit operator evaluates its right operand only when
@@ -67,7 +67,7 @@ impl<'a> Emitter<'a> {
                 let target = self.substitute(&value.ty);
                 match &target.kind {
                     TyKind::Void => format!("(void)({})", self.value(inner)),
-                    _ => format!("({})({})", c_type(&target), self.value(inner)),
+                    _ => format!("({})({})", c_type(&target, &self.sema.table), self.value(inner)),
                 }
             }
             ValueKind::Conditional {
@@ -124,7 +124,7 @@ impl<'a> Emitter<'a> {
                     ty = self.field_type(&ty, field);
                 }
                 Projection::Element(Some(index)) => {
-                    text = index_text(&ty, &text, &index.to_string());
+                    text = index_text(&ty, &text, &index.to_string(), &self.sema.table);
                     ty = element_type(&ty);
                 }
                 Projection::Element(None) => {
@@ -132,7 +132,7 @@ impl<'a> Emitter<'a> {
                     // the value forms carry it instead. A projected place only
                     // reaches here as an assignment target the checker bounded,
                     // so element zero keeps the C total.
-                    text = index_text(&ty, &text, "0");
+                    text = index_text(&ty, &text, "0", &self.sema.table);
                     ty = element_type(&ty);
                 }
             }
@@ -299,7 +299,7 @@ impl<'a> Emitter<'a> {
                 match scalar_of(&ty) {
                     Some(scalar) if is_signed_scalar(scalar) => {
                         let unsigned = unsigned_scalar(scalar);
-                        format!("({})(-({}){operand_c})", c_type(&ty), unsigned_c(unsigned))
+                        format!("({})(-({}){operand_c})", c_type(&ty, &self.sema.table), unsigned_c(unsigned))
                     }
                     _ => format!("-({operand_c})"),
                 }
@@ -328,7 +328,7 @@ impl<'a> Emitter<'a> {
                 // masking the count already keeps the shift well-defined.
                 if matches!(op, BinaryOp::Shl) && is_signed_scalar(scalar) {
                     let unsigned = unsigned_c(unsigned_scalar(scalar));
-                    return format!("({})(({}){left_c} << {count})", c_type(&ty), unsigned);
+                    return format!("({})(({}){left_c} << {count})", c_type(&ty, &self.sema.table), unsigned);
                 }
                 let operator = if matches!(op, BinaryOp::Shl) { "<<" } else { ">>" };
                 return format!("({left_c} {operator} {count})");
@@ -346,7 +346,7 @@ impl<'a> Emitter<'a> {
                     };
                     return format!(
                         "({})(({}){left_c} {operator} ({}){right_c})",
-                        c_type(&ty),
+                        c_type(&ty, &self.sema.table),
                         unsigned,
                         unsigned
                     );
@@ -441,6 +441,15 @@ impl<'a> Emitter<'a> {
             let target = self.value(receiver);
             return format!("({target})({argument_list})");
         }
+        // A closure-typed parameter shadows a module function of the same
+        // written name, exactly as a local does. Inside a monomorphized
+        // generic body such a call goes through the two-word value; testing it
+        // before the named-function lookup keeps the callee and the result
+        // type consistent.
+        if let Some(closure) = self.closure_param_type(callee) {
+            let callable = self.place(&Place::param(callee).with_type(closure));
+            return format!("(({callable}).fn(({callable}).env, {argument_list}))");
+        }
         // A func-typed binding shadows a module function of the same written
         // name, so the call goes through the binding's own C local before any
         // function or helper name is resolved.
@@ -458,15 +467,6 @@ impl<'a> Emitter<'a> {
                 format!("cl_{callee}__{}", keys.join("_"))
             };
             return format!("{symbol}({argument_list})");
-        }
-        // Inside a monomorphized generic body, a callable parameter bound to a
-        // closure is called through its two-word value. A parameter bound to a
-        // plain `func` type stays a direct function-pointer call. A capture-less
-        // lambda in a non-generic caller is not a parameter, so it falls through
-        // to the named-function spelling below.
-        if let Some(closure) = self.closure_param_type(callee) {
-            let callable = self.place(&Place::param(callee).with_type(closure));
-            return format!("(({callable}).fn(({callable}).env, {argument_list}))");
         }
         match callee {
             "text" => self.text_call(args.first()),
@@ -490,7 +490,7 @@ impl<'a> Emitter<'a> {
     /// instance substitutes `f`'s parameter with a closure type, the call is a
     /// two-word closure call. A `func`-typed parameter, and every non-parameter
     /// callee, yields `None`.
-    fn closure_param_type(&self, callee: &str) -> Option<Ty> {
+    pub(super) fn closure_param_type(&self, callee: &str) -> Option<Ty> {
         let function = self.function?;
         let param = function.params.iter().find(|param| param.name == callee)?;
         let ty = self.substitute(&param.ty);
@@ -756,7 +756,7 @@ impl<'a> Emitter<'a> {
             }
         }
         let cast = match &ty.kind {
-            TyKind::Struct(..) => c_type(ty),
+            TyKind::Struct(..) => c_type(ty, &self.sema.table),
             _ => format!("Cl{name}"),
         };
         format!("({cast}){{ {} }}", values.join(", "))

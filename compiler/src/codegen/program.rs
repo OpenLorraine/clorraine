@@ -11,7 +11,7 @@ use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, Templ
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
-use crate::types::{resolve_ty, substitute_instance, CaptureMode, Ty, TyKind};
+use crate::types::{resolve_ty, substitute_instance, CaptureMode, Ty, TyKind, TypeTable};
 
 use super::types::{
     c_type, collect_slice_types, declarator, function_declarator, mangle_module, scalar_of,
@@ -139,7 +139,7 @@ impl<'a> Emitter<'a> {
             return;
         }
         for (key, element) in &keys {
-            let element_c = c_type(element);
+            let element_c = c_type(element, &self.sema.table);
             self.push(&format!(
                 "typedef struct {{ {element_c} *ptr; usize len; }} ClSlice_{key};"
             ));
@@ -264,19 +264,28 @@ impl<'a> Emitter<'a> {
                         Ty::raw(capture.ty.clone())
                     }
                 };
-                self.push(&format!("    {};", declarator(&ty, field)));
+                self.push(&format!("    {};", declarator(&ty, field, &self.sema.table)));
             }
             self.push("};");
             // The field's declarator shares the lifted function's signature
             // builder, so the environment prefix, a by-value fixed-array
             // return's hidden destination, and a nested func-typed return all
             // spell the same way on both sides.
-            let params: Vec<String> = info.params.iter().map(c_type).collect();
+            let params: Vec<String> = info
+                .params
+                .iter()
+                .map(|ty| {
+                    declarator(ty, "", &self.sema.table)
+                        .trim()
+                        .to_owned()
+                })
+                .collect();
             let field = function_declarator(
                 &info.returns,
                 params,
                 "(*fn)",
                 Some(format!("struct ClEnv_{site} *__env")),
+                &self.sema.table,
             );
             self.push(&format!("typedef struct ClClosure_{site} {{"));
             self.push(&format!("    {field};"));
@@ -327,7 +336,7 @@ impl<'a> Emitter<'a> {
             self.push(&format!("struct {} {{", unit.symbol));
             for (name, ty, volatile) in &unit.fields {
                 let qualifier = if *volatile { "volatile " } else { "" };
-                self.push(&format!("    {qualifier}{};", declarator(ty, name)));
+                self.push(&format!("    {qualifier}{};", declarator(ty, name, &self.sema.table)));
             }
             self.push("};");
             self.push("");
@@ -377,7 +386,7 @@ impl<'a> Emitter<'a> {
         for field in &decl.fields {
             let ty = resolve_ty(&field.ty, &params, &self.sema.table);
             let ty = substitute_instance(&ty, &params, args);
-            collect_value_deps(&ty, &mut deps);
+            collect_value_deps(&ty, &mut deps, &self.sema.table);
             fields.push((field.name.clone(), ty, field.volatile));
         }
         StructUnit {
@@ -390,7 +399,7 @@ impl<'a> Emitter<'a> {
     /// Writes the enum constants as macros over the backing integer type.
     pub(super) fn emit_enum(&mut self, decl: &EnumDecl) {
         let backing = resolve_ty(&decl.backing, &[], &self.sema.table);
-        self.push(&format!("typedef {} Cl{};", c_type(&backing), decl.name));
+        self.push(&format!("typedef {} Cl{};", c_type(&backing, &self.sema.table), decl.name));
         let mut next: i128 = 0;
         let members: Vec<(String, i128)> = decl
             .members
@@ -524,7 +533,7 @@ impl<'a> Emitter<'a> {
             let qualifier = if volatile { "volatile " } else { "" };
             self.push(&format!(
                 "static {qualifier}{} = {};",
-                declarator(&ty, &symbol),
+                declarator(&ty, &symbol, &self.sema.table),
                 empty
             ));
         }
@@ -835,11 +844,11 @@ struct StructUnit {
 ///
 /// A pointer, handle, function pointer, or slice does not embed its referent,
 /// so only a struct and a fixed array contribute.
-fn collect_value_deps(ty: &Ty, deps: &mut Vec<String>) {
+fn collect_value_deps(ty: &Ty, deps: &mut Vec<String>, table: &TypeTable) {
     match &ty.kind {
-        TyKind::Struct(..) => deps.push(c_type(ty)),
+        TyKind::Struct(..) => deps.push(c_type(ty, table)),
         TyKind::Array { element, extents } if extents.iter().all(Option::is_some) => {
-            collect_value_deps(element, deps);
+            collect_value_deps(element, deps, table);
         }
         _ => {}
     }

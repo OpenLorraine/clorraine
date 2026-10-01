@@ -10,7 +10,7 @@ use crate::ir::{Value, ValueKind};
 use crate::types::{Ty, TyKind};
 
 use super::render::escape_c_string;
-use super::types::{c_type, type_key};
+use super::types::{c_type, is_pointer_param, type_key};
 use super::Emitter;
 
 impl Emitter<'_> {
@@ -62,8 +62,8 @@ impl Emitter<'_> {
             return None;
         }
         let row = Ty::array((**element).clone(), extents[1..].to_vec());
-        let row_type = super::types::pointer_to_array_type(&row)?;
-        Some((row_type, c_type(element)))
+        let row_type = super::types::pointer_to_array_type(&row, &self.sema.table)?;
+        Some((row_type, c_type(element, &self.sema.table)))
     }
 
     /// The pointer, count, and stored-pointer cast of the storage a `slice`
@@ -96,7 +96,7 @@ impl Emitter<'_> {
                     .fold(1usize, usize::saturating_mul);
                 let element = self.intrinsic_element(None, Some(view));
                 SliceSource {
-                    pointer: format!("({} *){value}", c_type(&element)),
+                    pointer: format!("({} *){value}", c_type(&element, &self.sema.table)),
                     length: format!("(usize){extent}"),
                     store_cast: None,
                 }
@@ -163,14 +163,15 @@ impl Emitter<'_> {
                 let text = self.argument_text(arg, expected);
                 let mode = modes.as_ref().and_then(|modes| modes.get(index)).copied();
                 let pointer = if func_ty.is_some() {
-                    // A function type has no duplicability table here: its
-                    // `borrow` parameter is the pointer to the value.
-                    mode == Some(Mode::Borrow)
+                    // A function type applies the same named-parameter rule as
+                    // the function it holds: only a non-duplicable struct lend
+                    // is the pointer to the value.
+                    expected.is_some_and(|expected| {
+                        is_pointer_param(expected, mode.unwrap_or(Mode::None), &self.sema.table)
+                    })
                 } else {
                     user_call
-                        && mode == Some(Mode::Borrow)
-                        && matches!(arg.ty.kind, TyKind::Struct(..))
-                        && !self.sema.table.duplicable(&arg.ty)
+                        && is_pointer_param(&arg.ty, mode.unwrap_or(Mode::None), &self.sema.table)
                 };
                 if pointer {
                     format!("&({text})")
@@ -290,7 +291,7 @@ impl Emitter<'_> {
                 )
             }
             "sizeof" => match type_arg {
-                Some(ty) => format!("sizeof({})", c_type(&self.substitute(ty))),
+                Some(ty) => format!("sizeof({})", c_type(&self.substitute(ty), &self.sema.table)),
                 None => "0".to_owned(),
             },
             // The hardware intrinsics become a `volatile`-qualified access at

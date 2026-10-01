@@ -213,11 +213,11 @@ impl<'a> Emitter<'a> {
         let params: Vec<String> = function
             .params
             .iter()
-            .map(|param| declarator(&param.ty, &sanitize_identifier(&param.name)))
+            .map(|param| declarator(&param.ty, &sanitize_identifier(&param.name), &self.sema.table))
             .collect();
         let env = capturing.then(|| format!("struct ClEnv_{site} *__env"));
         let signature =
-            function_declarator(&function.ret, params, &format!("cl_lambda_{site}"), env);
+            function_declarator(&function.ret, params, &format!("cl_lambda_{site}"), env, &self.sema.table);
         format!("static {signature}")
     }
 
@@ -236,7 +236,7 @@ impl<'a> Emitter<'a> {
                 .unwrap_or_else(|| sanitize_identifier(&local.name));
             let ty = self.substitute(&local.ty);
             let empty = self.empty_state(&ty);
-            self.push(&format!("    {} = {};", declarator(&ty, &c_name), empty));
+            self.push(&format!("    {} = {};", declarator(&ty, &c_name, &self.sema.table), empty));
             // A local the emitted code never reads would otherwise fail
             // `-Wunused-but-set-variable` under `-Werror`, because the hoisted
             // declaration initializes it. A `sizeof` test marks the value as
@@ -253,7 +253,7 @@ impl<'a> Emitter<'a> {
             let empty = self.empty_state(&ty);
             self.push(&format!(
                 "    {} = {};",
-                declarator(&ty, &format!("__cl_tmp{index}")),
+                declarator(&ty, &format!("__cl_tmp{index}"), &self.sema.table),
                 empty
             ));
             // A compiler temporary may only be written on a path that never
@@ -274,7 +274,7 @@ impl<'a> Emitter<'a> {
             } else {
                 let ret = self.return_ty.clone();
                 let empty = self.empty_state(&ret);
-                self.push(&format!("    {} = {};", declarator(&ret, &result), empty));
+                self.push(&format!("    {} = {};", declarator(&ret, &result, &self.sema.table), empty));
             }
         }
         // Reference every parameter so an unused one does not fail the
@@ -434,7 +434,7 @@ impl<'a> Emitter<'a> {
                         let temp = self.unique_local("__cl_arm");
                         self.push(&format!(
                             "    {} = {lowered};",
-                            declarator(&pointer_ty, &temp)
+                            declarator(&pointer_ty, &temp, &self.sema.table)
                         ));
                         self.emit_drop_expr(&format!("*({pointer_c})"), &pointer_ty);
                         self.push(&format!("    *({pointer_c}) = {temp};"));
@@ -475,7 +475,7 @@ impl<'a> Emitter<'a> {
                         self.push("    {");
                         self.push(&format!(
                             "        {} = {};",
-                            declarator(&ty, &dest),
+                            declarator(&ty, &dest, &self.sema.table),
                             self.empty_state(&ty)
                         ));
                         let call =
@@ -571,7 +571,7 @@ impl<'a> Emitter<'a> {
                         self.push("    {");
                         self.push(&format!(
                             "        {} = {};",
-                            declarator(&ty, &dest),
+                            declarator(&ty, &dest, &self.sema.table),
                             self.empty_state(&ty)
                         ));
                         let call = self.call_with_destination(
@@ -628,7 +628,7 @@ impl<'a> Emitter<'a> {
         }
         let ty = self.substitute(&arg.ty);
         let local = self.unique_local("__cl_panic_msg");
-        let decl = declarator(&ty, &local);
+        let decl = declarator(&ty, &local, &self.sema.table);
         let lowered = self.store_text(arg, &ty);
         self.push("    {");
         self.push(&format!("        {decl} = {lowered};"));
@@ -717,21 +717,23 @@ impl<'a> Emitter<'a> {
     /// A func-typed local or parameter wins over a same-named module function,
     /// because a binding shadows a module name; the local's signature then
     /// decides whether a fixed-array result needs the hidden destination. A
-    /// callable field carries its signature on the receiver value. Every other
-    /// callee resolves as a named function.
+    /// callable field carries its signature on the receiver value, a lambda
+    /// capture through the environment, a module-level func-typed global on
+    /// its own symbol, and a callable-bound closure parameter on its two-word
+    /// value. Every other callee resolves as a named function.
     pub(super) fn callee_result_type(
         &self,
         callee: &str,
         receiver: Option<&ir::Value>,
     ) -> Option<Ty> {
-        if let Some(receiver) = receiver {
-            if let TyKind::Func(signature) = &self.substitute(&receiver.ty).kind {
-                return Some(self.substitute(&signature.returns));
+        if let Some(ty) = self.callee_func_type(callee, receiver) {
+            if let TyKind::Func(signature) = &ty.kind {
+                return Some((*signature.returns).clone());
             }
         }
-        if let Some(ty) = self.func_value_type(callee) {
-            if let TyKind::Func(signature) = &ty.kind {
-                return Some(self.substitute(&signature.returns));
+        if let Some(ty) = self.closure_param_type(callee) {
+            if let TyKind::Closure(closure) = &ty.kind {
+                return Some((*closure.returns).clone());
             }
         }
         self.callee_return_type(callee)
@@ -906,7 +908,7 @@ impl<'a> Emitter<'a> {
         self.push("    {");
         self.push(&format!(
             "        {} = {};",
-            declarator(&ty, &save),
+            declarator(&ty, &save, &self.sema.table),
             target_c
         ));
         self.emit_guards(value);
@@ -992,7 +994,7 @@ impl<'a> Emitter<'a> {
             self.push("    {");
             self.push(&format!(
                 "        {} = {};",
-                declarator(ty, &temp),
+                declarator(ty, &temp, &self.sema.table),
                 self.empty_state(ty)
             ));
             let call =
@@ -1020,7 +1022,7 @@ impl<'a> Emitter<'a> {
             self.push("    {");
             self.push(&format!(
                 "        {} = {};",
-                declarator(ty, &temp),
+                declarator(ty, &temp, &self.sema.table),
                 self.empty_state(ty)
             ));
             let call = self.closure_call_with_destination(callable, args, Some(&temp));
@@ -1067,7 +1069,7 @@ impl<'a> Emitter<'a> {
         self.push("    {");
         self.push(&format!(
             "        {} = {};",
-            declarator(ty, &save),
+            declarator(ty, &save, &self.sema.table),
             self.empty_state(ty)
         ));
         self.push(&format!(
@@ -1118,7 +1120,7 @@ impl<'a> Emitter<'a> {
         self.push("    {");
         self.push(&format!(
             "        {} = {};",
-            declarator(ty, &save),
+            declarator(ty, &save, &self.sema.table),
             self.empty_state(ty)
         ));
         self.push(&format!(
@@ -1189,7 +1191,7 @@ impl<'a> Emitter<'a> {
                 let temp = self.unique_local("__cl_arm");
                 self.push(&format!(
                     "                {} = {};",
-                    declarator(ty, &temp),
+                    declarator(ty, &temp, &self.sema.table),
                     self.empty_state(ty)
                 ));
                 if let Some(receiver) = receiver.as_deref() {
@@ -1215,7 +1217,7 @@ impl<'a> Emitter<'a> {
                 let temp = self.unique_local("__cl_arm");
                 self.push(&format!(
                     "                {} = {};",
-                    declarator(ty, &temp),
+                    declarator(ty, &temp, &self.sema.table),
                     self.empty_state(ty)
                 ));
                 self.emit_guards(callable);
@@ -1305,7 +1307,7 @@ impl<'a> Emitter<'a> {
                 self.push("        {");
                 self.push(&format!(
                     "            {} = {};",
-                    declarator(ty, &local),
+                    declarator(ty, &local, &self.sema.table),
                     self.empty_state(ty)
                 ));
                 self.emit_struct_literal_fields(&local, ty, fields);
@@ -1370,7 +1372,7 @@ impl<'a> Emitter<'a> {
         self.push("    {");
         self.push(&format!(
             "        {} = {};",
-            declarator(ty, &local),
+            declarator(ty, &local, &self.sema.table),
             self.empty_state(ty)
         ));
         self.emit_struct_literal_fields(&local, ty, fields);
@@ -1452,7 +1454,7 @@ impl<'a> Emitter<'a> {
         self.push("    {");
         self.push(&format!(
             "        {} = {};",
-            declarator(ty, &save),
+            declarator(ty, &save, &self.sema.table),
             target_c
         ));
         self.emit_conditional_move_store(
@@ -1551,7 +1553,7 @@ impl<'a> Emitter<'a> {
             self.push("            {");
             self.push(&format!(
                 "                {} = {};",
-                declarator(ty, &local),
+                declarator(ty, &local, &self.sema.table),
                 self.empty_state(ty)
             ));
             self.emit_struct_literal_fields(&local, ty, fields);
@@ -1735,7 +1737,7 @@ impl<'a> Emitter<'a> {
         self.push("    {");
         self.push(&format!(
             "        {} = {};",
-            declarator(ty, &temp),
+            declarator(ty, &temp, &self.sema.table),
             self.empty_state(ty)
         ));
         let call = self.call_with_destination(callee, type_args, args, receiver, &temp);

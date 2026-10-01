@@ -7,7 +7,7 @@
 //! project size limit.
 
 use crate::ast::{BinaryOp, ScalarType};
-use crate::types::{Ty, TyKind};
+use crate::types::{Ty, TyKind, TypeTable};
 
 use super::types::{pointer_to_array_type, scalar_c_type};
 
@@ -26,7 +26,7 @@ pub(super) fn bounds_condition(index_c: &str, signed: bool, bound: &str) -> Stri
 }
 
 /// The C text of an indexed access, spelling the pointer of a view.
-pub(super) fn index_text(ty: &Ty, base: &str, index: &str) -> String {
+pub(super) fn index_text(ty: &Ty, base: &str, index: &str, table: &TypeTable) -> String {
     match &ty.kind {
         TyKind::Str | TyKind::StaticStr => format!("({base}).ptr[{index}]"),
         TyKind::Array { element, extents } if extents.iter().any(Option::is_none) => {
@@ -36,7 +36,7 @@ pub(super) fn index_text(ty: &Ty, base: &str, index: &str) -> String {
             // The row type keeps every extent after the first.
             if extents.len() > 1 {
                 let row = Ty::array((**element).clone(), extents[1..].to_vec());
-                if let Some(row_type) = pointer_to_array_type(&row) {
+                if let Some(row_type) = pointer_to_array_type(&row, table) {
                     return format!("(({row_type})({base}).ptr)[{index}]");
                 }
             }

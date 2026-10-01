@@ -13,14 +13,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{EnumDecl, Expr, FuncDecl, Item, Mode, StructDecl, Type};
+use crate::ast::{EnumDecl, Expr, FuncDecl, Item, StructDecl, Type};
 use crate::ir;
 use crate::load::{Loaded, Module};
 use crate::own::OwnershipOutput;
 use crate::profile::Profile;
 use crate::sema::SemaOutput;
 use crate::span::{SourceMap, Span};
-use crate::types::{resolve_ty, Ty, TyKind, TypeTable};
+use crate::types::{resolve_ty, Ty};
 
 mod calls;
 mod cleanup;
@@ -35,7 +35,7 @@ mod render;
 mod types;
 
 use cleanup::Action;
-use types::{declarator, function_declarator, mangle_module};
+use types::{declarator, function_declarator, is_pointer_param, mangle_module};
 
 /// Everything the emitter needs about one function with a body.
 pub(super) struct FuncInfo<'a> {
@@ -406,14 +406,14 @@ impl<'a> Emitter<'a> {
             let ty = substitute_in(&ty, subst);
             let c_name = sanitize_identifier(&param.name);
             if is_pointer_param(&ty, param.mode, &self.sema.table) {
-                params.push(declarator(&Ty::raw(ty), &c_name));
+                params.push(declarator(&Ty::raw(ty), &c_name, &self.sema.table));
             } else {
-                params.push(declarator(&ty, &c_name));
+                params.push(declarator(&ty, &c_name, &self.sema.table));
             }
         }
         // The shared declarator adds the hidden destination for a by-value
         // fixed-array return and nests a func-typed return in place.
-        let signature = function_declarator(&ret, params, symbol, None);
+        let signature = function_declarator(&ret, params, symbol, None, &self.sema.table);
         format!("{storage}{signature}")
     }
 
@@ -505,16 +505,6 @@ impl<'a> Emitter<'a> {
 /// Applies a substitution to a type.
 fn substitute_in(ty: &Ty, subst: &BTreeMap<String, Ty>) -> Ty {
     crate::types::substitute(ty, subst)
-}
-
-/// True when a parameter lowers to a C pointer rather than a value.
-///
-/// A writable lend of a non-duplicable struct must reach the caller's storage,
-/// so it becomes a `T *`; a duplicable struct lend binds a copy and stays by
-/// value, matching the unnecessary-lend warning. A handle already is a pointer
-/// and a view is passed by value, so neither is affected.
-fn is_pointer_param(ty: &Ty, mode: Mode, table: &TypeTable) -> bool {
-    mode == Mode::Borrow && matches!(ty.kind, TyKind::Struct(..)) && !table.duplicable(ty)
 }
 
 /// The type-parameter names of a declaration.

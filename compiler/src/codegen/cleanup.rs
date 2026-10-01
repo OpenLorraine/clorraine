@@ -344,7 +344,7 @@ impl<'a> Emitter<'a> {
                             // `return`. The value is stored in a block-local
                             // first, so the releases run after it has been read.
                             let local = self.unique_local("__cl_return");
-                            let decl = super::types::declarator(&ret_ty, &local);
+                            let decl = super::types::declarator(&ret_ty, &local, &self.sema.table);
                             self.push("    {");
                             self.push(&format!("        {decl} = {lowered};"));
                             self.emit_temp_releases(releases);
@@ -407,7 +407,7 @@ impl<'a> Emitter<'a> {
             return false;
         }
         let local = self.unique_local("__cl_return");
-        let decl = super::types::declarator(ret_ty, &local);
+        let decl = super::types::declarator(ret_ty, &local, &self.sema.table);
         self.push("    {");
         self.push(&format!(
             "        {decl} = {};",
@@ -438,7 +438,7 @@ impl<'a> Emitter<'a> {
             return false;
         }
         let local = self.unique_local("__cl_return");
-        let decl = super::types::declarator(ret_ty, &local);
+        let decl = super::types::declarator(ret_ty, &local, &self.sema.table);
         self.push("    {");
         self.push(&format!(
             "        {decl} = {};",
@@ -471,7 +471,7 @@ impl<'a> Emitter<'a> {
             return false;
         }
         let local = self.unique_local("__cl_return");
-        let decl = super::types::declarator(ret_ty, &local);
+        let decl = super::types::declarator(ret_ty, &local, &self.sema.table);
         self.push("    {");
         self.push(&format!(
             "        {decl} = {};",
@@ -653,10 +653,10 @@ impl<'a> Emitter<'a> {
             }
             // A view returns its pointer-and-length struct in its empty state.
             TyKind::Str | TyKind::StaticStr | TyKind::Struct(..) => {
-                format!("({}){{0}}", super::types::c_type(&ret))
+                format!("({}){{0}}", super::types::c_type(&ret, &self.sema.table))
             }
             TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
-                format!("({}){{0}}", super::types::c_type(&ret))
+                format!("({}){{0}}", super::types::c_type(&ret, &self.sema.table))
             }
             _ => "0".to_owned(),
         }

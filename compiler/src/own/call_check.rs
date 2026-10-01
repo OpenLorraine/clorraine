@@ -15,18 +15,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// field's own signature (already checked by the type stage) types it, so
     /// the ownership walk only reads the field and its arguments.
     pub(super) fn check_call_expr(&mut self, callee: &'a Expr, args: &'a [Arg], span: Span) {
-        if self
-            .callee_field_type(callee)
-            .is_some_and(|ty| matches!(ty.kind, TyKind::Func(_)))
-        {
-            // The callee is a field, not a named function, so only the
-            // receiver and the arguments are walked; the field's own signature
-            // was checked by the type stage.
-            self.eval_dot_receiver(callee);
-            for arg in args {
-                self.eval(&arg.value);
+        if let Some(field_ty) = self.callee_field_type(callee) {
+            if let TyKind::Func(signature) = &field_ty.kind {
+                // The callee is a field, not a named function, so the
+                // receiver is only read and the field's own signature types
+                // the call. A call-site marker must still match the declared
+                // mode. The modes carry no ownership semantics here, so a
+                // `take` argument is not marked as moved: the lowering does
+                // not emit a move-out for a field call.
+                self.eval_dot_receiver(callee);
+                let params: Vec<(Mode, Ty)> = signature
+                    .params
+                    .iter()
+                    .map(|param| (param.mode, param.ty.clone()))
+                    .collect();
+                if let Some(name) = self.callee_name(callee) {
+                    self.check_marker_matches(&name, args, &params);
+                }
+                for arg in args {
+                    self.eval(&arg.value);
+                }
+                return;
             }
-            return;
         }
         let callee_name = self.callee_name(callee);
         let Some(name) = callee_name else {

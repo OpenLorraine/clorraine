@@ -560,6 +560,17 @@ impl<'a> Emitter<'a> {
                             receiver.as_deref(),
                             &destination,
                         ),
+                        // A fixed-array closure call in a conditionally
+                        // evaluated operand also writes through its hidden
+                        // destination, taken after the environment and the
+                        // lambda's own arguments.
+                        ValueKind::ClosureCall { callable, args } if inner_ty.is_fixed_array() => {
+                            self.closure_call_with_destination(
+                                callable,
+                                args,
+                                Some(&destination),
+                            )
+                        }
                         ValueKind::ArrayLit { elements, fill } if inner_ty.is_fixed_array() => self
                             .array_assign_expr(&destination, &inner_ty, elements, fill)
                             .unwrap_or_else(|| {

@@ -1209,3 +1209,237 @@ func main(): i32 {
     assert_contains("cviimpl-p3borrow", &emitted, "void (*run)(ClEntity *);");
     assert_contains("cviimpl-p3borrow", &emitted, "(ops.run)(&(e));");
 }
+
+/// A func-type `borrow` parameter spells by value when the borrowed struct is
+/// duplicable, so the func value's C type matches the named function it holds.
+#[test]
+fn should_spell_a_duplicable_borrow_func_parameter_by_value() {
+    let source = r#"module impl.cvi.rv3borrow;
+struct D { value: i32; }
+func nudge(borrow e: D): void { e.value = 42; }
+func main(): i32 {
+    let d: D = D { value: 1 };
+    let g: func(borrow D): void = nudge;
+    g(d);
+    return d.value;
+}
+"#;
+    let emitted = emit_host("cviimpl-rv3borrow", source);
+    assert_contains(
+        "cviimpl-rv3borrow",
+        &emitted,
+        "static void cl_impl_cvi_rv3borrow_nudge(ClD e)",
+    );
+    assert_contains("cviimpl-rv3borrow", &emitted, "void (*g)(ClD) = NULL;");
+    assert_contains("cviimpl-rv3borrow", &emitted, "g(d);");
+    assert!(
+        !emitted.contains("g(&(d))"),
+        "cviimpl-rv3borrow: a duplicable borrow func parameter must not take an address"
+    );
+}
+
+/// A fixed-array closure call inside a short-circuit operand writes through its
+/// destination from the guard expression.
+#[test]
+fn should_pass_the_destination_from_a_guard_expression_to_a_closure_call() {
+    let source = r#"module impl.cvi.rv3guard;
+func main(): i32 {
+    let flag: bool = true;
+    if (flag && ((x: i32) => { return [x, x + 1]; })(5)[0] == 5) {
+        return 7;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("cviimpl-rv3guard", source);
+    assert_contains(
+        "cviimpl-rv3guard",
+        &emitted,
+        "((cl_lambda_0(5, __cl_tmp0)), (__cl_tmp0[0] == 5))",
+    );
+}
+
+/// A discarded fixed-array call through a module-level func-typed global still
+/// passes the hidden destination.
+#[test]
+fn should_pass_the_destination_to_a_discarded_global_func_call() {
+    let source = r#"module impl.cvi.rv3global;
+func pair(x: i32): i32[2] { return [x, x + 1]; }
+let global_arr: func(i32): i32[2] = pair;
+func main(): i32 {
+    global_arr(3);
+    return 0;
+}
+"#;
+    let emitted = emit_host("cviimpl-rv3global", source);
+    assert_contains(
+        "cviimpl-rv3global",
+        &emitted,
+        "static void (*cl_impl_cvi_rv3global_global_arr)(i32, i32 __cl_ret[2]) = NULL;",
+    );
+    assert_contains(
+        "cviimpl-rv3global",
+        &emitted,
+        "cl_impl_cvi_rv3global_global_arr(3, __cl_discard",
+    );
+}
+
+/// A discarded fixed-array call through a callable-bound closure parameter
+/// passes the hidden destination after the environment.
+#[test]
+fn should_pass_the_destination_to_a_discarded_closure_parameter_call() {
+    let source = r#"module impl.cvi.rv3closurediscard;
+func apply<F: func(i32): i32[2]>(f: F): i32 {
+    f(5);
+    return 0;
+}
+func main(): i32 {
+    let base: i32 = 10;
+    return apply([base] (x: i32) => { return [x, x + base]; });
+}
+"#;
+    let emitted = emit_host("cviimpl-rv3closurediscard", source);
+    assert_contains(
+        "cviimpl-rv3closurediscard",
+        &emitted,
+        "((f).fn((f).env, 5, __cl_discard",
+    );
+}
+
+/// A call-site marker on a callable field is checked against the field's
+/// declared mode.
+#[test]
+fn should_reject_a_marker_that_contradicts_a_callable_field_mode() {
+    let source = r#"module impl.cvi.rv3marker;
+struct D { value: i32; }
+struct Ops { run: func(D): void; }
+func plain(e: D): void { }
+func main(): i32 {
+    let d: D = D { value: 1 };
+    let ops: Ops = Ops { run: plain };
+    ops.run(borrow d);
+    return 0;
+}
+"#;
+    let scratch = ScratchDir::new("cviimpl-rv3marker");
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source).expect("write the program");
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "cviimpl-rv3marker: a contradicting field marker must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error E10039:"),
+        "cviimpl-rv3marker: expected E10039; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "cviimpl-rv3marker: a rejected program must not produce a translation unit"
+    );
+}
+
+/// A closure-typed parameter shadows a same-named module function inside a
+/// generic body.
+#[test]
+fn should_prefer_a_closure_parameter_over_a_same_named_module_function() {
+    let source = r#"module impl.cvi.rr3shadow;
+func f(x: i32): i32[2] { return [x, x + 1]; }
+func apply<F: func(i32): i32>(f: F): i32 {
+    f(5);
+    return 0;
+}
+func main(): i32 {
+    let base: i32 = 10;
+    return apply([base] (x: i32) => { return x + base; });
+}
+"#;
+    let emitted = emit_host("cviimpl-rr3shadow", source);
+    assert_contains("cviimpl-rr3shadow", &emitted, "((f).fn((f).env, 5));");
+    assert!(
+        !emitted.contains("cl_impl_cvi_rr3shadow_f(5)"),
+        "cviimpl-rr3shadow: the parameter must shadow the module function"
+    );
+}
+
+/// A direct capturing-lambda call with a fixed-array result takes the hidden
+/// destination from a guard expression.
+#[test]
+fn should_type_a_capturing_lambda_call_in_a_guard_with_its_real_result() {
+    let source = r#"module impl.cvi.rr3capguard;
+func main(): i32 {
+    let flag: bool = true;
+    let base: i32 = 10;
+    if (flag && ([base] (x: i32) => { return [x, x + base]; })(5)[0] == 15) {
+        return 7;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("cviimpl-rr3capguard", source);
+    assert_contains(
+        "cviimpl-rr3capguard",
+        &emitted,
+        "cl_lambda_0(&(((struct ClEnv_0){ base })), 5, __cl_tmp0)",
+    );
+    assert_contains("cviimpl-rr3capguard", &emitted, "(__cl_tmp0[0] == 15)");
+}
+
+/// A callable-bound parameter's fixed-array call in a guard takes the hidden
+/// destination from the bound signature.
+#[test]
+fn should_type_a_bound_parameter_call_in_a_guard_with_its_bound_result() {
+    let source = r#"module impl.cvi.rr3boundguard;
+func apply<F: func(i32): i32[2]>(f: F, flag: bool): i32 {
+    if (flag && f(5)[0] == 5) { return 7; }
+    return 0;
+}
+func main(): i32 {
+    let base: i32 = 10;
+    return apply([base] (x: i32) => { return [x, x + base]; }, true);
+}
+"#;
+    let emitted = emit_host("cviimpl-rr3boundguard", source);
+    assert_contains(
+        "cviimpl-rr3boundguard",
+        &emitted,
+        "((f).fn((f).env, 5, __cl_tmp0))",
+    );
+    assert_contains("cviimpl-rr3boundguard", &emitted, "(__cl_tmp0[0] == 5)");
+}
+
+/// A closure field spells a fixed-array parameter exactly as the lifted
+/// function does, so the two-word value initializes with a compatible pointer.
+#[test]
+fn should_spell_a_closure_field_fixed_array_parameter_like_its_lambda() {
+    let source = r#"module impl.cvi.rr3closarr;
+func apply<F: func(i32[2]): i32>(f: F): i32 {
+    let pair: i32[2] = [1, 2];
+    return f(pair);
+}
+func main(): i32 {
+    let base: i32 = 10;
+    return apply([base] (pair: i32[2]) => pair[0] + pair[1] + base);
+}
+"#;
+    let emitted = emit_host("cviimpl-rr3closarr", source);
+    assert_contains(
+        "cviimpl-rr3closarr",
+        &emitted,
+        "i32 (*fn)(struct ClEnv_0 *__env, i32 [2]);",
+    );
+    assert_contains(
+        "cviimpl-rr3closarr",
+        &emitted,
+        "static i32 cl_lambda_0(struct ClEnv_0 *__env, i32 pair[2])",
+    );
+}

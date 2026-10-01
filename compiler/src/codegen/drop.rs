@@ -111,7 +111,7 @@ impl<'a> Emitter<'a> {
     /// loop locals are unique, so a user local of the same name is not shadowed.
     fn emit_growable_array_drop(&mut self, c_name: &str, element: &Ty) {
         let data = format!("{c_name}.data");
-        let element_c = super::types::c_type(element);
+        let element_c = super::types::c_type(element, &self.sema.table);
         let elems = self.unique_local("__cl_elems");
         let index = self.unique_local("__cl_i");
         self.push(&format!("    if ({data}) {{"));
