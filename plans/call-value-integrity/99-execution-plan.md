@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 11:42
-> **Progress**: 35/39 tasks (89%)
+> **Last Updated**: 2026-10-01 11:20
+> **Progress**: 36/39 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -535,11 +535,25 @@ probe-verified within the phase.
 **Reference**: [01](01-requirements.md) §Acceptance Criteria · AR #16, #17, #18
 **Objective**: Full acceptance, memory-safety probes, documentation, and the plan summary.
 
-- [x] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-10-01 11:42)
-- [ ] 5.1.2 Host AddressSanitizer probes for the memory-safety defects DEF-34, DEF-36, DEF-37, DEF-39, and DEF-45: build with `clang -std=c99 -O0 -g -fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=1` (host side; the pinned container has no ASan runtime), using the probe programs in `07-testing-strategy.md` (AR #16)
+- [x] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-10-01 11:18)
+- [x] 5.1.2 Host AddressSanitizer probes for the memory-safety defects DEF-34, DEF-36, DEF-37, DEF-39, and DEF-45: build with `clang -std=c99 -O0 -g -fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=1` (host side; the pinned container has no ASan runtime), using the probe programs in `07-testing-strategy.md` (AR #16) ✅ (completed: 2026-10-01 11:20)
 - [ ] 5.1.3 Update documentation: `AGENTS.md` test map (both new suites) and the roadmap rows for `DEF-30` – `DEF-45` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` (AR #18)
 - [ ] 5.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 39/39; final `make check`
 - [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
+
+**Acceptance evidence (2026-10-01 11:18):** `make verify` passed every leg — `make check`
+(`./spec/check.sh` plus `cargo test --workspace`, 34 suites, 0 failures), the hosted-amiga
+corpus under `vamos` (file-copier, string-parser, buffer-container, volatile-mmio output
+matches), the FS-UAE-only programs (interrupt-counter and graphics output matches), and the six
+runtime-fault programs.
+
+**ASan probe evidence (2026-10-01 11:20):** the close-out harness at `build/closeout-probes/`
+(gitignored) emits each probe with `target/debug/clc --profile host` and builds it with
+`clang -std=c99 -O0 -g -fsanitize=address`; all 11 probes run clean with
+`ASAN_OPTIONS=detect_leaks=1`, each exiting with its specification code and printing no
+sanitizer report: ST-1, ST-32, and ST-33 in both directions (DEF-34), ST-26 (DEF-36), ST-27 and
+ST-38 (DEF-37), ST-29 (DEF-39), and a function-scoped discard shape (DEF-45). A deliberate-leak
+control confirmed leak detection is active.
 
 **Deliverables**:
 - [ ] `make verify` all legs passed
