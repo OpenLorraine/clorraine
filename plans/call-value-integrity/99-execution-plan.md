@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 11:22
-> **Progress**: 37/39 tasks (95%)
+> **Last Updated**: 2026-10-01 11:23
+> **Progress**: 38/39 tasks (97%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -538,7 +538,7 @@ probe-verified within the phase.
 - [x] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-10-01 11:18)
 - [x] 5.1.2 Host AddressSanitizer probes for the memory-safety defects DEF-34, DEF-36, DEF-37, DEF-39, and DEF-45: build with `clang -std=c99 -O0 -g -fsanitize=address` and run with `ASAN_OPTIONS=detect_leaks=1` (host side; the pinned container has no ASan runtime), using the probe programs in `07-testing-strategy.md` (AR #16) ✅ (completed: 2026-10-01 11:20)
 - [x] 5.1.3 Update documentation: `AGENTS.md` test map (both new suites) and the roadmap rows for `DEF-30` – `DEF-45` (done + plan link) — `AGENTS.md`, `plans/00-roadmap.md` (AR #18) ✅ (completed: 2026-10-01 11:22)
-- [ ] 5.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 39/39; final `make check`
+- [x] 5.1.4 Check every acceptance criterion in `01-requirements.md`; set this plan's status Complete and the progress header to 39/39; final `make check` ✅ (completed: 2026-10-01 11:23)
 - [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
 
 **Acceptance evidence (2026-10-01 11:18):** `make verify` passed every leg — `make check`
@@ -556,9 +556,14 @@ ST-38 (DEF-37), ST-29 (DEF-39), and a function-scoped discard shape (DEF-45). A 
 control confirmed leak detection is active.
 
 **Deliverables**:
-- [ ] `make verify` all legs passed
-- [ ] ASan probes clean with leak detection on
-- [ ] Documentation and roadmap synced; acceptance criteria checked
+- [x] `make verify` all legs passed
+- [x] ASan probes clean with leak detection on
+- [x] Documentation and roadmap synced; acceptance criteria checked
+
+**Close-out counter correction (mechanical):** the progress header reads 38/39 after task 5.1.4
+because task 5.1.5 is still open; it reaches 39/39, and the index status reads Complete, only
+when 5.1.5 verifies. The counter rule (only `[x]` tasks count) takes precedence over the task's
+shorthand.
 
 **Verify**: `make verify`
 

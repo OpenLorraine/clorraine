@@ -115,15 +115,15 @@ specification text.
 
 ## Acceptance Criteria
 
-1. [ ] Every specification test case (ST-1 – ST-41) passes; at least one case per defect fails
+1. [x] Every specification test case (ST-1 – ST-41) passes; at least one case per defect fails
    before its fix (red) and passes after (green). Cases that already pass before the fix are
    recorded as regression pins in `07-testing-strategy.md` and are not counted as red-phase
    evidence.
-2. [ ] `make check` passes with no warnings; `make verify` reports all legs passed.
-3. [ ] The AddressSanitizer probes for the memory-safety defects (DEF-34, 36, 37, 39, 45) run
+2. [x] `make check` passes with no warnings; `make verify` reports all legs passed.
+3. [x] The AddressSanitizer probes for the memory-safety defects (DEF-34, 36, 37, 39, 45) run
    host-side with `clang -std=c99 -O0 -g -fsanitize=address` and `ASAN_OPTIONS=detect_leaks=1`,
    using the probe programs named in `07-testing-strategy.md`, and report clean. The pinned
    container has no ASan runtime, so the probes run on the host.
-4. [ ] `DEF-30` – `DEF-45` are marked Done in `plans/00-roadmap.md` with a link to this plan.
-5. [ ] Documentation updated: `AGENTS.md` test map and roadmap rows; the closed plans' spec suites
+4. [x] `DEF-30` – `DEF-45` are marked Done in `plans/00-roadmap.md` with a link to this plan.
+5. [x] Documentation updated: `AGENTS.md` test map and roadmap rows; the closed plans' spec suites
    unchanged.
