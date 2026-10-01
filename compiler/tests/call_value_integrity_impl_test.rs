@@ -1443,3 +1443,190 @@ func main(): i32 {
         "static i32 cl_lambda_0(struct ClEnv_0 *__env, i32 pair[2])",
     );
 }
+
+/// A fixed-array parameter is C-adjusted to a pointer, so a move on either
+/// side copies through the parameter name and zeroes by element.
+#[test]
+fn should_copy_and_zero_when_fixed_array_parameters_move() {
+    let source = r#"module impl.cvi.p4params;
+import { String, stringOf } from std.text;
+
+func take_into(take a: String[2], take b: String[2]): i32 {
+    a = b;
+    return i32(len(a[0]) + len(a[1]));
+}
+
+func copy_out(take a: String[2]): i32 {
+    let c: String[2] = a;
+    return i32(len(c[0]));
+}
+
+func main(): i32 {
+    return take_into([stringOf("xy"), stringOf("z")], [stringOf("q"), stringOf("r")])
+        + copy_out([stringOf("m"), stringOf("n")]);
+}
+"#;
+    let emitted = emit_host("cviimpl-p4params", source);
+    assert_contains("cviimpl-p4params", &emitted, "memcpy(a, b, (sizeof(a[0]) * 2));");
+    assert_contains("cviimpl-p4params", &emitted, "cl_zero(&b[0]);");
+    assert_contains("cviimpl-p4params", &emitted, "cl_zero(&b[1]);");
+    assert_contains("cviimpl-p4params", &emitted, "memcpy(&(c), a, sizeof(c));");
+    assert_contains("cviimpl-p4params", &emitted, "cl_zero(&a[0]);");
+    assert_contains("cviimpl-p4params", &emitted, "cl_zero(&a[1]);");
+    assert!(
+        !emitted.contains("cl_zero(&a);"),
+        "cviimpl-p4params: the adjusted parameter must not reach cl_zero directly"
+    );
+}
+
+/// A fixed-array parameter returned to the caller is copied element by element
+/// and then emptied through the element walk.
+#[test]
+fn should_walk_the_returned_elements_when_a_fixed_array_parameter_returns() {
+    let source = r#"module impl.cvi.p4return;
+import { String, stringOf } from std.text;
+
+func give_back(take a: String[2]): String[2] {
+    return a;
+}
+
+func main(): i32 {
+    let r: String[2] = give_back([stringOf("ab"), stringOf("cde")]);
+    return i32(len(r[1]));
+}
+"#;
+    let emitted = emit_host("cviimpl-p4return", source);
+    assert_contains("cviimpl-p4return", &emitted, "__cl_ret[0] = a[0];");
+    assert_contains("cviimpl-p4return", &emitted, "cl_zero(&a[0]);");
+    assert_contains("cviimpl-p4return", &emitted, "cl_zero(&a[1]);");
+    assert!(
+        !emitted.contains("cl_zero(&a);"),
+        "cviimpl-p4return: the adjusted parameter must not reach cl_zero directly"
+    );
+}
+
+/// A guarded do/while is flag-first: the body runs once, then the guards and
+/// the test sit at the top where the fall-through and `continue` reach them.
+#[test]
+fn should_run_a_first_flagged_pass_when_a_do_while_condition_has_guards() {
+    let source = r#"module impl.cvi.p4dowhile;
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cd")];
+}
+
+func vlen(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (vlen(mk()[0]) == 2 && i < 3);
+    return i;
+}
+"#;
+    let emitted = emit_host("cviimpl-p4dowhile", source);
+    assert_contains("cviimpl-p4dowhile", &emitted, "i32 __cl_first_1 = 0;");
+    assert_contains("cviimpl-p4dowhile", &emitted, "if (__cl_first_1) {");
+    assert_contains("cviimpl-p4dowhile", &emitted, "if (!(((");
+    assert_contains("cviimpl-p4dowhile", &emitted, "__cl_first_1 = 1;");
+    assert!(
+        !emitted.contains("do {"),
+        "cviimpl-p4dowhile: a guarded do/while must not keep the bottom test"
+    );
+}
+
+/// An unguarded do/while keeps the C `do`/`while`, where a `continue` already
+/// reaches the test.
+#[test]
+fn should_keep_the_bottom_test_when_a_do_while_condition_has_no_guards() {
+    let source = r#"module impl.cvi.p4plain;
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (i < 5);
+    return i;
+}
+"#;
+    let emitted = emit_host("cviimpl-p4plain", source);
+    assert_contains("cviimpl-p4plain", &emitted, "do {");
+    assert_contains("cviimpl-p4plain", &emitted, "} while ((i < 5));");
+    assert!(!emitted.contains("__cl_first"));
+}
+
+/// A growable guard operand whose element needs no drop releases its buffer
+/// and resets its count as an expression before re-materializing.
+#[test]
+fn should_drop_a_growable_guard_operand_before_rematerializing_it() {
+    let source = r#"module impl.cvi.p4grow;
+import { Array, arrayNew } from std.mem;
+
+func growable(): Array<i32>[2] {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    let b: Array<i32> = arrayNew<i32>();
+    b.push(2);
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 3 && growable()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("cviimpl-p4grow", source);
+    assert_contains(
+        "cviimpl-p4grow",
+        &emitted,
+        "(__cl_tmp0[0].data ? (FreeBuffer(__cl_tmp0[0].data), __cl_tmp0[0].data = NULL, __cl_tmp0[0].count = 0) : 0)",
+    );
+    assert_contains(
+        "cviimpl-p4grow",
+        &emitted,
+        "cl_impl_cvi_p4grow_growable(__cl_tmp0)",
+    );
+}
+
+/// A growable guard operand whose element needs a drop keeps today's skip: the
+/// element loop has no expression form, so the guard re-materializes without a
+/// drop. This is the recorded limit, not a regression.
+#[test]
+fn should_keep_the_drop_skip_when_a_growable_guard_element_needs_a_drop() {
+    let source = r#"module impl.cvi.p4growstr;
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String>[2] {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    let b: Array<String> = arrayNew<String>();
+    b.push(stringOf("cd"));
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("cviimpl-p4growstr", source);
+    assert_contains(
+        "cviimpl-p4growstr",
+        &emitted,
+        "(cl_impl_cvi_p4growstr_grow(__cl_tmp0))",
+    );
+    assert!(
+        !emitted.contains("(__cl_tmp0[0].data ? (FreeBuffer("),
+        "cviimpl-p4growstr: a drop-needing element keeps the recorded skip"
+    );
+}

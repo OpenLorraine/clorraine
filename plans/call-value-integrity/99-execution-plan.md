@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 09:11
-> **Progress**: 32/39 tasks (82%)
+> **Last Updated**: 2026-10-01 09:08
+> **Progress**: 34/39 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -445,12 +445,12 @@ unchanged).
 **Reference**: [03-04](03-04-guards-and-cleanup.md) §Proposed Changes 1–3
 **Objective**: Correct the parameter zero walk, the do-while condition entry, and the embedded growable drop.
 
-- [x] 4.2.1 Array-parameter copy and zero walk on both the source and the target of a move; `is_pointer_param` and the parameter ABI stay unchanged; `cl_zero` stays for true locals — `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/cleanup.rs` (the return and guarded move-out paths reuse the same place-aware zero) (AR #10; DEF-36) ✅ (completed: 2026-10-01 09:06)
-- [x] 4.2.2 Goto-free flag-first do-while when the condition carries guards (fall-through, `continue`, and embedded-only guards all reach the guards/test; unguarded keeps today's emission) — `compiler/src/codegen/control.rs` (AR #8; DEF-37) ✅ (completed: 2026-10-01 09:04)
-- [x] 4.2.3 Growable-array drop expression form for element types that need no drop; the limitation for drop-needing elements is recorded in Won't Have and pinned — `compiler/src/codegen/drop.rs`, `compiler/src/codegen/guards.rs` (AR #9; DEF-39) ✅ (completed: 2026-10-01 09:11)
-- [x] 4.2.4 Run the specification tests — verify they PASS (green phase) ✅ (completed: 2026-10-01 09:11)
+- [x] 4.2.1 Array-parameter copy and zero walk on both the source and the target of a move; `is_pointer_param` and the parameter ABI stay unchanged; `cl_zero` stays for true locals — `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/cleanup.rs` (the return and guarded move-out paths reuse the same place-aware zero) (AR #10; DEF-36) ✅ (completed: 2026-10-01 09:02)
+- [x] 4.2.2 Goto-free flag-first do-while when the condition carries guards (fall-through, `continue`, and embedded-only guards all reach the guards/test; unguarded keeps today's emission) — `compiler/src/codegen/control.rs` (AR #8; DEF-37) ✅ (completed: 2026-10-01 09:05)
+- [x] 4.2.3 Growable-array drop expression form for element types that need no drop; the limitation for drop-needing elements is recorded in Won't Have and pinned — `compiler/src/codegen/drop.rs`, `compiler/src/codegen/guards.rs` (AR #9; DEF-39) ✅ (completed: 2026-10-01 09:06)
+- [x] 4.2.4 Run the specification tests — verify they PASS (green phase) ✅ (completed: 2026-10-01 09:06)
 
-**Green phase (2026-10-01 09:11):** all 62 specification cases pass
+**Green phase (2026-10-01 09:06):** all 62 specification cases pass
 (`cargo test --test call_value_integrity_spec_test`); the guard expression now drops each
 `Array<i32>` element's buffer and resets its count before re-materializing `growable()`
 (`__cl_tmp0[0].data ? (FreeBuffer(__cl_tmp0[0].data), __cl_tmp0[0].data = NULL, __cl_tmp0[0].count = 0) : 0`).
@@ -460,8 +460,13 @@ unchanged).
 **Reference**: [07](07-testing-strategy.md) §Implementation Tests
 **Objective**: Pin the emitted shapes and run the phase verification.
 
-- [ ] 4.3.1 Write implementation tests (parameter copy/zero on both sides, flag-first do-while with `continue`, limited growable drop expression) — `compiler/tests/call_value_integrity_impl_test.rs`
-- [ ] 4.3.2 Full verification — `make check`
+- [x] 4.3.1 Write implementation tests (parameter copy/zero on both sides, flag-first do-while with `continue`, limited growable drop expression) — `compiler/tests/call_value_integrity_impl_test.rs` ✅ (completed: 2026-10-01 09:08)
+- [x] 4.3.2 Full verification — `make check` ✅ (completed: 2026-10-01 09:08)
+
+**Phase 4 verification (2026-10-01 09:08):** `make check` 34 suites, 0 failures, 0 warnings;
+`call_value_integrity_spec_test` 62/62; `call_value_integrity_impl_test` 57/57 (6 new pins for the
+parameter copy/zero on both sides, the parameter return walk, the flag-first do-while, the
+unguarded `do`/`while` pin, the growable drop expression, and the drop-needing element skip).
 
 **Deliverables**:
 - [ ] ST-26 – ST-31 and ST-38 pass; at least one case per Phase-4 defect failed first (red phase
