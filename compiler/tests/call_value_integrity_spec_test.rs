@@ -1661,3 +1661,222 @@ func main(): i32 {
 "#;
     assert_rejected_with("cvi40", source, "E10210", &[]);
 }
+
+/// Moving a `take` array parameter into a local copies its elements.
+///
+/// `f` receives a `String[2]`, moves it into `b`, and reads the first element,
+/// which is `"ab"`. The parameter is passed as a pointer, so the move must copy
+/// the elements the pointer addresses; a copy that read the parameter slot
+/// itself would over-read, and zeroing the slot before the copy would leave
+/// `b[0]` dangling. The exit code scales the length by ten and adds one, so a
+/// zero or garbage length cannot masquerade as the right answer, and a clean
+/// exit proves neither the copy nor the parameter cleanup touched freed memory.
+#[test]
+fn should_copy_the_elements_when_a_take_array_parameter_moves_into_a_local() {
+    let source = r#"module codegen.cvi.st26;
+
+import { String, stringOf } from std.text;
+
+func f(take a: String[2]): i32 {
+    let b: String[2] = a;
+    return i32(len(b[0]));
+}
+
+func main(): i32 {
+    let pair: String[2] = [stringOf("ab"), stringOf("cde")];
+    return f(pair) * 10 + 1;
+}
+"#;
+    let output = run_host("cvi26", source);
+    assert_exit("cvi26", &output, 21);
+}
+
+/// A guarded `do`/`while` re-evaluates its condition after every body pass.
+///
+/// The condition materializes `mk()` and compares its first element's length
+/// with two. Each body pass increments `i`, so the test must run after every
+/// pass and the loop ends once `i` reaches three. A condition that reads a
+/// temporary that was never materialized sees an empty element, so the exit
+/// code proves the condition ran after each pass.
+#[test]
+fn should_re_evaluate_the_condition_when_a_do_while_body_falls_through() {
+    let source = r#"module codegen.cvi.st27;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cd")];
+}
+
+func vlen(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (vlen(mk()[0]) == 2 && i < 3);
+    return i;
+}
+"#;
+    let output = run_host("cvi27", source);
+    assert_exit("cvi27", &output, 3);
+}
+
+/// A `continue` in a guarded `do`/`while` body reaches the condition too.
+///
+/// The first pass falls through and sets `i` to one; the second pass takes the
+/// `continue` edge, which must still evaluate the guarded condition and its
+/// test before the next pass; the third pass falls through and ends the loop at
+/// three. A condition block that a `continue` bypasses leaves the loop at a
+/// wrong value or reads an empty temporary, so the exit code proves the
+/// `continue` edge re-evaluated the condition.
+#[test]
+fn should_re_evaluate_the_condition_when_a_do_while_body_continues() {
+    let source = r#"module codegen.cvi.st38;
+
+import { String, stringOf } from std.text;
+
+func mk(): String[2] {
+    return [stringOf("ab"), stringOf("cd")];
+}
+
+func vlen(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        if (i == 1) {
+            i = i + 1;
+            continue;
+        }
+        i = i + 1;
+    } while (vlen(mk()[0]) == 2 && i < 3);
+    return i;
+}
+"#;
+    let output = run_host("cvi38", source);
+    assert_exit("cvi38", &output, 3);
+}
+
+/// A guarded `do`/`while` condition carrying a fixed-array call re-evaluates
+/// the call after every body pass.
+///
+/// `mk2` always returns `[5, 7]`, so the first element is five on every test.
+/// The body increments `i`, so the test must run after each pass and the loop
+/// ends at three. A stale or missing temporary would compare a zero element and
+/// stop the loop after the first pass.
+#[test]
+fn should_re_evaluate_the_guarded_operand_when_a_do_while_condition_holds_a_fixed_array_call() {
+    let source = r#"module codegen.cvi.st28;
+
+func mk2(): i32[2] {
+    return [5, 7];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (mk2()[0] == 5 && i < 3);
+    return i;
+}
+"#;
+    let output = run_host("cvi28", source);
+    assert_exit("cvi28", &output, 3);
+}
+
+/// A `while` guard with an embedded growable call runs the body three times.
+///
+/// Each test re-materializes `growable()` and reads the first growable array's
+/// count, which is one, so the body runs three times and the loop ends at
+/// three. A re-materialization that does not release the previous growable
+/// value would leak its buffer; that leak is only visible to AddressSanitizer,
+/// so this case pins the loop count and the clean exit and leaves the leak
+/// check to the sanitizer run.
+#[test]
+fn should_run_the_body_three_times_when_a_while_guard_holds_a_growable_call() {
+    let source = r#"module codegen.cvi.st29;
+
+import { Array, arrayNew } from std.mem;
+
+func growable(): Array<i32>[2] {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    let b: Array<i32> = arrayNew<i32>();
+    b.push(2);
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 3 && growable()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("cvi29", source);
+    assert_exit("cvi29", &output, 3);
+}
+
+/// A `while` guard with an embedded fixed-array call keeps its behavior.
+///
+/// Each test materializes `mk2()` and compares its first element with five,
+/// which always holds, so the body runs until the `i` counter reaches two.
+/// This pins the fixed-array embedded guard while the growable form changes.
+#[test]
+fn should_keep_the_fixed_array_guard_when_a_while_condition_holds_a_call() {
+    let source = r#"module codegen.cvi.st30;
+
+func mk2(): i32[2] {
+    return [5, 7];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && mk2()[0] == 5) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("cvi30", source);
+    assert_exit("cvi30", &output, 2);
+}
+
+/// A growable array bound in a statement keeps its count and element reads.
+///
+/// `growableOne` returns a growable array holding seven and nine, and the loop
+/// walks it by its `count`, so the sum is sixteen. The clean exit pins the
+/// statement binding's cleanup path while the embedded guard spelling changes.
+#[test]
+fn should_keep_the_growable_statement_reads_when_a_local_holds_an_array() {
+    let source = r#"module codegen.cvi.st31;
+
+import { Array, arrayNew } from std.mem;
+
+func growableOne(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(7);
+    a.push(9);
+    return a;
+}
+
+func main(): i32 {
+    let arr: Array<i32> = growableOne();
+    let total: i32 = 0;
+    let i: usize = 0;
+    while (i < arr.count) {
+        total = total + arr.get(i)[0];
+        i = i + 1;
+    }
+    return total;
+}
+"#;
+    let output = run_host("cvi31", source);
+    assert_exit("cvi31", &output, 16);
+}

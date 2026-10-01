@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 08:31
-> **Progress**: 26/39 tasks (67%)
+> **Last Updated**: 2026-10-01 08:58
+> **Progress**: 28/39 tasks (72%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -411,16 +411,31 @@ another independent pass. The `take`-in-a-func-type double free stays the record
 
 ## Phase 4: Guards and Cleanup
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `63433c43fbf0f6f3ae185a9744ce604ae0bd8672` (recorded 2026-10-01 08:53
+> from a temporary-index snapshot of committed, staged, unstaged, and untracked phase-start state)
 > **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `compiler/tests/call_value_integrity_spec_test.rs`,
+> `compiler/src/codegen/{function,control,drop,guards}.rs`,
+> `compiler/tests/call_value_integrity_impl_test.rs`, `plans/call-value-integrity/*`
 
 ### Step 4.1: Specification Tests
 
 **Reference**: [03-04](03-04-guards-and-cleanup.md) §Proposed Changes 1–3 · AR #8, #9, #10
 **Objective**: Pin the parameter move, do-while condition, and growable guard behavior from ST-26 – ST-31 and ST-38.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-26 – ST-31 and ST-38 — `compiler/tests/call_value_integrity_spec_test.rs`
-- [ ] 4.1.2 Run the specification tests — verify at least one case per Phase-4 defect fails before implementation (red phase); record pre-passing cases as regression pins
+- [x] 4.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-26 – ST-31 and ST-38 — `compiler/tests/call_value_integrity_spec_test.rs` ✅ (completed: 2026-10-01 08:58)
+- [x] 4.1.2 Run the specification tests — verify at least one case per Phase-4 defect fails before implementation (red phase); record pre-passing cases as regression pins ✅ (completed: 2026-10-01 08:58)
+
+**Red phase (2026-10-01 08:58):** 58 passed / 4 failed on the unmodified compiler
+(`cargo test --test call_value_integrity_spec_test`); 7 new cases. DEF-36 is red: the parameter
+move rejects at the host C build (`sizeof` on an array parameter at `cl_zero(&a)`). DEF-37 is red
+three ways: ST-27 and ST-38 are killed by SIGSEGV after the guarded condition is skipped on the
+`continue`/fall-through edge, and ST-28 exits 1 instead of 3 because the guard temp is stale. The
+three DEF-39 cases (ST-29, ST-30, ST-31) pre-pass and are regression pins: the growable guard leak
+is only visible under AddressSanitizer, so DEF-39's red-phase evidence is the emitted-shape
+implementation pin in 4.3.1 plus the close-out ASan probes. ST-38's body gains `i = i + 1;` before
+`continue;` so the loop can terminate once the condition re-evaluates (the semantics under test are
+unchanged).
 
 ### Step 4.2: Implementation
 
