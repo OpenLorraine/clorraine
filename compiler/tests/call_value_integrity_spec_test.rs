@@ -1378,3 +1378,286 @@ func main(): i32 {
     let output = run_host("cvi41f", source);
     assert_exit("cvi41f", &output, 35);
 }
+
+/// A func-typed local holding an array-returning capture-less lambda reads the
+/// returned element.
+///
+/// `g` is a plain function pointer whose signature returns `i32[2]`; with the
+/// argument `5` the array is `[5, 6]`, so the exit code is `6`. The emitted C
+/// must build, which pins the hidden destination on the lifted lambda, on the
+/// func value's declarator, and on the call through the value.
+#[test]
+fn should_read_the_second_element_when_a_func_typed_local_returns_a_fixed_array() {
+    let source = r#"module codegen.cvi.st18;
+
+func main(): i32 {
+    let g: func(i32): i32[2] = (x: i32) => { return [x, x + 1]; };
+    return g(5)[1];
+}
+"#;
+    let output = run_host("cvi18", source);
+    assert_exit("cvi18", &output, 6);
+}
+
+/// An array-returning capturing closure fills a generic callable bound and its
+/// result reaches the caller.
+///
+/// The closure captures `base = 10`, so it is a closure struct whose `fn` field
+/// carries the signature. The bound `F: func(i32): i32[2]` requires a
+/// fixed-array result, so the lifted function takes the environment parameter
+/// first and the hidden destination last. With `5` the array is `[5, 15]`, so
+/// the exit code is `15`.
+#[test]
+fn should_read_the_captured_element_when_an_array_lambda_fills_a_callable_bound() {
+    let source = r#"module codegen.cvi.st19a;
+
+func apply<F: func(i32): i32[2]>(x: i32, f: F): i32 {
+    let r: i32[2] = f(x);
+    return r[1];
+}
+
+func main(): i32 {
+    let base: i32 = 10;
+    return apply(5, [base] (x: i32) => { return [x, x + base]; });
+}
+"#;
+    let output = run_host("cvi19a", source);
+    assert_exit("cvi19a", &output, 15);
+}
+
+/// A capture-less array-returning lambda stored in a plain `func`-typed struct
+/// field reads the returned element.
+///
+/// `Ops.run` has type `func(i32): i32[2]`; with `5` the array is `[5, 6]`, so
+/// the exit code is `6`. The field declarator and the call through the field
+/// must both carry the hidden destination.
+#[test]
+fn should_read_the_element_when_an_array_lambda_fills_a_func_typed_field() {
+    let source = r#"module codegen.cvi.st19b;
+
+struct Ops {
+    run: func(i32): i32[2];
+}
+
+func main(): i32 {
+    let ops: Ops = Ops { run: (x: i32) => { return [x, x + 1]; } };
+    return ops.run(5)[1];
+}
+"#;
+    let output = run_host("cvi19b", source);
+    assert_exit("cvi19b", &output, 6);
+}
+
+/// A function that returns a function value can be called twice.
+///
+/// `make` returns the bare function `double`, so `make()(4)` is `8`. The
+/// emitted declarator must nest the pointer for the func-typed return
+/// (`i32 (*cl_make(void))(i32)`), or the C compiler rejects the translation
+/// unit.
+#[test]
+fn should_call_the_returned_function_when_a_function_returns_a_func_value() {
+    let source = r#"module codegen.cvi.st20;
+
+func double(x: i32): i32 {
+    return x * 2;
+}
+
+func make(): func(i32): i32 {
+    return double;
+}
+
+func main(): i32 {
+    return make()(4);
+}
+"#;
+    let output = run_host("cvi20", source);
+    assert_exit("cvi20", &output, 8);
+}
+
+/// A lambda that captures a func-typed local calls the capture, not the
+/// same-named module function.
+///
+/// The local `step` adds one and the module function `step` adds a hundred. A
+/// local may shadow a module name, so the call by name inside the closure must
+/// reach the captured value; `4 + 1` exits `5`, while the module function would
+/// exit `104`.
+#[test]
+fn should_call_the_captured_function_when_a_module_function_has_the_same_name() {
+    let source = r#"module codegen.cvi.st21;
+
+func step(x: i32): i32 {
+    return x + 100;
+}
+
+func main(): i32 {
+    let step: func(i32): i32 = (x: i32) => x + 1;
+    return ([step] (y: i32) => step(y))(4);
+}
+"#;
+    let output = run_host("cvi21", source);
+    assert_exit("cvi21", &output, 5);
+}
+
+/// A module-level func-typed `let` called by name resolves to the global.
+///
+/// The global holds `double`; `global_fn(3)` must load the global's pointer and
+/// call it, so the exit code is `6`.
+#[test]
+fn should_call_the_global_function_when_a_module_global_holds_a_func_value() {
+    let source = r#"module codegen.cvi.st22;
+
+func double(x: i32): i32 {
+    return x * 2;
+}
+
+let global_fn: func(i32): i32 = double;
+
+func main(): i32 {
+    return global_fn(3);
+}
+"#;
+    let output = run_host("cvi22", source);
+    assert_exit("cvi22", &output, 6);
+}
+
+/// A `String` argument widens to `str` when the callee is a func value.
+///
+/// `show` has type `func(str): void`; passing `stringOf("hi")` must emit the
+/// `String` to `str` view conversion before the indirect call. `print` writes
+/// the view's bytes, so the emitted C must build and the process writes `hi`
+/// and exits `0`.
+#[test]
+fn should_widen_the_string_argument_when_a_func_value_takes_a_str_parameter() {
+    let source = r#"module codegen.cvi.st23;
+
+import { stringOf } from std.text;
+import { print } from std.io;
+
+func main(): i32 {
+    let show: func(str): void = print;
+    show(stringOf("hi"));
+    return 0;
+}
+"#;
+    let output = run_host("cvi23", source);
+    assert_exit("cvi23", &output, 0);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hi",
+        "cvi23: the widened argument must reach the callee; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A `borrow` func value writes through the pointer and the caller sees the
+/// update.
+///
+/// `Entity` owns a `String`, so a lend cannot bind a copy. `bump` has type
+/// `func(borrow Entity): void` and calls `nudge`, which sets `value` to `42`;
+/// the caller reads `e.value` after the indirect call, so the exit code is
+/// `42`. A func-type parameter that dropped the mode would pass the value
+/// instead of its address and leave `value` at `1`.
+#[test]
+fn should_see_the_write_when_a_borrow_func_value_updates_the_caller_value() {
+    let source = r#"module codegen.cvi.st24;
+
+import { String, stringOf } from std.text;
+
+struct Entity {
+    name: String;
+    value: i32;
+}
+
+func nudge(borrow e: Entity): void {
+    e.value = 42;
+}
+
+func main(): i32 {
+    let e: Entity = Entity { name: stringOf("e"), value: 1 };
+    let bump: func(borrow Entity): void = nudge;
+    bump(e);
+    return e.value;
+}
+"#;
+    let output = run_host("cvi24", source);
+    assert_exit("cvi24", &output, 42);
+}
+
+/// The same `borrow` func type as a struct field writes through the pointer and
+/// the caller sees the update.
+///
+/// `Ops.run` has type `func(borrow Entity): void` and holds `nudge`; invoking
+/// the field with `e` sets `e.value` to `42`, so the exit code is `42`.
+#[test]
+fn should_see_the_write_when_a_borrow_func_field_updates_the_caller_value() {
+    let source = r#"module codegen.cvi.st25;
+
+import { String, stringOf } from std.text;
+
+struct Entity {
+    name: String;
+    value: i32;
+}
+
+struct Ops {
+    run: func(borrow Entity): void;
+}
+
+func nudge(borrow e: Entity): void {
+    e.value = 42;
+}
+
+func main(): i32 {
+    let e: Entity = Entity { name: stringOf("e"), value: 1 };
+    let ops: Ops = Ops { run: nudge };
+    ops.run(e);
+    return e.value;
+}
+"#;
+    let output = run_host("cvi25", source);
+    assert_exit("cvi25", &output, 42);
+}
+
+/// A directly invoked array-returning lambda reads the returned element.
+///
+/// The parenthesized lambda is called in place; with `5` the array is `[5, 6]`,
+/// so the exit code is `6`. The direct call must supply the lifted function's
+/// hidden destination.
+#[test]
+fn should_read_the_second_element_when_an_array_lambda_is_invoked_directly() {
+    let source = r#"module codegen.cvi.st39;
+
+func main(): i32 {
+    return ((x: i32) => { return [x, x + 1]; })(5)[1];
+}
+"#;
+    let output = run_host("cvi39", source);
+    assert_exit("cvi39", &output, 6);
+}
+
+/// Assigning a `borrow` function to a by-value func type is rejected.
+///
+/// The declared `nudge` takes `borrow Entity`, while the binding's type says
+/// `func(Entity): void`. Parameter modes are part of the exact signature, so the
+/// mismatch reports E10210 and the compiler writes no C.
+#[test]
+fn should_reject_a_by_value_func_value_when_the_function_takes_a_borrow_parameter() {
+    let source = r#"module codegen.cvi.st40;
+
+struct Entity {
+    value: i32;
+}
+
+func nudge(borrow e: Entity): void {
+    e.value = 42;
+}
+
+func main(): i32 {
+    let g: func(Entity): void = nudge;
+    let e: Entity = Entity { value: 1 };
+    g(e);
+    return 0;
+}
+"#;
+    assert_rejected_with("cvi40", source, "E10210", &[]);
+}

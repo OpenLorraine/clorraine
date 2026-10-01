@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 01:53
-> **Progress**: 17/39 tasks (44%)
+> **Last Updated**: 2026-10-01 07:28
+> **Progress**: 19/39 tasks (49%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -285,16 +285,34 @@ variant of RV2-2, distinct from the array-literal variant fixed here).
 
 ## Phase 3: Func Pointers and Callable Resolution
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `4a1b54d4c5e8ba8be33ab508ae77b184f616c4a6` (recorded 2026-10-01 07:23
+> from a temporary-index snapshot of committed, staged, unstaged, and untracked phase-start state)
 > **Lenses**: compiler-and-language (strict profile)
+> **Scope mode**: strict · **Expected modification set**: `compiler/tests/call_value_integrity_spec_test.rs`,
+> `compiler/src/codegen.rs`, `compiler/src/codegen/{types,program,function,expr,calls,control,drop,guards}.rs`,
+> `compiler/src/own/{call,lower,generics}.rs`, `compiler/src/types/{mod,table}.rs`,
+> `compiler/src/sema/{expr,call,mod}.rs`, `compiler/src/abi.rs`,
+> `compiler/tests/call_value_integrity_impl_test.rs`, `plans/call-value-integrity/*`
 
 ### Step 3.1: Specification Tests
 
 **Reference**: [03-03](03-03-func-pointers-and-callable-resolution.md) §Proposed Changes 1–5 · AR #4, #12, #14
 **Objective**: Pin the declarator, resolution, widening, and borrow behavior from ST-18 – ST-25, ST-39, and ST-40.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-18 – ST-25, ST-39, and ST-40 — `compiler/tests/call_value_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the specification tests — verify at least one case per Phase-3 defect fails before implementation (red phase); record pre-passing cases as regression pins
+- [x] 3.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-18 – ST-25, ST-39, and ST-40 — `compiler/tests/call_value_integrity_spec_test.rs` ✅ (completed: 2026-10-01 07:28)
+- [x] 3.1.2 Run the specification tests — verify at least one case per Phase-3 defect fails before implementation (red phase); record pre-passing cases as regression pins ✅ (completed: 2026-10-01 07:28)
+
+**Red phase (2026-10-01 07:28):** 44 passed / 11 failed on the unmodified compiler
+(`cargo test --test call_value_integrity_spec_test`); 11 new cases (ST-19 split into the callable
+bound and the plain field form). Every Phase-3 defect has at least one red case: the four DEF-30
+cases emit a lambda pointer without the hidden destination and an undeclared result variable (ST-18,
+ST-19a — the closure call passes the destination the field lacks — ST-19b, ST-39); the DEF-43 case
+emits an unnamed function-pointer return declarator (`expected identifier before ')'`); the DEF-40
+case builds but calls the same-named module function (exit 104 instead of 5); the DEF-41 case emits
+an implicit declaration of the global name; the DEF-42 case passes `ClString` where the func value
+expects `ClStr`; the three DEF-44 cases assign a by-value pointer from a borrow pointer (ST-24,
+ST-25) or accept the mode mismatch that must report `E10210` (ST-40). No Phase-3 case pre-passes,
+so there are no new regression pins; the 44 Phase-1/2 cases pass.
 
 ### Step 3.2: Implementation
 
