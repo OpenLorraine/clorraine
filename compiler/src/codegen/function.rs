@@ -1962,7 +1962,7 @@ impl<'a> Emitter<'a> {
     ///
     /// A place that roots at an adjusted array parameter already names the
     /// array's address; every other source needs the address-of operator.
-    fn array_source_address(&self, value: &Value, c_name: &str) -> String {
+    pub(super) fn array_source_address(&self, value: &Value, c_name: &str) -> String {
         if let ValueKind::Place(place) = &value.kind {
             if self.is_array_param_place(place) {
                 return c_name.to_owned();

@@ -331,14 +331,117 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Renders one row of an array literal as a C expression.
+    ///
+    /// A row that is not itself a literal cannot use a brace list, which has no
+    /// C place. It becomes a comma expression instead, in source order, with
+    /// its guards embedded where the row is evaluated and its owned source
+    /// emptied after the copy. A conditional row nests, and a call row writes
+    /// through the row's hidden destination. Returns `None` for a shape with no
+    /// expression form, so the caller can fall back to the scalar store.
+    fn array_row_expr(&self, target_c: &str, row_ty: &Ty, value: &Value) -> Option<String> {
+        match &value.kind {
+            ValueKind::ArrayLit { elements, fill } => {
+                self.array_assign_expr(target_c, row_ty, elements, fill)
+            }
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let then_row = self.array_row_expr(target_c, row_ty, then_value)?;
+                let else_row = self.array_row_expr(target_c, row_ty, else_value)?;
+                // Both arms end in the same value, so the ternary has one
+                // operand type; the row's own value is discarded later.
+                Some(format!(
+                    "({} ? ({then_row}, 0) : ({else_row}, 0))",
+                    self.guarded_value(condition)
+                ))
+            }
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } => {
+                let call = self.call_with_destination(
+                    callee,
+                    type_args,
+                    args,
+                    receiver.as_deref(),
+                    target_c,
+                );
+                Some(self.row_call_expr(value, &call))
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                let call = self.closure_call_with_destination(callable, args, Some(target_c));
+                Some(self.row_call_expr(value, &call))
+            }
+            // A place, temporary, or otherwise rendered value with storage is
+            // copied by bytes; anything else has no row storage form, so the
+            // same fallback keeps the renderer total.
+            _ => self.row_memcpy_expr(target_c, row_ty, value),
+        }
+    }
+
+    /// Wraps a row-writing call with its guards and a common result value.
+    ///
+    /// The call writes the row through its hidden destination, so the
+    /// expression only has to run the call; the trailing `0` gives the
+    /// expression a value a surrounding ternary operand can share.
+    fn row_call_expr(&self, value: &Value, call: &str) -> String {
+        let mut guards: Vec<String> = Vec::new();
+        self.guard_expressions(value, &mut guards);
+        if guards.is_empty() {
+            format!("({call}, 0)")
+        } else {
+            format!("(({}), {call}, 0)", guards.join(", "))
+        }
+    }
+
+    /// Renders a row copy from a value that already has storage.
+    ///
+    /// The row's bytes travel through `memcpy`; when the row is owned the
+    /// source is emptied in the same comma expression, so only the destination
+    /// owns the moved values. A place that roots at a C-adjusted array
+    /// parameter is addressed by its name, and its move-out walks the elements
+    /// instead of zeroing the adjusted pointer.
+    fn row_memcpy_expr(&self, target_c: &str, row_ty: &Ty, value: &Value) -> Option<String> {
+        let mut parts: Vec<String> = Vec::new();
+        self.guard_expressions(value, &mut parts);
+        let source = self.value(value);
+        let address = self.array_source_address(value, &source);
+        parts.push(format!(
+            "memcpy({target_c}, {address}, sizeof({target_c}))"
+        ));
+        // An owned row is a move only when the source really has storage; a
+        // rendered expression is a fresh value the destination already took.
+        let storage = matches!(
+            &value.kind,
+            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. }
+        ) || ((matches!(
+            &value.kind,
+            ValueKind::Member { .. } | ValueKind::Index { .. }
+        )) && arm_has_storage_root(value));
+        if storage && self.needs_drop(row_ty) {
+            let zero = match &value.kind {
+                ValueKind::Place(place) => self.move_zero_expr(place),
+                _ => self.move_zero_text_expr(&source, &self.substitute(&value.ty)),
+            };
+            parts.push(zero);
+        }
+        Some(format!("({})", parts.join(", ")))
+    }
+
     /// Renders an array literal as comma-separated element stores.
     ///
     /// A conditionally evaluated array literal cannot use a brace list, which
     /// has no C place. Each element becomes an assignment expression instead,
     /// in source order, with its guards embedded ahead of its own store, so a
-    /// skipped path evaluates no element. A multi-extent literal recurses a
-    /// dimension deeper; a fill covers every index the prefix did not. Returns
-    /// `None` for a shape with no expression form, so the caller can fall back.
+    /// skipped path evaluates no element. A multi-extent literal stores each
+    /// row through [`Self::array_row_expr`]; a fill covers every index the
+    /// prefix did not. Returns `None` for a shape with no expression form, so
+    /// the caller can fall back.
     fn array_assign_expr(
         &self,
         target_c: &str,
@@ -358,6 +461,13 @@ impl<'a> Emitter<'a> {
             if let Some(element_ty) = &nested_ty {
                 if let ValueKind::ArrayLit { elements, fill } = &value.kind {
                     parts.push(self.array_assign_expr(&sub, element_ty, elements, fill)?);
+                    continue;
+                }
+                // A whole row that is not itself a literal is stored through
+                // the row expression, which keeps its guards on the path that
+                // evaluates the row.
+                if let Some(row) = self.array_row_expr(&sub, element_ty, value) {
+                    parts.push(row);
                     continue;
                 }
             }
@@ -394,6 +504,29 @@ impl<'a> Emitter<'a> {
                     let sub = format!("{target_c}[{index}]");
                     parts.push(self.array_assign_expr(&sub, element_ty, elements, fill)?);
                 }
+                return Some(if parts.is_empty() {
+                    "0".to_owned()
+                } else {
+                    parts.join(", ")
+                });
+            }
+            // A non-literal fill row also uses the expression form, for every
+            // index the prefix did not cover. When the shape has no expression
+            // form, the scalar fill store below stays the fallback.
+            let mut rows: Vec<String> = Vec::new();
+            let mut complete = true;
+            for index in prefix..extent {
+                let sub = format!("{target_c}[{index}]");
+                match self.array_row_expr(&sub, element_ty, fill) {
+                    Some(row) => rows.push(row),
+                    None => {
+                        complete = false;
+                        break;
+                    }
+                }
+            }
+            if complete {
+                parts.extend(rows);
                 return Some(if parts.is_empty() {
                     "0".to_owned()
                 } else {

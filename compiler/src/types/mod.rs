@@ -244,7 +244,33 @@ impl Ty {
     }
 
     /// An array or slice type.
+    ///
+    /// A fixed-array element under a fixed outer extent folds into one flat
+    /// extent list: `U[3]` under `[2]` is the same type as `U[2][3]`. The flat
+    /// form is what the C declarator, element iteration, and the row stores
+    /// assume, because a nested constructor would print only its base element
+    /// and lose the inner extent. A slice on either side never folds, since an
+    /// array of slices and a slice of fixed rows are different types.
     pub fn array(element: Ty, extents: Vec<Option<usize>>) -> Self {
+        if extents.iter().all(Option::is_some) {
+            if let TyKind::Array {
+                element: inner,
+                extents: inner_extents,
+            } = &element.kind
+            {
+                if inner_extents.iter().all(Option::is_some) {
+                    let mut folded = extents;
+                    folded.extend(inner_extents.iter().copied());
+                    return Self {
+                        kind: TyKind::Array {
+                            element: inner.clone(),
+                            extents: folded,
+                        },
+                        nullable: false,
+                    };
+                }
+            }
+        }
         Self {
             kind: TyKind::Array {
                 element: Box::new(element),
@@ -426,13 +452,13 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
     }
     match &ty.kind {
         TyKind::Param(name) => bindings.get(name).cloned().unwrap_or_else(|| ty.clone()),
-        TyKind::Array { element, extents } => Ty {
-            kind: TyKind::Array {
-                element: Box::new(substitute(element, bindings)),
-                extents: extents.clone(),
-            },
-            nullable: ty.nullable,
-        },
+        // Route through the constructor so a fixed-array binding under a fixed
+        // extent folds to the flat shape, exactly as a written type would.
+        TyKind::Array { element, extents } => {
+            let mut result = Ty::array(substitute(element, bindings), extents.clone());
+            result.nullable = ty.nullable;
+            result
+        }
         TyKind::Raw(inner) => Ty {
             kind: TyKind::Raw(Box::new(substitute(inner, bindings))),
             nullable: ty.nullable,

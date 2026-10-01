@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 14:51
-> **Progress**: 2/38 tasks (5%)
+> **Last Updated**: 2026-10-01 14:54
+> **Progress**: 5/38 tasks (13%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -81,9 +81,11 @@ task-size criteria in the make-plan skill's quality checklist)
 **Reference**: [03-01](03-01-flat-array-literal-types.md) §`Ty::array` folding, §`array_row_expr`
 **Objective**: Make the no-context literal flat and give every deferred row shape an expression store.
 
-- [ ] 1.2.1 Fold a fixed-array element into the extents in `Ty::array` and route `substitute` through it (slice elements and slice outer extents unchanged) — `compiler/src/types/mod.rs`
-- [ ] 1.2.2 Add `array_row_expr` (conditional with a common-typed arm tail, place with the place-aware move zero, call, closure-call, fallback) and route non-literal rows and fills through it — `compiler/src/codegen/guards.rs`
-- [ ] 1.2.3 Run the specification tests — verify ST-1 – ST-5 and ST-17 pass (green phase)
+- [x] 1.2.1 Fold a fixed-array element into the extents in `Ty::array` and route `substitute` through it (slice elements and slice outer extents unchanged) — `compiler/src/types/mod.rs` ✅ (completed: 2026-10-01 14:54)
+- [x] 1.2.2 Add `array_row_expr` (conditional with a common-typed arm tail, place with the place-aware move zero, call, closure-call, fallback) and route non-literal rows and fills through it — `compiler/src/codegen/guards.rs` ✅ (completed: 2026-10-01 14:54)
+- [x] 1.2.3 Run the specification tests — verify ST-1 – ST-5 and ST-17 pass (green phase) ✅ (completed: 2026-10-01 14:54)
+
+> **Green-phase record (2026-10-01 14:54):** `residual_defect_hardening_spec_test` 11/11 pass. Workspace run: 356 passed, 1 known failure — `types::table::tests::duplicability_stops_recursing_at_the_depth_cap` builds its shape through `Ty::array`, which now folds it flat, so the case no longer reaches the recursion cap; task 1.3.2 rebuilds that shape with an explicit `TyKind::Array`.
 
 ### Step 1.3: Implementation Tests & Hardening
 
