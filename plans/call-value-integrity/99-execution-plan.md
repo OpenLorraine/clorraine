@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 09:06
-> **Progress**: 29/39 tasks (74%)
+> **Last Updated**: 2026-10-01 09:04
+> **Progress**: 30/39 tasks (77%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -446,7 +446,7 @@ unchanged).
 **Objective**: Correct the parameter zero walk, the do-while condition entry, and the embedded growable drop.
 
 - [x] 4.2.1 Array-parameter copy and zero walk on both the source and the target of a move; `is_pointer_param` and the parameter ABI stay unchanged; `cl_zero` stays for true locals — `compiler/src/codegen/function.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/cleanup.rs` (the return and guarded move-out paths reuse the same place-aware zero) (AR #10; DEF-36) ✅ (completed: 2026-10-01 09:06)
-- [ ] 4.2.2 Goto-free flag-first do-while when the condition carries guards (fall-through, `continue`, and embedded-only guards all reach the guards/test; unguarded keeps today's emission) — `compiler/src/codegen/control.rs` (AR #8; DEF-37)
+- [x] 4.2.2 Goto-free flag-first do-while when the condition carries guards (fall-through, `continue`, and embedded-only guards all reach the guards/test; unguarded keeps today's emission) — `compiler/src/codegen/control.rs` (AR #8; DEF-37) ✅ (completed: 2026-10-01 09:04)
 - [ ] 4.2.3 Growable-array drop expression form for element types that need no drop; the limitation for drop-needing elements is recorded in Won't Have and pinned — `compiler/src/codegen/drop.rs`, `compiler/src/codegen/guards.rs` (AR #9; DEF-39)
 - [ ] 4.2.4 Run the specification tests — verify they PASS (green phase)
 

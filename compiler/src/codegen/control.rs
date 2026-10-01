@@ -361,17 +361,39 @@ impl<'a> Emitter<'a> {
             }
             LoopKind::DoWhile => {
                 self.emit_line_directive(span);
-                self.push("    do {");
                 let inner = ctx.in_loop(branch, exit);
                 let mut inner_stop = body_stop.clone();
                 // A `do` body falls into its test at `branch`; the continue
                 // edge reaches the same block, so both are handled by the loop
                 // context and the block is never printed on its own.
                 inner_stop.insert(branch);
-                self.emit_flow(function, body, &inner_stop, inner);
-                self.emit_guards(condition);
-                let condition_c = self.value(condition);
-                self.push(&format!("    }} while ({condition_c});"));
+                if ir::value_needs_guards(condition) {
+                    // The guards are statements, so they must run before every
+                    // test. A `do`/`while` test would sit after a `continue`
+                    // and read stale temporaries, so the loop is flag-first:
+                    // the first iteration skips the guards and the test, and
+                    // every later iteration reaches them at the top of the
+                    // loop, where the fall-through and every `continue` land.
+                    let first = self.unique_local("__cl_first");
+                    self.push("    {");
+                    self.push(&format!("        i32 {first} = 0;"));
+                    self.push("        for (;;) {");
+                    self.push(&format!("            if ({first}) {{"));
+                    self.emit_guards(condition);
+                    let condition_c = self.value(condition);
+                    self.push(&format!("                if (!({condition_c})) break;"));
+                    self.push("            }");
+                    self.push(&format!("            {first} = 1;"));
+                    self.emit_flow(function, body, &inner_stop, inner);
+                    self.push("        }");
+                    self.push("    }");
+                } else {
+                    self.push("    do {");
+                    self.emit_flow(function, body, &inner_stop, inner);
+                    self.emit_guards(condition);
+                    let condition_c = self.value(condition);
+                    self.push(&format!("    }} while ({condition_c});"));
+                }
             }
             LoopKind::For => {
                 self.emit_line_directive(span);
