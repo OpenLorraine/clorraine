@@ -200,10 +200,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::StructLiteral { name, fields, .. } => {
+                // A literal inside a conditionally evaluated operand must not
+                // move its field sources while the enclosing expression is
+                // lowered: only the chosen arm runs, and the arm's store empties
+                // the source it moves. An eagerly emitted move would leave the
+                // skipped arm's value in an unreleased temporary.
+                let deferred = self.defer_move_outs > 0;
                 let mut lowered = Vec::with_capacity(fields.len());
                 for field in fields {
                     let value = self.lower_value(&field.value);
-                    let value = self.consume_place(value);
+                    let value = if deferred {
+                        value
+                    } else {
+                        self.consume_place(value)
+                    };
                     lowered.push((field.name.clone(), value));
                 }
                 ValueKind::StructLit {
@@ -212,11 +222,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
+                // As for a struct literal, a deferred operand leaves its
+                // element sources in place; the arm's store moves the chosen
+                // source and empties it.
                 elements: elements
                     .iter()
                     .map(|element| {
                         let value = self.lower_value(element);
-                        self.consume_place(value)
+                        if self.defer_move_outs > 0 {
+                            value
+                        } else {
+                            self.consume_place(value)
+                        }
                     })
                     .collect(),
                 fill: fill
@@ -614,18 +631,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
-    /// Materializes a `take` conditional argument into a non-releasing
+    /// Materializes a `take` argument that has no C place into a non-releasing
     /// temporary.
     ///
     /// The callee's parameter cleanup owns the argument, so the caller never
     /// releases the temporary; the call empties it through a move-out after the
     /// call runs. That move-out also leaves the empty state the branch store's
     /// own save and release expect. An operand that is evaluated only sometimes
-    /// (the right side of `&&`/`||`, or an arm of `?:`) defers the branch store
-    /// to its guard, so a skipped path never runs an arm or the call.
-    fn materialize_take_conditional(&mut self, value: Value) -> Value {
+    /// (the right side of `&&`/`||`, or an arm of `?:`) defers the store to its
+    /// guard, so a skipped path never runs an arm or the call. A struct literal
+    /// stores eagerly, because only its statement form exists.
+    fn materialize_take_place(&mut self, value: Value) -> Value {
         let ty = value.ty.clone();
-        if self.defer_move_outs > 0 {
+        let deferred = self.defer_move_outs > 0
+            && matches!(
+                value.kind,
+                ValueKind::Conditional { .. }
+                    | ValueKind::ArrayLit { .. }
+                    | ValueKind::Call { .. }
+            );
+        if deferred {
             let temp = self.new_temp(ty.clone());
             return Value::new(
                 ty,
@@ -704,6 +729,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a value has no C form at a position that needs a place.
+    ///
+    /// A fixed-array value must live in storage before it is passed or
+    /// returned: C cannot copy an array from a `?:` expression or a brace
+    /// list, and a by-value fixed-array call writes through a hidden
+    /// out-parameter instead of returning a value. A struct literal needs a
+    /// place when a field is a fixed array (a C aggregate initializer cannot
+    /// name one) or when a nested literal needs stores. A value that already
+    /// names storage — a place, a compiler temporary, or a deferred
+    /// materialization — needs nothing.
+    fn value_needs_place(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => false,
+            ValueKind::Conditional { .. } | ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => {
+                value.ty.is_fixed_array()
+            }
+            ValueKind::StructLit { fields, .. } => fields.iter().any(|(_, field)| {
+                field.ty.is_fixed_array() || self.value_needs_place(field)
+            }),
+            _ => false,
+        }
+    }
+
     /// True when the value reads storage an owned container is responsible for.
     ///
     /// A place, or a field or element projection of one at any index, names
@@ -721,20 +769,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// it. An ownerless temporary that is not a destination (a transfer
     /// temporary) is not covered: its value travels to a binding that owns it,
     /// so a projection still needs that binding.
-    fn value_needs_place(&self, value: &Value) -> bool {
-        match &value.kind {
-            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => false,
-            ValueKind::Conditional { .. } | ValueKind::ArrayLit { .. } | ValueKind::Call { .. } => {
-                value.ty.is_fixed_array()
-            }
-            ValueKind::StructLit { fields, .. } => fields.iter().any(|(_, field)| {
-                field.ty.is_fixed_array() || self.value_needs_place(field)
-            }),
-            _ => false,
-        }
-    }
-
-    /// True when a projection of a value roots into existing storage.
     fn projects_from_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(_) => true,
@@ -924,6 +958,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         }
         let ty = value.ty.clone();
+        // An array literal inside a conditionally evaluated operand must not be
+        // filled while the enclosing expression is lowered: the guard emitter
+        // stores it where the operand is actually evaluated, so a short circuit
+        // leaves its elements unread and unevaluated.
+        if self.defer_move_outs > 0 && matches!(value.kind, ValueKind::ArrayLit { .. }) {
+            let temp = self.new_temp(ty.clone());
+            self.mark_destination_temp(temp);
+            self.register_pending_release(temp, &ty);
+            return Value::new(
+                ty,
+                ValueKind::Materialize {
+                    temp,
+                    value: Box::new(value),
+                    move_outs: Vec::new(),
+                },
+            );
+        }
         self.materialize_value_type(value, ty)
     }
 
@@ -996,7 +1047,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
         if take {
-            // A `take` argument transfers ownership to the callee, so a
+            // A `take` argument must reach the callee with a C place. A value
+            // that has none — a fixed-array literal, a by-value fixed-array
+            // call, or a struct literal whose field is a fixed array — is
+            // stored into an argument temporary. A conditional fixed-array
+            // value keeps its array-decay spelling, which is already a C
+            // expression.
+            if self.value_needs_place(&value)
+                && !matches!(value.kind, ValueKind::Conditional { .. })
+                && !value.ty.is_unknown()
+                && !mentions_type_param(&value.ty)
+            {
+                return self.materialize_take_place(value);
+            }
+            // A `take` argument transfers ownership to the callee, so an owned
             // conditional must not pass one arm directly: the chosen arm has to
             // move into an argument temporary and the caller's arm be emptied.
             // The temporary is not released by the caller; the callee's
@@ -1008,7 +1072,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !value.ty.is_unknown()
                 && !mentions_type_param(&value.ty)
             {
-                return self.materialize_take_conditional(value);
+                return self.materialize_take_place(value);
             }
             return value;
         }

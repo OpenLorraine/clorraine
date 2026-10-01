@@ -776,15 +776,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for projection in projections {
             ty = match projection {
                 ir::Projection::Field(field) => self.member_type(&ty, field),
-                ir::Projection::Element(_) => match &ty.kind {
-                    TyKind::Array { element, extents } => match extents.split_first() {
-                        Some((_, tail)) if !tail.is_empty() => {
-                            Ty::array((**element).clone(), tail.to_vec())
-                        }
-                        _ => (**element).clone(),
-                    },
-                    _ => Ty::unknown(),
-                },
+                ir::Projection::Element(_) => ty.iterated_element(),
             };
         }
         ty

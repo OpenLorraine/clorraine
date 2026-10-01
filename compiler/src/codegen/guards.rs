@@ -108,6 +108,7 @@ impl<'a> Emitter<'a> {
             } => {
                 self.emit_guards(inner);
                 self.emit_reassigned_temp_drop(*temp, &inner.ty);
+                let inner_ty = self.substitute(&inner.ty);
                 if let ValueKind::Conditional {
                     condition,
                     then_value,
@@ -132,6 +133,16 @@ impl<'a> Emitter<'a> {
                     } else {
                         self.push(&format!("    __cl_tmp{temp} = {};", self.value(inner)));
                     }
+                } else if let ValueKind::ArrayLit { elements, fill } = &inner.kind {
+                    if inner_ty.is_fixed_array() {
+                        // A brace list has no C place, so a deferred array
+                        // literal is stored element by element into the
+                        // temporary, on the path that evaluates the operand.
+                        let destination = format!("__cl_tmp{temp}");
+                        self.emit_array_assign_to(&destination, &inner_ty, elements, fill);
+                    } else {
+                        self.push(&format!("    __cl_tmp{temp} = {};", self.value(inner)));
+                    }
                 } else {
                     let store = match &inner.kind {
                         ValueKind::Call {
@@ -139,7 +150,7 @@ impl<'a> Emitter<'a> {
                             type_args,
                             args,
                             receiver,
-                        } if self.substitute(&inner.ty).is_fixed_array() => {
+                        } if inner_ty.is_fixed_array() => {
                             let destination = format!("__cl_tmp{temp}");
                             let call = self.call_with_destination(
                                 callee,
@@ -301,6 +312,94 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Renders an array literal as comma-separated element stores.
+    ///
+    /// A conditionally evaluated array literal cannot use a brace list, which
+    /// has no C place. Each element becomes an assignment expression instead,
+    /// in source order, with its guards embedded ahead of its own store, so a
+    /// skipped path evaluates no element. A multi-extent literal recurses a
+    /// dimension deeper; a fill covers every index the prefix did not. Returns
+    /// `None` for a shape with no expression form, so the caller can fall back.
+    fn array_assign_expr(
+        &self,
+        target_c: &str,
+        ty: &Ty,
+        elements: &[Value],
+        fill: &Option<Box<Value>>,
+    ) -> Option<String> {
+        let TyKind::Array { element, extents } = &ty.kind else {
+            return None;
+        };
+        let extent = extents.first().and_then(|size| *size).unwrap_or(0);
+        let nested_ty =
+            (extents.len() > 1).then(|| Ty::array((**element).clone(), extents[1..].to_vec()));
+        let mut parts: Vec<String> = Vec::new();
+        for (index, value) in elements.iter().enumerate() {
+            let sub = format!("{target_c}[{index}]");
+            if let Some(element_ty) = &nested_ty {
+                if let ValueKind::ArrayLit { elements, fill } = &value.kind {
+                    parts.push(self.array_assign_expr(&sub, element_ty, elements, fill)?);
+                    continue;
+                }
+            }
+            let mut guards: Vec<String> = Vec::new();
+            self.guard_expressions(value, &mut guards);
+            let lowered = self.store_text(value, element);
+            let mut store = format!("{sub} = {lowered}");
+            // An owned element source is a move: the store leaves the element
+            // owning, so the source is emptied in the same comma expression.
+            if self.needs_drop(element) && arm_has_storage_root(value) {
+                let source = self.value(value);
+                store = format!(
+                    "({store}, {})",
+                    self.move_zero_text_expr(&source, element)
+                );
+            }
+            parts.push(if guards.is_empty() {
+                store
+            } else {
+                format!("(({}), {})", guards.join(", "), store)
+            });
+        }
+        let Some(fill) = fill else {
+            return if parts.is_empty() {
+                Some("0".to_owned())
+            } else {
+                Some(parts.join(", "))
+            };
+        };
+        let prefix = elements.len();
+        if let Some(element_ty) = &nested_ty {
+            if let ValueKind::ArrayLit { elements, fill } = &fill.kind {
+                for index in prefix..extent {
+                    let sub = format!("{target_c}[{index}]");
+                    parts.push(self.array_assign_expr(&sub, element_ty, elements, fill)?);
+                }
+                return Some(if parts.is_empty() {
+                    "0".to_owned()
+                } else {
+                    parts.join(", ")
+                });
+            }
+        }
+        let mut guards: Vec<String> = Vec::new();
+        self.guard_expressions(fill, &mut guards);
+        let lowered = self.store_text(fill, element);
+        for index in prefix..extent {
+            let assignment = format!("{target_c}[{index}] = {lowered}");
+            parts.push(if guards.is_empty() {
+                assignment
+            } else {
+                format!("(({}), {})", guards.join(", "), assignment)
+            });
+        }
+        Some(if parts.is_empty() {
+            "0".to_owned()
+        } else {
+            parts.join(", ")
+        })
+    }
+
     /// Collects the guard expressions of a value's always-evaluated part.
     ///
     /// The right operand of a logical operator and the arms of `?:` are left
@@ -440,15 +539,18 @@ impl<'a> Emitter<'a> {
                             type_args,
                             args,
                             receiver,
-                        } if self.substitute(&inner.ty).is_fixed_array() => {
-                            self.call_with_destination(
-                                callee,
-                                type_args,
-                                args,
-                                receiver.as_deref(),
-                                &destination,
-                            )
-                        }
+                        } if inner_ty.is_fixed_array() => self.call_with_destination(
+                            callee,
+                            type_args,
+                            args,
+                            receiver.as_deref(),
+                            &destination,
+                        ),
+                        ValueKind::ArrayLit { elements, fill } if inner_ty.is_fixed_array() => self
+                            .array_assign_expr(&destination, &inner_ty, elements, fill)
+                            .unwrap_or_else(|| {
+                                format!("(__cl_tmp{temp} = {})", self.value(inner))
+                            }),
                         _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
                     };
                     out.push(stored);

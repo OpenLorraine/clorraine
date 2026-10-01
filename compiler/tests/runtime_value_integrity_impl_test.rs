@@ -188,7 +188,7 @@ func main(): i32 {
 }
 
 /// An aggregate-literal adoption temporary moves its value into the literal,
-/// so it is not released at the statement's end either.
+/// so it is emptied after the store and never released at the statement's end.
 #[test]
 fn should_not_release_a_literal_adoption_temporary() {
     let source = r#"module impl.rvi.literal;
@@ -203,9 +203,12 @@ func main(): i32 {
     let emitted = emit_host("rviimpl-literal", source);
     assert_contains("rviimpl-literal", &emitted, "__cl_tmp0 = a;");
     assert_contains("rviimpl-literal", &emitted, "a = NULL;");
+    let first = after("rviimpl-literal", &emitted, "c[0] = __cl_tmp0;");
+    assert_contains("rviimpl-literal", first, "__cl_tmp0 = NULL;");
     let tail = after("rviimpl-literal", &emitted, "c[1] = __cl_tmp1;");
+    assert_contains("rviimpl-literal", tail, "__cl_tmp1 = NULL;");
     assert!(
-        !tail.contains("__cl_tmp0") && !tail.contains("__cl_tmp1"),
+        !tail.contains("FreeString(__cl_tmp0") && !tail.contains("FreeString(__cl_tmp1"),
         "rviimpl-literal: the literal owns the adopted elements, so their temporaries must not be released"
     );
 }

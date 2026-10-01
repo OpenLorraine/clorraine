@@ -705,7 +705,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let right = self.lower_value(value);
                 self.combine(binary, element, right, &element_ty)
             }
-            None => self.lower_value(value),
+            // An owned value stored into an element is a move, exactly as it is
+            // for a named destination: the checker consumed the source, so the
+            // lowering empties it and the element keeps the value. Without this
+            // both the source and the element release the same storage.
+            None => {
+                let lowered = self.lower_value(value);
+                self.consume_place(lowered)
+            }
         };
         self.emit(Statement::StorePointer {
             pointer,

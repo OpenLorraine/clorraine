@@ -228,6 +228,39 @@ pin. Full `make check` — 34 suites, 0 failures, 0 warnings.
 
 **Verify**: `make check`
 
+### Phase 2 Review (post-phase quality step)
+
+**Reviewer:** correctness-reviewer (strict profile), phase diff against baseline tree
+`3237bc667633feeaff72952c4fbd84b7385f1900`; scope mode strict; lenses
+correctness / maintainability / standards.
+
+| Finding | Severity | User ruling | Fix |
+| ------- | -------- | ----------- | --- |
+| RV2-1: a run-time-index store of an owned value copied it without moving the source, so the source cleanup and the element double-freed (fixed arrays and the scalar sibling) | 🔴 critical | Fix now (2026-10-01) | `emit_indexed_store` moves an owned place RHS through `consume_place`; the scalar owned branch evaluates the value into a fresh local first, releases the replaced element, then moves the local in |
+| RV2-2: an array-literal projection materialized eagerly inside `&&`/`\|\|`/`?:`, running element side effects on a skipped path | 🟠 major | Fix now | A guarded projection defers the literal through a `Materialize` value; the guard emitter fills it (statement or comma-expression form, with each element's guards embedded where the element runs) |
+| RV2-3: a `take` argument skipped the place gate, so a fixed-array literal/call or a struct literal with a fixed-array field emitted invalid C | 🟠 major | Fix now | The take branch materializes a place-less value into a non-releasing argument temporary (deferred for literal and call operands), exactly like an owned conditional |
+| RV2-4: a conditional whose arms are struct literals with a fixed-array field still rendered an aggregate initializer (owned and duplicable paths) | 🟠 major | Fix now | A struct-literal arm always stores per field; a duplicable struct conditional stores per arm through `emit_struct_conditional_assign`; a returned conditional uses the same branches |
+| RV2-5: a nested row value in an element literal stored as a scalar assignment | 🟡 minor | Fix now | `emit_array_assign_to` routes a nested non-literal row through the fixed-array store core |
+| RV2-6: the `projects_from_place` doc comment was attached to `value_needs_place` | 🟡 minor | Fix now | The comment is back on its function and the new predicate has its own |
+| RV2-7: `projected_type` duplicated `Ty::iterated_element` | 🟡 minor | Fix now | The element arm calls `ty.iterated_element()` |
+
+**RV2 verification (2026-10-01 02:56):** while verifying RV2-4, the review probes exposed that
+`consume_place` inside a conditionally evaluated literal moved both arms' field sources eagerly,
+leaving the skipped arm's value in an unreleased temporary; the lowering now leaves those sources
+in place and each adopting store empties the source it moves. The closed plan's
+`should_not_release_a_literal_adoption_temporary` pin was updated in place (AR #15) to assert the
+emptied source instead of an untouched temporary. Host AddressSanitizer probes for all seven
+findings (fixed and scalar owned stores, the guarded projection and its arm form, take literal,
+take call, take struct sentinel/conditional/duplicable, conditional struct arms, nested row
+literal) run clean with `ASAN_OPTIONS=detect_leaks=1`; `call_value_integrity_spec_test` 44/44,
+`call_value_integrity_impl_test` 33/33 (five new emitted-shape pins), `make check` 34 suites, 0
+failures, 0 warnings. One re-review of the fix diff follows (single permitted pass).
+
+**Recorded, not fixed (out of phase):** the `DEF-36` array-parameter zero walk (Phase 4) still
+mis-zeroes a by-reference array parameter when a Phase-2 return path reaches it; a *conditional*
+fixed-array index base inside a guarded operand still materializes eagerly (the pre-existing
+variant of RV2-2, distinct from the array-literal variant fixed here).
+
 ---
 
 ## Phase 3: Func Pointers and Callable Resolution

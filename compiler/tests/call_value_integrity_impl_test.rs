@@ -859,3 +859,132 @@ func main(): i32 {
     assert_contains("cviimpl-retliteral", &emitted, "__cl_return_1.tag = 2;");
     assert_contains("cviimpl-retliteral", &emitted, "return __cl_return_1;");
 }
+
+/// A run-time-index row store moves an owned row source and empties it, so
+/// only the row releases the elements.
+#[test]
+fn should_move_an_owned_row_source_when_a_runtime_index_stores_it() {
+    let source = r#"module impl.cvi.rowmov;
+import { String, stringOf } from std.text;
+func index(): i32 {
+    return 1;
+}
+func main(): i32 {
+    let rows: String[2][2] = [[stringOf("ab"), stringOf("c")], [stringOf("de"), stringOf("f")]];
+    let value: String[2] = [stringOf("xyz"), stringOf("w")];
+    let i: i32 = index();
+    rows[i] = value;
+    return i32(len(rows[1][1]));
+}
+"#;
+    let emitted = emit_host("cviimpl-rowmov", source);
+    assert_contains("cviimpl-rowmov", &emitted, "cl_zero(&value);");
+    assert_contains(
+        "cviimpl-rowmov",
+        &emitted,
+        "memcpy(&((*(&(rows[i])))), &(__cl_tmp0), sizeof((*(&(rows[i])))));",
+    );
+}
+
+/// A run-time-index scalar store empties the moved source and releases the
+/// element it replaces exactly once.
+#[test]
+fn should_move_an_owned_scalar_source_and_release_the_replaced_element() {
+    let source = r#"module impl.cvi.scalarmov;
+import { String, stringOf } from std.text;
+func index(): i32 {
+    return 1;
+}
+func main(): i32 {
+    let rows: String[2] = [stringOf("ab"), stringOf("c")];
+    let s: String = stringOf("xyz");
+    let i: i32 = index();
+    rows[i] = s;
+    return i32(len(rows[1]));
+}
+"#;
+    let emitted = emit_host("cviimpl-scalarmov", source);
+    let moved = after("cviimpl-scalarmov", &emitted, "__cl_tmp0 = s;");
+    assert_contains("cviimpl-scalarmov", moved, "s = NULL;");
+    let dropped = emitted
+        .find("if (*(&(rows[i]))) { FreeString(*(&(rows[i]))); }")
+        .unwrap_or_else(|| panic!("cviimpl-scalarmov: the replaced element is not released"));
+    let assigned = emitted
+        .find("*(&(rows[i])) = __cl_arm_1;")
+        .unwrap_or_else(|| panic!("cviimpl-scalarmov: the element is not assigned"));
+    assert!(
+        dropped < assigned,
+        "cviimpl-scalarmov: the replaced element must be released before the new value is stored"
+    );
+}
+
+/// An array literal behind a projection inside a short circuit is stored on
+/// the guarded path only, not before the condition.
+#[test]
+fn should_store_a_guarded_array_literal_projection_on_its_own_path() {
+    let source = r#"module impl.cvi.guardlit;
+func boom(): i32 {
+    return 1;
+}
+func main(): i32 {
+    let ok: bool = false;
+    if (ok && [boom(), 1][0] == 1) {
+        return 9;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("cviimpl-guardlit", source);
+    let condition_at = emitted
+        .find("if ((ok &&")
+        .unwrap_or_else(|| panic!("cviimpl-guardlit: the short circuit is not emitted"));
+    assert!(
+        !emitted[..condition_at].contains("__cl_tmp0[0] ="),
+        "cviimpl-guardlit: the literal must not be stored before the condition"
+    );
+    let guarded = &emitted[condition_at..];
+    assert_contains("cviimpl-guardlit", guarded, "__cl_tmp0[0] = ");
+}
+
+/// A `take` array-literal argument materializes into a local before the call.
+#[test]
+fn should_materialize_a_take_array_literal_argument_into_a_local() {
+    let source = r#"module impl.cvi.takelit;
+func eat(take a: i32[2]): i32 {
+    return a[0] + a[1];
+}
+func main(): i32 {
+    return eat(take [1, 2]);
+}
+"#;
+    let emitted = emit_host("cviimpl-takelit", source);
+    assert_contains("cviimpl-takelit", &emitted, "i32 __cl_tmp0[2] = {0};");
+    assert_contains("cviimpl-takelit", &emitted, "__cl_tmp0[0] = 1;");
+    assert_contains("cviimpl-takelit", &emitted, "__cl_tmp0[1] = 2;");
+    assert_contains("cviimpl-takelit", &emitted, "eat(__cl_tmp0);");
+}
+
+/// A conditional of struct literals with fixed-array fields stores each arm
+/// per field instead of rendering a C ternary of aggregate initializers.
+#[test]
+fn should_store_each_arm_per_field_when_a_conditional_selects_struct_literals() {
+    let source = r#"module impl.cvi.armstruct;
+struct Box { arr: i32[2]; tag: i32; }
+func main(): i32 {
+    let ok: bool = true;
+    let a: i32[2] = [1, 2];
+    let b: i32[2] = [3, 4];
+    let c: Box = ok ? Box { arr: a, tag: 1 } : Box { arr: b, tag: 2 };
+    return c.arr[0] + c.arr[1] + c.tag;
+}
+"#;
+    let emitted = emit_host("cviimpl-armstruct", source);
+    let branch = after("cviimpl-armstruct", &emitted, "if (ok) {");
+    assert_contains("cviimpl-armstruct", branch, "ClBox __cl_arm");
+    assert_contains("cviimpl-armstruct", branch, "memcpy(&(__cl_arm");
+    assert_contains("cviimpl-armstruct", branch, "c = __cl_arm");
+    assert!(
+        !emitted.contains("(ok ? (ClBox)"),
+        "cviimpl-armstruct: a conditional of array-field literals must not render as a C ternary"
+    );
+}

@@ -298,6 +298,27 @@ impl<'a> Emitter<'a> {
                     }
                 }
                 if !value_stored {
+                    if let ValueKind::Conditional {
+                        condition,
+                        then_value,
+                        else_value,
+                    } = &value.kind
+                    {
+                        if self.conditional_struct_needs_stores(&ret_ty, then_value, else_value) {
+                            if self.emit_struct_conditional_return(
+                                &ret_ty,
+                                condition,
+                                then_value,
+                                else_value,
+                                releases,
+                            ) {
+                                return;
+                            }
+                            value_stored = true;
+                        }
+                    }
+                }
+                if !value_stored {
                     self.emit_guards(value);
                     // A returned `String` widens to the `str` view the return
                     // type declares, exactly as a store into a `str` place does.
@@ -424,6 +445,39 @@ impl<'a> Emitter<'a> {
             self.empty_state(ret_ty)
         ));
         self.emit_struct_literal_fields(&local, ret_ty, fields);
+        self.emit_temp_releases(releases);
+        self.push(&format!("        return {local};"));
+        self.push("    }");
+        true
+    }
+
+    /// Emits a struct conditional that needs per-arm stores as a return value.
+    ///
+    /// With a result variable the branches store into it and the caller
+    /// continues with the releases and the ladder jump, so `false` is
+    /// returned. Without one the conditional is built in a block-local, the
+    /// statement releases run after it has been read, and the block returns the
+    /// local; `true` means the whole return was emitted.
+    fn emit_struct_conditional_return(
+        &mut self,
+        ret_ty: &Ty,
+        condition: &ir::Value,
+        then_value: &ir::Value,
+        else_value: &ir::Value,
+        releases: &[ir::Release],
+    ) -> bool {
+        if let Some(result) = self.result_var.clone() {
+            self.emit_struct_conditional_assign(&result, ret_ty, condition, then_value, else_value);
+            return false;
+        }
+        let local = self.unique_local("__cl_return");
+        let decl = super::types::declarator(ret_ty, &local);
+        self.push("    {");
+        self.push(&format!(
+            "        {decl} = {};",
+            self.empty_state(ret_ty)
+        ));
+        self.emit_struct_conditional_assign(&local, ret_ty, condition, then_value, else_value);
         self.emit_temp_releases(releases);
         self.push(&format!("        return {local};"));
         self.push("    }");

@@ -401,6 +401,43 @@ impl<'a> Emitter<'a> {
                     // the value, so the old bytes are always saved.
                     let target_c = format!("(*({pointer_c}))");
                     self.emit_fixed_array_assign_to(&target_c, &pointer_ty, value, true);
+                } else if self.needs_drop(&pointer_ty) {
+                    // An owned conditional moves the chosen arm into the
+                    // element per path, exactly as it does for a named
+                    // destination; a value expression would copy the handle and
+                    // leave the arm owning the same storage.
+                    if let ValueKind::Conditional {
+                        condition,
+                        then_value,
+                        else_value,
+                    } = &value.kind
+                    {
+                        let target_c = format!("*({pointer_c})");
+                        self.emit_conditional_move_assign(
+                            &target_c,
+                            &pointer_ty,
+                            condition,
+                            then_value,
+                            else_value,
+                        );
+                    } else {
+                        // The replaced element owns a value, so it is released
+                        // only after the new value has been evaluated: a call
+                        // may read the element it replaces. The value is stored
+                        // in a fresh local first and then moved into the
+                        // element, which empties the local and releases the old
+                        // element exactly once.
+                        self.emit_guards(value);
+                        let lowered = self.store_text(value, &pointer_ty);
+                        let temp = self.unique_local("__cl_arm");
+                        self.push(&format!(
+                            "    {} = {lowered};",
+                            declarator(&pointer_ty, &temp)
+                        ));
+                        self.emit_drop_expr(&format!("*({pointer_c})"), &pointer_ty);
+                        self.push(&format!("    *({pointer_c}) = {temp};"));
+                        self.emit_move_zero(&temp, &pointer_ty);
+                    }
                 } else {
                     self.emit_guards(value);
                     let value_c = self.store_text(value, &pointer_ty);
@@ -752,6 +789,28 @@ impl<'a> Emitter<'a> {
                 return;
             }
         }
+        // A conditional of structs stores its arms per field when an arm
+        // cannot use a C aggregate initializer, even though the type owns
+        // nothing (a fixed-array field makes a `?:` on two struct values
+        // invalid C).
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        {
+            if self.conditional_struct_needs_stores(&ty, then_value, else_value) {
+                let target_c = self.place(target);
+                self.emit_struct_conditional_assign(
+                    &target_c,
+                    &ty,
+                    condition,
+                    then_value,
+                    else_value,
+                );
+                return;
+            }
+        }
         if !self.emits_drop(&ty) {
             self.emit_guards(value);
             let target_c = self.place(target);
@@ -900,6 +959,7 @@ impl<'a> Emitter<'a> {
             self.push(&format!(
                 "    memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
             ));
+            self.emit_arm_source_moves(value, ty);
             return;
         }
         // The value reads the target, so the old value must survive until the
@@ -920,6 +980,7 @@ impl<'a> Emitter<'a> {
         self.push(&format!(
             "        memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
         ));
+        self.emit_arm_source_moves(value, ty);
         self.emit_drop_expr(&save, ty);
         self.push("    }");
     }
@@ -1068,6 +1129,78 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+    }
+
+    /// True when a conditional of structs needs per-arm store forms.
+    ///
+    /// A C `?:` on two struct values copies bytes, which cannot initialize a
+    /// fixed-array field. The value must be stored per arm instead, with any
+    /// arm that is a struct literal storing its fields. An owned struct takes
+    /// the owned branch store, so this predicate is only consulted for a
+    /// duplicable struct.
+    pub(super) fn conditional_struct_needs_stores(
+        &self,
+        ty: &Ty,
+        then_value: &Value,
+        else_value: &Value,
+    ) -> bool {
+        if !matches!(&ty.kind, TyKind::Struct(..)) {
+            return false;
+        }
+        [then_value, else_value].into_iter().any(|arm| {
+            matches!(
+                &arm.kind,
+                ValueKind::StructLit { fields, .. } if self.struct_literal_needs_stores(fields)
+            )
+        })
+    }
+
+    /// Emits a duplicable struct conditional through one branch per arm.
+    ///
+    /// The condition runs once. An arm that is a struct literal whose fields
+    /// need stores is built in a fresh local and moved in; every other arm is
+    /// a plain struct assignment, which C allows for a type with no ownership.
+    pub(super) fn emit_struct_conditional_assign(
+        &mut self,
+        target_c: &str,
+        ty: &Ty,
+        condition: &Value,
+        then_value: &Value,
+        else_value: &Value,
+    ) {
+        self.emit_guards(condition);
+        let condition_c = self.value(condition);
+        self.push(&format!("    if ({condition_c}) {{"));
+        self.emit_struct_value_store_arm(target_c, ty, then_value);
+        self.push("    } else {");
+        self.emit_struct_value_store_arm(target_c, ty, else_value);
+        self.push("    }");
+    }
+
+    /// Stores one arm of a duplicable struct conditional into the target.
+    ///
+    /// A struct literal that needs stores is built in a fresh local first, so
+    /// a field that reads the target still sees the old value. Every other arm
+    /// is a plain struct assignment.
+    fn emit_struct_value_store_arm(&mut self, target_c: &str, ty: &Ty, arm: &Value) {
+        if let ValueKind::StructLit { fields, .. } = &arm.kind {
+            if self.struct_literal_needs_stores(fields) {
+                let local = self.unique_local("__cl_arm");
+                self.push("        {");
+                self.push(&format!(
+                    "            {} = {};",
+                    declarator(ty, &local),
+                    self.empty_state(ty)
+                ));
+                self.emit_struct_literal_fields(&local, ty, fields);
+                self.push(&format!("            {target_c} = {local};"));
+                self.push("        }");
+                return;
+            }
+        }
+        self.emit_guards(arm);
+        let arm_c = self.store_text(arm, ty);
+        self.push(&format!("        {target_c} = {arm_c};"));
     }
 
     /// True when a struct literal needs the per-field store form.
@@ -1294,26 +1427,21 @@ impl<'a> Emitter<'a> {
         }
         // A struct-literal arm is built in a fresh local through per-field
         // stores, so a conditional field evaluates its condition once and a
-        // target-reading condition still sees the old destination. A struct
-        // with a fixed-array field keeps the initializer form until the
-        // fixed-array store machinery reaches struct fields.
+        // target-reading condition still sees the old destination. A
+        // fixed-array field stores through the same core as an owned
+        // conditional field, because a C aggregate initializer cannot name it.
         if let ValueKind::StructLit { fields, .. } = &arm.kind {
-            if !fields
-                .iter()
-                .any(|(_, field)| self.substitute(&field.ty).is_fixed_array())
-            {
-                let local = self.unique_local("__cl_arm");
-                self.push("            {");
-                self.push(&format!(
-                    "                {} = {};",
-                    declarator(ty, &local),
-                    self.empty_state(ty)
-                ));
-                self.emit_struct_literal_fields(&local, ty, fields);
-                self.push(&format!("                {target_c} = {local};"));
-                self.push("            }");
-                return;
-            }
+            let local = self.unique_local("__cl_arm");
+            self.push("            {");
+            self.push(&format!(
+                "                {} = {};",
+                declarator(ty, &local),
+                self.empty_state(ty)
+            ));
+            self.emit_struct_literal_fields(&local, ty, fields);
+            self.push(&format!("                {target_c} = {local};"));
+            self.push("            }");
+            return;
         }
         match &arm.kind {
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
@@ -1510,7 +1638,7 @@ impl<'a> Emitter<'a> {
     /// An owned `String` widens implicitly to the `str` view the target holds,
     /// through the same shim view the call-argument widening uses. Every other
     /// store renders the value directly.
-    pub(super) fn store_text(&mut self, value: &Value, ty: &Ty) -> String {
+    pub(super) fn store_text(&self, value: &Value, ty: &Ty) -> String {
         let text = self.value(value);
         let value_ty = self.substitute(&value.ty);
         if matches!(ty.kind, TyKind::Str | TyKind::StaticStr)
@@ -1560,14 +1688,23 @@ impl<'a> Emitter<'a> {
         for (index, value) in elements.iter().enumerate() {
             let sub = format!("{target_c}[{index}]");
             if let Some(element_ty) = &nested_ty {
-                if let ValueKind::ArrayLit { elements, fill } = &value.kind {
-                    self.emit_array_assign_to(&sub, element_ty, elements, fill);
-                    continue;
+                match &value.kind {
+                    ValueKind::ArrayLit { elements, fill } => {
+                        self.emit_array_assign_to(&sub, element_ty, elements, fill);
+                    }
+                    // A whole row that is not a literal has no scalar form; it
+                    // travels through the fixed-array store core, one dimension
+                    // in.
+                    _ => self.emit_fixed_array_assign_to(&sub, element_ty, value, false),
                 }
+                continue;
             }
             self.emit_guards(value);
             let lowered = self.store_text(value, element);
             self.push(&format!("    {sub} = {lowered};"));
+            if self.needs_drop(element) {
+                self.emit_arm_source_moves(value, element);
+            }
         }
         let prefix = elements.len();
         let Some(fill) = fill else {
@@ -1576,13 +1713,21 @@ impl<'a> Emitter<'a> {
         // A fill covers every index the prefix did not: `[a, b; fill]` fills
         // from the prefix length to the extent, and `[; fill]` fills them all.
         if let Some(element_ty) = &nested_ty {
-            if let ValueKind::ArrayLit { elements, fill } = &fill.kind {
-                for index in prefix..extent {
-                    let sub = format!("{target_c}[{index}]");
-                    self.emit_array_assign_to(&sub, element_ty, elements, fill);
+            match &fill.kind {
+                ValueKind::ArrayLit { elements, fill } => {
+                    for index in prefix..extent {
+                        let sub = format!("{target_c}[{index}]");
+                        self.emit_array_assign_to(&sub, element_ty, elements, fill);
+                    }
                 }
-                return;
+                _ => {
+                    for index in prefix..extent {
+                        let sub = format!("{target_c}[{index}]");
+                        self.emit_fixed_array_assign_to(&sub, element_ty, fill, false);
+                    }
+                }
             }
+            return;
         }
         self.emit_guards(fill);
         let lowered = self.store_text(fill, element);
