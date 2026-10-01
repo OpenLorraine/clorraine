@@ -361,10 +361,19 @@ impl<'a> Emitter<'a> {
     /// A deferred `take` move-out must run inside the expression that
     /// evaluates a guarded operand, so the place is emptied with the same
     /// spelling `Statement::MoveOut` uses: a handle becomes `(place = NULL)`,
-    /// every other type `(cl_zero(&place), 0)`.
+    /// every other type `(cl_zero(&place), 0)`. A fixed-array parameter walks
+    /// its deepest elements, because `cl_zero` would take `sizeof` of the
+    /// adjusted pointer.
     pub(super) fn move_zero_expr(&self, place: &Place) -> String {
         let c_name = self.place(place);
         let ty = self.substitute(&place.ty);
+        if self.is_array_param_place(place) {
+            if let TyKind::Array { element, extents } = &ty.kind {
+                let dims: Vec<usize> = extents.iter().filter_map(|extent| *extent).collect();
+                let parts = array_param_zero_expr(&c_name, element, &dims);
+                return format!("({})", parts.join(", "));
+            }
+        }
         self.move_zero_text_expr(&c_name, &ty)
     }
 
@@ -760,5 +769,27 @@ impl<'a> Emitter<'a> {
             _ => format!("Cl{name}"),
         };
         format!("({cast}){{ {} }}", values.join(", "))
+    }
+}
+
+/// Renders the move-out zero of a fixed-array parameter as comma operands.
+///
+/// The parameter is C-adjusted to a pointer, so `cl_zero` cannot take its
+/// `sizeof`; each deepest element is zeroed instead, which empties every
+/// handle the deferred `take` move-out transferred.
+fn array_param_zero_expr(c_name: &str, element: &Ty, extents: &[usize]) -> Vec<String> {
+    match extents.split_first() {
+        None => vec![format!("(cl_zero(&{c_name}))")],
+        Some((head, tail)) => {
+            let mut parts = Vec::new();
+            for index in 0..*head {
+                parts.extend(array_param_zero_expr(
+                    &format!("{c_name}[{index}]"),
+                    element,
+                    tail,
+                ));
+            }
+            parts
+        }
     }
 }

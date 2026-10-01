@@ -854,7 +854,7 @@ func main(): i32 {
     assert_contains(
         "cviimpl-retliteral",
         &emitted,
-        "memcpy(&(__cl_return_1.arr), &(a), sizeof(__cl_return_1.arr));",
+        "memcpy(&(__cl_return_1.arr), a, sizeof(__cl_return_1.arr));",
     );
     assert_contains("cviimpl-retliteral", &emitted, "__cl_return_1.tag = 2;");
     assert_contains("cviimpl-retliteral", &emitted, "return __cl_return_1;");
@@ -1628,5 +1628,107 @@ func main(): i32 {
     assert!(
         !emitted.contains("(__cl_tmp0[0].data ? (FreeBuffer("),
         "cviimpl-p4growstr: a drop-needing element keeps the recorded skip"
+    );
+}
+
+/// A fixed-array assignment whose source is an adjusted parameter and whose
+/// element is duplicable copies through the parameter name, not its slot.
+#[test]
+fn should_copy_through_the_name_when_a_duplicable_array_parameter_assigns() {
+    let source = r#"module impl.cvi.rv4f1;
+func sum(v: i32[3]): i32 {
+    let c: i32[3] = v;
+    return c[0] + c[1] + c[2];
+}
+func main(): i32 {
+    let r: i32[3] = [2, 3, 4];
+    return sum(r);
+}
+"#;
+    let emitted = emit_host("cviimpl-rv4f1", source);
+    assert_contains("cviimpl-rv4f1", &emitted, "memcpy(&(c), v, sizeof(c));");
+    assert!(
+        !emitted.contains("&(v), sizeof(c)"),
+        "cviimpl-rv4f1: the parameter slot must not be the copy source"
+    );
+}
+
+/// A generic instance of a fixed-array parameter move adjusts both the copy
+/// source and the element-walk zero.
+#[test]
+fn should_adjust_both_sides_when_a_generic_array_parameter_moves() {
+    let source = r#"module impl.cvi.rv4f3;
+import { String, stringOf } from std.text;
+func copy<T>(take a: T[2]): i32 {
+    let c: T[2] = a;
+    return i32(len(c[0]));
+}
+func main(): i32 {
+    return copy<String>([stringOf("ab"), stringOf("cde")]);
+}
+"#;
+    let emitted = emit_host("cviimpl-rv4f3", source);
+    assert_contains("cviimpl-rv4f3", &emitted, "memcpy(&(c), a, sizeof(c));");
+    assert_contains("cviimpl-rv4f3", &emitted, "cl_zero(&a[0]);");
+    assert_contains("cviimpl-rv4f3", &emitted, "cl_zero(&a[1]);");
+    assert!(
+        !emitted.contains("cl_zero(&a);"),
+        "cviimpl-rv4f3: the adjusted parameter must not reach cl_zero directly"
+    );
+}
+
+/// A conditional fixed-array assignment with a parameter target uses the
+/// adjusted address and byte count for the save, the arm copy, and the restore.
+#[test]
+fn should_adjust_the_sides_when_a_conditional_stores_an_array_parameter() {
+    let source = r#"module impl.cvi.rv4f4;
+import { String, stringOf } from std.text;
+func choose(take a: String[2], take b: String[2], ok: bool): i32 {
+    a = ok ? b : a;
+    return i32(len(a[0]));
+}
+func main(): i32 {
+    return choose([stringOf("ab"), stringOf("cd")], [stringOf("xyz"), stringOf("q")], true);
+}
+"#;
+    let emitted = emit_host("cviimpl-rv4f4", source);
+    assert_contains("cviimpl-rv4f4", &emitted, "memcpy(a, b, (sizeof(a[0]) * 2));");
+    assert_contains("cviimpl-rv4f4", &emitted, "cl_zero(&b[0]);");
+    assert_contains("cviimpl-rv4f4", &emitted, "memcpy(a, &(__cl_save");
+    assert!(
+        !emitted.contains("cl_zero(&a);"),
+        "cviimpl-rv4f4: the adjusted parameter must not reach cl_zero directly"
+    );
+}
+
+/// A deferred `take` move-out of an array parameter inside a guarded operand
+/// empties the parameter's elements in one comma expression.
+#[test]
+fn should_walk_the_elements_when_a_guarded_move_out_names_an_array_parameter() {
+    let source = r#"module impl.cvi.rv4f2;
+import { String, stringOf } from std.text;
+func eat(take p: String[2]): i32 {
+    return i32(len(p[0]));
+}
+func pass(take a: String[2]): i32 {
+    let i: i32 = 0;
+    if (i < 2 && eat(a) > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+func main(): i32 {
+    return pass([stringOf("ab"), stringOf("cde")]);
+}
+"#;
+    let emitted = emit_host("cviimpl-rv4f2", source);
+    assert_contains(
+        "cviimpl-rv4f2",
+        &emitted,
+        "((cl_zero(&a[0])), (cl_zero(&a[1])))",
+    );
+    assert!(
+        !emitted.contains("(cl_zero(&a))"),
+        "cviimpl-rv4f2: the adjusted parameter must not reach cl_zero directly"
     );
 }

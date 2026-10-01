@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 09:08
+> **Last Updated**: 2026-10-01 10:27
 > **Progress**: 34/39 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
@@ -415,11 +415,11 @@ another independent pass. The `take`-in-a-func-type double free stays the record
 > from a temporary-index snapshot of committed, staged, unstaged, and untracked phase-start state)
 > **Lenses**: compiler-and-language (strict profile)
 > **Scope mode**: strict · **Expected modification set**: `compiler/tests/call_value_integrity_spec_test.rs`,
-> `compiler/src/codegen/{function,control,drop,guards,cleanup}.rs`,
+> `compiler/src/codegen/{function,control,drop,guards,cleanup,expr}.rs`,
 > `compiler/tests/call_value_integrity_impl_test.rs`, `plans/call-value-integrity/*`
 > (`cleanup.rs` added during 4.2.1: the return and guarded move-out paths zero a
-> C-adjusted array parameter through the same place-aware walk, a necessary
-> correction of the same defect surface)
+> C-adjusted array parameter through the same place-aware walk; `expr.rs` added
+> during the finding fixes: the guard-expression move-out zero walks elements)
 
 ### Step 4.1: Specification Tests
 
@@ -474,6 +474,37 @@ unguarded `do`/`while` pin, the growable drop expression, and the drop-needing e
 - [ ] `make check` passes with no warnings
 
 **Verify**: `make check`
+
+### Phase 4 Review (post-phase quality step)
+
+> **Phase baseline ref**: `63433c43fbf0f6f3ae185a9744ce604ae0bd8672` · **Reviewed diff**:
+> `63433c43..dc35009` · **Scope mode**: strict · **Reviewer**: correctness (strict default)
+> **Recorded**: 2026-10-01 09:20
+
+**Verified clean by the review:** parameter detection (projections, `EnvField`/`DerefTemp` roots,
+`pointer_params`, multi-extent sizes); both move sides and the return/statement-guard paths
+(ASan clean); flag-first do-while fall-through, `continue`, `break`, nested loops, `Jump::Loop`
+re-entry, and the unguarded form; the growable drop expression is null-safe, idempotent,
+single-evaluation, and keeps the drop-needing skip; `make check` 34 suites green.
+
+| # | Severity | Origin | Finding (evidence) | Disposition |
+| - | -------- | ------ | ------------------ | ----------- |
+| F1 | 🔴 critical | Pre-existing, adjacent | A fixed-array parameter assignment with a duplicable element lowers to the assign core (`Statement::Assign`), which addresses the adjusted parameter as an object (`function.rs:1072,1083,1104`): `func sum(v: i32[3]) { let c: i32[3] = v; }` emits `memcpy(&(c), &(v), sizeof(c));` — ASan stack overread (READ of 12), `gcc -Werror` rejects; `i32[2][3]` reads 24 bytes | Fixed: the assign core carries an `ArrayTarget` (text/address/bytes) built from the place, so both sides adjust for an array parameter; the probe emits `memcpy(&(c), v, sizeof(c));` and exits 9 |
+| F2 | 🟠 major | In authorized surface (`guards.rs`) | The deferred `take` move-out in the **embedded guard expression** still emits `cl_zero(&param)` (`guards.rs:585-587` → `expr.rs:365-369`); a guarded `eat(a)` from an array parameter emits `cl_zero(&a)`, rejected by `gcc -Werror` and NULL-dereferenced at cleanup | Fixed: `move_zero_expr` walks the parameter's deepest elements in one comma expression (`((cl_zero(&a[0])), (cl_zero(&a[1])))`); the probe builds and exits correctly |
+| F3 | 🟠 major | Pre-existing, same root as F1 | A generic fixed-array parameter move (`let c: T[2] = a`, `a = b`) routes to the assign core because a `Param` element is treated as duplicable, so it keeps `memcpy(&(c), &(a), sizeof(c)); cl_zero(&a);` and fails the strict C build | Fixed by the same assign-core adjustment: `memcpy(&(c), a, sizeof(c)); cl_zero(&a[0]); cl_zero(&a[1]);` |
+| F4 | 🟠 major | Pre-existing, same root as F1 | A conditional fixed-array assignment with parameter places (`a = c ? b : a`) emits `sizeof(param)` and `cl_zero(&param)` in `emit_fixed_array_conditional_assign` (`function.rs:1119-1272`) | Fixed: save, arm copy, and restore use the adjusted sides (`memcpy(a, b, (sizeof(a[0]) * 2));`, `memcpy(a, &(__cl_save_1), (sizeof(a[0]) * 2));`) |
+| F5 | 🟡 minor | Pre-existing, out of the zero-only change | A multi-extent fixed-array return of a place emits an array assignment (`cleanup.rs:544-546`): `return a` for `String[2][2]` emits `__cl_ret[0] = a[0];`, which C rejects; the new pin covers the 1-D case only | Filed as DEF-47 (Backlog) |
+| F6 | 🟡 minor (optional, non-executable) | Pre-existing, outside DEF-37/DEF-39 | An unguarded loop condition holding an owned call result leaks (`do { ... } while (grow().count > 0 && i < 3)`); `value_needs_guards` is false so the header call has no drop | Filed as DEF-48 (Backlog) |
+
+**Finding-fix verification (2026-10-01 10:27):** the user ruled "Fix all four now" for F1–F4 and "File
+both as defects" for F5/F6. The fix introduces `ArrayTarget` (text/address/bytes) in
+`codegen/function.rs` and threads it through `emit_fixed_array_assign_to`,
+`emit_fixed_array_conditional_assign`, `emit_fixed_array_assign_arm`, `emit_fixed_array_call_assign`,
+and `emit_array_assign_to`, plus a place-aware zero in `emit_arm_source_moves`; `move_zero_expr`
+(`codegen/expr.rs`) gains the comma-expression element walk. Four new impl pins (61/61); one
+existing pin updated in place (the struct-literal return now spells the adjusted source `a` instead
+of the buggy `&(a)` — AR #15 precedent); F1–F4 probes build under `-Werror` and exit correctly;
+`make check` 34 suites, 0 failures, 0 warnings. Fix diff re-reviewed once (see below).
 
 ---
 

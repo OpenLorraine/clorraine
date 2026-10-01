@@ -530,7 +530,7 @@ impl<'a> Emitter<'a> {
                 self.push("    }");
             }
             ValueKind::ArrayLit { elements, fill } => {
-                self.emit_array_assign_to("__cl_ret", &ty, elements, fill);
+                self.emit_array_assign_to(&super::function::ArrayTarget::object("__cl_ret"), &ty, elements, fill);
             }
             ValueKind::Place(place) => {
                 self.emit_guards(value);

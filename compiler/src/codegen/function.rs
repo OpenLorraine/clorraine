@@ -425,7 +425,8 @@ impl<'a> Emitter<'a> {
                     // against the dereferenced pointer. The pointer may alias
                     // the value, so the old bytes are always saved.
                     let target_c = format!("(*({pointer_c}))");
-                    self.emit_fixed_array_assign_to(&target_c, &pointer_ty, value, true);
+                    let target = ArrayTarget::object(&target_c);
+                    self.emit_fixed_array_assign_to(&target, &pointer_ty, value, true);
                 } else if self.needs_drop(&pointer_ty) {
                     // An owned conditional moves the chosen arm into the
                     // element per path, exactly as it does for a named
@@ -950,7 +951,8 @@ impl<'a> Emitter<'a> {
     fn emit_fixed_array_assign(&mut self, target: &Place, ty: &Ty, value: &Value) {
         let target_c = self.place(target);
         let reads_target = value_reads_base(value, target);
-        self.emit_fixed_array_assign_to(&target_c, ty, value, reads_target);
+        let target = self.array_target(target, &target_c);
+        self.emit_fixed_array_assign_to(&target, ty, value, reads_target);
     }
 
     /// Emits a whole-array store into a rendered C lvalue.
@@ -967,7 +969,7 @@ impl<'a> Emitter<'a> {
     /// struct-literal field, and a plain place share one core.
     fn emit_fixed_array_assign_to(
         &mut self,
-        target_c: &str,
+        target: &ArrayTarget,
         ty: &Ty,
         value: &Value,
         reads_target: bool,
@@ -979,7 +981,7 @@ impl<'a> Emitter<'a> {
         } = &value.kind
         {
             self.emit_fixed_array_conditional_assign(
-                target_c,
+                target,
                 ty,
                 condition,
                 then_value,
@@ -991,9 +993,9 @@ impl<'a> Emitter<'a> {
             // An array literal has one initializer per element, so it is
             // stored element by element; a `memcpy` cannot name its braces.
             if self.needs_drop(ty) {
-                self.emit_drop_expr(target_c, ty);
+                self.emit_drop_expr(&target.text, ty);
             }
-            self.emit_array_assign_to(target_c, ty, elements, fill);
+            self.emit_array_assign_to(target, ty, elements, fill);
             return;
         }
         if let ValueKind::Call {
@@ -1024,10 +1026,11 @@ impl<'a> Emitter<'a> {
                 self.call_with_destination(callee, type_args, args, receiver.as_deref(), &temp);
             self.push(&format!("        {call};"));
             if self.needs_drop(ty) {
-                self.emit_drop_expr(target_c, ty);
+                self.emit_drop_expr(&target.text, ty);
             }
             self.push(&format!(
-                "        memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+                "        memcpy({}, &({temp}), {});",
+                target.address, target.bytes
             ));
             self.emit_move_zero(&temp, ty);
             self.push("    }");
@@ -1051,36 +1054,41 @@ impl<'a> Emitter<'a> {
             let call = self.closure_call_with_destination(callable, args, Some(&temp));
             self.push(&format!("        {call};"));
             if self.needs_drop(ty) {
-                self.emit_drop_expr(target_c, ty);
+                self.emit_drop_expr(&target.text, ty);
             }
             self.push(&format!(
-                "        memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+                "        memcpy({}, &({temp}), {});",
+                target.address, target.bytes
             ));
             self.emit_move_zero(&temp, ty);
             self.push("    }");
             return;
         }
         let value_c = self.value(value);
-        if value_c == target_c {
+        if value_c == target.text {
             self.emit_guards(value);
             return;
         }
         if !self.needs_drop(ty) {
             self.emit_guards(value);
             let value_c = self.store_text(value, ty);
+            let source = self.array_source_address(value, &value_c);
             self.push(&format!(
-                "    memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
+                "    memcpy({}, {source}, {});",
+                target.address, target.bytes
             ));
             return;
         }
         if !reads_target {
             // The value does not read the target, so the old value is released
             // before the value is evaluated.
-            self.emit_drop_expr(target_c, ty);
+            self.emit_drop_expr(&target.text, ty);
             self.emit_guards(value);
             let value_c = self.store_text(value, ty);
+            let source = self.array_source_address(value, &value_c);
             self.push(&format!(
-                "    memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
+                "    memcpy({}, {source}, {});",
+                target.address, target.bytes
             ));
             self.emit_arm_source_moves(value, ty);
             return;
@@ -1096,12 +1104,15 @@ impl<'a> Emitter<'a> {
             self.empty_state(ty)
         ));
         self.push(&format!(
-            "        memcpy(&({save}), &({target_c}), sizeof({target_c}));"
+            "        memcpy(&({save}), {}, {});",
+            target.address, target.bytes
         ));
         self.emit_guards(value);
         let value_c = self.store_text(value, ty);
+        let source = self.array_source_address(value, &value_c);
         self.push(&format!(
-            "        memcpy(&({target_c}), &({value_c}), sizeof({target_c}));"
+            "        memcpy({}, {source}, {});",
+            target.address, target.bytes
         ));
         self.emit_arm_source_moves(value, ty);
         self.emit_drop_expr(&save, ty);
@@ -1118,7 +1129,7 @@ impl<'a> Emitter<'a> {
     /// back, and the saved value is released once afterwards.
     fn emit_fixed_array_conditional_assign(
         &mut self,
-        target_c: &str,
+        target: &ArrayTarget,
         ty: &Ty,
         condition: &Value,
         then_value: &Value,
@@ -1128,9 +1139,9 @@ impl<'a> Emitter<'a> {
             self.emit_guards(condition);
             let condition_c = self.value(condition);
             self.push(&format!("    if ({condition_c}) {{"));
-            self.emit_fixed_array_assign_arm(&target_c, ty, then_value, None);
+            self.emit_fixed_array_assign_arm(target, ty, then_value, None);
             self.push("    } else {");
-            self.emit_fixed_array_assign_arm(&target_c, ty, else_value, None);
+            self.emit_fixed_array_assign_arm(target, ty, else_value, None);
             self.push("    }");
             return;
         }
@@ -1147,14 +1158,15 @@ impl<'a> Emitter<'a> {
             self.empty_state(ty)
         ));
         self.push(&format!(
-            "        memcpy(&({save}), &({target_c}), sizeof({target_c}));"
+            "        memcpy(&({save}), {}, {});",
+            target.address, target.bytes
         ));
         self.emit_guards(condition);
         let condition_c = self.value(condition);
         self.push(&format!("        if ({condition_c}) {{"));
-        self.emit_fixed_array_assign_arm(&target_c, ty, then_value, Some(&save));
+        self.emit_fixed_array_assign_arm(target, ty, then_value, Some(&save));
         self.push("        } else {");
-        self.emit_fixed_array_assign_arm(&target_c, ty, else_value, Some(&save));
+        self.emit_fixed_array_assign_arm(target, ty, else_value, Some(&save));
         self.push("        }");
         self.emit_drop_expr(&save, ty);
         self.push("    }");
@@ -1162,14 +1174,14 @@ impl<'a> Emitter<'a> {
 
     /// Emits one arm of a fixed-array conditional assignment.
     ///
-    /// The arm is stored into `target_c`; `save` holds the destination's old
+    /// The arm is stored into `target`; `save` holds the destination's old
     /// value while the branch runs, so an arm that names the destination can
     /// restore it. A nested conditional recurses, and a call writes into a
     /// fresh statement-local before its bytes are copied in, so a callee that
     /// reads the destination still sees the old value.
     fn emit_fixed_array_assign_arm(
         &mut self,
-        target_c: &str,
+        target: &ArrayTarget,
         ty: &Ty,
         arm: &Value,
         save: Option<&str>,
@@ -1183,19 +1195,20 @@ impl<'a> Emitter<'a> {
             self.emit_guards(condition);
             let condition_c = self.value(condition);
             self.push(&format!("                if ({condition_c}) {{"));
-            self.emit_fixed_array_assign_arm(target_c, ty, then_value, save);
+            self.emit_fixed_array_assign_arm(target, ty, then_value, save);
             self.push("                } else {");
-            self.emit_fixed_array_assign_arm(target_c, ty, else_value, save);
+            self.emit_fixed_array_assign_arm(target, ty, else_value, save);
             self.push("                }");
             return;
         }
-        if self.value(arm) == target_c {
+        if self.value(arm) == target.text {
             // The arm names the destination. Without a save the destination
             // already holds its own value; with one, the old value is restored
             // and the save emptied so the later release is a no-op.
             if let Some(save) = save {
                 self.push(&format!(
-                    "                memcpy(&({target_c}), &({save}), sizeof({target_c}));"
+                    "                memcpy({}, &({save}), {});",
+                    target.address, target.bytes
                 ));
                 self.emit_move_zero(save, ty);
             }
@@ -1203,7 +1216,7 @@ impl<'a> Emitter<'a> {
         }
         match &arm.kind {
             ValueKind::ArrayLit { elements, fill } => {
-                self.emit_array_assign_to(target_c, ty, elements, fill);
+                self.emit_array_assign_to(target, ty, elements, fill);
             }
             ValueKind::Call {
                 callee,
@@ -1232,7 +1245,8 @@ impl<'a> Emitter<'a> {
                 );
                 self.push(&format!("                {call};"));
                 self.push(&format!(
-                    "                memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+                    "                memcpy({}, &({temp}), {});",
+                    target.address, target.bytes
                 ));
                 self.emit_move_zero(&temp, ty);
             }
@@ -1250,22 +1264,29 @@ impl<'a> Emitter<'a> {
                 let call = self.closure_call_with_destination(callable, args, Some(&temp));
                 self.push(&format!("                {call};"));
                 self.push(&format!(
-                    "                memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+                    "                memcpy({}, &({temp}), {});",
+                    target.address, target.bytes
                 ));
                 self.emit_move_zero(&temp, ty);
             }
             _ => {
                 self.emit_guards(arm);
                 let arm_c = self.store_text(arm, ty);
+                let source = self.array_source_address(arm, &arm_c);
                 self.push(&format!(
-                    "                memcpy(&({target_c}), &({arm_c}), sizeof({target_c}));"
+                    "                memcpy({}, {source}, {});",
+                    target.address, target.bytes
                 ));
                 // An owned arm is a move: the bytes travel to the destination
                 // and the source is emptied, so only the chosen arm is moved.
                 if self.needs_drop(ty) {
                     let source_ty = self.substitute(&arm.ty);
                     if self.needs_drop(&source_ty) {
-                        self.emit_move_zero(&arm_c, &source_ty);
+                        if let ValueKind::Place(place) = &arm.kind {
+                            self.emit_move_zero_place(place, &arm_c, &source_ty);
+                        } else {
+                            self.emit_move_zero(&arm_c, &source_ty);
+                        }
                     }
                 }
             }
@@ -1423,7 +1444,8 @@ impl<'a> Emitter<'a> {
             let field_ty = self.substitute(&field.ty);
             let field_c = format!("{target_c}.{name}");
             if field_ty.is_fixed_array() {
-                self.emit_fixed_array_assign_to(&field_c, &field_ty, field, false);
+                let field_target = ArrayTarget::object(&field_c);
+                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false);
                 continue;
             }
             if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
@@ -1700,7 +1722,11 @@ impl<'a> Emitter<'a> {
     /// copied transfer temporary a no-op.
     fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
         match &arm.kind {
-            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => {
+            ValueKind::Place(place) => {
+                let source = self.value(arm);
+                self.emit_move_zero_place(place, &source, ty);
+            }
+            ValueKind::Temp(_) | ValueKind::Materialize { .. } => {
                 let source = self.value(arm);
                 self.emit_move_zero(&source, ty);
             }
@@ -1767,8 +1793,10 @@ impl<'a> Emitter<'a> {
         self.push(&format!("        {call};"));
         self.emit_reassigned_target_drop(target);
         let target_c = self.place(target);
+        let target = self.array_target(target, &target_c);
         self.push(&format!(
-            "        memcpy(&({target_c}), &({temp}), sizeof({target_c}));"
+            "        memcpy({}, &({temp}), {});",
+            target.address, target.bytes
         ));
         self.emit_move_zero(&temp, ty);
         self.push("    }");
@@ -1799,20 +1827,22 @@ impl<'a> Emitter<'a> {
         fill: &Option<Box<ir::Value>>,
     ) {
         let target_c = self.place(target);
-        self.emit_array_assign_to(&target_c, ty, elements, fill);
+        let target = self.array_target(target, &target_c);
+        self.emit_array_assign_to(&target, ty, elements, fill);
     }
 
-    /// Emits an array literal as element-by-element assignments to a C lvalue.
+    /// Emits an array literal as element-by-element assignments to a target.
     ///
-    /// The target is a rendered C lvalue rather than a place, so the same
-    /// lowering can write a hoisted local or the hidden out-parameter that
-    /// carries a by-value fixed-array return. C cannot assign an array in one
-    /// statement, so a multi-extent type is filled one dimension deeper: an
-    /// element that is itself an array literal recurses against the indexed
-    /// sub-target instead of writing a rejected brace list.
+    /// The target carries the C spelling of the array, so the same lowering
+    /// can write a hoisted local, an adjusted array parameter, or the hidden
+    /// out-parameter that carries a by-value fixed-array return. C cannot
+    /// assign an array in one statement, so a multi-extent type is filled one
+    /// dimension deeper: an element that is itself an array literal recurses
+    /// against the indexed sub-target instead of writing a rejected brace
+    /// list.
     pub(super) fn emit_array_assign_to(
         &mut self,
-        target_c: &str,
+        target: &ArrayTarget,
         ty: &Ty,
         elements: &[ir::Value],
         fill: &Option<Box<ir::Value>>,
@@ -1827,7 +1857,7 @@ impl<'a> Emitter<'a> {
         let nested_ty = (extents.len() > 1)
             .then(|| Ty::array((**element).clone(), extents[1..].to_vec()));
         for (index, value) in elements.iter().enumerate() {
-            let sub = format!("{target_c}[{index}]");
+            let sub = target.element(index);
             if let Some(element_ty) = &nested_ty {
                 match &value.kind {
                     ValueKind::ArrayLit { elements, fill } => {
@@ -1844,13 +1874,13 @@ impl<'a> Emitter<'a> {
             // initializer form; it is stored per field into the element.
             if let ValueKind::StructLit { fields, .. } = &value.kind {
                 if self.struct_literal_needs_stores(fields) {
-                    self.emit_struct_literal_fields(&sub, element, fields);
+                    self.emit_struct_literal_fields(&sub.text, element, fields);
                     continue;
                 }
             }
             self.emit_guards(value);
             let lowered = self.store_text(value, element);
-            self.push(&format!("    {sub} = {lowered};"));
+            self.push(&format!("    {} = {lowered};", sub.text));
             if self.needs_drop(element) {
                 self.emit_arm_source_moves(value, element);
             }
@@ -1865,13 +1895,13 @@ impl<'a> Emitter<'a> {
             match &fill.kind {
                 ValueKind::ArrayLit { elements, fill } => {
                     for index in prefix..extent {
-                        let sub = format!("{target_c}[{index}]");
+                        let sub = target.element(index);
                         self.emit_array_assign_to(&sub, element_ty, elements, fill);
                     }
                 }
                 _ => {
                     for index in prefix..extent {
-                        let sub = format!("{target_c}[{index}]");
+                        let sub = target.element(index);
                         self.emit_fixed_array_assign_to(&sub, element_ty, fill, false);
                     }
                 }
@@ -1881,7 +1911,7 @@ impl<'a> Emitter<'a> {
         self.emit_guards(fill);
         let lowered = self.store_text(fill, element);
         for index in prefix..extent {
-            self.push(&format!("    {target_c}[{index}] = {lowered};"));
+            self.push(&format!("    {}[{index}] = {lowered};", target.text));
         }
     }
 
@@ -1904,10 +1934,41 @@ impl<'a> Emitter<'a> {
     /// pointer slot and `sizeof(name)` would be the pointer's size. A
     /// projection reaches a real element or row object, which needs no
     /// adjustment, so only the bare root counts.
-    fn is_array_param_place(&self, place: &Place) -> bool {
+    pub(super) fn is_array_param_place(&self, place: &Place) -> bool {
         place.projections.is_empty()
             && matches!(place.base, ir::PlaceBase::Param(_))
             && self.substitute(&place.ty).is_fixed_array()
+    }
+
+    /// The store target of a fixed-array place.
+    ///
+    /// A true array object is addressed with `&(name)` and measured with
+    /// `sizeof(name)`. A fixed-array parameter is C-adjusted, so its name
+    /// already is the array's address and the byte count comes from the
+    /// element type instead.
+    fn array_target(&self, place: &Place, c_name: &str) -> ArrayTarget {
+        if self.is_array_param_place(place) {
+            let ty = self.substitute(&place.ty);
+            return ArrayTarget {
+                text: c_name.to_owned(),
+                address: c_name.to_owned(),
+                bytes: self.array_param_bytes(c_name, &ty),
+            };
+        }
+        ArrayTarget::object(c_name)
+    }
+
+    /// The address of a fixed-array copy source.
+    ///
+    /// A place that roots at an adjusted array parameter already names the
+    /// array's address; every other source needs the address-of operator.
+    fn array_source_address(&self, value: &Value, c_name: &str) -> String {
+        if let ValueKind::Place(place) = &value.kind {
+            if self.is_array_param_place(place) {
+                return c_name.to_owned();
+            }
+        }
+        format!("&({c_name})")
     }
 
     /// The byte count of a fixed array through its C-adjusted parameter name.
@@ -1955,6 +2016,38 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+    }
+}
+
+/// The rendered sides of a fixed-array store.
+///
+/// `text` names the array for indexing and drops, `address` is the array's
+/// address for a `memcpy`, and `bytes` is its byte count. A true array object
+/// spells `&(name)` and `sizeof(name)`; a C-adjusted array parameter spells
+/// only its name and takes the byte count from the element type, because
+/// `sizeof` would measure the adjusted pointer.
+pub(super) struct ArrayTarget {
+    /// The C expression that names the array.
+    text: String,
+    /// The C expression that is the array's address.
+    address: String,
+    /// The C expression for the array's byte count.
+    bytes: String,
+}
+
+impl ArrayTarget {
+    /// The target of an array object named by `text`.
+    pub(super) fn object(text: &str) -> Self {
+        Self {
+            text: text.to_owned(),
+            address: format!("&({text})"),
+            bytes: format!("sizeof({text})"),
+        }
+    }
+
+    /// The target of one element or row inside this array object.
+    fn element(&self, index: usize) -> Self {
+        Self::object(&format!("{}[{}]", self.text, index))
     }
 }
 

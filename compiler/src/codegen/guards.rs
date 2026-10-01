@@ -139,7 +139,12 @@ impl<'a> Emitter<'a> {
                         // literal is stored element by element into the
                         // temporary, on the path that evaluates the operand.
                         let destination = format!("__cl_tmp{temp}");
-                        self.emit_array_assign_to(&destination, &inner_ty, elements, fill);
+                        self.emit_array_assign_to(
+                            &super::function::ArrayTarget::object(&destination),
+                            &inner_ty,
+                            elements,
+                            fill,
+                        );
                     } else {
                         self.push(&format!("    __cl_tmp{temp} = {};", self.value(inner)));
                     }
