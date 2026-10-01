@@ -433,39 +433,95 @@ func main(): i32 {
     assert_absent("rdhimpl-p3nonown", &emitted, "__cl_tmp");
 }
 
-/// A fixed-array call condition materializes one temp and needs no release.
+/// An owned fixed-array condition materializes one temp and releases it once.
 #[test]
-fn should_materialize_a_fixed_array_condition_once() {
-    let source = r#"module impl.rdh.p3fixed;
+fn should_materialize_and_release_an_owned_fixed_array_condition() {
+    let source = r#"module impl.rdh.p3fixedstr;
 
-func mk2(): i32[2] {
-    return [5, 7];
+import { String, stringOf } from std.text;
+
+func mkstr(): String[2] {
+    return [stringOf("ab"), stringOf("cd")];
 }
 
 func main(): i32 {
     let i: i32 = 0;
-    while (i < 2 && mk2()[0] == 5) {
+    while (i < 2 && len(mkstr()[0]) == 2) {
         i = i + 1;
     }
     return i;
 }
 "#;
-    let emitted = emit_host("rdhimpl-p3fixed", source);
-    assert_contains("rdhimpl-p3fixed", &emitted, "i32 __cl_tmp0[2] = {0};");
+    let emitted = emit_host("rdhimpl-p3fixedstr", source);
+    assert_contains(
+        "rdhimpl-p3fixedstr",
+        &emitted,
+        "ClString __cl_tmp0[2] = {0};",
+    );
     let calls = emitted
-        .matches("cl_impl_rdh_p3fixed_mk2(__cl_tmp0)")
+        .matches("cl_impl_rdh_p3fixedstr_mkstr(__cl_tmp0)")
         .count();
     assert_eq!(
         calls, 1,
-        "rdhimpl-p3fixed: the fixed-array condition call writes one temp"
+        "rdhimpl-p3fixedstr: the fixed-array condition call writes one temp"
     );
+    // The re-store empties the previous row in the expression form.
     assert_contains(
-        "rdhimpl-p3fixed",
+        "rdhimpl-p3fixedstr",
         &emitted,
-        "((cl_impl_rdh_p3fixed_mk2(__cl_tmp0)), (__cl_tmp0[0] == 5))",
+        "(__cl_tmp0[0] ? (FreeString(__cl_tmp0[0]), __cl_tmp0[0] = NULL) : 0)",
     );
-    // A duplicable fixed array needs no release.
-    assert_absent("rdhimpl-p3fixed", &emitted, "FreeString(__cl_tmp0");
+    // The final value is released once through the statement form.
+    let releases = emitted
+        .matches("if (__cl_tmp0[0]) { FreeString(__cl_tmp0[0]); }")
+        .count();
+    assert_eq!(
+        releases, 1,
+        "rdhimpl-p3fixedstr: the fixed-array temp has one final release"
+    );
+}
+
+/// An owned call trapped in an eagerly stored read still gets a temporary.
+///
+/// The condition indexes a literal holding `grow().count`; without its own
+/// temporary the array returned by `grow` would be released by nothing. The
+/// temporary is refilled each test with its previous value dropped first, and
+/// the last value is released after the loop.
+#[test]
+fn should_release_a_condition_call_trapped_in_a_materialized_read() {
+    let source = r#"module impl.rdh.p3read;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while ([grow().count][0] > 0 && i < 3) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3read", source);
+    // The trapped call travels through its own temporary, refilled in place.
+    assert_contains(
+        "rdhimpl-p3read",
+        &emitted,
+        "__cl_tmp0 = cl_impl_rdh_p3read_grow();",
+    );
+    assert_contains("rdhimpl-p3read", &emitted, "__cl_tmp1[0] = __cl_tmp0.count;");
+    let drops = emitted
+        .matches("if (__cl_tmp0.data) { FreeBuffer(__cl_tmp0.data); }")
+        .count();
+    assert_eq!(
+        drops, 2,
+        "rdhimpl-p3read: one re-store drop and one final release"
+    );
 }
 
 /// A `for` step holding a materialize drops to the flat label-and-goto form.

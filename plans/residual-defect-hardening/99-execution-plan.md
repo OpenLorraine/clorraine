@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 16:30
+> **Last Updated**: 2026-10-01 17:00
 > **Progress**: 21/38 tasks (55%)
 > **CodeOps Artifact Schema**: 1
 
@@ -220,6 +220,20 @@ task-size criteria in the make-plan skill's quality checklist)
 **Deliverables**:
 - [x] An owned call result in any loop condition is evaluated per iteration, dropped before a re-store, and released after the loop
 - [x] ST-8 – ST-9 pass; the pre-fix leak is recorded; all verification passing (ST-18 lands in Phase 4)
+
+> **Phase 3 review record (2026-10-01 17:00):** independent review found RV-7 (🟠) and RV-8 (🟠)
+> plus RV-9/RV-10 (🟡). User ruling: fix RV-8, record the RV-7 limit, defer RV-9, fix RV-10.
+> Fixed in the follow-up commit: **RV-8** — `materialize_read_place` runs the owned-call walk
+> before its eager store, so a call trapped inside a materialized read gets its own temporary
+> (re-store drop + final release); the repro `while ([grow().count][0] > 0 && i < 3)` now exits 3
+> with a clean host ASan probe (pre-fix: 96 bytes / 8 allocations). **RV-10** — the fixed-array
+> condition test now uses an owned `String[2]` and pins the expression-form re-store drop and the
+> single final release. **RV-7** — recorded as a pre-existing limit and filed as roadmap
+> `DEF-51`: a drop-needing element (growable `Array<T>` with drop-needing `T`, or a struct
+> containing one) has no expression-form drop, so a conditionally evaluated materialized operand
+> skips the previous-value drop; consistent with the guard skip already recorded in
+> `call-value-integrity`. **RV-9** — deferred to the existing DEF-45 transfer-temporary class; it
+> leaks identically outside loops and is not this walk's root. Re-review of the fix diff follows.
 
 **Verify**: `make check`
 

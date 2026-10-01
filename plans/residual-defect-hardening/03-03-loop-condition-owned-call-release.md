@@ -78,6 +78,9 @@ because the predicate widening and the skip removal must ship together.
   substitution-aware phase (`03-04`).
 - `compiler/src/own/loops.rs:586-598` — `for_step_is_structured`, the predicate's second consumer;
   a step holding a materialize drops to the flat form.
+- `compiler/src/own/lower.rs` — `materialize_read_place` runs the same walk before its eager store,
+  so an owned call trapped inside a materialized read (an array literal whose element calls)
+  still gets its own temporary and release.
 
 ## Code Examples
 

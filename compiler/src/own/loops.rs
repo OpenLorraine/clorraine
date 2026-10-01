@@ -47,7 +47,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.switch_to(head);
         self.eval(&decl.condition);
         let mut condition = self.lower_value(&decl.condition);
-        self.materialize_condition_calls(&mut condition);
+        self.materialize_owned_calls(&mut condition);
         // The condition may move an owner, so the state after evaluating it is
         // the exit state on the false path, not the head state.
         let condition_state = self.state.clone();
@@ -133,7 +133,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.eval(&decl.condition);
         let mut condition = self.lower_value(&decl.condition);
-        self.materialize_condition_calls(&mut condition);
+        self.materialize_owned_calls(&mut condition);
         let shape = self.loop_shape(
             LoopKind::DoWhile,
             body_block,
@@ -233,7 +233,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let condition = match &decl.condition {
             Some(condition) => {
                 let mut lowered = self.lower_value(condition);
-                self.materialize_condition_calls(&mut lowered);
+                self.materialize_owned_calls(&mut lowered);
                 lowered
             }
             None => Value::bool(Ty::boolean(), true),
@@ -583,17 +583,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Materializes every owned call result in a loop condition.
+    /// Materializes every owned call result in an eagerly evaluated value.
     ///
-    /// A structured C loop prints its condition in the header, where no
-    /// statement can run, so an owned call result has to travel through a
-    /// temporary: the guarded path stores it before the test, drops the
-    /// previous value before a re-store, and releases the last value after the
-    /// loop. A call that returns a view, a slice, a duplicable value, or an
-    /// unknown type is left inline because it needs no release. A call that is
-    /// already the direct stored value of a materialized operand is left alone;
-    /// wrapping it again would store it twice and register two releases.
-    fn materialize_condition_calls(&mut self, value: &mut Value) {
+    /// A loop condition is printed in a C header and an eagerly stored read
+    /// source is filled by a statement, so neither can leave an owned call
+    /// result inline: it has to travel through a temporary, whose guarded
+    /// store drops the previous value before a re-store and releases the last
+    /// value after the enclosing construct. A call that returns a view, a
+    /// slice, a duplicable value, or an unknown type is left inline because it
+    /// needs no release. A call that is already the direct stored value of a
+    /// materialized operand is left alone; wrapping it again would store it
+    /// twice and register two releases.
+    pub(super) fn materialize_owned_calls(&mut self, value: &mut Value) {
         if matches!(
             value.kind,
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
@@ -605,61 +606,61 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         match &mut value.kind {
             ValueKind::Binary { left, right, .. } => {
-                self.materialize_condition_calls(left);
-                self.materialize_condition_calls(right);
+                self.materialize_owned_calls(left);
+                self.materialize_owned_calls(right);
             }
             ValueKind::Index { base, index } => {
-                self.materialize_condition_calls(base);
-                self.materialize_condition_calls(index);
+                self.materialize_owned_calls(base);
+                self.materialize_owned_calls(index);
             }
             ValueKind::Cast { value: inner, .. } => {
-                self.materialize_condition_calls(inner);
+                self.materialize_owned_calls(inner);
             }
             ValueKind::Unary { operand, .. } => {
-                self.materialize_condition_calls(operand);
+                self.materialize_owned_calls(operand);
             }
             ValueKind::Conditional {
                 condition,
                 then_value,
                 else_value,
             } => {
-                self.materialize_condition_calls(condition);
-                self.materialize_condition_calls(then_value);
-                self.materialize_condition_calls(else_value);
+                self.materialize_owned_calls(condition);
+                self.materialize_owned_calls(then_value);
+                self.materialize_owned_calls(else_value);
             }
             ValueKind::Member { base, .. } => {
-                self.materialize_condition_calls(base);
+                self.materialize_owned_calls(base);
             }
             ValueKind::Call { args, receiver, .. } => {
                 if let Some(receiver) = receiver {
-                    self.materialize_condition_calls(receiver);
+                    self.materialize_owned_calls(receiver);
                 }
                 for arg in args {
-                    self.materialize_condition_calls(arg);
+                    self.materialize_owned_calls(arg);
                 }
             }
             ValueKind::Intrinsic { args, .. } => {
                 for arg in args {
-                    self.materialize_condition_calls(arg);
+                    self.materialize_owned_calls(arg);
                 }
             }
             ValueKind::StructLit { fields, .. } => {
                 for (_, field) in fields {
-                    self.materialize_condition_calls(field);
+                    self.materialize_owned_calls(field);
                 }
             }
             ValueKind::ArrayLit { elements, fill } => {
                 for element in elements {
-                    self.materialize_condition_calls(element);
+                    self.materialize_owned_calls(element);
                 }
                 if let Some(fill) = fill {
-                    self.materialize_condition_calls(fill);
+                    self.materialize_owned_calls(fill);
                 }
             }
             ValueKind::Template(pieces) => {
                 for piece in pieces {
                     if let ValuePiece::Placeholder(inner) = piece {
-                        self.materialize_condition_calls(inner);
+                        self.materialize_owned_calls(inner);
                     }
                 }
             }
@@ -671,18 +672,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     inner.kind,
                     ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
                 ) {
-                    self.materialize_condition_calls(inner);
+                    self.materialize_owned_calls(inner);
                 }
             }
             ValueKind::Closure { captures, .. } => {
                 for capture in captures {
-                    self.materialize_condition_calls(capture);
+                    self.materialize_owned_calls(capture);
                 }
             }
             ValueKind::ClosureCall { callable, args } => {
-                self.materialize_condition_calls(callable);
+                self.materialize_owned_calls(callable);
                 for arg in args {
-                    self.materialize_condition_calls(arg);
+                    self.materialize_owned_calls(arg);
                 }
             }
             ValueKind::Place(_)

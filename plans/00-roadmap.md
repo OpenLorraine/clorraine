@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-01 14:48
+> **Last Updated**: 2026-10-01 17:00
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -67,6 +67,7 @@
 | ↳ DEF-48 | An unguarded loop condition holding an owned call result leaks | — | [residual-defect-hardening](residual-defect-hardening/00-index.md) | Executing | 🔄 | 2026-10-01 14:48 | 🟡 minor, pre-existing, found in the call-value-integrity Phase 4 review (F6): `do { ... } while (grow().count > 0 && i < 3)` emits the owned call directly in the header with no drop because the condition carries no guards, so the container's buffer leaks each test; needs a release for an owned call result in an unguarded loop header |
 | ↳ DEF-49 | Generic instantiations never get a scope cleanup | — | [residual-defect-hardening](residual-defect-hardening/00-index.md) | Executing | 🔄 | 2026-10-01 14:48 | 🟠 major, pre-existing, found in the call-value-integrity Phase 4 fix-diff re-review (G1): ownership and the cleanup ladder are decided before type substitution (`needs_drop` is false for a type parameter at `codegen/drop.rs:265`), so a generic body that owns a value (`func copy<T>(take a: T[2])`) emits no release and leaks every allocation while computing correct values; needs substitution-aware cleanup for recorded instances (the deferred DEF-12 generic-substitution class) |
 | ↳ DEF-50 | Distinct fixed-array generic type arguments share a C symbol | — | — | Backlog | ⬜ | 2026-10-01 14:30 | 🟠 major, pre-existing, found during the residual-defect-hardening preflight (PF-011): `type_key` folds an array to its base element (`compiler/src/codegen/types.rs:290`), so `Grid<i32[3]>` and `Grid<i32[2]>` both emit `struct ClGrid__i32` and the C compiler rejects the redefinition; suggested fix: include the extents in `type_key`. The residual-defect-hardening plan corrects its "symbol keys agree" claim and excludes this shape (see its 01-requirements Won't Have) |
+| ↳ DEF-51 | A drop-needing element keeps the expression-form re-store drop skipped | — | [residual-defect-hardening](residual-defect-hardening/00-index.md) | Backlog | ⬜ | 2026-10-01 17:00 | 🟠 major, pre-existing limit recorded during the residual-defect-hardening Phase 3 review (RV-7): a materialized operand in a conditionally evaluated position (the right of `&&`/`||`, a `?:` arm) whose type needs an element loop to drop (a growable `Array<T>` with a drop-needing `T`, or a struct containing one) skips the previous-value drop because `drop_expr_text` has no expression form (`compiler/src/codegen/drop.rs:160-164`), so each re-store leaks the overwritten value; the guarded shape leaks the same way and is recorded in the call-value-integrity suite. A fix needs an expression-form element-loop drop (a per-type drop helper), which is new machinery under the complexity gate |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

@@ -971,7 +971,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// assignment into a fresh temporary and the read goes through that
     /// temporary. A value that already names storage, a non-array type, or a
     /// type that still mentions a generic parameter is returned unchanged.
-    pub(super) fn materialize_read_place(&mut self, value: Value) -> Value {
+    pub(super) fn materialize_read_place(&mut self, mut value: Value) -> Value {
         let needs_place = value.ty.is_fixed_array()
             && matches!(
                 value.kind,
@@ -999,6 +999,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 },
             );
         }
+        // The eager store fills the temporary through a statement, but an owned
+        // call trapped inside the stored value still needs its own temporary:
+        // its guarded store drops the previous value before a re-store and its
+        // release runs after the enclosing loop.
+        self.materialize_owned_calls(&mut value);
         self.materialize_value_type(value, ty)
     }
 

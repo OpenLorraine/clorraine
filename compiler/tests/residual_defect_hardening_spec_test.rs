@@ -603,6 +603,36 @@ func main(): i32 {
     assert_exit("rdh08", &output, 3);
 }
 
+/// A condition call trapped in a materialized read still releases.
+///
+/// The condition indexes a literal holding `grow().count`; the literal is
+/// filled in the loop head, so the owned call result must travel through its
+/// own temporary and be released after the loop. The exit code is `3`; the
+/// per-iteration leak is pinned by the recorded AddressSanitizer probe.
+#[test]
+fn should_release_when_a_condition_call_is_trapped_in_a_materialized_read() {
+    let source = r#"module spec.rdh.st8b;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while ([grow().count][0] > 0 && i < 3) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdh08b", source);
+    assert_exit("rdh08b", &output, 3);
+}
+
 /// An unguarded `do while` condition re-runs after `continue`.
 ///
 /// The body increments `i` and a `continue` skips the rest, so the condition
