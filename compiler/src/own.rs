@@ -90,6 +90,7 @@ pub fn check(
         program::check_struct_declarations(module, sema, diagnostics);
     }
     let mut functions = Vec::new();
+    let mut duplicable_requirements = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -110,14 +111,18 @@ pub fn check(
                     diagnostics,
                     &mut next_lifted,
                 );
-                let (mut function, lifted) = checker.check();
+                let (mut function, lifted, requirements) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
                 functions.extend(lifted);
+                duplicable_requirements.extend(requirements);
             }
         }
     }
     let mut monomorphization = generics::collect(loaded, &program, sema);
+    for requirement in duplicable_requirements {
+        monomorphization.require_duplicable(requirement);
+    }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
     OwnershipOutput {
@@ -234,6 +239,14 @@ struct FunctionChecker<'a, 'd> {
     materialize_owned_temporaries: bool,
     /// False during a speculative pass, which computes state without reporting.
     report_diagnostics: bool,
+    /// The later-use duplicability duties this body owes its instances.
+    ///
+    /// The checker records each maybe-owning store whose source is used again;
+    /// the per-instance audit discharges every duty against each recorded
+    /// concrete instantiation.
+    duplicable_requirements: Vec<ir::RequiresDuplicable>,
+    /// Binding indices already recorded, so one binding owes one duty.
+    recorded_requirements: BTreeSet<usize>,
     /// The lifted functions of every lambda this function lowers.
     ///
     /// A lambda's body becomes a file-scope `static` C function, so it is
@@ -301,6 +314,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             destination_temps: Vec::new(),
             materialize_owned_temporaries: true,
             report_diagnostics: true,
+            duplicable_requirements: Vec::new(),
+            recorded_requirements: BTreeSet::new(),
             lifted: Vec::new(),
             next_lifted,
             diagnostics,
@@ -309,8 +324,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Runs the whole function check and finishes the IR.
     ///
-    /// Returns the declared body together with every lambda lifted out of it.
-    fn check(mut self) -> (ir::Function, Vec<ir::Function>) {
+    /// Returns the declared body, every lambda lifted out of it, and the
+    /// duplicability duties the body owes its instances.
+    fn check(mut self) -> (ir::Function, Vec<ir::Function>, Vec<ir::RequiresDuplicable>) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
         self.elision_prelude();
@@ -343,7 +359,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .collect();
         function.temps = self.temps.clone();
         liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
-        (function, self.lifted)
+        (function, self.lifted, self.duplicable_requirements)
     }
 
     // -- scopes and bindings -------------------------------------------------
@@ -605,7 +621,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Declares a local binding and returns its index.
     fn declare_local(&mut self, name: &str, ty: Ty, is_const: bool, span: Span) -> usize {
-        let needs_drop = self.owns_drop(&ty);
+        let needs_drop = self.owns_drop(&ty) || self.maybe_owns(&ty);
         self.declare(
             name,
             span,
@@ -627,7 +643,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             BindingKind::Param
         };
-        let needs_drop = param.mode == Mode::Take && self.owns_drop(&ty);
+        let needs_drop =
+            param.mode == Mode::Take && (self.owns_drop(&ty) || self.maybe_owns(&ty));
         let id = self.declare(
             &param.name,
             param.name_span,
@@ -722,6 +739,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             && !is_view(ty)
             && !ty.is_unknown()
             && !ty.is_param()
+            && !ty.is_void()
+    }
+
+    /// True when a value of this type may own storage once a type argument is
+    /// substituted.
+    ///
+    /// A type that mentions a generic parameter is treated as maybe-owning when
+    /// it is not a view, unknown, or void. At every recorded instantiation the
+    /// substituted type either owns (the emitted drop and release run) or does
+    /// not (they are no-ops), so the checker can register the duty without
+    /// knowing the argument. The parameter mode is not consulted here;
+    /// `declare_param` applies its own `take` gate, so a `borrow` parameter or
+    /// an out-slot never becomes maybe-owning.
+    fn maybe_owns(&self, ty: &Ty) -> bool {
+        lower::mentions_type_param(ty)
+            && !is_view(ty)
+            && !ty.is_unknown()
             && !ty.is_void()
     }
 
@@ -849,6 +883,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 id,
                 PlaceState {
                     moved: a.moved || b.moved,
+                    // A maybe-owning consume on either path survives the join,
+                    // so a later use still deposits the duty.
+                    moved_if_owning: a.moved_if_owning || b.moved_if_owning,
                     partial: a.partial.union(&b.partial).cloned().collect(),
                     initialized: a.initialized && b.initialized,
                     initialized_fields,
@@ -963,7 +1000,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// drains the list in reverse creation order through a dedicated inline
     /// release, so the storage dies with the statement that created it.
     fn register_pending_release(&mut self, temp: ir::TempId, ty: &Ty) {
-        if self.owns_drop(ty) {
+        if self.owns_drop(ty) || self.maybe_owns(ty) {
             self.pending_releases.push(Release {
                 temp,
                 ty: ty.clone(),

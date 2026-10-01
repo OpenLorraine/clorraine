@@ -47,7 +47,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// deeper-than-top-level path the v1 partial-move error.
     fn consume_owned_place(&mut self, expr: &Expr, span: Span) {
         let ty = self.ty(expr);
-        if self.sema.table.duplicable(&ty) || super::lower::mentions_type_param(&ty) {
+        if self.maybe_owns(&ty) {
+            // The field store writes a move for an owning instance, so a later
+            // use of the source deposits the duplicability duty.
+            if let Some(target) = self.place_target(expr) {
+                self.mark_moved_if_owning(target);
+            }
+            return;
+        }
+        if self.sema.table.duplicable(&ty) {
             return;
         }
         if let Some(target) = self.place_target(expr) {
@@ -55,6 +63,38 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else if self.is_ownerless_element_move(expr) {
             self.report_element_move_limit(span);
         }
+    }
+
+    /// The whole-binding places a maybe-owning conditional may consume.
+    ///
+    /// Mirrors [`Self::conditional_move_sources`] for a type that mentions a
+    /// parameter: every arm whose type may own becomes a source, so the caller
+    /// can mark it consumed without rejecting a duplicable instance. A nested
+    /// conditional recurses.
+    pub(super) fn maybe_owning_move_sources(&self, expr: &Expr) -> Vec<PlaceTarget> {
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        else {
+            return Vec::new();
+        };
+        let mut sources = Vec::new();
+        for arm in [then_value.as_ref(), else_value.as_ref()] {
+            if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                sources.extend(self.maybe_owning_move_sources(arm));
+                continue;
+            }
+            let ty = self.ty(arm);
+            if !self.maybe_owns(&ty) {
+                continue;
+            }
+            if let Some(target) = self.place_target(arm) {
+                sources.push(target);
+            }
+        }
+        sources
     }
 
     /// The owned place sources a conditional may move out of.
@@ -103,10 +143,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let ty = self.ty(expr);
-        if !ty.is_fixed_array()
-            || self.sema.table.duplicable(&ty)
-            || super::lower::mentions_type_param(&ty)
-        {
+        if !ty.is_fixed_array() {
+            return;
+        }
+        if self.maybe_owns(&ty) {
+            // A read that materializes the conditional moves the chosen arm for
+            // an owning instance, so a later use of either arm deposits the
+            // duplicability duty.
+            for source in self.maybe_owning_move_sources(expr) {
+                self.mark_moved_if_owning(source);
+            }
+            return;
+        }
+        if self.sema.table.duplicable(&ty) {
             return;
         }
         for source in self.conditional_move_sources(expr) {

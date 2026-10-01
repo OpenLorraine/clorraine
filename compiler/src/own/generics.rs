@@ -18,7 +18,7 @@ use crate::ir::{
 };
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
-use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
+use crate::types::{resolve_ty, substitute, substitute_instance, Ty, TyKind};
 
 use super::program::{Callee, ProgramInfo};
 
@@ -456,56 +456,112 @@ pub fn collect_ir_instances(
     sema: &SemaOutput,
     mono: &mut Monomorphization,
 ) {
+    let no_bindings = BTreeMap::new();
     for function in functions {
-        record_struct_type(&function.ret, sema, mono);
-        for param in &function.params {
-            record_struct_type(&param.ty, sema, mono);
+        walk_function(function, &no_bindings, program, sema, mono);
+    }
+    // A generic body may call another generic with its own type parameters, so
+    // the first walk cannot name those instances. Each recorded instance is
+    // re-walked with its arguments substituted; new instances are appended and
+    // processed in turn until the set is closed.
+    let mut index = 0;
+    while index < mono.instances().len() {
+        let instance = mono.instances()[index].clone();
+        index += 1;
+        let Some(Callee::User(decl)) = program.callee(&instance.function) else {
+            continue;
+        };
+        if decl.type_params.len() != instance.args.len() {
+            continue;
         }
-        for local in &function.locals {
-            record_struct_type(&local.ty, sema, mono);
-        }
-        for temp in &function.temps {
-            record_struct_type(temp, sema, mono);
-        }
-        for block in &function.blocks {
-            for instr in &block.statements {
-                match &instr.statement {
-                    Statement::Assign { value, .. } => walk_value(value, program, sema, mono),
-                    Statement::StorePointer { pointer, value } => {
-                        walk_value(pointer, program, sema, mono);
-                        walk_value(value, program, sema, mono);
+        let Some(function) = functions
+            .iter()
+            .find(|function| function.name == decl.name)
+        else {
+            continue;
+        };
+        let bindings: BTreeMap<String, Ty> = decl
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .zip(instance.args.iter().cloned())
+            .collect();
+        walk_function(function, &bindings, program, sema, mono);
+    }
+}
+
+/// Walks one function's types and values, substituting every generic call and
+/// recorded type with the instance bindings.
+fn walk_function(
+    function: &Function,
+    bindings: &BTreeMap<String, Ty>,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
+    record_struct_type(&substitute(&function.ret, bindings), sema, mono);
+    for param in &function.params {
+        record_struct_type(&substitute(&param.ty, bindings), sema, mono);
+    }
+    for local in &function.locals {
+        record_struct_type(&substitute(&local.ty, bindings), sema, mono);
+    }
+    for temp in &function.temps {
+        record_struct_type(&substitute(temp, bindings), sema, mono);
+    }
+    for block in &function.blocks {
+        for instr in &block.statements {
+            match &instr.statement {
+                Statement::Assign { value, .. } => {
+                    walk_value(value, bindings, program, sema, mono)
+                }
+                Statement::StorePointer { pointer, value } => {
+                    walk_value(pointer, bindings, program, sema, mono);
+                    walk_value(value, bindings, program, sema, mono);
+                }
+                Statement::Call {
+                    callee,
+                    type_args,
+                    args,
+                    ..
+                } => {
+                    let resolved: Vec<Ty> = type_args
+                        .iter()
+                        .map(|ty| substitute(ty, bindings))
+                        .collect();
+                    record_instance(callee, &resolved, program, mono);
+                    for arg in args {
+                        walk_value(arg, bindings, program, sema, mono);
                     }
-                    Statement::Call { callee, type_args, args, .. } => {
-                        record_instance(callee, type_args, program, mono);
-                        for arg in args {
-                            walk_value(arg, program, sema, mono);
-                        }
-                    }
-                    Statement::Discard { value } => walk_value(value, program, sema, mono),
-                    Statement::Move { .. }
-                    | Statement::MoveOut { .. }
-                    | Statement::Borrow { .. }
-                    | Statement::Drop { .. }
-                    | Statement::ReleaseTemp(_)
-                    | Statement::Defer { .. }
-                    | Statement::ScopeEnd { .. }
-                    | Statement::ScopeExit { .. }
-                    | Statement::Nop => {}
+                }
+                Statement::Discard { value } => {
+                    walk_value(value, bindings, program, sema, mono)
+                }
+                Statement::Move { .. }
+                | Statement::MoveOut { .. }
+                | Statement::Borrow { .. }
+                | Statement::Drop { .. }
+                | Statement::ReleaseTemp(_)
+                | Statement::Defer { .. }
+                | Statement::ScopeEnd { .. }
+                | Statement::ScopeExit { .. }
+                | Statement::Nop => {}
+            }
+        }
+        match &block.terminator {
+            Terminator::Branch { condition, .. } => {
+                walk_value(condition, bindings, program, sema, mono)
+            }
+            Terminator::Switch { value, arms, .. } => {
+                walk_value(value, bindings, program, sema, mono);
+                for (label, _) in arms {
+                    walk_value(label, bindings, program, sema, mono);
                 }
             }
-            match &block.terminator {
-                Terminator::Branch { condition, .. } => walk_value(condition, program, sema, mono),
-                Terminator::Switch { value, arms, .. } => {
-                    walk_value(value, program, sema, mono);
-                    for (label, _) in arms {
-                        walk_value(label, program, sema, mono);
-                    }
-                }
-                Terminator::Return {
-                    value: Some(value), ..
-                } => walk_value(value, program, sema, mono),
-                _ => {}
-            }
+            Terminator::Return {
+                value: Some(value), ..
+            } => walk_value(value, bindings, program, sema, mono),
+            _ => {}
         }
     }
 }
@@ -537,8 +593,14 @@ fn record_instance(
 }
 
 /// Walks a value, recording every generic call it contains.
-fn walk_value(value: &Value, program: &ProgramInfo, sema: &SemaOutput, mono: &mut Monomorphization) {
-    record_struct_type(&value.ty, sema, mono);
+fn walk_value(
+    value: &Value,
+    bindings: &BTreeMap<String, Ty>,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &mut Monomorphization,
+) {
+    record_struct_type(&substitute(&value.ty, bindings), sema, mono);
     match &value.kind {
         ValueKind::Call {
             callee,
@@ -546,69 +608,73 @@ fn walk_value(value: &Value, program: &ProgramInfo, sema: &SemaOutput, mono: &mu
             args,
             receiver,
         } => {
-            record_instance(callee, type_args, program, mono);
+            let resolved: Vec<Ty> = type_args
+                .iter()
+                .map(|ty| substitute(ty, bindings))
+                .collect();
+            record_instance(callee, &resolved, program, mono);
             if let Some(receiver) = receiver {
-                walk_value(receiver, program, sema, mono);
+                walk_value(receiver, bindings, program, sema, mono);
             }
             for arg in args {
-                walk_value(arg, program, sema, mono);
+                walk_value(arg, bindings, program, sema, mono);
             }
         }
-        ValueKind::Member { base, .. } => walk_value(base, program, sema, mono),
+        ValueKind::Member { base, .. } => walk_value(base, bindings, program, sema, mono),
         ValueKind::Index { base, index } => {
-            walk_value(base, program, sema, mono);
-            walk_value(index, program, sema, mono);
+            walk_value(base, bindings, program, sema, mono);
+            walk_value(index, bindings, program, sema, mono);
         }
-        ValueKind::Unary { operand, .. } => walk_value(operand, program, sema, mono),
+        ValueKind::Unary { operand, .. } => walk_value(operand, bindings, program, sema, mono),
         ValueKind::Binary { left, right, .. } => {
-            walk_value(left, program, sema, mono);
-            walk_value(right, program, sema, mono);
+            walk_value(left, bindings, program, sema, mono);
+            walk_value(right, bindings, program, sema, mono);
         }
-        ValueKind::Cast { value, .. } => walk_value(value, program, sema, mono),
+        ValueKind::Cast { value, .. } => walk_value(value, bindings, program, sema, mono),
         ValueKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            walk_value(condition, program, sema, mono);
-            walk_value(then_value, program, sema, mono);
-            walk_value(else_value, program, sema, mono);
+            walk_value(condition, bindings, program, sema, mono);
+            walk_value(then_value, bindings, program, sema, mono);
+            walk_value(else_value, bindings, program, sema, mono);
         }
         ValueKind::StructLit { fields, .. } => {
             for (_, field) in fields {
-                walk_value(field, program, sema, mono);
+                walk_value(field, bindings, program, sema, mono);
             }
         }
         ValueKind::ArrayLit { elements, fill } => {
             for element in elements {
-                walk_value(element, program, sema, mono);
+                walk_value(element, bindings, program, sema, mono);
             }
             if let Some(fill) = fill {
-                walk_value(fill, program, sema, mono);
+                walk_value(fill, bindings, program, sema, mono);
             }
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
                 if let crate::ir::ValuePiece::Placeholder(inner) = piece {
-                    walk_value(inner, program, sema, mono);
+                    walk_value(inner, bindings, program, sema, mono);
                 }
             }
         }
         ValueKind::Intrinsic { args, .. } => {
             for arg in args {
-                walk_value(arg, program, sema, mono);
+                walk_value(arg, bindings, program, sema, mono);
             }
         }
-        ValueKind::Materialize { value, .. } => walk_value(value, program, sema, mono),
+        ValueKind::Materialize { value, .. } => walk_value(value, bindings, program, sema, mono),
         ValueKind::Closure { captures, .. } => {
             for capture in captures {
-                walk_value(capture, program, sema, mono);
+                walk_value(capture, bindings, program, sema, mono);
             }
         }
         ValueKind::ClosureCall { callable, args } => {
-            walk_value(callable, program, sema, mono);
+            walk_value(callable, bindings, program, sema, mono);
             for arg in args {
-                walk_value(arg, program, sema, mono);
+                walk_value(arg, bindings, program, sema, mono);
             }
         }
         ValueKind::Place(_)

@@ -82,8 +82,15 @@ func arrayNew<T>(): Array<T> {
 }
 
 func push<T>(borrow xs: Array<T>, take v: T): void {
+    // Reserve one element of raw capacity, then write `v` through a normal
+    // element store: an owning `T` instance moves the value into its slot and
+    // the parameter's cleanup becomes a no-op, while a duplicable instance
+    // copies. A raw byte append would hide the transfer from the checker and
+    // release `v` twice.
     unsafe {
-        cl_buffer_append(xs.data, raw u8(&v), sizeof(T));
+        cl_buffer_reserve(xs.data, (xs.count + 1) * sizeof(T));
+        let one: T[] = slice<T>(rawSlice<T>(raw T(cl_buffer_ptr(xs.data)), xs.count + 1), xs.count, xs.count + 1);
+        one[0] = v;
     }
     xs.count = xs.count + 1;
 }

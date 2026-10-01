@@ -5,6 +5,7 @@
 //! obligations a generic body owes, so codegen can consume them without reading
 //! the source tree again.
 
+use crate::span::Span;
 use crate::types::{Ty, TyKind};
 
 /// One concrete instantiation of a generic function.
@@ -94,6 +95,24 @@ pub struct CopyObligation {
     pub ty: String,
 }
 
+/// A later use that forces a maybe-owning store to stay a copy.
+///
+/// A generic body that stores a type parameter's value into a destination and
+/// then uses the source again is honest only when the instance's type argument
+/// is duplicable: an owning argument moves the source, so the later use would
+/// read a moved value. The checker records the duty at the conflicting use and
+/// the per-instance audit reports `E10020` when the substituted type is not
+/// duplicable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresDuplicable {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The unique IR spelling of the binding whose later use conflicts.
+    pub binding: String,
+    /// The conflicting use, for the body-site diagnostic.
+    pub span: Span,
+}
+
 /// The instantiation set and copy obligations of a generic program.
 ///
 /// This is the input codegen consumes: the set of concrete function copies to
@@ -107,6 +126,7 @@ pub struct Monomorphization {
     instances: Vec<Instance>,
     structs: Vec<StructInstance>,
     obligations: Vec<CopyObligation>,
+    duplicable_requirements: Vec<RequiresDuplicable>,
 }
 
 impl Monomorphization {
@@ -147,5 +167,15 @@ impl Monomorphization {
     /// Every copy obligation recorded so far.
     pub fn obligations(&self) -> &[CopyObligation] {
         &self.obligations
+    }
+
+    /// Records a later-use duplicability duty the generic body owes.
+    pub fn require_duplicable(&mut self, requirement: RequiresDuplicable) {
+        self.duplicable_requirements.push(requirement);
+    }
+
+    /// Every duplicability duty recorded so far.
+    pub fn duplicable_requirements(&self) -> &[RequiresDuplicable] {
+        &self.duplicable_requirements
     }
 }

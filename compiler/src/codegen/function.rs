@@ -403,14 +403,24 @@ impl<'a> Emitter<'a> {
                 } else {
                     self.push(&format!("    {target_c} = {source_c};"));
                 }
+                // A move whose source type does not own at this instantiation
+                // is a plain copy: the source stays intact for a duplicable
+                // instance, while an owning one empties it.
                 let source_ty = self.substitute(&source.ty);
-                self.emit_move_zero_place(source, &source_c, &source_ty);
+                if self.needs_drop(&source_ty) {
+                    self.emit_move_zero_place(source, &source_c, &source_ty);
+                }
             }
             Statement::MoveOut { place } => {
                 self.emit_line_directive(span);
-                let source = self.place(place);
+                // The callee took the value; only an owning argument place is
+                // emptied, because a duplicable instance leaves the caller its
+                // copy.
                 let ty = self.substitute(&place.ty);
-                self.emit_move_zero_place(place, &source, &ty);
+                if self.needs_drop(&ty) {
+                    let source = self.place(place);
+                    self.emit_move_zero_place(place, &source, &ty);
+                }
             }
             Statement::StorePointer { pointer, value } => {
                 self.emit_line_directive(span);

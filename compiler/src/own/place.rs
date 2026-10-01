@@ -22,6 +22,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let state = self.state.place(id);
         let name = self.bindings[id].name.clone();
+        // A later use after a store that only moves for an owning instance
+        // records the duplicability duty; a duplicable instance stays accepted.
+        if state.moved_if_owning {
+            self.record_requires_duplicable(id, span);
+        }
         if state.moved {
             self.error(
                 "E10020",
@@ -153,6 +158,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     place.initialized_fields.clear();
                     place.partial.clear();
                     place.moved = false;
+                    place.moved_if_owning = false;
                     place.narrowed.clear();
                 }
                 Some(ir::Projection::Field(field)) => {
@@ -244,6 +250,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             place.partial.insert(field.clone());
             place.initialized_fields.remove(&field);
             place.narrowed.retain(|path| path.first() != projections.first());
+        });
+    }
+
+    /// Records that a maybe-owning whole binding was consumed by a store.
+    ///
+    /// The flow keeps its copy semantics for a type that mentions a parameter,
+    /// so the store is written as a move only when the instance's type argument
+    /// owns. A later read of the source deposits the duplicability duty through
+    /// [`Self::record_requires_duplicable`].
+    pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget) {
+        if let PlaceTarget::Local(id, projections) = target {
+            if projections.is_empty() {
+                self.with_place(id, |place| place.moved_if_owning = true);
+            }
+        }
+    }
+
+    /// Records the duplicability duty a body owes for one binding, at most once.
+    ///
+    /// Only a binding whose declared type mentions a type parameter carries the
+    /// duty; the per-instance audit reports when the substituted type owns.
+    pub(super) fn record_requires_duplicable(&mut self, id: usize, span: Span) {
+        if !self.recorded_requirements.insert(id) {
+            return;
+        }
+        if !self.maybe_owns(&self.bindings[id].ty) {
+            return;
+        }
+        let ir_name = self.bindings[id].ir_name.clone();
+        self.duplicable_requirements.push(ir::RequiresDuplicable {
+            function: self.decl.name.clone(),
+            binding: ir_name,
+            span,
         });
     }
 

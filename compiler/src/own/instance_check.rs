@@ -42,6 +42,79 @@ pub fn check(
 ) {
     check_view_fields(loaded, sema, mono, diagnostics);
     check_fill_instances(program, functions, sema, mono, diagnostics);
+    check_duplicable_requirements(program, functions, sema, mono, diagnostics);
+}
+
+/// Reports the duplicability duty when an instance substitutes an owning type.
+///
+/// A generic body that stores a maybe-owning value and then uses the source
+/// again is accepted only when the instance's type argument is duplicable. The
+/// audit substitutes each recorded argument into the binding's declared type
+/// and reports `E10020` at the conflicting use for the first owning
+/// instantiation.
+fn check_duplicable_requirements(
+    program: &ProgramInfo,
+    functions: &[Function],
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.duplicable_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let Some(function) = functions.iter().find(|function| function.name == decl.name)
+        else {
+            continue;
+        };
+        // The binding may be a local or a parameter; both carry a declared type
+        // that mentions the parameter to substitute.
+        let declared = if let Some(local) = function
+            .locals
+            .iter()
+            .find(|local| local.name == requirement.binding)
+        {
+            local.ty.clone()
+        } else if let Some(param) = function
+            .params
+            .iter()
+            .find(|param| param.name == requirement.binding)
+        {
+            param.ty.clone()
+        } else {
+            continue;
+        };
+        let declared = &declared;
+        if !mentions_type_param(declared) {
+            continue;
+        }
+        let params = type_param_names(&decl.type_params);
+        let binding_name = requirement
+            .binding
+            .split('#')
+            .next()
+            .unwrap_or(&requirement.binding);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let substituted = substitute_instance(declared, &params, &instance.args);
+            if sema.table.duplicable(&substituted) {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10020",
+                    format!("'{binding_name}' was moved and cannot be used"),
+                    requirement.span,
+                )
+                .with_help("re-initialize the binding or use a view"),
+            );
+            // One duty per function and binding: the first owning instance
+            // reports it.
+            break;
+        }
+    }
 }
 
 /// Reports a substituted view field for every recorded struct instance.

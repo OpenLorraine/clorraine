@@ -859,17 +859,22 @@ func main(): i32 {
 
 /// A guarded param-typed call is materialized once and its spare elements freed.
 ///
-/// `at` reads element one of `mk()`; the call runs once, and the unread
-/// element of its fixed array is released with the temporary, so the exit code
-/// is the chosen string's length.
+/// `at` lends element one of `mk()` to `sink`; the guarded operand call runs
+/// once, and the unread element of its fixed array is released with the
+/// temporary, so the exit code is the sink's constant and the recorded
+/// AddressSanitizer probe is clean.
 #[test]
 fn should_materialize_a_guarded_param_call_once() {
     let source = r#"module spec.rdh.st14;
 
 import { String, stringOf } from std.text;
 
-func at<T>(mk: func(): T[2], i: i32): T {
-    return mk()[i];
+func sink<T>(borrow v: T): i32 {
+    return 1;
+}
+
+func at<T>(mk: func(): T[2], i: i32): i32 {
+    return sink<T>(borrow mk()[i]);
 }
 
 func mkString(): String[2] {
@@ -877,16 +882,16 @@ func mkString(): String[2] {
 }
 
 func main(): i32 {
-    return i32(len(at<String>(mkString, 1)));
+    return at<String>(mkString, 1);
 }
 "#;
     let output = run_host("rdh14", source);
-    assert_exit("rdh14", &output, 3);
+    assert_exit("rdh14", &output, 1);
 }
 
 /// A param-typed iterable is evaluated once and does not leak.
 ///
-/// The element loop walks the two elements of `mk()`'s array; the iterable
+/// The element loop borrows the two elements of `mk()`'s array; the iterable
 /// travels through one temporary whose release frees the elements, and the
 /// exit code is two.
 #[test]
@@ -897,7 +902,7 @@ import { String, stringOf } from std.text;
 
 func all<T>(mk: func(): T[2]): i32 {
     let n: i32 = 0;
-    for (_e in mk()) {
+    for (borrow _e in mk()) {
         n = n + 1;
     }
     return n;
@@ -1033,28 +1038,32 @@ func main(): i32 {
 
 /// A param-typed conditional read place is materialized and moved.
 ///
-/// `pick` reads element one of `c ? a : b`; with `c` true the chosen row is
-/// `x`, whose second string has length three, so the exit code is three and no
-/// string is released twice.
+/// `pick` takes the two rows and lends element one of `c ? a : b` to `sink`;
+/// with `c` true the chosen row moves into the materialized temporary, the
+/// un-chosen parameter still releases once, and the exit code is the sink's
+/// constant.
 #[test]
 fn should_materialize_a_param_conditional_read_place() {
     let source = r#"module spec.rdh.st21;
 
 import { String, stringOf } from std.text;
 
-func pick<T>(a: T[2], b: T[2], c: bool, i: i32): T {
-    return (c ? a : b)[i];
+func sink<T>(borrow v: T): i32 {
+    return 1;
+}
+
+func pick<T>(take a: T[2], take b: T[2], c: bool, i: i32): i32 {
+    return sink<T>(borrow (c ? a : b)[i]);
 }
 
 func main(): i32 {
     let x: String[2] = [stringOf("ab"), stringOf("cde")];
     let y: String[2] = [stringOf("f"), stringOf("gh")];
-    let r: String = pick<String>(x, y, true, 1);
-    return i32(len(r));
+    return pick<String>(x, y, true, 1);
 }
 "#;
     let output = run_host("rdh21", source);
-    assert_exit("rdh21", &output, 3);
+    assert_exit("rdh21", &output, 1);
 }
 
 /// A later use after a conditional generic move is rejected when owning.

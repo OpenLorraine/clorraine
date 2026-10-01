@@ -502,11 +502,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so leaving it inline would evaluate it once per iteration and render an
     /// invalid element expression. The value is stored once into a temporary
     /// before the loop, and the temporary is released after the loop
-    /// statement. A type that still mentions a generic parameter keeps the
-    /// inline behavior: the uninstantiated body cannot spell the temporary's
-    /// C type.
+    /// statement. A type that mentions a generic parameter materializes like
+    /// any other candidate: the temporary is declared with the substituted
+    /// type per instance and a maybe-owning release is a no-op for a
+    /// duplicable one.
     fn materialize_for_in_iterable(&mut self, expr: &Expr, value: Value) -> Value {
-        if self.place_target(expr).is_some() || super::lower::mentions_type_param(&value.ty) {
+        if self.place_target(expr).is_some() {
             return value;
         }
         let ty = value.ty.clone();
@@ -598,7 +599,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if matches!(
             value.kind,
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
-        ) && self.owns_drop(&value.ty)
+        ) && (self.owns_drop(&value.ty) || self.maybe_owns(&value.ty))
         {
             let call = value.clone();
             *value = self.materialize_guard_operand(call);

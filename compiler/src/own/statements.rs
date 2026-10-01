@@ -56,6 +56,13 @@ enum BindingEffect {
     /// becomes maybe-moved: a later use of either reports the moved-value
     /// error, exactly as if the value had been moved unconditionally.
     ConditionalMove { sources: Vec<PlaceTarget> },
+    /// A maybe-owning value consumed from one or more places.
+    ///
+    /// The store runs unconditionally, so every whole-binding source is marked
+    /// as consumed: an owning instance moves it and a later use is rejected by
+    /// the per-instance audit, while a duplicable instance copies and the use
+    /// stays accepted.
+    MoveIfOwning { sources: Vec<PlaceTarget> },
     /// A duplicable copy or a fresh value: no ownership effect.
     None,
 }
@@ -270,7 +277,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the outer binding the declaration may shadow. The caller emits the
     /// prepared shape once the target place is built.
     fn prepare_store(&mut self, ty: &Ty, value: &'a Expr) -> PreparedStore {
-        if !self.sema.table.duplicable(ty) {
+        // A type that may own at an instantiation stores as a move too: the
+        // emitted move checks the substituted source type and falls back to a
+        // plain copy when the instance is duplicable.
+        if !self.sema.table.duplicable(ty) || self.maybe_owns(ty) {
             if let Some(source) = self.place_target(value) {
                 return PreparedStore::Move {
                     source: self.target_place(&source),
@@ -279,9 +289,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // An element read from a call result has no place to move out of,
             // so storing it into an owned destination is the v1 element-move
             // limit rather than an assign of a borrowed element. A conditional
-            // whose arms are such reads hits the same limit.
-            if self.is_ownerless_element_move(value)
-                || self.conditional_ownerless_element_move(value)
+            // whose arms are such reads hits the same limit. A maybe-owning
+            // destination cannot judge the limit here, so it stays a copy.
+            if !self.maybe_owns(ty)
+                && (self.is_ownerless_element_move(value)
+                    || self.conditional_ownerless_element_move(value))
             {
                 self.report_element_move_limit(value.span);
             }
@@ -384,6 +396,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         value: &Expr,
         lowered: Option<&Value>,
     ) -> BindingEffect {
+        if self.maybe_owns(target) {
+            // The flow keeps copy semantics for a maybe-owning target; the
+            // sources are only marked as consumed so a later use deposits the
+            // duplicability duty.
+            let mut sources = Vec::new();
+            if let Some(source) = self.place_target(value) {
+                sources.push(source);
+            } else {
+                sources.extend(self.maybe_owning_move_sources(value));
+            }
+            if sources.is_empty() {
+                return BindingEffect::None;
+            }
+            return BindingEffect::MoveIfOwning { sources };
+        }
         if is_view(target) {
             return BindingEffect::View {
                 provenance: match self.view_provenance(value) {
@@ -425,6 +452,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                     }
                     self.move_target(source, span);
+                }
+            }
+            BindingEffect::MoveIfOwning { sources } => {
+                for source in sources {
+                    if let PlaceTarget::Local(source_id, projections) = &source {
+                        if *source_id == id && projections.is_empty() {
+                            continue;
+                        }
+                    }
+                    self.mark_moved_if_owning(source);
                 }
             }
             BindingEffect::View {

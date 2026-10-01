@@ -613,12 +613,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return value;
         }
-        // A type that still names a generic parameter cannot be declared as a
-        // C temporary in a caller that has no substitution for it; the operand
-        // is left inline instead, which is safe when it has no side effect.
-        if mentions_type_param(&value.ty) {
-            return value;
-        }
+        // A type that mentions a generic parameter materializes like any
+        // other: the temporary is declared with the substituted type per
+        // instance, and a maybe-owning release is a no-op for a duplicable one.
         // The value is assigned to the temporary where the guard runs, not
         // here: an operand inside `&&`/`||`/`?:` is evaluated only on the path
         // that reaches it, so a statement emitted now would run it even when
@@ -859,10 +856,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 move_outs: _,
             } => {
                 // A view-typed temporary owns no storage and is never released,
-                // so only an owning temporary is a loan owner; the wrapped
-                // value may itself read through a temporary (a slice of an
-                // element of a call result), so the walk continues into it.
-                if self.owns_drop(&value.ty) {
+                // so only an owning temporary is a loan owner; a type that may
+                // own once substituted is one too, because an owning instance
+                // releases the temporary and every view derived from it must
+                // not outlive that release. The wrapped value may itself read
+                // through a temporary (a slice of an element of a call result),
+                // so the walk continues into it.
+                if self.owns_drop(&value.ty) || self.maybe_owns(&value.ty) {
                     owners.insert(*temp);
                 }
                 self.collect_lowered_temp_owners(inner, owners);
@@ -976,8 +976,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             && matches!(
                 value.kind,
                 ValueKind::Conditional { .. } | ValueKind::ArrayLit { .. }
-            )
-            && !mentions_type_param(&value.ty);
+            );
         if !needs_place {
             return value;
         }
@@ -1053,9 +1052,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return value;
         }
-        if mentions_type_param(&value.ty) {
-            return value;
-        }
         self.materialize_value(value)
     }
 
@@ -1092,7 +1088,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !(value.ty.is_fixed_array()
                     && matches!(value.kind, ValueKind::Conditional { .. }))
                 && !value.ty.is_unknown()
-                && !mentions_type_param(&value.ty)
             {
                 return self.materialize_take_place(value);
             }
@@ -1106,7 +1101,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !self.sema.table.duplicable(&value.ty)
                 && !is_view(&value.ty)
                 && !value.ty.is_unknown()
-                && !mentions_type_param(&value.ty)
             {
                 return self.materialize_take_place(value);
             }
@@ -1119,7 +1113,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             || !self.report_diagnostics
             || !self.materialize_owned_temporaries
             || value.ty.is_unknown()
-            || mentions_type_param(&value.ty)
         {
             return value;
         }

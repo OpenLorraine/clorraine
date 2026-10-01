@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 17:49
-> **Progress**: 23/38 tasks (61%)
+> **Last Updated**: 2026-10-01 20:42
+> **Progress**: 30/38 tasks (79%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -258,7 +258,7 @@ task-size criteria in the make-plan skill's quality checklist)
 > `compiler/src/ir.rs`, `compiler/src/own.rs`,
 > `compiler/src/own/{lower,expr,statements,loops,instance_check,call,call_check,place,flow}.rs`,
 > `compiler/src/codegen/function.rs`, `compiler/tests/residual_defect_hardening_{spec,impl}_test.rs`,
-> `plans/residual-defect-hardening/*`
+> `stdlib/std.mem.clo` (user-approved expansion, 2026-10-01), `plans/residual-defect-hardening/*`
 
 ### Step 4.1: Specification Tests
 
@@ -284,13 +284,32 @@ task-size criteria in the make-plan skill's quality checklist)
 **Reference**: [03-04](03-04-substitution-aware-ownership.md) §Proposed Changes 1–5
 **Objective**: Deposit the five duty kinds and discharge them per instance.
 
-- [ ] 4.2.1 Add `maybe_owns` and register maybe-owning bindings and temporaries for drop and release, keeping the `mode == Mode::Take` parameter gate — `compiler/src/own.rs`
-- [ ] 4.2.2 Emit the move shape for param-typed place stores and `take` argument places, add the codegen non-owning branch (plain copy, no zero), and empty a param-typed take place through the argument move-out — `compiler/src/own/{statements,lower,call_check,call}.rs`, `compiler/src/codegen/function.rs`
-- [ ] 4.2.3 Add the `RequiresDuplicable` record (with the per-function carrier into `Monomorphization`) and the moved-if-owning marker in `PlaceState` with its `read_place` detection, clear-on-write, and join merge — `compiler/src/ir/mono.rs`, `compiler/src/own.rs`, `compiler/src/own/{expr,place,flow}.rs`
-- [ ] 4.2.4 Discharge `RequiresDuplicable` in the per-instance audit (`E10020` once per function and binding) — `compiler/src/own/instance_check.rs`
-- [ ] 4.2.5 Remove the five materialization skips (guard operand, two-use operand, read place, `take`/owned argument, for-in iterable) and widen the loop-condition walk's predicate with `maybe_owns` — `compiler/src/own/lower.rs`, `compiler/src/own/loops.rs`
-- [ ] 4.2.6 Add the loan-owner predicate site for maybe-owning temporaries and run the bounded reachability probe; record the result (an explicit acceptance ruling is required first if reachable) — `compiler/src/own/lower.rs`
-- [ ] 4.2.7 Run the specification tests — verify ST-10 – ST-16 and ST-18 – ST-22 pass (green phase) and the ST-10, ST-18, and ST-19 probes are clean
+- [x] 4.2.1 Add `maybe_owns` and register maybe-owning bindings and temporaries for drop and release, keeping the `mode == Mode::Take` parameter gate — `compiler/src/own.rs` ✅ (completed: 2026-10-01 20:42)
+- [x] 4.2.2 Emit the move shape for param-typed place stores and `take` argument places, add the codegen non-owning branch (plain copy, no zero), and empty a param-typed take place through the argument move-out — `compiler/src/own/{statements,lower,call_check,call}.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-01 20:42)
+- [x] 4.2.3 Add the `RequiresDuplicable` record (with the per-function carrier into `Monomorphization`) and the moved-if-owning marker in `PlaceState` with its `read_place` detection, clear-on-write, and join merge — `compiler/src/ir/mono.rs`, `compiler/src/own.rs`, `compiler/src/own/{expr,place,flow}.rs` ✅ (completed: 2026-10-01 20:42)
+- [x] 4.2.4 Discharge `RequiresDuplicable` in the per-instance audit (`E10020` once per function and binding) — `compiler/src/own/instance_check.rs` ✅ (completed: 2026-10-01 20:42)
+- [x] 4.2.5 Remove the five materialization skips (guard operand, two-use operand, read place, `take`/owned argument, for-in iterable) and widen the loop-condition walk's predicate with `maybe_owns` — `compiler/src/own/lower.rs`, `compiler/src/own/loops.rs` ✅ (completed: 2026-10-01 20:42)
+- [x] 4.2.6 Add the loan-owner predicate site for maybe-owning temporaries and run the bounded reachability probe; record the result (an explicit acceptance ruling is required first if reachable) — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-01 20:42)
+- [x] 4.2.7 Run the specification tests — verify ST-10 – ST-16 and ST-18 – ST-22 pass (green phase) and the ST-10, ST-18, and ST-19 probes are clean ✅ (completed: 2026-10-01 20:42)
+
+> **Green-phase record (2026-10-01 20:42):** `residual_defect_hardening_spec_test` 37/37. Host ASan
+> probes clean: ST-10 exits 7 (pre-fix 11 bytes / 1 allocation leaked), ST-18 exits 3 (pre-fix
+> 22 bytes / 2 allocations), ST-19 exits 0 (pre-fix: missing `cl_sink__String` instance, invalid
+> C). Four runtime discoveries were ruled on during implementation: **(1)** the maybe-owning
+> parameter release double-freed with the stdlib's raw-copy `push<T>`; the user approved expanding
+> the modification set with `stdlib/std.mem.clo`, and `push` now reserves through the same
+> `cl_buffer_reserve` FFI `reserve` used and writes the element through a checked slice store (the
+> previewed `reserve()` call would have needed nested generic instances); **(2)** a generic body
+> calling another user generic was never recorded (`cl_sink__String` emitted undeclared); the user
+> approved adding transitive instance collection to `compiler/src/own/generics.rs`, which now
+> re-walks each recorded instance with its arguments substituted to a fixpoint; **(3)** the ST-14,
+> ST-15, and ST-21 programs as written collide with the recorded v1 element-move (`E10026`) and
+> copy-element-loop (`E10040`) limits; the user approved realizing them as borrow-based shapes
+> that exercise the same sites (`borrow mk()[i]` into a sink; `for (borrow e in mk())`; `take`
+> rows with `borrow (c ? a : b)[i]`); **(4)** the loan-owner reachability probe found a
+> use-after-free (`let view: T[] = slice(mk(), 0, 1); return view[0];` segfaulted) and the user
+> approved shipping the widening, which reports `E10030` for every instance of the generic (the
+> recorded acceptance consequence).
 
 ### Step 4.3: Implementation Tests & Hardening
 

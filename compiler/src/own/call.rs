@@ -349,7 +349,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let mut places = Vec::new();
         for (arg, mode) in args.iter().zip(modes) {
-            if mode != Mode::Take || self.sema.table.duplicable(&arg.ty) {
+            // A maybe-owning argument travels as a move for an owning instance
+            // and as a copy for a duplicable one; the emitted move-out chooses
+            // by the substituted type.
+            if mode != Mode::Take
+                || (self.sema.table.duplicable(&arg.ty) && !self.maybe_owns(&arg.ty))
+            {
                 continue;
             }
             match &arg.kind {

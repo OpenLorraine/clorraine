@@ -94,6 +94,11 @@ pub(super) struct Scope {
 pub(super) struct PlaceState {
     /// The value was moved out and not re-initialized.
     pub(super) moved: bool,
+    /// The value was consumed by a store whose type may own at an
+    /// instantiation: an owning instance moves it, a duplicable one copies.
+    /// A later use records the duplicability duty the per-instance audit
+    /// discharges.
+    pub(super) moved_if_owning: bool,
     /// Top-level fields moved out, which makes whole use invalid.
     pub(super) partial: BTreeSet<String>,
     /// The binding is assigned on all paths reaching this point.

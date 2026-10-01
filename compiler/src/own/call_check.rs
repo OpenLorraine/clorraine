@@ -279,14 +279,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let target = self.place_target(expr);
         match mode {
             Mode::Take => {
-                if !self.sema.table.duplicable(arg_ty) {
+                let maybe_owning = self.maybe_owns(arg_ty);
+                if !self.sema.table.duplicable(arg_ty) || maybe_owning {
                     if let Some(target) = target {
-                        self.move_target(target, span);
+                        if maybe_owning {
+                            self.mark_moved_if_owning(target);
+                        } else {
+                            self.move_target(target, span);
+                        }
                     } else {
-                        let sources = self.conditional_move_sources(expr);
+                        let sources = if maybe_owning {
+                            self.maybe_owning_move_sources(expr)
+                        } else {
+                            self.conditional_move_sources(expr)
+                        };
                         if sources.is_empty() {
-                            if self.is_ownerless_element_move(expr)
-                                || self.conditional_ownerless_element_move(expr)
+                            if !maybe_owning
+                                && (self.is_ownerless_element_move(expr)
+                                    || self.conditional_ownerless_element_move(expr))
                             {
                                 // A `take` argument owns the value it receives,
                                 // and an element of a call result has no owner
@@ -294,10 +304,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 self.report_element_move_limit(span);
                             }
                         } else {
-                            // The callee consumes whichever owned arm the
-                            // condition selects, so either arm may be gone.
+                            // The callee consumes whichever arm the condition
+                            // selects, so either arm may be gone; a maybe-owning
+                            // argument records the duplicability duty instead.
                             for source in sources {
-                                self.move_target(source, span);
+                                if maybe_owning {
+                                    self.mark_moved_if_owning(source);
+                                } else {
+                                    self.move_target(source, span);
+                                }
                             }
                         }
                     }
