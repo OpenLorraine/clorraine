@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-01 17:00
-> **Progress**: 21/38 tasks (55%)
+> **Last Updated**: 2026-10-01 17:49
+> **Progress**: 23/38 tasks (61%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -252,7 +252,7 @@ task-size criteria in the make-plan skill's quality checklist)
 
 ## Phase 4: Substitution-Aware Ownership
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `15f5ea4c3cd93d6fa8d05a3e7ecd08c94786e273` (recorded 2026-10-01 17:47)
 > **Lenses**: compiler-and-language (strict profile)
 > **Scope mode**: strict · **Expected modification set**: `compiler/src/ir/mono.rs`,
 > `compiler/src/ir.rs`, `compiler/src/own.rs`,
@@ -265,8 +265,19 @@ task-size criteria in the make-plan skill's quality checklist)
 **Reference**: [03-04](03-04-substitution-aware-ownership.md) §The site table · AR #17, #11
 **Objective**: Pin one case per duty kind and per suppression site from ST-10 – ST-16.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-10 – ST-16 and ST-18 – ST-22 (ST-14 rewritten for site `own/lower.rs:619`) — `compiler/tests/residual_defect_hardening_spec_test.rs`
-- [ ] 4.1.2 Run the specification tests and record the pre-fix AddressSanitizer probes of ST-10 (the filed take-parameter leak) and ST-19 (the take-argument double-free) plus the ST-12 observation; the exit codes alone cannot show the failure
+- [x] 4.1.1 [spec-author] Write specification tests from the 07 ST-cases ST-10 – ST-16 and ST-18 – ST-22 (ST-14 rewritten for site `own/lower.rs:619`) — `compiler/tests/residual_defect_hardening_spec_test.rs` ✅ (completed: 2026-10-01 17:49)
+- [x] 4.1.2 Run the specification tests and record the pre-fix AddressSanitizer probes of ST-10 (the filed take-parameter leak) and ST-19 (the take-argument double-free) plus the ST-12 observation; the exit codes alone cannot show the failure ✅ (completed: 2026-10-01 17:49)
+
+> **Red-phase record (2026-10-01 17:49):** 8 failed / 29 passed. Failing pre-implementation:
+> ST-14, ST-15, ST-16, ST-19, and ST-20 emit invalid C (a fixed-array call or an instantiated
+> call rendered in a value position); ST-21 double-frees (`(c ? a : b)[i]` with owned rows);
+> ST-12 and ST-22 with the `String` instance are accepted but must report `E10020`. Leak-only
+> pins (pass pre-implementation, ASan evidence): ST-10 leaks 11 bytes / 1 allocation (the take
+> parameter never released); ST-18 leaks 22 bytes / 2 allocations (the loop-condition call never
+> released). Pre-passing regression pins: ST-11, ST-12 (`i32`), ST-13, ST-22 (`i32`). Note:
+> ST-14 and ST-15 are realized with a `func(): T[2]` fixed-array call because a `T[]` slice is a
+> view and cannot carry the owning duty; ST-20 is realized with the numeric index instantiation
+> the compound store requires; both keep the case's expectation and site unchanged.
 
 ### Step 4.2: Implementation
 

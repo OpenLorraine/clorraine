@@ -194,6 +194,12 @@ fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
 
 /// Asserts the front end rejects the program with `code` and writes no C.
 fn assert_rejected(tag: &str, source: &str, code: &str) {
+    assert_rejected_with(tag, source, code, &[]);
+}
+
+/// Asserts the front end rejects the program with `code`, that the message
+/// contains every fragment, and that no C is written.
+fn assert_rejected_with(tag: &str, source: &str, code: &str, fragments: &[&str]) {
     let (_scratch, output, c_path) = compile_only(tag, source);
     assert_ne!(
         output.status.code(),
@@ -205,6 +211,12 @@ fn assert_rejected(tag: &str, source: &str, code: &str) {
         stderr.contains(&format!("error {code}:")),
         "{tag}: expected {code}; stderr:\n{stderr}"
     );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
     assert!(
         !c_path.exists(),
         "{tag}: a rejected program must not produce a translation unit"
@@ -697,6 +709,410 @@ func main(): i32 {
 "#;
     let output = run_host("rdh08cl", source);
     assert_exit("rdh08cl", &output, 3);
+}
+
+/// A `take` parameter instantiated with an owning type releases its elements.
+///
+/// `keep` never touches `a`, so the caller hands the only reference to the
+/// callee; the parameter's element cleanup must release both strings. The exit
+/// code is `7`; the leak is pinned by the recorded AddressSanitizer probe.
+#[test]
+fn should_release_the_parameter_when_a_take_parameter_is_owning() {
+    let source = r#"module spec.rdh.st10;
+
+import { String, stringOf } from std.text;
+
+func keep<T>(take a: T[2]): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("c")];
+    keep<String>(xs);
+    return 7;
+}
+"#;
+    let output = run_host("rdh10", source);
+    assert_exit("rdh10", &output, 7);
+}
+
+/// A generic local move moves under an owning instance.
+///
+/// `dup` initializes `b` from `a` and returns `b`; under `String` the handle
+/// travels to the caller and the callee keeps nothing, so the caller reads the
+/// length four and the storage is released exactly once.
+#[test]
+fn should_move_through_the_local_when_a_generic_move_is_owning() {
+    let source = r#"module spec.rdh.st11;
+
+import { String, stringOf } from std.text;
+
+func dup<T>(take a: T): T {
+    let b: T = a;
+    return b;
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let t: String = dup<String>(s);
+    return i32(len(t));
+}
+"#;
+    let output = run_host("rdh11", source);
+    assert_exit("rdh11", &output, 4);
+}
+
+/// A later use after a generic move is rejected for an owning instance.
+///
+/// `reuse` moves `a` into `b` and then lends `a` again; under `String` the
+/// compiler reports `E10020` once and writes no translation unit.
+#[test]
+fn should_reject_a_later_use_when_a_generic_move_needs_duplicability() {
+    let source = r#"module spec.rdh.st12;
+
+import { String, stringOf } from std.text;
+
+func sink(borrow v: String): i32 {
+    return i32(len(v));
+}
+
+func reuse<T>(take a: T): i32 {
+    let b: T = a;
+    sink(borrow a);
+    return 0;
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    return reuse<String>(s);
+}
+"#;
+    assert_rejected_with(
+        "rdh12",
+        source,
+        "E10020",
+        &["'a' was moved and cannot be used"],
+    );
+}
+
+/// A later use after a generic move is accepted for a duplicable instance.
+///
+/// Under `i32` both bindings hold five, so the function compiles and returns
+/// ten.
+#[test]
+fn should_accept_a_later_use_when_a_generic_move_is_duplicable() {
+    let source = r#"module spec.rdh.st12;
+
+func sinkInt(borrow v: i32): i32 {
+    return v;
+}
+
+func reuse<T>(take a: T): i32 {
+    let b: T = a;
+    return sinkInt(borrow a) + sinkInt(borrow b);
+}
+
+func main(): i32 {
+    return reuse<i32>(5);
+}
+"#;
+    let output = run_host("rdh12i", source);
+    assert_exit("rdh12i", &output, 10);
+}
+
+/// Duplicable instances and a borrowed parameter keep their behavior.
+///
+/// The `i32` instantiations release nothing extra and the `String` borrow
+/// parameter frees nothing in the callee, so the caller's string stays valid
+/// and the exit code is three plus one.
+#[test]
+fn should_keep_duplicable_instances_and_borrows_unchanged() {
+    let source = r#"module spec.rdh.st13;
+
+import { String, stringOf } from std.text;
+
+func keep<T>(take a: T[2]): i32 {
+    return 0;
+}
+
+func dup<T>(take a: T): T {
+    let b: T = a;
+    return b;
+}
+
+func peek<T>(borrow a: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    let n: i32 = dup<i32>(3);
+    keep<i32>(xs);
+    let s: String = stringOf("ab");
+    let p: i32 = peek<String>(s);
+    return n + p;
+}
+"#;
+    let output = run_host("rdh13", source);
+    assert_exit("rdh13", &output, 4);
+}
+
+/// A guarded param-typed call is materialized once and its spare elements freed.
+///
+/// `at` reads element one of `mk()`; the call runs once, and the unread
+/// element of its fixed array is released with the temporary, so the exit code
+/// is the chosen string's length.
+#[test]
+fn should_materialize_a_guarded_param_call_once() {
+    let source = r#"module spec.rdh.st14;
+
+import { String, stringOf } from std.text;
+
+func at<T>(mk: func(): T[2], i: i32): T {
+    return mk()[i];
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return i32(len(at<String>(mkString, 1)));
+}
+"#;
+    let output = run_host("rdh14", source);
+    assert_exit("rdh14", &output, 3);
+}
+
+/// A param-typed iterable is evaluated once and does not leak.
+///
+/// The element loop walks the two elements of `mk()`'s array; the iterable
+/// travels through one temporary whose release frees the elements, and the
+/// exit code is two.
+#[test]
+fn should_materialize_a_param_iterable_once() {
+    let source = r#"module spec.rdh.st15;
+
+import { String, stringOf } from std.text;
+
+func all<T>(mk: func(): T[2]): i32 {
+    let n: i32 = 0;
+    for (_e in mk()) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return all<String>(mkString);
+}
+"#;
+    let output = run_host("rdh15", source);
+    assert_exit("rdh15", &output, 2);
+}
+
+/// A param-typed call passed to a `take` parameter is released by the callee.
+///
+/// `pass` hands `mk()`'s fresh string to `sink`, whose maybe-owning parameter
+/// cleanup releases it; the caller releases nothing and the exit code is zero.
+#[test]
+fn should_release_a_param_call_passed_to_a_take_parameter() {
+    let source = r#"module spec.rdh.st16;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take v: T): i32 {
+    return 0;
+}
+
+func pass<T>(mk: func(): T): i32 {
+    return sink<T>(mk());
+}
+
+func mkString(): String {
+    return stringOf("abcd");
+}
+
+func main(): i32 {
+    return pass<String>(mkString);
+}
+"#;
+    let output = run_host("rdh16", source);
+    assert_exit("rdh16", &output, 0);
+}
+
+/// A param-typed loop-condition call is released per test.
+///
+/// Every test calls `mk`, which returns a fresh string, and reads its length;
+/// the body runs three times and the exit code is three. The per-test leak is
+/// pinned by the recorded AddressSanitizer probe.
+#[test]
+fn should_release_a_param_call_in_a_loop_condition() {
+    let source = r#"module spec.rdh.st18;
+
+import { String, stringOf } from std.text;
+
+func mkString(): String {
+    return stringOf("ab");
+}
+
+func loop<T>(mk: func(): T): i32 {
+    let i: i32 = 0;
+    while (i < 3 && len(mk()) > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+
+func main(): i32 {
+    return loop<String>(mkString);
+}
+"#;
+    let output = run_host("rdh18", source);
+    assert_exit("rdh18", &output, 3);
+}
+
+/// A param-typed `take` argument place is emptied and released once.
+///
+/// `caller` hands its own parameter to `sink`; the caller's place is emptied
+/// and the callee releases the value exactly once. The exit code is zero and a
+/// double free would abort.
+#[test]
+fn should_empty_the_take_argument_when_it_is_a_param_typed_place() {
+    let source = r#"module spec.rdh.st19;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take v: T): i32 {
+    return 0;
+}
+
+func caller<T>(take a: T): i32 {
+    return sink<T>(a);
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    return caller<String>(s);
+}
+"#;
+    let output = run_host("rdh19", source);
+    assert_exit("rdh19", &output, 0);
+}
+
+/// A param-typed operand used twice is materialized once.
+///
+/// `bump` increments the element at `at(i)`; the index call must run once and
+/// the store must see that one value, so the array becomes one and three and
+/// the sum is four.
+#[test]
+fn should_materialize_a_param_operand_once_when_it_is_used_twice() {
+    let source = r#"module spec.rdh.st20;
+
+func at<T>(v: T): T {
+    return v;
+}
+
+func bump<T>(borrow xs: i32[2], i: T): i32 {
+    xs[at<T>(i)] += 1;
+    return xs[0] + xs[1];
+}
+
+func main(): i32 {
+    let xs: i32[2] = [1, 2];
+    return bump<i32>(xs, 1);
+}
+"#;
+    let output = run_host("rdh20", source);
+    assert_exit("rdh20", &output, 4);
+}
+
+/// A param-typed conditional read place is materialized and moved.
+///
+/// `pick` reads element one of `c ? a : b`; with `c` true the chosen row is
+/// `x`, whose second string has length three, so the exit code is three and no
+/// string is released twice.
+#[test]
+fn should_materialize_a_param_conditional_read_place() {
+    let source = r#"module spec.rdh.st21;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(a: T[2], b: T[2], c: bool, i: i32): T {
+    return (c ? a : b)[i];
+}
+
+func main(): i32 {
+    let x: String[2] = [stringOf("ab"), stringOf("cde")];
+    let y: String[2] = [stringOf("f"), stringOf("gh")];
+    let r: String = pick<String>(x, y, true, 1);
+    return i32(len(r));
+}
+"#;
+    let output = run_host("rdh21", source);
+    assert_exit("rdh21", &output, 3);
+}
+
+/// A later use after a conditional generic move is rejected when owning.
+///
+/// `pick` moves `a` into `b` through `c ? a : a` and then lends `a`; under
+/// `String` the compiler reports `E10020` once and writes no translation unit.
+#[test]
+fn should_reject_a_later_use_after_a_conditional_move_when_owning() {
+    let source = r#"module spec.rdh.st22;
+
+import { String, stringOf } from std.text;
+
+func sink(borrow v: String): i32 {
+    return i32(len(v));
+}
+
+func pick<T>(take a: T, c: bool): i32 {
+    let b: T = c ? a : a;
+    sink(borrow a);
+    return 0;
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    return pick<String>(s, true);
+}
+"#;
+    assert_rejected_with(
+        "rdh22",
+        source,
+        "E10020",
+        &["'a' was moved and cannot be used"],
+    );
+}
+
+/// A conditional generic move is accepted for a duplicable instance.
+///
+/// Under `i32` the conditional copies five into `b` and `a` stays readable, so
+/// the function compiles and returns ten.
+#[test]
+fn should_accept_a_conditional_move_when_the_instance_is_duplicable() {
+    let source = r#"module spec.rdh.st22;
+
+func sinkInt(borrow v: i32): i32 {
+    return v;
+}
+
+func pick<T>(take a: T, c: bool): i32 {
+    let b: T = c ? a : a;
+    return sinkInt(borrow a) + sinkInt(borrow b);
+}
+
+func main(): i32 {
+    return pick<i32>(5, true);
+}
+"#;
+    let output = run_host("rdh22i", source);
+    assert_exit("rdh22i", &output, 10);
 }
 
 /// An unguarded `do while` condition re-runs after `continue`.
