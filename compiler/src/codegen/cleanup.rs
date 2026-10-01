@@ -502,13 +502,13 @@ impl<'a> Emitter<'a> {
 
     /// Copies a by-value fixed-array return into the hidden out-parameter.
     ///
-    /// C cannot assign or return an array, so the value is written to the
-    /// caller's destination element by element. An array literal writes its
-    /// elements through [`Emitter::emit_array_assign_to`]; a returned place
-    /// travels through the statement store core, which copies every extent by
-    /// bytes and empties the source once when it owns elements, so the scope
-    /// cleanup does not release the value the caller now owns. A conditional
-    /// evaluates only its chosen arm into the destination.
+    /// C cannot assign or return an array, so the value is copied into the
+    /// caller's destination. An array literal writes its elements through
+    /// [`Emitter::emit_array_assign_to`]; a returned place travels through the
+    /// statement store core, which copies every extent by bytes and empties the
+    /// source once when it owns elements, so the scope cleanup does not release
+    /// the value the caller now owns. A conditional evaluates only its chosen
+    /// arm into the destination.
     fn emit_fixed_array_return(&mut self, value: &ir::Value) {
         self.emit_fixed_array_return_arm(value);
     }

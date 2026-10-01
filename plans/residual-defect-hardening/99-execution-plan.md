@@ -162,6 +162,14 @@ task-size criteria in the make-plan skill's quality checklist)
 - [x] Every extent of a returned fixed-array place is copied and the owned source is emptied once
 - [x] ST-6 – ST-7 pass; all verification passing
 
+> **Phase 2 review record (2026-10-01 16:24):** independent review — no 🔴/🟠 findings. One 🟡
+> minor (RV-5: stale "element by element" in the return-arm doc) fixed in the follow-up commit.
+> The reviewer independently re-ran `make check` (36 suites), the four relevant suites, and
+> ad-hoc return probes (non-square extents, struct base, generic, lambda, nested conditional,
+> early return, forwarding) — all correct. Non-finding noted for separate triage: a user local
+> named `__cl_ret` collides with the hidden ABI parameter (pre-existing on the phase base,
+> outside this plan's four defects).
+
 **Verify**: `make check`
 
 ---
