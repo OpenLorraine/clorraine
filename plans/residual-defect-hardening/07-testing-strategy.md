@@ -75,6 +75,13 @@
 | ST-21 | A generic body reading a param-typed fixed-array place under a guard, owning substitution | The read place is materialized; no leak | spec/04-expressions.md · R5 · site `own/lower.rs:980` |
 | ST-22 | A generic body with a conditional param-typed move whose source is used afterwards (`func pick<T>(take a: T, c: bool): i32 { let b: T = c ? a : a; sink(borrow a); return 0; }` shape) | `String` instance: `E10020` once at the body's use; `i32` instance: accepted | spec/03-ownership.md · R5 · sites `own/expr.rs:50/85/108` |
 
+> **Realization notes:** ST-14 and ST-15 are exercised with a `func(): T[2]` fixed-array call
+> (a `T[]` slice is a view and cannot carry the owning duty) and borrow-based uses
+> (`sink<T>(borrow mk()[i])`, `for (borrow e in mk())`); ST-20 is exercised with the numeric
+> index instantiation the compound store requires. The cases' expectations and sites are
+> unchanged; the full rationale is in the execution plan's Phase 4 record. The close-out probe
+> runner also covers the `for` spelling of ST-9.
+
 ### Site → case map (03-04 completeness proof)
 
 | Site | Pinned by |

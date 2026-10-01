@@ -385,12 +385,13 @@ task-size criteria in the make-plan skill's quality checklist)
 - [x] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode ✅ (completed: 2026-10-01 23:59)
 
 > **Close-out record (2026-10-01 23:59):** `make verify` passed every leg (`check` 36 suites,
-> hosted-amiga corpus, FS-UAE capture, the six runtime faults). Twelve host ASan close-out probes
-> built under `build/closeout-probes/` with leak detection on, all clean at their expected exit
-> codes (ST-4, ST-6, ST-8, ST-9, ST-18, ST-10, ST-11, ST-14, ST-15, ST-16, ST-19, ST-21); the
-> pre-fix leaks were recorded in the phase records. `spec/` has zero changes and no diagnostic
-> code was added (R7, R8 verified by diff). `AGENTS.md` maps both new suites; the roadmap DEF-46 –
-> DEF-49 rows are Done with this plan linked, and DEF-50 – DEF-55 record the filed residuals.
+> hosted-amiga corpus, FS-UAE capture, the six runtime faults). Thirteen host ASan close-out
+> probes built under `build/closeout-probes/` with leak detection on, all clean at their expected
+> exit codes (ST-4, ST-6, ST-8, ST-9 do/for, ST-18, ST-10, ST-11, ST-14, ST-15, ST-16, ST-19,
+> ST-21), re-runnable with `build/closeout-probes/run-residual-hardening.sh`; the pre-fix leaks
+> were recorded in the phase records. `spec/` has zero changes and no diagnostic code was added
+> (R7, R8 verified by diff). `AGENTS.md` maps both new suites; the roadmap DEF-46 – DEF-49 rows
+> are Done with this plan linked, and DEF-50 – DEF-55 record the filed residuals.
 
 **Deliverables**:
 - [x] `make verify` all legs passed
