@@ -1878,6 +1878,28 @@ impl<'a> Emitter<'a> {
                     continue;
                 }
             }
+            // An owned conditional element moves the chosen arm into the
+            // element per path; a plain copy would leave the chosen arm owning
+            // the same storage, so the element and the arm would both release
+            // it. The fill form cannot reach this: a non-duplicable fill value
+            // is rejected when the literal is checked.
+            if self.needs_drop(element) {
+                if let ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } = &value.kind
+                {
+                    self.emit_conditional_move_assign(
+                        &sub.text,
+                        element,
+                        condition,
+                        then_value,
+                        else_value,
+                    );
+                    continue;
+                }
+            }
             self.emit_guards(value);
             let lowered = self.store_text(value, element);
             self.push(&format!("    {} = {lowered};", sub.text));

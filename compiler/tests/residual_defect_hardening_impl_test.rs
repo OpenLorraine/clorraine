@@ -481,6 +481,35 @@ func main(): i32 {
     );
 }
 
+/// An owned conditional array element moves its chosen arm per branch.
+#[test]
+fn should_branch_store_an_owned_conditional_array_element() {
+    let source = r#"module impl.rdh.p3condel;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let c: bool = true;
+    let x: i32 = i32(len([c ? stringOf("ab") : stringOf("c")][0]));
+    return x;
+}
+"#;
+    let emitted = emit_host("rdhimpl-p3condel", source);
+    // The chosen arm moves into the element and is emptied; the un-chosen arm
+    // stays owned for the statement-end release.
+    assert_contains("rdhimpl-p3condel", &emitted, "if (c) {");
+    assert_contains("rdhimpl-p3condel", &emitted, "__cl_tmp0 = cl_std_text_stringOf(cl_str(\"ab\"));");
+    let moves = emitted
+        .matches("__cl_tmp2[0] = __cl_tmp0;")
+        .count();
+    assert_eq!(
+        moves, 1,
+        "rdhimpl-p3condel: the then arm moves into the element once"
+    );
+    // A plain conditional copy was the double-free shape.
+    assert_absent("rdhimpl-p3condel", &emitted, "__cl_tmp2[0] = (c ?");
+}
+
 /// An owned call trapped in an eagerly stored read still gets a temporary.
 ///
 /// The condition indexes a literal holding `grow().count`; without its own

@@ -633,6 +633,72 @@ func main(): i32 {
     assert_exit("rdh08b", &output, 3);
 }
 
+/// An owned conditional array element moves its then-call into the element.
+///
+/// The literal is read through `[0]`, so it is filled through the element
+/// store; the chosen call's string is moved and only the un-chosen arm is
+/// released, so the exit code is the then-string's length. A plain copy would
+/// leave the arm and the element owning the same storage and double-free.
+#[test]
+fn should_move_the_then_call_when_an_owned_conditional_is_an_array_element() {
+    let source = r#"module spec.rdh.st8c;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let c: bool = true;
+    let x: i32 = i32(len([c ? stringOf("ab") : stringOf("c")][0]));
+    return x;
+}
+"#;
+    let output = run_host("rdh08c", source);
+    assert_exit("rdh08c", &output, 2);
+}
+
+/// An owned conditional array element moves its else-call into the element.
+///
+/// With `c` false the chosen arm is the else string, whose length one is the
+/// exit code; the then arm stays owned and is released once.
+#[test]
+fn should_move_the_else_call_when_an_owned_conditional_is_an_array_element() {
+    let source = r#"module spec.rdh.st8c;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let c: bool = false;
+    let x: i32 = i32(len([c ? stringOf("ab") : stringOf("c")][0]));
+    return x;
+}
+"#;
+    let output = run_host("rdh08cf", source);
+    assert_exit("rdh08cf", &output, 1);
+}
+
+/// An owned conditional element moves per test in a loop condition.
+///
+/// Every test fills a one-element literal from the chosen call and reads its
+/// length; the body runs three times, so the exit code is `3`. A double free
+/// would abort before the exit.
+#[test]
+fn should_move_the_chosen_call_when_an_owned_conditional_is_a_condition_element() {
+    let source = r#"module spec.rdh.st8c;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let c: bool = true;
+    let i: i32 = 0;
+    while (len([c ? stringOf("ab") : stringOf("c")][0]) == 2 && i < 3) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdh08cl", source);
+    assert_exit("rdh08cl", &output, 3);
+}
+
 /// An unguarded `do while` condition re-runs after `continue`.
 ///
 /// The body increments `i` and a `continue` skips the rest, so the condition

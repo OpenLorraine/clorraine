@@ -234,6 +234,17 @@ task-size criteria in the make-plan skill's quality checklist)
 > skips the previous-value drop; consistent with the guard skip already recorded in
 > `call-value-integrity`. **RV-9** — deferred to the existing DEF-45 transfer-temporary class; it
 > leaks identically outside loops and is not this walk's root. Re-review of the fix diff follows.
+>
+> **RV-11 fix (2026-10-01 17:44):** the scoped re-review found a critical regression from the RV-8
+> fix: an owned conditional array element was copied without moving its chosen arm (the eager walk
+> newly wrapped the conditional arms), so the element and the arm released the same storage and
+> the program double-freed. Fixed in the element store path by routing an owned conditional
+> through the existing per-arm move store (`emit_conditional_move_assign`), mirroring the
+> owned-scalar assignment rule; the fill form stays unchanged because a non-duplicable fill value
+> is rejected when the literal is checked. Local verification per the user's ruling (no third
+> review pass): the statement and loop double-free repros are ASan-clean and compute their
+> values; three specification cases and one emitted-shape implementation test added;
+> `make check` 36 suites, spec 23/23, impl 19/19.
 
 **Verify**: `make check`
 
