@@ -1,0 +1,302 @@
+# Execution Plan: Residual Defect Completion
+
+> **Document**: 99-execution-plan.md
+> **Parent**: [Index](00-index.md)
+> **Last Updated**: 2026-10-02 09:49
+> **Progress**: 7/34 tasks (21%)
+> **CodeOps Artifact Schema**: 1
+
+## Overview
+
+Fix the six filed residual defects DEF-50 – DEF-55 in four implementation phases plus a
+close-out. Each implementation phase follows the specification-first ordering: spec tests, a
+recorded red phase, implementation, a green phase, implementation tests, and the project's verify
+command.
+
+**🚨 Update this document after EACH completed task!**
+
+---
+
+## Implementation Phases
+
+| Phase | Title | Tasks |
+| ----- | ----- | ----- |
+| 1 | Type keys and call arguments (DEF-50, DEF-54) | 7 |
+| 2 | Lifted-lambda instances (DEF-52) | 8 |
+| 3 | Call-result ownership (DEF-53, DEF-55) | 7 |
+| 4 | Guarded drop hoist (DEF-51) | 7 |
+| 5 | Close-out | 5 |
+
+**Total: 34 tasks across 5 phases**
+
+> **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
+>
+> The task checkboxes in the phase sections below are the **single source of truth** for
+> progress. Every task line appears exactly once in this document. The executing agent MUST:
+>
+> 1. **On implementation:** mark the task `[~]` with a timestamp —
+>    `- [~] 1.1.1 Task description ⏳ (implemented: YYYY-MM-DD HH:MM)`
+> 2. **On verify pass:** promote it to `[x]` —
+>    `- [x] 1.1.1 Task description ✅ (completed: YYYY-MM-DD HH:MM)`
+> 3. **Update the Progress header** and the Last Updated stamp after EVERY task — never batch.
+> 4. **Resume** by scanning the phase sections top-to-bottom: the first `[~]` task is resumed
+>    first, else the first `[ ]` task.
+> 5. **On blocker:** mark the task `[!]` and append `Blocked: <short reason>` on the same line.
+>    The plan lifecycle is `Ready`, `Executing`, `Done`, or `Blocked`, derived from these markers.
+>
+> Timestamps come from `date '+%Y-%m-%d %H:%M'` — never invented.
+
+---
+
+## Phase 1: Type keys and call arguments (DEF-50, DEF-54)
+
+> **Phase baseline tree**: 387dc536f0a2371822338156a4fc0802fc32f5a3
+> **Lenses**: compiler-and-language (strict profile)
+
+### Step 1.1: Specification Tests
+
+**Reference**: [03-01](03-01-type-keys-and-call-arguments.md) · [AR-3](00-ambiguity-register.md)
+**Objective**: Pin the extent-key and substituted-argument behaviors before any implementation.
+
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-6 — `compiler/tests/residual_defect_completion_spec_test.rs` ✅ (completed: 2026-10-02 09:41)
+- [x] 1.1.2 Run the spec suite and record the red phase (DEF-50: C redefinition; DEF-54: C build
+  type mismatch; ST-6 may pass pre-implementation and is recorded as a regression pin) ✅ (completed: 2026-10-02 09:43)
+
+> **Red phase (1.1.2)**: 3 failed as required — the two extent-key cases fail the C build with
+> `redefinition of 'struct ClGrid__i32'`; the substituted-argument case fails with
+> `expected 'ClInner__String *' but argument is of type 'ClInner__String'`. 3 passed
+> pre-implementation and are recorded as pins: the owned-element instantiation builds today, the
+> `i32` substituted argument is duplicative so its view semantics already hold, and re-emission is
+> already deterministic.
+
+### Step 1.2: Implementation
+
+**Reference**: [03-01](03-01-type-keys-and-call-arguments.md) §Proposed Changes
+**Objective**: Make distinct extent lists key distinctly and substitute the argument type before
+the pointer decision.
+
+- [x] 1.2.1 Encode fixed-array extents and the slice marker in `type_key` — `compiler/src/codegen/types.rs` ✅ (completed: 2026-10-02 09:44)
+- [x] 1.2.2 Substitute the argument type in the named-call pointer decision — `compiler/src/codegen/calls.rs` ✅ (completed: 2026-10-02 09:44)
+- [x] 1.2.3 Run the spec suite and record the green phase ✅ (completed: 2026-10-02 09:45)
+
+> **Green phase (1.2.3)**: all 6 Phase-1 specification cases pass.
+
+### Step 1.3: Implementation Tests & Hardening
+
+**Reference**: [07-testing-strategy.md](07-testing-strategy.md) §Implementation Tests
+**Objective**: Pin internals, determinism, and the `type_key` unit shapes.
+
+- [x] 1.3.1 Write implementation tests: `type_key` unit shapes in the module test block (scalar,
+  multi-extent, nested, slice, struct element), emitted `&(p.v)`, byte-identical re-emission —
+  `compiler/src/codegen/types.rs`, `compiler/tests/residual_defect_completion_impl_test.rs` ✅ (completed: 2026-10-02 09:47)
+- [x] 1.3.2 Full verification (`make check`) ✅ (completed: 2026-10-02 09:49)
+
+**Deliverables**:
+- [x] `Grid<i32[2]>` and `Grid<i32[3]>` coexist and build; multi-extent and slice keys distinct
+- [x] The substituted borrow argument builds and runs
+- [x] All verification passing
+
+**Verify**: `make check`
+
+> **Post-phase review (Phase 1)**: correctness review — no findings; semantics review — one
+> 🟠 MAJOR: a view built over a fixed grid (`slice<i32[3]>(grid, …)`) keyed its immediate element
+> and emitted `ClSlice_arr3_i32` with no typedef, while the written `i32[][3]` parameter declared
+> `ClSlice_i32`, so an accepted program failed the C build. User ruling: fix now. Resolved by
+> keying every slice spelling from the base element (`slice_base_element` / `slice_element_key`,
+> used by `c_type`, `type_key`, `collect_slice_types`, and the two view builders), with a unit
+> pin and an emitted-shape pin; `make check` green; the scoped re-review reports no findings.
+> Two pre-existing, non-blocking observations (a slice-of-struct typedef order and an
+> unannotated `slice` local inference) are outside this plan's strict scope.
+
+---
+
+## Phase 2: Lifted-lambda instances (DEF-52)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
+> committed, staged, unstaged, and untracked phase-start state)_
+> **Lenses**: compiler-and-language (strict profile)
+
+### Step 2.1: Specification Tests
+
+**Reference**: [03-02](03-02-lifted-lambda-instances.md) · [AR-2](00-ambiguity-register.md)
+**Objective**: Pin the capture-less primary repro, two coexisting instances, and a capturing
+parameter-typed lambda.
+
+- [ ] 2.1.1 [spec-author] Write specification tests from ST-7 – ST-9 — `compiler/tests/residual_defect_completion_spec_test.rs`
+- [ ] 2.1.2 Run the spec suite and record the red phase (C names `ClT` / the nested instance is missing)
+
+### Step 2.2: Implementation
+
+**Reference**: [03-02](03-02-lifted-lambda-instances.md) §Proposed Changes
+**Objective**: Carry the enclosing provenance, walk lifted bodies with the instance bindings, and
+emit one specialization per needed instance.
+
+- [ ] 2.2.1 Record the enclosing-function provenance on lifted functions and walk them in the
+  instance closure — `compiler/src/ir.rs`, `compiler/src/own/lower.rs`, `compiler/src/own/generics.rs`
+- [ ] 2.2.2 Emit per-instance lifted specializations, environment structs, and callable types,
+  keeping the shared emission for non-parameter bodies — `compiler/src/codegen/program.rs`,
+  `compiler/src/codegen/function.rs`, `compiler/src/codegen/types.rs`
+- [ ] 2.2.3 Render closure values, calls, and environments with the active specialization's
+  lambda/closure/env spellings — `compiler/src/codegen/expr.rs`
+- [ ] 2.2.4 Run the spec suite and record the green phase
+
+### Step 2.3: Implementation Tests & Hardening
+
+- [ ] 2.3.1 Write implementation tests: specialization symbol and environment/callable shapes,
+  closure value/call/env rendering for the capture-less and capturing cases, shared emission
+  unchanged, byte-identical re-emission — `compiler/tests/residual_defect_completion_impl_test.rs`
+- [ ] 2.3.2 Full verification (`make check`)
+
+**Deliverables**:
+- [ ] A generic call inside a lifted lambda is instantiated per enclosing instance
+- [ ] Multiple instances and a capturing parameter-typed lambda build and run
+- [ ] All verification passing
+
+**Verify**: `make check`
+
+---
+
+## Phase 3: Call-result ownership (DEF-53, DEF-55)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
+> committed, staged, unstaged, and untracked phase-start state)_
+> **Lenses**: compiler-and-language (strict profile)
+
+### Step 3.1: Specification Tests
+
+**Reference**: [03-03](03-03-call-result-ownership.md) · [AR-4](00-ambiguity-register.md)
+**Objective**: Pin the `return`, `let`, and take-argument field projections, the maybe-owning
+element take, and the concrete `E10026` compatibility case.
+
+- [ ] 3.1.1 [spec-author] Write specification tests from ST-10 – ST-14 — `compiler/tests/residual_defect_completion_spec_test.rs`
+- [ ] 3.1.2 Run the spec suite and record the red phase (LSan leaks on ST-10 – ST-12; the ASan
+  double free on ST-13; ST-14 passes pre-implementation as a compatibility pin)
+
+### Step 3.2: Implementation
+
+**Reference**: [03-03](03-03-call-result-ownership.md) §Proposed Changes
+**Objective**: Bind the ownerless call result before an owning projection read and before the
+maybe-owning element take.
+
+- [ ] 3.2.1 Bind field/element projection reads of ownerless call results — `compiler/src/own/lower.rs`
+- [ ] 3.2.2 Bind the maybe-owning element take in lowering and emit the element move-out, keeping
+  the checker suppression and the concrete `E10026` rejection — `compiler/src/own/lower.rs`
+- [ ] 3.2.3 Run the spec suite and record the green phase
+
+### Step 3.3: Implementation Tests & Hardening
+
+- [ ] 3.3.1 Write implementation tests: emitted binding shape, single-release counts, sanitizer
+  runs for the leak and double-free cases, `E10026` unchanged — `compiler/tests/residual_defect_completion_impl_test.rs`
+- [ ] 3.3.2 Full verification (`make check`)
+
+**Deliverables**:
+- [ ] `return mkv().a`, `let s = mkv().a`, and `sink(mkv().a)` are sanitizer-clean
+- [ ] `sink<T>(mk()[i])` under an owning substitution is AddressSanitizer-clean
+- [ ] The concrete element take keeps `E10026`
+- [ ] All verification passing
+
+**Verify**: `make check`
+
+---
+
+## Phase 4: Guarded drop hoist (DEF-51)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
+> committed, staged, unstaged, and untracked phase-start state)_
+> **Lenses**: compiler-and-language (strict profile)
+
+### Step 4.1: Specification Tests
+
+**Reference**: [03-04](03-04-guarded-drop-hoist.md) · [AR-8](00-ambiguity-register.md)
+**Objective**: Pin the `while`, `do`, and `for` guarded shapes, the struct-containing form, and
+the expression-form regression shape.
+
+- [ ] 4.1.1 [spec-author] Write specification tests from ST-15 – ST-18 — `compiler/tests/residual_defect_completion_spec_test.rs`
+- [ ] 4.1.2 Run the spec suite and record the red phase (ST-15 – ST-17 LSan leaks; ST-18 passes
+  pre-implementation as a regression pin)
+
+### Step 4.2: Implementation
+
+**Reference**: [03-04](03-04-guarded-drop-hoist.md) §Proposed Changes
+**Objective**: Hoist the statement-form drop for guard operands whose type has no expression-form
+drop.
+
+- [ ] 4.2.1 Add the conditional-subtree walk and the statement-form drop hoist in `emit_guards` — `compiler/src/codegen/guards.rs`
+- [ ] 4.2.2 Rewrite the implementation test that pinned the old skip to the fixed shape — `compiler/tests/call_value_integrity_impl_test.rs` (AR-10)
+- [ ] 4.2.3 Run the spec suite and record the green phase
+
+### Step 4.3: Implementation Tests & Hardening
+
+- [ ] 4.3.1 Write implementation tests: statement-form drop before the re-store, expression-form
+  shapes unchanged, LeakSanitizer-clean runs, byte-identical re-emission — `compiler/tests/residual_defect_completion_impl_test.rs`
+- [ ] 4.3.2 Full verification (`make check`)
+
+**Deliverables**:
+- [ ] A guarded operand of a drop-needing growable type releases its previous value on every
+  re-store for the `while`, `do`, and `for` spellings and the struct-containing form
+- [ ] Types with expression-form drops keep their emitted shape
+- [ ] All verification passing
+
+**Verify**: `make check`
+
+---
+
+## Phase 5: Close-out
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
+> committed, staged, unstaged, and untracked phase-start state)_
+> **Lenses**: compiler-and-language (strict profile)
+
+### Step 5.1: Acceptance, Probes, Docs, and Summary
+
+**Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria · [AR-7](00-ambiguity-register.md)
+**Objective**: Prove acceptance, record the close-out probes, and sync the durable docs.
+
+- [ ] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
+- [ ] 5.1.2 Host AddressSanitizer close-out probes for the six defects with leak detection on —
+  `build/closeout-probes/` (R10)
+- [ ] 5.1.3 Update documentation: the `AGENTS.md` test map (both new suites) and the roadmap rows
+  for DEF-50 – DEF-55 (Done with this plan linked) — `AGENTS.md`, `plans/00-roadmap.md` (R11)
+- [ ] 5.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the
+  plan status Complete and the progress header to 34/34; final `make check`
+- [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
+
+**Deliverables**:
+- [ ] `make verify` all legs passed
+- [ ] ASan probes clean with leak detection on
+- [ ] Documentation and roadmap synced; acceptance criteria checked
+
+---
+
+## Dependencies
+
+```
+Phase 1 (DEF-50, DEF-54)
+    ↓
+Phase 2 (DEF-52)
+    ↓
+Phase 3 (DEF-53, DEF-55)
+    ↓
+Phase 4 (DEF-51)
+    ↓
+Phase 5 (Close-out)
+```
+
+Phases run in order per [AR-9](00-ambiguity-register.md): the substitution cluster lands first,
+then the call-result binding that the element-take case shares, then the guard hoist. Each phase
+is independently verifiable with `make check`.
+
+---
+
+## Success Criteria
+
+**Feature is complete when:**
+
+1. ✅ All phases completed
+2. ✅ All verification passing (`make check`, then `make verify` at close-out)
+3. ✅ No warnings/errors
+4. ✅ No dead code — no unused parameters, functions, or modules
+5. ✅ Security hardened — N/A (compiler-internal; no input surface)
+6. ✅ Documentation updated (`AGENTS.md`, the roadmap)
+7. ✅ Code reviewed (per the repository's quality profile)
+8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
