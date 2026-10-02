@@ -53,7 +53,7 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
             if extents.iter().all(Option::is_some) {
                 c_type(element, table)
             } else {
-                format!("ClSlice_{}", type_key(element))
+                format!("ClSlice_{}", slice_element_key(element))
             }
         }
         TyKind::Func(signature) => func_pointer_type(signature, table),
@@ -270,6 +270,10 @@ pub(super) fn empty_state(ty: &Ty) -> String {
 }
 
 /// A stable key naming a type in a symbol.
+///
+/// A fixed array renders every extent, so `i32[2]` and `i32[3]` never share a
+/// key. An array with an unknown extent is a slice and renders the slice
+/// marker instead; the two forms cannot collide with each other.
 pub(super) fn type_key(ty: &Ty) -> String {
     match &ty.kind {
         TyKind::Void => "void".to_owned(),
@@ -287,11 +291,40 @@ pub(super) fn type_key(ty: &Ty) -> String {
                 format!("{name}__{}", rendered.join("_"))
             }
         }
-        TyKind::Array { element, .. } => type_key(element),
+        TyKind::Array { element, extents } => {
+            if extents.iter().all(Option::is_some) {
+                let dims: Vec<String> = extents
+                    .iter()
+                    .filter_map(|size| size.map(|value| value.to_string()))
+                    .collect();
+                format!("arr{}_{}", dims.join("x"), type_key(element))
+            } else {
+                format!("slice_{}", slice_element_key(element))
+            }
+        }
         TyKind::Func(_) => "fn".to_owned(),
         TyKind::Closure(closure) => format!("closure_{}", closure.id),
         TyKind::Unknown => "unknown".to_owned(),
     }
+}
+
+/// The base element a slice view points at, with nested rows unwrapped.
+///
+/// A slice of a fixed row (`i32[3][]`) and a row slice written with its
+/// extents after the marker (`i32[][3]`) describe the same view. Both flatten
+/// to the same base element, so their `ClSlice_` names stay shared and a view
+/// built by the `slice` intrinsic matches the declared typedef.
+pub(super) fn slice_base_element(element: &Ty) -> &Ty {
+    let mut base = element;
+    while let TyKind::Array { element, .. } = &base.kind {
+        base = element;
+    }
+    base
+}
+
+/// The element key a slice's C spelling uses.
+pub(super) fn slice_element_key(element: &Ty) -> String {
+    type_key(slice_base_element(element))
 }
 
 /// The C struct name of a closure's two-word value.
@@ -312,9 +345,14 @@ pub(super) fn collect_slice_types(ty: &Ty, found: &mut BTreeMap<String, Ty>) {
     match &ty.kind {
         TyKind::Array { element, extents } => {
             // A slice over a generic parameter has no concrete element type to
-            // declare; its concrete instances add the typedefs they need.
-            if extents.iter().any(Option::is_none) && !element.is_param() {
-                found.entry(type_key(element)).or_insert_with(|| (**element).clone());
+            // declare; its concrete instances add the typedefs they need. The
+            // typedef points at the base element, so a slice of a fixed row
+            // shares the spelling of the equivalent written row slice.
+            if extents.iter().any(Option::is_none) {
+                let base = slice_base_element(element);
+                if !base.is_param() {
+                    found.entry(type_key(base)).or_insert_with(|| base.clone());
+                }
             }
             collect_slice_types(element, found);
         }
@@ -393,5 +431,35 @@ mod tests {
             }),
             "{0}"
         );
+    }
+
+    #[test]
+    fn type_keys_distinguish_extent_lists() {
+        assert_eq!(type_key(&Ty::i32_ty()), "i32");
+        assert_eq!(type_key(&Ty::array(Ty::i32_ty(), vec![Some(2)])), "arr2_i32");
+        assert_eq!(type_key(&Ty::array(Ty::i32_ty(), vec![Some(3)])), "arr3_i32");
+        assert_eq!(
+            type_key(&Ty::array(Ty::i32_ty(), vec![Some(2), Some(3)])),
+            "arr2x3_i32"
+        );
+        assert_eq!(type_key(&Ty::array(Ty::i32_ty(), vec![None])), "slice_i32");
+        assert_eq!(
+            type_key(&Ty::array(
+                Ty::struct_with("Pair", vec![Ty::i32_ty()]),
+                vec![Some(2)]
+            )),
+            "arr2_Pair__i32"
+        );
+    }
+
+    #[test]
+    fn slice_keys_share_the_base_element() {
+        let table = TypeTable::default();
+        let flat = Ty::array(Ty::i32_ty(), vec![None, Some(3)]);
+        let nested = Ty::array(Ty::array(Ty::i32_ty(), vec![Some(3)]), vec![None]);
+        assert_eq!(type_key(&flat), "slice_i32");
+        assert_eq!(type_key(&nested), "slice_i32");
+        assert_eq!(c_type(&flat, &table), "ClSlice_i32");
+        assert_eq!(c_type(&nested, &table), "ClSlice_i32");
     }
 }

@@ -10,7 +10,7 @@ use crate::ir::{Value, ValueKind};
 use crate::types::{Ty, TyKind};
 
 use super::render::escape_c_string;
-use super::types::{c_type, is_pointer_param, type_key};
+use super::types::{c_type, is_pointer_param, slice_element_key};
 use super::Emitter;
 
 impl Emitter<'_> {
@@ -170,8 +170,15 @@ impl Emitter<'_> {
                         is_pointer_param(expected, mode.unwrap_or(Mode::None), &self.sema.table)
                     })
                 } else {
+                    // A written argument type may mention the enclosing
+                    // instance's parameters, so substitute it before deciding
+                    // whether the callee's parameter is a pointer.
                     user_call
-                        && is_pointer_param(&arg.ty, mode.unwrap_or(Mode::None), &self.sema.table)
+                        && is_pointer_param(
+                            &self.substitute(&arg.ty),
+                            mode.unwrap_or(Mode::None),
+                            &self.sema.table,
+                        )
                 };
                 if pointer {
                     format!("&({text})")
@@ -258,7 +265,7 @@ impl Emitter<'_> {
                 let element = self.intrinsic_element(type_arg, args.first());
                 format!(
                     "((ClSlice_{}){{ {}, (usize)({}) }})",
-                    type_key(&element),
+                    slice_element_key(&element),
                     pointer,
                     count
                 )
@@ -287,7 +294,7 @@ impl Emitter<'_> {
                 };
                 format!(
                     "((ClSlice_{}){{ {stored}, (usize)(({high}) - ({low})) }})",
-                    type_key(&element)
+                    slice_element_key(&element)
                 )
             }
             "sizeof" => match type_arg {
