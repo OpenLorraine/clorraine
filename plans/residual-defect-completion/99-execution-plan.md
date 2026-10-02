@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 01:05
-> **Progress**: 29/34 tasks (85%)
+> **Last Updated**: 2026-10-03 01:50
+> **Progress**: 34/34 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -301,8 +301,7 @@ drop.
 
 ## Phase 5: Close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: c21b60704e55c82afde2d388f4eda11e2d8b2a99
 > **Lenses**: compiler-and-language (strict profile)
 
 ### Step 5.1: Acceptance, Probes, Docs, and Summary
@@ -310,19 +309,34 @@ drop.
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria · [AR-7](00-ambiguity-register.md)
 **Objective**: Prove acceptance, record the close-out probes, and sync the durable docs.
 
-- [ ] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg)
-- [ ] 5.1.2 Host AddressSanitizer close-out probes for the six defects with leak detection on —
-  `build/closeout-probes/` (R10)
-- [ ] 5.1.3 Update documentation: the `AGENTS.md` test map (both new suites) and the roadmap rows
-  for DEF-50 – DEF-55 (Done with this plan linked) — `AGENTS.md`, `plans/00-roadmap.md` (R11)
-- [ ] 5.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the
-  plan status Complete and the progress header to 34/34; final `make check`
-- [ ] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode
+- [x] 5.1.1 Full acceptance — `make verify` (every hosted-amiga and freestanding leg) ✅ (completed: 2026-10-03 01:43)
+- [x] 5.1.2 Host AddressSanitizer close-out probes for the six defects with leak detection on —
+  `build/closeout-probes/` (R10) ✅ (completed: 2026-10-03 01:45)
+- [x] 5.1.3 Update documentation: the `AGENTS.md` test map (both new suites) and the roadmap rows
+  for DEF-50 – DEF-55 (Done with this plan linked) — `AGENTS.md`, `plans/00-roadmap.md` (R11) ✅ (completed: 2026-10-03 01:46)
+
+> **Close-out evidence**: `make verify` reports `verify: all legs passed` (hosted-amiga
+> cross-toolchain, fault, and freestanding legs included). The close-out probe runner
+> `build/closeout-probes/run-residual-completion.sh` emits, builds with AddressSanitizer and leak
+> detection, and runs all eight reproductions (DEF-50 – DEF-55, including the three projection
+> forms): every probe exits its expected code with no sanitizer report.
+- [x] 5.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the
+  plan status Complete and the progress header to 34/34; final `make check` ✅ (completed: 2026-10-03 01:48)
+
+> **Acceptance check**: R1 – R11 and all five acceptance criteria are checked in
+> [01-requirements.md](01-requirements.md). R8 is verified by `git diff --name-only d438347..HEAD
+> -- spec/` returning zero files. The final `make check` is green (38 suites).
+- [x] 5.1.5 Phase review evidence and plan summary — commit per the active commit mode ✅ (completed: 2026-10-03 01:50)
 
 **Deliverables**:
-- [ ] `make verify` all legs passed
-- [ ] ASan probes clean with leak detection on
-- [ ] Documentation and roadmap synced; acceptance criteria checked
+- [x] `make verify` all legs passed
+- [x] ASan probes clean with leak detection on
+- [x] Documentation and roadmap synced; acceptance criteria checked
+
+> **Post-phase review (Phase 5)**: the close-out diff is docs-only, so one correctness review ran
+> (auditors skipped by the profile). It reproduced the acceptance evidence and found one
+> 🟡 MINOR wording mismatch (the checked 5.1.4 line named a `34/34` header while the last task was
+> still open); the header now reads `34/34` at completion. No other findings.
 
 ---
 

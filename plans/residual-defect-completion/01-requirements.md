@@ -19,48 +19,48 @@ diagnostics, and no new test harness.
 
 ### Must Have
 
-- [ ] **R1 — DEF-50, array-extent symbol keys.** Distinct fixed-array type arguments instantiate
+- [x] **R1 — DEF-50, array-extent symbol keys.** Distinct fixed-array type arguments instantiate
   distinct C symbols: `Grid<i32[2]>` and `Grid<i32[3]>` coexist in one program, the emitted C
   builds, and the program reads the values it stored. Multi-extent arguments (`Grid<i32[2][2]>`)
   and owning element arguments (`Grid<String[2]>`) keep the same property, and slice arguments
   keep a key distinct from any fixed extent.
-- [ ] **R2 — DEF-54, substituted borrow argument.** A `borrow` argument whose declared type is a
+- [x] **R2 — DEF-54, substituted borrow argument.** A `borrow` argument whose declared type is a
   projection of a generic-struct parameter (`sink<T>(borrow p.v)` with `p: Outer<T>`) is passed
   as the pointer the callee's C parameter expects, builds, and returns the callee's value; the
   argument stays a view (the caller's value is usable after the call and is not released).
-- [ ] **R3 — DEF-52, lifted-lambda instances.** A lambda inside a generic function body is
+- [x] **R3 — DEF-52, lifted-lambda instances.** A lambda inside a generic function body is
   specialized for each enclosing instance: a generic call inside the lambda body is instantiated
   with the enclosing substitution, the emitted C builds, and each instance computes its own
   result. Two instances of the same enclosing function coexist; a capturing lambda whose captured
   value's type mentions the enclosing parameter is specialized too.
-- [ ] **R4 — DEF-55, ownerless projection binding.** An owning read of a field projection from a
+- [x] **R4 — DEF-55, ownerless projection binding.** An owning read of a field projection from a
   fresh call result (`return mkv().a`, `let s: String = mkv().a`, `sink(mkv().a)`) binds the
   result to an owned temporary, moves the projection out, and releases the remaining fields
   exactly once. The value handed to the caller or callee is the projection; no sibling leaks and
   nothing is freed twice.
-- [ ] **R5 — DEF-53, ownerless element take under an owning substitution.** `sink<T>(mk()[i])`
+- [x] **R5 — DEF-53, ownerless element take under an owning substitution.** `sink<T>(mk()[i])`
   instantiated with an owning `T` (for example `String`) releases the taken element exactly once:
   the callee owns the element it receives, the bound temporary releases the remaining elements,
   and the program is clean under AddressSanitizer. The concrete non-generic element take keeps
   its existing `E10026` behavior (no accepted program changes).
-- [ ] **R6 — DEF-51, guarded drop-needing element.** A conditionally evaluated materialized
+- [x] **R6 — DEF-51, guarded drop-needing element.** A conditionally evaluated materialized
   operand whose type needs an element loop to drop (a growable `Array<T>` with a drop-needing
   `T`, or a struct containing one) releases its previous value before the re-store. The program
   computes the correct value and is clean under LeakSanitizer for the `while`, `do`, and `for`
   spellings. Types whose drop already has an expression form keep their emitted shape.
-- [ ] **R7 — Compatibility.** No program that compiles today gains a new error, and no diagnostic
+- [x] **R7 — Compatibility.** No program that compiles today gains a new error, and no diagnostic
   that fires today changes, except that each of the six reproductions becomes an accepted,
   correct program. Concrete `E10026` element-take rejections are unchanged.
-- [ ] **R8 — No specification change.** No file under `spec/` changes; no new diagnostic code is
+- [x] **R8 — No specification change.** No file under `spec/` changes; no new diagnostic code is
   added (the defects are implementation gaps against the frozen oracle).
 
 ### Should Have
 
-- [ ] **R9 — Determinism.** The same source emits byte-identical C across runs, including the new
+- [x] **R9 — Determinism.** The same source emits byte-identical C across runs, including the new
   symbol keys and lifted specializations.
-- [ ] **R10 — Close-out probes.** Pre-fix reproduction evidence is recorded and the post-fix
+- [x] **R10 — Close-out probes.** Pre-fix reproduction evidence is recorded and the post-fix
   AddressSanitizer/LeakSanitizer close-out probes for all six defects are clean.
-- [ ] **R11 — Docs synced.** The `AGENTS.md` test map gains the two new suites, and the roadmap
+- [x] **R11 — Docs synced.** The `AGENTS.md` test map gains the two new suites, and the roadmap
   DEF-50 – DEF-55 rows move to Done with this plan linked.
 
 ### Won't Have (Out of Scope)
@@ -112,12 +112,12 @@ N/A — the change is compiler-internal and adds no input, parsing, or output su
 
 ## Acceptance Criteria
 
-1. [ ] R1 – R8 hold, each pinned by a specification case in `07-testing-strategy.md`.
-2. [ ] Every phase's spec tests fail before its implementation (or are recorded pre-passing
+1. [x] R1 – R8 hold, each pinned by a specification case in `07-testing-strategy.md`.
+2. [x] Every phase's spec tests fail before its implementation (or are recorded pre-passing
    regression pins) and pass after it.
-3. [ ] The full workspace suite, the corpus, and the determinism suite pass; `make verify` passes
+3. [x] The full workspace suite, the corpus, and the determinism suite pass; `make verify` passes
    every cross-toolchain leg.
-4. [ ] The six defects' close-out probes are clean under AddressSanitizer with leak detection on,
+4. [x] The six defects' close-out probes are clean under AddressSanitizer with leak detection on,
    with the pre-fix failure recorded for each.
-5. [ ] `AGENTS.md` maps the new suites and `plans/00-roadmap.md` marks DEF-50 – DEF-55 Done with
+5. [x] `AGENTS.md` maps the new suites and `plans/00-roadmap.md` marks DEF-50 – DEF-55 Done with
    this plan linked.

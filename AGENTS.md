@@ -145,6 +145,16 @@ in `CMD`).
   **implementation tests** (emitted shapes per instance, the non-owning no-op
   branches, the emptied take-argument place, the single `E10020` report, the
   nested-instance declaration, and byte-identical re-emission).
+- `compiler/tests/residual_defect_completion_spec_test.rs` holds the
+  **specification tests** for the six filed residual defects (fixed-array C
+  symbol keys, the substituted generic-struct borrow argument, lifted-lambda
+  instance specialization, ownerless call-result projection binding, the
+  ownerless element take under an owning substitution, and the guarded
+  drop-needing element hoist), and
+  `compiler/tests/residual_defect_completion_impl_test.rs` holds their
+  **implementation tests** (key and symbol shapes, specialization and
+  environment names, binding and release shapes, guard-drop ordering, the
+  opt-in sanitizer runs, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

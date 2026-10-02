@@ -1,7 +1,7 @@
 # Residual Defect Completion Implementation Plan
 
 > **Feature**: Complete the six filed residual defects DEF-50 – DEF-55 in the Clorraine compiler (array-extent C symbol keys, a generic-struct borrow argument's substituted type, lifted-lambda instance specialization, ownerless call-result projection binding, ownerless element take under an owning substitution, and the guarded drop-needing element hoist)
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-10-02 08:47
 > **Implements**: DEF-50, DEF-51, DEF-52, DEF-53, DEF-54, DEF-55
 > **CodeOps Artifact Schema**: 1
