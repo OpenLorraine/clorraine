@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-02 09:49
-> **Progress**: 7/34 tasks (21%)
+> **Last Updated**: 2026-10-02 22:41
+> **Progress**: 15/34 tasks (44%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -112,8 +112,7 @@ the pointer decision.
 
 ## Phase 2: Lifted-lambda instances (DEF-52)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: f3a64e3ab9287f20c701730ea75cb51548d3c57a
 > **Lenses**: compiler-and-language (strict profile)
 
 ### Step 2.1: Specification Tests
@@ -122,8 +121,12 @@ the pointer decision.
 **Objective**: Pin the capture-less primary repro, two coexisting instances, and a capturing
 parameter-typed lambda.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-7 – ST-9 — `compiler/tests/residual_defect_completion_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (C names `ClT` / the nested instance is missing)
+- [x] 2.1.1 [spec-author] Write specification tests from ST-7 – ST-9 — `compiler/tests/residual_defect_completion_spec_test.rs` ✅ (completed: 2026-10-02 21:13)
+- [x] 2.1.2 Run the spec suite and record the red phase (C names `ClT` / the nested instance is missing) ✅ (completed: 2026-10-02 21:14)
+
+> **Red phase (2.1.2)**: all 3 new cases fail as required — the emitted C rejects
+> `static ClT cl_lambda_0(ClT v);` with `unknown type name 'ClT'` and the lambda symbol is
+> undeclared. The Phase-1 cases stay green.
 
 ### Step 2.2: Implementation
 
@@ -131,28 +134,44 @@ parameter-typed lambda.
 **Objective**: Carry the enclosing provenance, walk lifted bodies with the instance bindings, and
 emit one specialization per needed instance.
 
-- [ ] 2.2.1 Record the enclosing-function provenance on lifted functions and walk them in the
-  instance closure — `compiler/src/ir.rs`, `compiler/src/own/lower.rs`, `compiler/src/own/generics.rs`
-- [ ] 2.2.2 Emit per-instance lifted specializations, environment structs, and callable types,
+- [x] 2.2.1 Record the enclosing-function provenance on lifted functions and walk them in the
+  instance closure — `compiler/src/ir.rs`, `compiler/src/own/lower.rs`, `compiler/src/own/generics.rs` ✅ (completed: 2026-10-02 21:17)
+- [x] 2.2.2 Emit per-instance lifted specializations, environment structs, and callable types,
   keeping the shared emission for non-parameter bodies — `compiler/src/codegen/program.rs`,
-  `compiler/src/codegen/function.rs`, `compiler/src/codegen/types.rs`
-- [ ] 2.2.3 Render closure values, calls, and environments with the active specialization's
-  lambda/closure/env spellings — `compiler/src/codegen/expr.rs`
-- [ ] 2.2.4 Run the spec suite and record the green phase
+  `compiler/src/codegen/function.rs`, `compiler/src/codegen/types.rs` ✅ (completed: 2026-10-02 22:38)
+- [x] 2.2.3 Render closure values, calls, and environments with the active specialization's
+  lambda/closure/env spellings — `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-02 22:38)
+- [x] 2.2.4 Run the spec suite and record the green phase ✅ (completed: 2026-10-02 22:38)
+
+> **Green phase (2.2.4)**: all 9 specification cases pass (6 from Phase 1, 3 from Phase 2).
+> ST-8's String result is measured in place; binding it surfaced a pre-existing, out-of-scope
+> defect filed as roadmap DEF-56 and recorded as runtime AR-11.
 
 ### Step 2.3: Implementation Tests & Hardening
 
-- [ ] 2.3.1 Write implementation tests: specialization symbol and environment/callable shapes,
+- [x] 2.3.1 Write implementation tests: specialization symbol and environment/callable shapes,
   closure value/call/env rendering for the capture-less and capturing cases, shared emission
-  unchanged, byte-identical re-emission — `compiler/tests/residual_defect_completion_impl_test.rs`
-- [ ] 2.3.2 Full verification (`make check`)
+  unchanged, byte-identical re-emission — `compiler/tests/residual_defect_completion_impl_test.rs` ✅ (completed: 2026-10-02 22:37)
+- [x] 2.3.2 Full verification (`make check`) ✅ (completed: 2026-10-02 22:41)
 
 **Deliverables**:
-- [ ] A generic call inside a lifted lambda is instantiated per enclosing instance
-- [ ] Multiple instances and a capturing parameter-typed lambda build and run
-- [ ] All verification passing
+- [x] A generic call inside a lifted lambda is instantiated per enclosing instance
+- [x] Multiple instances and a capturing parameter-typed lambda build and run
+- [x] All verification passing
 
 **Verify**: `make check`
+
+> **Post-phase review (Phase 2)**: correctness and semantics reviews both found: one 🔴 CRITICAL
+> (the specialized lifted body kept an unsubstituted `return_ty`, so a fixed-array return silently
+> returned zero and a cleanup return spelled `ClT`) and one 🟠 MAJOR (the specialization predicate
+> missed lambda captures and nested value positions). A second 🟠 MAJOR (a callable-bound closure
+> argument kept a site-only callable type) and a pre-existing trailing-comma zero-argument closure
+> call were ruled out of scope and filed as roadmap DEF-57 and DEF-58 (runtime AR-12). Fixes:
+> substituted `return_ty`; the predicate now checks the lambda site's captures and walks nested
+> values (receiver calls included) in the statement scan, and the instance walker visits receiver
+> values; four compile-and-run pins were added. The scoped re-review found one remaining receiver
+> gap in the same predicate arm; the one-line correction was applied, `make check` is green, and
+> per the review cap no third pass was run.
 
 ---
 

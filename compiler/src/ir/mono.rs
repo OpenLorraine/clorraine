@@ -118,18 +118,34 @@ pub struct RequiresDuplicable {
     pub span: Span,
 }
 
+/// One emitted specialization of a lifted lambda.
+///
+/// A lifted function inside a generic declaration is emitted once per enclosing
+/// instance. The site names the lifted function and the type arguments are the
+/// enclosing instance's arguments, so the emitter can install the same
+/// substitution it installs for the declared instance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LiftedSpecialization {
+    /// The lambda site the lifted function was created from.
+    pub site: usize,
+    /// The enclosing instance's concrete type arguments.
+    pub args: Vec<Ty>,
+}
+
 /// The instantiation set and copy obligations of a generic program.
 ///
 /// This is the input codegen consumes: the set of concrete function copies to
 /// emit, each with a stable deduplication key, the concrete generic structs to
-/// emit, and the copies a generic body owes. A function instance's type
-/// arguments are stored as their rendered spellings because the emitter names
-/// symbols from them; a struct instance keeps the checked types so the emitter
-/// can substitute them into the struct's fields.
+/// emit, the lifted-lambda specializations the generic bodies need, and the
+/// copies a generic body owes. A function instance's type arguments are stored
+/// as their rendered spellings because the emitter names symbols from them; a
+/// struct instance keeps the checked types so the emitter can substitute them
+/// into the struct's fields.
 #[derive(Clone, Debug, Default)]
 pub struct Monomorphization {
     instances: Vec<Instance>,
     structs: Vec<StructInstance>,
+    lifted: Vec<LiftedSpecialization>,
     obligations: Vec<CopyObligation>,
     duplicable_requirements: Vec<RequiresDuplicable>,
 }
@@ -162,6 +178,21 @@ impl Monomorphization {
     /// Every distinct struct instance recorded so far.
     pub fn struct_instances(&self) -> &[StructInstance] {
         &self.structs
+    }
+
+    /// Records a lifted-lambda specialization, returning true when it was not
+    /// already present.
+    pub fn record_lifted(&mut self, specialization: LiftedSpecialization) -> bool {
+        if self.lifted.iter().any(|known| known == &specialization) {
+            return false;
+        }
+        self.lifted.push(specialization);
+        true
+    }
+
+    /// Every distinct lifted-lambda specialization recorded so far.
+    pub fn lifted_specializations(&self) -> &[LiftedSpecialization] {
+        &self.lifted
     }
 
     /// Records a copy obligation the generic body owes.

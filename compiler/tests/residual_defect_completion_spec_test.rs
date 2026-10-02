@@ -370,3 +370,85 @@ func main(): i32 {
         "rdc06: the same program emitted two different translations"
     );
 }
+
+/// A generic call inside a lifted lambda must be instantiated.
+///
+/// The lambda in `outer<i32>` calls `apply<i32>`; the lifted function's body
+/// must carry the enclosing instance's substitution, so the emitted C names
+/// `cl_apply__i32` rather than the unresolved parameter. The exit code `3`
+/// proves the value travelled through both calls.
+#[test]
+fn should_instantiate_when_a_captureless_lambda_calls_a_generic() {
+    let source = r#"module spec.rdc.st7;
+
+func apply<T>(x: T): T {
+    return x;
+}
+
+func outer<T>(x: T): T {
+    let f: func(T): T = (v: T) => apply<T>(v);
+    return f(x);
+}
+
+func main(): i32 {
+    return outer<i32>(3);
+}
+"#;
+    let output = run_host("rdc07", source);
+    assert_exit("rdc07", &output, 3);
+}
+
+/// Two enclosing instances must each specialize the same lifted lambda.
+///
+/// One program instantiates `outer<i32>` and `outer<String>`. Both lifted
+/// copies must build with their own substitution; the exit code `3` is the
+/// `String` length plus the `i32` result minus three, so both calls ran. The
+/// String result is measured in place, because binding it to an owning local
+/// is a separate, pre-existing defect outside this behavior.
+#[test]
+fn should_build_when_two_enclosing_instances_specialize_the_same_lambda() {
+    let source = r#"module spec.rdc.st8;
+
+import { String, stringOf } from std.text;
+
+func apply<T>(x: T): T {
+    return x;
+}
+
+func outer<T>(x: T): T {
+    let f: func(T): T = (v: T) => apply<T>(v);
+    return f(x);
+}
+
+func main(): i32 {
+    let n: i32 = outer<i32>(3);
+    return i32(len(outer<String>(stringOf("abc")))) + (n - 3);
+}
+"#;
+    let output = run_host("rdc08", source);
+    assert_exit("rdc08", &output, 3);
+}
+
+/// A capturing lambda with a parameter-typed capture must run under an owning instance.
+///
+/// `outer<String>` captures its parameter and returns it through an immediate
+/// closure call. The environment and the lifted body mention `T`, so both must
+/// be specialized for `String`; the exit code `3` is the captured length, and a
+/// double release of the captured string would abort before the exit.
+#[test]
+fn should_return_the_capture_when_a_capturing_lambda_runs_under_an_owning_instance() {
+    let source = r#"module spec.rdc.st9;
+
+import { String, stringOf } from std.text;
+
+func outer<T>(x: T): T {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    return i32(len(outer<String>(stringOf("abc"))));
+}
+"#;
+    let output = run_host("rdc09", source);
+    assert_exit("rdc09", &output, 3);
+}

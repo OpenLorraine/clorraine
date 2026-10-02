@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-02 09:39
+> **Last Updated**: 2026-10-02 22:50
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -72,6 +72,9 @@
 | ↳ DEF-53 | An ownerless element passed to a take parameter double-frees | — | [residual-defect-completion](residual-defect-completion/00-index.md) | Executing | 🔄 | 2026-10-02 09:39 | 🔴 critical, pre-existing, found in the residual-defect-hardening Phase 4 re-review (RV-28): `sink<T>(mkv()[0])` has no caller place to empty, so the callee's element release and the call temporary's release free the same storage; this plan binds the ownerless call result to an owned temporary instead of the maybe-owning suppression (see the plan's ambiguity register AR-4) |
 | ↳ DEF-54 | A generic-struct borrow argument is passed by value | — | [residual-defect-completion](residual-defect-completion/00-index.md) | Executing | 🔄 | 2026-10-02 09:39 | 🔴 critical, pre-existing, found in the residual-defect-hardening Phase 4 re-review (RV-29): the named-call pointer decision uses the unsubstituted argument type (`codegen/calls.rs:172-175`), so `sink<T>(borrow p.v)` with `p: Outer<T>` emits `cl_sink__String(p.v)` where the C parameter is `ClInner__String *` and the build fails; substitute the argument type before the decision |
 | ↳ DEF-55 | A returned field of a fresh call result leaks its siblings | — | [residual-defect-completion](residual-defect-completion/00-index.md) | Executing | 🔄 | 2026-10-02 09:39 | 🟠 major, pre-existing, found in the residual-defect-hardening Phase 4 re-review (RV-30): `return mkv().a` correctly does not empty the call result, but the result is never bound or released, so its other owning fields leak; bind the result to an owned temporary and move the returned projection out |
+| ↳ DEF-56 | A generic lend returned by value and bound to an owning local double-frees | — | — | Backlog | ⬜ | 2026-10-02 22:35 | 🔴 critical, pre-existing, found during the residual-defect-completion Phase 2 execution: `let s: String = outer<String>(stringOf("abc"))` with `outer<T>(x: T): T { return apply<T>(x); }` releases the same string twice (ASan `attempting double-free`); the callee returns an alias of the caller's owned temporary while the caller's binding takes ownership, so both release it. Reproduced on `efbf55f` with no lambdas. Needs a ruling: move the lend on return, or reject binding it as owned |
+| ↳ DEF-57 | A specialized capturing closure passed to a callable-bound generic parameter spells a site-only callable type | — | — | Backlog | ⬜ | 2026-10-02 22:50 | 🟠 major, found in the residual-defect-completion Phase 2 review: recording `apply<T, F: func(T): T>` with an inferred closure argument keeps `ClosureTy.instance` unset, so the callee's parameter spells `ClClosure_<id>` while the call-site value spells `ClClosure_<id>__<key>` and the C build fails. Needs the closure's enclosing instance carried through the instance argument (with its symbol key) or an explicit rejection |
+| ↳ DEF-58 | A zero-argument call through a closure-typed value emits a trailing comma | — | — | Backlog | ⬜ | 2026-10-02 22:50 | 🟡 minor, pre-existing, found in the residual-defect-completion Phase 2 review: `((f).fn((f).env, ))` is invalid C; reproduced without generics (`consume([x] () => x)`); the call renderer should omit the separator when the argument list is empty |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

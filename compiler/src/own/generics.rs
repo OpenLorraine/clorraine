@@ -13,12 +13,12 @@ use std::collections::BTreeMap;
 
 use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, StructDecl, Type, TypeParam};
 use crate::ir::{
-    CopyObligation, Function, Instance, Monomorphization, Statement, StructInstance, Terminator,
-    Value, ValueKind,
+    CopyObligation, Function, Instance, LiftedSpecialization, Monomorphization, Statement,
+    StructInstance, Terminator, Value, ValueKind, ValuePiece,
 };
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
-use crate::types::{resolve_ty, substitute, substitute_instance, Ty, TyKind};
+use crate::types::{resolve_ty, substitute, substitute_instance, ClosureSite, Ty, TyKind};
 
 use super::program::{Callee, ProgramInfo};
 
@@ -487,6 +487,167 @@ pub fn collect_ir_instances(
             .zip(instance.args.iter().cloned())
             .collect();
         walk_function(function, &bindings, program, sema, mono);
+        // A lifted lambda in this instance's body carries the same bindings.
+        // Walking it records the nested generic calls its body makes (the
+        // behavior this pass exists for) and marks the specialization the
+        // emitter must write.
+        for lifted in functions {
+            if lifted.enclosing.as_deref() != Some(decl.name.as_str()) {
+                continue;
+            }
+            let Some(site) = lifted.lambda_site else {
+                continue;
+            };
+            if lifted_needs_specialization(lifted, decl, &sema.closures) {
+                mono.record_lifted(LiftedSpecialization {
+                    site,
+                    args: instance.args.clone(),
+                });
+            }
+            walk_function(lifted, &bindings, program, sema, mono);
+        }
+    }
+}
+
+/// True when a lifted lambda must be emitted once per enclosing instance.
+///
+/// A lifted function whose declared types, body value types, lambda captures,
+/// or generic call arguments mention a type parameter of its enclosing
+/// declaration changes meaning per concrete instance, so it cannot be emitted
+/// once with an unresolved parameter. Every other lifted function keeps the
+/// single shared emission.
+pub(crate) fn lifted_needs_specialization(
+    function: &Function,
+    decl: &crate::ast::FuncDecl,
+    closures: &BTreeMap<usize, ClosureSite>,
+) -> bool {
+    if decl.type_params.is_empty() {
+        return false;
+    }
+    if super::lower::mentions_type_param(&function.ret)
+        || function
+            .params
+            .iter()
+            .any(|param| super::lower::mentions_type_param(&param.ty))
+        || function
+            .locals
+            .iter()
+            .any(|local| super::lower::mentions_type_param(&local.ty))
+        || function.temps.iter().any(super::lower::mentions_type_param)
+    {
+        return true;
+    }
+    // An environment field can carry a parameter even when the body never
+    // reads the capture, so the recorded capture types are part of the check.
+    if let Some(site) = function.lambda_site {
+        if closures.get(&site).is_some_and(|closure| {
+            closure
+                .captures
+                .iter()
+                .any(|capture| super::lower::mentions_type_param(&capture.ty))
+        }) {
+            return true;
+        }
+    }
+    function.blocks.iter().any(|block| {
+        block.statements.iter().any(|statement| match &statement.statement {
+            Statement::Assign { value, .. } | Statement::Discard { value } => {
+                value_mentions_type_param(value)
+            }
+            Statement::StorePointer { pointer, value } => {
+                value_mentions_type_param(pointer) || value_mentions_type_param(value)
+            }
+            Statement::Call {
+                type_args,
+                args,
+                receiver,
+                ..
+            } => {
+                type_args.iter().any(super::lower::mentions_type_param)
+                    || args.iter().any(value_mentions_type_param)
+                    || receiver.as_deref().is_some_and(value_mentions_type_param)
+            }
+            _ => false,
+        }) || match &block.terminator {
+            Terminator::Branch { condition, .. } => value_mentions_type_param(condition),
+            Terminator::Switch { value, arms, .. } => {
+                value_mentions_type_param(value)
+                    || arms
+                        .iter()
+                        .any(|(label, _)| value_mentions_type_param(label))
+            }
+            Terminator::Return {
+                value: Some(value), ..
+            } => value_mentions_type_param(value),
+            _ => false,
+        }
+    })
+}
+
+/// True when a value's type or any nested value mentions a type parameter.
+///
+/// A parameter can sit below the top of a value tree — in a call's type
+/// arguments, a template placeholder, a literal element, or a nested closure's
+/// captures — so the check descends every operand instead of reading only the
+/// value's own result type.
+fn value_mentions_type_param(value: &Value) -> bool {
+    if super::lower::mentions_type_param(&value.ty) {
+        return true;
+    }
+    match &value.kind {
+        ValueKind::Call {
+            type_args,
+            args,
+            receiver,
+            ..
+        } => {
+            type_args.iter().any(super::lower::mentions_type_param)
+                || args.iter().any(value_mentions_type_param)
+                || receiver
+                    .as_deref()
+                    .is_some_and(value_mentions_type_param)
+        }
+        ValueKind::Member { base, .. }
+        | ValueKind::Unary { operand: base, .. }
+        | ValueKind::Cast { value: base, .. } => value_mentions_type_param(base),
+        ValueKind::Index { base, index } => {
+            value_mentions_type_param(base) || value_mentions_type_param(index)
+        }
+        ValueKind::Binary { left, right, .. } => {
+            value_mentions_type_param(left) || value_mentions_type_param(right)
+        }
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            value_mentions_type_param(condition)
+                || value_mentions_type_param(then_value)
+                || value_mentions_type_param(else_value)
+        }
+        ValueKind::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, field)| value_mentions_type_param(field)),
+        ValueKind::ArrayLit { elements, fill } => {
+            elements.iter().any(value_mentions_type_param)
+                || fill
+                    .as_deref()
+                    .is_some_and(value_mentions_type_param)
+        }
+        ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            ValuePiece::Literal(_) => false,
+            ValuePiece::Placeholder(value) => value_mentions_type_param(value),
+        }),
+        ValueKind::Intrinsic { args, type_arg, .. } => {
+            type_arg.iter().any(super::lower::mentions_type_param)
+                || args.iter().any(value_mentions_type_param)
+        }
+        ValueKind::Closure { captures, .. } => captures.iter().any(value_mentions_type_param),
+        ValueKind::ClosureCall { callable, args } => {
+            value_mentions_type_param(callable) || args.iter().any(value_mentions_type_param)
+        }
+        ValueKind::Materialize { value, .. } => value_mentions_type_param(value),
+        _ => false,
     }
 }
 
@@ -523,6 +684,7 @@ fn walk_function(
                     callee,
                     type_args,
                     args,
+                    receiver,
                     ..
                 } => {
                     let resolved: Vec<Ty> = type_args
@@ -530,6 +692,9 @@ fn walk_function(
                         .map(|ty| substitute(ty, bindings))
                         .collect();
                     record_instance(callee, &resolved, program, mono);
+                    if let Some(receiver) = receiver {
+                        walk_value(receiver, bindings, program, sema, mono);
+                    }
                     for arg in args {
                         walk_value(arg, bindings, program, sema, mono);
                     }

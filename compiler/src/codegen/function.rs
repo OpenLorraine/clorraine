@@ -38,6 +38,7 @@ impl<'a> Emitter<'a> {
             .as_ref()
             .map(|(subst, _)| subst.clone())
             .unwrap_or_default();
+        self.instance_key = instance.as_ref().map(|(_, key)| key.clone());
         self.used_names.clear();
         self.local_names.clear();
         self.pointer_params.clear();
@@ -121,8 +122,15 @@ impl<'a> Emitter<'a> {
     /// A lifted function has no source declaration, so its symbol comes from the
     /// lambda site and its captures are read through the leading environment
     /// parameter. A capture-less lambda's function takes only the lambda's own
-    /// parameters.
-    pub(super) fn emit_lifted_function(&mut self, function: &'a ir::Function) {
+    /// parameters. A lifted function in a generic body carries the enclosing
+    /// instance's substitution when specialized, so its parameter, local, and
+    /// return types resolve to the instance's concrete types and its C name
+    /// carries the instance key.
+    pub(super) fn emit_lifted_function(
+        &mut self,
+        function: &'a ir::Function,
+        instance: Option<(&BTreeMap<String, Ty>, &str)>,
+    ) {
         let Some(site) = function.lambda_site else {
             return;
         };
@@ -132,9 +140,13 @@ impl<'a> Emitter<'a> {
             .get(&site)
             .is_some_and(|closure| !closure.captures.is_empty());
 
-        // A lifted function is never generic: its types were fixed when the
-        // enclosing body was lowered, so no substitution is active.
-        self.subst.clear();
+        // The shared emission has neither a substitution nor an instance key;
+        // a specialized emission installs both so every type and closure name
+        // resolves to the instance.
+        self.subst = instance
+            .map(|(subst, _)| subst.clone())
+            .unwrap_or_default();
+        self.instance_key = instance.map(|(_, key)| key.to_owned());
         self.used_names.clear();
         self.local_names.clear();
         self.pointer_params.clear();
@@ -150,7 +162,7 @@ impl<'a> Emitter<'a> {
 
         self.function = Some(function);
         self.current_module = function.module.clone();
-        self.return_ty = function.ret.clone();
+        self.return_ty = self.substitute(&function.ret);
         // A by-value fixed-array return is written into the hidden trailing
         // out-parameter, so the caller's destination is the result on every
         // path, with or without a cleanup ladder.
@@ -178,7 +190,11 @@ impl<'a> Emitter<'a> {
             self.result_var = Some("__cl_ret".to_owned());
         }
 
-        let signature = self.lifted_signature(function, site, capturing);
+        let symbol = match instance {
+            Some((_, key)) => format!("cl_lambda_{site}__{key}"),
+            None => format!("cl_lambda_{site}"),
+        };
+        let signature = self.lifted_signature(function, site, capturing, &symbol);
         self.push(&signature);
         self.push("{");
         self.emit_local_declarations(function);
@@ -197,28 +213,48 @@ impl<'a> Emitter<'a> {
 
     /// The C signature of one lifted lambda function.
     ///
-    /// A capturing lambda's function takes a leading `struct ClEnv_<site> *`
-    /// named `__env`; a capture-less one has only the lambda parameters. The
-    /// function is always `static`, because a lifted lambda is reached only
-    /// through its value, never by name from another translation unit. The
-    /// shared declarator adds the hidden destination for a by-value
-    /// fixed-array return and nests a func-typed return, so the lifted
-    /// function's signature cannot drift from the value that calls it.
+    /// A capturing lambda's function takes a leading environment pointer named
+    /// `__env`; a capture-less one has only the lambda parameters. The function
+    /// is always `static`, because a lifted lambda is reached only through its
+    /// value, never by name from another translation unit. The shared
+    /// declarator adds the hidden destination for a by-value fixed-array return
+    /// and nests a func-typed return, so the lifted function's signature cannot
+    /// drift from the value that calls it. The parameter and return types are
+    /// substituted, so a specialization takes the instance's concrete types.
     pub(super) fn lifted_signature(
         &self,
         function: &ir::Function,
         site: usize,
         capturing: bool,
+        symbol: &str,
     ) -> String {
         let params: Vec<String> = function
             .params
             .iter()
-            .map(|param| declarator(&param.ty, &sanitize_identifier(&param.name), &self.sema.table))
+            .map(|param| {
+                declarator(
+                    &self.substitute(&param.ty),
+                    &sanitize_identifier(&param.name),
+                    &self.sema.table,
+                )
+            })
             .collect();
-        let env = capturing.then(|| format!("struct ClEnv_{site} *__env"));
-        let signature =
-            function_declarator(&function.ret, params, &format!("cl_lambda_{site}"), env, &self.sema.table);
+        let env = capturing.then(|| format!("{} *__env", self.env_struct_name(site)));
+        let ret = self.substitute(&function.ret);
+        let signature = function_declarator(&ret, params, symbol, env, &self.sema.table);
         format!("static {signature}")
+    }
+
+    /// The C name of a lifted lambda's environment struct.
+    ///
+    /// The instance spelling mirrors the callable and lifted names, so the
+    /// environment a creation site builds is the one the specialized lifted
+    /// function expects.
+    pub(super) fn env_struct_name(&self, site: usize) -> String {
+        match &self.instance_key {
+            Some(key) => format!("struct ClEnv_{site}__{key}"),
+            None => format!("struct ClEnv_{site}"),
+        }
     }
 
     /// Writes the hoisted local declarations, the temporaries, and the result.

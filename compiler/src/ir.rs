@@ -42,7 +42,8 @@ pub use control::{BranchShape, LoopKind};
 pub use global::GlobalId;
 pub use guards::value_needs_guards;
 pub use mono::{
-    CopyObligation, Instance, Monomorphization, RequiresDuplicable, StructInstance,
+    CopyObligation, Instance, LiftedSpecialization, Monomorphization, RequiresDuplicable,
+    StructInstance,
 };
 pub use place::{Place, PlaceBase, Projection};
 
@@ -552,6 +553,13 @@ pub struct Function {
     /// name is derived from the site. The marker tells the emitter to take the
     /// lifted path rather than look the body up by a declaration name.
     pub lambda_site: Option<usize>,
+    /// The declared function this lifted function came from, or `None` for a
+    /// declared function.
+    ///
+    /// A lifted function inside a generic declaration is emitted once per
+    /// enclosing instance, so the emitter needs the declaration's name to find
+    /// the instance's bindings.
+    pub enclosing: Option<String>,
 }
 
 /// Builds a [`Function`] block by block.
@@ -591,6 +599,7 @@ impl Builder {
                 blocks: vec![entry],
                 entry: 0,
                 lambda_site: None,
+                enclosing: None,
             },
             current: 0,
             span: Span::default(),

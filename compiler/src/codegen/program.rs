@@ -233,36 +233,45 @@ impl<'a> Emitter<'a> {
     /// The environment holds one field per recorded capture: the copied value
     /// for a `Copy` capture, or a pointer to the captured place for a borrow.
     /// The callable pairs the lifted function pointer with an environment
-    /// pointer. Both are emitted before the prototypes, because a generic
-    /// instance's `ClClosure_<id>` parameter type appears there.
+    /// pointer. A lambda in a generic body gets one pair per enclosing
+    /// instance, named with the instance key, so the environment a creation
+    /// site builds matches the specialized function it passes to. Both are
+    /// emitted before the prototypes, because a closure-typed parameter
+    /// appears there.
     pub(super) fn emit_closure_declarations(&mut self) {
-        let mut sites: Vec<usize> = Vec::new();
-        for function in &self.ownership.functions {
-            if let Some(site) = function.lambda_site {
-                if self
-                    .sema
-                    .closures
-                    .get(&site)
-                    .is_some_and(|closure| !closure.captures.is_empty())
-                {
-                    sites.push(site);
-                }
+        // One environment and callable struct per capturing site, or per
+        // specialization when the site's enclosing instance changes the
+        // capture or parameter types.
+        let mut units: Vec<(usize, Option<(BTreeMap<String, Ty>, String)>)> = Vec::new();
+        for emission in self.lifted_emissions() {
+            if !emission.capturing {
+                continue;
             }
+            units.push((emission.site, emission.key.map(|key| (emission.subst, key))));
         }
-        sites.sort_unstable();
-        sites.dedup();
-        for site in sites {
+        for (site, instance) in units {
             let Some(info) = self.sema.closures.get(&site) else {
                 continue;
             };
-            self.push(&format!("struct ClEnv_{site} {{"));
+            let subst = instance
+                .as_ref()
+                .map(|(subst, _)| subst.clone())
+                .unwrap_or_default();
+            let env_name = match &instance {
+                Some((_, key)) => format!("ClEnv_{site}__{key}"),
+                None => format!("ClEnv_{site}"),
+            };
+            let closure_name = match &instance {
+                Some((_, key)) => format!("ClClosure_{site}__{key}"),
+                None => format!("ClClosure_{site}"),
+            };
+            self.push(&format!("struct {env_name} {{"));
             for capture in &info.captures {
                 let field = &capture.name;
+                let captured = super::substitute_in(&capture.ty, &subst);
                 let ty = match capture.mode {
-                    CaptureMode::Copy => capture.ty.clone(),
-                    CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow => {
-                        Ty::raw(capture.ty.clone())
-                    }
+                    CaptureMode::Copy => captured,
+                    CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow => Ty::raw(captured),
                 };
                 self.push(&format!("    {};", declarator(&ty, field, &self.sema.table)));
             }
@@ -275,22 +284,23 @@ impl<'a> Emitter<'a> {
                 .params
                 .iter()
                 .map(|ty| {
-                    declarator(ty, "", &self.sema.table)
+                    declarator(&super::substitute_in(ty, &subst), "", &self.sema.table)
                         .trim()
                         .to_owned()
                 })
                 .collect();
+            let returns = super::substitute_in(&info.returns, &subst);
             let field = function_declarator(
-                &info.returns,
+                &returns,
                 params,
                 "(*fn)",
-                Some(format!("struct ClEnv_{site} *__env")),
+                Some(format!("struct {env_name} *__env")),
                 &self.sema.table,
             );
-            self.push(&format!("typedef struct ClClosure_{site} {{"));
+            self.push(&format!("typedef struct {closure_name} {{"));
             self.push(&format!("    {field};"));
-            self.push(&format!("    struct ClEnv_{site} *env;"));
-            self.push(&format!("}} ClClosure_{site};"));
+            self.push(&format!("    struct {env_name} *env;"));
+            self.push(&format!("}} {closure_name};"));
             self.push("");
         }
     }
@@ -446,19 +456,25 @@ impl<'a> Emitter<'a> {
         }
         // A lifted lambda is used from the body that writes it, which is
         // printed before the lifted function's own definition, so it needs a
-        // prototype too.
-        for function in &self.ownership.functions {
-            if let Some(site) = function.lambda_site {
-                let capturing = self
-                    .sema
-                    .closures
-                    .get(&site)
-                    .is_some_and(|closure| !closure.captures.is_empty());
-                lines.push(format!(
-                    "{};",
-                    self.lifted_signature(function, site, capturing)
-                ));
-            }
+        // prototype too. A specialized prototype installs the instance's
+        // substitution so its types match the creation site's value.
+        for emission in self.lifted_emissions() {
+            let symbol = emission.symbol();
+            let saved_subst = std::mem::take(&mut self.subst);
+            let saved_key = self.instance_key.take();
+            self.subst = emission.subst;
+            self.instance_key = emission.key;
+            lines.push(format!(
+                "{};",
+                self.lifted_signature(
+                    emission.function,
+                    emission.site,
+                    emission.capturing,
+                    &symbol
+                )
+            ));
+            self.subst = saved_subst;
+            self.instance_key = saved_key;
         }
         for module in self.loaded.modules.values() {
             for item in &module.items {
@@ -754,15 +770,16 @@ impl<'a> Emitter<'a> {
             self.emit_function(&info, instance);
         }
         // A lifted lambda function is not a declared item, so it is emitted
-        // from the ownership stage's function list directly.
-        let lifted: Vec<&'a crate::ir::Function> = self
-            .ownership
-            .functions
-            .iter()
-            .filter(|function| function.lambda_site.is_some())
-            .collect();
-        for function in lifted {
-            self.emit_lifted_function(function);
+        // from the ownership stage's function list directly: once when shared,
+        // once per enclosing instance when the body mentions a parameter.
+        for emission in self.lifted_emissions() {
+            self.emit_lifted_function(
+                emission.function,
+                emission
+                    .key
+                    .as_deref()
+                    .map(|key| (&emission.subst, key)),
+            );
         }
     }
 
@@ -819,14 +836,92 @@ impl<'a> Emitter<'a> {
                 self.instance_typekey(&instance.args)
             ));
         }
-        for function in &self.ownership.functions {
-            if let Some(site) = function.lambda_site {
-                symbols.push(format!("cl_lambda_{site}"));
-            }
+        for emission in self.lifted_emissions() {
+            symbols.push(emission.symbol());
         }
         symbols
     }
 
+    /// The lifted lambda emissions this program needs, in deterministic order.
+    ///
+    /// A lifted function in a non-generic declaration, or one whose types never
+    /// mention an enclosing parameter, keeps the single shared emission. A
+    /// lifted function that mentions a parameter is emitted once per recorded
+    /// enclosing specialization; with no recorded instance it is not emitted at
+    /// all, because its body cannot be spelled with an unresolved parameter.
+    fn lifted_emissions(&self) -> Vec<LiftedEmission<'a>> {
+        let mut emissions = Vec::new();
+        for function in &self.ownership.functions {
+            let Some(site) = function.lambda_site else {
+                continue;
+            };
+            let capturing = self
+                .sema
+                .closures
+                .get(&site)
+                .is_some_and(|closure| !closure.captures.is_empty());
+            let enclosing = function
+                .enclosing
+                .as_deref()
+                .and_then(|name| self.first_function_by_name(name))
+                .map(|info| info.decl);
+            let specialized = enclosing.is_some_and(|decl| {
+                crate::own::lifted_needs_specialization(function, decl, &self.sema.closures)
+            });
+            if !specialized {
+                emissions.push(LiftedEmission {
+                    function,
+                    site,
+                    capturing,
+                    subst: BTreeMap::new(),
+                    key: None,
+                });
+                continue;
+            }
+            let Some(decl) = enclosing else {
+                continue;
+            };
+            for specialization in self.ownership.monomorphization.lifted_specializations() {
+                if specialization.site != site {
+                    continue;
+                }
+                emissions.push(LiftedEmission {
+                    function,
+                    site,
+                    capturing,
+                    subst: self.instance_subst(decl, &specialization.args),
+                    key: Some(self.instance_typekey(&specialization.args)),
+                });
+            }
+        }
+        emissions
+    }
+
+}
+
+/// One lifted lambda emission: the lifted function, its symbol, and, for a
+/// specialization, the enclosing instance's substitution and key.
+struct LiftedEmission<'a> {
+    /// The lifted function to write.
+    function: &'a crate::ir::Function,
+    /// The lambda site the lifted function came from.
+    site: usize,
+    /// True when the lambda captures at least one binding.
+    capturing: bool,
+    /// The enclosing instance's substitution, empty for a shared emission.
+    subst: BTreeMap<String, Ty>,
+    /// The enclosing instance key, absent for a shared emission.
+    key: Option<String>,
+}
+
+impl LiftedEmission<'_> {
+    /// The C symbol of the lifted function.
+    fn symbol(&self) -> String {
+        match &self.key {
+            Some(key) => format!("cl_lambda_{}__{key}", self.site),
+            None => format!("cl_lambda_{}", self.site),
+        }
+    }
 }
 
 /// One struct definition to emit: a non-generic struct or a generic instance.

@@ -469,6 +469,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         function.temps = self.temps.clone();
         function.module = self.module.name.clone();
         function.lambda_site = Some(site);
+        function.enclosing = Some(self.decl.name.clone());
         liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
         self.lifted.push(function);
 

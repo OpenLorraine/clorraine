@@ -43,6 +43,7 @@ mod call_check;
 mod expr;
 mod flow;
 mod generics;
+pub(crate) use generics::lifted_needs_specialization;
 mod instance_check;
 mod liveness;
 mod lower;

@@ -20,7 +20,7 @@ use crate::own::OwnershipOutput;
 use crate::profile::Profile;
 use crate::sema::SemaOutput;
 use crate::span::{SourceMap, Span};
-use crate::types::{resolve_ty, Ty};
+use crate::types::{resolve_ty, Ty, TyKind};
 
 mod calls;
 mod cleanup;
@@ -91,6 +91,12 @@ pub(super) struct Emitter<'a> {
     enums: BTreeMap<String, EnumInfo<'a>>,
     /// Generic type-parameter substitutions active while a body is emitted.
     pub(super) subst: BTreeMap<String, Ty>,
+    /// The enclosing instance key active while a body is emitted.
+    ///
+    /// A lifted lambda in a generic body is specialized per enclosing instance;
+    /// while that instance's body is emitted this names the specialization so
+    /// closure values, calls, and types spell the per-instance C names.
+    pub(super) instance_key: Option<String>,
     /// Unique C names already handed out in the function being emitted.
     pub(super) used_names: BTreeSet<String>,
     /// The IR body currently being emitted, when a function is open.
@@ -173,6 +179,7 @@ impl<'a> Emitter<'a> {
             structs: BTreeMap::new(),
             enums: BTreeMap::new(),
             subst: BTreeMap::new(),
+            instance_key: None,
             used_names: BTreeSet::new(),
             function: None,
             local_names: BTreeMap::new(),
@@ -307,9 +314,67 @@ impl<'a> Emitter<'a> {
             .map(|ty| self.substitute(&ty))
     }
 
-    /// Applies the active generic substitution to a type.
+    /// Applies the active generic substitution to a type and marks closure
+    /// types with the active instance specialization.
     pub(super) fn substitute(&self, ty: &Ty) -> Ty {
-        substitute_in(ty, &self.subst)
+        let substituted = substitute_in(ty, &self.subst);
+        self.tag_closure_instance(substituted)
+    }
+
+    /// Marks every closure type in `ty` with the active instance spelling.
+    ///
+    /// A closure type created in a generic instance body names its specialized
+    /// callable struct, so a local or temporary that holds it matches the
+    /// environment and function pointer the creation site builds. A site with
+    /// no specialization for the active instance is left alone, so shared
+    /// lifted functions and non-generic closures keep their names.
+    fn tag_closure_instance(&self, ty: Ty) -> Ty {
+        let Some(key) = self.instance_key.as_deref() else {
+            return ty;
+        };
+        self.tag_closure_instance_with(ty, key)
+    }
+
+    /// The recursive worker of [`Self::tag_closure_instance`].
+    fn tag_closure_instance_with(&self, mut ty: Ty, key: &str) -> Ty {
+        match &mut ty.kind {
+            TyKind::Closure(closure) => {
+                if closure.instance.is_none() && self.has_lifted_specialization(closure.id, key) {
+                    closure.instance = Some(key.to_owned());
+                }
+            }
+            TyKind::Raw(inner) => {
+                **inner = self.tag_closure_instance_with((**inner).clone(), key);
+            }
+            TyKind::Array { element, .. } => {
+                **element = self.tag_closure_instance_with((**element).clone(), key);
+            }
+            TyKind::Struct(_, args) => {
+                for arg in args {
+                    *arg = self.tag_closure_instance_with(arg.clone(), key);
+                }
+            }
+            TyKind::Func(signature) => {
+                for param in &mut signature.params {
+                    param.ty = self.tag_closure_instance_with(param.ty.clone(), key);
+                }
+                signature.returns =
+                    Box::new(self.tag_closure_instance_with((*signature.returns).clone(), key));
+            }
+            _ => {}
+        }
+        ty
+    }
+
+    /// True when the lifted site is emitted for the instance named `key`.
+    pub(super) fn has_lifted_specialization(&self, site: usize, key: &str) -> bool {
+        self.ownership
+            .monomorphization
+            .lifted_specializations()
+            .iter()
+            .any(|specialization| {
+                specialization.site == site && self.instance_typekey(&specialization.args) == key
+            })
     }
 
     /// The empty-state initializer of a type under the selected profile.

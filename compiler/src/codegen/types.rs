@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use crate::abi;
 use crate::ast::{Mode, ScalarType};
-use crate::types::{Ty, TyKind, TypeTable};
+use crate::types::{ClosureTy, Ty, TyKind, TypeTable};
 
 /// Replaces the dots of a dotted module path with underscores.
 pub(super) fn mangle_module(module: &str) -> String {
@@ -57,7 +57,7 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
             }
         }
         TyKind::Func(signature) => func_pointer_type(signature, table),
-        TyKind::Closure(closure) => closure_type(closure.id),
+        TyKind::Closure(closure) => closure_type(closure),
         TyKind::Param(name) => format!("Cl{name}"),
         TyKind::Unknown => "i32".to_owned(),
     }
@@ -328,8 +328,14 @@ pub(super) fn slice_element_key(element: &Ty) -> String {
 }
 
 /// The C struct name of a closure's two-word value.
-pub(super) fn closure_type(id: usize) -> String {
-    format!("ClClosure_{id}")
+///
+/// A closure specialized for an enclosing instance carries the instance key in
+/// its name, so two specializations of one site name different C structs.
+pub(super) fn closure_type(closure: &ClosureTy) -> String {
+    match &closure.instance {
+        Some(key) => format!("ClClosure_{}__{}", closure.id, key),
+        None => format!("ClClosure_{}", closure.id),
+    }
 }
 
 /// The scalar a type denotes, when it is a scalar.

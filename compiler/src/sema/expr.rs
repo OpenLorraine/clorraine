@@ -211,6 +211,7 @@ impl Checker<'_, '_> {
                     id,
                     params: param_types,
                     returns: Box::new(returns),
+                    instance: None,
                 }),
                 nullable: false,
             }

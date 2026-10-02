@@ -7,8 +7,12 @@
 //! two emissions of one program must be byte-identical.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
+/// How long one program may run before the case fails as a hang.
+const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Temporary directory that removes itself when the test finishes.
 struct ScratchDir {
@@ -93,6 +97,111 @@ fn assert_absent(tag: &str, text: &str, needle: &str) {
     assert!(
         !text.contains(needle),
         "{tag}: the emitted C still contains {needle:?}"
+    );
+}
+
+/// Emits the scratch directory's `main.clo` with a relative source path.
+///
+/// Both runs of a determinism case then name the same logical source, so the
+/// emitted `#line` directives stay comparable.
+fn emit_relative(scratch: &ScratchDir, tag: &str, output_name: &str) -> String {
+    let output_path = scratch.path().join(output_name);
+    let output = Command::new(env!("CARGO_BIN_EXE_clc"))
+        .current_dir(scratch.path())
+        .args([
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            output_path.display().to_string(),
+            "main.clo".to_owned(),
+        ])
+        .output()
+        .expect("failed to spawn the compiler binary");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::read_to_string(&output_path).unwrap_or_default()
+}
+
+/// Emits, builds, and runs one host program, returning its output.
+///
+/// The emitted C is built with the same strict flag set the specification
+/// suite uses, so a specialized emission that only builds without `-Werror`
+/// still fails here.
+fn run_host(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let emitted = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        emitted.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&emitted.stderr)
+    );
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let mut child = Command::new(&program)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
+    let deadline = Instant::now() + RUN_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{tag}: the program did not finish within {RUN_TIMEOUT:?}");
+            }
+            Err(err) => panic!("{tag}: cannot wait for the program: {err}"),
+        }
+    }
+    child
+        .wait_with_output()
+        .unwrap_or_else(|err| panic!("{tag}: cannot collect the program output: {err}"))
+}
+
+/// Asserts the program exited with exactly `expected`, reporting its stderr.
+fn assert_exit(tag: &str, output: &Output, expected: i32) {
+    assert_eq!(
+        output.status.code(),
+        Some(expected),
+        "{tag}: expected exit code {expected}; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 
@@ -206,29 +315,8 @@ func main(): i32 {
 "#;
     let scratch = ScratchDir::new("determinism");
     std::fs::write(scratch.path().join("main.clo"), source).expect("write the program");
-    let emit = |output_name: &str| -> String {
-        let output_path = scratch.path().join(output_name);
-        let output = Command::new(env!("CARGO_BIN_EXE_clc"))
-            .current_dir(scratch.path())
-            .args([
-                "--profile".to_owned(),
-                "host".to_owned(),
-                "-o".to_owned(),
-                output_path.display().to_string(),
-                "main.clo".to_owned(),
-            ])
-            .output()
-            .expect("failed to spawn the compiler binary");
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "determinism: the front end rejected the program; stderr:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        std::fs::read_to_string(&output_path).unwrap_or_default()
-    };
-    let first = emit("first.c");
-    let second = emit("second.c");
+    let first = emit_relative(&scratch, "determinism", "first.c");
+    let second = emit_relative(&scratch, "determinism", "second.c");
     assert!(
         !first.trim().is_empty(),
         "determinism: the emitted C is empty, so the emitter is not implemented yet"
@@ -237,4 +325,240 @@ func main(): i32 {
         first, second,
         "determinism: the same program emitted two different translations"
     );
+}
+
+/// A generic call inside a lifted lambda must name a specialized symbol.
+///
+/// The lifted function's symbol and its nested call carry the enclosing
+/// instance, so the emitted C names `cl_lambda_0__i32` and `cl_apply__i32` and
+/// never spells the unresolved `ClT`.
+#[test]
+fn should_specialize_the_lifted_symbol_when_a_generic_lambda_calls_a_generic() {
+    let source = r#"module impl.rdc.specialize;
+
+func apply<T>(x: T): T {
+    return x;
+}
+
+func outer<T>(x: T): T {
+    let f: func(T): T = (v: T) => apply<T>(v);
+    return f(x);
+}
+
+func main(): i32 {
+    return outer<i32>(3);
+}
+"#;
+    let emitted = emit_host("specialize", source);
+    assert_contains("specialize", &emitted, "static i32 cl_lambda_0__i32(i32 v);");
+    assert_contains("specialize", &emitted, "cl_apply__i32(v)");
+    assert_absent("specialize", &emitted, "ClT");
+    assert_absent("specialize", &emitted, "cl_lambda_0(i32 v)");
+}
+
+/// A capturing lambda in a generic body must name its instance environment.
+///
+/// The environment struct, the callable struct, the lifted symbol, and the
+/// inline call all carry the enclosing instance key, and no site-only spelling
+/// remains.
+#[test]
+fn should_name_the_environment_when_a_capturing_lambda_is_specialized() {
+    let source = r#"module impl.rdc.capture;
+
+import { String, stringOf } from std.text;
+
+func outer<T>(x: T): T {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    return i32(len(outer<String>(stringOf("abc"))));
+}
+"#;
+    let emitted = emit_host("capture", source);
+    assert_contains("capture", &emitted, "struct ClEnv_0__String {");
+    assert_contains("capture", &emitted, "typedef struct ClClosure_0__String {");
+    assert_contains(
+        "capture",
+        &emitted,
+        "static ClString cl_lambda_0__String(struct ClEnv_0__String *__env);",
+    );
+    assert_contains(
+        "capture",
+        &emitted,
+        "cl_lambda_0__String(&(((struct ClEnv_0__String){ x })))",
+    );
+    assert_absent("capture", &emitted, "struct ClEnv_0 {");
+    assert_absent("capture", &emitted, "ClClosure_0 {");
+}
+
+/// A lambda in a non-generic function must keep the shared symbol.
+///
+/// Its body mentions no type parameter, so it stays a single shared emission
+/// with the site-only name and no instance suffix.
+#[test]
+fn should_keep_the_shared_symbol_when_a_lambda_lives_in_a_non_generic_function() {
+    let source = r#"module impl.rdc.shared;
+
+func demo(): i32 {
+    let f: func(i32): i32 = (v: i32) => v + 1;
+    return f(2);
+}
+
+func main(): i32 {
+    return demo();
+}
+"#;
+    let emitted = emit_host("shared", source);
+    assert_contains("shared", &emitted, "static i32 cl_lambda_0(i32 v);");
+    assert_absent("shared", &emitted, "cl_lambda_0__");
+}
+
+/// Two emissions of a specialized-lambda program must be byte-identical.
+///
+/// The specialization order and every instance name must be deterministic.
+#[test]
+fn should_emit_identical_translations_when_a_generic_lambda_is_specialized() {
+    let source = r#"module impl.rdc.liftdeterminism;
+
+import { String, stringOf } from std.text;
+
+func apply<T>(x: T): T {
+    return x;
+}
+
+func outer<T>(x: T): T {
+    let f: func(T): T = (v: T) => apply<T>(v);
+    return f(x);
+}
+
+func main(): i32 {
+    let n: i32 = outer<i32>(3);
+    return i32(len(outer<String>(stringOf("abc")))) + (n - 3);
+}
+"#;
+    let scratch = ScratchDir::new("liftdeterminism");
+    std::fs::write(scratch.path().join("main.clo"), source).expect("write the program");
+    let first = emit_relative(&scratch, "liftdeterminism", "first.c");
+    let second = emit_relative(&scratch, "liftdeterminism", "second.c");
+    assert_contains("liftdeterminism", &first, "cl_lambda_0__i32");
+    assert_contains("liftdeterminism", &first, "cl_lambda_0__String");
+    assert_eq!(
+        first, second,
+        "liftdeterminism: the same program emitted two different translations"
+    );
+}
+
+/// A specialized lifted lambda returning a fixed array must use the hidden
+/// destination.
+///
+/// Under `T = i32[3]` the lifted function returns by value through the trailing
+/// out-parameter; the body must write it, so the program builds under `-Werror`
+/// and reads the first element back.
+#[test]
+fn should_return_the_array_when_a_fixed_array_instance_specializes_a_lambda() {
+    let source = r#"module impl.rdc.arrayreturn;
+
+func outer<T>(x: T): T {
+    let f: func(T): T = (v: T) => v;
+    return f(x);
+}
+
+func main(): i32 {
+    let a: i32[3] = [1, 2, 3];
+    let b: i32[3] = outer<i32[3]>(a);
+    return b[0] - 1;
+}
+"#;
+    let output = run_host("arrayreturn", source);
+    assert_exit("arrayreturn", &output, 0);
+}
+
+/// A capture that only lives in the environment still needs specialization.
+///
+/// `x` is captured but never read, so the type parameter appears only in the
+/// environment field. The lifted function and its `ClEnv_0__String` struct must
+/// still be specialized, and the program must build and run.
+#[test]
+fn should_specialize_when_a_capture_is_only_in_the_environment() {
+    let source = r#"module impl.rdc.unusedcapture;
+
+import { String, stringOf } from std.text;
+
+func outer<T>(x: T): i32 {
+    return ([x] () => 3)();
+}
+
+func main(): i32 {
+    return outer<String>(stringOf("abc"));
+}
+"#;
+    let emitted = emit_host("unusedcapture", source);
+    assert_contains("unusedcapture", &emitted, "struct ClEnv_0__String {");
+    assert_absent("unusedcapture", &emitted, "ClT");
+    let output = run_host("unusedcapture-run", source);
+    assert_exit("unusedcapture-run", &output, 3);
+}
+
+/// A nested capture chain must specialize every lifted lambda it reaches.
+///
+/// The outer lambda captures `x` only for its inner lambda; both environments
+/// and both lifted functions must carry the instance key, and the program must
+/// build and run.
+#[test]
+fn should_specialize_when_a_nested_capture_mentions_the_parameter() {
+    let source = r#"module impl.rdc.nestedcapture;
+
+import { String, stringOf } from std.text;
+
+func outer<T>(x: T): i32 {
+    return ([x] () => ([x] () => 3)())();
+}
+
+func main(): i32 {
+    return outer<String>(stringOf("abc"));
+}
+"#;
+    let emitted = emit_host("nestedcapture", source);
+    assert_contains("nestedcapture", &emitted, "struct ClEnv_0__String {");
+    assert_contains("nestedcapture", &emitted, "struct ClEnv_1__String {");
+    assert_absent("nestedcapture", &emitted, "ClT");
+    let output = run_host("nestedcapture-run", source);
+    assert_exit("nestedcapture-run", &output, 3);
+}
+
+/// A receiver call that names the parameter must specialize the lambda.
+///
+/// The lambda's only use of `T` is the receiver call `pick<T>()`; the lifted
+/// body must carry the enclosing substitution, so the emitted C calls
+/// `cl_pick__i32` and builds.
+#[test]
+fn should_specialize_when_a_receiver_call_mentions_the_parameter() {
+    let source = r#"module impl.rdc.receiver;
+
+func double(x: i32): i32 {
+    return x * 2;
+}
+
+func pick<T>(): func(i32): i32 {
+    return double;
+}
+
+func outer<T>(x: T): i32 {
+    let f = () => {
+        pick<T>()(2);
+        return 4;
+    };
+    return f();
+}
+
+func main(): i32 {
+    return outer<i32>(0);
+}
+"#;
+    let emitted = emit_host("receiver", source);
+    assert_contains("receiver", &emitted, "cl_pick__i32()");
+    assert_absent("receiver", &emitted, "cl_pick__T");
+    let output = run_host("receiver-run", source);
+    assert_exit("receiver-run", &output, 4);
 }

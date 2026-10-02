@@ -1,7 +1,8 @@
 # Ambiguity Register: Residual Defect Completion
 
-> **Status**: ✅ GATE PASSED — all 10 items resolved
-> **Last Updated**: 2026-10-02 08:34
+> **Status**: ✅ GATE PASSED — all 12 items resolved
+> **Last Updated**: 2026-10-02 22:53
+> **Execution additions**: AR-11 and AR-12 (runtime), recorded during Phase 2 execution.
 
 ## Ambiguity Register
 
@@ -17,6 +18,8 @@
 | 8 | Technical (complexity escalation) | DEF-51: on-demand per-type drop helper versus a targeted statement hoist in `emit_guards` | Helper facility / generic runtime helper with thunks / guard restructure / targeted statement hoist | Smaller solution: targeted statement hoist (larger machinery explicitly not approved) | ✅ Resolved |
 | 9 | Behavioral | Phase ordering of the six fixes | Substitution cluster first (DEF-54, DEF-50, DEF-52), release cluster second (DEF-55, DEF-53, DEF-51), then close-out / other orders | The recommended order | ✅ Resolved |
 | 10 | Behavioral | The implementation test that pins the DEF-51 skip is rewritten when the limit is fixed | Rewrite the implementation pin (impl tests track the code; the spec suites never pinned the skip) / keep it | Rewrite it; no specification case pinned the skip | ✅ Resolved |
+| 11 | Technical (runtime) | ST-8's bound `String` result hits a pre-existing bound-lend double free, outside this plan's scope | Inline the result and file the pre-existing defect / inline and note only / expand scope to fix | Inline the result in ST-8; file the pre-existing defect as DEF-56 (roadmap Backlog) | ✅ Resolved |
+| 12 | Technical (runtime) | Phase 2 review: unsubstituted lifted return type (critical), specialization predicate gaps (major), closure-argument specialization hole (major), pre-existing trailing-comma closure call | Fix F1+F2 now and file F3 (+ pre-existing) / fix all three now / fix F1 only | Fix F1 (`return_ty` substitution) and F2 (capture/nested-value predicate) now; file F3 as DEF-57 and the trailing-comma call as DEF-58 (Backlog) | ✅ Resolved |
 
 ### Resolution Notes
 
@@ -79,3 +82,19 @@ DEF-55 before DEF-51's guard hoist.
 (`compiler/tests/call_value_integrity_impl_test.rs:1609-1641`) pinned as a recorded limit. No
 specification suite pinned the skip, so the implementation test is rewritten to pin the fixed
 shape, and the defect's behavior is pinned by new specification cases in this plan's suite.
+
+**AR-11 (runtime):** While pinning the two-instance case, binding the `outer<String>` result to an
+owning local (`let s: String = outer<String>(stringOf("abc"))`) double-freed: the callee returns an
+alias of the caller's owned temporary while the binding takes ownership, so both release it. The
+shape reproduces on `efbf55f` with `outer<T>(x: T): T { return apply<T>(x); }` and no lambdas, so it
+is a pre-existing defect outside this plan's strict scope. The user ruled: keep the ST-8 behavior
+(both instances build, exit `3`) with the String result measured in place, and file the
+pre-existing defect as roadmap DEF-56 (Backlog). No scope expansion.
+
+**AR-12 (runtime):** The Phase 2 review found three issues in the new specialization machinery: a
+critical unsubstituted `return_ty` in `emit_lifted_function` (F1), a specialization predicate that
+missed lambda captures and nested value positions (F2, major), and a callable-bound closure
+argument whose instance parameter type did not carry the closure's specialization (F3, major). A
+pre-existing zero-argument closure call with a trailing comma was also reproduced. The user ruled:
+fix F1 and F2 now, with compile-and-run pins; file F3 as roadmap DEF-57 and the trailing-comma
+call as roadmap DEF-58 (Backlog). No scope expansion; one scoped re-review of the fix diff.

@@ -126,6 +126,12 @@ pub struct ClosureTy {
     pub params: Vec<Ty>,
     /// Return type.
     pub returns: Box<Ty>,
+    /// The enclosing instance this closure was specialized for, when its
+    /// generic enclosing body was emitted for a concrete instance.
+    ///
+    /// The emitter appends this key to the callable and environment names, so
+    /// two specializations of one site never share a C type.
+    pub instance: Option<String>,
 }
 
 /// How a lambda captures one enclosing binding.
@@ -495,6 +501,7 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
                     .map(|param| substitute(param, bindings))
                     .collect(),
                 returns: Box::new(substitute(&closure.returns, bindings)),
+                instance: closure.instance.clone(),
             }),
             nullable: ty.nullable,
         },

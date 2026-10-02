@@ -570,13 +570,27 @@ impl<'a> Emitter<'a> {
     /// A capture-less lambda is a plain C function pointer, so it is the lifted
     /// function's name. A capturing lambda is a two-word struct holding the
     /// function pointer and the address of a stack environment built inline; the
-    /// environment is valid for the synchronous call that receives it.
+    /// environment is valid for the synchronous call that receives it. A lambda
+    /// in a generic body names the active instance's specialization.
     fn closure_value(&self, site: usize, captures: &[Value]) -> String {
+        let suffix = self.closure_instance_suffix(site);
         if captures.is_empty() {
-            return format!("cl_lambda_{site}");
+            return format!("cl_lambda_{site}{suffix}");
         }
         let environment = self.environment_literal(site, captures);
-        format!("((ClClosure_{site}){{ cl_lambda_{site}, &({environment}) }})")
+        format!("((ClClosure_{site}{suffix}){{ cl_lambda_{site}{suffix}, &({environment}) }})")
+    }
+
+    /// The instance suffix of a lifted lambda's C names.
+    ///
+    /// A lambda in a generic body that the active enclosing instance
+    /// specializes carries the instance key; a shared lifted function, or a
+    /// closure rendered outside any instance body, keeps the site-only names.
+    fn closure_instance_suffix(&self, site: usize) -> String {
+        match &self.instance_key {
+            Some(key) if self.has_lifted_specialization(site, key) => format!("__{key}"),
+            _ => String::new(),
+        }
     }
 
     /// Renders a call of a value that is an ephemeral closure.
@@ -607,14 +621,15 @@ impl<'a> Emitter<'a> {
         }
         let argument_list = rendered.join(", ");
         if let ValueKind::Closure { site, captures } = &callable.kind {
+            let suffix = self.closure_instance_suffix(*site);
             if captures.is_empty() {
-                return format!("cl_lambda_{site}({argument_list})");
+                return format!("cl_lambda_{site}{suffix}({argument_list})");
             }
             let environment = self.environment_literal(*site, captures);
             return if argument_list.is_empty() {
-                format!("cl_lambda_{site}(&({environment}))")
+                format!("cl_lambda_{site}{suffix}(&({environment}))")
             } else {
-                format!("cl_lambda_{site}(&({environment}), {argument_list})")
+                format!("cl_lambda_{site}{suffix}(&({environment}), {argument_list})")
             };
         }
         let callable_c = self.value(callable);
@@ -628,7 +643,8 @@ impl<'a> Emitter<'a> {
     /// Renders an environment struct literal holding one capture per field.
     fn environment_literal(&self, site: usize, captures: &[Value]) -> String {
         let fields: Vec<String> = captures.iter().map(|capture| self.value(capture)).collect();
-        format!("((struct ClEnv_{site}){{ {} }})", fields.join(", "))
+        let suffix = self.closure_instance_suffix(site);
+        format!("((struct ClEnv_{site}{suffix}){{ {} }})", fields.join(", "))
     }
 
     /// Renders a call to the compiler-known `text` conversion.
