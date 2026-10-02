@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-02 22:41
-> **Progress**: 15/34 tasks (44%)
+> **Last Updated**: 2026-10-02 23:21
+> **Progress**: 22/34 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -177,8 +177,7 @@ emit one specialization per needed instance.
 
 ## Phase 3: Call-result ownership (DEF-53, DEF-55)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: 53cad897f6a26abacf335fcb8035a992146cd28b
 > **Lenses**: compiler-and-language (strict profile)
 
 ### Step 3.1: Specification Tests
@@ -187,9 +186,15 @@ emit one specialization per needed instance.
 **Objective**: Pin the `return`, `let`, and take-argument field projections, the maybe-owning
 element take, and the concrete `E10026` compatibility case.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-10 – ST-14 — `compiler/tests/residual_defect_completion_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (LSan leaks on ST-10 – ST-12; the ASan
-  double free on ST-13; ST-14 passes pre-implementation as a compatibility pin)
+- [x] 3.1.1 [spec-author] Write specification tests from ST-10 – ST-14 — `compiler/tests/residual_defect_completion_spec_test.rs` ✅ (completed: 2026-10-02 23:02)
+- [x] 3.1.2 Run the spec suite and record the red phase (LSan leaks on ST-10 – ST-12; the ASan
+  double free on ST-13; ST-14 passes pre-implementation as a compatibility pin) ✅ (completed: 2026-10-02 23:02)
+
+> **Red phase (3.1.2)**: ST-13 fails with `free(): double free detected` for the ownerless element
+> take. ST-10 – ST-12 compute the right value pre-fix and pass, because their defect is a leak
+> that the plain host harness cannot see; those are recorded as value pins, and the leak is pinned
+> by this plan's sanitizer implementation tests and the close-out probes. ST-14 reports `E10026`
+> as required.
 
 ### Step 3.2: Implementation
 
@@ -197,22 +202,37 @@ element take, and the concrete `E10026` compatibility case.
 **Objective**: Bind the ownerless call result before an owning projection read and before the
 maybe-owning element take.
 
-- [ ] 3.2.1 Bind field/element projection reads of ownerless call results — `compiler/src/own/lower.rs`
-- [ ] 3.2.2 Bind the maybe-owning element take in lowering and emit the element move-out, keeping
-  the checker suppression and the concrete `E10026` rejection — `compiler/src/own/lower.rs`
-- [ ] 3.2.3 Run the spec suite and record the green phase
+- [x] 3.2.1 Bind field/element projection reads of ownerless call results — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-02 23:09)
+- [x] 3.2.2 Bind the maybe-owning element take in lowering and emit the element move-out, keeping
+  the checker suppression and the concrete `E10026` rejection — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-02 23:09)
+- [x] 3.2.3 Run the spec suite and record the green phase ✅ (completed: 2026-10-02 23:09)
+
+> **Green phase (3.2.3)**: all 14 specification cases pass, and `make check` is green across the
+> workspace. One regression surfaced and was fixed during the phase: the projection binding had
+> to stay confined to field/element reads so a whole fixed-array call assignment keeps its
+> hidden-destination shape (`array_value_integrity_impl_test`).
 
 ### Step 3.3: Implementation Tests & Hardening
 
-- [ ] 3.3.1 Write implementation tests: emitted binding shape, single-release counts, sanitizer
-  runs for the leak and double-free cases, `E10026` unchanged — `compiler/tests/residual_defect_completion_impl_test.rs`
-- [ ] 3.3.2 Full verification (`make check`)
+- [x] 3.3.1 Write implementation tests: emitted binding shape, single-release counts, sanitizer
+  runs for the leak and double-free cases, `E10026` unchanged — `compiler/tests/residual_defect_completion_impl_test.rs` ✅ (completed: 2026-10-02 23:20)
+- [x] 3.3.2 Full verification (`make check`) ✅ (completed: 2026-10-02 23:21)
 
 **Deliverables**:
-- [ ] `return mkv().a`, `let s = mkv().a`, and `sink(mkv().a)` are sanitizer-clean
-- [ ] `sink<T>(mk()[i])` under an owning substitution is AddressSanitizer-clean
-- [ ] The concrete element take keeps `E10026`
-- [ ] All verification passing
+- [x] `return mkv().a`, `let s = mkv().a`, and `sink(mkv().a)` are sanitizer-clean
+- [x] `sink<T>(mk()[i])` under an owning substitution is AddressSanitizer-clean
+- [x] The concrete element take keeps `E10026`
+- [x] All verification passing
+
+> **Post-phase review (Phase 3)**: correctness and semantics reviews found: one 🟠 MAJOR
+> introduced by this phase (the new take-root binding ignored `defer_move_outs`, so a projected
+> take inside `&&`/`||`/`?:` hoisted the root call out of its guard), one 🟠 MAJOR harness issue
+> (the new in-test sanitizer runs are nondeterministic in the pinned container), and one
+> pre-existing 🔴 CRITICAL (an ownerless element read under a maybe-owning substitution uses
+> freed memory; not worsened by this phase). The user ruled: gate the take-root binding on
+> `defer_move_outs == 0` and file the guarded take as DEF-60; run sanitizers opt-in behind
+> `RDC_ASAN` with plain-run pins; file the element read as DEF-59 (runtime AR-13). A guard pin was
+> added, `make check` is deterministic green, and the scoped re-review reports no findings.
 
 **Verify**: `make check`
 

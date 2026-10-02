@@ -280,7 +280,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A type that may own at an instantiation stores as a move too: the
         // emitted move checks the substituted source type and falls back to a
         // plain copy when the instance is duplicable.
-        if !self.sema.table.duplicable(ty) || self.maybe_owns(ty) {
+        let owning = !self.sema.table.duplicable(ty) || self.maybe_owns(ty);
+        if owning {
             if let Some(source) = self.place_target(value) {
                 return PreparedStore::Move {
                     source: self.target_place(&source),
@@ -298,9 +299,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.report_element_move_limit(value.span);
             }
         }
-        PreparedStore::Assign {
-            value: self.lower_value(value),
+        let lowered = self.lower_value(value);
+        // A consumed projection of a fresh call result has no place to move out
+        // of, so its root is bound to an owned temporary and the store becomes
+        // the ordinary move that empties the selected field. A whole call result
+        // keeps its own destination handling.
+        if owning
+            && matches!(
+                lowered.kind,
+                ValueKind::Member { .. } | ValueKind::Index { .. }
+            )
+            && !self.projects_from_place(&lowered)
+        {
+            let rebound = self.bind_ownerless_projection_root(lowered);
+            if let Some(source) = self.value_place(&rebound) {
+                return PreparedStore::Move { source };
+            }
+            return PreparedStore::Assign { value: rebound };
         }
+        PreparedStore::Assign { value: lowered }
     }
 
     /// Emits a store prepared by [`Self::prepare_store`].
@@ -877,6 +894,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             let lowered = self.lower_value(value);
+            // A consumed projection of a fresh call result is bound and
+            // re-rooted, so the return emission empties the selected field and
+            // the temporary releases only the remaining fields. A whole call
+            // result keeps its own destination handling.
+            let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
+                && !is_view(&returns)
+                && matches!(
+                    lowered.kind,
+                    ValueKind::Member { .. } | ValueKind::Index { .. }
+                )
+                && !self.projects_from_place(&lowered)
+            {
+                self.bind_ownerless_projection_root(lowered)
+            } else {
+                lowered
+            };
             // A view derived from a statement temporary cannot leave the
             // function: the caller's use lies after the temporary's release.
             // The loans are created at the return, the releases follow, and

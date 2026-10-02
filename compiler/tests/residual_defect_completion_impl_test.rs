@@ -170,9 +170,21 @@ fn run_host(tag: &str, source: &str) -> Output {
         "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
         String::from_utf8_lossy(&built.stderr)
     );
-    let mut child = Command::new(&program)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+    run_with_timeout(tag, &program, &[])
+}
+
+/// Runs a built program with a time limit and the given environment values.
+///
+/// A program that is still running when the limit passes is killed and the case
+/// fails, so a regression that loops forever surfaces as one failing case
+/// instead of a frozen suite.
+fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(program);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let mut child = command
         .spawn()
         .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
     let deadline = Instant::now() + RUN_TIMEOUT;
@@ -193,6 +205,100 @@ fn run_host(tag: &str, source: &str) -> Output {
     child
         .wait_with_output()
         .unwrap_or_else(|err| panic!("{tag}: cannot collect the program output: {err}"))
+}
+
+/// Emits a program, builds it with AddressSanitizer, and runs it with leak
+/// detection on, returning its output.
+///
+/// A leaked allocation fails the run and a double free aborts, so a clean exit
+/// pins release-once for the case.
+fn run_asan(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let emitted = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        emitted.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&emitted.stderr)
+    );
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-fsanitize=address",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the sanitizer build failed; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    run_with_timeout(
+        tag,
+        &program,
+        &[("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")],
+    )
+}
+
+/// Runs a memory-safety case: under AddressSanitizer when `RDC_ASAN` is set,
+/// otherwise as an ordinary strict host build.
+///
+/// The pinned container's sanitizer runtime randomly fails to start, so the
+/// sanitizer run is opt-in; the plain build still aborts in the C library on a
+/// double release and pins the program's exit code, and the recorded
+/// leak-clean probes run on the host at close-out.
+fn run_memory(tag: &str, source: &str) -> Output {
+    if std::env::var_os("RDC_ASAN").is_some() {
+        run_asan(tag, source)
+    } else {
+        run_host(tag, source)
+    }
+}
+
+/// Asserts the front end rejects the program with `code` and writes no C.
+fn assert_rejected(tag: &str, source: &str, code: &str) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("error {code}:")),
+        "{tag}: expected {code}; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
 }
 
 /// Asserts the program exited with exactly `expected`, reporting its stderr.
@@ -561,4 +667,200 @@ func main(): i32 {
     assert_absent("receiver", &emitted, "cl_pick__T");
     let output = run_host("receiver-run", source);
     assert_exit("receiver-run", &output, 4);
+}
+
+/// A returned projection must be moved out of the bound call result.
+///
+/// The emitted C binds `mkv()` to `__cl_owned0`, reads `.a` into the return
+/// register, and empties the field, so the scope release frees only `b`.
+#[test]
+fn should_bind_and_move_when_a_returned_projection_is_taken() {
+    let source = r#"module impl.rdc.returnproj;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("x"), b: stringOf("yz") };
+}
+
+func takea(): String {
+    return mkv().a;
+}
+
+func main(): i32 {
+    let s: String = takea();
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("returnproj", source);
+    assert_contains("returnproj", &emitted, "__cl_owned0 = cl_impl_rdc_returnproj_mkv();");
+    assert_contains("returnproj", &emitted, "__cl_ret = __cl_owned0.a;");
+    assert_contains("returnproj", &emitted, "__cl_owned0.a = NULL;");
+    let output = run_memory("returnproj-run", source);
+    assert_exit("returnproj-run", &output, 1);
+}
+
+/// A bound projection must be moved out of the call-result temporary.
+///
+/// `let s: String = mkv().a` binds `mkv()` to `__cl_owned0`, moves `.a` into
+/// `s`, and empties the field; the sanitizer run proves `b` is released once and
+/// `a` is not double-freed.
+#[test]
+fn should_bind_and_move_when_a_projection_is_bound() {
+    let source = r#"module impl.rdc.boundproj;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("x"), b: stringOf("yz") };
+}
+
+func main(): i32 {
+    let s: String = mkv().a;
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("boundproj", source);
+    assert_contains("boundproj", &emitted, "s = __cl_owned0.a;");
+    assert_contains("boundproj", &emitted, "__cl_owned0.a = NULL;");
+    let output = run_memory("boundproj-run", source);
+    assert_exit("boundproj-run", &output, 1);
+}
+
+/// A projected `take` argument must be moved out of the bound temporary.
+///
+/// The call receives `__cl_owned0.a` and the caller empties that field after
+/// the call, so the temporary releases only `b`.
+#[test]
+fn should_bind_and_move_when_a_projection_is_passed_to_take() {
+    let source = r#"module impl.rdc.takeproj;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("x"), b: stringOf("yz") };
+}
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return sink(mkv().a);
+}
+"#;
+    let emitted = emit_host("takeproj", source);
+    assert_contains("takeproj", &emitted, "_sink(__cl_owned0.a)");
+    assert_contains("takeproj", &emitted, "__cl_owned0.a = NULL;");
+    let output = run_memory("takeproj-run", source);
+    assert_exit("takeproj-run", &output, 1);
+}
+
+/// An ownerless element take must empty the taken element exactly once.
+///
+/// The lifted call receives `__cl_tmp0[i]` and the caller empties that element
+/// after the call; the temporary then releases only the other element, so the
+/// sanitizer run is clean.
+#[test]
+fn should_move_the_element_once_when_an_ownerless_take_is_substituted() {
+    let source = r#"module impl.rdc.elementtake;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take s: T): i32 {
+    return 0;
+}
+
+func at<T>(mk: func(): T[2], i: i32): i32 {
+    return sink<T>(mk()[i]);
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return at<String>(mkString, 0);
+}
+"#;
+    let emitted = emit_host("elementtake", source);
+    assert_contains("elementtake", &emitted, "_sink__String(__cl_tmp0[i])");
+    assert_contains("elementtake", &emitted, "__cl_tmp0[0] = NULL;");
+    let output = run_memory("elementtake-run", source);
+    assert_exit("elementtake-run", &output, 0);
+}
+
+/// A concrete ownerless element take must keep its rejection.
+///
+/// Without a substitution there is no caller place to empty, so the front end
+/// still reports `E10026` and writes no translation unit.
+#[test]
+fn should_reject_when_a_concrete_ownerless_element_is_taken() {
+    let source = r#"module impl.rdc.elementreject;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return 0;
+}
+
+func mkv(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return sink(mkv()[0]);
+}
+"#;
+    assert_rejected("elementreject", source, "E10026");
+}
+
+/// A guarded ownerless take must stay inline inside its guard.
+///
+/// The root call runs only when the guard evaluates the operand, so no binding
+/// may be hoisted out of the `&&`; the projection binding applies only to an
+/// unconditionally evaluated take.
+#[test]
+fn should_keep_a_guarded_ownerless_take_inline() {
+    let source = r#"module impl.rdc.guardt;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("x"), b: stringOf("yz") };
+}
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let flag: bool = false;
+    let hit: bool = flag && sink(mkv().a) == 1;
+    return hit ? 1 : 0;
+}
+"#;
+    let emitted = emit_host("guardt", source);
+    assert_contains("guardt", &emitted, "_sink(cl_impl_rdc_guardt_mkv().a)");
+    assert_absent("guardt", &emitted, "__cl_owned0 = ");
 }

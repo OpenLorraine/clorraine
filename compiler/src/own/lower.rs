@@ -771,6 +771,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn value_place(&self, value: &Value) -> Option<Place> {
         match &value.kind {
             ValueKind::Place(place) => Some(place.clone()),
+            // A compiler temporary is storage the current statement owns, so a
+            // projected read of it names the same object a move-out empties.
+            ValueKind::Temp(id) => Some(Place {
+                base: ir::PlaceBase::Temp(*id),
+                projections: Vec::new(),
+                ty: value.ty.clone(),
+            }),
+            ValueKind::Materialize { temp, .. } => Some(Place {
+                base: ir::PlaceBase::Temp(*temp),
+                projections: Vec::new(),
+                ty: value.ty.clone(),
+            }),
             ValueKind::Member { base, name } => {
                 let mut place = self.value_place(base)?;
                 place.projections.push(ir::Projection::Field(name.clone()));
@@ -848,7 +860,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// it. An ownerless temporary that is not a destination (a transfer
     /// temporary) is not covered: its value travels to a binding that owns it,
     /// so a projection still needs that binding.
-    fn projects_from_place(&self, value: &Value) -> bool {
+    pub(super) fn projects_from_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Place(_) => true,
             ValueKind::Materialize { .. } => true,
@@ -1113,6 +1125,53 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.materialize_value(value)
     }
 
+    /// Binds a consumed projection's ownerless call root to an owned temporary.
+    ///
+    /// A field or element read of a fresh call result names no storage that
+    /// outlives the statement, so consuming it (a return, an owned binding, or a
+    /// `take` argument) would copy the selected part while the result's other
+    /// fields are never released. The root call is bound to an owned local and
+    /// the projection is re-rooted at that local, so the ordinary move and
+    /// return emission empties the selected field and the local's scope release
+    /// drops only the remaining fields. A chain that already roots in storage,
+    /// or a root that owns nothing, is returned unchanged.
+    pub(super) fn bind_ownerless_projection_root(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.bind_ownerless_projection_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.bind_ownerless_projection_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            // The root of the chain: a fresh call result owns its storage only
+            // until the statement ends, so it is bound to a scope local. A
+            // result that owns nothing to release is left inline.
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                    self.materialize_owned_argument(value, false)
+                } else {
+                    value
+                }
+            }
+            _ => value,
+        }
+    }
+
     /// Binds an unnamed owned call result so the scope cleanup can release it.
     ///
     /// A call result the callee only borrows is owned by the caller, but an
@@ -1133,6 +1192,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
         if take {
+            // A `take` argument that reads a projection of a fresh call result
+            // has no caller storage to empty: the root is bound to an owned
+            // temporary and the projection re-roots there, so the ordinary
+            // move-out after the call empties the selected part and the
+            // temporary releases the remaining fields. A conditionally
+            // evaluated operand is left inline: the root call must run only on
+            // the path that evaluates the operand.
+            let value = if self.defer_move_outs == 0
+                && !self.projects_from_place(&value)
+                && matches!(
+                    value.kind,
+                    ValueKind::Member { .. } | ValueKind::Index { .. }
+                )
+                && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
+                && !is_view(&value.ty)
+                && !value.ty.is_unknown()
+            {
+                self.bind_ownerless_projection_root(value)
+            } else {
+                value
+            };
             // A `take` argument must reach the callee with a C place. A value
             // that has none — a fixed-array literal, a by-value fixed-array
             // call, or a struct literal whose field is a fixed array — is

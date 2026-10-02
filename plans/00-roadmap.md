@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-02 22:50
+> **Last Updated**: 2026-10-03 00:55
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -75,6 +75,8 @@
 | ↳ DEF-56 | A generic lend returned by value and bound to an owning local double-frees | — | — | Backlog | ⬜ | 2026-10-02 22:35 | 🔴 critical, pre-existing, found during the residual-defect-completion Phase 2 execution: `let s: String = outer<String>(stringOf("abc"))` with `outer<T>(x: T): T { return apply<T>(x); }` releases the same string twice (ASan `attempting double-free`); the callee returns an alias of the caller's owned temporary while the caller's binding takes ownership, so both release it. Reproduced on `efbf55f` with no lambdas. Needs a ruling: move the lend on return, or reject binding it as owned |
 | ↳ DEF-57 | A specialized capturing closure passed to a callable-bound generic parameter spells a site-only callable type | — | — | Backlog | ⬜ | 2026-10-02 22:50 | 🟠 major, found in the residual-defect-completion Phase 2 review: recording `apply<T, F: func(T): T>` with an inferred closure argument keeps `ClosureTy.instance` unset, so the callee's parameter spells `ClClosure_<id>` while the call-site value spells `ClClosure_<id>__<key>` and the C build fails. Needs the closure's enclosing instance carried through the instance argument (with its symbol key) or an explicit rejection |
 | ↳ DEF-58 | A zero-argument call through a closure-typed value emits a trailing comma | — | — | Backlog | ⬜ | 2026-10-02 22:50 | 🟡 minor, pre-existing, found in the residual-defect-completion Phase 2 review: `((f).fn((f).env, ))` is invalid C; reproduced without generics (`consume([x] () => x)`); the call renderer should omit the separator when the argument list is empty |
+| ↳ DEF-59 | An ownerless element read under a maybe-owning substitution uses freed memory | — | — | Backlog | ⬜ | 2026-10-03 00:55 | 🔴 critical, pre-existing, found in the residual-defect-completion Phase 3 review: `first<T>(mk: func(): T[2]): T { return mk()[0]; }` and the `let s: T = mk()[0];` store form, instantiated `String`, read `__cl_tmp0[0]` after the statement temporary released it (host ASan heap-use-after-free). The store/return projection binding skips it because the materialized destination temp counts as storage, and no element move-out runs before the temp release; mirror the take path's element move-out on the store/return path |
+| ↳ DEF-60 | A guarded ownerless take under a maybe-owning substitution keeps the pre-existing double free | — | — | Backlog | ⬜ | 2026-10-03 00:55 | 🟠 major, pre-existing, found in the residual-defect-completion Phase 3 review: the take-root binding is skipped inside a conditionally evaluated operand (`flag && sink<T>(mk()[i])`) so the call stays inline and short-circuit-correct, but on its evaluated path the ownerless element is still released by both the callee and the temporary; the complete fix defers the root binding through the guard machinery |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

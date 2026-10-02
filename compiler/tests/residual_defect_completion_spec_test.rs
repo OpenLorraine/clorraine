@@ -171,6 +171,42 @@ fn assert_exit(tag: &str, output: &Output, expected: i32) {
     );
 }
 
+/// Compiles `source` and returns the scratch directory, output, and C path.
+fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    (scratch, output, c_path)
+}
+
+/// Asserts the front end rejects the program with `code` and writes no C.
+fn assert_rejected(tag: &str, source: &str, code: &str) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("error {code}:")),
+        "{tag}: expected {code}; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 /// Two distinct fixed-array type arguments must get distinct C structs.
 ///
 /// `Grid<i32[2]>` and `Grid<i32[3]>` are different types; the emitted C must
@@ -451,4 +487,151 @@ func main(): i32 {
 "#;
     let output = run_host("rdc09", source);
     assert_exit("rdc09", &output, 3);
+}
+
+/// A returned projection of a fresh call result must release the sibling.
+///
+/// `takea` returns `mkv().a`; the other field `b` must be released once, the
+/// returned `"x"` kept, and a double release would abort before the exit.
+#[test]
+fn should_release_the_sibling_when_a_returned_projection_is_taken() {
+    let source = r#"module spec.rdc.st10;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("x"), b: stringOf("yz") };
+}
+
+func takea(): String {
+    return mkv().a;
+}
+
+func main(): i32 {
+    let s: String = takea();
+    return i32(len(s));
+}
+"#;
+    let output = run_host("rdc10", source);
+    assert_exit("rdc10", &output, 1);
+}
+
+/// A projection bound to a local must release the call result's siblings.
+///
+/// `let s: String = mkv().a` moves `a` into `s` and releases `b`; the exit code
+/// is `"x"`'s length.
+#[test]
+fn should_release_the_sibling_when_a_projection_is_bound() {
+    let source = r#"module spec.rdc.st11;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("x"), b: stringOf("yz") };
+}
+
+func main(): i32 {
+    let s: String = mkv().a;
+    return i32(len(s));
+}
+"#;
+    let output = run_host("rdc11", source);
+    assert_exit("rdc11", &output, 1);
+}
+
+/// A projection passed to a `take` parameter must release the sibling.
+///
+/// `sink(mkv().a)` hands `a` to the callee and releases `b` with the
+/// temporary; the callee returns the received length, so the exit code is `1`.
+#[test]
+fn should_release_the_sibling_when_a_projection_is_passed_to_take() {
+    let source = r#"module spec.rdc.st12;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("x"), b: stringOf("yz") };
+}
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return sink(mkv().a);
+}
+"#;
+    let output = run_host("rdc12", source);
+    assert_exit("rdc12", &output, 1);
+}
+
+/// An ownerless element take under an owning substitution must free once.
+///
+/// `at<String>` takes element zero of `mk()`'s fresh array; the callee owns the
+/// element and the temporary releases the remaining element, so the exit code
+/// is the callee's constant and a double free would abort.
+#[test]
+fn should_release_the_element_once_when_an_ownerless_take_is_substituted() {
+    let source = r#"module spec.rdc.st13;
+
+import { String, stringOf } from std.text;
+
+func sink<T>(take s: T): i32 {
+    return 0;
+}
+
+func at<T>(mk: func(): T[2], i: i32): i32 {
+    return sink<T>(mk()[i]);
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return at<String>(mkString, 0);
+}
+"#;
+    let output = run_host("rdc13", source);
+    assert_exit("rdc13", &output, 0);
+}
+
+/// A concrete ownerless element take keeps its rejection.
+///
+/// Without a generic substitution the element take has no place to mark, so the
+/// front end still reports `E10026` and writes no translation unit.
+#[test]
+fn should_reject_when_a_concrete_ownerless_element_is_taken() {
+    let source = r#"module spec.rdc.st14;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return 0;
+}
+
+func mkv(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return sink(mkv()[0]);
+}
+"#;
+    assert_rejected("rdc14", source, "E10026");
 }
