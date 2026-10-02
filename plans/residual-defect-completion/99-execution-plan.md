@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-02 23:21
-> **Progress**: 22/34 tasks (65%)
+> **Last Updated**: 2026-10-03 01:05
+> **Progress**: 29/34 tasks (85%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -240,8 +240,7 @@ maybe-owning element take.
 
 ## Phase 4: Guarded drop hoist (DEF-51)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: ed277e31e04c86276466dc49d7691512c2d3c1cb
 > **Lenses**: compiler-and-language (strict profile)
 
 ### Step 4.1: Specification Tests
@@ -250,9 +249,17 @@ maybe-owning element take.
 **Objective**: Pin the `while`, `do`, and `for` guarded shapes, the struct-containing form, and
 the expression-form regression shape.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from ST-15 – ST-18 — `compiler/tests/residual_defect_completion_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and record the red phase (ST-15 – ST-17 LSan leaks; ST-18 passes
-  pre-implementation as a regression pin)
+- [x] 4.1.1 [spec-author] Write specification tests from ST-15 – ST-18 — `compiler/tests/residual_defect_completion_spec_test.rs` ✅ (completed: 2026-10-03 01:01)
+- [x] 4.1.2 Run the spec suite and record the red phase (ST-15 – ST-17 LSan leaks; ST-18 passes
+  pre-implementation as a regression pin) ✅ (completed: 2026-10-03 01:01)
+
+> **Red phase (4.1.2)**: all 19 specification cases pass against the plain harness, because
+> DEF-51 is leak-only: the guarded values are computed correctly and the missing drop is
+> invisible without a sanitizer. The defect is recorded with host AddressSanitizer probes of the
+> ST-15 and ST-17 programs: exit `1` with `70 byte(s) leaked in 6 allocation(s)` and
+> `35 byte(s) leaked in 3 allocation(s)` respectively, while ST-18 (`Array<i32>`, no drop-needing
+> element) is clean. The implementation pin in the call-value-integrity suite that recorded the
+> skipped drop is rewritten in 4.2.2 (AR-10).
 
 ### Step 4.2: Implementation
 
@@ -260,21 +267,33 @@ the expression-form regression shape.
 **Objective**: Hoist the statement-form drop for guard operands whose type has no expression-form
 drop.
 
-- [ ] 4.2.1 Add the conditional-subtree walk and the statement-form drop hoist in `emit_guards` — `compiler/src/codegen/guards.rs`
-- [ ] 4.2.2 Rewrite the implementation test that pinned the old skip to the fixed shape — `compiler/tests/call_value_integrity_impl_test.rs` (AR-10)
-- [ ] 4.2.3 Run the spec suite and record the green phase
+- [x] 4.2.1 Add the conditional-subtree walk and the statement-form drop hoist in `emit_guards` — `compiler/src/codegen/guards.rs` ✅ (completed: 2026-10-03 01:01)
+- [x] 4.2.2 Rewrite the implementation test that pinned the old skip to the fixed shape — `compiler/tests/call_value_integrity_impl_test.rs` (AR-10) ✅ (completed: 2026-10-03 01:01)
+- [x] 4.2.3 Run the spec suite and record the green phase ✅ (completed: 2026-10-03 01:01)
+
+> **Green phase (4.2.3)**: all 19 specification cases pass, the rewritten call-value pin passes
+> (61/61), and the host ASan probes of ST-15 and ST-17 exit `2` with no leaks (`detect_leaks=1`);
+> ST-18 stays clean with its expression-form drop.
 
 ### Step 4.3: Implementation Tests & Hardening
 
-- [ ] 4.3.1 Write implementation tests: statement-form drop before the re-store, expression-form
-  shapes unchanged, LeakSanitizer-clean runs, byte-identical re-emission — `compiler/tests/residual_defect_completion_impl_test.rs`
-- [ ] 4.3.2 Full verification (`make check`)
+- [x] 4.3.1 Write implementation tests: statement-form drop before the re-store, expression-form
+  shapes unchanged, LeakSanitizer-clean runs, byte-identical re-emission — `compiler/tests/residual_defect_completion_impl_test.rs` ✅ (completed: 2026-10-03 01:03)
+- [x] 4.3.2 Full verification (`make check`) ✅ (completed: 2026-10-03 01:05)
 
 **Deliverables**:
-- [ ] A guarded operand of a drop-needing growable type releases its previous value on every
+- [x] A guarded operand of a drop-needing growable type releases its previous value on every
   re-store for the `while`, `do`, and `for` spellings and the struct-containing form
-- [ ] Types with expression-form drops keep their emitted shape
-- [ ] All verification passing
+- [x] Types with expression-form drops keep their emitted shape
+- [x] All verification passing
+
+> **Post-phase review (Phase 4)**: the correctness and semantics reviews report no phase findings.
+> The hoist is exactly-once on the probed paths (skipped, skipped-then-evaluated, every
+> iteration), expression-form shapes are unchanged, and generic substitutions resolve. One
+> 🟡 MINOR coverage gap (no `?:`-arm pin) was closed with an additional implementation pin. Two
+> pre-existing defects found while probing were filed as roadmap DEF-61 (a generic body passes a
+> default-lend parameter to a take position without `E10034`) and DEF-62 (a `do ... while` early
+> return leaks the condition temporary), recorded as runtime AR-14.
 
 **Verify**: `make check`
 

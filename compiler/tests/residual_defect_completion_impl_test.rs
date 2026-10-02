@@ -864,3 +864,214 @@ func main(): i32 {
     assert_contains("guardt", &emitted, "_sink(cl_impl_rdc_guardt_mkv().a)");
     assert_absent("guardt", &emitted, "__cl_owned0 = ");
 }
+
+/// A guarded element with no expression drop is released before the re-store.
+///
+/// The hoisted statement-form element loop runs before the guarded store, and
+/// the scope cleanup releases the last value, so the release site appears twice
+/// and the first one precedes the store.
+#[test]
+fn should_hoist_the_statement_drop_when_a_guarded_element_needs_a_drop() {
+    let source = r#"module impl.rdc.hoist;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String>[2] {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    let b: Array<String> = arrayNew<String>();
+    b.push(stringOf("cd"));
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("hoist", source);
+    let release_at = emitted
+        .find("__cl_tmp0[0].count = 0;")
+        .expect("hoist: the element release site is emitted");
+    let store_at = emitted
+        .find("_grow(__cl_tmp0)")
+        .expect("hoist: the guarded store is emitted");
+    assert!(
+        release_at < store_at,
+        "hoist: the previous element must be released before the re-store"
+    );
+    assert!(
+        emitted.matches("__cl_tmp0[0].count = 0;").count() >= 2,
+        "hoist: the hoisted release and the scope cleanup must both run"
+    );
+    let output = run_memory("hoist-run", source);
+    assert_exit("hoist-run", &output, 2);
+}
+
+/// A guarded struct field with no expression drop is released the same way.
+///
+/// The `Bag`'s `Array<String>` field drops through the same element loop, so
+/// the release site must appear before the guarded store.
+#[test]
+fn should_hoist_the_statement_drop_when_a_guarded_struct_field_needs_a_drop() {
+    let source = r#"module impl.rdc.hoistbag;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+struct Bag {
+    items: Array<String>;
+}
+
+func grow(): Bag {
+    let b: Bag = Bag { items: arrayNew<String>() };
+    b.items.push(stringOf("ab"));
+    return b;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow().items.count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("hoistbag", source);
+    let release_at = emitted
+        .find("__cl_tmp0.items.count = 0;")
+        .expect("hoistbag: the field release site is emitted");
+    let store_at = emitted
+        .find("_grow()")
+        .expect("hoistbag: the guarded store is emitted");
+    assert!(
+        release_at < store_at,
+        "hoistbag: the previous field must be released before the re-store"
+    );
+    let output = run_memory("hoistbag-run", source);
+    assert_exit("hoistbag-run", &output, 2);
+}
+
+/// A guarded element that needs no drop keeps its expression-form drop.
+///
+/// `Array<i32>` has an expression-form drop, so the guarded store still carries
+/// it and no statement hoist is emitted.
+#[test]
+fn should_keep_the_expression_drop_when_a_guarded_element_needs_no_drop() {
+    let source = r#"module impl.rdc.noopdrop;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32>[2] {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    let b: Array<i32> = arrayNew<i32>();
+    b.push(2);
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("noopdrop", source);
+    assert_contains(
+        "noopdrop",
+        &emitted,
+        "(__cl_tmp0[0].data ? (FreeBuffer(__cl_tmp0[0].data), __cl_tmp0[0].data = NULL, __cl_tmp0[0].count = 0) : 0)",
+    );
+    assert!(
+        !emitted.contains("__cl_tmp0[0].count = 0;"),
+        "noopdrop: an expression-form drop must not be hoisted"
+    );
+    let output = run_memory("noopdrop-run", source);
+    assert_exit("noopdrop-run", &output, 2);
+}
+
+/// A materialized operand in a `?:` arm is released before the store.
+///
+/// The conditional arm is conditionally evaluated, so the statement drop is
+/// hoisted before the assignment that holds the conditional; the release site
+/// precedes it and the scope cleanup follows.
+#[test]
+fn should_hoist_the_statement_drop_in_a_conditional_arm() {
+    let source = r#"module impl.rdc.hoistcond;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String>[2] {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    let b: Array<String> = arrayNew<String>();
+    b.push(stringOf("cd"));
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let flag: bool = true;
+    while (i < 2) {
+        let x: i32 = flag ? i32(grow()[0].count) : 0;
+        i = i + x;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("hoistcond", source);
+    let release_at = emitted
+        .find("__cl_tmp0[0].count = 0;")
+        .expect("hoistcond: the element release site is emitted");
+    let store_at = emitted
+        .find("x = (flag ?")
+        .expect("hoistcond: the conditional store is emitted");
+    assert!(
+        release_at < store_at,
+        "hoistcond: the previous element must be released before the conditional store"
+    );
+    let output = run_memory("hoistcond-run", source);
+    assert_exit("hoistcond-run", &output, 2);
+}
+
+/// Two emissions of a hoisted-guard program must be byte-identical.
+#[test]
+fn should_emit_identical_translations_when_a_guarded_element_is_hoisted() {
+    let source = r#"module impl.rdc.hoistdet;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String>[2] {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    let b: Array<String> = arrayNew<String>();
+    b.push(stringOf("cd"));
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let scratch = ScratchDir::new("hoistdet");
+    std::fs::write(scratch.path().join("main.clo"), source).expect("write the program");
+    let first = emit_relative(&scratch, "hoistdet", "first.c");
+    let second = emit_relative(&scratch, "hoistdet", "second.c");
+    assert_contains("hoistdet", &first, "__cl_tmp0[0].count = 0;");
+    assert_eq!(
+        first, second,
+        "hoistdet: the same program emitted two different translations"
+    );
+}

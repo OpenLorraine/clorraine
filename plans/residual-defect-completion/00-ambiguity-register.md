@@ -1,8 +1,8 @@
 # Ambiguity Register: Residual Defect Completion
 
-> **Status**: ✅ GATE PASSED — all 13 items resolved
-> **Last Updated**: 2026-10-03 00:55
-> **Execution additions**: AR-11, AR-12, and AR-13 (runtime), recorded during execution.
+> **Status**: ✅ GATE PASSED — all 14 items resolved
+> **Last Updated**: 2026-10-03 01:08
+> **Execution additions**: AR-11 through AR-14 (runtime), recorded during execution.
 
 ## Ambiguity Register
 
@@ -21,6 +21,7 @@
 | 11 | Technical (runtime) | ST-8's bound `String` result hits a pre-existing bound-lend double free, outside this plan's scope | Inline the result and file the pre-existing defect / inline and note only / expand scope to fix | Inline the result in ST-8; file the pre-existing defect as DEF-56 (roadmap Backlog) | ✅ Resolved |
 | 12 | Technical (runtime) | Phase 2 review: unsubstituted lifted return type (critical), specialization predicate gaps (major), closure-argument specialization hole (major), pre-existing trailing-comma closure call | Fix F1+F2 now and file F3 (+ pre-existing) / fix all three now / fix F1 only | Fix F1 (`return_ty` substitution) and F2 (capture/nested-value predicate) now; file F3 as DEF-57 and the trailing-comma call as DEF-58 (Backlog) | ✅ Resolved |
 | 13 | Technical (runtime) | Phase 3 review: eager root binding in guarded operands (major), flaky in-container sanitizer tests (major), pre-existing ownerless element-read use-after-free (critical) | Gate on `defer_move_outs` + opt-in ASan + file the rest / full guard-deferred fix / fix all | Gate the take-root binding on `defer_move_outs == 0`; make sanitizer runs opt-in (`RDC_ASAN`) with plain-run pins; file the guarded take as DEF-60 and the element read as DEF-59 (Backlog) | ✅ Resolved |
+| 14 | Technical (runtime) | Phase 4 review: two pre-existing defects found while probing the hoist (generic lend-store misses `E10034`; do-while early return leaks the condition temp) | File both as new backlog defects / extend DEF-56 and file the leak / note only | File DEF-61 (generic lend-store to a take position) and DEF-62 (do-while early-return leak) as Backlog rows; no code change in this plan | ✅ Resolved |
 
 ### Resolution Notes
 
@@ -109,3 +110,10 @@ ruled: gate the take-root binding on `defer_move_outs == 0` (restoring short-cir
 file the guarded take as DEF-60; make the sanitizer runs opt-in behind `RDC_ASAN` with plain-run
 pins so `make check` is deterministic; file the element-read use-after-free as DEF-59 (Backlog).
 No scope expansion; one scoped re-review of the fix diff.
+
+**AR-14 (runtime):** The Phase 4 review reported no phase findings; one 🟡 MINOR coverage gap (no
+`?:`-arm hoist pin) was closed with an additional implementation pin. Two pre-existing defects
+surfaced while probing the hoist: a generic body can pass a default-lend parameter to a `take`
+position without `E10034` (the instantiated callee moves the caller's still-owned temporary), and a
+`do { ... return ... } while (guarded)` leaks the final stored value. The user ruled: file them as
+roadmap DEF-61 and DEF-62 (Backlog). No scope expansion.

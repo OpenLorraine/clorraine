@@ -635,3 +635,161 @@ func main(): i32 {
 "#;
     assert_rejected("rdc14", source, "E10026");
 }
+
+/// A guarded re-store of a growable element must release the previous value.
+///
+/// The `while` test stores `grow()[0]` in a temporary it re-evaluates every
+/// iteration. The program exits `2`; the previous element loop must be released
+/// on each re-store, which the host close-out probe and the implementation
+/// tests pin (the plain harness cannot see a leak).
+#[test]
+fn should_release_the_guarded_value_when_a_while_condition_stores_a_growable_element() {
+    let source = r#"module spec.rdc.st15;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String>[2] {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    let b: Array<String> = arrayNew<String>();
+    b.push(stringOf("cd"));
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdc15", source);
+    assert_exit("rdc15", &output, 2);
+}
+
+/// The guarded re-store also releases in the `do` spelling.
+///
+/// The condition re-runs after the body, so the same temporary is re-stored
+/// each test; the body runs twice and the exit code is `2`.
+#[test]
+fn should_release_the_guarded_value_when_a_do_condition_stores_a_growable_element() {
+    let source = r#"module spec.rdc.st16;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String>[2] {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    let b: Array<String> = arrayNew<String>();
+    b.push(stringOf("cd"));
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (i < 2 && grow()[0].count > 0);
+    return i;
+}
+"#;
+    let output = run_host("rdc16d", source);
+    assert_exit("rdc16d", &output, 2);
+}
+
+/// The guarded re-store also releases in the `for` spelling.
+///
+/// The condition runs once per test with the step between, so the body runs
+/// twice and the exit code is `2`.
+#[test]
+fn should_release_the_guarded_value_when_a_for_condition_stores_a_growable_element() {
+    let source = r#"module spec.rdc.st16;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+func grow(): Array<String>[2] {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    let b: Array<String> = arrayNew<String>();
+    b.push(stringOf("cd"));
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    for (i = 0; i < 2 && grow()[0].count > 0; i = i + 1) {
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdc16f", source);
+    assert_exit("rdc16f", &output, 2);
+}
+
+/// A struct containing a growable element drops through the same hoist.
+///
+/// The condition stores a `Bag` whose `Array<String>` field needs an element
+/// loop to drop; the body runs twice and the exit code is `2`.
+#[test]
+fn should_release_the_guarded_value_when_a_struct_contains_a_growable_element() {
+    let source = r#"module spec.rdc.st17;
+
+import { Array, arrayNew } from std.mem;
+import { String, stringOf } from std.text;
+
+struct Bag {
+    items: Array<String>;
+}
+
+func grow(): Bag {
+    let b: Bag = Bag { items: arrayNew<String>() };
+    b.items.push(stringOf("ab"));
+    return b;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow().items.count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdc17", source);
+    assert_exit("rdc17", &output, 2);
+}
+
+/// A guarded element that needs no drop keeps its count and shape.
+///
+/// `Array<i32>` drops without an element loop, so its expression-form drop is
+/// already available and the emitted shape must not change; the exit code is
+/// still `2`.
+#[test]
+fn should_keep_the_count_when_a_guarded_element_needs_no_drop() {
+    let source = r#"module spec.rdc.st18;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32>[2] {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    let b: Array<i32> = arrayNew<i32>();
+    b.push(2);
+    return [a, b];
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 2 && grow()[0].count > 0) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("rdc18", source);
+    assert_exit("rdc18", &output, 2);
+}

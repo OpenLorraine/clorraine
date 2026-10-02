@@ -28,9 +28,10 @@ impl<'a> Emitter<'a> {
             ValueKind::Binary {
                 op: BinaryOp::LogicalAnd | BinaryOp::LogicalOr,
                 left,
-                ..
+                right,
             } => {
                 self.emit_guards(left);
+                self.emit_conditional_drop_hoists(right);
             }
             ValueKind::Binary { op, left, right } => {
                 self.emit_guards(left);
@@ -64,8 +65,14 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Unary { operand, .. } => self.emit_guards(operand),
             // Only the condition always runs; the arms' guards are embedded.
-            ValueKind::Conditional { condition, .. } => {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
                 self.emit_guards(condition);
+                self.emit_conditional_drop_hoists(then_value);
+                self.emit_conditional_drop_hoists(else_value);
             }
             ValueKind::Member { base, .. } => self.emit_guards(base),
             ValueKind::StructLit { fields, .. } => {
@@ -201,6 +208,101 @@ impl<'a> Emitter<'a> {
                 self.emit_guards(callable);
                 for arg in args {
                     self.emit_guards(arg);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Hoists the statement-form drop of a conditionally evaluated operand.
+    ///
+    /// A materialized operand inside a short-circuit right side or a `?:` arm
+    /// stores its side effect as an expression, and a type whose drop has no
+    /// expression form would skip the previous value on every re-store. The
+    /// statement form runs before the construct: the temporary is
+    /// zero-initialized, so the first evaluation drops nothing, and the
+    /// post-construct release stays null-safe, so each stored value is released
+    /// exactly once. A type whose drop already has an expression form keeps it
+    /// and is not hoisted, and the walk descends the whole subtree because
+    /// nested guards embed at their own evaluation sites.
+    fn emit_conditional_drop_hoists(&mut self, value: &Value) {
+        match &value.kind {
+            ValueKind::Materialize {
+                temp,
+                value: inner,
+                ..
+            } => {
+                let inner_ty = self.substitute(&inner.ty);
+                let destination = format!("__cl_tmp{temp}");
+                if self.needs_drop(&inner_ty)
+                    && self.drop_expr_text(&destination, &inner_ty).is_none()
+                {
+                    self.emit_reassigned_temp_drop(*temp, &inner.ty);
+                }
+                self.emit_conditional_drop_hoists(inner);
+            }
+            ValueKind::Binary { left, right, .. } => {
+                self.emit_conditional_drop_hoists(left);
+                self.emit_conditional_drop_hoists(right);
+            }
+            ValueKind::Unary { operand, .. } => self.emit_conditional_drop_hoists(operand),
+            ValueKind::Cast { value, .. } => self.emit_conditional_drop_hoists(value),
+            ValueKind::Index { base, index } => {
+                self.emit_conditional_drop_hoists(base);
+                self.emit_conditional_drop_hoists(index);
+            }
+            ValueKind::Member { base, .. } => self.emit_conditional_drop_hoists(base),
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.emit_conditional_drop_hoists(condition);
+                self.emit_conditional_drop_hoists(then_value);
+                self.emit_conditional_drop_hoists(else_value);
+            }
+            ValueKind::Call { args, receiver, .. } => {
+                if let Some(receiver) = receiver {
+                    self.emit_conditional_drop_hoists(receiver);
+                }
+                for arg in args {
+                    self.emit_conditional_drop_hoists(arg);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.emit_conditional_drop_hoists(callable);
+                for arg in args {
+                    self.emit_conditional_drop_hoists(arg);
+                }
+            }
+            ValueKind::Intrinsic { args, .. } => {
+                for arg in args {
+                    self.emit_conditional_drop_hoists(arg);
+                }
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    self.emit_conditional_drop_hoists(field);
+                }
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.emit_conditional_drop_hoists(element);
+                }
+                if let Some(fill) = fill {
+                    self.emit_conditional_drop_hoists(fill);
+                }
+            }
+            ValueKind::Template(pieces) => {
+                for piece in pieces {
+                    if let ValuePiece::Placeholder(inner) = piece {
+                        self.emit_conditional_drop_hoists(inner);
+                    }
+                }
+            }
+            ValueKind::Closure { captures, .. } => {
+                for capture in captures {
+                    self.emit_conditional_drop_hoists(capture);
                 }
             }
             _ => {}

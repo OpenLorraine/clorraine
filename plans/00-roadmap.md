@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-03 00:55
+> **Last Updated**: 2026-10-03 01:08
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -77,6 +77,8 @@
 | ↳ DEF-58 | A zero-argument call through a closure-typed value emits a trailing comma | — | — | Backlog | ⬜ | 2026-10-02 22:50 | 🟡 minor, pre-existing, found in the residual-defect-completion Phase 2 review: `((f).fn((f).env, ))` is invalid C; reproduced without generics (`consume([x] () => x)`); the call renderer should omit the separator when the argument list is empty |
 | ↳ DEF-59 | An ownerless element read under a maybe-owning substitution uses freed memory | — | — | Backlog | ⬜ | 2026-10-03 00:55 | 🔴 critical, pre-existing, found in the residual-defect-completion Phase 3 review: `first<T>(mk: func(): T[2]): T { return mk()[0]; }` and the `let s: T = mk()[0];` store form, instantiated `String`, read `__cl_tmp0[0]` after the statement temporary released it (host ASan heap-use-after-free). The store/return projection binding skips it because the materialized destination temp counts as storage, and no element move-out runs before the temp release; mirror the take path's element move-out on the store/return path |
 | ↳ DEF-60 | A guarded ownerless take under a maybe-owning substitution keeps the pre-existing double free | — | — | Backlog | ⬜ | 2026-10-03 00:55 | 🟠 major, pre-existing, found in the residual-defect-completion Phase 3 review: the take-root binding is skipped inside a conditionally evaluated operand (`flag && sink<T>(mk()[i])`) so the call stays inline and short-circuit-correct, but on its evaluated path the ownerless element is still released by both the callee and the temporary; the complete fix defers the root binding through the guard machinery |
+| ↳ DEF-61 | A generic body can pass a default-lend parameter to a take position without E10034 | — | — | Backlog | ⬜ | 2026-10-03 01:08 | 🔴 critical, pre-existing, found in the residual-defect-completion Phase 4 review: a generic body such as `func f<T>(take h: Holder<T>, v: T) { h.items.push(v); }` compiles while the non-generic spelling reports `E10034`; the instantiated callee moves the caller's still-owned argument temporary, so both release it (plain build `free(): double free detected`, ASan double-free). Extends the DEF-56 family: the lend must move on the store or the generic form must reject |
+| ↳ DEF-62 | A do-while early return leaks the guarded condition's final value | — | — | Backlog | ⬜ | 2026-10-03 01:08 | 🟠 major, pre-existing, found in the residual-defect-completion Phase 4 review: `do { ... return N; ... } while (guarded)` never attaches the flag-first condition temporary to the return's release set, so the final stored value leaks (host ASan `70 byte(s) leaked in 6 allocation(s)`); reproduces with an always-evaluated condition and no conditional operand, so it is independent of the hoist |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

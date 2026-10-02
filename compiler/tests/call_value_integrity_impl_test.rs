@@ -1603,11 +1603,16 @@ func main(): i32 {
     );
 }
 
-/// A growable guard operand whose element needs a drop keeps today's skip: the
-/// element loop has no expression form, so the guard re-materializes without a
-/// drop. This is the recorded limit, not a regression.
+/// A growable guard operand whose element needs a drop releases the previous
+/// value through the hoisted statement-form drop.
+///
+/// The element loop has no expression form, so the guard's re-store cannot
+/// carry the drop; the enclosing construct emits it as a statement before the
+/// guarded store. The element's release site therefore appears once in the
+/// hoist and once in the scope cleanup, and the guard still stores through its
+/// temporary.
 #[test]
-fn should_keep_the_drop_skip_when_a_growable_guard_element_needs_a_drop() {
+fn should_release_the_previous_element_when_a_growable_guard_element_needs_a_drop() {
     let source = r#"module impl.cvi.p4growstr;
 import { Array, arrayNew } from std.mem;
 import { String, stringOf } from std.text;
@@ -1634,9 +1639,16 @@ func main(): i32 {
         &emitted,
         "(cl_impl_cvi_p4growstr_grow(__cl_tmp0))",
     );
+    assert_contains("cviimpl-p4growstr", &emitted, "if (__cl_tmp0[0].data) {");
+    let release_sites = emitted.matches("__cl_tmp0[0].count = 0;").count();
+    assert!(
+        release_sites >= 2,
+        "cviimpl-p4growstr: the previous element must be released before the re-store \
+         (found {release_sites} release sites)"
+    );
     assert!(
         !emitted.contains("(__cl_tmp0[0].data ? (FreeBuffer("),
-        "cviimpl-p4growstr: a drop-needing element keeps the recorded skip"
+        "cviimpl-p4growstr: the element loop still has no expression form"
     );
 }
 
