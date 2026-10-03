@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 21:14
-> **Progress**: 35/40 tasks (88%)
+> **Last Updated**: 2026-10-03 21:23
+> **Progress**: 40/40 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -145,7 +145,7 @@ element reads move before release.
 > read once), RV-105 (audit docs), RV-106a (the guard-deferral test now asserts the assignment
 > stays inside the guarded condition), and RV-107 (drop the redundant nullable clause). RV-102
 > (major — slice-view element reads) is filed as DEF-66; RV-106b (the out-param write path) is an
-> accepted limitation. The fixes are tasks 1.3.3 – 1.3.7 below.
+> accepted limitation, reported as a minor severity. The fixes are tasks 1.3.3 – 1.3.7 below.
 
 - [x] 1.3.3 Fix the fixed-array row return: route a projected row through the byte-copy return core
   and pin it — `codegen/cleanup.rs`, `compiler/tests/def_backlog_completion_spec_test.rs` (RV-101) ✅ (completed: 2026-10-03 17:52)
@@ -378,26 +378,60 @@ element reads move before release.
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria · [AR-6, AR-7, AR-10, AR-12](00-ambiguity-register.md)
 **Objective**: Prove the plan against the acceptance criteria and sync the project records.
 
-- [ ] 4.1.1 Full cross-toolchain verification — `make verify`
-- [ ] 4.1.2 Build and run the close-out probe runner: five AddressSanitizer run probes (DEF-57,
+- [x] 4.1.1 Full cross-toolchain verification — `make verify` ✅ (completed: 2026-10-03 21:14)
+- [x] 4.1.2 Build and run the close-out probe runner: five AddressSanitizer run probes (DEF-57,
   DEF-58, DEF-59, DEF-60, DEF-62) and two rejection probes (DEF-56, DEF-61: `E10034`, no C
   written), each with an expected signature, a `timeout`, and
   `ASAN_OPTIONS=detect_leaks=1:symbolize=0:handle_segv=0` for determinism —
-  `build/def-backlog-probes/run-def-backlog-completion.sh` (gitignored)
-- [ ] 4.1.3 Sync documentation: add both suites to the `AGENTS.md` test map; mark DEF-56 – DEF-62
+  `build/def-backlog-probes/run-def-backlog-completion.sh` (gitignored) ✅ (completed: 2026-10-03 21:19)
+- [x] 4.1.3 Sync documentation: add both suites to the `AGENTS.md` test map; mark DEF-56 – DEF-62
   Done; verify the DEF-63 and DEF-64 backlog rows and the corrected DEF-60 remedy — `AGENTS.md`,
-  `plans/00-roadmap.md`
-- [ ] 4.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the
-  plan status Complete and the progress header to 31/31
-- [ ] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode (git-commit
-  skill in push mode)
+  `plans/00-roadmap.md` ✅ (completed: 2026-10-03 21:19)
+- [x] 4.1.4 Check every acceptance criterion in [01-requirements.md](01-requirements.md); set the
+  plan status Complete and the progress header to 40/40 ✅ (completed: 2026-10-03 21:20)
+- [x] 4.1.5 Phase review evidence and plan summary — commit per the active commit mode (git-commit
+  skill in push mode) ✅ (completed: 2026-10-03 21:23)
+
+> **Close-out review (2026-10-03 21:23)**: one reviewer verified the acceptance criteria against
+> the repository and re-ran the probe runner (all seven probes correct, exit 0; a negative control
+> showed the checks fail on a wrong expectation). It confirmed `spec/` and the diagnostic surface
+> are untouched, the roadmap dispositions are present, the filed backlog rows reproduce at HEAD,
+> and no critical or major finding is open. Its two minor notes are addressed here: RV-106b's
+> severity is recorded as minor, and the DEF-60 row's line references are refreshed.
+
+> **Close-out evidence (2026-10-03 21:20)**: `make verify` exit 0 — all legs passed (40 workspace
+> suites plus the FS-UAE and hosted-amiga fault legs). The probe runner reported all seven probes:
+> `def57` exit 41, `def58` exit 5, `def59` exit 2, `def60` exit 0, `def62` exit 2, all
+> sanitizer-clean, and `def56`/`def61` rejected with `E10034` and no translation unit. `spec/` is
+> untouched and no diagnostic-registry file changed (`git diff d06d451..HEAD` over both paths is
+> empty). `AGENTS.md` maps both suites; the roadmap marks DEF-56 – DEF-62 Done, with DEF-63 – DEF-69
+> filed as backlog and the DEF-60 remedy corrected.
 
 **Deliverables**:
-- [ ] `make verify` all legs passed
-- [ ] Five ASan run probes clean and two rejection probes correct
-- [ ] Documentation and roadmap synced; acceptance criteria checked
+- [x] `make verify` all legs passed
+- [x] Five ASan run probes clean and two rejection probes correct
+- [x] Documentation and roadmap synced; acceptance criteria checked
 
 **Verify**: `make verify` and the probe runner
+
+---
+
+## Plan Summary
+
+All seven filed defects are closed, each through the specification-first loop (spec tests → red →
+implementation → green → implementation tests → full verification) and an independent post-phase
+review:
+
+| Phase | Outcome |
+| ----- | ------- |
+| 1 — Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61) | The maybe-owning move site records a post-substitution lend duty that reports the existing `E10034`; the element move-out carries its run-time index; the store and return paths move the element out before the statement temporary releases it. Review added the raw-element fix, the fixed-array row fix, and the base-before-index fix; the slice-view residual is filed as DEF-66 |
+| 2 — Do-while condition release (DEF-62) | `check_do_while` sends the condition's newly registered releases to the body's return terminators through a builder mutator, newest-first and deduped, with the release events recorded for the borrow checker. The deferred-return residual is filed as DEF-68 |
+| 3 — Closure C spelling (DEF-57, DEF-58) | The type key renderer moves to the stage-neutral type model; a closure's enclosing instance enters the key and the dedupe key; the instance is stamped while instances are collected; the zero-argument closure call drops its trailing separator. Review caught and the phase fixed a first-pass walk regression and the discarded-call stamping path; the unlisted-capture spelling residual is filed as DEF-69 |
+| 4 — Close-out | `make verify` all legs passed; the seven close-out probes correct; acceptance criteria checked; `AGENTS.md`, the roadmap, and the plan records synced |
+
+Verification totals: specification suite 33/33, implementation suite 17/17, `make check` 40 suites
+green per phase, `make verify` green at close-out, and `spec/` untouched. Residuals discovered by
+the reviews and the execution are filed as backlog rows DEF-63 – DEF-69 with reproductions.
 
 ---
 

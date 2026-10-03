@@ -155,6 +155,14 @@ in `CMD`).
   **implementation tests** (key and symbol shapes, specialization and
   environment names, binding and release shapes, guard-drop ordering, the
   opt-in sanitizer runs, and byte-identical re-emission).
+- `compiler/tests/def_backlog_completion_spec_test.rs` holds the
+  **specification tests** for the seven backlog defects (generic-lend
+  rejection under an owning substitution, run-time-index move-out integrity,
+  do-while condition release, and the closure callable spelling), and
+  `compiler/tests/def_backlog_completion_impl_test.rs` holds their
+  **implementation tests** (duty-report dedupe, index-carrying move-out and
+  store shapes, condition-release counts and ordering, closure symbol and
+  empty-call text, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

@@ -20,36 +20,36 @@ the generic spelling match the concrete spelling's existing `E10034` (AR-2, AR-9
 
 ### Must Have
 
-- [ ] **R1 — Generic lend escaping as owned (DEF-56).** A generic instantiation must not accept a
+- [x] **R1 — Generic lend escaping as owned (DEF-56).** A generic instantiation must not accept a
   lend returned, stored, or passed as an owned value when the instantiated type owns; it reports the
   existing `E10034` at the move site, matching the concrete spelling (a moved lend that is read
   again additionally keeps its existing `E10020`, PF-024; the rule also covers a concrete-typed
   lend in a maybe-owning position, PF-021). Duplicable instantiations stay accepted
   (AR-2, [03-01](03-01-generic-lend-duties.md)).
-- [ ] **R2 — Generic lend passed to a take position (DEF-61).** The same duty covers a default-lend
+- [x] **R2 — Generic lend passed to a take position (DEF-61).** The same duty covers a default-lend
   parameter passed to a `take` position inside a generic body; the instantiated `String` form
   reports `E10034`, mirroring `spec/tests/compile-fail/E10034_borrow_released.clo` (AR-2, 03-01).
-- [ ] **R3 — Runtime-index element move-out (DEF-60).** An ownerless element take with a runtime
+- [x] **R3 — Runtime-index element move-out (DEF-60).** An ownerless element take with a runtime
   index (`sink<T>(mk()[i])`, guarded or unguarded) must zero the slot the callee moved, not slot
   zero; the program runs without a double free and with the moved value correct
   (AR-1, [03-02](03-02-move-out-integrity.md)).
-- [ ] **R4 — Ownerless element read on store and return (DEF-59).** `let s: T = mk()[0]` and
+- [x] **R4 — Ownerless element read on store and return (DEF-59).** `let s: T = mk()[0]` and
   `return mk()[0]` under a maybe-owning substitution must move the element out of the
   statement-owned temporary before its release, so no read touches freed memory
   (AR-5, 03-02).
-- [ ] **R5 — Do-while early return release (DEF-62).** A `return` inside a `do ... while (guarded)`
+- [x] **R5 — Do-while early return release (DEF-62).** A `return` inside a `do ... while (guarded)`
   body must release the condition's materialized temporaries; the reproduction runs leak-free under
   AddressSanitizer (AR-4, [03-03](03-03-do-while-condition-release.md)).
-- [ ] **R6 — Specialized closure argument spelling (DEF-57).** A specialized capturing closure
+- [x] **R6 — Specialized closure argument spelling (DEF-57).** A specialized capturing closure
   passed to a callable-bound generic parameter must spell the same callable type at the call site
   and in the callee; two enclosing specializations must produce distinct C symbols and both must run
   (AR-3, [03-04](03-04-closure-c-spelling.md)).
-- [ ] **R7 — Zero-argument closure call (DEF-58).** A zero-argument call through a closure-typed
+- [x] **R7 — Zero-argument closure call (DEF-58).** A zero-argument call through a closure-typed
   value must emit valid C without a trailing separator (AR-3 family, 03-04).
 
 ### Should Have
 
-- [ ] **R8 — No new acceptance changes beyond R1/R2.** Concrete spellings, accepted programs, and
+- [x] **R8 — No new acceptance changes beyond R1/R2.** Concrete spellings, accepted programs, and
   emitted shapes not covered by the seven defects stay unchanged; pinned re-emission stays
   byte-identical (AR-9, AR-10).
 
@@ -113,11 +113,16 @@ the generic spelling match the concrete spelling's existing `E10034` (AR-2, AR-9
 
 ## Acceptance Criteria
 
-1. [ ] R1 – R7 each pass their specification cases (ST-1 – ST-27) and the host sanitizer probes.
-2. [ ] No `spec/` file changes and no new diagnostic codes.
-3. [ ] `make check` green for every phase; `make verify` green at close-out.
-4. [ ] The close-out probe runner runs five AddressSanitizer run probes (DEF-57, DEF-58, DEF-59,
+1. [x] R1 – R7 each pass their specification cases (ST-1 – ST-27) and the host sanitizer probes.
+2. [x] No `spec/` file changes and no new diagnostic codes.
+3. [x] `make check` green for every phase; `make verify` green at close-out.
+4. [x] The close-out probe runner runs five AddressSanitizer run probes (DEF-57, DEF-58, DEF-59,
    DEF-60, DEF-62) clean and two rejection probes (DEF-56, DEF-61) that emit `E10034` with no C
    written (PF-011).
-5. [ ] Documentation synced: `AGENTS.md` test map, the roadmap rows (DEF-56 – DEF-62 Done; DEF-63
+5. [x] Documentation synced: `AGENTS.md` test map, the roadmap rows (DEF-56 – DEF-62 Done; DEF-63
    and DEF-64 verified as filed), and the corrected DEF-60 remedy (AR-6, AR-10, PF-009, PF-016).
+
+> **Verified at close-out (2026-10-03 21:19)**: `make verify` reported all legs passed; the
+> close-out runner reported all seven probes correct; `git diff d06d451..HEAD -- spec/` is empty and
+> no diagnostic-registry file changed; the specification suite is 33/33 (the R1 – R7 cases plus the
+> review regressions) and the implementation suite is 17/17.

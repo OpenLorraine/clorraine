@@ -5,7 +5,7 @@
 > closure's callable-bound type spelling, a zero-argument closure call's trailing comma, an
 > ownerless element read under a maybe-owning substitution, a runtime-index element move-out, and a
 > do-while early return leaking the condition temporary)
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-10-03 08:09
 > **Implements**: DEF-56, DEF-57, DEF-58, DEF-59, DEF-60, DEF-61, DEF-62
 > **CodeOps Artifact Schema**: 1
