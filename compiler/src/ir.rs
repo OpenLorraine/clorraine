@@ -707,6 +707,45 @@ impl Builder {
         }
     }
 
+    /// Prepends statement-temporary releases to the return terminators of `blocks`.
+    ///
+    /// A `return` inside a `do ... while` body is lowered before the loop's
+    /// condition, so it copied a release list that does not yet name the
+    /// temporaries the condition stores. The caller passes only the condition's
+    /// new releases, in newest-first order; each listed block that ends in a
+    /// return receives them ahead of its existing list, which keeps the list
+    /// newest-first. A release the block already carries is skipped, so one
+    /// temporary is never released twice on the same path.
+    pub fn append_return_releases(&mut self, blocks: &[BlockId], releases: &[Release]) {
+        for block in blocks {
+            let Some(entry) = self.function.blocks.get_mut(*block as usize) else {
+                continue;
+            };
+            let Terminator::Return {
+                releases: existing,
+                ..
+            } = &mut entry.terminator
+            else {
+                continue;
+            };
+            let mut prepend: Vec<Release> = Vec::new();
+            for release in releases {
+                let known = existing
+                    .iter()
+                    .chain(prepend.iter())
+                    .any(|current| current.temp == release.temp);
+                if !known {
+                    prepend.push(release.clone());
+                }
+            }
+            if prepend.is_empty() {
+                continue;
+            }
+            prepend.append(existing);
+            *existing = prepend;
+        }
+    }
+
     /// Borrows the function built so far.
     pub fn function(&self) -> &Function {
         &self.function

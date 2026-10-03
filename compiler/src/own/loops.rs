@@ -121,6 +121,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             floor,
         ));
         self.switch_to(body_block);
+        // Blocks created from here on belong to the body, so a return among
+        // them is a place the condition's later releases have to travel to.
+        let body_floor = self.builder.function().blocks.len();
         self.check_block(&decl.body);
         if !self.is_terminated() {
             self.terminate(Terminator::Goto(condition_block));
@@ -131,9 +134,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let Some(state) = self.continue_states.get(&condition_block).cloned() {
             self.state = Self::merge(self.state.clone(), state);
         }
+        // The condition's materialized temporaries are registered while it is
+        // evaluated, so only the entries added after this point belong to it.
+        let release_floor = self.pending_releases.len();
         self.eval(&decl.condition);
         let mut condition = self.lower_value(&decl.condition);
         self.materialize_owned_calls(&mut condition);
+        self.append_condition_releases(body_block, body_floor, release_floor);
         let shape = self.loop_shape(
             LoopKind::DoWhile,
             body_block,
@@ -152,6 +159,65 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let condition_state = self.state.clone();
         self.state = join_breaks(condition_state, &frame);
         self.switch_to(exit);
+    }
+
+    /// Sends a do-while condition's new releases to the body's returns.
+    ///
+    /// The body is checked before the condition, so a `return` inside it copied
+    /// a release list that does not name the temporaries the condition stores.
+    /// The pending list is sliced at `release_floor` (its length just before
+    /// the condition was evaluated) and reversed to newest-first; the body's
+    /// return blocks — the blocks created since `body_floor` that end in a
+    /// return and are reachable from the body's entry — receive the copies.
+    /// The same release events are recorded at each return, so the borrow
+    /// checker sees that a view of a condition temporary cannot outlive it.
+    fn append_condition_releases(
+        &mut self,
+        body_block: BlockId,
+        body_floor: usize,
+        release_floor: usize,
+    ) {
+        if self.pending_releases.len() <= release_floor {
+            return;
+        }
+        let successors = super::liveness::successors(self.builder.function());
+        let mut returns: Vec<BlockId> = Vec::new();
+        let mut seen = vec![false; successors.len()];
+        let mut stack = vec![body_block];
+        while let Some(block) = stack.pop() {
+            let visited = &mut seen[block as usize];
+            if *visited {
+                continue;
+            }
+            *visited = true;
+            if block as usize >= body_floor
+                && matches!(
+                    self.builder.function().blocks[block as usize].terminator,
+                    Terminator::Return { .. }
+                )
+            {
+                returns.push(block);
+            }
+            for next in &successors[block as usize] {
+                stack.push(*next);
+            }
+        }
+        if returns.is_empty() {
+            return;
+        }
+        returns.sort_unstable();
+        let releases: Vec<Release> = self.pending_releases[release_floor..]
+            .iter()
+            .rev()
+            .cloned()
+            .collect();
+        let current = self.builder.current();
+        self.builder.append_return_releases(&returns, &releases);
+        for block in &returns {
+            self.switch_to(*block);
+            self.record_release_events(&releases);
+        }
+        self.switch_to(current);
     }
 
     /// Checks a three-clause `for` loop.

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 18:30
-> **Progress**: 20/37 tasks (54%)
+> **Last Updated**: 2026-10-03 18:33
+> **Progress**: 22/37 tasks (59%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -212,11 +212,17 @@ element reads move before release.
 **Reference**: [03-03](03-03-do-while-condition-release.md) §Proposed Changes
 **Objective**: Attach the condition's materialized releases to the body's early returns.
 
-- [ ] 2.2.1 Add the builder mutator that prepends release places (newest-first, deduped) to the
+- [x] 2.2.1 Add the builder mutator that prepends release places (newest-first, deduped) to the
   return terminators reachable from the loop body, and call it in `check_do_while` with the
   checkpoint-sliced releases registered while lowering the condition; reuse `liveness::successors`
-  for reachability and record the release events — `compiler/src/ir.rs`, `own/loops.rs`
-- [ ] 2.2.2 Run the spec suite — green phase
+  for reachability and record the release events — `compiler/src/ir.rs`, `own/loops.rs` ✅ (completed: 2026-10-03 18:33)
+- [x] 2.2.2 Run the spec suite — green phase ✅ (completed: 2026-10-03 18:33)
+
+> **Green-phase evidence (2026-10-03 18:33)**: `make check` exit 0 — all 40 suites green, including
+> the specification suite's five do-while cases. The host AddressSanitizer probe now reports no leak
+> for the early-return program (exit 2), the two-temporary condition (exit 3), and the nested loops
+> (exit 2), while the fall-through (exit 3) and break (exit 2) programs stay clean. The emitted
+> early return carries the condition temporary's null-safe release before `return`.
 
 **Deliverables**:
 - [ ] Release append implemented
