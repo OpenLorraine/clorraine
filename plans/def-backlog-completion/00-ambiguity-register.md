@@ -1,8 +1,9 @@
 # Ambiguity Register: Def Backlog Completion
 
-> **Status**: ✅ GATE PASSED — all 12 items resolved
-> **Last Updated**: 2026-10-03 08:44
+> **Status**: ✅ GATE PASSED — all 13 items resolved
+> **Last Updated**: 2026-10-03 11:06
 > **Preflight**: 30 findings resolved (PF-001 – PF-030); resolution notes extended above.
+> **Execution additions**: AR-13 (runtime), recorded during execution.
 
 ## Ambiguity Register
 
@@ -20,6 +21,7 @@
 | 10 | Behavioral | Phase ordering, coverage, and success criteria | Phase 1 generic-lend ownership (DEF-56, DEF-59, DEF-61, DEF-60); Phase 2 guard/loop release (DEF-62); Phase 3 closure C spelling (DEF-57, DEF-58); each with spec tests → implementation → impl tests; success = five ASan run probes clean, two rejection probes correct, suites green, pinned re-emission byte-identical | Confirmed as stated | ✅ Resolved |
 | 11 | Process | Cycle and commit mode | Commit the plan set after preflight; execute with `--auto-commit` (commit and push each verified task/phase), as the cycle prompt directs | Commit the plan set after preflight; `--auto-commit` through close-out (user instruction, 2026-10-03 08:0x cycle prompt) | ✅ Resolved |
 | 12 | Edge cases | Coverage obligations for the fixes | Runtime non-zero element indices (guarded and unguarded), guarded member-root take, store and return element reads, do-while early return with multiple materialized condition temps, nested flag-first loops, byte-identical re-emission | Confirmed as stated | ✅ Resolved |
+| 13 | Technical (runtime) | The spec suite's ST-24 (generic `borrow T?` out-param exemption) is unwritable: a generic `T?` slot is `E10011`, and a concrete non-null `borrow T?` slot double-frees through an unrelated by-value lowering gap | Narrow ST-24 to a concrete out-param with a `null` start and file the non-null double-free as a new backlog defect / expand scope to fix the lowering / drop the exemption case | Accepted narrowing: the concrete null-slot case stays; the plan's ST-24 and exemption wording are corrected; the non-null double-free is filed as DEF-65 (runtime resolution, 2026-10-03) | ✅ Resolved |
 
 ### Resolution Notes
 

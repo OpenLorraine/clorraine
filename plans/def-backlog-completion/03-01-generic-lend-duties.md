@@ -94,7 +94,10 @@ forwards the record for the function being lowered.
   duty; the predicate is the binding kind plus the lend mode, mirroring `move_place`
   (`own/place.rs:204-215`).
 - The `borrow T?` out-param slot stays exempt from `E10034`, as the specification states
-  (`spec/06-functions.md:141-145`); the duty does not record for it (PF-027).
+  (`spec/06-functions.md:141-145`); the duty does not record for it (PF-027). A generic `T?` slot
+  cannot be declared (`E10011`), so the exemption is pinned through a concrete out-param slot with
+  a `null` start value; the non-null start double-frees through an unrelated by-value lowering gap,
+  filed as DEF-65 (runtime resolution, AR-13).
 - A duty for which the substituted type is duplicable is accepted silently (ST-3).
 - The audit reports at most one `E10034` per recorded duty, mirroring the duplicability audit's
   break (`own/instance_check.rs:93-95`), so forwarding chains and multiple owning instantiations do
@@ -134,7 +137,7 @@ func f<T>(take h: Holder<T>, v: T) { h.items.push(v); }
 | Multiple owning instantiations of one duty | Report once (first owning instance) so the same body site is not repeated | AR-2 |
 | Concrete-typed lend in a maybe-owning position | Judged by the substituted declared type; no param-mention early skip | PF-021 |
 | Lend element projection (`p[0]`) | Recorded like a field projection and judged by the element type | PF-026 |
-| `borrow T?` out-param slot | Exempt: the duty does not record | PF-027 |
+| `borrow T?` out-param slot | Exempt: the duty does not record (concrete slot with a `null` start; a non-null start is the filed DEF-65) | PF-027, AR-13 |
 | `take` parameter or non-parameter storage | No duty; behavior unchanged | AR-9 |
 | A typo-class body that never instantiates | No report (no instance to judge), matching the duplicability duty | AR-2 |
 

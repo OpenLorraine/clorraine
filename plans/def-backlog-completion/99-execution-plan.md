@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 08:13
-> **Progress**: 0/31 tasks (0%)
+> **Last Updated**: 2026-10-03 11:06
+> **Progress**: 2/31 tasks (6%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -52,21 +52,26 @@ task-size criteria: each task is independently testable and reviewable)
 
 ## Phase 1: Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: ad2fff6aa69f25efce9928ea5190adb7c9f3b0a6
 
 ### Step 1.1: Specification Tests
 
 **Reference**: [03-01](03-01-generic-lend-duties.md) · [03-02](03-02-move-out-integrity.md) · [AR-1, AR-2, AR-5, AR-9, AR-10](00-ambiguity-register.md)
 **Objective**: Pin the four defects' required behavior before any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-11 and ST-20 – ST-26 — `compiler/tests/def_backlog_completion_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase: the acceptance cases fail with `E10034`
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-11 and ST-20 – ST-26 — `compiler/tests/def_backlog_completion_spec_test.rs` ✅ (completed: 2026-10-03 11:04)
+- [x] 1.1.2 Run the spec suite and record the red phase: the acceptance cases fail with `E10034`
   (ST-1/2/4, ST-21 – ST-23, ST-26); the double-free cases abort where the shape reaches `free`
   (DEF-60); the use-after-free and leak cases are captured with the host AddressSanitizer probe
   described in [07-testing-strategy.md](07-testing-strategy.md) (ST-9/10, ST-20, ST-25); the
   duplicable, constant-index, exemption, and regression cases pass pre-implementation (justified:
-  they pin unchanged behavior)
+  they pin unchanged behavior) ✅ (completed: 2026-10-03 11:06)
+
+> **Red-phase evidence (2026-10-03 11:06)**: `cargo test --test def_backlog_completion_spec_test`
+> → `5 passed; 13 failed`. Pass (pinned behavior): ST-3, ST-5, ST-6, ST-11, ST-24. Fail
+> (acceptance red): ST-1, ST-2, ST-4 (accepted instead of `E10034`), ST-7, ST-8, ST-25 (double
+> free), ST-9, ST-10 (use-after-free / wrong result), ST-20 (copy without the zeroing move),
+> ST-21, ST-22, ST-23 (accepted instead of `E10034`), ST-26 (one `E10020`, no `E10034`).
 
 **Deliverables**:
 - [ ] Specification suite with ST-1 – ST-11 and ST-20 – ST-26
