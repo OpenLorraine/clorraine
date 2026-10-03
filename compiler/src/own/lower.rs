@@ -685,7 +685,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// handled (`mk()[i][j]` keeps both indices), and a `Member` chain recurses
     /// to its element base. A constant index and an index that already names
     /// storage are left alone.
-    fn materialize_index_chain(&mut self, value: Value) -> Value {
+    pub(super) fn materialize_index_chain(&mut self, value: Value) -> Value {
         match value.kind {
             ValueKind::Member { base, name } => {
                 let base = self.materialize_index_chain(*base);
@@ -802,6 +802,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// free the value the destination now owns. Every other value is returned
     /// unchanged. This realizes the "a move is a copy plus a zero of the source"
     /// rule for a value consumed inside an aggregate literal.
+    ///
+    /// Known limit: the place derivation here does not carry a run-time element
+    /// index. A value reached this way (an aggregate-literal element whose
+    /// position is selected by a non-constant index over a fresh call result)
+    /// keeps the older element-zero fallback, so the wrong slot would be
+    /// emptied; the store and take paths materialize the index first and do not
+    /// share the limit.
     pub(super) fn consume_place(&mut self, value: Value) -> Value {
         let Some(source) = self.value_place(&value) else {
             return value;
@@ -906,6 +913,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ValueKind::StructLit { fields, .. } => fields.iter().any(|(_, field)| {
                 field.ty.is_fixed_array() || self.value_needs_place(field)
             }),
+            _ => false,
+        }
+    }
+
+    /// True when a projection chain roots at statement-owned compiler storage.
+    ///
+    /// A store that reads an owning element or field out of such a temporary
+    /// must move it out before the temporary's release, exactly as a `take`
+    /// does: the temporary owns the value until the end of the statement, so a
+    /// copy would leave the stored value aliasing storage the release frees. A
+    /// chain that roots at a caller place is not covered — the caller's
+    /// container keeps ownership and the store stays a copy.
+    pub(super) fn projection_roots_at_temp(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Temp(_) | ValueKind::Materialize { .. } => true,
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.projection_roots_at_temp(base)
+            }
             _ => false,
         }
     }

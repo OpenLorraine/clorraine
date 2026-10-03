@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:26
-> **Progress**: 7/31 tasks (23%)
+> **Last Updated**: 2026-10-03 13:28
+> **Progress**: 8/31 tasks (26%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -105,8 +105,8 @@ element reads move before release.
 - [x] 1.2.5 Update the stale move-out pin to the corrected `__cl_tmp[i] = NULL` shape after the
   index-carrying move-out lands — `compiler/tests/residual_defect_completion_impl_test.rs`
   (AR-6, PF-002; the program migrations were applied with task 1.2.2) ✅ (completed: 2026-10-03 13:26)
-- [ ] 1.2.6 Move the store out of a statement-owned destination temporary instead of copying, and
-  document the DEF-64 aggregate-literal limitation — `own/statements.rs`
+- [x] 1.2.6 Move the store out of a statement-owned destination temporary instead of copying, and
+  document the DEF-64 aggregate-literal limitation — `own/statements.rs` ✅ (completed: 2026-10-03 13:28; the limitation note lives on the aggregate-consume path in `own/lower.rs`)
 - [ ] 1.2.7 Move the return source in the no-ladder branch before the temporary releases —
   `codegen/cleanup.rs`
 - [ ] 1.2.8 Run the spec suite — green phase (a failing case means the implementation is wrong; do

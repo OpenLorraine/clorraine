@@ -18,6 +18,14 @@ enum PreparedStore {
     Move { source: Place },
     /// A lowered value stored by assignment.
     Assign { value: Value },
+    /// A lowered value assigned from statement-owned storage, followed by a
+    /// move-out of the source slot.
+    ///
+    /// A projection over a deferred materialization is assigned first, because
+    /// the assignment is what fills the materialized temporary; the move-out
+    /// then empties the selected slot so the temporary's release cannot free
+    /// the storage the destination now holds.
+    AssignThenMoveOut { value: Value, source: Place },
 }
 
 impl PreparedStore {
@@ -27,7 +35,7 @@ impl PreparedStore {
     /// has none.
     fn lowered(&self) -> Option<&Value> {
         match self {
-            Self::Assign { value } => Some(value),
+            Self::Assign { value } | Self::AssignThenMoveOut { value, .. } => Some(value),
             Self::Move { .. } => None,
         }
     }
@@ -300,22 +308,38 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         let lowered = self.lower_value(value);
-        // A consumed projection of a fresh call result has no place to move out
-        // of, so its root is bound to an owned temporary and the store becomes
-        // the ordinary move that empties the selected field. A whole call result
-        // keeps its own destination handling.
+        // A consumed projection of fresh statement-owned storage is a move:
+        // a call result's projection is bound to an owned temporary first,
+        // while a projection over an existing destination temporary (a
+        // materialized call result or a transfer temporary) is moved out
+        // directly, so the temporary's release sees the emptied slot instead
+        // of freeing what the destination now owns. A run-time element index is
+        // bound once, so the move empties the selected slot. A projection over
+        // a caller place keeps the ordinary copy: the caller's container owns
+        // the element and the existing move paths already cover a named place.
         if owning
             && matches!(
                 lowered.kind,
                 ValueKind::Member { .. } | ValueKind::Index { .. }
             )
-            && !self.projects_from_place(&lowered)
         {
-            let rebound = self.bind_ownerless_projection_root(lowered);
-            if let Some(source) = self.value_place(&rebound) {
-                return PreparedStore::Move { source };
+            if self.projection_roots_at_temp(&lowered) {
+                let lowered = self.materialize_index_chain(lowered);
+                if let Some(source) = self.value_place(&lowered) {
+                    return PreparedStore::AssignThenMoveOut {
+                        value: lowered,
+                        source,
+                    };
+                }
+                return PreparedStore::Assign { value: lowered };
             }
-            return PreparedStore::Assign { value: rebound };
+            if !self.projects_from_place(&lowered) {
+                let rebound = self.bind_ownerless_projection_root(lowered);
+                if let Some(source) = self.value_place(&rebound) {
+                    return PreparedStore::Move { source };
+                }
+                return PreparedStore::Assign { value: rebound };
+            }
         }
         PreparedStore::Assign { value: lowered }
     }
@@ -325,6 +349,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match prepared {
             PreparedStore::Move { source } => self.emit(Statement::Move { target, source }),
             PreparedStore::Assign { value } => self.emit(Statement::Assign { target, value }),
+            PreparedStore::AssignThenMoveOut { value, source } => {
+                self.emit(Statement::Assign { target, value });
+                self.emit(Statement::MoveOut { place: source });
+            }
         }
     }
 
