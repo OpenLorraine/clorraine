@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 00:49
-> **Progress**: 1/44 tasks (2%)
+> **Progress**: 2/44 tasks (5%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -67,13 +67,29 @@ task-size criteria: each task is independently testable and reviewable)
 **Objective**: Pin the three defects' required behavior before any implementation.
 
 - [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/def_backlog_closeout_spec_test.rs` ✅ (completed: 2026-10-04 00:50)
-- [ ] 1.1.2 Run the spec suite and record the red phase: ST-1/3 leak under the host ASan probe; ST-5/6 leak only for each form the reproduction gate confirms, otherwise they pass and close as already-fixed; ST-2/4/7 pass pre-implementation (justified: unchanged behavior); record the exact evidence
+- [x] 1.1.2 Run the spec suite and record the red phase: ST-1/3 leak under the host ASan probe; ST-4 also loses the root call and the run-time index pin; ST-5/6 leak only for each form the reproduction gate confirms, otherwise they pass and close as already-fixed; ST-2/7 pass pre-implementation (justified: unchanged behavior); record the exact evidence ✅ (completed: 2026-10-04 00:50)
 
 **Deliverables**:
 - [ ] Specification suite with ST-1 – ST-7
 - [ ] Red-phase evidence recorded in this plan
 
 **Verify**: `make check` (the new suite compiles; expected failures recorded)
+
+**Red-phase evidence (2026-10-04 00:49)** — `cargo test --test def_backlog_closeout_spec_test`
+in the pinned container (log `/tmp/opencode/verify-1.1.2-red.log`):
+
+| Case | Red state |
+| ---- | --------- |
+| ST-1 | FAILED — the emitted guard has no member zeroing; host ASan leaks the call result's sibling |
+| ST-3 | FAILED — the run-time index is not pinned and the root call is lost |
+| ST-4 | FAILED — the constant-index aggregate literal also loses the root call; plain run segfaults |
+| ST-5 | FAILED — both start forms leave a dangling element (exit 107 / 49) |
+| ST-6 | FAILED — the slice take aborts with `free(): double free detected` |
+| ST-2, ST-7 | PASSED — justified regression pins (unguarded take already binds/zeroes/releases once; `E10026` rejection intact) |
+
+Correction vs. this task's first wording: ST-4 is red too (constant-index aggregate literals lose the
+root call on the consume path), so the justified-pass set is ST-2/ST-7 only. The DEF-66 reproduction
+gate confirms both slice forms reproduce; no form closes as already-fixed.
 
 ### Step 1.2: Implementation
 
