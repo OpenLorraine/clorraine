@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:22
-> **Progress**: 4/31 tasks (13%)
+> **Last Updated**: 2026-10-03 13:23
+> **Progress**: 5/31 tasks (16%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -95,10 +95,10 @@ element reads move before release.
   parameter and type internally; add the span at the eleven call sites — `own/place.rs`,
   `own/statements.rs`, `own/call_check.rs`, `own/expr.rs` ✅ (completed: 2026-10-03 13:22; the four
   colliding test programs were migrated with this task as a mechanical correction)
-- [ ] 1.2.3 Add `Projection::ElementTemp`; map a materialized index in `value_place`; add the
+- [x] 1.2.3 Add `Projection::ElementTemp`; map a materialized index in `value_place`; add the
   explicit arms at every exhaustive match (`own/expr.rs`, `own/place.rs`, `own.rs`) and render it
   through `index_text` — `ir/place.rs`, `own/lower.rs`, `own/expr.rs`, `own/place.rs`, `own.rs`,
-  `codegen/expr.rs`
+  `codegen/expr.rs` ✅ (completed: 2026-10-03 13:23)
 - [ ] 1.2.4 Add the guard-aware, chain-recursing index-materialization helper in
   `materialize_owned_argument`'s take block so the argument and the move-out share it, covering the
   discarded-call path — `own/lower.rs`, `own/statements.rs`

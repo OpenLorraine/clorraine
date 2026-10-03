@@ -169,7 +169,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .retain(|path| path.first() != first.as_ref());
                     place.narrowed.retain(|path| path.first() != first.as_ref());
                 }
-                Some(ir::Projection::Element(_)) => {
+                Some(ir::Projection::Element(_)) | Some(ir::Projection::ElementTemp(_)) => {
                     place.initialized = true;
                     place.moved = false;
                     // Only the written element and its sub-paths are cleared;
@@ -249,7 +249,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let field = match &projections[0] {
             ir::Projection::Field(name) => name.clone(),
-            ir::Projection::Element(_) => return,
+            ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => return,
         };
         self.with_place(id, |place| {
             place.partial.insert(field.clone());
@@ -816,10 +816,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let (id, projections) = self.plain_binding(name)?;
         // A run-time index names no stable path, so narrowing it would conflate
         // different elements; leave it unnarrowed and let the use be reported.
-        if projections
-            .iter()
-            .any(|projection| matches!(projection, ir::Projection::Element(None)))
-        {
+        if projections.iter().any(|projection| {
+            matches!(
+                projection,
+                ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
+            )
+        }) {
             return None;
         }
         Some((id, projections, non_null))

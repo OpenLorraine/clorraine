@@ -845,7 +845,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for projection in projections {
             ty = match projection {
                 ir::Projection::Field(field) => self.member_type(&ty, field),
-                ir::Projection::Element(_) => ty.iterated_element(),
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => ty.iterated_element(),
             };
         }
         ty

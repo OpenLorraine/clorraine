@@ -850,7 +850,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.check_member_raw(&current, target.span);
                     current = self.member_type(&current, field);
                 }
-                ir::Projection::Element(_) => {
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
                     if matches!(current.kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
                         self.report_unsafe(UnsafeOp::PointerArithmetic, target.span);
                     }
@@ -865,7 +865,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
 /// True when a projection chain selects an element with a run-time index.
 fn has_runtime_element(projections: &[ir::Projection]) -> bool {
-    projections
-        .iter()
-        .any(|projection| matches!(projection, ir::Projection::Element(None)))
+    projections.iter().any(|projection| {
+        matches!(
+            projection,
+            ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
+        )
+    })
 }

@@ -127,6 +127,10 @@ impl<'a> Emitter<'a> {
                     text = index_text(&ty, &text, &index.to_string(), &self.sema.table);
                     ty = element_type(&ty);
                 }
+                Projection::ElementTemp(temp) => {
+                    text = index_text(&ty, &text, &format!("__cl_tmp{temp}"), &self.sema.table);
+                    ty = element_type(&ty);
+                }
                 Projection::Element(None) => {
                     // A run-time index does not survive on a projected place;
                     // the value forms carry it instead. A projected place only

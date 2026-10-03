@@ -126,6 +126,13 @@ pub enum PlaceBase {
 pub enum Projection {
     /// A named struct field.
     Field(String),
-    /// An array or slice element; `None` is a run-time index.
+    /// An array or slice element with a known constant index.
     Element(Option<usize>),
+    /// An array or slice element reached by a run-time index held in a compiler
+    /// temporary.
+    ///
+    /// A move-out must empty the same slot the read selected, so a non-constant
+    /// index is materialized once and the projection names the temporary that
+    /// holds it. The constant form stays [`Projection::Element`].
+    ElementTemp(TempId),
 }

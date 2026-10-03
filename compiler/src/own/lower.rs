@@ -795,6 +795,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     ValueKind::Int(value) => {
                         ir::Projection::Element(usize::try_from(*value).ok())
                     }
+                    // A materialized run-time index survives on the place, so a
+                    // move-out through it empties the slot the read selected.
+                    ValueKind::Temp(id) => ir::Projection::ElementTemp(*id),
+                    ValueKind::Materialize { temp, .. } => ir::Projection::ElementTemp(*temp),
                     _ => ir::Projection::Element(None),
                 };
                 place.projections.push(projection);
