@@ -831,13 +831,15 @@ func main(): i32 {
     assert_rejected("elementreject", source, "E10026");
 }
 
-/// A guarded ownerless take must stay inline inside its guard.
+/// A guarded ownerless take binds its call root through a deferred temporary.
 ///
-/// The root call runs only when the guard evaluates the operand, so no binding
-/// may be hoisted out of the `&&`; the projection binding applies only to an
-/// unconditionally evaluated take.
+/// The root call runs only when the guard evaluates the operand, so the binding
+/// cannot be an eagerly assigned scope local: the guard emits the call into a
+/// statement temporary, passes the selected member to the callee, and empties
+/// the member on that path. The scope cleanup then releases the remaining
+/// fields.
 #[test]
-fn should_keep_a_guarded_ownerless_take_inline() {
+fn should_bind_a_guarded_ownerless_take_through_a_deferred_temp() {
     let source = r#"module impl.rdc.guardt;
 
 import { String, stringOf } from std.text;
@@ -862,7 +864,17 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("guardt", source);
-    assert_contains("guardt", &emitted, "_sink(cl_impl_rdc_guardt_mkv().a)");
+    let bind_at = emitted
+        .find("__cl_tmp0 = cl_impl_rdc_guardt_mkv()")
+        .expect("guardt: the root call is bound to a deferred temporary");
+    let call_at = emitted
+        .find("_sink(__cl_tmp0.a)")
+        .expect("guardt: the callee reads the member of the bound temporary");
+    assert!(
+        bind_at < call_at,
+        "guardt: expected the root bind before the callee call"
+    );
+    assert_contains("guardt", &emitted, "__cl_tmp0.a = NULL");
     assert_absent("guardt", &emitted, "__cl_owned0 = ");
 }
 
