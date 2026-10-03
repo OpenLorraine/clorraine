@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-03 21:19
+> **Last Updated**: 2026-10-03 22:17
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -87,6 +87,7 @@
 | ↳ DEF-68 | A do-while body's deferred return leaks the condition temporary | — | — | Backlog | ⬜ | 2026-10-03 19:28 | 🟠 major, pre-existing, found in the def-backlog-completion Phase 2 post-phase review (RV-301): `defer { ... return i; }` inside a do-while body registers its block outside the CFG successors (`own/statements.rs` `check_defer`), so the Phase 2 append cannot reach that return and the condition's materialized temporary leaks (host ASan 20 bytes in 2 allocations); the same shape under `while` is clean. The append mechanism covers CFG-reachable returns; deferred blocks need their own collection, or the defer lowering needs a successor link |
 | ↳ DEF-69 | A lambda that reads an enclosing name without listing it as a capture emits undeclared C | — | — | Backlog | ⬜ | 2026-10-03 21:11 | 🟠 major, pre-existing, confirmed in the def-backlog-completion Phase 3 review (RV-403): `[x] () => n` inside a function whose parameter is `n` is accepted, and the lifted lambda body references `n` without receiving it, so the C build fails with `'n' undeclared`; before the DEF-58 fix the program failed earlier, at the trailing separator, which masked this. The capture checker must either require the name in the capture list or the lifted body must receive the implicitly read enclosing binding |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
+| PLAN-14 | Generated-C optimization | — | — | Backlog | ⬜ | 2026-10-03 22:17 | Trigger: only after the open DEF backlog closes and the semantics freeze (no remaining plan changes the emitted ABI/semantics); optimize only against a measured need (a visibly slow or oversized Amiga program), never on feel. First build the benchmark harness — host timing, FS-UAE instruction/cycle counts, `.text`/struct sizes — then plan from those numbers. Guard every optimization with the emission-integrity auditor (behavior preservation, base-vs-head emission diff), the memory-safety auditor (copy/move elision), and a deterministic benchmark script; dispatch the global performance-auditor per phase for `spec/17-codegen` ABI and over-optimization judgment. Expected cost: the shape-pinning implementation suites migrate with every emission optimization. Separate axis: compiler compile-time speed, evaluated only if it becomes a workflow bottleneck |
 
 ## Scope decisions (v1.0)
 
