@@ -3,7 +3,7 @@
 > **Status**: ✅ GATE PASSED — all 13 items resolved
 > **Last Updated**: 2026-10-03 11:06
 > **Preflight**: 30 findings resolved (PF-001 – PF-030); resolution notes extended above.
-> **Execution additions**: AR-13, AR-14 (runtime), recorded during execution.
+> **Execution additions**: AR-13, AR-14, AR-15 (runtime), recorded during execution.
 
 ## Ambiguity Register
 
@@ -23,6 +23,7 @@
 | 12 | Edge cases | Coverage obligations for the fixes | Runtime non-zero element indices (guarded and unguarded), guarded member-root take, store and return element reads, do-while early return with multiple materialized condition temps, nested flag-first loops, byte-identical re-emission | Confirmed as stated | ✅ Resolved |
 | 13 | Technical (runtime) | The spec suite's ST-24 (generic `borrow T?` out-param exemption) is unwritable: a generic `T?` slot is `E10011`, and a concrete non-null `borrow T?` slot double-frees through an unrelated by-value lowering gap | Narrow ST-24 to a concrete out-param with a `null` start and file the non-null double-free as a new backlog defect / expand scope to fix the lowering / drop the exemption case | Accepted narrowing: the concrete null-slot case stays; the plan's ST-24 and exemption wording are corrected; the non-null double-free is filed as DEF-65 (runtime resolution, 2026-10-03) | ✅ Resolved |
 | 14 | Technical (runtime) | An AddressSanitizer run of the ST-30 order program reports a 24-byte leak that the fix does not cause: the program reads `len(viaTake<String>(...))` inline, and an owned call result consumed as a borrow inside a larger expression is never released (a pre-existing gap; the Phase 1 baseline tree emits byte-identical leaky C) | Rebind the ST-30 program's results and file the ownerless-borrow leak as a new backlog defect / file the defect only, leaving the order program's ASan noise / fix the leak inside this plan / ignore both | Rebound the ST-30 program (each result bound; the order oracle stays exit `33`) and filed the ownerless-borrow leak as DEF-67; no compiler fix in this plan (user ruling, 2026-10-03 18:29) | ✅ Resolved |
+| 15 | Technical (runtime) | A `return` inside a `defer` block registered in a do-while body leaks the condition temporary: deferred blocks are not CFG successors, so the Phase 2 append cannot reach their return terminators | File the defer-return leak as a new backlog defect and keep the approved CFG-reachability mechanism / extend `append_condition_releases` to body-registered deferred blocks inside this phase / ignore | Filed as DEF-68; Phase 2 keeps the approved mechanism, and the fall-through implementation case is tightened to assert the post-loop return directly (user ruling, 2026-10-03 19:28) | ✅ Resolved |
 
 ### Resolution Notes
 

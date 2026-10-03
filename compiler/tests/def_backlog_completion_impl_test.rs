@@ -669,7 +669,8 @@ func main(): i32 {
 ///
 /// Nothing in the body returns, so no release is appended outside the body:
 /// the condition temporary is dropped only by the re-store and the exit drain,
-/// and the program leaves the loop with `3`.
+/// and the post-loop return follows the drain with no added release. The
+/// program leaves the loop with `3`.
 #[test]
 fn should_not_append_a_release_outside_the_loop_body() {
     let source = r#"module impl.dbc.dwfall;
@@ -690,14 +691,13 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("dowhile-fall", source);
-    assert!(
-        !emitted.contains("return __cl_return_1;"),
-        "dowhile-fall: the loop has no early return"
-    );
+    let return_at = emitted
+        .find("return i;")
+        .expect("dowhile-fall: the post-loop return must be emitted");
     assert_eq!(
-        count_occurrences(&emitted, "FreeBuffer(__cl_tmp0.data)"),
+        count_occurrences(&emitted[..return_at], "FreeBuffer(__cl_tmp0.data)"),
         2,
-        "dowhile-fall: only the re-store drop and the exit drain may release the temporary"
+        "dowhile-fall: only the re-store drop and the exit drain may release before the post-loop return"
     );
     let output = run_memory("dowhile-fall-run", source);
     assert_exit("dowhile-fall-run", &output, 3);

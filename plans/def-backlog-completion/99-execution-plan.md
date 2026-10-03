@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 18:34
-> **Progress**: 24/37 tasks (65%)
+> **Last Updated**: 2026-10-03 19:28
+> **Progress**: 25/38 tasks (66%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -22,11 +22,11 @@ verify) from `07-testing-strategy.md`.
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
 | 1 | Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61) | 18 |
-| 2 | Do-while condition release (DEF-62) | 6 |
+| 2 | Do-while condition release (DEF-62) | 7 |
 | 3 | Closure C spelling (DEF-57, DEF-58) | 8 |
 | 4 | Close-out | 5 |
 
-**Total: 37 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
+**Total: 38 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
 task-size criteria: each task is independently testable and reviewable)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
@@ -241,11 +241,22 @@ element reads move before release.
   do-while returns carry both loops' releases; no release is appended outside the body; re-emission
   is byte-identical — `compiler/tests/def_backlog_completion_impl_test.rs` ✅ (completed: 2026-10-03 18:34)
 - [x] 2.3.2 Full verification — `make check` ✅ (completed: 2026-10-03 18:34)
+- [x] 2.3.3 Tighten the fall-through case so the post-loop return is asserted directly —
+  `compiler/tests/def_backlog_completion_impl_test.rs` (RV-302) ✅ (completed: 2026-10-03 19:28)
 
 > **Phase 2 verification evidence (2026-10-03 18:34)**: `make check` exit 0 — all 40 suites green
 > (the specification suite at 25/25, the implementation suite at 12/12, and every pre-existing
 > suite). The four new implementation cases pin the early return's release, the nested return's
 > newest-first pair, the unappended fall-through shape, and byte-identical re-emission.
+
+> **Phase 2 post-phase review (2026-10-03 19:28)**: one correctness reviewer ran on the phase diff
+> (`dbc3cee..aac2699`); no critical findings. RV-301 (major — a `return` inside a `defer` block
+> registered in the body still leaks the condition temporary, because deferred blocks are not CFG
+> successors) is pre-existing and outside the approved reachability mechanism; the user ruled it
+> filed as DEF-68. RV-302 (minor — the fall-through case's post-loop return was only indirectly
+> asserted) is fixed by task 2.3.3. The reviewer verified the append targets body returns exactly,
+> the newest-first order and dedupe, the inert-but-safe release events, zero-initialized
+> temporaries, and that `while`/`for`/guard paths are unaffected.
 
 **Deliverables**:
 - [ ] Implementation suite for Phase 2
