@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:29
-> **Progress**: 9/31 tasks (29%)
+> **Last Updated**: 2026-10-03 13:32
+> **Progress**: 11/31 tasks (35%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -109,8 +109,12 @@ element reads move before release.
   document the DEF-64 aggregate-literal limitation — `own/statements.rs` ✅ (completed: 2026-10-03 13:28; the limitation note lives on the aggregate-consume path in `own/lower.rs`)
 - [x] 1.2.7 Move the return source in the no-ladder branch before the temporary releases —
   `codegen/cleanup.rs` ✅ (completed: 2026-10-03 13:29)
-- [ ] 1.2.8 Run the spec suite — green phase (a failing case means the implementation is wrong; do
-  not edit the case)
+- [x] 1.2.8 Run the spec suite — green phase (a failing case means the implementation is wrong; do
+  not edit the case) ✅ (completed: 2026-10-03 13:30)
+
+> **Green-phase evidence (2026-10-03 13:30)**: `make check` exit 0 — all 39 suites green, including
+> `def_backlog_completion_spec_test` at 18/18. The four migrated programs and the updated
+> move-out pin stay green.
 
 **Deliverables**:
 - [ ] Duty machinery and the four fixes
@@ -126,9 +130,9 @@ element reads move before release.
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) §Implementation Tests · [AR-12](00-ambiguity-register.md)
 **Objective**: Pin emitted shapes, report counts, single evaluation, and re-emission.
 
-- [ ] 1.3.1 Write implementation tests: duty record and report dedupe; no duty for `take`/locals;
+- [x] 1.3.1 Write implementation tests: duty record and report dedupe; no duty for `take`/locals;
   `__cl_tmp[i] = NULL` for the take and store; return source-move ordering; one index
-  materialization; constant-index byte-identical re-emission — `compiler/tests/def_backlog_completion_impl_test.rs`
+  materialization; constant-index byte-identical re-emission — `compiler/tests/def_backlog_completion_impl_test.rs` ✅ (completed: 2026-10-03 13:32)
 - [ ] 1.3.2 Full verification and determinism check — `make check`
 
 **Deliverables**:
