@@ -529,7 +529,7 @@ fn should_emit_identical_translations_when_a_generic_lambda_is_specialized() {
 
 import { String, stringOf } from std.text;
 
-func apply<T>(x: T): T {
+func apply<T>(take x: T): T {
     return x;
 }
 

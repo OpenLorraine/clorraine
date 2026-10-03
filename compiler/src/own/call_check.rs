@@ -283,7 +283,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !self.sema.table.duplicable(arg_ty) || maybe_owning {
                     if let Some(target) = target {
                         if maybe_owning {
-                            self.mark_moved_if_owning(target);
+                            self.mark_moved_if_owning(target, span);
                         } else {
                             self.move_target(target, span);
                         }
@@ -309,7 +309,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             // argument records the duplicability duty instead.
                             for source in sources {
                                 if maybe_owning {
-                                    self.mark_moved_if_owning(source);
+                                    self.mark_moved_if_owning(source, span);
                                 } else {
                                     self.move_target(source, span);
                                 }

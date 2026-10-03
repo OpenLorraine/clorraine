@@ -979,7 +979,7 @@ fn should_reject_a_prefix_and_fill_instantiated_with_a_move_only_element() {
 
 import { String, stringOf } from std.text;
 
-func pair<T>(a: T, b: T): T[2] {
+func pair<T>(take a: T, b: T): T[2] {
     return [a; b];
 }
 

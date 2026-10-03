@@ -447,7 +447,7 @@ fn should_build_when_two_enclosing_instances_specialize_the_same_lambda() {
 
 import { String, stringOf } from std.text;
 
-func apply<T>(x: T): T {
+func apply<T>(take x: T): T {
     return x;
 }
 

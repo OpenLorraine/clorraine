@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:18
-> **Progress**: 3/31 tasks (10%)
+> **Last Updated**: 2026-10-03 13:22
+> **Progress**: 4/31 tasks (13%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -90,10 +90,11 @@ element reads move before release.
 - [x] 1.2.1 Add the duty record, collection, and post-substitution `E10034` audit with one report
   per site, no param-mention early skip, the `BindingKind::Param` predicate, and the `borrow T?`
   exemption — `ir/mono.rs`, `own.rs`, `own/instance_check.rs` ✅ (completed: 2026-10-03 13:18)
-- [ ] 1.2.2 Record the lend duty at the center: `mark_moved_if_owning` takes the move span and
+- [x] 1.2.2 Record the lend duty at the center: `mark_moved_if_owning` takes the move span and
   records a `RequiresNotLend` for a lend-parameter root (field or element projection), deriving the
   parameter and type internally; add the span at the eleven call sites — `own/place.rs`,
-  `own/statements.rs`, `own/call_check.rs`, `own/expr.rs`
+  `own/statements.rs`, `own/call_check.rs`, `own/expr.rs` ✅ (completed: 2026-10-03 13:22; the four
+  colliding test programs were migrated with this task as a mechanical correction)
 - [ ] 1.2.3 Add `Projection::ElementTemp`; map a materialized index in `value_place`; add the
   explicit arms at every exhaustive match (`own/expr.rs`, `own/place.rs`, `own.rs`) and render it
   through `index_text` — `ir/place.rs`, `own/lower.rs`, `own/expr.rs`, `own/place.rs`, `own.rs`,
@@ -101,13 +102,9 @@ element reads move before release.
 - [ ] 1.2.4 Add the guard-aware, chain-recursing index-materialization helper in
   `materialize_owned_argument`'s take block so the argument and the move-out share it, covering the
   discarded-call path — `own/lower.rs`, `own/statements.rs`
-- [ ] 1.2.5 Update the existing pins and programs under the recorded oracle ruling: the stale
-  move-out pin asserts the corrected `__cl_tmp[i] = NULL` shape; the two lambda programs migrate
-  `apply<T>` to `take x: T`; the generic-reborrow unit case instantiates `ident<str>`; the
-  fill-prefix case marks `pair<T>`'s first parameter `take` —
-  `compiler/tests/residual_defect_completion_impl_test.rs`,
-  `compiler/tests/residual_defect_completion_spec_test.rs`, `compiler/src/own/tests.rs`,
-  `compiler/tests/ownership_drop_spec_test.rs` (AR-6, PF-002)
+- [ ] 1.2.5 Update the stale move-out pin to the corrected `__cl_tmp[i] = NULL` shape after the
+  index-carrying move-out lands — `compiler/tests/residual_defect_completion_impl_test.rs`
+  (AR-6, PF-002; the program migrations were applied with task 1.2.2)
 - [ ] 1.2.6 Move the store out of a statement-owned destination temporary instead of copying, and
   document the DEF-64 aggregate-literal limitation — `own/statements.rs`
 - [ ] 1.2.7 Move the return source in the no-ladder branch before the temporary releases —

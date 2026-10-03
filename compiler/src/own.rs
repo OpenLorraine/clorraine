@@ -266,6 +266,8 @@ struct FunctionChecker<'a, 'd> {
     /// judged after substitution: the per-instance audit reports `E10034` when
     /// the type argument owns.
     not_lend_requirements: Vec<ir::RequiresNotLend>,
+    /// Move sites already recorded, so one site owes one lend duty.
+    recorded_not_lend: BTreeSet<(String, u32, u32)>,
     /// Binding indices already recorded, so one binding owes one duty.
     recorded_requirements: BTreeSet<usize>,
     /// The lifted functions of every lambda this function lowers.
@@ -337,6 +339,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             report_diagnostics: true,
             duplicable_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
+            recorded_not_lend: BTreeSet::new(),
             recorded_requirements: BTreeSet::new(),
             lifted: Vec::new(),
             next_lifted,

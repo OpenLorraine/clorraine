@@ -945,7 +945,7 @@ fn a_generic_reborrow_of_a_call_result_reports_e10030() {
         func ident<T>(x: T): T { return x; }\n\
         func vlen(s: str): i32 { return i32(len(s)); }\n\
         func demo(): i32 {\n\
-            let v: str = ident(mk()[0]);\n\
+            let v: str = ident<str>(mk()[0]);\n\
             return vlen(v);\n\
         }\n\
         func main(): i32 { return 0; }\n";

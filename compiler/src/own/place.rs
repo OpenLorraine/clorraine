@@ -286,16 +286,43 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Records that a maybe-owning whole binding was consumed by a store.
+    /// Records a value-consuming move of a maybe-owning place.
     ///
     /// The flow keeps its copy semantics for a type that mentions a parameter,
     /// so the store is written as a move only when the instance's type argument
     /// owns. A later read of the source deposits the duplicability duty through
-    /// [`Self::record_requires_duplicable`].
-    pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget) {
+    /// [`Self::record_requires_duplicable`]. A move whose root is a lend
+    /// parameter additionally records a duty the per-instance audit judges
+    /// against the substituted type: moving a lend into an owned position is
+    /// legal only for a duplicable instance, and the `borrow T?` out-param slot
+    /// stays exempt.
+    pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget, span: Span) {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
-                place.moved_if_owning.insert(projections);
+                place.moved_if_owning.insert(projections.clone());
+            });
+            let binding = &self.bindings[id];
+            let lend = binding.kind == BindingKind::Param
+                && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)
+                && !(binding.mode == Mode::Borrow && binding.ty.nullable);
+            if !lend {
+                return;
+            }
+            let parameter = binding.name.clone();
+            let ir_name = binding.ir_name.clone();
+            let ty = if projections.is_empty() {
+                binding.ty.clone()
+            } else {
+                self.projected_type(id, &projections)
+            };
+            if ty.is_unknown() || !self.recorded_not_lend.insert((ir_name, span.start, span.end)) {
+                return;
+            }
+            self.not_lend_requirements.push(ir::RequiresNotLend {
+                function: self.decl.name.clone(),
+                parameter,
+                ty,
+                span,
             });
         }
     }

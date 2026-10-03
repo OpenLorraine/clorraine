@@ -51,7 +51,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // The field store writes a move for an owning instance, so a later
             // use of the source deposits the duplicability duty.
             if let Some(target) = self.place_target(expr) {
-                self.mark_moved_if_owning(target);
+                self.mark_moved_if_owning(target, span);
             }
             return;
         }
@@ -151,7 +151,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // an owning instance, so a later use of either arm deposits the
             // duplicability duty.
             for source in self.maybe_owning_move_sources(expr) {
-                self.mark_moved_if_owning(source);
+                self.mark_moved_if_owning(source, expr.span);
             }
             return;
         }
@@ -331,7 +331,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     let field_ty = self.ty(&field.value);
                     if self.maybe_owns(&field_ty) {
                         for source in self.maybe_owning_move_sources(&field.value) {
-                            self.mark_moved_if_owning(source);
+                            self.mark_moved_if_owning(source, field.value.span);
                         }
                     } else {
                         for source in self.conditional_move_sources(&field.value) {
@@ -349,7 +349,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     let element_ty = self.ty(element);
                     if self.maybe_owns(&element_ty) {
                         for source in self.maybe_owning_move_sources(element) {
-                            self.mark_moved_if_owning(source);
+                            self.mark_moved_if_owning(source, element.span);
                         }
                     } else {
                         for source in self.conditional_move_sources(element) {
@@ -528,7 +528,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 }
                             }
                             if maybe_owning {
-                                self.mark_moved_if_owning(source);
+                                self.mark_moved_if_owning(source, value.span);
                             } else {
                                 self.move_target(source, value.span);
                             }
