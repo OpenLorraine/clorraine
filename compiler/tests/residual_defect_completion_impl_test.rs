@@ -799,8 +799,9 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("elementtake", source);
-    assert_contains("elementtake", &emitted, "_sink__String(__cl_tmp0[i])");
-    assert_contains("elementtake", &emitted, "__cl_tmp0[0] = NULL;");
+    assert_contains("elementtake", &emitted, "__cl_tmp1 = i;");
+    assert_contains("elementtake", &emitted, "_sink__String(__cl_tmp0[__cl_tmp1])");
+    assert_contains("elementtake", &emitted, "__cl_tmp0[__cl_tmp1] = NULL;");
     let output = run_memory("elementtake-run", source);
     assert_exit("elementtake-run", &output, 0);
 }
