@@ -1391,3 +1391,85 @@ func main(): i32 {
     let output = run_host("dbc27", source);
     assert_exit("dbc27", &output, 30);
 }
+
+/// A generic call inside a lambda of a non-generic function is instantiated.
+///
+/// `main` is not generic, so its lifted lambda is recorded from its own walk.
+/// The lambda calls `identity<i32>`, which must be emitted: the program builds
+/// and returns the argument `3`.
+#[test]
+fn should_record_a_generic_call_inside_a_lambda_in_a_non_generic_function() {
+    let source = r#"module spec.dbc.st35;
+
+func identity<T>(x: T): T {
+    return x;
+}
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    let v: i32 = 3;
+    return apply(v, [v] (y: i32) => identity(y));
+}
+"#;
+    let output = run_host("dbc35", source);
+    assert_exit("dbc35", &output, 3);
+}
+
+/// A generic struct inside a lambda of a non-generic function is emitted.
+///
+/// The lambda in `main` builds a `Pair<i32>` and reads both fields. The
+/// struct's instance must be recorded from the lambda's own walk, so the
+/// program builds and returns `1 + 2 + 1`.
+#[test]
+fn should_record_a_generic_struct_inside_a_lambda_in_a_non_generic_function() {
+    let source = r#"module spec.dbc.st36;
+
+struct Pair<T> {
+    a: T;
+    b: T;
+}
+
+func consume<F: func(): i32>(f: F): i32 {
+    return f();
+}
+
+func main(): i32 {
+    let x: i32 = 1;
+    return consume([x] () => {
+        let p: Pair<i32> = Pair<i32> { a: 1, b: 2 };
+        return p.a + p.b + x;
+    });
+}
+"#;
+    let output = run_host("dbc36", source);
+    assert_exit("dbc36", &output, 4);
+}
+
+/// A discarded call passing a closure builds and runs.
+///
+/// `outer<i32>` discards `consume([x, n] () => n);` as a statement. The
+/// discarded call records the same specialized closure argument as a value
+/// call, so the callee and the call site agree and the program returns `10`.
+#[test]
+fn should_build_when_a_closure_is_passed_in_a_discarded_call() {
+    let source = r#"module spec.dbc.st37;
+
+func consume<F: func(): i32>(f: F): i32 {
+    return f();
+}
+
+func outer<T>(x: T, n: i32): i32 {
+    consume([x, n] () => n);
+    return n;
+}
+
+func main(): i32 {
+    return outer<i32>(1, 10);
+}
+"#;
+    let output = run_host("dbc37", source);
+    assert_exit("dbc37", &output, 10);
+}

@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-03 19:28
+> **Last Updated**: 2026-10-03 21:11
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -85,6 +85,7 @@
 | ↳ DEF-66 | An element read through a `slice()` view over a statement temporary is not moved out | — | — | Backlog | ⬜ | 2026-10-03 13:36 | 🟠 major, pre-existing, found in the def-backlog-completion Phase 1 review (RV-102): `let s: T = slice(mk(), 0, 2)[i]` copies the element while the temporary release frees it (ASan heap-use-after-free), and `consume<T>(slice(mk(), 0, 2)[i])` double-frees (the take form is broken concretely too). No place can be derived for the slice-intrinsic root; fixing it means teaching the place derivation about slice views or rejecting the form |
 | ↳ DEF-67 | An owned call result consumed as a borrow inside a larger expression is never released | — | — | Backlog | ⬜ | 2026-10-03 18:29 | 🟠 major, pre-existing, found during the def-backlog-completion Phase 2 spec authoring: `return i32(len(stringOf("abc")));` emits the call inline with no temporary and no release, so an ownerless call result passed to a borrow-taking callee inside a consuming expression leaks (host ASan direct leak of 12 bytes; the Phase 1 baseline tree `ad2fff6` emits byte-identical leaky C). Unrelated to the seven planned defects; filed for a future expression-temporaries plan, and the order case that exposed it now binds its results so the leak cannot mask that assertion |
 | ↳ DEF-68 | A do-while body's deferred return leaks the condition temporary | — | — | Backlog | ⬜ | 2026-10-03 19:28 | 🟠 major, pre-existing, found in the def-backlog-completion Phase 2 post-phase review (RV-301): `defer { ... return i; }` inside a do-while body registers its block outside the CFG successors (`own/statements.rs` `check_defer`), so the Phase 2 append cannot reach that return and the condition's materialized temporary leaks (host ASan 20 bytes in 2 allocations); the same shape under `while` is clean. The append mechanism covers CFG-reachable returns; deferred blocks need their own collection, or the defer lowering needs a successor link |
+| ↳ DEF-69 | A lambda that reads an enclosing name without listing it as a capture emits undeclared C | — | — | Backlog | ⬜ | 2026-10-03 21:11 | 🟠 major, pre-existing, confirmed in the def-backlog-completion Phase 3 review (RV-403): `[x] () => n` inside a function whose parameter is `n` is accepted, and the lifted lambda body references `n` without receiving it, so the C build fails with `'n' undeclared`; before the DEF-58 fix the program failed earlier, at the trailing separator, which masked this. The capture checker must either require the name in the capture list or the lifted body must receive the implicitly read enclosing binding |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 
 ## Scope decisions (v1.0)

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 19:35
-> **Progress**: 33/38 tasks (87%)
+> **Last Updated**: 2026-10-03 21:11
+> **Progress**: 34/40 tasks (85%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -23,10 +23,10 @@ verify) from `07-testing-strategy.md`.
 | ----- | ----- | ----- |
 | 1 | Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61) | 18 |
 | 2 | Do-while condition release (DEF-62) | 7 |
-| 3 | Closure C spelling (DEF-57, DEF-58) | 8 |
+| 3 | Closure C spelling (DEF-57, DEF-58) | 10 |
 | 4 | Close-out | 5 |
 
-**Total: 38 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
+**Total: 40 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
 task-size criteria: each task is independently testable and reviewable)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
@@ -335,6 +335,19 @@ element reads move before release.
   the non-generic `ClClosure_0` spelling; the `((f).fn((f).env))` text; byte-identical re-emission
   — `compiler/tests/def_backlog_completion_impl_test.rs` ✅ (completed: 2026-10-03 19:35)
 - [x] 3.3.2 Full verification — `make check` ✅ (completed: 2026-10-03 19:35)
+- [x] 3.3.3 Fix the first-pass regression (a lifted lambda in a non-generic function must keep
+  its walk) and stamp the discarded-call path, with regression cases — `own/generics.rs`,
+  `compiler/tests/def_backlog_completion_spec_test.rs` (RV-401, RV-402) ✅ (completed: 2026-10-03 21:11)
+- [~] 3.3.4 Full verification and the bounded fix-diff re-review — `make check` (RV-401, RV-402) ⏳ (implemented: 2026-10-03 21:11)
+
+> **Phase 3 post-phase review (2026-10-03 21:11)**: one correctness reviewer ran on the phase diff
+> (`a316203..76acb3b`). RV-401 (critical — the first-pass template skip also skipped lifted lambdas
+> in non-generic functions, so inferred generic calls and generic structs inside them lost their
+> only walk) and RV-402 (major — the discarded-statement call path recorded closure arguments
+> without the enclosing stamp) are fixed by task 3.3.3, with the reviewer's two probes added as
+> regression cases plus a discarded-call case. RV-403 (a lambda reading an unlisted enclosing name
+> emits undeclared C) is pre-existing and filed as DEF-69. The reviewer confirmed byte-identical
+> non-closure emission, matching keys, no other separator path, and deterministic output.
 
 > **Phase 3 verification evidence (2026-10-03 19:35)**: `make check` exit 0 — all 40 suites green
 > (the specification suite at 30/30, the implementation suite at 17/17). The five new implementation

@@ -463,12 +463,19 @@ pub fn collect_ir_instances(
         // keyed on a closure whose enclosing instance is not known yet: a
         // closure-only argument has no type parameter to mark it unresolved,
         // so walking the template would record a plain copy alongside the
-        // stamped one.
-        let template = function.enclosing.is_some()
-            || matches!(
+        // stamped one. A lifted lambda is only as generic as the declaration
+        // that encloses it, so a lambda in a non-generic function keeps its
+        // first-pass walk.
+        let template = match function.enclosing.as_deref() {
+            Some(enclosing) => matches!(
+                program.callee(enclosing),
+                Some(Callee::User(decl)) if !decl.type_params.is_empty()
+            ),
+            None => matches!(
                 program.callee(&function.name),
                 Some(Callee::User(decl)) if !decl.type_params.is_empty()
-            );
+            ),
+        };
         if template {
             continue;
         }
@@ -716,11 +723,12 @@ fn walk_function(
                     receiver,
                     ..
                 } => {
-                    let resolved: Vec<Ty> = type_args
-                        .iter()
-                        .map(|ty| substitute(ty, bindings))
-                        .collect();
-                    record_instance(callee, &resolved, program, mono);
+                    record_instance(
+                        callee,
+                        &stamped_type_args(type_args, bindings, enclosing, mono),
+                        program,
+                        mono,
+                    );
                     if let Some(receiver) = receiver {
                         walk_value(receiver, bindings, program, sema, mono, enclosing);
                     }
@@ -808,6 +816,31 @@ fn stamp_closure_instances(ty: &mut Ty, key: &str, mono: &Monomorphization) {
     }
 }
 
+/// The concrete type arguments of one call, stamped for the enclosing instance.
+///
+/// The arguments are substituted first, so a call in a generic body carries
+/// concrete types, and then every closure argument with a lifted
+/// specialization for `enclosing` names its specialized callable. Both the
+/// value and the discarded-statement call paths use this, so they cannot
+/// record different instances for the same call.
+fn stamped_type_args(
+    type_args: &[Ty],
+    bindings: &BTreeMap<String, Ty>,
+    enclosing: Option<&str>,
+    mono: &Monomorphization,
+) -> Vec<Ty> {
+    let mut resolved: Vec<Ty> = type_args
+        .iter()
+        .map(|ty| substitute(ty, bindings))
+        .collect();
+    if let Some(key) = enclosing {
+        for ty in &mut resolved {
+            stamp_closure_instances(ty, key, mono);
+        }
+    }
+    resolved
+}
+
 /// Records an instance for one IR call with concrete type arguments.
 fn record_instance(
     callee: &str,
@@ -851,16 +884,12 @@ fn walk_value(
             args,
             receiver,
         } => {
-            let mut resolved: Vec<Ty> = type_args
-                .iter()
-                .map(|ty| substitute(ty, bindings))
-                .collect();
-            if let Some(key) = enclosing {
-                for ty in &mut resolved {
-                    stamp_closure_instances(ty, key, mono);
-                }
-            }
-            record_instance(callee, &resolved, program, mono);
+            record_instance(
+                callee,
+                &stamped_type_args(type_args, bindings, enclosing, mono),
+                program,
+                mono,
+            );
             if let Some(receiver) = receiver {
                 walk_value(receiver, bindings, program, sema, mono, enclosing);
             }
