@@ -80,14 +80,16 @@ and emit the base fill explicitly (03-01 §2, AR-9).
 
 ### Gap 3: DEF-66 — element read through a slice view over a statement temporary
 
-**Current Behavior:** filed before the base-settlement fix landed; code reading suggests the
-generic store/take paths now settle and move out, but no test or probe covers the slice root:
-`value_place` has no `Intrinsic` arm (`compiler/src/own/lower.rs:929`) and
-`bind_ownerless_projection_root` recognizes only `Call`/`ClosureCall` (`:1281-1316`).
+**Current Behavior:** the generic let-store form still reproduces (host ASan reports
+`heap-use-after-free`, exit 1). The direct `slice(...)` element read carries no type, so the
+derived place has type `Unknown`; `Statement::MoveOut` is skipped when the place type does not
+need a drop (`compiler/src/codegen/function.rs:450-459`, `compiler/src/codegen/drop.rs:261-267`),
+the temporary release then frees the element, and the take form infers an unknown-typed callee.
 **Required Behavior:** each probed form is either proven clean and pinned, or fixed so the element
-moves out before the temporary release; existing `E10026`/`E10030` rejections stay.
-**Fix Required:** reproduction probe first; extend the slice-intrinsic root handling only if a form
-reproduces (03-01 §3, AR-2).
+type is recovered from the settled slice view base and the existing settle/index-chain/move-out
+path moves the element out before the temporary release; the take form's emitted C builds.
+**Fix Required:** reproduction probe first; recover the slice element type in the lowering for each
+reproducing form (03-01 §3, AR-2).
 
 ### Gap 4: DEF-65 — nullable borrow out-slot passed by value
 
@@ -98,8 +100,9 @@ while the caller still owns it, and the caller's scope cleanup frees it again (d
 `str?`, callee writes are lost.
 **Required Behavior:** a pointer per `spec/17-codegen.md:65`; the callee's write reaches the
 caller; exactly one free on every path.
-**Fix Required:** add `ty.nullable` to the predicate and materialize view conversions at the call
-site (03-03, AR-3, AR-10).
+**Fix Required:** add `ty.nullable` to the declaration predicate; key the named-call pointer
+decision on the substituted parameter type; require an exact-typed place for every out-slot
+argument and reject implicit widening into the slot (03-03).
 
 ### Gap 5: DEF-67 — ownerless call result as a borrow argument leaks
 
@@ -157,8 +160,9 @@ golden (03-05, AR-4, AR-13, AR-14).
 | Risk | Likelihood | Impact | Mitigation |
 | ---- | ---------- | ------ | ---------- |
 | DEF-66 no longer reproduces (already fixed by the base-settlement change) | High | Low | AR-2 reproduction gate; clean forms close with regression pins and a roadmap correction |
+| The DEF-66 fix recovers the element type only for the direct slice call | Medium | Medium | Every form is probed; the take form asserts a well-typed build; a non-zero slice start is pinned (ST-5) |
 | `Statement::Move` cannot carry the DEF-64 fill; the fix needs a new emission shape | Medium | Medium | Reuse the existing `PreparedStore::AssignThenMoveOut`/explicit-fill pattern (AR-9); emission-integrity review |
-| `&(rvalue)` for a pointer-lowered `borrow str?` receiving a `String` | Medium | Medium | Materialize the view conversion into a temporary (AR-10) |
+| A widened `String` or null argument passed to a nullable out-slot | Medium | Medium | Out-slot arguments must be exact-typed places; widening into the slot is rejected (`E10200`) |
 | The DEF-68 marker scan re-appends releases on a path that already has them | Low | Medium | Dedupe by `Release.temp` already exists (`compiler/src/ir.rs:719-747`); spec case ST-19 |
 | The DEF-69 scope floor flags module-level names or shadowed names | Medium | Medium | Floor is set at lambda entry; module bindings are above it; cases ST-21 – ST-23 |
 | In-container `RDC_ASAN=1` is timing-flaky, hiding memory regressions | Medium | High | Task-time host-ASan probes are mandatory (AR-15); `RDC_ASAN` is not used as a gate |

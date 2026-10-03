@@ -43,14 +43,16 @@ value position.
 3. Do not bind when the value is adopted or moved (take/store positions) — the binding applies only
    in borrow-argument position, so no double release can appear.
 
-The existing `len(storeAt<String>(...))` shapes (`def_backlog_completion_impl_test.rs:391-454`)
-must stay byte-identical.
+The existing `storeAt` body shapes asserted by the prior impl test
+(`def_backlog_completion_impl_test.rs:391-454`) stay unchanged; a call-result argument now gains
+its binding and release, so whole-program byte-identity holds only for programs that pass a place.
 
 ## Implementation Details
 
 ### Integration Points
 
-- The binding reuses `pending_releases`; no IR or emitter change is expected.
+- The statement path binds through the existing owned-argument local; the guard path reuses the
+  deferred `Materialize` release; no IR or emitter change is expected.
 - `check_return`'s existing release copies (`compiler/src/own/statements.rs:974-983`) cover the
   return form once the release is registered.
 

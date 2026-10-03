@@ -40,7 +40,8 @@ the approved `E10405`.
 **Smallest viable design:** bind a guarded call-rooted take through the existing deferred
 `Materialize` temp so the current place derivation and guard zeroing apply; prepare the
 aggregate-literal consume path like the existing store path; key the pointer lowering on
-`mode == Borrow && ty.nullable` in the single predicate four consumers already share; route
+`mode == Borrow && ty.nullable` in the shared declaration predicate and on the substituted
+parameter type at the call site, with an exact-typed place required for an out-slot argument; route
 intrinsic arguments and dot-`len` receivers through the existing owned-argument binding; extend the
 do-while condition-release walk to the registered defer blocks; and add one scope-floor check in
 the lambda checker with the approved diagnostic. No new layer, dependency, harness, or crate.
@@ -89,7 +90,7 @@ The plan's target shapes; all seven currently misbehave and must be clean after 
 ```clorraine
 flag && sink(mkv().a);                      // DEF-63: siblings of mkv() leak
 Box<T> { v: mk()[i] }                       // DEF-64: root call lost, wrong slot
-fill(v: T, borrow slot: String?);           // DEF-65: non-null slot double-frees
+fill(take v: T, borrow slot: String?);     // DEF-65: non-null slot double-frees
 let s: T = slice(mk(), 0, 2)[i];            // DEF-66: element read after release
 return i32(len(stringOf("abc")));           // DEF-67: result never released
 do { defer { return i; } } while (guarded); // DEF-68: condition temp leaks

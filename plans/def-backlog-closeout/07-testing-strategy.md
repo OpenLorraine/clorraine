@@ -31,27 +31,27 @@
 | ST-2 | `sink(mkv().a)` unguarded, host ASan | Clean (regression); the taken member transfers and the result releases once | R1, AR-8 |
 | ST-3 | `Box<T> { v: mk()[i] }` with a run-time `i`, concrete and `<String>`, host ASan | C builds and runs; field equals the `i`-th element; the root call is emitted before the move; `__cl_tmp0[i]` is emptied; exactly one release of the result | R2, AR-9 |
 | ST-4 | `Box<T> { v: mk()[0] }` constant index | C builds and runs; the slot `[0]` is emptied; clean | R2, AR-9 |
-| ST-5 | `let s: T = slice(mk(), 0, 2)[i]`, host ASan (reproduction-gated) | Clean: either already fixed (pinned) or the element moves out before the temporary release | R3, AR-2 |
-| ST-6 | `consume<T>(slice(mk(), 0, 2)[i])`, host ASan (reproduction-gated) | Clean: no double free, element transferred | R3, AR-2 |
+| ST-5 | `let s: T = slice(mk(), 0, 2)[i]` and a non-zero start (`slice(mk(), 1, 2)[i]`), host ASan (reproduction-gated) | Clean: either already fixed (pinned) or the element moves out before the temporary release | R3, AR-2 |
+| ST-6 | `consume<T>(slice(mk(), 0, 2)[i])`, host ASan (reproduction-gated) | Clean: no double free, element transferred; the emitted C builds with no unknown-typed symbol | R3, AR-2 |
 | ST-7 | Concrete slice element-move forms rejected today (e.g. a concrete take/store through a slice view) | The existing `E10026` element-move limit stays; previously rejected forms still report it | R3, AR-2 |
 
 ### Expression Temporaries (03-02)
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|------------------|----------------------------|--------|
-| ST-8 | `return i32(len(stringOf("abc")));`, host ASan | Returns 3; clean (no leak) | R5, AR-6 |
+| ST-8 | `return i32(len(stringOf("abc")));` and `return i32(len(storeAt<String>(mkString, 1)));`, host ASan | Returns the pinned length; clean (no leak) | R5, AR-6 |
 | ST-9 | `stringOf("a").len()` dot form, host ASan | Returns 1; clean | R5, AR-6 |
 | ST-10 | `flag && len(stringOf("abc")) == 3` with true and false guard, host ASan | Clean on both paths; the call is not evaluated when the guard is false | R5, AR-6 |
-| ST-11 | `let n: i32 = len(stringOf("abc"));` and `len(storeAt<String>(...))` | Unchanged behavior and emitted shape (regression) | R5, AR-6 |
+| ST-11 | `let n: i32 = i32(len(s));` where `s` is a local `String` place | Unchanged behavior and emitted shape (regression); a place argument needs no binding | R5, AR-6 |
 
 ### Borrow Out-Slot ABI (03-03)
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|------------------|----------------------------|--------|
-| ST-12 | `fill(v: T, borrow slot: String?)` called with a non-null slot; callee assigns; host ASan | Callee's value visible to the caller; the old value is dropped exactly once; clean | R4, AR-3, AR-10 |
+| ST-12 | `fill<T>(take v: T, borrow slot: String?)` called with a non-null slot; callee assigns `v`; host ASan | Callee's value visible to the caller; the old value is dropped exactly once; clean | R4, AR-3 |
 | ST-13 | Same with `borrow slot: File?` | Pointer parameter; exactly one free; clean | R4, AR-3 |
-| ST-14 | Same with `borrow slot: str?` and a `String` value | The view conversion is materialized; callee write-through reaches the caller | R4, AR-10 |
-| ST-15 | Null-start out-slot case and a duplicable-struct `borrow` parameter | Null start unchanged; duplicable struct stays by value (W10001 path unchanged) | R4, AR-3 |
+| ST-14 | Same with `borrow slot: str?` and a `str?` place | The pointer receives `&slot`; callee write-through reaches the caller. A `String` value passed to the slot is rejected (`E10200`) | R4 |
+| ST-15 | Null-start out-slot case, a non-nullable duplicable-struct `borrow` parameter, and a nullable duplicable-struct out-slot (`Point?`) | Null start unchanged; non-nullable duplicable struct stays by value (W10001 path unchanged); the nullable struct out-slot is a pointer and writes through | R4, AR-3 |
 
 ### Defer Condition Release (03-04)
 
@@ -108,6 +108,7 @@ Emit with `target/debug/clc --profile host -o build/closeout/<name>.c <program>.
 | `def67_len_call.clo` | ST-8 | exit 3, no ASan output |
 | `def67_len_guard.clo` | ST-10 | exit pinned, no ASan output |
 | `def65_nonnull_slot.clo` | ST-12 | exit pinned, no ASan output |
+| `def65_str_slot.clo` | ST-14 | exit pinned, no ASan output |
 | `def68_defer_return.clo` | ST-16 | exit pinned, no ASan output |
 | `def67_storeat_regression.clo` | ST-11 | exit pinned, no ASan output |
 

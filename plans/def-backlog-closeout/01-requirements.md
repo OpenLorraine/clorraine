@@ -31,9 +31,11 @@ behavior.
   teaching the place derivation about the slice intrinsic root, and each clean form gets a
   regression pin closing the roadmap row as already-fixed (AR-2, 03-01 §3).
 - [ ] R4 — DEF-65: a `borrow` out-slot of a nullable owned type (`String?`, `File?`, `str?`,
-  `T[]?`) is lowered as a pointer; a non-null incoming slot is dropped exactly once by the callee's
-  assignment and the caller observes the new value; the null-start case is unchanged; duplicable
-  struct borrows keep their deliberate by-value path (AR-3, AR-10, 03-03).
+  `T[]?`) is lowered as a pointer when its argument is an exact-typed place; a non-null incoming
+  slot is dropped exactly once by the callee's assignment and the caller observes the new value;
+  an argument that would need an implicit conversion or nullability widening into the slot is
+  rejected (E10200), because a converted temporary cannot carry the write back; the null-start
+  case is unchanged; duplicable struct borrows keep their deliberate by-value path (AR-3, 03-03).
 - [ ] R5 — DEF-67: an ownerless owned call result consumed as a borrow argument inside a larger
   expression (`i32(len(stringOf("abc")))`, the dot `len` form, and `slice`-argument forms) is bound
   and released exactly once at statement end or return; guarded operands defer correctly and no

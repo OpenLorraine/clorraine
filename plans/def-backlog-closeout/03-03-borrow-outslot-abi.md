@@ -3,15 +3,16 @@
 > **Document**: 03-03-borrow-outslot-abi.md
 > **Parent**: [Index](00-index.md)
 > **Defects**: DEF-65
-> **AR**: AR-3, AR-10
+> **AR**: AR-3 (AR-10 superseded by preflight PF-002)
 
 ## Overview
 
 A `borrow` out-slot of a nullable owned type is passed by value, so the callee's write and drop do
 not reach the caller's storage: the caller keeps ownership while the callee frees the old value,
 and the caller frees it again (double free); for `str?` the callee's write is lost. The fix widens
-the single pointer-parameter predicate to cover nullable borrow out-slots and materializes view
-conversions at the call site. The deliberately by-value duplicable-struct borrows stay unchanged
+the shared pointer-parameter predicate to cover nullable borrow out-slots and keys the call-site
+pointer decision on the substituted parameter type, with an exact-typed place required for every
+out-slot argument. The deliberately by-value duplicable-struct borrows stay unchanged
 (AR-3).
 
 ## Architecture
@@ -37,14 +38,19 @@ conversions at the call site. The deliberately by-value duplicable-struct borrow
 
 1. `is_pointer_param` becomes
    `Mode::Borrow && (ty.nullable || (matches!(ty.kind, TyKind::Struct(..)) && !table.duplicable(ty)))`.
-   Nullable borrows of any kind lower to `T *` per `spec/17-codegen.md:65`.
-2. Call-site conversions (`compiler/src/codegen/calls.rs:203-224`): a pointer-lowered
-   `borrow str?` receiving a `String`/`str` value needs the view conversion materialized into a
-   temporary before passing its address; a place argument passes `&place`. The same rule applies to
-   a nullable slice borrow and a nullable handle borrow.
-3. The duplicate spellings (`func_pointer_params`, signatures, emitted function headers) follow the
-   same predicate automatically; the component's task list includes a blast-radius pass over all
-   four consumers and the `out_slot` condition.
+   Nullable borrows of any kind lower to `T *` per `spec/17-codegen.md:65`. The deliberate
+   duplicable-struct by-value deviation applies only to a **non-nullable** struct lend; a nullable
+   struct borrow is an out-slot and follows the pointer rule.
+2. The named-call pointer decision (`compiler/src/codegen/calls.rs:132-191`) uses the substituted
+   **parameter** type, not the argument type, so a nullable parameter always receives its pointer
+   regardless of how the argument was written.
+3. An out-slot argument must be an exact-typed place: the caller passes `&place`. An argument that
+   would need an implicit conversion or nullability widening into the slot is rejected with the
+   existing implicit-conversion diagnostic `E10200`; a converted temporary cannot carry the
+   callee's write back to the caller, and accepting one would reintroduce the lost-write bug.
+4. The declaration spellings (`func_pointer_params`, signatures, emitted function headers) follow
+   the predicate automatically; the component's task list includes a blast-radius pass over all
+   four predicate consumers, the `out_slot` condition, and the sema argument check.
 
 No change is made to `needs_drop`, the drop ladder, or the null-start ownership rule.
 
@@ -63,9 +69,9 @@ No change is made to `needs_drop`, the drop ladder, or the null-start ownership 
 | Error Case | Handling Strategy | AR Ref |
 | ---------- | ----------------- | ------ |
 | Non-null `borrow String?` / `File?` slot written by the callee | Pointer parameter; callee drop runs on caller storage; caller sees the new value | AR-3 |
-| `borrow str?` receives a `String` value | Materialize the view conversion; pass its address | AR-10 |
+| A `String` value passed to a `borrow str?`/`String?` out-slot | Rejected: the out-slot needs an exact-typed place; the implicit conversion is not allowed (`E10200`) | AR-3 |
 | Null initial slot | Unchanged behavior; the prior exemption case stays pinned | AR-3 |
-| Duplicable struct borrow | Unchanged by-value path (W10001) | AR-3 |
+| Non-nullable duplicable struct borrow | Unchanged by-value path (W10001); nullable duplicable struct out-slots become pointers | AR-3 |
 | `func(...)` type with a nullable borrow parameter | `func_pointer_params` follows the same predicate | AR-3 |
 
 > **Traceability:** Every strategy references the Ambiguity Register entry (AR #) that resolved it.
@@ -73,7 +79,9 @@ No change is made to `needs_drop`, the drop ladder, or the null-start ownership 
 
 ## Testing Requirements
 
-- Specification tests: ST-12 – ST-15 (`07-testing-strategy.md`).
+- Specification tests: ST-12 – ST-15 (`07-testing-strategy.md`), including the rejected widened
+  argument.
 - Implementation tests: emitted declarator/argument shapes for each nullable kind, the freestanding
   compile, and the null-start regression.
-- Host-ASan probes: the non-null out-slot double-free program for `String?` and `File?`.
+- Host-ASan probes: the non-null out-slot double-free program for `String?` and `File?` and the
+  `str?` write-through program.

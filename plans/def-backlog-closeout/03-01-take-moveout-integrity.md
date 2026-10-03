@@ -67,15 +67,19 @@ statement before the move or the value-carrying store arm
 keeps the place semantics identical. The concrete `E10026` element-move decisions
 (`compiler/src/own/expr.rs:201-228`) are preserved: forms that are rejected today stay rejected.
 
-#### 3. DEF-66 — slice-root place derivation (reproduction-gated)
+#### 3. DEF-66 — slice element typing (reproduction-gated)
 
-Task 0 probes the let-store, take, and return forms under host ASan. If a form reproduces:
+Task 0 probes the let-store, take, and return forms under host ASan. The current failure is not a
+missing place: the slice base is already materialized, but the element read of a direct
+`slice(...)` call carries no type, so the derived place is `Unknown`, `Statement::MoveOut` skips it
+(`compiler/src/codegen/function.rs:450-459`), and the take form infers an unknown-typed callee. If a
+form reproduces:
 
-1. Extend `bind_ownerless_projection_root` (`:1281-1316`) to recognize an
-   `Intrinsic { name: "slice" }` root, following the precedent already in
-   `collect_lowered_temp_owners` (`:1112-1116`), or add the equivalent `value_place` root arm.
-2. Ensure every place-deriving path (`prepare_store`, the take path, `consume_place`,
-   `check_return`) settles the intrinsic base before `value_place`.
+1. Recover the element type from the settled slice view base (its element type; `iterated_element`
+   is the existing helper) in the ownership lowering, and use it for the index value and the
+   derived place.
+2. The existing settle/index-chain/move-out path then applies unchanged; no `value_place` root arm
+   and no `bind_ownerless_projection_root` extension is needed.
 
 If every form is clean, add the regression pins and close the roadmap row as already-fixed. The
 existing `E10030` view-outliving rejection (`residual_defect_hardening_impl_test.rs:875`) and the
@@ -106,7 +110,8 @@ existing `E10030` view-outliving rejection (`residual_defect_hardening_impl_test
 
 ## Testing Requirements
 
-- Specification tests: ST-1 – ST-7 (`07-testing-strategy.md`).
+- Specification tests: ST-1 – ST-7 (`07-testing-strategy.md`), including the non-zero slice start
+  and the take form's well-typed build.
 - Implementation tests: emitted-shape assertions for the guarded member zeroing, the aggregate
   fill, the run-time index slot, and the slice-root regression pins.
 - Host-ASan probes: the exact programs from DEF-63/64/66 under

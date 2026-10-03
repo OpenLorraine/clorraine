@@ -64,7 +64,7 @@ task-size criteria: each task is independently testable and reviewable)
 **Objective**: Pin the three defects' required behavior before any implementation.
 
 - [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/def_backlog_closeout_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase: ST-1/3/5/6 fail or leak under the host ASan probe; ST-2/4/7 pass pre-implementation (justified: unchanged behavior); record the exact evidence
+- [ ] 1.1.2 Run the spec suite and record the red phase: ST-1/3 leak under the host ASan probe; ST-5/6 leak only for each form the reproduction gate confirms, otherwise they pass and close as already-fixed; ST-2/4/7 pass pre-implementation (justified: unchanged behavior); record the exact evidence
 
 **Deliverables**:
 - [ ] Specification suite with ST-1 – ST-7
@@ -75,11 +75,11 @@ task-size criteria: each task is independently testable and reviewable)
 ### Step 1.2: Implementation
 
 **Reference**: [03-01](03-01-take-moveout-integrity.md) §1–§3
-**Objective**: Fix the guarded member-root take, the aggregate-literal consume, and the slice-root gap only if it reproduces.
+**Objective**: Fix the guarded member-root take, the aggregate-literal consume, and the slice element-typing gap only if it reproduces.
 
 - [ ] 1.2.1 Bind the guarded call-rooted take argument through the deferred `Materialize` temp — `compiler/src/own/lower.rs`
 - [ ] 1.2.2 Prepare the aggregate-literal consume path (settle, index chain, root bind) and emit the base fill explicitly — `compiler/src/own/lower.rs`
-- [ ] 1.2.3 Run the DEF-66 reproduction probes (let-store, take, return forms under host ASan); apply the slice-root place-derivation fix only for forms that reproduce, otherwise record the already-fixed evidence — `compiler/src/own/lower.rs`
+- [ ] 1.2.3 Run the DEF-66 reproduction probes (let-store, take, return forms under host ASan); for each reproducing form recover the slice element's type from the settled slice base so the existing move-out path applies, otherwise record the already-fixed evidence — `compiler/src/own/lower.rs`, `compiler/src/sema`
 - [ ] 1.2.4 Run the spec suite and record the green phase
 
 **Deliverables**:
@@ -93,7 +93,7 @@ task-size criteria: each task is independently testable and reviewable)
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) · [AR-15](00-ambiguity-register.md)
 **Objective**: Pin the emitted shapes and release counts; prove memory safety at task time.
 
-- [ ] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice-root regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice element move-out with its regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs`
 - [ ] 1.3.2 Run the ST-1/3/5/6 host-ASan probes from the 07 matrix and `cargo test` for both new suites
 - [ ] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
 
@@ -116,7 +116,7 @@ task-size criteria: each task is independently testable and reviewable)
 **Objective**: Pin the release behavior of an ownerless call result used as a borrow argument.
 
 - [ ] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-11 — `compiler/tests/def_backlog_closeout_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (ST-8/9/10 leak; ST-11 passes, justified)
+- [ ] 2.1.2 Run the spec suite and record the red phase (ST-8/9/10 and the call-result cases leak; ST-11's local-place regression passes, justified)
 
 **Deliverables**:
 - [ ] Specification suite with ST-8 – ST-11
@@ -159,11 +159,11 @@ task-size criteria: each task is independently testable and reviewable)
 
 ### Step 3.1: Specification Tests
 
-**Reference**: [03-03](03-03-borrow-outslot-abi.md) · [AR-3, AR-10](00-ambiguity-register.md)
+**Reference**: [03-03](03-03-borrow-outslot-abi.md) · [AR-3](00-ambiguity-register.md) · [PF-002](00-preflight-report.md)
 **Objective**: Pin the pointer lowering and write-through behavior of nullable borrow out-slots.
 
 - [ ] 3.1.1 [spec-author] Write specification tests from ST-12 – ST-15 — `compiler/tests/def_backlog_closeout_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (ST-12/13 double-free or wrong value; ST-15 passes, justified)
+- [ ] 3.1.2 Run the spec suite and record the red phase (ST-12/13 double-free or lost write; ST-14 lost write; ST-15 passes, justified)
 
 **Deliverables**:
 - [ ] Specification suite with ST-12 – ST-15
@@ -174,10 +174,10 @@ task-size criteria: each task is independently testable and reviewable)
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-borrow-outslot-abi.md) §Proposed Changes
-**Objective**: Widen the pointer predicate and materialize view conversions at call sites.
+**Objective**: Widen the declaration predicate and key the call-site pointer decision on the parameter type with exact-typed out-slot places.
 
-- [ ] 3.2.1 Add `ty.nullable` to the pointer-parameter predicate — `compiler/src/codegen/types.rs`
-- [ ] 3.2.2 Materialize view conversions for pointer slots and run the blast-radius pass over all four predicate consumers plus the `out_slot` condition — `compiler/src/codegen/calls.rs`
+- [ ] 3.2.1 Add `ty.nullable` to the pointer-parameter predicate (declaration side) — `compiler/src/codegen/types.rs`
+- [ ] 3.2.2 Key the named-call pointer decision on the substituted parameter type, require an exact-typed place for out-slot arguments (reject implicit widening), and run the blast-radius pass over all four predicate consumers plus the `out_slot` condition — `compiler/src/codegen/calls.rs`, `compiler/src/sema`
 - [ ] 3.2.3 Run the spec suite and record the green phase
 
 **Deliverables**:
@@ -189,7 +189,7 @@ task-size criteria: each task is independently testable and reviewable)
 
 ### Step 3.3: Implementation Tests & Hardening
 
-- [ ] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind and the unchanged by-value path — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind (including a nullable duplicable struct), the unchanged by-value path, and the rejected widened out-slot argument — `compiler/tests/def_backlog_closeout_impl_test.rs`
 - [ ] 3.3.2 Run the ST-12/13 host-ASan probes, a freestanding compile, and `cargo test` for both suites
 - [ ] 3.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
 
