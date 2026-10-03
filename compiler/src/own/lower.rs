@@ -678,6 +678,57 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
+    /// Fills an eager materialized projection base before an index is pinned.
+    ///
+    /// A projection base expression runs before its index (`m()[i]` evaluates
+    /// `m()` first), and the base may change the index. A base that is already
+    /// materialized defers its fill to the statement that renders the value, so
+    /// when a separate index statement must follow the base, the fill is emitted
+    /// here first. A guarded operand keeps its deferred form — its fill and its
+    /// index already share one comma expression inside the guard, in the right
+    /// order.
+    pub(super) fn settle_projection_base(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.settle_projection_base(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.settle_projection_base(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            ValueKind::Materialize {
+                temp,
+                value: inner,
+                move_outs,
+            } if self.defer_move_outs == 0 && move_outs.is_empty() => {
+                let place = Place {
+                    base: ir::PlaceBase::Temp(temp),
+                    projections: Vec::new(),
+                    ty: inner.ty.clone(),
+                };
+                self.emit(Statement::Assign {
+                    target: place,
+                    value: *inner,
+                });
+                Value::new(value.ty, ValueKind::Temp(temp))
+            }
+            other => Value::new(value.ty, other),
+        }
+    }
+
     /// Binds every non-constant element index in a value's projection chain.
     ///
     /// A `take` move-out must empty the slot the callee received, so a run-time
@@ -1284,9 +1335,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
         if take {
-            // A run-time element index is bound first so the call argument and
-            // the move-out after the call name the same slot; a constant or an
-            // already-materialized index is unchanged.
+            // The base expression evaluates before the index (`m()[i]` runs
+            // `m()` first and it may change the index), so an eager base is
+            // filled before the index is pinned. A guarded operand keeps its
+            // deferred form and pins the index inside the guard instead.
+            let value = if self.defer_move_outs == 0 {
+                self.bind_ownerless_projection_root(value)
+            } else {
+                value
+            };
+            let value = self.settle_projection_base(value);
             let value = self.materialize_index_chain(value);
             // A `take` argument that reads a projection of a fresh call result
             // has no caller storage to empty: the root is bound to an owned

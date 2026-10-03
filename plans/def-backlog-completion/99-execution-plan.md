@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:36
-> **Progress**: 12/36 tasks (33%)
+> **Last Updated**: 2026-10-03 17:58
+> **Progress**: 18/37 tasks (49%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -21,12 +21,12 @@ verify) from `07-testing-strategy.md`.
 
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
-| 1 | Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61) | 17 |
+| 1 | Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61) | 18 |
 | 2 | Do-while condition release (DEF-62) | 6 |
 | 3 | Closure C spelling (DEF-57, DEF-58) | 8 |
 | 4 | Close-out | 5 |
 
-**Total: 36 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
+**Total: 37 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
 task-size criteria: each task is independently testable and reviewable)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
@@ -156,7 +156,16 @@ element reads move before release.
 - [x] 1.3.6 Tighten the guard-deferral test and clean up the audit documentation and the redundant
   nullable clause — `compiler/tests/def_backlog_completion_impl_test.rs`, `own/instance_check.rs`,
   `own/place.rs` (RV-105, RV-106a, RV-107) ✅ (completed: 2026-10-03 17:52)
-- [~] 1.3.7 Full verification of the review fixes and the bounded fix-diff re-review — `make check` ⏳ (implemented: 2026-10-03 17:52)
+- [x] 1.3.7 Full verification of the review fixes and the bounded fix-diff re-review — `make check` ✅ (completed: 2026-10-03 17:58; the re-review verified all six fixes and, on its one allowed pass, found the RV-201 evaluation-order regression)
+- [x] 1.3.8 Fix the re-review's evaluation-order regression: fill an eager projection base before
+  pinning the index on the take, store, and return paths, and pin the order — `own/lower.rs`,
+  `own/statements.rs`, `compiler/tests/def_backlog_completion_spec_test.rs` (RV-201) ✅ (completed: 2026-10-03 17:58)
+
+> **Phase 1 review outcome (2026-10-03 17:58)**: all 7 findings resolved; the bounded re-review
+> verified RV-101/103/104/105/106a/107 and found RV-201 (index pinned before the base) plus RV-202
+> (whitespace). RV-201 is fixed (base filled first on take/store/return; ST-30 pins the order) and
+> RV-202 is fixed; no third review pass per the profile cap. `make check` exit 0 — 40 suites
+> (spec 21/21, impl 8/8). DEF-66 records the filed slice-view residual.
 
 **Deliverables**:
 - [ ] Implementation suite for Phase 1

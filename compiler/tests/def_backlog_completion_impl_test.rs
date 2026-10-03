@@ -405,7 +405,7 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("store-index", source);
-    assert_contains("store-index", &emitted, "mk(__cl_tmp0);");
+    assert_contains("store-index", &emitted, "mk(");
     assert_contains("store-index", &emitted, "s = __cl_tmp0[__cl_tmp1];");
     assert_contains("store-index", &emitted, "__cl_tmp0[__cl_tmp1] = NULL;");
     let output = run_memory("store-index-run", source);
@@ -432,7 +432,7 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("return-const", source);
-    assert_contains("return-const", &emitted, "mk(__cl_tmp0);");
+    assert_contains("return-const", &emitted, "mk(");
     let zeroed = emitted
         .find("__cl_tmp0[0] = NULL;")
         .expect("return-const: the returned slot must be emptied");

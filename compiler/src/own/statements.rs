@@ -324,6 +324,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             )
         {
             if self.projection_roots_at_temp(&lowered) {
+                // The base runs before the index, so the materialized base is
+                // filled before the index is pinned.
+                let lowered = self.settle_projection_base(lowered);
                 let lowered = self.materialize_index_chain(lowered);
                 if let Some(source) = self.value_place(&lowered) {
                     return PreparedStore::AssignThenMoveOut {
@@ -926,7 +929,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // re-rooted, so the return emission empties the selected field and
             // the temporary releases only the remaining fields. A whole call
             // result keeps its own destination handling.
-            let lowered =             if (!self.sema.table.duplicable(&returns) || maybe_owning)
+            let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
                 && !is_view(&returns)
                 && matches!(
                     lowered.kind,
@@ -940,7 +943,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
             // A moved-out return reads its run-time index once: the source move
             // empties a slot the returned copy also read, so both must use the
-            // same index temporary.
+            // same index temporary. The base is filled first because it runs
+            // before the index.
             let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
                 && !is_view(&returns)
                 && matches!(
@@ -948,6 +952,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     ValueKind::Member { .. } | ValueKind::Index { .. }
                 )
             {
+                let lowered = self.settle_projection_base(lowered);
                 self.materialize_index_chain(lowered)
             } else {
                 lowered

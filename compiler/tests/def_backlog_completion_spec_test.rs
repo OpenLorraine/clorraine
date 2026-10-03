@@ -744,7 +744,9 @@ func main(): i32 {
         &emitted,
         "static ClString cl_storeFirst__String(void (*mk)(ClString __cl_ret[2]))\n{",
     );
-    let store_after = after_marker("dbc20", store_body, "mk(__cl_tmp0);");
+    // The base call fills the destination through a block temporary, so the
+    // zero-before-release check anchors after that fill.
+    let store_after = after_marker("dbc20", store_body, "cl_zero(&__cl_call_");
     assert_before(
         "dbc20",
         store_after,
@@ -757,7 +759,7 @@ func main(): i32 {
         &emitted,
         "static ClString cl_retFirst__String(void (*mk)(ClString __cl_ret[2]))\n{",
     );
-    let ret_after = after_marker("dbc20", ret_body, "mk(__cl_tmp0);");
+    let ret_after = after_marker("dbc20", ret_body, "cl_zero(&__cl_call_");
     assert_before(
         "dbc20",
         ret_after,
@@ -1069,4 +1071,43 @@ func main(): i32 {
 }
 "#;
     assert_rejected("dbc29", source, "E10034");
+}
+
+/// A projection base evaluates before its index.
+///
+/// `mkString` sets the global `idx` to one, and both readers select
+/// `mk()[idx]`: the base call runs first, so the take and the store each
+/// receive the second row element and measure three bytes (`33`).
+#[test]
+fn should_evaluate_the_base_before_the_index_when_a_projection_is_read() {
+    let source = r#"module spec.dbc.st30;
+
+import { String, stringOf } from std.text;
+
+let idx: i32 = 0;
+
+func mkString(): String[2] {
+    idx = 1;
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func takeFirst<T>(take s: T): T {
+    return s;
+}
+
+func viaTake<T>(mk: func(): T[2]): T {
+    return takeFirst<T>(mk()[idx]);
+}
+
+func viaStore<T>(mk: func(): T[2]): T {
+    let s: T = mk()[idx];
+    return s;
+}
+
+func main(): i32 {
+    return i32(len(viaTake<String>(mkString))) * 10 + i32(len(viaStore<String>(mkString)));
+}
+"#;
+    let output = run_memory("dbc30", source);
+    assert_exit("dbc30", &output, 33);
 }
