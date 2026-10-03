@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 00:49
-> **Progress**: 4/44 tasks (9%)
+> **Progress**: 5/44 tasks (11%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -70,8 +70,8 @@ task-size criteria: each task is independently testable and reviewable)
 - [x] 1.1.2 Run the spec suite and record the red phase: ST-1/3 leak under the host ASan probe; ST-4 also loses the root call and the run-time index pin; ST-5/6 leak only for each form the reproduction gate confirms, otherwise they pass and close as already-fixed; ST-2/7 pass pre-implementation (justified: unchanged behavior); record the exact evidence ✅ (completed: 2026-10-04 00:50)
 
 **Deliverables**:
-- [ ] Specification suite with ST-1 – ST-7
-- [ ] Red-phase evidence recorded in this plan
+- [x] Specification suite with ST-1 – ST-7
+- [x] Red-phase evidence recorded in this plan
 
 **Verify**: `make check` (the new suite compiles; expected failures recorded)
 
@@ -98,7 +98,7 @@ gate confirms both slice forms reproduce; no form closes as already-fixed.
 
 - [x] 1.2.1 Bind the guarded call-rooted take argument through the deferred `Materialize` temp — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-04 00:54)
 - [x] 1.2.2 Prepare the aggregate-literal consume path (settle, index chain, root bind) and emit the base fill explicitly — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-04 00:55)
-- [ ] 1.2.3 Run the DEF-66 reproduction probes (let-store, take, return forms under host ASan); for each reproducing form recover the slice element's type from the settled slice base so the existing move-out path applies, otherwise record the already-fixed evidence — `compiler/src/own/lower.rs`, `compiler/src/sema`
+- [x] 1.2.3 Run the DEF-66 reproduction probes (let-store, take, return forms under host ASan); for each reproducing form recover the slice element's type from the settled slice base so the existing move-out path applies, otherwise record the already-fixed evidence — `compiler/src/own/lower.rs`, `compiler/src/sema` ✅ (completed: 2026-10-04 00:56)
 - [ ] 1.2.4 Run the spec suite and record the green phase
 
 **Deliverables**:
@@ -106,6 +106,16 @@ gate confirms both slice forms reproduce; no form closes as already-fixed.
 - [ ] `make check` green
 
 **Verify**: `make check`
+
+**DEF-66 evidence (2026-10-04 00:56)** — all eight spec cases pass in the container. The fix sits
+in `compiler/src/own/lower.rs` alone (the index lowering recovers an unknown element type from the
+settled base); no `compiler/src/sema` change was needed — a mechanical narrowing of the planned
+modification set. Host-ASan probes: the let-store form and the return form, each isolated by
+binding the result in `main`, exit 3 with no sanitizer output; the take form exits 3 clean. The
+literal `i32(len(storeSlice(...)))` probe still leaks 12 bytes, which is the DEF-67
+expression-temporary shape in `main` (the call result passed to `len` is never released, visible in
+the emitted C), not a DEF-66 failure; that leak closes in Phase 2, and the close-out probe runner
+(task 6.1.2) re-runs the literal form.
 
 ### Step 1.3: Implementation Tests & Hardening
 

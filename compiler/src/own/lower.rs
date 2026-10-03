@@ -48,6 +48,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let base = self.materialize_guard_operand(base);
                 let base = self.materialize_read_place(base);
                 let index = self.materialize_guard_operand(index);
+                // The type stage does not type the element of a direct
+                // `slice(...)` call, so the access type can still be unknown.
+                // The settled base knows its element type, and the element one
+                // step yields is the accessed type; recovering it lets the
+                // move-out path see the element's drop need instead of skipping
+                // it as unknown.
+                if ty.is_unknown() {
+                    let element = self.materialized_ty(&base).iterated_element();
+                    if !element.is_unknown() {
+                        ty = element;
+                    }
+                }
                 ValueKind::Index {
                     base: Box::new(base),
                     index: Box::new(index),
