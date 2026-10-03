@@ -259,7 +259,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let mut type_arg = None;
                 for arg in args {
                     match arg {
-                        IntrinsicArg::Expr(inner) => values.push(self.lower_value(inner)),
+                        IntrinsicArg::Expr(inner) => {
+                            // An intrinsic only borrows its expression
+                            // arguments, so an unnamed owned result passed here
+                            // needs the caller-side binding its cleanup uses.
+                            let value = self.lower_value(inner);
+                            values.push(self.bind_intrinsic_argument(value));
+                        }
                         IntrinsicArg::Type(written) => type_arg = Some(self.resolve(written)),
                     }
                 }
@@ -1405,6 +1411,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             _ => value,
+        }
+    }
+
+    /// Binds an ownerless owned result that an intrinsic only borrows.
+    ///
+    /// An intrinsic such as `len` reads its argument without taking ownership,
+    /// so the argument's storage is released by the enclosing statement's
+    /// cleanup rather than by the callee. A named local already has an owner;
+    /// an unnamed call result has none and leaks unless it is bound. The value
+    /// is bound exactly like a named call's borrowed argument, so the same
+    /// release paths apply. A conditionally evaluated argument (the right side
+    /// of `&&` or `||`, or a `?:` arm) is bound through the deferred
+    /// materialization instead: its fill runs only on the path that evaluates
+    /// the argument, and the statement's registered release frees it there.
+    pub(super) fn bind_intrinsic_argument(&mut self, value: Value) -> Value {
+        if self.defer_move_outs > 0 {
+            if is_pure_value(&value) || is_view(&value.ty) || value.ty.is_unknown() {
+                return value;
+            }
+            if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
+                return value;
+            }
+            self.materialize_guard_operand(value)
+        } else {
+            self.materialize_owned_argument(value, false)
         }
     }
 

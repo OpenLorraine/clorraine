@@ -272,8 +272,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         if name == "len" && type_args.is_empty() {
             // `xs.len()` is the dot-call spelling of `len(xs)`; the receiver
-            // becomes the intrinsic's argument.
+            // becomes the intrinsic's argument. The intrinsic borrows the
+            // receiver, so an ownerless owned result needs the caller-side
+            // binding its cleanup uses.
             let receiver = self.lower_dot_receiver(callee)?;
+            let receiver = self.bind_intrinsic_argument(receiver);
             return Some((
                 Ty::usize_ty(),
                 ValueKind::Intrinsic {

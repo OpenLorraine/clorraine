@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 01:50
-> **Progress**: 11/44 tasks (25%)
+> **Progress**: 12/44 tasks (27%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -241,7 +241,7 @@ timing-flaky in this environment; the host probes are the deterministic oracle.
 **Reference**: [03-02](03-02-expression-temporaries.md) §Proposed Changes
 **Objective**: Bind and release the intrinsic argument and dot-`len` receiver.
 
-- [ ] 2.2.1 Route intrinsic arguments and dot-`len` receivers through the owned-argument binding, guard-aware — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`
+- [x] 2.2.1 Route intrinsic arguments and dot-`len` receivers through the owned-argument binding, guard-aware — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs` ✅ (completed: 2026-10-04 01:53)
 - [ ] 2.2.2 Run the spec suite and record the green phase
 
 **Deliverables**:
