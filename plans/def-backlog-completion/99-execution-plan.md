@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 19:28
-> **Progress**: 25/38 tasks (66%)
+> **Last Updated**: 2026-10-03 19:29
+> **Progress**: 27/38 tasks (71%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -268,18 +268,25 @@ element reads move before release.
 
 ## Phase 3: Closure C spelling (DEF-57, DEF-58)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: a316203 (the phase-start commit; the review diff uses `git diff a316203..HEAD`)
 
 ### Step 3.1: Specification Tests
 
 **Reference**: [03-04](03-04-closure-c-spelling.md) · [AR-3](00-ambiguity-register.md)
 **Objective**: Pin the callable-bound closure spelling and the zero-argument call before implementation.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-16 – ST-19 and ST-27 — append to `compiler/tests/def_backlog_completion_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase: ST-16/17 fail the C build (`ClClosure_0`
+- [x] 3.1.1 [spec-author] Write specification tests from ST-16 – ST-19 and ST-27 — append to `compiler/tests/def_backlog_completion_spec_test.rs` ✅ (completed: 2026-10-03 19:29)
+- [x] 3.1.2 Run the spec suite and record the red phase: ST-16/17 fail the C build (`ClClosure_0`
   unknown); ST-27 emits one collapsed symbol for two enclosing instances; ST-19 fails the C build
   (trailing comma); ST-18 passes pre-implementation (justified: it pins the unchanged non-generic
-  spelling)
+  spelling) ✅ (completed: 2026-10-03 19:29)
+
+> **Red-phase evidence (2026-10-03 19:29)**: `cargo test --test def_backlog_completion_spec_test`
+> → 4 failed of the 5 new cases. ST-16 and ST-27: `unknown type name 'ClClosure_0'; did you mean
+> 'ClClosure_0__i32'?` (the callee's recorded argument and the call site disagree). ST-17:
+> `cl_apply__String_closure_0` undeclared (the per-enclosing symbols do not match the collapsed
+> callee declaration). ST-19: `expected expression before ')' token` from the trailing separator in
+> `((f).fn((f).env, ))`. ST-18 passes: the non-generic caller keeps `ClClosure_0` everywhere.
 
 **Deliverables**:
 - [ ] Specification cases ST-16 – ST-19 and ST-27

@@ -1263,3 +1263,131 @@ func main(): i32 {
     let output = run_memory("dbc34", source);
     assert_exit("dbc34", &output, 2);
 }
+
+/// A capturing closure passed to a callable-bound generic parameter builds.
+///
+/// `outer<i32>` creates the identity closure `[x] (y: T) => y` and passes it
+/// to `apply`, whose parameter `F` is bound to `func(T): T`. The callee's
+/// parameter type and the call-site value must spell the same callable struct,
+/// so the program builds and returns the argument `41`.
+#[test]
+fn should_build_when_a_capturing_closure_passes_to_a_callable_bound_parameter() {
+    let source = r#"module spec.dbc.st16;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func outer<T>(x: T): T {
+    return apply(x, [x] (y: T) => y);
+}
+
+func main(): i32 {
+    return outer<i32>(41);
+}
+"#;
+    let output = run_host("dbc16", source);
+    assert_exit("dbc16", &output, 41);
+}
+
+/// Two enclosing instances of one closure site build and run.
+///
+/// `outer<i32>` and `outer<String>` both create the identity closure at the
+/// same site, so the two enclosing specializations must emit distinct callable
+/// structs. The first call returns `41` and the second measures three bytes,
+/// so the program returns `44`.
+#[test]
+fn should_build_when_two_enclosing_instances_pass_capturing_closures() {
+    let source = r#"module spec.dbc.st17;
+
+import { String, stringOf } from std.text;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func outer<T>(x: T): T {
+    return apply(x, [x] (y: T) => y);
+}
+
+func main(): i32 {
+    let a: i32 = outer<i32>(41);
+    let b: i32 = i32(len(outer<String>(stringOf("abc"))));
+    return a + b;
+}
+"#;
+    let output = run_host("dbc17", source);
+    assert_exit("dbc17", &output, 44);
+}
+
+/// A non-generic caller keeps the plain closure spelling.
+///
+/// `main` is not generic, so the capturing closure it passes to `apply` has no
+/// enclosing instance to stamp: the callable struct keeps its plain name and
+/// the program builds and returns `41 + 1`.
+#[test]
+fn should_keep_the_closure_spelling_when_a_non_generic_caller_passes_a_capturing_closure() {
+    let source = r#"module spec.dbc.st18;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    let base: i32 = 1;
+    return apply(41, [base] (y: i32) => y + base);
+}
+"#;
+    let output = run_host("dbc18", source);
+    assert_exit("dbc18", &output, 42);
+}
+
+/// A zero-argument call through a closure value has no trailing separator.
+///
+/// `consume` calls its callable-bound parameter with no arguments. The emitted
+/// call must render `((f).fn((f).env))` without a trailing comma, so the
+/// program builds and returns the captured `5`.
+#[test]
+fn should_build_when_a_zero_argument_closure_value_is_called() {
+    let source = r#"module spec.dbc.st19;
+
+func consume<F: func(): i32>(f: F): i32 {
+    return f();
+}
+
+func main(): i32 {
+    let x: i32 = 5;
+    return consume([x] () => x);
+}
+"#;
+    let output = run_host("dbc19", source);
+    assert_exit("dbc19", &output, 5);
+}
+
+/// A closure-only bound instantiated from two enclosing generics builds.
+///
+/// `outer<i32>` and `outer<String>` both pass a closure to the closure-only
+/// bound `F: func(): i32` at one site. The two enclosing specializations must
+/// stay distinct in the emitters' keys, so the program builds and returns
+/// `10 + 20`.
+#[test]
+fn should_build_when_two_enclosing_instances_use_a_closure_only_bound() {
+    let source = r#"module spec.dbc.st27;
+
+import { String, stringOf } from std.text;
+
+func consume<F: func(): i32>(f: F): i32 {
+    return f();
+}
+
+func outer<T>(x: T, n: i32): i32 {
+    return consume([x] () => n);
+}
+
+func main(): i32 {
+    return outer<i32>(1, 10) + outer<String>(stringOf("ab"), 20);
+}
+"#;
+    let output = run_host("dbc27", source);
+    assert_exit("dbc27", &output, 30);
+}
