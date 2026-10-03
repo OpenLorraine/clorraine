@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 17:58
-> **Progress**: 18/37 tasks (49%)
+> **Last Updated**: 2026-10-03 18:30
+> **Progress**: 20/37 tasks (54%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -184,10 +184,20 @@ element reads move before release.
 **Reference**: [03-03](03-03-do-while-condition-release.md) · [AR-4](00-ambiguity-register.md)
 **Objective**: Pin the early-return release before implementation.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-12 – ST-15 — append to `compiler/tests/def_backlog_completion_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase: ST-12 – ST-13 and ST-15 leak (captured with
+- [x] 2.1.1 [spec-author] Write specification tests from ST-12 – ST-15 — append to `compiler/tests/def_backlog_completion_spec_test.rs` ✅ (completed: 2026-10-03 18:30)
+- [x] 2.1.2 Run the spec suite and record the red phase: ST-12 – ST-13 and ST-15 leak (captured with
   the host AddressSanitizer probe; each case pins an exit code); ST-14 passes pre-implementation
-  (justified: it pins unchanged fall-through and break behavior)
+  (justified: it pins unchanged fall-through and break behavior) ✅ (completed: 2026-10-03 18:30)
+
+> **Red-phase evidence (2026-10-03 18:30)**: the documented host AddressSanitizer probe is the red
+> oracle, because the in-container full-suite `RDC_ASAN` run is timing-sensitive in this environment
+> (its 30-second timeouts vary between runs while the host probe is deterministic). Host results:
+> ST-12 → 20 bytes leaked in 2 allocations; ST-13 → 40 bytes in 4; ST-15 → 40 bytes in 4; ST-14's
+> fall-through program exits 3 and its break program exits 2 with no sanitizer report. Plain
+> `make check` is green with the new cases (`All 40 suites`), because a plain run cannot observe the
+> leaks; the ownership-checked runs are the red signal. A pre-existing ownerless-borrow leak found
+> while auditing the ST-30 order case is filed as DEF-67 and the order program now binds its
+> results (AR-14).
 
 **Deliverables**:
 - [ ] Specification cases ST-12 – ST-15

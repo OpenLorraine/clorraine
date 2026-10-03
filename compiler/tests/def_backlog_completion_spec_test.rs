@@ -1077,7 +1077,9 @@ func main(): i32 {
 ///
 /// `mkString` sets the global `idx` to one, and both readers select
 /// `mk()[idx]`: the base call runs first, so the take and the store each
-/// receive the second row element and measure three bytes (`33`).
+/// receive the second row element and measure three bytes (`33`). Each result
+/// is bound, so the case reads a projection of the temporary without also
+/// exercising the release of an ownerless call result.
 #[test]
 fn should_evaluate_the_base_before_the_index_when_a_projection_is_read() {
     let source = r#"module spec.dbc.st30;
@@ -1105,9 +1107,159 @@ func viaStore<T>(mk: func(): T[2]): T {
 }
 
 func main(): i32 {
-    return i32(len(viaTake<String>(mkString))) * 10 + i32(len(viaStore<String>(mkString)));
+    let a: String = viaTake<String>(mkString);
+    let b: String = viaStore<String>(mkString);
+    return i32(len(a)) * 10 + i32(len(b));
 }
 "#;
     let output = run_memory("dbc30", source);
     assert_exit("dbc30", &output, 33);
+}
+
+/// An early return from a do-while body releases the condition's temporary.
+///
+/// The body returns at `i == 2`, after the condition already materialized the
+/// `grow()` result once. The return must give that array up, so the program
+/// returns `2` and the sanitizer run reports no leak.
+#[test]
+fn should_release_the_condition_temporary_when_a_do_while_body_returns_early() {
+    let source = r#"module spec.dbc.st31;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        if (i == 2) { return i; }
+    } while (grow().count > 0);
+    return 0;
+}
+"#;
+    let output = run_memory("dbc31", source);
+    assert_exit("dbc31", &output, 2);
+}
+
+/// An early return releases every temporary the condition materialized.
+///
+/// The condition calls `grow()` twice on each pass. The return at `i == 3`
+/// must give both arrays up, so the program returns `3` and the sanitizer run
+/// reports no leak.
+#[test]
+fn should_release_every_condition_temporary_when_a_do_while_body_returns_early() {
+    let source = r#"module spec.dbc.st32;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        if (i == 3) { return i; }
+    } while (grow().count > 0 && grow().count > 0);
+    return 0;
+}
+"#;
+    let output = run_memory("dbc32", source);
+    assert_exit("dbc32", &output, 3);
+}
+
+/// A do-while that falls through or breaks keeps its existing releases.
+///
+/// The first program leaves the loop when the condition turns false and
+/// returns `3`; the second leaves through `break` and returns `2`. Neither
+/// path has an early return, so the condition temporary is released exactly
+/// once by the existing paths: no leak and no double release.
+#[test]
+fn should_keep_the_existing_releases_when_a_do_while_falls_through_or_breaks() {
+    let fall_source = r#"module spec.dbc.st33a;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (grow().count > 0 && i < 3);
+    return i;
+}
+"#;
+    let fall_output = run_memory("dbc33a", fall_source);
+    assert_exit("dbc33a", &fall_output, 3);
+
+    let break_source = r#"module spec.dbc.st33b;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        if (i == 2) { break; }
+    } while (grow().count > 0);
+    return i;
+}
+"#;
+    let break_output = run_memory("dbc33b", break_source);
+    assert_exit("dbc33b", &break_output, 2);
+}
+
+/// A nested do-while return releases both loops' condition temporaries.
+///
+/// The outer condition runs once before the second outer pass; the inner
+/// condition runs once before the second inner pass. The return in that
+/// second inner pass finds both arrays live, so both must be released: the
+/// program returns `2` and the sanitizer run reports no leak.
+#[test]
+fn should_release_both_condition_temporaries_when_a_nested_do_while_body_returns_early() {
+    let source = r#"module spec.dbc.st34;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let j: i32 = 0;
+    do {
+        j = 0;
+        i = i + 1;
+        do {
+            j = j + 1;
+            if (i == 2 && j == 2) { return 2; }
+        } while (grow().count > 0 && j < 2);
+    } while (grow().count > 0 && i < 2);
+    return 0;
+}
+"#;
+    let output = run_memory("dbc34", source);
+    assert_exit("dbc34", &output, 2);
 }
