@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 19:34
-> **Progress**: 31/38 tasks (82%)
+> **Last Updated**: 2026-10-03 19:35
+> **Progress**: 33/38 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -331,10 +331,16 @@ element reads move before release.
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) §Implementation Tests
 **Objective**: Pin the emitted symbol names and the empty call text.
 
-- [ ] 3.3.1 Write implementation tests: both enclosing specializations' struct and symbol names;
+- [x] 3.3.1 Write implementation tests: both enclosing specializations' struct and symbol names;
   the non-generic `ClClosure_0` spelling; the `((f).fn((f).env))` text; byte-identical re-emission
-  — `compiler/tests/def_backlog_completion_impl_test.rs`
-- [ ] 3.3.2 Full verification — `make check`
+  — `compiler/tests/def_backlog_completion_impl_test.rs` ✅ (completed: 2026-10-03 19:35)
+- [x] 3.3.2 Full verification — `make check` ✅ (completed: 2026-10-03 19:35)
+
+> **Phase 3 verification evidence (2026-10-03 19:35)**: `make check` exit 0 — all 40 suites green
+> (the specification suite at 30/30, the implementation suite at 17/17). The five new implementation
+> cases pin the two specialized callable declarations, the plain non-generic struct, the two
+> closure-only symbols (and the absence of the collapsed one), the empty-argument call text, and
+> byte-identical re-emission.
 
 **Deliverables**:
 - [ ] Implementation suite for Phase 3

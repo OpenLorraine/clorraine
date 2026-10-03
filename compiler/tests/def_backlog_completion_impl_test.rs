@@ -712,3 +712,151 @@ fn should_emit_identical_translations_when_a_do_while_body_returns_early() {
         "dowhile-determinism: the same program emitted two different translations"
     );
 }
+
+/// One closure site passed from two enclosing instances, `i32` then `String`.
+const CLOSURE_TWO_INSTANCES: &str = r#"module impl.dbc.cl2;
+import { String, stringOf } from std.text;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func outer<T>(x: T): T {
+    return apply(x, [x] (y: T) => y);
+}
+
+func main(): i32 {
+    let a: i32 = outer<i32>(41);
+    let b: i32 = i32(len(outer<String>(stringOf("abc"))));
+    return a + b;
+}
+"#;
+
+/// Two enclosing instances of one closure site name distinct callables.
+///
+/// The recorded callable-bound argument carries its enclosing instance key, so
+/// the callee's parameter struct and the call-site value agree and the two
+/// specializations emit separate symbols and callable structs.
+#[test]
+fn should_name_distinct_callables_when_two_enclosing_instances_share_a_closure_site() {
+    let emitted = emit_host("closure-two", CLOSURE_TWO_INSTANCES);
+    assert_contains(
+        "closure-two",
+        &emitted,
+        "static i32 cl_apply__i32_closure_0__i32(i32 x, ClClosure_0__i32 f);",
+    );
+    assert_contains(
+        "closure-two",
+        &emitted,
+        "static ClString cl_apply__String_closure_0__String(ClString x, ClClosure_0__String f);",
+    );
+    let output = run_host("closure-two-run", CLOSURE_TWO_INSTANCES);
+    assert_exit("closure-two-run", &output, 44);
+}
+
+/// A non-generic caller keeps the plain callable struct name.
+///
+/// `main` has no enclosing instance to stamp, so the callable argument keeps
+/// `ClClosure_0` at both the call site and the callee, and no specialized
+/// struct is emitted.
+#[test]
+fn should_keep_the_plain_callable_when_a_non_generic_caller_uses_a_closure() {
+    let source = r#"module impl.dbc.clplain;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    let base: i32 = 1;
+    return apply(41, [base] (y: i32) => y + base);
+}
+"#;
+    let emitted = emit_host("closure-plain", source);
+    assert_contains("closure-plain", &emitted, "ClClosure_0");
+    assert_eq!(
+        count_occurrences(&emitted, "ClClosure_0__"),
+        0,
+        "closure-plain: a non-generic caller must not emit a specialized callable struct"
+    );
+    assert_contains("closure-plain", &emitted, "cl_apply__i32_closure_0");
+    let output = run_host("closure-plain-run", source);
+    assert_exit("closure-plain-run", &output, 42);
+}
+
+/// Two closure-only enclosing instances keep distinct symbols.
+///
+/// The bound argument is the closure itself, with no other type argument to
+/// keep the two instances apart, so only the stamped enclosing key separates
+/// them. Both callees declare their own callable struct.
+#[test]
+fn should_keep_two_closure_only_instances_distinct() {
+    let source = r#"module impl.dbc.clonly;
+import { String, stringOf } from std.text;
+
+func consume<F: func(): i32>(f: F): i32 {
+    return f();
+}
+
+func outer<T>(x: T, n: i32): i32 {
+    return consume([x, n] () => n);
+}
+
+func main(): i32 {
+    return outer<i32>(1, 10) + outer<String>(stringOf("ab"), 20);
+}
+"#;
+    let emitted = emit_host("closure-only", source);
+    assert_contains(
+        "closure-only",
+        &emitted,
+        "static i32 cl_consume__closure_0__i32(ClClosure_0__i32 f);",
+    );
+    assert_contains(
+        "closure-only",
+        &emitted,
+        "static i32 cl_consume__closure_0__String(ClClosure_0__String f);",
+    );
+    assert_eq!(
+        count_occurrences(&emitted, "cl_consume__closure_0("),
+        0,
+        "closure-only: the collapsed symbol without the instance key must not be emitted"
+    );
+    let output = run_host("closure-only-run", source);
+    assert_exit("closure-only-run", &output, 30);
+}
+
+/// A zero-argument call through a closure value has no trailing separator.
+#[test]
+fn should_render_a_zero_argument_closure_call_without_a_separator() {
+    let source = r#"module impl.dbc.clempty;
+
+func consume<F: func(): i32>(f: F): i32 {
+    return f();
+}
+
+func main(): i32 {
+    let x: i32 = 5;
+    return consume([x] () => x);
+}
+"#;
+    let emitted = emit_host("closure-empty", source);
+    assert_contains("closure-empty", &emitted, "((f).fn((f).env))");
+    assert_eq!(
+        count_occurrences(&emitted, ".env, )"),
+        0,
+        "closure-empty: the call must not render a trailing separator"
+    );
+    let output = run_host("closure-empty-run", source);
+    assert_exit("closure-empty-run", &output, 5);
+}
+
+/// Re-emitting a specialized closure argument is deterministic.
+#[test]
+fn should_emit_identical_translations_when_a_specialized_closure_is_passed() {
+    let (first, second) = emit_twice("closure-determinism", CLOSURE_TWO_INSTANCES);
+    assert_eq!(
+        first, second,
+        "closure-determinism: the same program emitted two different translations"
+    );
+}
