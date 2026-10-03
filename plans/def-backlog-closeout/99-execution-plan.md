@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 00:58
-> **Progress**: 8/44 tasks (18%)
+> **Last Updated**: 2026-10-04 01:38
+> **Progress**: 9/44 tasks (20%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -130,7 +130,7 @@ path, and no eagerly assigned owned local appears. Necessary correction, not a w
 
 - [x] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice element move-out with its regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 01:01)
 - [x] 1.3.2 Run the ST-1/3/5/6 host-ASan probes from the 07 matrix and `cargo test` for both new suites ✅ (completed: 2026-10-04 01:03)
-- [~] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff ⏳ (implemented: 2026-10-04 01:04; paused on open critical/major findings)
+- [x] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-04 01:38)
 
 **Phase 1 review findings (2026-10-04 01:10)** — three reviewers dispatched in parallel on the
 phase diff (baseline `12b02b66`); correctness via the generic reviewer role, memory safety and
@@ -146,6 +146,12 @@ emission integrity via the project auditors.
 | PE-003 | 🟡 MINOR | A moved slot is zeroed twice (`cl_zero` then the move-out NULL); no memory impact | report-only |
 | RV-002 | 🟡 MINOR | In-container `RDC_ASAN=1` is unreliable in this environment (libasan DEADLYSIGNAL loops); host ASan remains the oracle per the testing strategy | report-only (environment) |
 | OB-5 | 🟡 MINOR | C argument-evaluation order is relied on for two side-effecting call arguments; identical on the baseline | report-only |
+| RV-004 | 🟡 MINOR | The field-order case asserted a clean sanitizer run while the restored member read leaves the call result's sibling leak; the assertion would fail under `RDC_ASAN` | ✅ fixed — the case pins order and value under the strict host build |
+| SA-005 | 🔴 CRITICAL | Re-review: the SA-001 gate checked only the immediate slice source's recorded type, so a slice of a slice (or a two-step view binding) recorded a single-extent type, recovered an owned element, and double-freed again | ✅ resolved — user chose: recover only for fixed single-extent slice sources; both repros are baseline-identical and host-ASan clean |
+| RV-003 | 🟠 MAJOR | Re-review: the nested multi-extent memory pin passed on the pre-fix compiler (AddressSanitizer exits 1, so `is_some()` held, and the message spells `double-free`) | ✅ fixed — asserts exit 0 and no `AddressSanitizer`; red on the pre-fix compiler per the re-review's exact-flag run |
+| PE-001r | 🟠 MAJOR | Residual of the order fix: element-projection consumes stay eager (`Box<T> { w: f(), v: make()[i] }` → trace 21; the baseline crashed) | 📋 filed as DEF-73 |
+| PE-002 | 🟠 MAJOR | The authorized member revert restores the pre-existing direct-call member-consume leak (`Box { v: mk().a }`, 12 B host ASan; baseline identical) | 📋 filed as DEF-74 |
+| PE-003r | 🟠 MAJOR | Pre-existing invalid C: a call-indexed assignment (`out[target()] = mkvArray()[rhsIndex()]`, also a struct-literal RHS) emits `*(&(out[i])).a` and fails the strict build | 📋 filed as DEF-75 |
 
 Test integrity independently re-checked: every fix-bound spec case fails on the baseline (6/8 red
 before), the impl suite pins the new shapes (5/7 red before), and the updated guarded-take pin is
@@ -163,10 +169,18 @@ Both suites green together (9 spec + 8 impl); `make check` green; host ASan prob
 pre-existing defects are filed as DEF-70 – DEF-72 in the roadmap. One bounded re-review is
 dispatched on the fix diff.
 
+**Re-review outcome (2026-10-04 01:38)** — the single permitted re-review confirmed both fixes and
+found one gate escape plus test-integrity gaps. Resolutions: the recovery gate now requires a
+fixed single-extent slice source (chained and two-step view sources are baseline-identical and
+host-ASan clean); the nested memory pin asserts exit 0 and no sanitizer report; the field-order case
+pins order under the strict host build. The residual element-projection order case and the two
+pre-existing emission defects are filed as DEF-73 – DEF-75. `make check` green (42 suites). No
+further re-review remains under the protocol; the targeted re-verify above is the final check.
+
 **Deliverables**:
 - [x] Implementation suite for the three shapes
 - [x] Clean probe matrix
-- [ ] Phase review with no open critical/major finding
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 

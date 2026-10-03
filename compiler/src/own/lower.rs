@@ -649,18 +649,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// True when recovering an unknown element type from an index base agrees
     /// with the type the emitted view actually reads.
     ///
-    /// A slice over a multi-extent source is emitted as a flat view of the
-    /// source's scalar element while the recorded base type still nests the row
-    /// extents; recovering the nested element in that case would type the
-    /// access as an owned row over storage the view only borrows, so the
-    /// recovery is limited to single-extent sources, where the recorded element
-    /// and the viewed element agree. Every non-slice base keeps the recovery
-    /// unchanged.
+    /// Only a fixed single-extent array is viewed with the recorded element
+    /// type. A dynamic or multi-extent source may be a flattened view of nested
+    /// storage (a slice of a slice stays single-extent in its recorded type),
+    /// so recovering its element would type the access as an owned value over
+    /// storage the view only borrows; those bases keep the unknown type and
+    /// stay borrowed reads. Every non-slice base keeps the recovery unchanged.
     fn element_recovery_agrees(&self, base: &Value) -> bool {
         match &base.kind {
-            ValueKind::Intrinsic { name, args, .. } if name == "slice" => !matches!(
+            ValueKind::Intrinsic { name, args, .. } if name == "slice" => matches!(
                 args.first().map(|arg| &arg.ty.kind),
-                Some(TyKind::Array { extents, .. }) if extents.len() > 1
+                Some(TyKind::Array { extents, .. })
+                    if extents.len() == 1 && extents[0].is_some()
             ),
             ValueKind::Materialize { value, .. } => self.element_recovery_agrees(value),
             _ => true,

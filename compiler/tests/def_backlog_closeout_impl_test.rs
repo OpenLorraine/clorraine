@@ -533,14 +533,15 @@ func main(): i32 {
 }
 "#;
     let output = run_relaxed_asan("slice-nested", source);
-    assert!(
-        output.status.code().is_some(),
+    assert_eq!(
+        output.status.code(),
+        Some(0),
         "slice-nested: the program aborted (double free); stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        !String::from_utf8_lossy(&output.stderr).contains("double free"),
-        "slice-nested: the program reported a double free; stderr:\n{}",
+        !String::from_utf8_lossy(&output.stderr).contains("AddressSanitizer"),
+        "slice-nested: the sanitizer reported an error; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
