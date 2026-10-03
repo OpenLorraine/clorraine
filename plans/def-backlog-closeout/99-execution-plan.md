@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 00:58
-> **Progress**: 7/44 tasks (16%)
+> **Progress**: 8/44 tasks (18%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -129,15 +129,29 @@ path, and no eagerly assigned owned local appears. Necessary correction, not a w
 **Objective**: Pin the emitted shapes and release counts; prove memory safety at task time.
 
 - [x] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice element move-out with its regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 01:01)
-- [ ] 1.3.2 Run the ST-1/3/5/6 host-ASan probes from the 07 matrix and `cargo test` for both new suites
+- [x] 1.3.2 Run the ST-1/3/5/6 host-ASan probes from the 07 matrix and `cargo test` for both new suites ✅ (completed: 2026-10-04 01:03)
 - [ ] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
 
 **Deliverables**:
-- [ ] Implementation suite for the three shapes
-- [ ] Clean probe matrix
+- [x] Implementation suite for the three shapes
+- [x] Clean probe matrix
 - [ ] Phase review with no open critical/major finding
 
 **Verify**: `make check`
+
+**Probe evidence (2026-10-04 01:03)** — host ASan over `build/closeout/`:
+
+| Probe | Exit | Sanitizer output |
+| ----- | ---- | ---------------- |
+| `def63_guarded_member.clo` (both guard paths) | 7 | none |
+| `def64_aggregate_index.clo` | 3 | none |
+| `def66_slice_store.clo` | 3 | none |
+| `def66_slice_take.clo` | 3 | none |
+
+Both new suites pass together (8 spec + 7 impl). Probe-shape note: `def66_slice_store.clo` binds the
+returned element before measuring it, because the literal `i32(len(storeSlice(...)))` spelling carries
+the still-open expression-temporary leak (the DEF-67 shape) in the caller; the close-out runner
+(task 6.1.2) uses the literal spelling after Phase 2, when that leak closes.
 
 ---
 
