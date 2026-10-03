@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 00:58
-> **Progress**: 6/44 tasks (14%)
+> **Progress**: 7/44 tasks (16%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -128,7 +128,7 @@ path, and no eagerly assigned owned local appears. Necessary correction, not a w
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) · [AR-15](00-ambiguity-register.md)
 **Objective**: Pin the emitted shapes and release counts; prove memory safety at task time.
 
-- [ ] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice element move-out with its regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [x] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice element move-out with its regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 01:01)
 - [ ] 1.3.2 Run the ST-1/3/5/6 host-ASan probes from the 07 matrix and `cargo test` for both new suites
 - [ ] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
 
