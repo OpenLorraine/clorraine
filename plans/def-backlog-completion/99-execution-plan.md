@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 21:11
-> **Progress**: 34/40 tasks (85%)
+> **Last Updated**: 2026-10-03 21:14
+> **Progress**: 35/40 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -338,7 +338,13 @@ element reads move before release.
 - [x] 3.3.3 Fix the first-pass regression (a lifted lambda in a non-generic function must keep
   its walk) and stamp the discarded-call path, with regression cases — `own/generics.rs`,
   `compiler/tests/def_backlog_completion_spec_test.rs` (RV-401, RV-402) ✅ (completed: 2026-10-03 21:11)
-- [~] 3.3.4 Full verification and the bounded fix-diff re-review — `make check` (RV-401, RV-402) ⏳ (implemented: 2026-10-03 21:11)
+- [x] 3.3.4 Full verification and the bounded fix-diff re-review — `make check` (RV-401, RV-402) ✅ (completed: 2026-10-03 21:14)
+
+> **Fix re-review outcome (2026-10-03 21:14)**: the one allowed re-review on `76acb3b..0af4588`
+> found no findings at any severity. It confirmed the template predicate is correct for declared
+> and lifted functions in both generic and non-generic declarations, both `record_instance` sites
+> share the stamped helper, the three regression cases fail pre-fix and pass post-fix, existing
+> corpus emission is byte-identical, and the borrow/order in the helper is sound.
 
 > **Phase 3 post-phase review (2026-10-03 21:11)**: one correctness reviewer ran on the phase diff
 > (`a316203..76acb3b`). RV-401 (critical — the first-pass template skip also skipped lifted lambdas
@@ -365,7 +371,7 @@ element reads move before release.
 
 ## Phase 4: Close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 0af4588 (the phase-start commit; the review diff uses `git diff 0af4588..HEAD`)
 
 ### Step 4.1: Acceptance, Probes, Docs, and Summary
 
