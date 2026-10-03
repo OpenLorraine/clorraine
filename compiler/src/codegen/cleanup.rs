@@ -345,10 +345,20 @@ impl<'a> Emitter<'a> {
                             // directly, and a release cannot run after a
                             // `return`. The value is stored in a block-local
                             // first, so the releases run after it has been read.
+                            // A storage-rooted source is emptied before the
+                            // releases, exactly as the result-var branch does:
+                            // otherwise a release of the temporary would free
+                            // the element the returned value still aliases.
                             let local = self.unique_local("__cl_return");
                             let decl = super::types::declarator(&ret_ty, &local, &self.sema.table);
                             self.push("    {");
                             self.push(&format!("        {decl} = {lowered};"));
+                            if self.needs_drop(&ret_ty) {
+                                let source_ty = self.substitute(&value.ty);
+                                if self.needs_drop(&source_ty) {
+                                    self.emit_arm_source_moves(value, &source_ty);
+                                }
+                            }
                             self.emit_temp_releases(releases);
                             self.push(&format!("        return {local};"));
                             self.push("    }");

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:28
-> **Progress**: 8/31 tasks (26%)
+> **Last Updated**: 2026-10-03 13:29
+> **Progress**: 9/31 tasks (29%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -107,8 +107,8 @@ element reads move before release.
   (AR-6, PF-002; the program migrations were applied with task 1.2.2) ✅ (completed: 2026-10-03 13:26)
 - [x] 1.2.6 Move the store out of a statement-owned destination temporary instead of copying, and
   document the DEF-64 aggregate-literal limitation — `own/statements.rs` ✅ (completed: 2026-10-03 13:28; the limitation note lives on the aggregate-consume path in `own/lower.rs`)
-- [ ] 1.2.7 Move the return source in the no-ladder branch before the temporary releases —
-  `codegen/cleanup.rs`
+- [x] 1.2.7 Move the return source in the no-ladder branch before the temporary releases —
+  `codegen/cleanup.rs` ✅ (completed: 2026-10-03 13:29)
 - [ ] 1.2.8 Run the spec suite — green phase (a failing case means the implementation is wrong; do
   not edit the case)
 
