@@ -191,4 +191,20 @@ in `CMD`).
 - Keep `plans/*/99-...`/roadmap state in sync through the CodeOps skills, and
   follow the repository's quality profile (strict: independent review, stop on
   critical/major findings).
+- Phase-review dispatch follows the change surface:
+  - ownership, drop, or emission changes: correctness reviewer plus the
+    read-only memory-safety auditor
+    (`.opencode/agents/memory-safety-auditor.md`), which probes the changed
+    shapes under the host AddressSanitizer;
+  - IR, codegen, or symbol-name changes: those two plus the read-only
+    emission-integrity auditor
+    (`.opencode/agents/emission-integrity-auditor.md`), which diffs base and
+    head emissions over the corpus and hunts accepted-program C build
+    failures;
+  - language-rule changes (lends, captures, evaluation order): those two plus
+    `semantics-reviewer`, with the `spec/17-codegen` ABI lens where signatures
+    or lowering change.
+- Reviewer packets always include a blast-radius step (every call site,
+  exhaustive match, and parallel path of the changed construct) and a
+  test-integrity step (an assertion must fail without the fix).
 <!-- CODEOPS-PROJECT:END -->
