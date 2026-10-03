@@ -854,21 +854,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// unchanged. This realizes the "a move is a copy plus a zero of the source"
     /// rule for a value consumed inside an aggregate literal.
     ///
-    /// Known limit: the place derivation here does not carry a run-time element
-    /// index. A value reached this way (an aggregate-literal element whose
-    /// position is selected by a non-constant index over a fresh call result)
-    /// keeps the older element-zero fallback, so the wrong slot would be
-    /// emptied; the store and take paths materialize the index first and do not
-    /// share the limit.
+    /// A projection is prepared like a store before its place is derived: a
+    /// fresh call root is bound to an owned temporary, an eager base is filled,
+    /// and a run-time index is pinned. Without that preparation the root call
+    /// would never run and a run-time index would fall back to the element-zero
+    /// form, so the move could empty the wrong slot. A projection over caller
+    /// storage keeps the ordinary move.
     pub(super) fn consume_place(&mut self, value: Value) -> Value {
-        let Some(source) = self.value_place(&value) else {
-            return value;
-        };
         // A maybe-owning value moves through the same shape: the emitted move
         // copies and zeroes only for an owning instance.
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
         }
+        let value = if matches!(
+            value.kind,
+            ValueKind::Member { .. } | ValueKind::Index { .. }
+        ) {
+            let value = self.bind_ownerless_projection_root(value);
+            let value = self.settle_projection_base(value);
+            self.materialize_index_chain(value)
+        } else {
+            value
+        };
+        let Some(source) = self.value_place(&value) else {
+            return value;
+        };
         let ty = self.materialized_ty(&value);
         let id = self.new_temp(ty.clone());
         let target = Place {
