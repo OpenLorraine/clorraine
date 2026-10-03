@@ -1315,6 +1315,56 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Binds a consumed projection's call root for a conditionally evaluated
+    /// operand.
+    ///
+    /// An operand inside `&&`/`||`/`?:` runs only on the path that reaches it, so
+    /// the ownerless call root cannot be bound to an eagerly assigned scope
+    /// local: the binding would run the root call even when the operand is
+    /// skipped. The root is wrapped in the deferred [`ValueKind::Materialize`]
+    /// shape the guard emitter fills on the evaluated path, and the temporary's
+    /// registered release frees every field the take does not move out. The
+    /// recursion and the ownership rules match
+    /// [`Self::bind_ownerless_projection_root`]; a chain that already roots in
+    /// storage, or a root that owns nothing, is returned unchanged.
+    fn bind_guarded_projection_root(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.bind_guarded_projection_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.bind_guarded_projection_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            // The root of the chain: a fresh call result owns its storage only
+            // until the statement ends. The deferred materialization fills the
+            // temporary where the operand is evaluated and releases it with the
+            // statement, so a skipped path never runs the call.
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                    self.materialize_guard_operand(value)
+                } else {
+                    value
+                }
+            }
+            _ => value,
+        }
+    }
+
     /// Binds an unnamed owned call result so the scope cleanup can release it.
     ///
     /// A call result the callee only borrows is owned by the caller, but an
@@ -1338,11 +1388,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // The base expression evaluates before the index (`m()[i]` runs
             // `m()` first and it may change the index), so an eager base is
             // filled before the index is pinned. A guarded operand keeps its
-            // deferred form and pins the index inside the guard instead.
+            // deferred form and pins the index inside the guard instead. A
+            // guarded call root is bound to the deferred guard temporary, which
+            // keeps the call on the evaluated path while the take's move-out
+            // still empties the selected member.
             let value = if self.defer_move_outs == 0 {
                 self.bind_ownerless_projection_root(value)
             } else {
-                value
+                self.bind_guarded_projection_root(value)
             };
             let value = self.settle_projection_base(value);
             let value = self.materialize_index_chain(value);

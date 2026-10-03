@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 00:49
-> **Progress**: 2/44 tasks (5%)
+> **Progress**: 3/44 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -96,7 +96,7 @@ gate confirms both slice forms reproduce; no form closes as already-fixed.
 **Reference**: [03-01](03-01-take-moveout-integrity.md) §1–§3
 **Objective**: Fix the guarded member-root take, the aggregate-literal consume, and the slice element-typing gap only if it reproduces.
 
-- [ ] 1.2.1 Bind the guarded call-rooted take argument through the deferred `Materialize` temp — `compiler/src/own/lower.rs`
+- [x] 1.2.1 Bind the guarded call-rooted take argument through the deferred `Materialize` temp — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-04 00:54)
 - [ ] 1.2.2 Prepare the aggregate-literal consume path (settle, index chain, root bind) and emit the base fill explicitly — `compiler/src/own/lower.rs`
 - [ ] 1.2.3 Run the DEF-66 reproduction probes (let-store, take, return forms under host ASan); for each reproducing form recover the slice element's type from the settled slice base so the existing move-out path applies, otherwise record the already-fixed evidence — `compiler/src/own/lower.rs`, `compiler/src/sema`
 - [ ] 1.2.4 Run the spec suite and record the green phase
