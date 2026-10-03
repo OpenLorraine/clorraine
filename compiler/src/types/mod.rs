@@ -15,8 +15,10 @@ use std::collections::BTreeMap;
 
 use crate::ast::{Expr, ExprKind, Mode, ScalarType};
 
+mod keys;
 mod table;
 
+pub(crate) use keys::{closure_key, slice_base_element, slice_element_key, type_key};
 pub use table::{resolve_ty, resolve_ty_with, FuncSig, TypeParamSig, TypeTable};
 
 /// A checked type: a shape plus the `?` empty-state flag.

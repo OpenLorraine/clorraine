@@ -12,6 +12,8 @@ use crate::abi;
 use crate::ast::{Mode, ScalarType};
 use crate::types::{ClosureTy, Ty, TyKind, TypeTable};
 
+pub(super) use crate::types::{slice_base_element, slice_element_key, type_key};
+
 /// Replaces the dots of a dotted module path with underscores.
 pub(super) fn mangle_module(module: &str) -> String {
     module.replace('.', "_")
@@ -267,64 +269,6 @@ pub(super) fn empty_state(ty: &Ty) -> String {
         TyKind::Array { .. } => "{0}".to_owned(),
         _ => "0".to_owned(),
     }
-}
-
-/// A stable key naming a type in a symbol.
-///
-/// A fixed array renders every extent, so `i32[2]` and `i32[3]` never share a
-/// key. An array with an unknown extent is a slice and renders the slice
-/// marker instead; the two forms cannot collide with each other.
-pub(super) fn type_key(ty: &Ty) -> String {
-    match &ty.kind {
-        TyKind::Void => "void".to_owned(),
-        TyKind::Scalar(scalar) => crate::types::scalar_name(*scalar).to_owned(),
-        TyKind::Str => "str".to_owned(),
-        TyKind::StaticStr => "static_str".to_owned(),
-        TyKind::CString => "cstring".to_owned(),
-        TyKind::Raw(inner) => format!("raw_{}", type_key(inner)),
-        TyKind::Handle(name) | TyKind::Enum(name) | TyKind::Param(name) => name.clone(),
-        TyKind::Struct(name, args) => {
-            if args.is_empty() {
-                name.clone()
-            } else {
-                let rendered: Vec<String> = args.iter().map(type_key).collect();
-                format!("{name}__{}", rendered.join("_"))
-            }
-        }
-        TyKind::Array { element, extents } => {
-            if extents.iter().all(Option::is_some) {
-                let dims: Vec<String> = extents
-                    .iter()
-                    .filter_map(|size| size.map(|value| value.to_string()))
-                    .collect();
-                format!("arr{}_{}", dims.join("x"), type_key(element))
-            } else {
-                format!("slice_{}", slice_element_key(element))
-            }
-        }
-        TyKind::Func(_) => "fn".to_owned(),
-        TyKind::Closure(closure) => format!("closure_{}", closure.id),
-        TyKind::Unknown => "unknown".to_owned(),
-    }
-}
-
-/// The base element a slice view points at, with nested rows unwrapped.
-///
-/// A slice of a fixed row (`i32[3][]`) and a row slice written with its
-/// extents after the marker (`i32[][3]`) describe the same view. Both flatten
-/// to the same base element, so their `ClSlice_` names stay shared and a view
-/// built by the `slice` intrinsic matches the declared typedef.
-pub(super) fn slice_base_element(element: &Ty) -> &Ty {
-    let mut base = element;
-    while let TyKind::Array { element, .. } = &base.kind {
-        base = element;
-    }
-    base
-}
-
-/// The element key a slice's C spelling uses.
-pub(super) fn slice_element_key(element: &Ty) -> String {
-    type_key(slice_base_element(element))
 }
 
 /// The C struct name of a closure's two-word value.

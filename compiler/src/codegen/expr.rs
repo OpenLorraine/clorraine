@@ -461,7 +461,11 @@ impl<'a> Emitter<'a> {
         // type consistent.
         if let Some(closure) = self.closure_param_type(callee) {
             let callable = self.place(&Place::param(callee).with_type(closure));
-            return format!("(({callable}).fn(({callable}).env, {argument_list}))");
+            return if argument_list.is_empty() {
+                format!("(({callable}).fn(({callable}).env))")
+            } else {
+                format!("(({callable}).fn(({callable}).env, {argument_list}))")
+            };
         }
         // A func-typed binding shadows a module function of the same written
         // name, so the call goes through the binding's own C local before any

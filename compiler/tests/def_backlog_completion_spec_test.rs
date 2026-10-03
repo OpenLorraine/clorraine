@@ -1381,7 +1381,7 @@ func consume<F: func(): i32>(f: F): i32 {
 }
 
 func outer<T>(x: T, n: i32): i32 {
-    return consume([x] () => n);
+    return consume([x, n] () => n);
 }
 
 func main(): i32 {

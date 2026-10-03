@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 19:29
-> **Progress**: 27/38 tasks (71%)
+> **Last Updated**: 2026-10-03 19:34
+> **Progress**: 31/38 tasks (82%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -301,14 +301,21 @@ element reads move before release.
 **Reference**: [03-04](03-04-closure-c-spelling.md) §Proposed Changes
 **Objective**: Make the call site and the callee agree, and fix the empty argument list.
 
-- [ ] 3.2.1 Relocate `type_key` and its slice helpers to the stage-neutral `types` module; include
+- [x] 3.2.1 Relocate `type_key` and its slice helpers to the stage-neutral `types` module; include
   the closure instance in `type_key`'s closure arm and in `dedupe_arg` — `compiler/src/types/`,
-  `codegen/types.rs`, `codegen/calls.rs`, `ir/mono.rs`
-- [ ] 3.2.2 Record the enclosing lifted specializations before walking the body, then stamp the
+  `codegen/types.rs`, `codegen/calls.rs`, `ir/mono.rs` ✅ (completed: 2026-10-03 19:34)
+- [x] 3.2.2 Record the enclosing lifted specializations before walking the body, then stamp the
   enclosing instance key on recorded closure type arguments that have a lifted specialization for
-  that instance — `own/generics.rs`
-- [ ] 3.2.3 Omit the separator for an empty closure argument list — `codegen/expr.rs`
-- [ ] 3.2.4 Run the spec suite — green phase
+  that instance — `own/generics.rs` ✅ (completed: 2026-10-03 19:34)
+- [x] 3.2.3 Omit the separator for an empty closure argument list — `codegen/expr.rs` ✅ (completed: 2026-10-03 19:34)
+- [x] 3.2.4 Run the spec suite — green phase ✅ (completed: 2026-10-03 19:34)
+
+> **Green-phase evidence (2026-10-03 19:34)**: `cargo test --test def_backlog_completion_spec_test`
+> → 30/30 green, and `make check` exit 0 — all 40 suites. The five closure cases run with their
+> pinned exits (`41`, `44`, `42`, `5`, `30`); the two closure-only enclosing specializations emit
+> `cl_consume__closure_0__i32` and `cl_consume__closure_0__String` as distinct symbols, and the
+> zero-argument call renders `((f).fn((f).env))`. Task 3.2.2 also skips generic templates in the
+> first walk, because a closure-only argument has no type parameter to mark it unresolved.
 
 **Deliverables**:
 - [ ] Key relocation, stamping, and renderer fix

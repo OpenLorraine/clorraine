@@ -458,7 +458,21 @@ pub fn collect_ir_instances(
 ) {
     let no_bindings = BTreeMap::new();
     for function in functions {
-        walk_function(function, &no_bindings, program, sema, mono);
+        // A generic declaration and a lifted lambda inside one are walked per
+        // concrete instance below. Their bodies must not record an instance
+        // keyed on a closure whose enclosing instance is not known yet: a
+        // closure-only argument has no type parameter to mark it unresolved,
+        // so walking the template would record a plain copy alongside the
+        // stamped one.
+        let template = function.enclosing.is_some()
+            || matches!(
+                program.callee(&function.name),
+                Some(Callee::User(decl)) if !decl.type_params.is_empty()
+            );
+        if template {
+            continue;
+        }
+        walk_function(function, &no_bindings, program, sema, mono, None);
     }
     // A generic body may call another generic with its own type parameters, so
     // the first walk cannot name those instances. Each recorded instance is
@@ -486,11 +500,10 @@ pub fn collect_ir_instances(
             .map(|param| param.name.clone())
             .zip(instance.args.iter().cloned())
             .collect();
-        walk_function(function, &bindings, program, sema, mono);
-        // A lifted lambda in this instance's body carries the same bindings.
-        // Walking it records the nested generic calls its body makes (the
-        // behavior this pass exists for) and marks the specialization the
-        // emitter must write.
+        // The enclosing specializations are recorded before the body is
+        // walked: the walk stamps a closure argument it records for this
+        // instance, and the stamp is applied only when the site is specialized
+        // for that instance.
         for lifted in functions {
             if lifted.enclosing.as_deref() != Some(decl.name.as_str()) {
                 continue;
@@ -504,7 +517,22 @@ pub fn collect_ir_instances(
                     args: instance.args.clone(),
                 });
             }
-            walk_function(lifted, &bindings, program, sema, mono);
+        }
+        // The key mirrors the emitter's instance key, so a stamped closure
+        // names the same callable struct the emitter builds for this instance.
+        let enclosing = instance_key(&instance.args);
+        walk_function(function, &bindings, program, sema, mono, Some(&enclosing));
+        // A lifted lambda in this instance's body carries the same bindings.
+        // Walking it records the nested generic calls its body makes (the
+        // behavior this pass exists for).
+        for lifted in functions {
+            if lifted.enclosing.as_deref() != Some(decl.name.as_str()) {
+                continue;
+            }
+            if lifted.lambda_site.is_none() {
+                continue;
+            }
+            walk_function(lifted, &bindings, program, sema, mono, Some(&enclosing));
         }
     }
 }
@@ -659,6 +687,7 @@ fn walk_function(
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
+    enclosing: Option<&str>,
 ) {
     record_struct_type(&substitute(&function.ret, bindings), sema, mono);
     for param in &function.params {
@@ -674,11 +703,11 @@ fn walk_function(
         for instr in &block.statements {
             match &instr.statement {
                 Statement::Assign { value, .. } => {
-                    walk_value(value, bindings, program, sema, mono)
+                    walk_value(value, bindings, program, sema, mono, enclosing)
                 }
                 Statement::StorePointer { pointer, value } => {
-                    walk_value(pointer, bindings, program, sema, mono);
-                    walk_value(value, bindings, program, sema, mono);
+                    walk_value(pointer, bindings, program, sema, mono, enclosing);
+                    walk_value(value, bindings, program, sema, mono, enclosing);
                 }
                 Statement::Call {
                     callee,
@@ -693,14 +722,14 @@ fn walk_function(
                         .collect();
                     record_instance(callee, &resolved, program, mono);
                     if let Some(receiver) = receiver {
-                        walk_value(receiver, bindings, program, sema, mono);
+                        walk_value(receiver, bindings, program, sema, mono, enclosing);
                     }
                     for arg in args {
-                        walk_value(arg, bindings, program, sema, mono);
+                        walk_value(arg, bindings, program, sema, mono, enclosing);
                     }
                 }
                 Statement::Discard { value } => {
-                    walk_value(value, bindings, program, sema, mono)
+                    walk_value(value, bindings, program, sema, mono, enclosing)
                 }
                 Statement::Move { .. }
                 | Statement::MoveOut { .. }
@@ -715,19 +744,67 @@ fn walk_function(
         }
         match &block.terminator {
             Terminator::Branch { condition, .. } => {
-                walk_value(condition, bindings, program, sema, mono)
+                walk_value(condition, bindings, program, sema, mono, enclosing)
             }
             Terminator::Switch { value, arms, .. } => {
-                walk_value(value, bindings, program, sema, mono);
+                walk_value(value, bindings, program, sema, mono, enclosing);
                 for (label, _) in arms {
-                    walk_value(label, bindings, program, sema, mono);
+                    walk_value(label, bindings, program, sema, mono, enclosing);
                 }
             }
             Terminator::Return {
                 value: Some(value), ..
-            } => walk_value(value, bindings, program, sema, mono),
+            } => walk_value(value, bindings, program, sema, mono, enclosing),
             _ => {}
         }
+    }
+}
+
+/// The joined symbol key of an instance's type arguments.
+///
+/// It mirrors the emitter's instance key, so a closure stamped with it names
+/// the same callable struct the emitter builds for the enclosing instance.
+fn instance_key(args: &[Ty]) -> String {
+    let keys: Vec<String> = args.iter().map(crate::types::type_key).collect();
+    keys.join("_")
+}
+
+/// True when the lifted lambda at `site` is emitted for the instance key.
+fn has_lifted_specialization(mono: &Monomorphization, site: usize, key: &str) -> bool {
+    mono.lifted_specializations().iter().any(|specialization| {
+        specialization.site == site && instance_key(&specialization.args) == key
+    })
+}
+
+/// Stamps an enclosing instance key on closure types recorded for that instance.
+///
+/// A closure created in a generic body belongs to the enclosing instance, so a
+/// call argument that names the closure must spell the same callable struct the
+/// emitter builds there. Only a site with a lifted specialization for this
+/// instance is stamped; a shared or non-generic closure keeps its plain key.
+/// The walk mirrors the emitter's tagging, so a closure nested inside another
+/// recorded type is stamped too.
+fn stamp_closure_instances(ty: &mut Ty, key: &str, mono: &Monomorphization) {
+    match &mut ty.kind {
+        TyKind::Closure(closure) => {
+            if closure.instance.is_none() && has_lifted_specialization(mono, closure.id, key) {
+                closure.instance = Some(key.to_owned());
+            }
+        }
+        TyKind::Raw(inner) => stamp_closure_instances(inner, key, mono),
+        TyKind::Array { element, .. } => stamp_closure_instances(element, key, mono),
+        TyKind::Struct(_, args) => {
+            for arg in args {
+                stamp_closure_instances(arg, key, mono);
+            }
+        }
+        TyKind::Func(signature) => {
+            for param in &mut signature.params {
+                stamp_closure_instances(&mut param.ty, key, mono);
+            }
+            stamp_closure_instances(&mut signature.returns, key, mono);
+        }
+        _ => {}
     }
 }
 
@@ -764,6 +841,7 @@ fn walk_value(
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
+    enclosing: Option<&str>,
 ) {
     record_struct_type(&substitute(&value.ty, bindings), sema, mono);
     match &value.kind {
@@ -773,73 +851,78 @@ fn walk_value(
             args,
             receiver,
         } => {
-            let resolved: Vec<Ty> = type_args
+            let mut resolved: Vec<Ty> = type_args
                 .iter()
                 .map(|ty| substitute(ty, bindings))
                 .collect();
+            if let Some(key) = enclosing {
+                for ty in &mut resolved {
+                    stamp_closure_instances(ty, key, mono);
+                }
+            }
             record_instance(callee, &resolved, program, mono);
             if let Some(receiver) = receiver {
-                walk_value(receiver, bindings, program, sema, mono);
+                walk_value(receiver, bindings, program, sema, mono, enclosing);
             }
             for arg in args {
-                walk_value(arg, bindings, program, sema, mono);
+                walk_value(arg, bindings, program, sema, mono, enclosing);
             }
         }
-        ValueKind::Member { base, .. } => walk_value(base, bindings, program, sema, mono),
+        ValueKind::Member { base, .. } => walk_value(base, bindings, program, sema, mono, enclosing),
         ValueKind::Index { base, index } => {
-            walk_value(base, bindings, program, sema, mono);
-            walk_value(index, bindings, program, sema, mono);
+            walk_value(base, bindings, program, sema, mono, enclosing);
+            walk_value(index, bindings, program, sema, mono, enclosing);
         }
-        ValueKind::Unary { operand, .. } => walk_value(operand, bindings, program, sema, mono),
+        ValueKind::Unary { operand, .. } => walk_value(operand, bindings, program, sema, mono, enclosing),
         ValueKind::Binary { left, right, .. } => {
-            walk_value(left, bindings, program, sema, mono);
-            walk_value(right, bindings, program, sema, mono);
+            walk_value(left, bindings, program, sema, mono, enclosing);
+            walk_value(right, bindings, program, sema, mono, enclosing);
         }
-        ValueKind::Cast { value, .. } => walk_value(value, bindings, program, sema, mono),
+        ValueKind::Cast { value, .. } => walk_value(value, bindings, program, sema, mono, enclosing),
         ValueKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            walk_value(condition, bindings, program, sema, mono);
-            walk_value(then_value, bindings, program, sema, mono);
-            walk_value(else_value, bindings, program, sema, mono);
+            walk_value(condition, bindings, program, sema, mono, enclosing);
+            walk_value(then_value, bindings, program, sema, mono, enclosing);
+            walk_value(else_value, bindings, program, sema, mono, enclosing);
         }
         ValueKind::StructLit { fields, .. } => {
             for (_, field) in fields {
-                walk_value(field, bindings, program, sema, mono);
+                walk_value(field, bindings, program, sema, mono, enclosing);
             }
         }
         ValueKind::ArrayLit { elements, fill } => {
             for element in elements {
-                walk_value(element, bindings, program, sema, mono);
+                walk_value(element, bindings, program, sema, mono, enclosing);
             }
             if let Some(fill) = fill {
-                walk_value(fill, bindings, program, sema, mono);
+                walk_value(fill, bindings, program, sema, mono, enclosing);
             }
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
                 if let crate::ir::ValuePiece::Placeholder(inner) = piece {
-                    walk_value(inner, bindings, program, sema, mono);
+                    walk_value(inner, bindings, program, sema, mono, enclosing);
                 }
             }
         }
         ValueKind::Intrinsic { args, .. } => {
             for arg in args {
-                walk_value(arg, bindings, program, sema, mono);
+                walk_value(arg, bindings, program, sema, mono, enclosing);
             }
         }
-        ValueKind::Materialize { value, .. } => walk_value(value, bindings, program, sema, mono),
+        ValueKind::Materialize { value, .. } => walk_value(value, bindings, program, sema, mono, enclosing),
         ValueKind::Closure { captures, .. } => {
             for capture in captures {
-                walk_value(capture, bindings, program, sema, mono);
+                walk_value(capture, bindings, program, sema, mono, enclosing);
             }
         }
         ValueKind::ClosureCall { callable, args } => {
-            walk_value(callable, bindings, program, sema, mono);
+            walk_value(callable, bindings, program, sema, mono, enclosing);
             for arg in args {
-                walk_value(arg, bindings, program, sema, mono);
+                walk_value(arg, bindings, program, sema, mono, enclosing);
             }
         }
         ValueKind::Place(_)

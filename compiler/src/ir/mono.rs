@@ -40,10 +40,12 @@ impl Instance {
 ///
 /// A closure type's rendered signature alone does not identify its site, so two
 /// lambdas with the same signature would share a key. The site id is included
-/// here so distinct closures stay distinct.
+/// here so distinct closures stay distinct, and a closure specialized for an
+/// enclosing instance carries that instance's key too, so two enclosing
+/// specializations of one site stay distinct as well.
 fn dedupe_arg(ty: &Ty) -> String {
     match &ty.kind {
-        TyKind::Closure(closure) => format!("closure_{}", closure.id),
+        TyKind::Closure(closure) => crate::types::closure_key(closure),
         _ => ty.display(),
     }
 }

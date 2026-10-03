@@ -51,7 +51,10 @@ does `dedupe_arg` (`ir/mono.rs:44-49`), which feeds the instance dedupe/diagnost
    closure-typed argument whose `instance` is `None` when the site has a lifted specialization for
    the enclosing instance — the same condition the emitter's `tag_closure_instance` uses
    (`codegen.rs:339-367`). A non-capturing or shared closure keeps `instance: None`, so non-generic
-   callers keep their current spelling.
+   callers keep their current spelling. The first pass over generic templates must also skip
+   template bodies: a closure-only argument has no type parameter to mark it unresolved, so a
+   template walk would otherwise record a plain copy of a closure-bearing instance alongside the
+   stamped per-instance copy (found while closing ST-27).
 4. **Omit the empty separator.** In `render_call`, the closure-typed-parameter branch
    (`codegen/expr.rs:458-461`) writes `.env, {arguments}` unconditionally. Branch on
    `argument_list.is_empty()`, mirroring `closure_call_with_destination`
