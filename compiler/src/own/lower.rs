@@ -53,8 +53,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // The settled base knows its element type, and the element one
                 // step yields is the accessed type; recovering it lets the
                 // move-out path see the element's drop need instead of skipping
-                // it as unknown.
-                if ty.is_unknown() {
+                // it as unknown. The recovery is limited to bases whose viewed
+                // element agrees with the recorded element type.
+                if ty.is_unknown() && self.element_recovery_agrees(&base) {
                     let element = self.materialized_ty(&base).iterated_element();
                     if !element.is_unknown() {
                         ty = element;
@@ -645,6 +646,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when recovering an unknown element type from an index base agrees
+    /// with the type the emitted view actually reads.
+    ///
+    /// A slice over a multi-extent source is emitted as a flat view of the
+    /// source's scalar element while the recorded base type still nests the row
+    /// extents; recovering the nested element in that case would type the
+    /// access as an owned row over storage the view only borrows, so the
+    /// recovery is limited to single-extent sources, where the recorded element
+    /// and the viewed element agree. Every non-slice base keeps the recovery
+    /// unchanged.
+    fn element_recovery_agrees(&self, base: &Value) -> bool {
+        match &base.kind {
+            ValueKind::Intrinsic { name, args, .. } if name == "slice" => !matches!(
+                args.first().map(|arg| &arg.ty.kind),
+                Some(TyKind::Array { extents, .. }) if extents.len() > 1
+            ),
+            ValueKind::Materialize { value, .. } => self.element_recovery_agrees(value),
+            _ => true,
+        }
+    }
+
     /// A runtime guard and the operation it protects both read the operand. An
     /// operand with no side effect is safe to render twice, so it is returned
     /// unchanged. A side-effecting one (a call such as `a[next()]` or
@@ -870,18 +892,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// fresh call root is bound to an owned temporary, an eager base is filled,
     /// and a run-time index is pinned. Without that preparation the root call
     /// would never run and a run-time index would fall back to the element-zero
-    /// form, so the move could empty the wrong slot. A projection over caller
-    /// storage keeps the ordinary move.
+    /// form, so the move could empty the wrong slot. The preparation is limited
+    /// to element projections, the shape whose root call and run-time index
+    /// were otherwise lost; a field projection keeps its inline read, so an
+    /// aggregate literal that worked before keeps its field evaluation order.
     pub(super) fn consume_place(&mut self, value: Value) -> Value {
         // A maybe-owning value moves through the same shape: the emitted move
         // copies and zeroes only for an owning instance.
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
         }
-        let value = if matches!(
-            value.kind,
-            ValueKind::Member { .. } | ValueKind::Index { .. }
-        ) {
+        let value = if matches!(value.kind, ValueKind::Index { .. }) {
             let value = self.bind_ownerless_projection_root(value);
             let value = self.settle_projection_base(value);
             self.materialize_index_chain(value)

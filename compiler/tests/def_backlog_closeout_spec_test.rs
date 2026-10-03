@@ -731,3 +731,51 @@ func main(): i32 {
 "#;
     assert_rejected("slice-reject-store", store_source, "E10026");
 }
+
+/// Aggregate-literal fields evaluate in source order.
+///
+/// The language evaluates an aggregate literal's fields left to right, so an
+/// earlier field's call runs before a later field's projection of a fresh call
+/// result. The program records the two calls in a global counter and answers
+/// with the counter; running the later field's call first would answer
+/// twenty-one instead of twelve.
+#[test]
+fn should_evaluate_aggregate_fields_left_to_right_when_a_later_field_consumes_a_projection() {
+    let source = r#"module closeout.fieldorder;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+struct Box {
+    w: String;
+    v: String;
+}
+
+let trace: i32 = 0;
+
+func first(): String {
+    trace = trace * 10 + 1;
+    return stringOf("w");
+}
+
+func second(): Pair {
+    trace = trace * 10 + 2;
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    let b: Box = Box { w: first(), v: second().a };
+    if (i32(len(b.v)) != 2) {
+        return 99;
+    }
+    return trace;
+}
+"#;
+    let output = run_memory("field-order", source);
+    assert_exit("field-order", &output, 12);
+    assert_no_asan("field-order", &output);
+}

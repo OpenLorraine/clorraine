@@ -128,8 +128,52 @@ fn run_host(tag: &str, source: &str) -> Output {
         "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
         String::from_utf8_lossy(&built.stderr)
     );
-    let mut command = Command::new(&program);
+    run_program(tag, &program, &[])
+}
+
+/// Emits, builds with AddressSanitizer without the strict warning set, and runs
+/// one host program.
+///
+/// A shape with a known pre-existing warning still needs its memory behavior
+/// pinned, so the case builds with the sanitizer but without `-Werror` and
+/// reports the run. Returns the program output.
+fn run_relaxed_asan(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, source);
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, &emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-fsanitize=address",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the sanitizer build failed; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    run_program(tag, &program, &[("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")])
+}
+
+/// Runs a built program with a time limit and the given environment values.
+///
+/// A program that is still running when the limit passes is killed and the case
+/// fails, so a regression that loops forever surfaces as one failing case
+/// instead of a frozen suite.
+fn run_program(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(program);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    for (key, value) in env {
+        command.env(key, value);
+    }
     let mut child = command
         .spawn()
         .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
@@ -459,6 +503,44 @@ func main(): i32 {
         output.status.code(),
         Some(1),
         "member-take: expected exit 1; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A nested access through a multi-extent slice view must not free caller
+/// storage.
+///
+/// The slice view over a multi-extent source does not carry row typing, so an
+/// element access through it stays a borrowed read: it must not move out or
+/// release storage the caller still owns, because a double release aborts even
+/// without the sanitizer. The emitted access already carries a pre-existing
+/// scalar-typing warning, so the case builds without the strict warning set and
+/// pins memory safety only.
+#[test]
+fn should_not_free_caller_storage_when_a_nested_multi_extent_slice_access_runs() {
+    let source = r#"module impl.closeout.slicenested;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let xs: String[2][2] = [
+        [stringOf("a"), stringOf("bc")],
+        [stringOf("def"), stringOf("ghij")]
+    ];
+    let n: i32 = i32(len(slice(xs, 0, 2)[1][0]));
+    return n;
+}
+"#;
+    let output = run_relaxed_asan("slice-nested", source);
+    assert!(
+        output.status.code().is_some(),
+        "slice-nested: the program aborted (double free); stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !String::from_utf8_lossy(&output.stderr).contains("double free"),
+        "slice-nested: the program reported a double free; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

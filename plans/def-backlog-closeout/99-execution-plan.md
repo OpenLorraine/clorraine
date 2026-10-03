@@ -130,7 +130,38 @@ path, and no eagerly assigned owned local appears. Necessary correction, not a w
 
 - [x] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice element move-out with its regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 01:01)
 - [x] 1.3.2 Run the ST-1/3/5/6 host-ASan probes from the 07 matrix and `cargo test` for both new suites ✅ (completed: 2026-10-04 01:03)
-- [ ] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
+- [~] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff ⏳ (implemented: 2026-10-04 01:04; paused on open critical/major findings)
+
+**Phase 1 review findings (2026-10-04 01:10)** — three reviewers dispatched in parallel on the
+phase diff (baseline `12b02b66`); correctness via the generic reviewer role, memory safety and
+emission integrity via the project auditors.
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| RV-001 + SA-004 | 🟠 MAJOR | `consume_place`'s new preparation emits the root bind/move eagerly, so an aggregate-literal field whose later expression consumes a projection evaluates before earlier field expressions: `Box { w: f(), v: mk().a }` runs `mk()` before `f()` (trace 21 vs. the required 12, `spec/04-expressions.md` §3); the same applies to an indexed-assignment right-hand side. Introduced by task 1.2.2 | ✅ resolved — user chose: restrict the preparation to element projections; the field projection keeps its inline read |
+| SA-001 | 🔴 CRITICAL | The new index type recovery types a nested multi-extent slice access (`slice(xs,0,2)[1][0]`, `xs: String[2][2]`) as an owned scalar and releases caller storage: host ASan double free; baseline ran a wrong value without corruption. Introduced by task 1.2.3; the underlying slice view is already mistyped for multi-extent sources | ✅ resolved — user chose: gate the recovery to single-extent slice sources (baseline behavior restored; view defect filed) |
+| SA-003 + PE-001 | 🔴 CRITICAL | Multi-extent slice row moves and multi-dimensional slice views double-free (`let row: T[2] = slice(rows,0,2)[i]`); reproduces identically on the baseline — pre-existing, unfiled | 📋 filed as DEF-70 |
+| SA-002 | 🟠 MAJOR | Take/consume roots that are not a direct call still leak (a root call with its own `take` argument; a conditional-of-calls root); identical on the baseline — pre-existing, unfiled | 📋 filed as DEF-71 |
+| OB-1 | 🟠 MAJOR | An impure index in an aggregate literal (`Box<T> { v: make()[pick()] }`) still reads slot 0 and never calls `pick()`; the baseline also lost the root call — pre-existing guard-fill gap, unfiled | 📋 filed as DEF-72 |
+| PE-003 | 🟡 MINOR | A moved slot is zeroed twice (`cl_zero` then the move-out NULL); no memory impact | report-only |
+| RV-002 | 🟡 MINOR | In-container `RDC_ASAN=1` is unreliable in this environment (libasan DEADLYSIGNAL loops); host ASan remains the oracle per the testing strategy | report-only (environment) |
+| OB-5 | 🟡 MINOR | C argument-evaluation order is relied on for two side-effecting call arguments; identical on the baseline | report-only |
+
+Test integrity independently re-checked: every fix-bound spec case fails on the baseline (6/8 red
+before), the impl suite pins the new shapes (5/7 red before), and the updated guarded-take pin is
+red on the old code. `make check` passes on the head.
+
+**Fix evidence (2026-10-04 01:20)** — spec-first regression coverage added and verified red before
+the fix:
+
+| Fix | Red before | Green after |
+| --- | ---------- | ----------- |
+| Field evaluation order (`should_evaluate_aggregate_fields_left_to_right_when_a_later_field_consumes_a_projection`, spec) | exit 21 (reversed trace) | exit 12 (source order) |
+| Nested multi-extent access (`should_not_free_caller_storage_when_a_nested_multi_extent_slice_access_runs`, impl) | `free(): double free detected` | exit 0, no sanitizer output, byte-identical to the baseline emission for the shape |
+
+Both suites green together (9 spec + 8 impl); `make check` green; host ASan probes clean. The
+pre-existing defects are filed as DEF-70 – DEF-72 in the roadmap. One bounded re-review is
+dispatched on the fix diff.
 
 **Deliverables**:
 - [x] Implementation suite for the three shapes
