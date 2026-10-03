@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:23
-> **Progress**: 5/31 tasks (16%)
+> **Last Updated**: 2026-10-03 13:25
+> **Progress**: 6/31 tasks (19%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -99,9 +99,9 @@ element reads move before release.
   explicit arms at every exhaustive match (`own/expr.rs`, `own/place.rs`, `own.rs`) and render it
   through `index_text` — `ir/place.rs`, `own/lower.rs`, `own/expr.rs`, `own/place.rs`, `own.rs`,
   `codegen/expr.rs` ✅ (completed: 2026-10-03 13:23)
-- [ ] 1.2.4 Add the guard-aware, chain-recursing index-materialization helper in
+- [x] 1.2.4 Add the guard-aware, chain-recursing index-materialization helper in
   `materialize_owned_argument`'s take block so the argument and the move-out share it, covering the
-  discarded-call path — `own/lower.rs`, `own/statements.rs`
+  discarded-call path — `own/lower.rs`, `own/statements.rs` ✅ (completed: 2026-10-03 13:25)
 - [ ] 1.2.5 Update the stale move-out pin to the corrected `__cl_tmp[i] = NULL` shape after the
   index-carrying move-out lands — `compiler/tests/residual_defect_completion_impl_test.rs`
   (AR-6, PF-002; the program migrations were applied with task 1.2.2)

@@ -678,6 +678,69 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
+    /// Binds every non-constant element index in a value's projection chain.
+    ///
+    /// A `take` move-out must empty the slot the callee received, so a run-time
+    /// index has to survive on the place. Each level of a nested chain is
+    /// handled (`mk()[i][j]` keeps both indices), and a `Member` chain recurses
+    /// to its element base. A constant index and an index that already names
+    /// storage are left alone.
+    fn materialize_index_chain(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.materialize_index_chain(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.materialize_index_chain(*base);
+                let index = self.materialize_index(*index);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index: Box::new(index),
+                    },
+                )
+            }
+            other => Value::new(value.ty, other),
+        }
+    }
+
+    /// Stores one index expression so the call and its move-out share it.
+    ///
+    /// The index is evaluated exactly once. Outside a guard it is assigned to a
+    /// compiler temporary now; under a guard the assignment is deferred to the
+    /// path that evaluates the operand, so a short-circuited index never runs.
+    /// A constant or an index that already names storage is returned unchanged.
+    fn materialize_index(&mut self, index: Value) -> Value {
+        if matches!(
+            index.kind,
+            ValueKind::Int(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. }
+        ) {
+            return index;
+        }
+        if self.defer_move_outs > 0 {
+            let ty = self.materialized_ty(&index);
+            let temp = self.new_temp(ty.clone());
+            Value::new(
+                ty,
+                ValueKind::Materialize {
+                    temp,
+                    value: Box::new(index),
+                    move_outs: Vec::new(),
+                },
+            )
+        } else {
+            self.materialize_value(index)
+        }
+    }
+
     /// Materializes a `take` argument that has no C place into a non-releasing
     /// temporary.
     ///
@@ -1196,6 +1259,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
         if take {
+            // A run-time element index is bound first so the call argument and
+            // the move-out after the call name the same slot; a constant or an
+            // already-materialized index is unchanged.
+            let value = self.materialize_index_chain(value);
             // A `take` argument that reads a projection of a fresh call result
             // has no caller storage to empty: the root is bound to an owned
             // temporary and the projection re-roots there, so the ordinary
