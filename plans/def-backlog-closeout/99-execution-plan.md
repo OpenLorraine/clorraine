@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 01:50
-> **Progress**: 10/44 tasks (23%)
+> **Progress**: 11/44 tasks (25%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -213,13 +213,28 @@ the still-open expression-temporary leak (the DEF-67 shape) in the caller; the c
 **Objective**: Pin the release behavior of an ownerless call result used as a borrow argument.
 
 - [x] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-11 — `compiler/tests/def_backlog_closeout_spec_test.rs` ✅ (completed: 2026-10-04 01:50)
-- [ ] 2.1.2 Run the spec suite and record the red phase (ST-8/9/10 and the call-result cases leak; ST-11's local-place regression passes, justified)
+- [x] 2.1.2 Run the spec suite and record the red phase (ST-8/9/10 and the call-result cases leak; ST-11's local-place regression passes, justified) ✅ (completed: 2026-10-04 01:50)
 
 **Deliverables**:
-- [ ] Specification suite with ST-8 – ST-11
-- [ ] Red-phase evidence
+- [x] Specification suite with ST-8 – ST-11
+- [x] Red-phase evidence
 
 **Verify**: `make check`
+
+**Red-phase evidence (2026-10-04 01:50)** — host ASan over `build/closeout/` with the pre-fix
+compiler; each probe mirrors its spec case:
+
+| Probe | Exit | Sanitizer output |
+| ----- | ---- | ---------------- |
+| `def67_len_call.clo` (ST-8a) | 1 | 12-byte leak |
+| `def67_len_store.clo` (ST-8b) | 1 | 10-byte leak |
+| `def67_dot_len.clo` (ST-9) | 1 | 10-byte leak |
+| `def67_len_guard.clo` (ST-10, true path) | 1 | 12-byte leak |
+| `def67_storeat_regression.clo` (ST-11) | 3 | none — justified pass (a local place needs no owner) |
+
+The spec suite itself runs green in a plain build (14 passed); the leak cases are red only under the
+sanitizer, so this matrix is the red-phase evidence. The in-container `RDC_ASAN=1` run stays
+timing-flaky in this environment; the host probes are the deterministic oracle.
 
 ### Step 2.2: Implementation
 
