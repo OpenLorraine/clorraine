@@ -58,6 +58,8 @@ observe a container UAF, so the memory cases are verified twice:
 | ST-24 | A concrete `borrow File?`/`borrow String?` out-param slot reassigned under an owning instance, starting `null` | Accepted and runs; the out-param slot stays exempt from `E10034` (a generic `T?` slot cannot be declared: `E10011`) | R8, PF-027; spec/06-functions.md:141-145 |
 | ST-25 | Multi-level runtime indices (`let s: T = mk()[i][j]`; `consume<T>(mk()[i][j])`) with non-zero `i`, `j` | Runs; every level is materialized once and the exact slot is emptied; no double free or use-after-free | R3/R4, PF-023; 03-02 §Behavior Rules |
 | ST-26 | A moved lend that is read again in a generic body, instantiated owning (`reuse<T>(x: T) { let y: T = x; sink(borrow y); sink(borrow x); }`) | Reports exactly one `E10034` and exactly one `E10020` (the concrete spelling reports one `E10034`) | R1, PF-024; 03-01 §Behavior Rules |
+| ST-28 | A fixed-array row returned from a statement temporary (`row<T>(m: func(): T[2][2], i) : T[2] { return m()[i]; }`, instantiated `String`) | The selected row is byte-copied into the hidden destination and the temporary's release does not free it; the caller reads the second row (4 bytes) | R4, RV-101; 03-02 §Behavior Rules |
+| ST-29 | A lend moved out of a raw element read under an owning instance (`f<T>(p: raw T): T { return unsafe(p[0]); }`) | Rejected with `E10034`, matching the concrete spelling | R1, RV-103; 03-01 §Behavior Rules |
 
 ### Phase 2 — Do-while condition release (DEF-62)
 

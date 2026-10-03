@@ -372,6 +372,14 @@ func main(): i32 {
         1,
         "guard-index: the index must be evaluated once"
     );
+    let guard_line = emitted
+        .lines()
+        .find(|line| line.contains("if ((flag"))
+        .expect("guard-index: the guarded condition must be emitted");
+    assert!(
+        guard_line.contains("__cl_tmp1 = i"),
+        "guard-index: the index assignment must stay inside the guarded condition"
+    );
     let output = run_memory("guard-index-run", source);
     assert_exit("guard-index-run", &output, 0);
 }
@@ -437,6 +445,40 @@ func main(): i32 {
     );
     let output = run_memory("return-const-run", source);
     assert_exit("return-const-run", &output, 2);
+}
+
+/// A run-time index on a returned element is read once and shared by the
+/// returned copy and the source move.
+#[test]
+fn should_read_the_return_index_once_when_a_runtime_index_is_returned() {
+    let source = r#"module impl.dbc.returni;
+import { String, stringOf } from std.text;
+
+func first<T>(mk: func(): T[2], i: i32): T {
+    return mk()[i];
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return i32(len(first<String>(mkString, 1)));
+}
+"#;
+    let emitted = emit_host("return-index", source);
+    assert_eq!(
+        count_occurrences(&emitted, "__cl_tmp1 = i;"),
+        1,
+        "return-index: the index must be evaluated once"
+    );
+    assert_contains(
+        "return-index",
+        &emitted,
+        "__cl_tmp0[__cl_tmp1] = NULL;",
+    );
+    let output = run_memory("return-index-run", source);
+    assert_exit("return-index-run", &output, 3);
 }
 
 /// Every level of a nested run-time index is bound and the exact slot is

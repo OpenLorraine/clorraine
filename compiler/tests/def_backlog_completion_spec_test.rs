@@ -1018,3 +1018,55 @@ func main(): i32 {
         "dbc26: a rejected program must not produce a translation unit"
     );
 }
+
+/// A returned fixed-array row moves out of the statement temporary.
+///
+/// `row` returns `m()[i]` where the element is itself a fixed array. The
+/// hidden return destination receives a byte copy of the selected row and the
+/// temporary's release must not free that row, so the caller reads the second
+/// row and measures four bytes.
+#[test]
+fn should_move_the_row_when_a_fixed_array_row_is_returned() {
+    let source = r#"module spec.dbc.st28;
+
+import { String, stringOf } from std.text;
+
+func row<T>(m: func(): T[2][2], i: i32): T[2] {
+    return m()[i];
+}
+
+func mkGrid(): String[2][2] {
+    return [[stringOf("a"), stringOf("bb")], [stringOf("ccc"), stringOf("dddd")]];
+}
+
+func main(): i32 {
+    return i32(len(row<String>(mkGrid, 1)[1]));
+}
+"#;
+    let output = run_memory("dbc28", source);
+    assert_exit("dbc28", &output, 4);
+}
+
+/// A lend moved out of a raw element read is rejected under an owning instance.
+///
+/// `raw T` indexing yields the pointee, so moving it into the owned return is
+/// the same lent escape the concrete spelling rejects with `E10034`.
+#[test]
+fn should_reject_when_a_lend_raw_element_is_moved_under_an_owning_instance() {
+    let source = r#"module spec.dbc.st29;
+
+import { String, stringOf } from std.text;
+
+func f<T>(p: raw T): T {
+    return unsafe(p[0]);
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let r: raw String = unsafe(&s);
+    let out: String = f<String>(r);
+    return i32(len(out));
+}
+"#;
+    assert_rejected("dbc29", source, "E10034");
+}

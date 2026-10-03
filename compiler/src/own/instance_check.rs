@@ -1,12 +1,13 @@
 //! Instantiation-time re-check of the substitution-blind guards.
 //!
-//! The type stage checks a struct field typed `T` and a fill whose element is
-//! `T` against the type as it is written: a parameter is not a view and has no
-//! known duplicability, so both pass. This module runs once, after the
-//! monomorphization is complete, and re-applies the same two predicates to each
-//! recorded concrete instantiation so the substituted kind is judged. It
-//! reports through the same diagnostics the declaration-site guards use and
-//! changes no other stage.
+//! The type stage checks a struct field typed `T`, a fill whose element is
+//! `T`, and a move of a lend whose type is a parameter against the type as it is
+//! written: a parameter is not a view, has no known duplicability, and hides
+//! whether a lend move is real. This module runs once, after the
+//! monomorphization is complete, and re-applies the same rules to each recorded
+//! concrete instantiation so the substituted kind is judged. It reports through
+//! the same diagnostics the declaration-site rules use and changes no other
+//! stage.
 //!
 //! The audit reads only the recorded instance set: it never discovers an
 //! instance the collectors missed. A program whose instance is never recorded
@@ -25,13 +26,16 @@ use super::generics::{struct_declarations, type_param_names};
 use super::lower::mentions_type_param;
 use super::program::{Callee, ProgramInfo};
 
-/// Audits the recorded concrete instantiations for the two guards that cannot
-/// see a substituted type.
+/// Audits the recorded concrete instantiations for the guards that cannot see
+/// a substituted type.
 ///
 /// It reports `E10205` for a substituted view-typed field and `E10215` for a
-/// substituted non-duplicable fill. Only declared types that mention a type
-/// parameter are checked, so a program whose illegal field or fill is already
-/// concrete keeps its single declaration-site diagnostic.
+/// substituted non-duplicable fill, `E10020` when a maybe-owning store's later
+/// use needs a duplicable instance, and `E10034` when a lend moved into an
+/// owned position instantiates with an owning type. Only declared types that
+/// mention a type parameter are checked for the field and fill guards, so a
+/// program whose illegal field or fill is already concrete keeps its single
+/// declaration-site diagnostic.
 pub fn check(
     loaded: &Loaded,
     program: &ProgramInfo,

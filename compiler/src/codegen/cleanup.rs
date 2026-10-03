@@ -549,12 +549,14 @@ impl<'a> Emitter<'a> {
                 );
                 self.emit_array_assign_to(&destination, &ty, elements, fill);
             }
-            ValueKind::Place(_) => {
+            ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. } => {
                 // The statement store core already copies every extent by
                 // bytes, releases the (empty) destination first when the type
-                // owns elements, and empties the source once. The caller's
-                // destination is the hidden out-parameter, never the source, so
-                // `reads_target` is fixed false.
+                // owns elements, and empties the source once. A projected row
+                // (`m()[i]`) takes the same path: the source address is the
+                // projected element and the arm walk empties exactly that row.
+                // The caller's destination is the hidden out-parameter, never
+                // the source, so `reads_target` is fixed false.
                 let destination = super::function::ArrayTarget::parameter(
                     "__cl_ret",
                     self.array_param_bytes("__cl_ret", &ty),

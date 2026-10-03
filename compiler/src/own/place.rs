@@ -302,9 +302,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 place.moved_if_owning.insert(projections.clone());
             });
             let binding = &self.bindings[id];
+            // A lend whose value is moved into an owned position owes the
+            // post-substitution judgment. Out-parameter slots carry their own
+            // binding kind and are not lend moves.
             let lend = binding.kind == BindingKind::Param
-                && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)
-                && !(binding.mode == Mode::Borrow && binding.ty.nullable);
+                && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow);
             if !lend {
                 return;
             }

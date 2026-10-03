@@ -926,7 +926,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // re-rooted, so the return emission empties the selected field and
             // the temporary releases only the remaining fields. A whole call
             // result keeps its own destination handling.
-            let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
+            let lowered =             if (!self.sema.table.duplicable(&returns) || maybe_owning)
                 && !is_view(&returns)
                 && matches!(
                     lowered.kind,
@@ -935,6 +935,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !self.projects_from_place(&lowered)
             {
                 self.bind_ownerless_projection_root(lowered)
+            } else {
+                lowered
+            };
+            // A moved-out return reads its run-time index once: the source move
+            // empties a slot the returned copy also read, so both must use the
+            // same index temporary.
+            let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
+                && !is_view(&returns)
+                && matches!(
+                    lowered.kind,
+                    ValueKind::Member { .. } | ValueKind::Index { .. }
+                )
+            {
+                self.materialize_index_chain(lowered)
             } else {
                 lowered
             };

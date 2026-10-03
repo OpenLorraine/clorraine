@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:33
-> **Progress**: 12/31 tasks (39%)
+> **Last Updated**: 2026-10-03 13:36
+> **Progress**: 12/36 tasks (33%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -21,12 +21,12 @@ verify) from `07-testing-strategy.md`.
 
 | Phase | Title | Tasks |
 | ----- | ----- | ----- |
-| 1 | Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61) | 12 |
+| 1 | Generic-lend ownership (DEF-56, DEF-59, DEF-60, DEF-61) | 17 |
 | 2 | Do-while condition release (DEF-62) | 6 |
 | 3 | Closure C spelling (DEF-57, DEF-58) | 8 |
 | 4 | Close-out | 5 |
 
-**Total: 31 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
+**Total: 36 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
 task-size criteria: each task is independently testable and reviewable)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
@@ -138,6 +138,25 @@ element reads move before release.
 > **Phase 1 verification evidence (2026-10-03 13:33)**: `make check` exit 0 — all 40 suites green
 > (the specification suite at 18/18, the implementation suite at 7/7, and every pre-existing
 > suite).
+
+> **Phase 1 post-phase review (2026-10-03 13:36)**: one correctness reviewer ran on the phase diff;
+> 7 findings, all ruled by the user: fix RV-101 (critical — the fixed-array row return bypassed the
+> return move-out), RV-103 (major — the raw-element lend duty false negative), RV-104 (return index
+> read once), RV-105 (audit docs), RV-106a (the guard-deferral test now asserts the assignment
+> stays inside the guarded condition), and RV-107 (drop the redundant nullable clause). RV-102
+> (major — slice-view element reads) is filed as DEF-66; RV-106b (the out-param write path) is an
+> accepted limitation. The fixes are tasks 1.3.3 – 1.3.7 below.
+
+- [x] 1.3.3 Fix the fixed-array row return: route a projected row through the byte-copy return core
+  and pin it — `codegen/cleanup.rs`, `compiler/tests/def_backlog_completion_spec_test.rs` (RV-101) ✅ (completed: 2026-10-03 17:52)
+- [x] 1.3.4 Fix the raw-element lend duty: the element projection sees through a raw pointer and
+  records the pointee, with a rejection case — `own.rs`, `compiler/tests/def_backlog_completion_spec_test.rs` (RV-103) ✅ (completed: 2026-10-03 17:52)
+- [x] 1.3.5 Read a returned element's run-time index once (materialize the chain on an owning
+  return) and pin it — `own/statements.rs`, `compiler/tests/def_backlog_completion_impl_test.rs` (RV-104) ✅ (completed: 2026-10-03 17:52)
+- [x] 1.3.6 Tighten the guard-deferral test and clean up the audit documentation and the redundant
+  nullable clause — `compiler/tests/def_backlog_completion_impl_test.rs`, `own/instance_check.rs`,
+  `own/place.rs` (RV-105, RV-106a, RV-107) ✅ (completed: 2026-10-03 17:52)
+- [~] 1.3.7 Full verification of the review fixes and the bounded fix-diff re-review — `make check` ⏳ (implemented: 2026-10-03 17:52)
 
 **Deliverables**:
 - [ ] Implementation suite for Phase 1

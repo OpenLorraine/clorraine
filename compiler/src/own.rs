@@ -845,7 +845,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for projection in projections {
             ty = match projection {
                 ir::Projection::Field(field) => self.member_type(&ty, field),
-                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => ty.iterated_element(),
+                // A raw element read sees through the raw pointer to its
+                // pointee, so the moved type is the pointee itself rather than
+                // unknown or the pointee's element.
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                    match &ty.kind {
+                        crate::types::TyKind::Raw(inner) => (**inner).clone(),
+                        _ => ty.iterated_element(),
+                    }
+                }
             };
         }
         ty
