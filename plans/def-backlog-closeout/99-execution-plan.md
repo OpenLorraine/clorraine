@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 01:38
-> **Progress**: 9/44 tasks (20%)
+> **Last Updated**: 2026-10-04 01:50
+> **Progress**: 10/44 tasks (23%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -202,14 +202,17 @@ the still-open expression-temporary leak (the DEF-67 shape) in the caller; the c
 
 ## Phase 2: Expression temporaries (DEF-67)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `143cef93c5a4a483c167134a8411355e25a6ece5`
+> **Expected modification set**: `compiler/tests/def_backlog_closeout_spec_test.rs`,
+> `compiler/tests/def_backlog_closeout_impl_test.rs`, `compiler/src/own/lower.rs`,
+> `compiler/src/own/call.rs`, `build/closeout/*` probe artifacts (gitignored). Scope mode: `strict`.
 
 ### Step 2.1: Specification Tests
 
 **Reference**: [03-02](03-02-expression-temporaries.md) · [AR-6](00-ambiguity-register.md)
 **Objective**: Pin the release behavior of an ownerless call result used as a borrow argument.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-11 — `compiler/tests/def_backlog_closeout_spec_test.rs`
+- [x] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-11 — `compiler/tests/def_backlog_closeout_spec_test.rs` ✅ (completed: 2026-10-04 01:50)
 - [ ] 2.1.2 Run the spec suite and record the red phase (ST-8/9/10 and the call-result cases leak; ST-11's local-place regression passes, justified)
 
 **Deliverables**:

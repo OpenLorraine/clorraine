@@ -780,3 +780,178 @@ func main(): i32 {
     let output = run_host("field-order", source);
     assert_exit("field-order", &output, 12);
 }
+
+/// A `len` call on an owned string-literal result releases the string once.
+///
+/// `i32(len(stringOf("abc")))` passes a heap string straight into the intrinsic
+/// that measures it. The string has no named owner, so the caller must bind it
+/// and release it when the statement ends or the function returns; lowering the
+/// call inline with no owner leaks the bytes. The program answers three, and
+/// the sanitizer path reports a leak whenever the release is missing.
+#[test]
+fn should_release_the_string_when_len_reads_a_string_of_call_result() {
+    let source = r#"module spec.closeout.st8;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    return i32(len(stringOf("abc")));
+}
+"#;
+    let output = run_memory("closeout-st8-literal", source);
+    assert_exit("closeout-st8-literal", &output, 3);
+    assert_no_asan("closeout-st8-literal", &output);
+}
+
+/// A `len` call on a runtime-indexed store result releases the stored string.
+///
+/// `storeAt` moves the selected array element out of the temporary and returns
+/// it, so the caller receives a freshly owned one-character string that no
+/// local names. Measuring it through `len` must bind that string and release
+/// it exactly once; the program answers one, and the sanitizer path reports a
+/// leak whenever the release is missing.
+#[test]
+fn should_release_the_stored_string_when_len_reads_a_call_result() {
+    let source = r#"module spec.closeout.st8;
+
+import { String, stringOf } from std.text;
+
+func storeAt<T>(mk: func(): T[2], i: i32): T {
+    let s: T = mk()[i];
+    return s;
+}
+
+func mkString(): String[2] {
+    return [stringOf("a"), stringOf("b")];
+}
+
+func main(): i32 {
+    return i32(len(storeAt<String>(mkString, 1)));
+}
+"#;
+    let output = run_memory("closeout-st8-store", source);
+    assert_exit("closeout-st8-store", &output, 1);
+    assert_no_asan("closeout-st8-store", &output);
+}
+
+/// The dot spelling of `len` on a call result releases the string once.
+///
+/// `stringOf("a").len()` asks a one-character heap string for its length. The
+/// receiver has no named owner, so the caller must bind it and release it when
+/// the statement ends or the function returns; an inline receiver leaks the
+/// bytes. The program answers one, and the sanitizer path reports a leak
+/// whenever the release is missing.
+#[test]
+fn should_release_the_receiver_when_the_dot_len_form_reads_a_call_result() {
+    let source = r#"module spec.closeout.st9;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    return i32(stringOf("a").len());
+}
+"#;
+    let output = run_memory("closeout-st9", source);
+    assert_exit("closeout-st9", &output, 1);
+    assert_no_asan("closeout-st9", &output);
+}
+
+/// A guarded `len` call stays lazy and releases the string on the taken path.
+///
+/// The condition `flag && len(make()) == 3` must not evaluate `make()` when the
+/// flag is false, so short-circuit evaluation stays lazy (a counter global
+/// proves the call never ran). When the flag is true the call must run exactly
+/// once, measure three bytes, and its ownerless heap string must be released
+/// when the function returns; the sanitizer path reports a leak otherwise. The
+/// true path answers three and the false path answers five.
+#[test]
+fn should_keep_the_call_lazy_when_a_guarded_len_call_reads_a_call_result() {
+    let source_true = r#"module spec.closeout.st10;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func make(): String {
+    calls = calls + 1;
+    return stringOf("abc");
+}
+
+func guarded(flag: bool): i32 {
+    let hit: bool = flag && len(make()) == 3;
+    if (hit) {
+        if (calls == 1) {
+            return 3;
+        }
+        return 98;
+    }
+    if (calls == 0) {
+        return 5;
+    }
+    return 99;
+}
+
+func main(): i32 {
+    return guarded(true);
+}
+"#;
+    let output_true = run_memory("closeout-st10-true", source_true);
+    assert_exit("closeout-st10-true", &output_true, 3);
+    assert_no_asan("closeout-st10-true", &output_true);
+
+    let source_false = r#"module spec.closeout.st10;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func make(): String {
+    calls = calls + 1;
+    return stringOf("abc");
+}
+
+func guarded(flag: bool): i32 {
+    let hit: bool = flag && len(make()) == 3;
+    if (hit) {
+        if (calls == 1) {
+            return 3;
+        }
+        return 98;
+    }
+    if (calls == 0) {
+        return 5;
+    }
+    return 99;
+}
+
+func main(): i32 {
+    return guarded(false);
+}
+"#;
+    let output_false = run_memory("closeout-st10-false", source_false);
+    assert_exit("closeout-st10-false", &output_false, 5);
+    assert_no_asan("closeout-st10-false", &output_false);
+}
+
+/// A local string place passed to `len` keeps its value and its clean run.
+///
+/// This is a regression pin: the argument is an existing local binding, not an
+/// ownerless call result, so measuring it needs no temporary owner and must
+/// neither disturb the binding nor release it early. The program answers three
+/// and the sanitizer path stays clean.
+#[test]
+fn should_keep_the_local_string_when_len_reads_a_place_argument() {
+    let source = r#"module spec.closeout.st11;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("abc");
+    let n: i32 = i32(len(s));
+    return n;
+}
+"#;
+    let output = run_memory("closeout-st11", source);
+    assert_exit("closeout-st11", &output, 3);
+    assert_no_asan("closeout-st11", &output);
+}
