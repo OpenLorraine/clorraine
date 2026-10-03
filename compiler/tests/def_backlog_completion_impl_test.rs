@@ -4,8 +4,9 @@
 //! suite pins the shapes the fixes rely on: the lend duty reports once per
 //! move site, the run-time element index is bound once and shared by the read
 //! and the move-out, a guarded index keeps short-circuit evaluation, the store
-//! and return paths empty the selected slot before the temporary release, and
-//! re-emission is byte-identical.
+//! and return paths empty the selected slot before the temporary release, a
+//! do-while body's early return carries the condition's release while the
+//! exit drain keeps its own, and re-emission is byte-identical.
 //!
 //! A memory case runs under AddressSanitizer when `RDC_ASAN` is set and
 //! otherwise as an ordinary strict host build.
@@ -547,5 +548,167 @@ func main(): i32 {
     assert_eq!(
         first, second,
         "determinism: the same program emitted two different translations"
+    );
+}
+
+/// A do-while body that returns at `i == 2`, so the condition already ran once.
+const DO_WHILE_EARLY_RETURN: &str = r#"module impl.dbc.dwret;
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        if (i == 2) { return i; }
+    } while (grow().count > 0);
+    return 0;
+}
+"#;
+
+/// An early return in a do-while body releases the condition's temporary.
+///
+/// The condition stores the made array in a function-scope temporary. The
+/// return block must release it before returning, and the loop's exit drain
+/// keeps its own release for the fall-through path, so the temporary appears
+/// three times: the re-store drop, the early return's release, and the exit
+/// drain. A clean run returns `2`; releasing on only one of the paths would
+/// leak or double-release.
+#[test]
+fn should_release_the_condition_temporary_at_an_early_return() {
+    let emitted = emit_host("dowhile-return", DO_WHILE_EARLY_RETURN);
+    assert_eq!(
+        count_occurrences(&emitted, "FreeBuffer(__cl_tmp0.data)"),
+        3,
+        "dowhile-return: expected the re-store drop, the return's release, and the exit drain"
+    );
+    let return_at = emitted
+        .find("return __cl_return_1;")
+        .expect("dowhile-return: the early return must be emitted");
+    let before = &emitted[..return_at];
+    let released = before
+        .rfind("FreeBuffer(__cl_tmp0.data)")
+        .expect("dowhile-return: the release must precede the return");
+    let zeroed = before
+        .rfind("__cl_tmp0.data = NULL;")
+        .expect("dowhile-return: the release must clear the temporary");
+    assert!(
+        released < zeroed,
+        "dowhile-return: the temporary's storage must be freed before the pointer is cleared"
+    );
+    let output = run_memory("dowhile-return-run", DO_WHILE_EARLY_RETURN);
+    assert_exit("dowhile-return-run", &output, 2);
+}
+
+/// A nested do-while return carries both loops' condition releases.
+///
+/// The inner condition stores its array first and the outer condition stores
+/// its own after the inner loop finishes a pass, so the return block lists the
+/// outer release ahead of the inner one (newest first), and each loop's exit
+/// drain still releases its own temporary on the fall-through paths.
+#[test]
+fn should_release_both_condition_temporaries_at_a_nested_early_return() {
+    let source = r#"module impl.dbc.dwnext;
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let j: i32 = 0;
+    do {
+        j = 0;
+        i = i + 1;
+        do {
+            j = j + 1;
+            if (i == 2 && j == 2) { return 2; }
+        } while (grow().count > 0 && j < 2);
+    } while (grow().count > 0 && i < 2);
+    return 0;
+}
+"#;
+    let emitted = emit_host("dowhile-nested", source);
+    assert_eq!(
+        count_occurrences(&emitted, "FreeBuffer(__cl_tmp1.data)"),
+        3,
+        "dowhile-nested: the outer condition's re-store drop, return release, and exit drain"
+    );
+    assert_eq!(
+        count_occurrences(&emitted, "FreeBuffer(__cl_tmp0.data)"),
+        3,
+        "dowhile-nested: the inner condition's re-store drop, return release, and exit drain"
+    );
+    let return_at = emitted
+        .find("return __cl_return_1;")
+        .expect("dowhile-nested: the early return must be emitted");
+    let before = &emitted[..return_at];
+    let outer = before
+        .rfind("__cl_tmp1.data = NULL;")
+        .expect("dowhile-nested: the outer condition's release must precede the return");
+    let inner = before
+        .rfind("__cl_tmp0.data = NULL;")
+        .expect("dowhile-nested: the inner condition's release must precede the return");
+    assert!(
+        outer < inner,
+        "dowhile-nested: the outer condition's newer temporary is released first"
+    );
+    let output = run_memory("dowhile-nested-run", source);
+    assert_exit("dowhile-nested-run", &output, 2);
+}
+
+/// A do-while without an early return keeps exactly its existing releases.
+///
+/// Nothing in the body returns, so no release is appended outside the body:
+/// the condition temporary is dropped only by the re-store and the exit drain,
+/// and the program leaves the loop with `3`.
+#[test]
+fn should_not_append_a_release_outside_the_loop_body() {
+    let source = r#"module impl.dbc.dwfall;
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+    } while (grow().count > 0 && i < 3);
+    return i;
+}
+"#;
+    let emitted = emit_host("dowhile-fall", source);
+    assert!(
+        !emitted.contains("return __cl_return_1;"),
+        "dowhile-fall: the loop has no early return"
+    );
+    assert_eq!(
+        count_occurrences(&emitted, "FreeBuffer(__cl_tmp0.data)"),
+        2,
+        "dowhile-fall: only the re-store drop and the exit drain may release the temporary"
+    );
+    let output = run_memory("dowhile-fall-run", source);
+    assert_exit("dowhile-fall-run", &output, 3);
+}
+
+/// Re-emitting a do-while early return is deterministic.
+#[test]
+fn should_emit_identical_translations_when_a_do_while_body_returns_early() {
+    let (first, second) = emit_twice("dowhile-determinism", DO_WHILE_EARLY_RETURN);
+    assert_eq!(
+        first, second,
+        "dowhile-determinism: the same program emitted two different translations"
     );
 }

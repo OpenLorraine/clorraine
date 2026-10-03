@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 18:33
-> **Progress**: 22/37 tasks (59%)
+> **Last Updated**: 2026-10-03 18:34
+> **Progress**: 24/37 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -177,7 +177,7 @@ element reads move before release.
 
 ## Phase 2: Do-while condition release (DEF-62)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: dbc3cee (the phase-start commit; the review diff uses `git diff dbc3cee..HEAD`)
 
 ### Step 2.1: Specification Tests
 
@@ -237,10 +237,15 @@ element reads move before release.
 **Reference**: [07-testing-strategy.md](07-testing-strategy.md) §Implementation Tests
 **Objective**: Pin the appended release shape and the nested-loop behavior.
 
-- [ ] 2.3.1 Write implementation tests: the return arm carries the condition release; nested
+- [x] 2.3.1 Write implementation tests: the return arm carries the condition release; nested
   do-while returns carry both loops' releases; no release is appended outside the body; re-emission
-  is byte-identical — `compiler/tests/def_backlog_completion_impl_test.rs`
-- [ ] 2.3.2 Full verification — `make check`
+  is byte-identical — `compiler/tests/def_backlog_completion_impl_test.rs` ✅ (completed: 2026-10-03 18:34)
+- [x] 2.3.2 Full verification — `make check` ✅ (completed: 2026-10-03 18:34)
+
+> **Phase 2 verification evidence (2026-10-03 18:34)**: `make check` exit 0 — all 40 suites green
+> (the specification suite at 25/25, the implementation suite at 12/12, and every pre-existing
+> suite). The four new implementation cases pin the early return's release, the nested return's
+> newest-first pair, the unappended fall-through shape, and byte-identical re-emission.
 
 **Deliverables**:
 - [ ] Implementation suite for Phase 2
