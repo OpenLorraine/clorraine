@@ -1,0 +1,733 @@
+//! Runnable specification tests for take and move-out behavior at call and
+//! slice boundaries.
+//!
+//! Each case compiles a small Clorraine program with the built `clc` binary,
+//! builds the emitted C with the host C compiler under the fixed warning
+//! flags, runs the binary, and asserts the process result. The chosen answer
+//! travels in `main`'s return code, so a case that prints nothing states its
+//! result as the exit code.
+//!
+//! The suite covers three shapes:
+//!
+//! * a `take` argument that reads a member of an aggregate returned by a call,
+//!   both guarded (`flag && sink(mkv().a)`) and unguarded;
+//! * an aggregate literal whose field reads an indexed element of an
+//!   array-returning call (`Box<T> { v: mk()[i] }`), with a run-time index and
+//!   a constant index, spelled concretely and under a `String` substitution;
+//! * an element read through a `slice(...)` view over a statement temporary,
+//!   bound to a local, taken by a callee, and, for concrete element types,
+//!   rejected.
+//!
+//! A case whose program is accepted but whose emitted C the host compiler
+//! rejects states the defect directly: the emitted translation must build. A
+//! case that runs also pins release-once behavior, because a double release
+//! aborts in the C library before the exit code is seen.
+//!
+//! The unguarded member take and the concrete slice rejections already behave
+//! as required, so they act as regression pins. The guarded member take and
+//! the aggregate-literal index cases are the expectations that fail until the
+//! move-out reaches those shapes.
+//!
+//! The memory helper runs the same program as an ordinary strict host build
+//! and adds leak and use-after-free detection when `RDC_ASAN` is set.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
+
+/// How long one program may run before the case fails as a hang.
+const RUN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Temporary directory that removes itself when the test finishes.
+struct ScratchDir {
+    path: PathBuf,
+}
+
+impl ScratchDir {
+    /// Creates a unique directory for one test process and tag.
+    fn new(tag: &str) -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "clc-closeoutspec-{}-{tag}-{sequence}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&path)
+            .unwrap_or_else(|err| panic!("cannot create {}: {err}", path.display()));
+        Self { path }
+    }
+
+    /// Path of the scratch directory.
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Runs the built compiler with the given arguments.
+fn run_clc(args: &[String]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args(args)
+        .output()
+        .expect("failed to spawn the compiler binary")
+}
+
+/// Emits one host-profile program and asserts the front end accepted it.
+///
+/// Returns the emitted translation unit. A rejection is a failure of the case,
+/// not a result to assert, because the run cases are about runtime behavior.
+fn emit_host(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    emitted
+}
+
+/// Compiles the emitted C with the host compiler under the strict flag set.
+///
+/// Panics with the compiler's stderr when the build fails. Returns the built
+/// program path.
+fn build_host_c(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    program
+}
+
+/// Runs a built program with a time limit and the given environment values.
+///
+/// A program that is still running when the limit passes is killed and the case
+/// fails, so a regression that loops forever surfaces as one failing case
+/// instead of a frozen suite.
+fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(program);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let mut child = command
+        .spawn()
+        .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"));
+    let deadline = Instant::now() + RUN_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("{tag}: the program did not finish within {RUN_TIMEOUT:?}");
+            }
+            Err(err) => panic!("{tag}: cannot wait for the program: {err}"),
+        }
+    }
+    child
+        .wait_with_output()
+        .unwrap_or_else(|err| panic!("{tag}: cannot collect the program output: {err}"))
+}
+
+/// Emits, builds, and runs one host program, returning its output.
+fn run_host(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, source);
+    let program = build_host_c(tag, &scratch, &emitted);
+    run_with_timeout(tag, &program, &[])
+}
+
+/// Emits a program, builds it with AddressSanitizer, and runs it with leak
+/// detection on, returning its output.
+///
+/// A leaked allocation fails the run and a double free aborts, so a clean exit
+/// pins release-once for the case.
+fn run_asan(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let emitted = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        emitted.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&emitted.stderr)
+    );
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-fsanitize=address",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the sanitizer build failed; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    run_with_timeout(
+        tag,
+        &program,
+        &[("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")],
+    )
+}
+
+/// Runs a memory-safety case: under AddressSanitizer when `RDC_ASAN` is set,
+/// otherwise as an ordinary strict host build.
+///
+/// The plain build still aborts in the C library on a double release, so the
+/// exit code stays observable; the sanitizer run adds leak and use-after-free
+/// detection for the close-out probes.
+fn run_memory(tag: &str, source: &str) -> Output {
+    if std::env::var_os("RDC_ASAN").is_some() {
+        run_asan(tag, source)
+    } else {
+        run_host(tag, source)
+    }
+}
+
+/// Asserts the program exited with exactly `expected`, reporting its stderr.
+fn assert_exit(tag: &str, output: &Output, expected: i32) {
+    assert_eq!(
+        output.status.code(),
+        Some(expected),
+        "{tag}: expected exit code {expected}; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Asserts the run produced no AddressSanitizer report.
+///
+/// The check is meaningful under `RDC_ASAN`; a plain strict build has no
+/// sanitizer output to find. A leak or use-after-free that aborts the run
+/// fails the exit-code assertion first.
+fn assert_no_asan(tag: &str, output: &Output) {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("AddressSanitizer"),
+        "{tag}: the run reported a memory error; stderr:\n{stderr}"
+    );
+}
+
+/// Compiles `source` and returns the scratch directory, output, and C path.
+fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    (scratch, output, c_path)
+}
+
+/// Asserts the front end rejects the program with `code` and writes no C.
+fn assert_rejected(tag: &str, source: &str, code: &str) {
+    assert_rejected_with(tag, source, code, &[]);
+}
+
+/// Asserts the front end rejects the program with `code`, that the message
+/// contains every fragment, and that no translation unit is written.
+fn assert_rejected_with(tag: &str, source: &str, code: &str, fragments: &[&str]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("error {code}:")),
+        "{tag}: expected {code}; stderr:\n{stderr}"
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// Asserts the text contains a fragment.
+fn assert_contains(tag: &str, text: &str, needle: &str) {
+    assert!(
+        text.contains(needle),
+        "{tag}: the emitted C does not contain {needle:?}"
+    );
+}
+
+/// Asserts the first fragment appears before the second one in the text.
+fn assert_before(tag: &str, text: &str, first: &str, second: &str) {
+    let first_at = text
+        .find(first)
+        .unwrap_or_else(|| panic!("{tag}: the text does not contain {first:?}"));
+    let second_at = text
+        .find(second)
+        .unwrap_or_else(|| panic!("{tag}: the text does not contain {second:?}"));
+    assert!(
+        first_at < second_at,
+        "{tag}: expected {first:?} before {second:?}"
+    );
+}
+
+/// Counts the occurrences of a fragment.
+fn count_occurrences(text: &str, needle: &str) -> usize {
+    text.matches(needle).count()
+}
+
+/// Returns the compiler temporary that the run-time index parameter `i` was
+/// pinned into.
+///
+/// The pin keeps the index expression evaluated once, so the element read and
+/// the slot emptying share one value. A translation without the pin fails the
+/// case with a clear message.
+fn pinned_index_temp<'a>(tag: &str, text: &'a str) -> &'a str {
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some((lhs, rhs)) = line.split_once(" = ") {
+            if rhs == "i;" && lhs.starts_with("__cl_tmp") {
+                return lhs;
+            }
+        }
+    }
+    panic!("{tag}: the run-time index is not pinned into a compiler temporary")
+}
+
+/// Asserts the emitted aggregate-literal field calls the array-returning
+/// function before it empties the slot the run-time index selected.
+///
+/// The function is passed as a callable parameter named `make`, so `make(`
+/// only matches the call site. The pinned index appears exactly once and is
+/// the index of the emptied slot.
+fn assert_indexed_box_shape(tag: &str, source: &str) {
+    let emitted = emit_host(tag, source);
+    let index = pinned_index_temp(tag, &emitted);
+    assert_eq!(
+        count_occurrences(&emitted, &format!("{index} = i;")),
+        1,
+        "{tag}: the run-time index must be pinned exactly once"
+    );
+    assert_before(tag, &emitted, "make(", &format!("[{index}] = NULL;"));
+}
+
+/// A guarded member take keeps the call result's siblings alive: the guard
+/// zeroes the taken member and releases the rest exactly once.
+///
+/// The true path takes `mkv().a` (two bytes) and answers seven; the false path
+/// never evaluates the call and answers zero. The emitted guard must zero
+/// `.a` after the take, or the result's cleanup releases the member a second
+/// time. Under AddressSanitizer the true path also proves the sibling `b` is
+/// released once.
+#[test]
+fn should_keep_a_guarded_member_take_clean_when_the_guard_is_true_or_false() {
+    let source_true = r#"module closeout.guardedmember;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func sink(take v: String): i32 {
+    return i32(len(v));
+}
+
+func guarded(flag: bool): i32 {
+    let hit: bool = flag && sink(mkv().a) == 2;
+    return hit ? 7 : 0;
+}
+
+func main(): i32 {
+    return guarded(true);
+}
+"#;
+    let emitted = emit_host("guarded-member", source_true);
+    assert_contains("guarded-member", &emitted, ".a = NULL;");
+
+    let output_true = run_memory("guarded-member-true", source_true);
+    assert_exit("guarded-member-true", &output_true, 7);
+    assert_no_asan("guarded-member-true", &output_true);
+
+    let source_false = r#"module closeout.guardedmember;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func sink(take v: String): i32 {
+    return i32(len(v));
+}
+
+func guarded(flag: bool): i32 {
+    let hit: bool = flag && sink(mkv().a) == 2;
+    return hit ? 7 : 0;
+}
+
+func main(): i32 {
+    return guarded(false);
+}
+"#;
+    let output_false = run_memory("guarded-member-false", source_false);
+    assert_exit("guarded-member-false", &output_false, 0);
+    assert_no_asan("guarded-member-false", &output_false);
+}
+
+/// An unguarded member take transfers the member and releases the result once.
+///
+/// This is a regression pin: the unguarded form already binds the call result,
+/// empties the taken field, and releases the sibling field. The run answers
+/// two, and the sanitizer path would report a leak or a second release.
+#[test]
+fn should_transfer_the_member_when_an_unguarded_take_reads_a_call_result() {
+    let source = r#"module closeout.membertake;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mkv(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func sink(take v: String): i32 {
+    return i32(len(v));
+}
+
+func main(): i32 {
+    return sink(mkv().a);
+}
+"#;
+    let emitted = emit_host("member-take", source);
+    assert_contains("member-take", &emitted, ".a = NULL;");
+
+    let output = run_memory("member-take-run", source);
+    assert_exit("member-take-run", &output, 2);
+    assert_no_asan("member-take-run", &output);
+}
+
+/// An aggregate-literal field reads a call result through a run-time index.
+///
+/// `pack` fills `Box<T> { v: make()[i] }`; the array-returning call must run
+/// before the selected element moves into the field, the index must be read
+/// exactly once, and the emptied slot must be the one the index selected. The
+/// instantiation measures the second element, so `main` answers three. Both
+/// the generic literal spelling and the concrete `Box<String>` spelling must
+/// behave the same way.
+#[test]
+fn should_move_the_indexed_element_when_an_aggregate_field_reads_a_call_result() {
+    let generic_source = r#"module closeout.indexbox;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func pack<T>(make: func(): T[2], i: i32): Box<T> {
+    return Box<T> { v: make()[i] };
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let b: Box<String> = pack<String>(mkString, 1);
+    return i32(len(b.v));
+}
+"#;
+    assert_indexed_box_shape("aggregate-index-generic", generic_source);
+    let generic_output = run_memory("aggregate-index-generic-run", generic_source);
+    assert_exit("aggregate-index-generic-run", &generic_output, 3);
+    assert_no_asan("aggregate-index-generic-run", &generic_output);
+
+    let concrete_source = r#"module closeout.indexboxconcrete;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func pack<T>(make: func(): T[2], i: i32): Box<String> {
+    return Box<String> { v: make()[i] };
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let b: Box<String> = pack<String>(mkString, 1);
+    return i32(len(b.v));
+}
+"#;
+    assert_indexed_box_shape("aggregate-index-concrete", concrete_source);
+    let concrete_output = run_memory("aggregate-index-concrete-run", concrete_source);
+    assert_exit("aggregate-index-concrete-run", &concrete_output, 3);
+    assert_no_asan("aggregate-index-concrete-run", &concrete_output);
+}
+
+/// An aggregate-literal field reads a call result at a constant index zero.
+///
+/// The root call must still be emitted before the move, and the first slot
+/// must be emptied before the array temporary is released. The first element
+/// measures three bytes, so `main` answers three; the sanitizer path would
+/// report a missing root call as a crash or a leak.
+#[test]
+fn should_move_slot_zero_when_an_aggregate_field_reads_a_call_result_at_a_constant_index() {
+    let source = r#"module closeout.constantbox;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func pack<T>(make: func(): T[2]): Box<T> {
+    return Box<T> { v: make()[0] };
+}
+
+func mkString(): String[2] {
+    return [stringOf("abc"), stringOf("de")];
+}
+
+func main(): i32 {
+    let b: Box<String> = pack<String>(mkString);
+    return i32(len(b.v));
+}
+"#;
+    let emitted = emit_host("constant-index", source);
+    assert_before("constant-index", &emitted, "make(", "__cl_tmp0[0] = NULL;");
+
+    let output = run_memory("constant-index-run", source);
+    assert_exit("constant-index-run", &output, 3);
+    assert_no_asan("constant-index-run", &output);
+}
+
+/// A slice view over a statement temporary moves its element into a binding.
+///
+/// `storeSlice` binds `slice(make(), 0, 2)[i]` with `i` one. The selected
+/// element must move out before the statement temporary releases the rows, so
+/// the returned string is still valid and measures three bytes; the sanitizer
+/// path would report a read of freed memory otherwise.
+#[test]
+fn should_move_the_element_when_a_slice_statement_temporary_is_bound() {
+    let source = r#"module closeout.slicestore;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func storeSlice<T>(make: func(): T[2], i: i32): T {
+    let s: T = slice(make(), 0, 2)[i];
+    return s;
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return i32(len(storeSlice<String>(mkString, 1)));
+}
+"#;
+    let output = run_memory("slice-store", source);
+    assert_exit("slice-store", &output, 3);
+    assert_no_asan("slice-store", &output);
+}
+
+/// A slice view with a non-zero start moves its element into a binding.
+///
+/// `storeSlice` binds `slice(make(), 1, 2)[i]` with `i` zero, which selects
+/// the second row element. Counting rows, not scalars, finds `"cde"`; the
+/// element must move out before the temporary releases the rows, so `main`
+/// answers three.
+#[test]
+fn should_move_the_element_when_the_slice_start_is_non_zero() {
+    let source = r#"module closeout.slicestoreoffset;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func storeSlice<T>(make: func(): T[2], i: i32): T {
+    let s: T = slice(make(), 1, 2)[i];
+    return s;
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return i32(len(storeSlice<String>(mkString, 0)));
+}
+"#;
+    let output = run_memory("slice-store-offset", source);
+    assert_exit("slice-store-offset", &output, 3);
+    assert_no_asan("slice-store-offset", &output);
+}
+
+/// A slice view over a statement temporary passes its element to a `take`
+/// parameter.
+///
+/// `takeSlice` calls `consume<T>(slice(make(), 0, 2)[i])` with `i` one, so the
+/// callee receives the second element and owns it. The element must move out
+/// before the temporary releases the rows: a copy would be freed twice, which
+/// aborts, and the emitted C must name no unknown-typed callee. The consumed
+/// string measures three bytes, so `main` answers three.
+#[test]
+fn should_transfer_the_element_when_a_slice_statement_temporary_is_taken() {
+    let source = r#"module closeout.slicetake;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func consume<T>(take v: T): i32 {
+    return i32(len(v));
+}
+
+func takeSlice<T>(make: func(): T[2], i: i32): i32 {
+    return consume<T>(slice(make(), 0, 2)[i]);
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    return takeSlice<String>(mkString, 1);
+}
+"#;
+    let emitted = emit_host("slice-take", source);
+    assert!(
+        !emitted.contains("Unknown"),
+        "slice-take: the emitted C must not name an unknown-typed symbol"
+    );
+
+    let output = run_memory("slice-take-run", source);
+    assert_exit("slice-take-run", &output, 3);
+    assert_no_asan("slice-take-run", &output);
+}
+
+/// Concrete element moves through a slice view stay rejected.
+///
+/// This is a regression pin: the element-move limit reports `E10026` for a
+/// concrete `String` element whether the element is taken by a callee or bound
+/// to an owned local, and a rejected program writes no translation unit. The
+/// generic spellings above are the forms the fixes widen; the concrete
+/// spellings must keep the existing limit.
+#[test]
+fn should_reject_a_concrete_slice_element_move_when_the_element_is_taken_or_stored() {
+    let take_source = r#"module closeout.slicerejecttake;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func consume(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("cde")];
+    let view: String[] = slice(xs, 0, 2);
+    return consume(take view[1]);
+}
+"#;
+    assert_rejected("slice-reject-take", take_source, "E10026");
+
+    let store_source = r#"module closeout.slicerejectstore;
+
+import { String, stringOf } from std.text;
+import { slice } from std.mem;
+
+func main(): i32 {
+    let xs: String[2] = [stringOf("ab"), stringOf("cde")];
+    let view: String[] = slice(xs, 0, 2);
+    let s: String = view[1];
+    return i32(len(s));
+}
+"#;
+    assert_rejected("slice-reject-store", store_source, "E10026");
+}

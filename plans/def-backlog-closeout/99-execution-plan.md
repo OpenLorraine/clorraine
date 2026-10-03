@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 22:53
-> **Progress**: 0/44 tasks (0%)
+> **Last Updated**: 2026-10-04 00:49
+> **Progress**: 1/44 tasks (2%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -55,15 +55,18 @@ task-size criteria: each task is independently testable and reviewable)
 
 ## Phase 1: Take/move-out integrity (DEF-63, DEF-64, DEF-66)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: `12b02b668370bcb93594c557ece0de9c72f8fc5b`
+> **Expected modification set**: `compiler/tests/def_backlog_closeout_spec_test.rs`,
+> `compiler/tests/def_backlog_closeout_impl_test.rs`, `compiler/src/own/lower.rs`,
+> `compiler/src/own/call.rs`, `compiler/src/own/statements.rs`, `compiler/src/codegen/*` (only if
+> an emitter gap is proven), `build/closeout/*` probe artifacts (gitignored). Scope mode: `strict`.
 
 ### Step 1.1: Specification Tests
 
 **Reference**: [03-01](03-01-take-moveout-integrity.md) · [AR-2, AR-8, AR-9, AR-15](00-ambiguity-register.md)
 **Objective**: Pin the three defects' required behavior before any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/def_backlog_closeout_spec_test.rs`
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/def_backlog_closeout_spec_test.rs` ✅ (completed: 2026-10-04 00:50)
 - [ ] 1.1.2 Run the spec suite and record the red phase: ST-1/3 leak under the host ASan probe; ST-5/6 leak only for each form the reproduction gate confirms, otherwise they pass and close as already-fixed; ST-2/4/7 pass pre-implementation (justified: unchanged behavior); record the exact evidence
 
 **Deliverables**:
