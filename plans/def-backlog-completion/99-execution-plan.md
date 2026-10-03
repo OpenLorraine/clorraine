@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 13:32
-> **Progress**: 11/31 tasks (35%)
+> **Last Updated**: 2026-10-03 13:33
+> **Progress**: 12/31 tasks (39%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -133,7 +133,11 @@ element reads move before release.
 - [x] 1.3.1 Write implementation tests: duty record and report dedupe; no duty for `take`/locals;
   `__cl_tmp[i] = NULL` for the take and store; return source-move ordering; one index
   materialization; constant-index byte-identical re-emission — `compiler/tests/def_backlog_completion_impl_test.rs` ✅ (completed: 2026-10-03 13:32)
-- [ ] 1.3.2 Full verification and determinism check — `make check`
+- [x] 1.3.2 Full verification and determinism check — `make check` ✅ (completed: 2026-10-03 13:33)
+
+> **Phase 1 verification evidence (2026-10-03 13:33)**: `make check` exit 0 — all 40 suites green
+> (the specification suite at 18/18, the implementation suite at 7/7, and every pre-existing
+> suite).
 
 **Deliverables**:
 - [ ] Implementation suite for Phase 1
