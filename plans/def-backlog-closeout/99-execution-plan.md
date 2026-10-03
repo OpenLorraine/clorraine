@@ -1,0 +1,356 @@
+# Execution Plan: Def Backlog Closeout
+
+> **Document**: 99-execution-plan.md
+> **Parent**: [Index](00-index.md)
+> **Last Updated**: 2026-10-03 22:53
+> **Progress**: 0/44 tasks (0%)
+> **CodeOps Artifact Schema**: 1
+
+## Overview
+
+Close the seven filed defects DEF-63 – DEF-69 in six phases: take/move-out integrity, expression
+temporaries, borrow out-slot ABI, defer condition release, the capture diagnostic, and close-out.
+Each implementation phase follows the specification-first ordering (spec tests → red phase →
+implement → green phase → impl tests → host-ASan probes → phase review) from
+`07-testing-strategy.md`.
+
+**🚨 Update this document after EACH completed task!**
+
+---
+
+## Implementation Phases
+
+| Phase | Title | Tasks |
+| ----- | ----- | ----- |
+| 1 | Take/move-out integrity (DEF-63, DEF-64, DEF-66) | 9 |
+| 2 | Expression temporaries (DEF-67) | 7 |
+| 3 | Borrow out-slot ABI (DEF-65) | 8 |
+| 4 | Defer condition release (DEF-68) | 7 |
+| 5 | Capture diagnostic (DEF-69) | 7 |
+| 6 | Close-out | 6 |
+
+**Total: 44 tasks across 6 phases** (no fabricated hour estimates — scope is bounded by the
+task-size criteria: each task is independently testable and reviewable)
+
+> **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
+>
+> The task checkboxes in the phase sections below are the **single source of truth** for progress.
+> Every task line appears exactly once in this document. The executing agent MUST:
+>
+> 1. **On implementation:** mark the task `[~]` with a timestamp —
+>    `- [~] 1.1.1 Task description ⏳ (implemented: YYYY-MM-DD HH:MM)`
+> 2. **On verify pass:** promote it to `[x]` —
+>    `- [x] 1.1.1 Task description ✅ (completed: YYYY-MM-DD HH:MM)`
+> 3. **Update the Progress header** (`> **Progress**: X/Y tasks (Z%)`) and the Last Updated stamp
+>    after EVERY task — never batch updates. Only `[x]` counts as complete.
+> 4. **Resume** by scanning the phase sections top-to-bottom: the first `[~]` task is resumed first,
+>    else the first `[ ]` task.
+> 5. **On blocker:** mark the task `[!]` and append `Blocked: <short reason>` on the same line. The
+>    plan lifecycle is `Ready`, `Executing`, `Done`, or `Blocked`, derived from these markers.
+>
+> Timestamps come from `date '+%Y-%m-%d %H:%M'` — never invented. Failure to keep the marks current
+> means progress is invisible after crashes, context resets, or session handoffs.
+
+---
+
+## Phase 1: Take/move-out integrity (DEF-63, DEF-64, DEF-66)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
+> committed, staged, unstaged, and untracked phase-start state)_
+
+### Step 1.1: Specification Tests
+
+**Reference**: [03-01](03-01-take-moveout-integrity.md) · [AR-2, AR-8, AR-9, AR-15](00-ambiguity-register.md)
+**Objective**: Pin the three defects' required behavior before any implementation.
+
+- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/def_backlog_closeout_spec_test.rs`
+- [ ] 1.1.2 Run the spec suite and record the red phase: ST-1/3/5/6 fail or leak under the host ASan probe; ST-2/4/7 pass pre-implementation (justified: unchanged behavior); record the exact evidence
+
+**Deliverables**:
+- [ ] Specification suite with ST-1 – ST-7
+- [ ] Red-phase evidence recorded in this plan
+
+**Verify**: `make check` (the new suite compiles; expected failures recorded)
+
+### Step 1.2: Implementation
+
+**Reference**: [03-01](03-01-take-moveout-integrity.md) §1–§3
+**Objective**: Fix the guarded member-root take, the aggregate-literal consume, and the slice-root gap only if it reproduces.
+
+- [ ] 1.2.1 Bind the guarded call-rooted take argument through the deferred `Materialize` temp — `compiler/src/own/lower.rs`
+- [ ] 1.2.2 Prepare the aggregate-literal consume path (settle, index chain, root bind) and emit the base fill explicitly — `compiler/src/own/lower.rs`
+- [ ] 1.2.3 Run the DEF-66 reproduction probes (let-store, take, return forms under host ASan); apply the slice-root place-derivation fix only for forms that reproduce, otherwise record the already-fixed evidence — `compiler/src/own/lower.rs`
+- [ ] 1.2.4 Run the spec suite and record the green phase
+
+**Deliverables**:
+- [ ] DEF-63, DEF-64 fixes and the DEF-66 decision with evidence
+- [ ] `make check` green
+
+**Verify**: `make check`
+
+### Step 1.3: Implementation Tests & Hardening
+
+**Reference**: [07-testing-strategy.md](07-testing-strategy.md) · [AR-15](00-ambiguity-register.md)
+**Objective**: Pin the emitted shapes and release counts; prove memory safety at task time.
+
+- [ ] 1.3.1 Write implementation tests for the guard zeroing shape, the aggregate fill/index slot, and the slice-root regression pins — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 1.3.2 Run the ST-1/3/5/6 host-ASan probes from the 07 matrix and `cargo test` for both new suites
+- [ ] 1.3.3 Dispatch the phase review — correctness, memory-safety, and emission-integrity auditors per the `AGENTS.md` matrix; every packet carries the blast-radius (every call site, exhaustive match, and parallel path of the changed construct) and test-integrity (an assertion must fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
+
+**Deliverables**:
+- [ ] Implementation suite for the three shapes
+- [ ] Clean probe matrix
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 2: Expression temporaries (DEF-67)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+
+### Step 2.1: Specification Tests
+
+**Reference**: [03-02](03-02-expression-temporaries.md) · [AR-6](00-ambiguity-register.md)
+**Objective**: Pin the release behavior of an ownerless call result used as a borrow argument.
+
+- [ ] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-11 — `compiler/tests/def_backlog_closeout_spec_test.rs`
+- [ ] 2.1.2 Run the spec suite and record the red phase (ST-8/9/10 leak; ST-11 passes, justified)
+
+**Deliverables**:
+- [ ] Specification suite with ST-8 – ST-11
+- [ ] Red-phase evidence
+
+**Verify**: `make check`
+
+### Step 2.2: Implementation
+
+**Reference**: [03-02](03-02-expression-temporaries.md) §Proposed Changes
+**Objective**: Bind and release the intrinsic argument and dot-`len` receiver.
+
+- [ ] 2.2.1 Route intrinsic arguments and dot-`len` receivers through the owned-argument binding, guard-aware — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`
+- [ ] 2.2.2 Run the spec suite and record the green phase
+
+**Deliverables**:
+- [ ] DEF-67 fix
+- [ ] `make check` green
+
+**Verify**: `make check`
+
+### Step 2.3: Implementation Tests & Hardening
+
+- [ ] 2.3.1 Write implementation tests for the intrinsic-argument release shape and the guard deferral — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 2.3.2 Run the ST-8/10/11 host-ASan probes and `cargo test` for both suites
+- [ ] 2.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+
+**Deliverables**:
+- [ ] Implementation suite for the new shapes
+- [ ] Clean probe matrix
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 3: Borrow out-slot ABI (DEF-65)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+
+### Step 3.1: Specification Tests
+
+**Reference**: [03-03](03-03-borrow-outslot-abi.md) · [AR-3, AR-10](00-ambiguity-register.md)
+**Objective**: Pin the pointer lowering and write-through behavior of nullable borrow out-slots.
+
+- [ ] 3.1.1 [spec-author] Write specification tests from ST-12 – ST-15 — `compiler/tests/def_backlog_closeout_spec_test.rs`
+- [ ] 3.1.2 Run the spec suite and record the red phase (ST-12/13 double-free or wrong value; ST-15 passes, justified)
+
+**Deliverables**:
+- [ ] Specification suite with ST-12 – ST-15
+- [ ] Red-phase evidence
+
+**Verify**: `make check`
+
+### Step 3.2: Implementation
+
+**Reference**: [03-03](03-03-borrow-outslot-abi.md) §Proposed Changes
+**Objective**: Widen the pointer predicate and materialize view conversions at call sites.
+
+- [ ] 3.2.1 Add `ty.nullable` to the pointer-parameter predicate — `compiler/src/codegen/types.rs`
+- [ ] 3.2.2 Materialize view conversions for pointer slots and run the blast-radius pass over all four predicate consumers plus the `out_slot` condition — `compiler/src/codegen/calls.rs`
+- [ ] 3.2.3 Run the spec suite and record the green phase
+
+**Deliverables**:
+- [ ] DEF-65 fix
+- [ ] Blast-radius evidence over the four consumers
+- [ ] `make check` green
+
+**Verify**: `make check`
+
+### Step 3.3: Implementation Tests & Hardening
+
+- [ ] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind and the unchanged by-value path — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 3.3.2 Run the ST-12/13 host-ASan probes, a freestanding compile, and `cargo test` for both suites
+- [ ] 3.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+
+**Deliverables**:
+- [ ] Implementation suite for the ABI shapes
+- [ ] Clean probe matrix and freestanding compile
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 4: Defer condition release (DEF-68)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+
+### Step 4.1: Specification Tests
+
+**Reference**: [03-04](03-04-defer-condition-release.md) · [AR-7](00-ambiguity-register.md)
+**Objective**: Pin the condition release on a deferred return and the unchanged paths.
+
+- [ ] 4.1.1 [spec-author] Write specification tests from ST-16 – ST-19 — `compiler/tests/def_backlog_closeout_spec_test.rs`
+- [ ] 4.1.2 Run the spec suite and record the red phase (ST-16 leaks; ST-17/18 pass, justified; ST-19 pins the boundary)
+
+**Deliverables**:
+- [ ] Specification suite with ST-16 – ST-19
+- [ ] Red-phase evidence
+
+**Verify**: `make check`
+
+### Step 4.2: Implementation
+
+**Reference**: [03-04](03-04-defer-condition-release.md) §Proposed Changes
+**Objective**: Union the registered defer blocks' return successors into the condition-release append.
+
+- [ ] 4.2.1 Extend `append_condition_releases` with the defer-marker scan — `compiler/src/own/loops.rs`
+- [ ] 4.2.2 Run the spec suite and record the green phase
+
+**Deliverables**:
+- [ ] DEF-68 fix
+- [ ] `make check` green
+
+**Verify**: `make check`
+
+### Step 4.3: Implementation Tests & Hardening
+
+- [ ] 4.3.1 Write implementation tests for the deferred return's release list and the post-loop return's absence of releases — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 4.3.2 Run the ST-16 host-ASan probe and `cargo test` for both suites
+- [ ] 4.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+
+**Deliverables**:
+- [ ] Implementation suite for the release shape
+- [ ] Clean probe matrix
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 5: Capture diagnostic (DEF-69)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+
+### Step 5.1: Specification Tests
+
+**Reference**: [03-05](03-05-capture-diagnostic.md) · [AR-4, AR-5, AR-13, AR-14](00-ambiguity-register.md)
+**Objective**: Register the approved diagnostic and its compile-fail golden before implementation.
+
+- [ ] 5.1.1 Add the approved `E10405` registry row, the compile-fail golden, and the `ASSERTED_CODES` entry — `spec/14-diagnostics.md`, `spec/tests/compile-fail/E10405_unlisted_capture.clo`, `compiler/tests/compile_fail_spec_test.rs`
+- [ ] 5.1.2 Run the compile-fail suite and record the red phase (the golden reports no diagnostic)
+
+**Deliverables**:
+- [ ] Approved specification change and golden
+- [ ] Red-phase evidence
+
+**Verify**: `make check` (the golden fails as expected)
+
+### Step 5.2: Implementation
+
+**Reference**: [03-05](03-05-capture-diagnostic.md) §Proposed Changes
+**Objective**: Reject an unlisted enclosing read with the scope-floor check.
+
+- [ ] 5.2.1 Implement the scope-floor capture check in the lambda checker — `compiler/src/sema/expr.rs`, `compiler/src/sema/mod.rs`
+- [ ] 5.2.2 Run the spec cases, the golden, and `spec/check.sh`; record the green phase
+
+**Deliverables**:
+- [ ] DEF-69 fix
+- [ ] `spec/check.sh` and `make check` green
+
+**Verify**: `make check`
+
+### Step 5.3: Implementation Tests & Hardening
+
+- [ ] 5.3.1 Write implementation tests for the nested-capture, global-read, and unchanged capture-mode cases — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 5.3.2 Run `spec/check.sh` and `cargo test` for both new suites
+- [ ] 5.3.3 Dispatch the phase review — correctness, memory-safety, and semantics-reviewer per the `AGENTS.md` language-rule dispatch (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+
+**Deliverables**:
+- [ ] Implementation suite for the diagnostic edge cases
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 6: Close-out
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+
+### Step 6.1: Verification and Documentation
+
+**Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria
+**Objective**: Prove the whole plan, record the evidence, and close the roadmap rows.
+
+- [ ] 6.1.1 Run `make verify` (all hosted-amiga cross-toolchain legs)
+- [ ] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh`
+- [ ] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done
+- [ ] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change
+- [ ] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included)
+- [ ] 6.1.6 Resolve close-out findings within scope, write the plan summary into this document, and mark the plan Complete in `00-index.md`
+
+**Deliverables**:
+- [ ] All verification passing
+- [ ] Close-out probe runner with recorded results
+- [ ] Updated `AGENTS.md` and roadmap
+- [ ] Close-out review with no open critical/major finding
+
+**Verify**: `make verify`
+
+---
+
+## Dependencies
+
+```
+Phase 1 (take/move-out)
+    ↓
+Phase 2 (expression temporaries)
+    ↓
+Phase 3 (borrow out-slot ABI)
+    ↓
+Phase 4 (defer condition release)
+    ↓
+Phase 5 (capture diagnostic)
+    ↓
+Phase 6 (close-out)
+```
+
+Phases 1 – 2 share `compiler/src/own/lower.rs`, so they run in order; phases 3 – 5 touch disjoint
+files but stay ordered for review simplicity.
+
+---
+
+## Success Criteria
+
+**Feature is complete when:**
+
+1. ✅ All phases completed
+2. ✅ All verification passing (`make check` per phase, `make verify` at close-out)
+3. ✅ No warnings/errors
+4. ✅ No dead code — no unused parameters, functions, classes, or modules
+5. ✅ Memory safety proven — the host-ASan probe matrix is clean; no leak, double free, use-after-free, or invalid free remains
+6. ✅ Documentation updated — `AGENTS.md` test map and roadmap rows
+7. ✅ Code reviewed — per-phase and close-out reviews dispatched with no open critical/major finding
+8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
