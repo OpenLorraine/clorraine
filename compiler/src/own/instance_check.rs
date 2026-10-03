@@ -43,6 +43,52 @@ pub fn check(
     check_view_fields(loaded, sema, mono, diagnostics);
     check_fill_instances(program, functions, sema, mono, diagnostics);
     check_duplicable_requirements(program, sema, mono, diagnostics);
+    check_not_lend_requirements(program, sema, mono, diagnostics);
+}
+
+/// Reports `E10034` when a recorded lend move instantiates with an owning type.
+///
+/// A generic body that moves a lend into an owned position is accepted while
+/// the type is a parameter, because the checker cannot yet tell whether the
+/// move is real. The audit substitutes each recorded instance's type arguments
+/// into the moved type: a duplicable substitution stays a copy, while an owning
+/// one reports the same diagnostic the concrete spelling emits. One duty
+/// reports once — the first owning instance — so the body site is not repeated.
+fn check_not_lend_requirements(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.not_lend_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
+            if sema.table.duplicable(&substituted) {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10034",
+                    format!(
+                        "cannot release or store borrowed parameter '{}'",
+                        requirement.parameter
+                    ),
+                    requirement.span,
+                )
+                .with_help(
+                    "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                ),
+            );
+            break;
+        }
+    }
 }
 
 /// Reports the duplicability duty when an instance substitutes an owning type.

@@ -92,6 +92,7 @@ pub fn check(
     }
     let mut functions = Vec::new();
     let mut duplicable_requirements = Vec::new();
+    let mut not_lend_requirements = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -112,17 +113,21 @@ pub fn check(
                     diagnostics,
                     &mut next_lifted,
                 );
-                let (mut function, lifted, requirements) = checker.check();
+                let (mut function, lifted, requirements, lend_duties) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
                 functions.extend(lifted);
                 duplicable_requirements.extend(requirements);
+                not_lend_requirements.extend(lend_duties);
             }
         }
     }
     let mut monomorphization = generics::collect(loaded, &program, sema);
     for requirement in duplicable_requirements {
         monomorphization.require_duplicable(requirement);
+    }
+    for requirement in not_lend_requirements {
+        monomorphization.require_not_lend(requirement);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
@@ -255,6 +260,12 @@ struct FunctionChecker<'a, 'd> {
     /// the per-instance audit discharges every duty against each recorded
     /// concrete instantiation.
     duplicable_requirements: Vec<ir::RequiresDuplicable>,
+    /// The lend-move duties this body owes its instances.
+    ///
+    /// A lend moved into an owned position under a still-parameter type is
+    /// judged after substitution: the per-instance audit reports `E10034` when
+    /// the type argument owns.
+    not_lend_requirements: Vec<ir::RequiresNotLend>,
     /// Binding indices already recorded, so one binding owes one duty.
     recorded_requirements: BTreeSet<usize>,
     /// The lifted functions of every lambda this function lowers.
@@ -325,6 +336,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             materialize_owned_temporaries: true,
             report_diagnostics: true,
             duplicable_requirements: Vec::new(),
+            not_lend_requirements: Vec::new(),
             recorded_requirements: BTreeSet::new(),
             lifted: Vec::new(),
             next_lifted,
@@ -334,9 +346,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Runs the whole function check and finishes the IR.
     ///
-    /// Returns the declared body, every lambda lifted out of it, and the
-    /// duplicability duties the body owes its instances.
-    fn check(mut self) -> (ir::Function, Vec<ir::Function>, Vec<ir::RequiresDuplicable>) {
+    /// Returns the declared body, every lambda lifted out of it, the
+    /// duplicability duties the body owes its instances, and the lend-move
+    /// duties it owes them.
+    fn check(
+        mut self,
+    ) -> (
+        ir::Function,
+        Vec<ir::Function>,
+        Vec<ir::RequiresDuplicable>,
+        Vec<ir::RequiresNotLend>,
+    ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
         self.elision_prelude();
@@ -369,7 +389,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .collect();
         function.temps = self.temps.clone();
         liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
-        (function, self.lifted, self.duplicable_requirements)
+        (
+            function,
+            self.lifted,
+            self.duplicable_requirements,
+            self.not_lend_requirements,
+        )
     }
 
     // -- scopes and bindings -------------------------------------------------

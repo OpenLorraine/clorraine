@@ -118,6 +118,27 @@ pub struct RequiresDuplicable {
     pub span: Span,
 }
 
+/// A body's obligation that a lend may only be moved into an owned position
+/// when the instance's type is duplicable.
+///
+/// A concrete lend parameter that is returned, stored, or passed to a `take`
+/// position reports `E10034` directly. While the type is still a parameter the
+/// checker takes the maybe-owning branch instead, so the body records this duty
+/// and the per-instance audit reports the same diagnostic once the type
+/// argument is known to own. A duplicable substitution is accepted, matching
+/// the concrete copy.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresNotLend {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The lend parameter's source name, for the diagnostic text.
+    pub parameter: String,
+    /// The moved value's declared type, substituted per instance by the audit.
+    pub ty: Ty,
+    /// The move site, for the diagnostic span.
+    pub span: Span,
+}
+
 /// One emitted specialization of a lifted lambda.
 ///
 /// A lifted function inside a generic declaration is emitted once per enclosing
@@ -148,6 +169,7 @@ pub struct Monomorphization {
     lifted: Vec<LiftedSpecialization>,
     obligations: Vec<CopyObligation>,
     duplicable_requirements: Vec<RequiresDuplicable>,
+    not_lend_requirements: Vec<RequiresNotLend>,
 }
 
 impl Monomorphization {
@@ -213,5 +235,15 @@ impl Monomorphization {
     /// Every duplicability duty recorded so far.
     pub fn duplicable_requirements(&self) -> &[RequiresDuplicable] {
         &self.duplicable_requirements
+    }
+
+    /// Records a lend move the body owes an instance judgment for.
+    pub fn require_not_lend(&mut self, requirement: RequiresNotLend) {
+        self.not_lend_requirements.push(requirement);
+    }
+
+    /// Every lend-move duty recorded so far.
+    pub fn not_lend_requirements(&self) -> &[RequiresNotLend] {
+        &self.not_lend_requirements
     }
 }

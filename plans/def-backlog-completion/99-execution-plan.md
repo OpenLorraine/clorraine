@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-03 11:06
-> **Progress**: 2/31 tasks (6%)
+> **Last Updated**: 2026-10-03 13:18
+> **Progress**: 3/31 tasks (10%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -87,9 +87,9 @@ task-size criteria: each task is independently testable and reviewable)
 **Objective**: Reject the generic lend escape; make the move-out index-correct and the store/return
 element reads move before release.
 
-- [ ] 1.2.1 Add the duty record, collection, and post-substitution `E10034` audit with one report
+- [x] 1.2.1 Add the duty record, collection, and post-substitution `E10034` audit with one report
   per site, no param-mention early skip, the `BindingKind::Param` predicate, and the `borrow T?`
-  exemption — `ir/mono.rs`, `own.rs`, `own/instance_check.rs`
+  exemption — `ir/mono.rs`, `own.rs`, `own/instance_check.rs` ✅ (completed: 2026-10-03 13:18)
 - [ ] 1.2.2 Record the lend duty at the center: `mark_moved_if_owning` takes the move span and
   records a `RequiresNotLend` for a lend-parameter root (field or element projection), deriving the
   parameter and type internally; add the span at the eleven call sites — `own/place.rs`,
