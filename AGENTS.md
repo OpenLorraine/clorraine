@@ -163,6 +163,15 @@ in `CMD`).
   **implementation tests** (duty-report dedupe, index-carrying move-out and
   store shapes, condition-release counts and ordering, closure symbol and
   empty-call text, and byte-identical re-emission).
+- `compiler/tests/def_backlog_closeout_spec_test.rs` holds the
+  **specification tests** for the seven closed backlog defects (the guarded
+  member-root take, the indexed aggregate-literal consume, the nullable borrow
+  out-slot, the slice element through a statement temporary, the ownerless
+  `len` argument, the do-while deferred return, and the unlisted lambda
+  capture), and `compiler/tests/def_backlog_closeout_impl_test.rs` holds their
+  **implementation tests** (guard zeroing, indexed store and move-out shapes,
+  the pointer out-slot declarators, release counts and ordering, the capture
+  scope floor and its listed-name exemption, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 14:29
-> **Progress**: 38/44 tasks (86%)
+> **Last Updated**: 2026-10-04 14:31
+> **Progress**: 41/44 tasks (93%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -758,7 +758,7 @@ observations are filed as DEF-91 – DEF-94.
 
 - [x] 6.1.1 Run `make verify` (all hosted-amiga cross-toolchain legs) ✅ (completed: 2026-10-04 14:27) — `make check` 42 suites green; `spec/check.sh` OK; `corpus-amiga` all portable programs match (vamos), vbcc build warning-free, interrupt-counter and graphics built; `corpus-fs-uae` interrupt-counter and graphics outputs match; `run-fault-amiga` all six faults match; `verify: all legs passed`
 - [x] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh` ✅ (completed: 2026-10-04 14:29)
-- [ ] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done
+- [x] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done ✅ (completed: 2026-10-04 14:31) — `AGENTS.md` test map entry added; all seven roadmap rows verified `Done ✅`
 - [ ] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change
 - [ ] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included)
 - [ ] 6.1.6 Resolve close-out findings within scope, write the plan summary into this document, and mark the plan Complete in `00-index.md`
@@ -766,7 +766,7 @@ observations are filed as DEF-91 – DEF-94.
 **Deliverables**:
 - [ ] All verification passing
 - [x] Close-out probe runner with recorded results
-- [ ] Updated `AGENTS.md` and roadmap
+- [x] Updated `AGENTS.md` and roadmap
 - [ ] Close-out review with no open critical/major finding
 
 **Verify**: `make verify`
