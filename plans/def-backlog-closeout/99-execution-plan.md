@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 02:01
-> **Progress**: 14/44 tasks (32%)
+> **Progress**: 15/44 tasks (34%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -276,15 +276,27 @@ pin's red state is preserved (an abort leaves no exit code, failing the exit-zer
 ### Step 2.3: Implementation Tests & Hardening
 
 - [x] 2.3.1 Write implementation tests for the intrinsic-argument release shape and the guard deferral — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 02:02)
-- [ ] 2.3.2 Run the ST-8/10/11 host-ASan probes and `cargo test` for both suites
+- [x] 2.3.2 Run the ST-8/10/11 host-ASan probes and `cargo test` for both suites ✅ (completed: 2026-10-04 02:02)
 - [ ] 2.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
 
 **Deliverables**:
-- [ ] Implementation suite for the new shapes
-- [ ] Clean probe matrix
+- [x] Implementation suite for the new shapes
+- [x] Clean probe matrix
 - [ ] Phase review with no open critical/major finding
 
 **Verify**: `make check`
+
+**Probe evidence (2026-10-04 02:02)** — host ASan over `build/closeout/` with the fixed compiler:
+
+| Probe | Exit | Sanitizer output |
+| ----- | ---- | ---------------- |
+| `def67_len_call.clo` (ST-8) | 3 | none |
+| `def67_len_store.clo` (ST-8, stored element) | 1 | none |
+| `def67_dot_len.clo` (ST-9) | 1 | none |
+| `def67_len_guard.clo` (ST-10) | 3 | none |
+| `def67_storeat_regression.clo` (ST-11) | 3 | none |
+
+Both suites green together (13 impl + 14 spec).
 
 ---
 
