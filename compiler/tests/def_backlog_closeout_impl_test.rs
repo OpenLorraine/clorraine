@@ -885,6 +885,52 @@ func main(): i32 {
     );
 }
 
+/// A lifted lambda returns through the cleanup ladder so the read precedes
+/// the release.
+///
+/// The expression-bodied lambda `() => i32(len(stringOf("abc")))` binds the
+/// call result to `__cl_owned0`, reads the length through the string view, and
+/// returns. The body must mirror an ordinary `return`: the read runs first,
+/// then the cleanup label releases the temporary. A body whose scope cleanup
+/// runs inline emits the `FreeString` before the read, and the read dereferences
+/// a null handle.
+#[test]
+fn should_read_before_releasing_when_a_lifted_lambda_returns_a_len_call_result() {
+    let source = r#"module impl.closeout.liftedlen;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let f: func(): i32 = () => i32(len(stringOf("abc")));
+    return f();
+}
+"#;
+    let emitted = emit_host("lifted-len", source);
+    assert_contains(
+        "lifted-len",
+        &emitted,
+        "__cl_owned0 = cl_std_text_stringOf",
+    );
+    assert_before(
+        "lifted-len",
+        &emitted,
+        "__cl_ret = (i32)((cl_string_view(__cl_owned0)).len);",
+        "__cl_c1:\n    if (__cl_owned0) { FreeString(__cl_owned0); }",
+    );
+    assert_contains(
+        "lifted-len",
+        &emitted,
+        "if (__cl_owned0) { FreeString(__cl_owned0); }",
+    );
+    let output = run_host("lifted-len-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "lifted-len-run: expected exit 3; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A nullable borrow out-slot lowers per kind, and the call passes its address.
 ///
 /// A `String?` slot is `ClString *`, a `File?` slot `BPTR *`, a `str?` slot

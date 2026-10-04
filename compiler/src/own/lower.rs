@@ -452,21 +452,40 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.declare_lambda_param(&param.name, ty.clone());
         }
         self.declare_captures(site);
-        let returned = match body {
-            LambdaBody::Expr(value) => Some(self.lower_value(value)),
+        match body {
+            LambdaBody::Expr(value) => {
+                let returned = self.lower_value(value);
+                if !self.is_terminated() {
+                    // Mirror `Stmt::Return`: the scope cleanup becomes a
+                    // cleanup ladder the emitter runs after the returned
+                    // value has been read. Running the cleanup before the
+                    // terminator would release the temporary the returned
+                    // expression still reads.
+                    self.emit_return_cleanup();
+                    let releases = self.pending_release_copies();
+                    self.record_release_events(&releases);
+                    self.terminate(Terminator::Return {
+                        value: Some(returned),
+                        releases,
+                    });
+                }
+                // The cleanup, when it ran, already emitted the scope's drops;
+                // popping without the cleanup keeps them from being emitted
+                // twice.
+                self.scopes.pop();
+            }
             LambdaBody::Block(block) => {
                 self.check_block(block);
-                None
+                self.pop_scope();
+                if !self.is_terminated() {
+                    let releases = self.pending_release_copies();
+                    self.record_release_events(&releases);
+                    self.terminate(Terminator::Return {
+                        value: None,
+                        releases,
+                    });
+                }
             }
-        };
-        self.pop_scope();
-        if !self.is_terminated() {
-            let releases = self.pending_release_copies();
-            self.record_release_events(&releases);
-            self.terminate(Terminator::Return {
-                value: returned,
-                releases,
-            });
         }
 
         let lambda_builder = std::mem::replace(
