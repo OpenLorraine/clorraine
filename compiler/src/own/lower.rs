@@ -1426,13 +1426,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// materialization instead: its fill runs only on the path that evaluates
     /// the argument, and the statement's registered release frees it there.
     pub(super) fn bind_intrinsic_argument(&mut self, value: Value) -> Value {
+        if is_view(&value.ty) || value.ty.is_unknown() || self.projects_from_place(&value) {
+            return value;
+        }
+        if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
+            return value;
+        }
+        // A call that may reborrow an owned argument returns storage that
+        // argument's owner already releases; binding the result would create a
+        // second owner for the same storage. The intrinsic only borrows, so the
+        // aliased value needs no binding of its own.
+        if let ValueKind::Call { callee, args, .. } = &value.kind {
+            if let Some(index) = self.lowered_lend_source(callee) {
+                if args
+                    .get(index)
+                    .is_some_and(|arg| self.owns_drop(&arg.ty) || self.maybe_owns(&arg.ty))
+                {
+                    return value;
+                }
+            }
+        }
         if self.defer_move_outs > 0 {
-            if is_pure_value(&value) || is_view(&value.ty) || value.ty.is_unknown() {
-                return value;
-            }
-            if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
-                return value;
-            }
             self.materialize_guard_operand(value)
         } else {
             self.materialize_owned_argument(value, false)
