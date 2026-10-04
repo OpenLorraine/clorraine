@@ -1744,3 +1744,54 @@ func main(): i32 {
         &["'take' captures are not supported"],
     );
 }
+
+/// A member read of an unlisted enclosing binding is rejected.
+///
+/// The dotted spelling resolves through the member chain, but the read still
+/// names an enclosing parameter, so the capture list must carry `n`.
+#[test]
+fn should_reject_an_unlisted_member_read_without_listing_it() {
+    let source = r#"module spec.closeout.st23m;
+
+struct Pair {
+    a: i32;
+    b: i32;
+}
+
+func outer(n: Pair): i32 {
+    return ([] () => n.a)();
+}
+
+func main(): i32 {
+    return outer(Pair { a: 3, b: 4 });
+}
+"#;
+    assert_rejected("closeout-st23-member", source, "E10405");
+}
+
+/// A dot-call receiver that reads an unlisted enclosing binding is rejected.
+///
+/// `n.get()` resolves the receiver `n` from the enclosing function, so the
+/// same rule as a bare read applies to the receiver spelling.
+#[test]
+fn should_reject_an_unlisted_dot_call_receiver_without_listing_it() {
+    let source = r#"module spec.closeout.st23c;
+
+struct Pair {
+    a: i32;
+}
+
+func get(p: Pair): i32 {
+    return p.a;
+}
+
+func outer(n: Pair): i32 {
+    return ([] () => n.get())();
+}
+
+func main(): i32 {
+    return outer(Pair { a: 3 });
+}
+"#;
+    assert_rejected("closeout-st23-call", source, "E10405");
+}

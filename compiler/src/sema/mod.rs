@@ -128,6 +128,11 @@ struct Checker<'a, 'd> {
     /// that resolves below the innermost floor names an enclosing lexical
     /// binding, so it is legal only when the capture list names it.
     lambda_floors: Vec<usize>,
+    /// The capture names listed by each lambda currently being checked,
+    /// innermost last, in every mode. A listed name stays out of the
+    /// unlisted-read report even when its capture mode is itself rejected,
+    /// so a `take` capture read does not add a second error.
+    lambda_listed: Vec<Vec<String>>,
     /// The return type inferred for each block-bodied lambda currently being
     /// checked, innermost last. Each `return` in the body records the first
     /// non-`void` value type here, so a block body gets the same return type an
@@ -163,6 +168,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             closures: Vec::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),
+            lambda_listed: Vec::new(),
             lambda_returns: Vec::new(),
             diagnostics,
             profile,

@@ -1470,3 +1470,41 @@ func main(): i32 {
         ],
     );
 }
+
+/// A read of a `take` capture reports only the take rejection.
+///
+/// The capture is listed, so the read is not an unlisted enclosing read: the
+/// listing itself is invalid (E10403), and the help must not suggest adding a
+/// name that is already there.
+#[test]
+fn should_report_only_the_take_rejection_when_a_take_capture_is_read() {
+    let source = r#"module impl.closeout.capturetake;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    ([take s] () => s)();
+    return 0;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("capture-take", source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "capture-take: the front end accepted a `take` capture"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error E10403:"),
+        "capture-take: expected E10403; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("E10405"),
+        "capture-take: a listed take capture must not also report E10405; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "capture-take: a rejected program must not produce a translation unit"
+    );
+}

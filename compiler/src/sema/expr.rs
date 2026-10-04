@@ -100,7 +100,11 @@ impl Checker<'_, '_> {
     /// scope and stay readable without a listing.
     fn check_name(&mut self, name: &str, span: Span) -> Ty {
         if let Some(&floor) = self.lambda_floors.last() {
-            if self.name_scope_depth(name).is_some_and(|depth| depth < floor) {
+            let listed = self
+                .lambda_listed
+                .last()
+                .is_some_and(|names| names.iter().any(|listed| listed == name));
+            if !listed && self.name_scope_depth(name).is_some_and(|depth| depth < floor) {
                 self.error(
                     "E10405",
                     format!("lambda reads '{name}' without listing it"),
@@ -174,6 +178,11 @@ impl Checker<'_, '_> {
             .map(|param| self.resolve_type(&param.ty))
             .collect();
 
+        let listed: Vec<String> = captures
+            .iter()
+            .map(|capture| capture.name.clone())
+            .collect();
+
         let floor = self.scopes.len();
         self.push_scope();
         for info in &infos {
@@ -185,6 +194,7 @@ impl Checker<'_, '_> {
 
         self.lambda_captures.push(infos.clone());
         self.lambda_floors.push(floor);
+        self.lambda_listed.push(listed);
         let returns = match body {
             LambdaBody::Expr(value) => {
                 // An expression body may be `void` (for example a lambda that
@@ -207,6 +217,7 @@ impl Checker<'_, '_> {
                 inferred.unwrap_or_else(Ty::void)
             }
         };
+        self.lambda_listed.pop();
         self.lambda_floors.pop();
         self.lambda_captures.pop();
         self.pop_scope();
@@ -379,7 +390,7 @@ impl Checker<'_, '_> {
             // for example `point.x`; the parser cannot tell that apart from a
             // type path, so the choice is made here once names are known.
             if self.name_is_value(first) {
-                let mut ty = self.name_type(first);
+                let mut ty = self.check_name(first, name.span);
                 for segment in &name.segments[1..] {
                     ty = self.member_type(&ty, segment, name.span);
                 }
@@ -419,7 +430,7 @@ impl Checker<'_, '_> {
         let Some(first) = name.segments.first() else {
             return Ty::unknown();
         };
-        let mut ty = self.name_type(first);
+        let mut ty = self.check_name(first, name.span);
         let last = name.segments.len().saturating_sub(1);
         for segment in &name.segments[1..last] {
             ty = self.member_type(&ty, segment, name.span);

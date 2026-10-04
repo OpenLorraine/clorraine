@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 13:20
+> **Last Updated**: 2026-10-04 14:03
 > **Progress**: 37/44 tasks (84%)
 > **CodeOps Artifact Schema**: 1
 
@@ -694,7 +694,7 @@ and `should_reject_a_nested_lambda_that_reads_the_outer_capture_without_listing_
 
 - [x] 5.3.1 Write implementation tests for the emitted nested-capture environment names, the module-path spelling, and the E10405 diagnostic text (AR-21 correction) — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 13:20)
 - [x] 5.3.2 Run `spec/check.sh` and `cargo test` for both new suites ✅ (completed: 2026-10-04 13:20)
-- [ ] 5.3.3 Dispatch the phase review — correctness, memory-safety, and semantics-reviewer per the `AGENTS.md` language-rule dispatch (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+- [~] 5.3.3 Dispatch the phase review — correctness, memory-safety, and semantics-reviewer per the `AGENTS.md` language-rule dispatch (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ⏳ (review returned 2026-10-04 14:03; F1/F2 fixed and green, bounded re-review pending)
 
 **Deliverables**:
 - [x] Implementation suite for the diagnostic edge cases
@@ -707,6 +707,27 @@ cases: the nested environment relay (`capture-nest`: outer env from the local, i
 `cl_impl_closeout_captureenv_addTwo(cl_impl_closeout_captureenv_base)`; exit 42), and the E10405
 message/help text (`capture-text`). `spec/check.sh` OK (27 files, 105 compile-fail tests);
 `cargo test`: impl 30 / spec 42 / compile-fail 3, all green; `make check` exit 0 (42 suites).
+
+**Phase 5 review findings (2026-10-04 14:03)** — three reviewers on the phase diff
+`06858a69…47851e6`: correctness via the generic reviewer role, memory safety via the project
+auditor, semantics via the generic reviewer role (the manual-only roles' fallback). No
+change-introduced memory defect; accepted programs emit byte-identical C to the baseline; test
+integrity confirmed (without the fix: golden 2/1, spec 41/1, impl 29/1, exactly the intended cases).
+
+| # | Severity | Finding | Disposition (user ruling) |
+| - | -------- | ------- | ------------------------- |
+| F1 | 🟠 major | `E10405` was not enforced on `Qualified` roots (`p.x`, `p.x = v`, `p.get()`, `n.xs[i]`): `check_qualified` and `qualified_receiver_type` called `name_type` directly, so the dotted spelling stayed accepted and emitted invalid C or dropped the write | ✅ fixed — both roots route through `check_name`; spec pins for the member read and the dot-call receiver (AR-21 fix round) |
+| F2 | 🟡 minor | a read of a `[take s]` capture reported E10403 plus a spurious E10405 (take captures are not declared in the lambda scope) | ✅ fixed — the floor check exempts every capture name listed in any mode; impl pin asserts only E10403 |
+| F3 | 🟡 minor | an unlisted `n = n + 5` reports E10405 twice (target and read) | report-only (per-occurrence reporting style) |
+
+Fix-round evidence (2026-10-04 14:03): the three new pins were red before the fix (spec 42/2,
+impl 30/1) and green after (spec 44, impl 31, compile-fail 3); the E10405 golden still passes;
+`make check` exit 0 (42 suites); `spec/check.sh` OK (27 files, 105 compile-fail tests). The
+reviewers' pre-existing, baseline-identical observations are filed at close-out (capture relay
+invalid C; `[base]` module-const capture emits an env-less call; the capture-less-lambda
+`len(stringOf(...))` segfault; a listed copy-capture field write reporting E10024 instead of
+E10402). The review also confirmed the phase closed two pre-existing holes: an unlisted nested
+parameter read and a silently dropped unlisted write.
 
 **Verify**: `make check`
 
