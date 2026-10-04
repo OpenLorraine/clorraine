@@ -986,6 +986,31 @@ func main(): i32 {
     assert_exit("closeout-st8-cond", &output, 46);
 }
 
+/// A lifted lambda releases its return temporary after the read.
+///
+/// The body `i32(len(stringOf("abc")))` binds the call result as the intrinsic
+/// argument's temporary, measures it, and returns three. The release must run
+/// after the read, exactly as it does on an ordinary return: a lifted body
+/// that runs its scope cleanup before the return value is read frees the
+/// handle, and the following read measures a null string and faults. The case
+/// runs the plain strict build, where the reversed order crashes, and the
+/// sanitizer path also proves the release still happens.
+#[test]
+fn should_release_the_temporary_after_the_lifted_lambda_reads_it() {
+    let source = r#"module spec.closeout.def91;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let f: func(): i32 = () => i32(len(stringOf("abc")));
+    return f();
+}
+"#;
+    let output = run_memory("closeout-def91-lambda", source);
+    assert_exit("closeout-def91-lambda", &output, 3);
+    assert_no_asan("closeout-def91-lambda", &output);
+}
+
 /// A non-null `String?` out-slot receives the callee's value and releases the
 /// old one exactly once.
 ///
