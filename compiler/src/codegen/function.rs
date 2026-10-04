@@ -1854,6 +1854,11 @@ impl<'a> Emitter<'a> {
     /// through the same shim view the call-argument widening uses. Every other
     /// store renders the value directly.
     pub(super) fn store_text(&self, value: &Value, ty: &Ty) -> String {
+        // A null literal is typed by its destination, and a struct-typed view
+        // destination needs its zero struct rather than a null pointer.
+        if matches!(value.kind, ValueKind::Null) {
+            return self.null_value(ty);
+        }
         let text = self.value(value);
         let value_ty = self.substitute(&value.ty);
         if matches!(ty.kind, TyKind::Str | TyKind::StaticStr)

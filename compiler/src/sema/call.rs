@@ -439,7 +439,9 @@ impl Checker<'_, '_> {
     /// Checks call arguments, optionally allowing a `cstring` literal argument.
     ///
     /// When a parameter is declared `take`, the argument moves its value to the
-    /// callee. Moving a captured binding out of a lambda is `E10401`.
+    /// callee. Moving a captured binding out of a lambda is `E10401`. A
+    /// nullable writable lend is an ownership out-slot and takes a stricter
+    /// exact-place rule (see [`Self::check_out_slot_argument`]).
     fn check_args_impl(
         &mut self,
         args: &[Arg],
@@ -449,7 +451,11 @@ impl Checker<'_, '_> {
     ) {
         if args.len() == params.len() {
             for (index, (arg, param)) in args.iter().zip(params).enumerate() {
-                if modes.get(index).copied() == Some(crate::ast::Mode::Take) {
+                let mode = modes
+                    .get(index)
+                    .copied()
+                    .unwrap_or(crate::ast::Mode::None);
+                if mode == crate::ast::Mode::Take {
                     self.reject_capture_move(&arg.value);
                 }
                 if allow_cstring_literal && is_cstring_literal_argument(&arg.value, param) {
@@ -459,6 +465,10 @@ impl Checker<'_, '_> {
                     self.check_value(&arg.value, None);
                     continue;
                 }
+                if self.is_out_slot_param(param, mode) {
+                    self.check_out_slot_argument(arg, param);
+                    continue;
+                }
                 self.check_into(&arg.value, param);
             }
         } else {
@@ -466,6 +476,42 @@ impl Checker<'_, '_> {
                 self.check_value(&arg.value, None);
             }
         }
+    }
+
+    /// True when a parameter is a nullable writable lend: an ownership
+    /// out-slot the callee writes and releases through.
+    ///
+    /// A generic parameter type is left to the ordinary conversion check
+    /// because only an instantiation knows the concrete slot type.
+    fn is_out_slot_param(&self, param: &Ty, mode: crate::ast::Mode) -> bool {
+        mode == crate::ast::Mode::Borrow
+            && param.nullable
+            && !param.is_param()
+            && !param.is_unknown()
+    }
+
+    /// Checks an argument passed to a nullable writable lend.
+    ///
+    /// The out-slot lowers to a pointer into the caller's storage, so the
+    /// argument must be a place whose type already is the slot type exactly: a
+    /// conversion or a nullability widening would produce a temporary whose
+    /// address could not carry the callee's write back. Anything else is
+    /// rejected with `E10200`, the implicit-conversion diagnostic.
+    fn check_out_slot_argument(&mut self, arg: &Arg, param: &Ty) {
+        let ty = self.check_value(&arg.value, Some(param));
+        if ty == *param && self.is_place(&arg.value) {
+            return;
+        }
+        self.error(
+            "E10200",
+            format!(
+                "cannot convert '{}' to '{}' implicitly",
+                ty.display(),
+                param.display()
+            ),
+            "pass a place of the exact slot type; the callee writes through it",
+            arg.span,
+        );
     }
 
     /// Checks a call whose callee is a type name: a struct, enum, or handle

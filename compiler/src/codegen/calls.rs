@@ -7,7 +7,7 @@
 
 use crate::ast::Mode;
 use crate::ir::{Value, ValueKind};
-use crate::types::{Ty, TyKind};
+use crate::types::{contains_param, Ty, TyKind};
 
 use super::render::escape_c_string;
 use super::types::{c_type, is_pointer_param, slice_element_key};
@@ -122,13 +122,14 @@ impl Emitter<'_> {
     /// writable lends and widening a `String` to a `str` view where required.
     ///
     /// A `borrow` parameter of a non-duplicable struct lowers to `T *`, so the
-    /// caller passes the address of its place. A call through a `func` value
-    /// takes its parameter types and modes from `func_ty`, so a `borrow`
-    /// parameter passes the address too, and a `str` parameter widens a
-    /// `String` argument exactly as a declared signature does. A `str`
-    /// parameter accepts a `String` argument through the implicit widening,
-    /// which lowers to a view over the owned bytes. Every other argument, and
-    /// every `ffi` argument, is passed as its value.
+    /// caller passes the address of its place; a nullable `borrow` parameter is
+    /// an ownership out-slot and lowers to a pointer the same way. A call
+    /// through a `func` value takes its parameter types and modes from
+    /// `func_ty`, so a `borrow` parameter passes the address too, and a `str`
+    /// parameter widens a `String` argument exactly as a declared signature
+    /// does. A `str` parameter accepts a `String` argument through the implicit
+    /// widening, which lowers to a view over the owned bytes. Every other
+    /// argument, and every `ffi` argument, is passed as its value.
     pub(super) fn call_arguments(
         &self,
         callee: &str,
@@ -162,23 +163,25 @@ impl Emitter<'_> {
                 let expected = param_types.as_ref().and_then(|types| types.get(index));
                 let text = self.argument_text(arg, expected);
                 let mode = modes.as_ref().and_then(|modes| modes.get(index)).copied();
-                let pointer = if func_ty.is_some() {
-                    // A function type applies the same named-parameter rule as
-                    // the function it holds: only a non-duplicable struct lend
-                    // is the pointer to the value.
-                    expected.is_some_and(|expected| {
+                // The declared parameter type decides whether the argument is
+                // the address of a writable out-slot, not the written argument
+                // type: a nullable borrow parameter always lowers to a pointer,
+                // and the front end has already required its argument to be an
+                // exact-typed place. A parameter type that still mentions a type
+                // parameter is not yet the instance's type, so the substituted
+                // argument type stands in for it.
+                let pointer = match expected.filter(|expected| !contains_param(expected)) {
+                    Some(expected) => {
                         is_pointer_param(expected, mode.unwrap_or(Mode::None), &self.sema.table)
-                    })
-                } else {
-                    // A written argument type may mention the enclosing
-                    // instance's parameters, so substitute it before deciding
-                    // whether the callee's parameter is a pointer.
-                    user_call
-                        && is_pointer_param(
-                            &self.substitute(&arg.ty),
-                            mode.unwrap_or(Mode::None),
-                            &self.sema.table,
-                        )
+                    }
+                    None => {
+                        user_call
+                            && is_pointer_param(
+                                &self.substitute(&arg.ty),
+                                mode.unwrap_or(Mode::None),
+                                &self.sema.table,
+                            )
+                    }
                 };
                 if pointer {
                     format!("&({text})")

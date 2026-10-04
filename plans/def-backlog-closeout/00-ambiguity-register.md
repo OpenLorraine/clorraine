@@ -1,7 +1,7 @@
 # Ambiguity Register: def-backlog-closeout
 
-> **Status**: ✅ GATE PASSED — 18 planning items + AR-19 (runtime) resolved
-> **Last Updated**: 2026-10-04 10:18
+> **Status**: ✅ GATE PASSED — 18 planning items + AR-19/AR-20 (runtime) resolved
+> **Last Updated**: 2026-10-04 10:56
 
 This register is the Zero-Ambiguity Gate audit trail for the `def-backlog-closeout`
 plan. All items were resolved in the planning interview on 2026-10-03.
@@ -27,6 +27,7 @@ plan. All items were resolved in the planning interview on 2026-10-03.
 | AR-17 | Stakeholder | Competing priorities | — | None; the defects are all filed backlog items with one owner | ✅ Resolved |
 | AR-18 | Data & State | Data-model changes | — | None; release/ownership counts per shape are specified in the component docs, no persistent data | ✅ Resolved |
 | AR-19 (runtime) | Plan / Technical | Phase 3's plan documents require a nullable duplicable-struct out-slot (`Point?`): 03-03 Proposed Change 1 and its error table, PF-005's resolution, ST-15, and task 3.3.1. The frozen specification forbids nullable structs: `spec/02-types.md:118-124` (TY-4, E10011). Probes on the current compiler: a `Point?` parameter and a `Point?` local report E10011; `Point? == null` reports E10222. A spec test for `Point?` can never pass after any in-scope DEF-65 fix | A (recommended) correct the plan to the frozen-spec boundary: drop the `Point?` sub-case, keep the valid nullable kinds (`String?`, `File?`, `str?`, `T[]?` — arrays are views, per E10036); B amend TY-4 and implement nullable structs (out of scope: R10 allows only the E10405 spec change; large complexity escalation); C keep the ST-15c test red (violates the spec-first green-phase mandate) | ✅ Resolved — correct the plan to the frozen-spec boundary: drop the `Point?` sub-case (TY-4/E10011 forbids nullable structs); keep the valid nullable kinds (`String?`, `File?`, `str?`, `T[]?`); no spec change (R10 holds) | ✅ Resolved |
+| AR-20 (runtime) | Implementation / Scope | ST-14 (`borrow slot: str?`, a `str?` place) cannot pass with the planned changes alone. The caller's nullable-view local lowers to the emitted view struct (`ClStr`), but the null literal always renders `NULL`/`0` and `== null` renders a direct comparison, so the host cc rejects `slot = NULL;` and `(slot == NULL)` (`incompatible types when assigning to type 'ClStr' from type 'void *'`; `invalid operands to binary ==`). Handles, `raw`, and `cstring` lower to C pointers and are unaffected; `str`, `static str`, and slice views (`T[]`, the AR-3 `T[]?` kind) are struct-typed. The necessary correction is type-aware null rendering (`empty_state`) plus a `.ptr` null test for struct-typed views in `compiler/src/codegen/expr.rs`, with a small shared helper in `compiler/src/codegen/types.rs`; that adds `codegen/expr.rs` to the phase's expected modification set | A (recommended) extend Phase 3 with this necessary correction (small, local, reuses `empty_state`); B weaken ST-14 to a declaration-shape check (contradicts the approved ST case); C file a new defect and leave the ST-14 case red (violates the green-phase mandate) | ✅ Resolved — extend Phase 3 with the nullable-view null handling (`codegen/expr.rs` added to the expected modification set; helper in `codegen/types.rs`) | ✅ Resolved |
 
 ### Resolution Notes
 
@@ -75,3 +76,10 @@ plan to the spec boundary: the `Point?` sub-case and its test are dropped, the v
 kinds (handles, `raw`, `cstring`, and views, including `T[]?` slices) keep the DEF-65 pointer
 treatment, and no specification change is made. A struct borrow can never be nullable in valid
 code, so the deliberate by-value deviation stays as-is.
+
+**AR-20 (runtime):** The nullable-view null handling was added to Phase 3 as a necessary
+correction: a view is an emitted pointer-and-length struct, so the null literal now renders its
+zero struct (`empty_state`) and a null test reads the view's `ptr` member instead of comparing the
+struct with a pointer. The change is local to `compiler/src/codegen/expr.rs` with a shared
+predicate in `compiler/src/codegen/types.rs`; it also enables the `T[]?` out-slot kind AR-3
+includes. Scope mode stays `strict`; no optional addition was accepted.

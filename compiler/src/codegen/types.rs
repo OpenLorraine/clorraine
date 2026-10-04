@@ -23,12 +23,26 @@ pub(super) fn mangle_module(module: &str) -> String {
 ///
 /// A writable lend of a non-duplicable struct must reach the caller's storage,
 /// so it becomes a `T *`; a duplicable struct lend binds a copy and stays by
-/// value, matching the unnecessary-lend warning. A handle already is a pointer
-/// and a view is passed by value, so neither is affected. The named-function
-/// ABI and a function-pointer type both spell their parameters this way, so a
-/// func value's C type matches every function it can hold.
+/// value, matching the unnecessary-lend warning. A nullable lend is an
+/// ownership out-slot the callee writes and releases through, so it becomes a
+/// pointer as well; structs cannot be nullable, so that arm covers handles,
+/// `raw`, `cstring`, and views. The named-function ABI and a function-pointer
+/// type both spell their parameters this way, so a func value's C type matches
+/// every function it can hold.
 pub(super) fn is_pointer_param(ty: &Ty, mode: Mode, table: &TypeTable) -> bool {
-    mode == Mode::Borrow && matches!(ty.kind, TyKind::Struct(..)) && !table.duplicable(ty)
+    mode == Mode::Borrow
+        && (ty.nullable || (matches!(ty.kind, TyKind::Struct(..)) && !table.duplicable(ty)))
+}
+
+/// True when a type is a view emitted as a value struct rather than a pointer.
+///
+/// `str`, `static str`, and slice arrays (`T[]`) lower to pointer-and-length
+/// structs (`ClStr`, `ClSlice_T`), so their empty state is the zero struct, not
+/// a null pointer. Handles, `raw`, and `cstring` already are C pointers and
+/// keep the pointer spelling.
+pub(super) fn is_struct_view(ty: &Ty) -> bool {
+    matches!(ty.kind, TyKind::Str | TyKind::StaticStr)
+        || matches!(&ty.kind, TyKind::Array { extents, .. } if extents.iter().any(Option::is_none))
 }
 
 /// The C spelling of a type in a value position.
@@ -381,6 +395,26 @@ mod tests {
             }),
             "{0}"
         );
+    }
+
+    #[test]
+    fn struct_views_are_distinguished_from_pointer_likes() {
+        let string_view = Ty {
+            kind: TyKind::Str,
+            nullable: true,
+        };
+        assert!(is_struct_view(&string_view));
+        assert!(is_struct_view(&Ty::array(Ty::i32_ty(), vec![None])));
+        assert!(!is_struct_view(&Ty::array(Ty::i32_ty(), vec![Some(2)])));
+        assert!(!is_struct_view(&Ty::handle("String")));
+        assert!(!is_struct_view(&Ty {
+            kind: TyKind::CString,
+            nullable: true,
+        }));
+        assert!(!is_struct_view(&Ty {
+            kind: TyKind::Raw(Box::new(Ty::i32_ty())),
+            nullable: true,
+        }));
     }
 
     #[test]

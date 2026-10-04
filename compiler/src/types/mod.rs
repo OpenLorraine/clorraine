@@ -617,8 +617,9 @@ pub fn implicit_conversion(from: &Ty, to: &Ty) -> bool {
 ///
 /// The checker treats such a type as compatible with any concrete type, the
 /// same way it treats a bare parameter, so an unsubstituted generic signature
-/// does not cascade into conversion errors.
-fn contains_param(ty: &Ty) -> bool {
+/// does not cascade into conversion errors. Call lowering also uses this to
+/// tell a concrete parameter type from one the instance still has to fix.
+pub(crate) fn contains_param(ty: &Ty) -> bool {
     match &ty.kind {
         TyKind::Param(_) => true,
         TyKind::Array { element, .. } => contains_param(element),

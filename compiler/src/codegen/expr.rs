@@ -18,7 +18,7 @@ use super::render::{
     binary_token, element_type, escape_c_string, float_literal, index_text, unsigned_c,
     unsigned_scalar,
 };
-use super::types::{c_type, scalar_of, type_key};
+use super::types::{c_type, is_struct_view, scalar_of, type_key};
 use super::Emitter;
 
 impl<'a> Emitter<'a> {
@@ -32,7 +32,7 @@ impl<'a> Emitter<'a> {
             ValueKind::Float(number) => float_literal(*number),
             ValueKind::Char(byte) => format!("{byte}"),
             ValueKind::Bool(flag) => if *flag { "1" } else { "0" }.to_owned(),
-            ValueKind::Null => self.null_literal().to_owned(),
+            ValueKind::Null => self.null_value(&value.ty),
             ValueKind::Str(text) => format!("cl_str({})", escape_c_string(text.as_bytes())),
             ValueKind::Path(segments) => self.path(segments),
             ValueKind::Member { base, name } => {
@@ -317,8 +317,59 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Renders the null literal for a value of `ty`.
+    ///
+    /// A pointer-like type spells null as `NULL` (or the profile's zero), but a
+    /// view is an emitted pointer-and-length struct, so its empty state is the
+    /// zero struct; `NULL` would not type-check against it.
+    pub(super) fn null_value(&self, ty: &Ty) -> String {
+        let ty = self.substitute(ty);
+        if is_struct_view(&ty) {
+            // An assignment or argument needs an expression, so the zero view
+            // is written as a compound literal rather than a bare brace form.
+            format!("({}){{0}}", c_type(&ty, &self.sema.table))
+        } else {
+            self.null_literal().to_owned()
+        }
+    }
+
+    /// Renders a null test on a struct-typed view, when the pair is one.
+    ///
+    /// A view is an emitted pointer-and-length struct, so C cannot compare it
+    /// with a null pointer directly; the test reads its `ptr` member instead.
+    /// Returns `None` when the comparison is not a view-to-null equality test.
+    fn view_null_test(&self, op: BinaryOp, left: &Value, right: &Value) -> Option<String> {
+        if !matches!(op, BinaryOp::Eq | BinaryOp::Ne) {
+            return None;
+        }
+        let token = if matches!(op, BinaryOp::Eq) { "==" } else { "!=" };
+        let view = match (&left.kind, &right.kind) {
+            // Two null literals carry no view value whose member could be
+            // read, so they keep the plain pointer comparison.
+            (ValueKind::Null, ValueKind::Null) => {
+                return Some(format!(
+                    "({} {token} {})",
+                    self.null_literal(),
+                    self.null_literal()
+                ));
+            }
+            (_, ValueKind::Null) => left,
+            (ValueKind::Null, _) => right,
+            _ => return None,
+        };
+        let ty = self.substitute(&view.ty);
+        if !is_struct_view(&ty) {
+            return None;
+        }
+        let text = self.value(view);
+        Some(format!("(({text}).ptr {token} {})", self.null_literal()))
+    }
+
     /// Renders a binary operator with the wrapping and masking strategy.
     fn binary(&self, op: BinaryOp, left: &Value, right: &Value, whole: &Value) -> String {
+        if let Some(test) = self.view_null_test(op, left, right) {
+            return test;
+        }
         let left_c = self.value(left);
         let right_c = self.value(right);
         let ty = self.substitute(&whole.ty);

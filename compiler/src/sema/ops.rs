@@ -376,7 +376,7 @@ impl Checker<'_, '_> {
     }
 
     /// True when the expression may stand on the left of an assignment.
-    fn is_place(&self, expr: &Expr) -> bool {
+    pub(super) fn is_place(&self, expr: &Expr) -> bool {
         match &expr.kind {
             ExprKind::Name(_) | ExprKind::Index { .. } => true,
             // The parser spells `value.field` as a dotted name, so a dotted name

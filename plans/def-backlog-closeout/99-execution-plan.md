@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 10:55
-> **Progress**: 18/44 tasks (41%)
+> **Last Updated**: 2026-10-04 11:12
+> **Progress**: 21/44 tasks (48%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -362,8 +362,9 @@ Both suites green together (13 impl + 14 spec).
 > **Phase baseline tree**: `2b2de6a0f5301958ea125aaa1625a6b269b17a0f`
 > **Expected modification set**: `compiler/tests/def_backlog_closeout_spec_test.rs`,
 > `compiler/tests/def_backlog_closeout_impl_test.rs`, `compiler/src/codegen/types.rs`,
-> `compiler/src/codegen/calls.rs`, `compiler/src/sema/*` (only if the out-slot argument check
-> needs a sema change), `build/closeout/*` probe artifacts (gitignored). Scope mode: `strict`.
+> `compiler/src/codegen/calls.rs`, `compiler/src/codegen/expr.rs` (added by runtime AR-20),
+> `compiler/src/sema/*` (only if the out-slot argument check needs a sema change),
+> `build/closeout/*` probe artifacts (gitignored). Scope mode: `strict`.
 
 ### Step 3.1: Specification Tests
 
@@ -402,16 +403,44 @@ AR-19 ruling; the suite now derives only from the frozen spec's nullable kinds.
 **Reference**: [03-03](03-03-borrow-outslot-abi.md) §Proposed Changes
 **Objective**: Widen the declaration predicate and key the call-site pointer decision on the parameter type with exact-typed out-slot places.
 
-- [ ] 3.2.1 Add `ty.nullable` to the pointer-parameter predicate (declaration side) — `compiler/src/codegen/types.rs`
-- [ ] 3.2.2 Key the named-call pointer decision on the substituted parameter type, require an exact-typed place for out-slot arguments (reject implicit widening), and run the blast-radius pass over all four predicate consumers plus the `out_slot` condition — `compiler/src/codegen/calls.rs`, `compiler/src/sema`
-- [ ] 3.2.3 Run the spec suite and record the green phase
+- [x] 3.2.1 Add `ty.nullable` to the pointer-parameter predicate (declaration side) — `compiler/src/codegen/types.rs` ✅ (completed: 2026-10-04 11:12)
+- [x] 3.2.2 Key the named-call pointer decision on the substituted parameter type, require an exact-typed place for out-slot arguments (reject implicit widening), run the blast-radius pass over all four predicate consumers plus the `out_slot` condition, and add nullable-view null handling per runtime AR-20 — `compiler/src/codegen/calls.rs`, `compiler/src/sema`, `compiler/src/codegen/expr.rs`, `compiler/src/codegen/types.rs` ✅ (completed: 2026-10-04 11:12)
+- [x] 3.2.3 Run the spec suite and record the green phase ✅ (completed: 2026-10-04 11:12)
 
 **Deliverables**:
-- [ ] DEF-65 fix
-- [ ] Blast-radius evidence over the four consumers
-- [ ] `make check` green
+- [x] DEF-65 fix
+- [x] Blast-radius evidence over the four consumers
+- [x] `make check` green
 
 **Verify**: `make check`
+
+**Green-phase evidence (2026-10-04 11:12)** — `cargo test --test def_backlog_closeout_spec_test` in the
+pinned container (log `/tmp/opencode/verify-3.2.3-green.log`): 22 passed, 0 failed; `make check`
+green (42 suites, log `/tmp/opencode/verify-3.2.3-check.log`).
+
+| Case | Green state |
+| ---- | ----------- |
+| ST-12 `String?` | PASS — callee `ClString *`, write-through, single drop |
+| ST-13 `File?` | PASS — callee `BPTR *`, single close |
+| ST-14 `str?` | PASS — callee `ClStr *`, write-through; requires the AR-20 correction |
+| ST-14 widened `str?` / `String?` arguments | PASS — rejected with `E10200` |
+| ST-15 null start / by-value duplicable struct | PASS — unchanged pins |
+
+Blast radius over the four `is_pointer_param` consumers plus the `out_slot` condition:
+
+| Consumer | Result |
+| -------- | ------ |
+| `signature_with_symbol` (`codegen.rs:473`) | nullable borrow parameters now spell as pointers (`ClString *`, `BPTR *`, `ClStr *`, `ClSlice_T *`) |
+| `Emitter::emit_function` (`function.rs:44-51`) | the pointer-parameter set follows the widened predicate, so `place_base` dereferences the out-slot |
+| `func_pointer_params` (`types.rs:101-115`) | function-pointer types follow the same rule and match the named-function ABI |
+| `call_arguments` (`calls.rs`) | keys on the (substituted) parameter type; a parameter type that still mentions a type parameter falls back to the substituted argument type, keeping generic instances correct (`residual_defect_completion_spec_test` green) |
+| `out_slot` (`own.rs:678`) | already selected `Borrow && nullable`; unchanged |
+
+Runtime AR-20 correction: the null literal and null test now handle struct-typed views — a view's
+empty state is its zero struct (`(ClStr){0}` in expression position) and a null test reads the
+view's `ptr` member. This fixes the caller's `str?` local in ST-14 and enables the `T[]?` out-slot
+kind from AR-3. The first cut of the parameter-type keying broke the substituted-generic case in
+`residual_defect_completion_spec_test`; the `contains_param` fallback restored it.
 
 ### Step 3.3: Implementation Tests & Hardening
 
