@@ -829,3 +829,45 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A nested conditional whose place arm is one level deep stays inline.
+///
+/// The chosen arm of a conditional may itself be a conditional; when any
+/// reachable arm roots in a place, adopting the outer value would empty that
+/// place and the later read of it would run on freed storage. The case pins
+/// the absence of the binding on a shape whose place sits one level down, and
+/// the answer proves the local string is still readable after the measurement.
+#[test]
+fn should_not_bind_a_nested_conditional_argument_when_a_deep_arm_roots_in_a_place() {
+    let source = r#"module impl.closeout.exprcond2;
+
+import { String, stringOf } from std.text;
+
+func mk1(): String {
+    return stringOf("x");
+}
+
+func mk2(): String {
+    return stringOf("yz");
+}
+
+func measure(a: bool, b: bool, s: String): i32 {
+    return i32(len(a ? mk1() : (b ? s : mk2())));
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let n: i32 = measure(false, true, s);
+    return n * 10 + i32(len(s));
+}
+"#;
+    let emitted = emit_host("expr-cond2", source);
+    assert_absent("expr-cond2", &emitted, "__cl_owned");
+    let output = run_host("expr-cond2-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(44),
+        "expr-cond2-run: expected exit 44; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 02:01
-> **Progress**: 15/44 tasks (34%)
+> **Last Updated**: 2026-10-04 09:00
+> **Progress**: 16/44 tasks (36%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -277,7 +277,7 @@ pin's red state is preserved (an abort leaves no exit code, failing the exit-zer
 
 - [x] 2.3.1 Write implementation tests for the intrinsic-argument release shape and the guard deferral — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 02:02)
 - [x] 2.3.2 Run the ST-8/10/11 host-ASan probes and `cargo test` for both suites ✅ (completed: 2026-10-04 02:02)
-- [~] 2.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ⏳ (review dispatched: 2026-10-04 02:20; paused on open critical findings)
+- [x] 2.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-04 09:00)
 
 **Phase 2 review findings (2026-10-04 02:20)** — three reviewers dispatched in parallel on the phase
 diff (baseline `143cef93`): correctness via the generic reviewer role, memory safety and emission
@@ -291,6 +291,9 @@ integrity via the project auditors.
 | RV-005 | 🟡 MINOR | The may-lend gate lacks the receiver/local-callee guard the named-call path applies, so a func-field call whose field name collides with a module lender under-binds (leak, baseline-identical) | ✅ fixed — the may-lend check requires a receiver-less call |
 | PE-005 | 🟡 MINOR (pre-existing) | A generic `len` argument emits `i32 __cl_owned0[2]` set-but-unused and fails `-Werror`; byte-identical on the baseline | 📋 filed as DEF-76 |
 | Note | — | Test-integrity: the guard test's `flag && ((` assertion passes on both base and head; the duplicable and may-lend tests are pins for the later corrections, not DEF-67 oracles; ST-8b has no structural implementation pin; ST-11 is a documented regression pin | ✅ strengthened — the guard assertion now pins the read through the materialized temporary; the correction pins are documented |
+| N-1 | 🔴 CRITICAL | Bounded re-review: the conditional place gate checked only the immediate arms, so a nested mixed conditional (`a ? mk1() : (b ? s : mk2())` with the deep arm chosen) still adopted the deep place arm — host-ASan heap-use-after-free across the depth-2/3, dot, field, and guard variants | ✅ resolved — user chose the recursive any-arm place predicate; depth-2/3/dot probes host-ASan clean; depth-2 impl pin added |
+| RR-P2-001 | 🟡 MINOR | Re-review: the may-lend gate lacks the local-callee guard, so a func-typed parameter named like a module lender under-binds (13-byte leak, baseline-identical on all revisions) | 📋 filed as DEF-77 |
+| Note | — | Bounded re-review verdicts: emission integrity clean (every hunk intended; strict builds unchanged; base↔head corpus diff expected-only); correctness clean apart from RR-P2-001; memory safety reported N-1, which the recursive fix closes | — |
 
 **Fix evidence (2026-10-04 02:38)** — spec-first regression coverage added and verified red before
 the fix:
@@ -305,12 +308,38 @@ Host-ASan probes: the conditional may-lend repro (`p53`) and the loop take repro
 mixed-conditional probes (`p41`, `p52`) no longer crash and their fresh-arm leak is
 baseline-identical (10 bytes, pre-existing). Both suites green together (15 spec + 15 impl);
 `make check` green (42 suites). One bounded re-review of this fix diff is dispatched.
+
+**Re-review outcome and N-1 fix (2026-10-04 09:00)** — the single permitted re-review confirmed
+the four findings fixed and the emission and correctness lenses came back clean, but the memory
+lens found one remaining critical: the conditional place gate judged only the immediate arms, so
+a nested mixed conditional still adopted the deep place arm (heap-use-after-free). The gate now
+uses a recursive predicate: any reachable arm that roots in a place keeps the whole conditional
+an inline read.
+
+| Fix | Red before | Green after |
+| --- | ---------- | ----------- |
+| Nested conditional place arm (`should_not_bind_a_nested_conditional_argument_when_a_deep_arm_roots_in_a_place`, impl) | `__cl_owned` binding present | no binding, exit 44 |
+
+Targeted re-verify (the one re-review budget is used; no third pass) — host ASan over the nested
+family and the earlier probes:
+
+| Probe | Exit | Sanitizer output |
+| ----- | ---- | ---------------- |
+| `n1_depth2.clo` (place arm one level down) | 44 | none |
+| `n1_depth3.clo` (place arm two levels down) | 44 | none |
+| `n1_dot.clo` (nested dot receiver) | 44 | none |
+| `p53_cond_lend.clo` (conditional may-lend) | 44 | none |
+| `loop_take.clo` (take result across iterations) | 40 | none |
+| `p41`/`p52` (mixed conditional, both paths) | 1 | 10-byte fresh-arm leak, baseline-identical |
+
+Both suites green together (15 spec + 16 impl); `make check` green (42 suites). The minor
+func-typed-parameter under-bind is filed as DEF-77.
 | Note | — | Accepted: the named-call may-lend double free is baseline-identical and out of scope; in-container AddressSanitizer flakiness is RV-002; the corpus emission diff is expected-only (20 hunks, all bindings/releases) and every emitted unit builds under the strict warning set | — |
 
 **Deliverables**:
 - [x] Implementation suite for the new shapes
 - [x] Clean probe matrix
-- [ ] Phase review with no open critical/major finding
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 

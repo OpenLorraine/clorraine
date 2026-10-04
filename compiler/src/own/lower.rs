@@ -1431,16 +1431,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         // A conditional with an arm that roots in a place must stay an inline
         // read: the owned-conditional store adopts the chosen arm, which would
-        // empty storage the borrow argument only reads.
-        if let ValueKind::Conditional {
-            then_value,
-            else_value,
-            ..
-        } = &value.kind
+        // empty storage the borrow argument only reads. The check follows
+        // nested conditionals because the chosen leaf may be the place.
+        if matches!(value.kind, ValueKind::Conditional { .. })
+            && self.conditional_borrows_place(&value)
         {
-            if self.projects_from_place(then_value) || self.projects_from_place(else_value) {
-                return value;
-            }
+            return value;
         }
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
@@ -1467,6 +1463,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.materialize_guard_operand(value)
         } else {
             self.materialize_owned_argument(value, false)
+        }
+    }
+
+    /// True when any reachable arm of a conditional roots in a place.
+    ///
+    /// The owned-conditional store adopts the chosen arm, so a conditional
+    /// whose arm tree contains a place-rooted leaf must stay an inline read.
+    /// Every non-conditional leaf is judged by the same predicate that tells a
+    /// place projection from a fresh value, so a nested conditional is covered
+    /// at any depth.
+    fn conditional_borrows_place(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.conditional_borrows_place(then_value)
+                    || self.conditional_borrows_place(else_value)
+            }
+            _ => self.projects_from_place(value),
         }
     }
 
