@@ -1605,3 +1605,142 @@ func main(): i32 {
     assert_exit("closeout-st19-paths", &output, 80);
     assert_no_asan("closeout-st19-paths", &output);
 }
+
+/// A lambda that lists every enclosing name it reads is accepted.
+///
+/// Both enclosing locals appear in the capture list and the immediate
+/// invocation reads both, so the program compiles and runs and answers the
+/// sum, eight.
+#[test]
+fn should_accept_a_lambda_that_lists_every_enclosing_name_it_reads() {
+    let source = r#"module spec.closeout.st21;
+
+func main(): i32 {
+    let n: i32 = 7;
+    let x: i32 = 1;
+    return ([x, n] () => n + x)();
+}
+"#;
+    let output = run_host("closeout-st21-listed", source);
+    assert_exit("closeout-st21-listed", &output, 8);
+}
+
+/// A capture-less lambda may read module-level names.
+///
+/// A module constant and a module function sit above every lambda scope floor,
+/// so a lambda with an empty capture list reads them without listing them. The
+/// program answers forty-two.
+#[test]
+fn should_accept_a_captureless_lambda_that_reads_module_names() {
+    let source = r#"module spec.closeout.st22;
+
+const base: i32 = 40;
+
+func addTwo(v: i32): i32 {
+    return v + 2;
+}
+
+func main(): i32 {
+    let f: func(i32): i32 = (v: i32) => addTwo(base) + v;
+    return f(0);
+}
+"#;
+    let output = run_host("closeout-st22-module", source);
+    assert_exit("closeout-st22-module", &output, 42);
+}
+
+/// A nested lambda that lists the outer capture it reads is accepted.
+///
+/// The inner lambda reads the outer lambda's capture, so it must list the name
+/// at its own level; with the listing present the program runs and answers
+/// four.
+#[test]
+fn should_accept_a_nested_lambda_that_lists_the_outer_capture() {
+    let source = r#"module spec.closeout.st23;
+
+func main(): i32 {
+    let n: i32 = 4;
+    return ([n] () => ([n] () => n)())();
+}
+"#;
+    let output = run_host("closeout-st23-nested-listed", source);
+    assert_exit("closeout-st23-nested-listed", &output, 4);
+}
+
+/// A nested lambda that reads the outer capture without listing it is
+/// rejected: the capture list must be repeated at each level.
+#[test]
+fn should_reject_a_nested_lambda_that_reads_the_outer_capture_without_listing_it() {
+    let source = r#"module spec.closeout.st23;
+
+func main(): i32 {
+    let n: i32 = 4;
+    return ([n] () => ([] () => n)())();
+}
+"#;
+    assert_rejected("closeout-st23-nested-unlisted", source, "E10405");
+}
+
+/// Moving a captured binding still reports E10401.
+#[test]
+fn should_still_reject_moving_a_captured_binding() {
+    let source = r#"module spec.closeout.st24a;
+
+import { stringOf } from std.text;
+
+func consume(take s: String): void {
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    ([s] () => consume(s))();
+    return 0;
+}
+"#;
+    assert_rejected_with(
+        "closeout-st24-move",
+        source,
+        "E10401",
+        &["cannot move captured 's'"],
+    );
+}
+
+/// Writing a captured binding without a borrow capture still reports E10402.
+#[test]
+fn should_still_reject_writing_a_captured_binding_without_a_borrow_capture() {
+    let source = r#"module spec.closeout.st24b;
+
+func main(): i32 {
+    let counter: i32 = 0;
+    ([counter] () => { counter = counter + 1; })();
+    return counter;
+}
+"#;
+    assert_rejected_with(
+        "closeout-st24-write",
+        source,
+        "E10402",
+        &["cannot write captured 'counter' without '[borrow counter]'"],
+    );
+}
+
+/// A take capture still reports E10403.
+#[test]
+fn should_still_reject_a_take_capture() {
+    let source = r#"module spec.closeout.st24c;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    ([take s] () => s)();
+    return 0;
+}
+"#;
+    assert_rejected_with(
+        "closeout-st24-take",
+        source,
+        "E10403",
+        &["'take' captures are not supported"],
+    );
+}

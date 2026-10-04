@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 12:42
-> **Progress**: 31/44 tasks (70%)
+> **Last Updated**: 2026-10-04 13:16
+> **Progress**: 33/44 tasks (75%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -632,19 +632,38 @@ DEF-84 – DEF-90; none is caused by this phase.
 
 ## Phase 5: Capture diagnostic (DEF-69)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `06858a69eb29ee1389486c9ccd2a9394b6dff6cc`
+> **Expected modification set**: `spec/14-diagnostics.md`,
+> `spec/tests/compile-fail/E10405_unlisted_capture.clo`, `compiler/tests/compile_fail_spec_test.rs`,
+> `compiler/tests/def_backlog_closeout_spec_test.rs`, `compiler/tests/def_backlog_closeout_impl_test.rs`,
+> `compiler/src/sema/expr.rs`, `compiler/src/sema/mod.rs`. Scope mode: `strict`.
 
 ### Step 5.1: Specification Tests
 
-**Reference**: [03-05](03-05-capture-diagnostic.md) · [AR-4, AR-5, AR-13, AR-14](00-ambiguity-register.md)
+**Reference**: [03-05](03-05-capture-diagnostic.md) · [AR-4, AR-5, AR-13, AR-14, AR-21](00-ambiguity-register.md)
 **Objective**: Register the approved diagnostic and its compile-fail golden before implementation.
 
-- [ ] 5.1.1 Add the approved `E10405` registry row, the compile-fail golden, and the `ASSERTED_CODES` entry — `spec/14-diagnostics.md`, `spec/tests/compile-fail/E10405_unlisted_capture.clo`, `compiler/tests/compile_fail_spec_test.rs`
-- [ ] 5.1.2 Run the compile-fail suite and record the red phase (the golden reports no diagnostic)
+- [x] 5.1.1 Add the approved `E10405` registry row, the compile-fail golden, the `ASSERTED_CODES` entry, and the ST-21 – ST-24 spec cases (AR-21 correction) — `spec/14-diagnostics.md`, `spec/tests/compile-fail/E10405_unlisted_capture.clo`, `compiler/tests/compile_fail_spec_test.rs`, `compiler/tests/def_backlog_closeout_spec_test.rs` ✅ (completed: 2026-10-04 13:16)
+- [x] 5.1.2 Run the compile-fail suite and record the red phase (the golden reports no diagnostic; the unlisted nested case is accepted) ✅ (completed: 2026-10-04 13:16)
 
 **Deliverables**:
-- [ ] Approved specification change and golden
-- [ ] Red-phase evidence
+- [x] Approved specification change and golden
+- [x] ST-21 – ST-24 specification cases
+- [x] Red-phase evidence
+
+**Red-phase evidence (2026-10-04 13:16)** — `./spec/check.sh` green (27 files, 105
+compile-fail tests; the registry row and the golden shape validate). The suites at the
+implementation baseline:
+
+| Suite | Result |
+| ----- | ------ |
+| `compile_fail_spec_test` | FAILED — 1 of 103 asserted goldens: `E10405_unlisted_capture.clo: no 'error E10405: ...' diagnostic line (exit Some(0))` |
+| `def_backlog_closeout_spec_test` | 41 passed, 1 failed — `should_reject_a_nested_lambda_that_reads_the_outer_capture_without_listing_it` accepted (exit 0); ST-21, ST-22, the listed nested case, and the three E10401 – E10403 pins pass as justified regression pins |
+
+Host probes at the baseline: the accepted ST-21/22/23-listed programs build strict and answer
+8/42/4; the unlisted nested program emits `cl_lambda_1` with a bare `n` (`'n' undeclared` in the
+host C build), the filed DEF-69 shape. Logs: `/tmp/opencode/verify-5.1.2-red.log`,
+`/tmp/opencode/verify-5.1.2-spec-red.log`.
 
 **Verify**: `make check` (the golden fails as expected)
 
@@ -664,7 +683,7 @@ DEF-84 – DEF-90; none is caused by this phase.
 
 ### Step 5.3: Implementation Tests & Hardening
 
-- [ ] 5.3.1 Write implementation tests for the nested-capture, global-read, and unchanged capture-mode cases — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 5.3.1 Write implementation tests for the emitted nested-capture environment names, the module-path spelling, and the E10405 diagnostic text (AR-21 correction) — `compiler/tests/def_backlog_closeout_impl_test.rs`
 - [ ] 5.3.2 Run `spec/check.sh` and `cargo test` for both new suites
 - [ ] 5.3.3 Dispatch the phase review — correctness, memory-safety, and semantics-reviewer per the `AGENTS.md` language-rule dispatch (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
 

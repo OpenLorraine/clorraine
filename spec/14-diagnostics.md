@@ -129,6 +129,7 @@
 | E10402 | Lambda writes a captured binding without a `[borrow]` capture | `cannot write captured '{name}' without '[borrow {name}]'` | add the borrow capture |
 | E10403 | `take` capture | `'take' captures are not supported` | copy or borrow the capture |
 | E10404 | Closure stored, returned, or captured (closures are ephemeral) | `closures are ephemeral and cannot be stored, returned, or captured` | pass the lambda directly |
+| E10405 | Lambda reads an enclosing name without listing it | `lambda reads '{name}' without listing it` | add '{name}' to the capture list |
 
 ## 8. Strings and templates (`E105xx`)
 

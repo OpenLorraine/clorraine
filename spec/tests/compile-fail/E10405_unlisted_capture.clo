@@ -1,0 +1,11 @@
+// expect-error E10405
+// trigger: a lambda reads an enclosing parameter without listing it
+module tests.compile_fail.E10405;
+
+func outer(n: i32, x: i32): i32 {
+    return ([x] () => n + x)();   // E10405: 'n' is not in the capture list
+}
+
+func main(): i32 {
+    return outer(1, 2);
+}
