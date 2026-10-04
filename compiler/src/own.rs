@@ -1040,6 +1040,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .unwrap_or(false)
     }
 
+    /// True when the temporary already carries a registered release.
+    ///
+    /// Such a temporary's storage is released by the statement cleanup or the
+    /// enclosing construct, so a second owning binding for the same value would
+    /// free it twice.
+    fn has_pending_release(&self, temp: ir::TempId, ty: &Ty) -> bool {
+        self.pending_releases
+            .iter()
+            .any(|release| release.temp == temp && &release.ty == ty)
+    }
+
     /// Registers a destination temporary for release at the statement's end.
     ///
     /// Only a temporary whose type owns storage joins the pending list; a

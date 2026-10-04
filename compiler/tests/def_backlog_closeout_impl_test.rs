@@ -671,7 +671,11 @@ func main(): i32 {
         &emitted,
         "__cl_tmp0 = cl_impl_closeout_exprguard_make()",
     );
-    assert_contains("expr-guard", &emitted, "flag && ((");
+    assert_contains(
+        "expr-guard",
+        &emitted,
+        "(cl_string_view(__cl_tmp0)).len == 3",
+    );
     assert_absent(
         "expr-guard",
         &emitted,
@@ -748,6 +752,80 @@ func main(): i32 {
         output.status.code(),
         Some(3),
         "expr-lend-run: expected exit 3; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A conditional argument with a place-rooted arm stays an inline read.
+///
+/// Binding such a conditional would adopt and empty the place arm, and the
+/// borrow argument needs only a read. The case pins the absence of the binding
+/// and the pinned answer on the taken path, where the other arm is a may-lend
+/// call that must not be bound either.
+#[test]
+fn should_not_bind_a_conditional_argument_when_an_arm_roots_in_a_place() {
+    let source = r#"module impl.closeout.exprcond;
+
+import { String, stringOf } from std.text;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func outer<T>(x: T): T {
+    return apply(x, [x] (y: T) => y);
+}
+
+func main(): i32 {
+    let t: String = stringOf("abcd");
+    return i32(len(true ? t : outer<String>(t)));
+}
+"#;
+    let emitted = emit_host("expr-cond", source);
+    assert_absent("expr-cond", &emitted, "__cl_owned");
+    let output = run_host("expr-cond-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "expr-cond-run: expected exit 4; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A take-call result measured across loop iterations is released once.
+///
+/// The take call materializes its result in a statement temporary that already
+/// carries a release, so the intrinsic argument must read that temporary
+/// instead of copying it into a second owner; a second owner frees the same
+/// bytes when the loop statement runs again. The case pins the absence of the
+/// alias assignment and the two-iteration answer.
+#[test]
+fn should_release_the_take_result_once_when_len_reads_it_across_loop_iterations() {
+    let source = r#"module impl.closeout.exprloop;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): String {
+    return s;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 2) {
+        n = n + i32(len(sink(stringOf("ab"))));
+        i = i + 1;
+    }
+    return n;
+}
+"#;
+    let emitted = emit_host("expr-loop", source);
+    assert_absent("expr-loop", &emitted, " = __cl_tmp");
+    let output = run_host("expr-loop-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "expr-loop-run: expected exit 4; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

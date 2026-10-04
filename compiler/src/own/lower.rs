@@ -1429,6 +1429,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_view(&value.ty) || value.ty.is_unknown() || self.projects_from_place(&value) {
             return value;
         }
+        // A conditional with an arm that roots in a place must stay an inline
+        // read: the owned-conditional store adopts the chosen arm, which would
+        // empty storage the borrow argument only reads.
+        if let ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &value.kind
+        {
+            if self.projects_from_place(then_value) || self.projects_from_place(else_value) {
+                return value;
+            }
+        }
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
         }
@@ -1436,20 +1449,51 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // argument's owner already releases; binding the result would create a
         // second owner for the same storage. The intrinsic only borrows, so the
         // aliased value needs no binding of its own.
-        if let ValueKind::Call { callee, args, .. } = &value.kind {
-            if let Some(index) = self.lowered_lend_source(callee) {
-                if args
-                    .get(index)
-                    .is_some_and(|arg| self.owns_drop(&arg.ty) || self.maybe_owns(&arg.ty))
-                {
-                    return value;
-                }
+        if self.value_may_lend(&value) {
+            return value;
+        }
+        // A transfer temporary that carries ownership is released by the
+        // enclosing statement; registering it keeps a single owner without a
+        // second binding. A temporary that already has a registered release is
+        // left alone so the release is not repeated, and the temporary's
+        // re-assignment pre-release covers a statement that runs again.
+        if let ValueKind::Temp(id) = &value.kind {
+            if !self.has_pending_release(*id, &value.ty) {
+                self.register_pending_release(*id, &value.ty);
             }
+            return value;
         }
         if self.defer_move_outs > 0 {
             self.materialize_guard_operand(value)
         } else {
             self.materialize_owned_argument(value, false)
+        }
+    }
+
+    /// True when a value may hand back storage one of its arguments owns.
+    ///
+    /// A receiver-less call reborrows an owned argument when the callee can
+    /// return a lend of it, so the result aliases storage the argument's owner
+    /// already releases. The check follows a conditional's arms because either
+    /// arm may be the lender; a func-typed field carries no declared lend
+    /// parameter and is never consulted.
+    fn value_may_lend(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Call {
+                callee,
+                args,
+                receiver,
+                ..
+            } if receiver.is_none() => self.lowered_lend_source(callee).is_some_and(|index| {
+                args.get(index)
+                    .is_some_and(|arg| self.owns_drop(&arg.ty) || self.maybe_owns(&arg.ty))
+            }),
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => self.value_may_lend(then_value) || self.value_may_lend(else_value),
+            _ => false,
         }
     }
 

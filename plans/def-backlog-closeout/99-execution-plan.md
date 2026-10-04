@@ -277,7 +277,35 @@ pin's red state is preserved (an abort leaves no exit code, failing the exit-zer
 
 - [x] 2.3.1 Write implementation tests for the intrinsic-argument release shape and the guard deferral — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 02:02)
 - [x] 2.3.2 Run the ST-8/10/11 host-ASan probes and `cargo test` for both suites ✅ (completed: 2026-10-04 02:02)
-- [ ] 2.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+- [~] 2.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ⏳ (review dispatched: 2026-10-04 02:20; paused on open critical findings)
+
+**Phase 2 review findings (2026-10-04 02:20)** — three reviewers dispatched in parallel on the phase
+diff (baseline `143cef93`): correctness via the generic reviewer role, memory safety and emission
+integrity via the project auditors.
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| SA-006 | 🔴 CRITICAL | A conditional intrinsic argument with a place arm is adopted and moved: `len(flag ? s : stringOf("x"))` reads the moved-out `s` (SIGSEGV, exit 139); guarded (`flag && len(flag2 ? s : ...)`) and dot variants reproduce. Baseline clean. The shared owned-conditional store adopts a borrow argument; the same helper defect pre-exists for named calls (`sink(flag ? s : call())` crashes on the baseline too) | ✅ resolved — user chose the combined fix: a conditional with a place-rooted arm stays an inline read; spec and impl cases added; the fresh-arm leak that remains is baseline-identical (10 bytes) |
+| SA-007 | 🔴 CRITICAL | The may-lend gate matches only a top-level call, so `len(flag ? t : outer<String>(t))` binds the alias and double-frees (baseline clean) | ✅ resolved — the may-lend check now follows conditional arms and requires a receiver-less call; the conditional may-lend repro is host-ASan clean |
+| PE-004 | 🔴 CRITICAL | Binding an already-materialized take-call result copies the transfer temporary without emptying it (`__cl_owned1 = __cl_tmp0`); re-running the statement (loop) frees `__cl_tmp0` and then `__cl_owned1` (double free, exit 134). Non-loop forms carry the stale alias latently; baseline leaked but ran | ✅ resolved — a transfer temporary now registers its own single release instead of gaining a second owner; the loop repro is host-ASan clean and an impl case pins the absence of the alias |
+| RV-005 | 🟡 MINOR | The may-lend gate lacks the receiver/local-callee guard the named-call path applies, so a func-field call whose field name collides with a module lender under-binds (leak, baseline-identical) | ✅ fixed — the may-lend check requires a receiver-less call |
+| PE-005 | 🟡 MINOR (pre-existing) | A generic `len` argument emits `i32 __cl_owned0[2]` set-but-unused and fails `-Werror`; byte-identical on the baseline | 📋 filed as DEF-76 |
+| Note | — | Test-integrity: the guard test's `flag && ((` assertion passes on both base and head; the duplicable and may-lend tests are pins for the later corrections, not DEF-67 oracles; ST-8b has no structural implementation pin; ST-11 is a documented regression pin | ✅ strengthened — the guard assertion now pins the read through the materialized temporary; the correction pins are documented |
+
+**Fix evidence (2026-10-04 02:38)** — spec-first regression coverage added and verified red before
+the fix:
+
+| Fix | Red before | Green after |
+| --- | ---------- | ----------- |
+| Mixed conditional place arm (`should_read_the_chosen_arm_when_len_reads_a_conditional_with_a_place_arm`, spec) | SIGSEGV (exit 139, runtime flag) | exit 46 |
+| Conditional argument shape (`should_not_bind_a_conditional_argument_when_an_arm_roots_in_a_place`, impl) | `__cl_owned` binding present | no binding, exit 4 |
+| Take-result loop alias (`should_release_the_take_result_once_when_len_reads_it_across_loop_iterations`, impl) | ` = __cl_tmp` alias present | no alias, exit 4 |
+
+Host-ASan probes: the conditional may-lend repro (`p53`) and the loop take repro are clean; the
+mixed-conditional probes (`p41`, `p52`) no longer crash and their fresh-arm leak is
+baseline-identical (10 bytes, pre-existing). Both suites green together (15 spec + 15 impl);
+`make check` green (42 suites). One bounded re-review of this fix diff is dispatched.
+| Note | — | Accepted: the named-call may-lend double free is baseline-identical and out of scope; in-container AddressSanitizer flakiness is RV-002; the corpus emission diff is expected-only (20 hunks, all bindings/releases) and every emitted unit builds under the strict warning set | — |
 
 **Deliverables**:
 - [x] Implementation suite for the new shapes

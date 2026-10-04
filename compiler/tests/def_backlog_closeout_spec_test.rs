@@ -955,3 +955,33 @@ func main(): i32 {
     assert_exit("closeout-st11", &output, 3);
     assert_no_asan("closeout-st11", &output);
 }
+
+/// A conditional argument with one place-rooted arm is read in place.
+///
+/// The language passes an intrinsic argument by borrow, so measuring
+/// `flag ? s : stringOf("x")` must not adopt and empty either arm: the chosen
+/// place stays the caller's and the chosen fresh string is read where it
+/// stands. Adopting the place arm would empty the caller's binding and the
+/// later read of it would run on freed storage. The taken path answers three
+/// and the false path answers one, and the local string is measured again
+/// after the conditional to prove it was not emptied.
+#[test]
+fn should_read_the_chosen_arm_when_len_reads_a_conditional_with_a_place_arm() {
+    let source = r#"module spec.closeout.st8cond;
+
+import { String, stringOf } from std.text;
+
+func measure(flag: bool, s: String): i32 {
+    return i32(len(flag ? s : stringOf("x"))) * 10 + i32(len(s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("abc");
+    let a: i32 = measure(true, s);
+    let b: i32 = measure(false, s);
+    return a + b;
+}
+"#;
+    let output = run_host("closeout-st8-cond", source);
+    assert_exit("closeout-st8-cond", &output, 46);
+}

@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-04 01:38
+> **Last Updated**: 2026-10-04 02:38
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -92,6 +92,7 @@
 | ↳ DEF-73 | An element-projection consume still evaluates eagerly inside an aggregate literal | — | Backlog | ⬜ | 2026-10-04 01:38 | 🟠 major, pre-existing, residual of the Phase 1 order fix (PE-001r): `Box<T> { w: f(), v: make()[i] }` evaluates `make()` before `f()` (trace 21; `spec/04-expressions.md` §3 requires 12). The baseline crashed on the same program, so the phase removed the crash without restoring order. Needs the deferred fill/move machinery for element projections |
 | ↳ DEF-74 | A direct-call member-rooted consume leaks the call result's sibling fields | — | Backlog | ⬜ | 2026-10-04 01:38 | 🟠 major, pre-existing, surfaced by the Phase 1 re-review (PE-002): `Box { v: mk().a }` and the field-order probe leak the call result's sibling `.b` (12 bytes host ASan) because a member-rooted consume keeps its inline read; the baseline emission is byte-identical. The member form was outside the filed element shape; fold into the expression-temporaries work or prepare member consumes lazily |
 | ↳ DEF-75 | A call-indexed assignment with a compound right-hand side emits invalid C | — | Backlog | ⬜ | 2026-10-04 01:38 | 🟠 major, pre-existing, surfaced by the Phase 1 re-review (PE-003r): `out[target()] = mkvArray()[rhsIndex()]` and `out[target()] = Pair{...}` emit `*(&(out[i])).a` without the outer parentheses, so the strict host build fails with a pointer-arrow error; all compiler versions reproduce. Needs the target-drop expression parenthesized for an element base |
+| ↳ DEF-76 | A generic len argument emits a set-but-unused owned array local and fails the strict build | — | Backlog | ⬜ | 2026-10-04 02:38 | 🟡 minor, pre-existing, surfaced by the Phase 2 emission review (PE-005): a generic call whose fixed-array result feeds `len` emits `i32 __cl_owned0[2] = {0};` but the length is resolved structurally, so the local is set and never read and `-Wall -Wextra -Werror` rejects the unit; byte-identical on the baseline. Needs the structured-length path to skip a binding whose value is never read |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 | PLAN-14 | Generated-C optimization | — | — | Backlog | ⬜ | 2026-10-03 22:17 | Trigger: only after the open DEF backlog closes and the semantics freeze (no remaining plan changes the emitted ABI/semantics); optimize only against a measured need (a visibly slow or oversized Amiga program), never on feel. First build the benchmark harness — host timing, FS-UAE instruction/cycle counts, `.text`/struct sizes — then plan from those numbers. Guard every optimization with the emission-integrity auditor (behavior preservation, base-vs-head emission diff), the memory-safety auditor (copy/move elision), and a deterministic benchmark script; dispatch the global performance-auditor per phase for `spec/17-codegen` ABI and over-optimization judgment. Expected cost: the shape-pinning implementation suites migrate with every emission optimization. Separate axis: compiler compile-time speed, evaluated only if it becomes a workflow bottleneck |
 
