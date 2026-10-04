@@ -51,7 +51,7 @@
 | ST-12 | `fill<T>(take v: T, borrow slot: String?)` called with a non-null slot; callee assigns `v`; host ASan | Callee's value visible to the caller; the old value is dropped exactly once; clean | R4, AR-3 |
 | ST-13 | Same with `borrow slot: File?` | Pointer parameter; exactly one free; clean | R4, AR-3 |
 | ST-14 | Same with `borrow slot: str?` and a `str?` place | The pointer receives `&slot`; callee write-through reaches the caller. A `String` value passed to the slot is rejected (`E10200`) | R4 |
-| ST-15 | Null-start out-slot case, a non-nullable duplicable-struct `borrow` parameter, and a nullable duplicable-struct out-slot (`Point?`) | Null start unchanged; non-nullable duplicable struct stays by value (W10001 path unchanged); the nullable struct out-slot is a pointer and writes through | R4, AR-3 |
+| ST-15 | Null-start out-slot case and a non-nullable duplicable-struct `borrow` parameter | Null start unchanged; non-nullable duplicable struct stays by value (W10001 path unchanged). Structs cannot be nullable (TY-4/E10011), so no nullable-struct sub-case exists | R4, AR-3, AR-19 |
 
 ### Defer Condition Release (03-04)
 

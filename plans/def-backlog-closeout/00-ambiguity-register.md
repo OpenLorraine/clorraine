@@ -1,7 +1,7 @@
 # Ambiguity Register: def-backlog-closeout
 
-> **Status**: ✅ GATE PASSED — all 18 items resolved
-> **Last Updated**: 2026-10-03 22:53
+> **Status**: ✅ GATE PASSED — 18 planning items + AR-19 (runtime) resolved
+> **Last Updated**: 2026-10-04 10:18
 
 This register is the Zero-Ambiguity Gate audit trail for the `def-backlog-closeout`
 plan. All items were resolved in the planning interview on 2026-10-03.
@@ -26,6 +26,7 @@ plan. All items were resolved in the planning interview on 2026-10-03.
 | AR-16 | Security | Threat surface for these fixes | — | No external input; the fixes are release-count/memory-safety work, guarded by the deterministic host-ASan probes and the repo's auditor dispatch matrix | ✅ Resolved |
 | AR-17 | Stakeholder | Competing priorities | — | None; the defects are all filed backlog items with one owner | ✅ Resolved |
 | AR-18 | Data & State | Data-model changes | — | None; release/ownership counts per shape are specified in the component docs, no persistent data | ✅ Resolved |
+| AR-19 (runtime) | Plan / Technical | Phase 3's plan documents require a nullable duplicable-struct out-slot (`Point?`): 03-03 Proposed Change 1 and its error table, PF-005's resolution, ST-15, and task 3.3.1. The frozen specification forbids nullable structs: `spec/02-types.md:118-124` (TY-4, E10011). Probes on the current compiler: a `Point?` parameter and a `Point?` local report E10011; `Point? == null` reports E10222. A spec test for `Point?` can never pass after any in-scope DEF-65 fix | A (recommended) correct the plan to the frozen-spec boundary: drop the `Point?` sub-case, keep the valid nullable kinds (`String?`, `File?`, `str?`, `T[]?` — arrays are views, per E10036); B amend TY-4 and implement nullable structs (out of scope: R10 allows only the E10405 spec change; large complexity escalation); C keep the ST-15c test red (violates the spec-first green-phase mandate) | ✅ Resolved — correct the plan to the frozen-spec boundary: drop the `Point?` sub-case (TY-4/E10011 forbids nullable structs); keep the valid nullable kinds (`String?`, `File?`, `str?`, `T[]?`); no spec change (R10 holds) | ✅ Resolved |
 
 ### Resolution Notes
 
@@ -67,3 +68,10 @@ conversion whose address is valid for the call; materializing the conversion int
 temporary keeps the argument an lvalue without `&(rvalue)`.
 
 **AR-11–AR-13:** Accepted as recommended; see the rows above for the exact content.
+
+**AR-19 (runtime):** The Phase 3 plan required a nullable duplicable-struct out-slot (`Point?`),
+but the frozen specification forbids nullable structs (TY-4/E10011). The user ruled to correct the
+plan to the spec boundary: the `Point?` sub-case and its test are dropped, the valid nullable
+kinds (handles, `raw`, `cstring`, and views, including `T[]?` slices) keep the DEF-65 pointer
+treatment, and no specification change is made. A struct borrow can never be nullable in valid
+code, so the deliberate by-value deviation stays as-is.

@@ -985,3 +985,222 @@ func main(): i32 {
     let output = run_host("closeout-st8-cond", source);
     assert_exit("closeout-st8-cond", &output, 46);
 }
+
+/// A non-null `String?` out-slot receives the callee's value and releases the
+/// old one exactly once.
+///
+/// `fill<String>` takes the new string and assigns it through a writable
+/// out-slot that already owns the old string. The callee owns the incoming
+/// value on entry, so the assignment must release the old string in the
+/// caller's storage and leave the new string there. The caller then measures
+/// the new string, so `main` answers three. An out-slot passed by value would
+/// leave the caller with the old string, and the callee and the caller would
+/// each release it, aborting in the C library or reporting a double free under
+/// AddressSanitizer.
+#[test]
+fn should_write_through_when_a_non_null_nullable_string_out_slot_is_assigned() {
+    let source = r#"module spec.closeout.st12;
+
+import { String, stringOf } from std.text;
+
+func fill<T>(take v: T, borrow slot: String?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let slot: String? = stringOf("ab");
+    fill<String>(stringOf("xyz"), borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot));
+}
+"#;
+    let output = run_memory("closeout-st12", source);
+    assert_exit("closeout-st12", &output, 3);
+    assert_no_asan("closeout-st12", &output);
+}
+
+/// A non-null `File?` out-slot receives the callee's handle and closes each
+/// handle exactly once.
+///
+/// `fill<File>` takes a freshly opened handle and assigns it through a writable
+/// out-slot that already owns another open handle. The callee owns the incoming
+/// handle on entry, so the assignment must close the old handle in the caller's
+/// storage and leave the new handle there. The caller then falls off the scope
+/// and closes the new handle once, so `main` answers zero. A by-value out-slot
+/// would leave the caller the already-closed old handle and both sides would
+/// close it again, aborting in the C library or reporting a use-after-free
+/// under AddressSanitizer.
+#[test]
+fn should_write_through_when_a_non_null_nullable_file_out_slot_is_assigned() {
+    let source = r#"module spec.closeout.st13;
+
+import { File, openFile, MODE_OLDFILE } from std.io;
+
+func fill<T>(take v: T, borrow slot: File?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let first: File? = openFile("/dev/null", MODE_OLDFILE);
+    if (first == null) {
+        return 8;
+    }
+    let second: File? = openFile("/dev/null", MODE_OLDFILE);
+    if (second == null) {
+        return 9;
+    }
+    let slot: File? = first;
+    fill<File>(second, borrow slot);
+    if (slot == null) {
+        return 10;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("closeout-st13", source);
+    assert_exit("closeout-st13", &output, 0);
+    assert_no_asan("closeout-st13", &output);
+}
+
+/// A `str?` out-slot receives the callee's view so the caller can read it.
+///
+/// `fill` assigns its `str` argument into a `str?` place. The call must pass
+/// the address of the caller's storage, so the view is written through and the
+/// caller measures three bytes after the call. A `str?` slot passed by value
+/// would leave the caller's slot empty and `main` would answer nine; the
+/// emitted translation must also build as strict C, because a nullable view has
+/// no by-value spelling.
+#[test]
+fn should_write_through_when_a_nullable_str_out_slot_is_assigned() {
+    let source = r#"module spec.closeout.st14;
+
+func fill(v: str, borrow slot: str?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let slot: str? = null;
+    fill("abc", borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot));
+}
+"#;
+    let output = run_memory("closeout-st14-write", source);
+    assert_exit("closeout-st14-write", &output, 3);
+    assert_no_asan("closeout-st14-write", &output);
+}
+
+/// A `String` place that would widen into a `str?` out-slot is rejected.
+///
+/// An out-slot needs an exact-typed place because the callee writes back into
+/// the caller's storage; a converted temporary cannot carry that write. A
+/// `String` place needs a view conversion to reach a `str?` slot, so the
+/// argument is rejected with `E10200` and no translation unit is written.
+#[test]
+fn should_reject_when_a_string_place_widens_into_a_str_out_slot() {
+    let source = r#"module spec.closeout.st14;
+
+import { String, stringOf } from std.text;
+
+func fill(borrow slot: str?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("abc");
+    fill(borrow owned);
+    return 0;
+}
+"#;
+    assert_rejected_with("closeout-st14-wide-str-slot", source, "E10200", &[]);
+}
+
+/// A `String` place that would widen into a `String?` out-slot is rejected.
+///
+/// The argument needs only the nullability widening, but an out-slot must
+/// still be an exact-typed place: the callee writes back into the caller's
+/// storage, and a converted temporary cannot carry that write. The argument is
+/// rejected with `E10200` and no translation unit is written.
+#[test]
+fn should_reject_when_a_string_place_widens_into_a_string_out_slot() {
+    let source = r#"module spec.closeout.st14;
+
+import { String, stringOf } from std.text;
+
+func fill(borrow slot: String?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("abc");
+    fill(borrow owned);
+    return 0;
+}
+"#;
+    assert_rejected_with("closeout-st14-wide-string-slot", source, "E10200", &[]);
+}
+
+/// A null-start out-slot stays accepted and may be reassigned to null.
+///
+/// The callee owns the incoming value on entry, but a null slot has nothing to
+/// release, and writing null leaves the caller's slot empty. This is the
+/// established out-parameter exemption: the callee may reassign the slot
+/// without the borrowed-parameter diagnostic, and `main` answers one after
+/// observing the null slot.
+#[test]
+fn should_keep_the_null_slot_when_a_null_start_out_slot_is_reassigned_to_null() {
+    let source = r#"module spec.closeout.st15;
+
+import { String, stringOf } from std.text;
+
+func fill<T>(v: T, borrow slot: String?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let slot: String? = null;
+    fill<String>(stringOf("xyz"), borrow slot);
+    if (slot == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("closeout-st15-nullstart", source);
+    assert_exit("closeout-st15-nullstart", &output, 1);
+    assert_no_asan("closeout-st15-nullstart", &output);
+}
+
+/// A writable lend of a non-nullable duplicable struct stays by value.
+///
+/// `bump` increments its `Point` parameter, but a duplicable struct is passed
+/// by value, so the write affects only the callee's copy and `main` still reads
+/// one. The declaration warns that the lend is unnecessary; the behavior is
+/// deliberate and must not change when nullable out-slots become pointers.
+#[test]
+fn should_keep_the_caller_value_when_a_non_nullable_duplicable_struct_is_lent() {
+    let source = r#"module spec.closeout.st15;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func bump(borrow p: Point): void {
+    p.x = p.x + 1;
+}
+
+func main(): i32 {
+    let p: Point = Point { x: 1, y: 2 };
+    bump(p);
+    return p.x;
+}
+"#;
+    let output = run_memory("closeout-st15-byvalue", source);
+    assert_exit("closeout-st15-byvalue", &output, 1);
+    assert_no_asan("closeout-st15-byvalue", &output);
+}

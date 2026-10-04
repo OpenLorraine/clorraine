@@ -3,7 +3,7 @@
 > **Document**: 03-03-borrow-outslot-abi.md
 > **Parent**: [Index](00-index.md)
 > **Defects**: DEF-65
-> **AR**: AR-3 (AR-10 superseded by preflight PF-002)
+> **AR**: AR-3 (AR-10 superseded by preflight PF-002; nullable-struct sub-case corrected at runtime by AR-19)
 
 ## Overview
 
@@ -38,9 +38,10 @@ out-slot argument. The deliberately by-value duplicable-struct borrows stay unch
 
 1. `is_pointer_param` becomes
    `Mode::Borrow && (ty.nullable || (matches!(ty.kind, TyKind::Struct(..)) && !table.duplicable(ty)))`.
-   Nullable borrows of any kind lower to `T *` per `spec/17-codegen.md:65`. The deliberate
-   duplicable-struct by-value deviation applies only to a **non-nullable** struct lend; a nullable
-   struct borrow is an out-slot and follows the pointer rule.
+   Nullable borrows of any kind lower to `T *` per `spec/17-codegen.md:65`. Structs cannot be
+   nullable (TY-4, `spec/02-types.md:118-124`), so the `ty.nullable` clause covers handles, `raw`,
+   `cstring`, and views (including `T[]?` slices) only; a duplicable struct lend therefore always
+   keeps its deliberate by-value deviation.
 2. The named-call pointer decision (`compiler/src/codegen/calls.rs:132-191`) uses the substituted
    **parameter** type, not the argument type, so a nullable parameter always receives its pointer
    regardless of how the argument was written.
@@ -71,7 +72,7 @@ No change is made to `needs_drop`, the drop ladder, or the null-start ownership 
 | Non-null `borrow String?` / `File?` slot written by the callee | Pointer parameter; callee drop runs on caller storage; caller sees the new value | AR-3 |
 | A `String` value passed to a `borrow str?`/`String?` out-slot | Rejected: the out-slot needs an exact-typed place; the implicit conversion is not allowed (`E10200`) | AR-3 |
 | Null initial slot | Unchanged behavior; the prior exemption case stays pinned | AR-3 |
-| Non-nullable duplicable struct borrow | Unchanged by-value path (W10001); nullable duplicable struct out-slots become pointers | AR-3 |
+| Duplicable struct borrow | Unchanged by-value path (W10001); structs cannot be nullable (TY-4/E10011), so no nullable struct out-slot exists | AR-3, AR-19 |
 | `func(...)` type with a nullable borrow parameter | `func_pointer_params` follows the same predicate | AR-3 |
 
 > **Traceability:** Every strategy references the Ambiguity Register entry (AR #) that resolved it.

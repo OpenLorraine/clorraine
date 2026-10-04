@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 09:00
-> **Progress**: 16/44 tasks (36%)
+> **Last Updated**: 2026-10-04 10:55
+> **Progress**: 18/44 tasks (41%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -359,21 +359,43 @@ Both suites green together (13 impl + 14 spec).
 
 ## Phase 3: Borrow out-slot ABI (DEF-65)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `2b2de6a0f5301958ea125aaa1625a6b269b17a0f`
+> **Expected modification set**: `compiler/tests/def_backlog_closeout_spec_test.rs`,
+> `compiler/tests/def_backlog_closeout_impl_test.rs`, `compiler/src/codegen/types.rs`,
+> `compiler/src/codegen/calls.rs`, `compiler/src/sema/*` (only if the out-slot argument check
+> needs a sema change), `build/closeout/*` probe artifacts (gitignored). Scope mode: `strict`.
 
 ### Step 3.1: Specification Tests
 
 **Reference**: [03-03](03-03-borrow-outslot-abi.md) · [AR-3](00-ambiguity-register.md) · [PF-002](00-preflight-report.md)
 **Objective**: Pin the pointer lowering and write-through behavior of nullable borrow out-slots.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-12 – ST-15 — `compiler/tests/def_backlog_closeout_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (ST-12/13 double-free or lost write; ST-14 lost write; ST-15 passes, justified)
+- [x] 3.1.1 [spec-author] Write specification tests from ST-12 – ST-15 — `compiler/tests/def_backlog_closeout_spec_test.rs` ✅ (completed: 2026-10-04 10:55)
+- [x] 3.1.2 Run the spec suite and record the red phase (ST-12/13 double-free or lost write; ST-14 lost write; ST-15 null-start and by-value pins pass, justified; the `Point?` sub-case was removed per runtime AR-19) ✅ (completed: 2026-10-04 10:55)
 
 **Deliverables**:
-- [ ] Specification suite with ST-12 – ST-15
-- [ ] Red-phase evidence
+- [x] Specification suite with ST-12 – ST-15
+- [x] Red-phase evidence
 
 **Verify**: `make check`
+
+**Red-phase evidence (2026-10-04 10:55)** — `cargo test --test def_backlog_closeout_spec_test` in the
+pinned container (log `/tmp/opencode/verify-3.1.2-red.log`): 17 passed, 5 failed; the 15 prior cases
+and the field-order regression stay green.
+
+| Case | Red state |
+| ---- | --------- |
+| ST-12 `String?` | FAILED — expected exit 3; `free(): double free detected in tcache 2` |
+| ST-13 `File?` | FAILED — expected exit 0; `free(): double free detected in tcache 2` |
+| ST-14 `str?` write-through | FAILED — the emitted C does not build: `incompatible types when assigning to type 'ClStr' from type 'void *'`; `invalid operands to binary == (have 'ClStr' and 'void *')` |
+| ST-14 `str?` widened argument | FAILED — the front end accepted the program instead of reporting `E10200` |
+| ST-14 `String?` widened argument | FAILED — the front end accepted the program instead of reporting `E10200` |
+| ST-15 null start | PASSED — justified pin (exit 1, clean) |
+| ST-15 by-value duplicable struct | PASSED — justified pin (exit 1) |
+| ST-15 `Point?` | removed per runtime AR-19 (TY-4/E10011: structs cannot be nullable) |
+
+The `Point?` sub-case was written from PF-005's superseded resolution and removed after the runtime
+AR-19 ruling; the suite now derives only from the frozen spec's nullable kinds.
 
 ### Step 3.2: Implementation
 
@@ -393,7 +415,7 @@ Both suites green together (13 impl + 14 spec).
 
 ### Step 3.3: Implementation Tests & Hardening
 
-- [ ] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind (including a nullable duplicable struct), the unchanged by-value path, and the rejected widened out-slot argument — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [ ] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind, the unchanged by-value path for a duplicable struct, and the rejected widened out-slot argument — `compiler/tests/def_backlog_closeout_impl_test.rs`
 - [ ] 3.3.2 Run the ST-12/13 host-ASan probes, a freestanding compile, and `cargo test` for both suites
 - [ ] 3.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
 

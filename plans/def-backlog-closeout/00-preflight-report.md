@@ -160,6 +160,10 @@ leaves the defect).
 **Iteration 2:** `03-03` states the non-nullable carve-out, the error table splits nullable from
 non-nullable, ST-15 gains the `Point?` case, and task 3.3.1 names the nullable duplicable struct.
 
+**Iteration 3 (runtime, 2026-10-04):** Superseded by runtime AR-19 — structs cannot be nullable
+(TY-4/E10011), so the `Point?` sub-case was removed from ST-15, `03-03`, and task 3.3.1 per the
+user's ruling; the by-value deviation applies to every struct borrow.
+
 ## PF-006: Red-phase wording vs the DEF-66 reproduction gate 🟡 MINOR
 
 **Dimension:** 3 Logical Contradictions
