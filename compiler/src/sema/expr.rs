@@ -52,7 +52,7 @@ impl Checker<'_, '_> {
                 kind: TyKind::Unknown,
                 nullable: true,
             },
-            ExprKind::Name(name) => self.name_type(name),
+            ExprKind::Name(name) => self.check_name(name, expr.span),
             ExprKind::Qualified(name) => self.check_qualified(name),
             ExprKind::Call {
                 callee,
@@ -89,6 +89,27 @@ impl Checker<'_, '_> {
             ExprKind::Template(pieces) => self.check_template(pieces),
             ExprKind::Error => Ty::unknown(),
         }
+    }
+
+    /// Types a bare name read and rejects an unlisted enclosing read.
+    ///
+    /// A lambda body may read the bindings its capture list names and the
+    /// bindings introduced inside the body; any other lexical binding belongs
+    /// to an enclosing function or lambda, so the lifted function would
+    /// reference a name it does not own. Module-level names have no lexical
+    /// scope and stay readable without a listing.
+    fn check_name(&mut self, name: &str, span: Span) -> Ty {
+        if let Some(&floor) = self.lambda_floors.last() {
+            if self.name_scope_depth(name).is_some_and(|depth| depth < floor) {
+                self.error(
+                    "E10405",
+                    format!("lambda reads '{name}' without listing it"),
+                    &format!("add '{name}' to the capture list"),
+                    span,
+                );
+            }
+        }
+        self.name_type(name)
     }
 
     /// Types a lambda, checking its body and classifying each capture.
@@ -153,6 +174,7 @@ impl Checker<'_, '_> {
             .map(|param| self.resolve_type(&param.ty))
             .collect();
 
+        let floor = self.scopes.len();
         self.push_scope();
         for info in &infos {
             self.declare(&info.name, info.ty.clone());
@@ -162,6 +184,7 @@ impl Checker<'_, '_> {
         }
 
         self.lambda_captures.push(infos.clone());
+        self.lambda_floors.push(floor);
         let returns = match body {
             LambdaBody::Expr(value) => {
                 // An expression body may be `void` (for example a lambda that
@@ -184,6 +207,7 @@ impl Checker<'_, '_> {
                 inferred.unwrap_or_else(Ty::void)
             }
         };
+        self.lambda_floors.pop();
         self.lambda_captures.pop();
         self.pop_scope();
 

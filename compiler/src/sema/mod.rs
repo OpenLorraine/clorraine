@@ -124,6 +124,10 @@ struct Checker<'a, 'd> {
     /// The capture lists of the lambdas currently being checked, innermost
     /// last. A body write or move of a name found here is a capture error.
     lambda_captures: Vec<Vec<CaptureInfo>>,
+    /// The scope depth at each lambda's entry, innermost last. A body read
+    /// that resolves below the innermost floor names an enclosing lexical
+    /// binding, so it is legal only when the capture list names it.
+    lambda_floors: Vec<usize>,
     /// The return type inferred for each block-bodied lambda currently being
     /// checked, innermost last. Each `return` in the body records the first
     /// non-`void` value type here, so a block body gets the same return type an
@@ -158,6 +162,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             next_closure_id,
             closures: Vec::new(),
             lambda_captures: Vec::new(),
+            lambda_floors: Vec::new(),
             lambda_returns: Vec::new(),
             diagnostics,
             profile,
@@ -350,6 +355,20 @@ impl<'a, 'd> Checker<'a, 'd> {
     fn error(&mut self, code: &'static str, message: impl Into<String>, help: &str, span: Span) {
         self.diagnostics
             .push(Diagnostic::error(code, message, span).with_help(help));
+    }
+
+    /// The depth of the innermost scope that binds `name`, if any.
+    ///
+    /// Scope depth grows inward from the function scope. The capture check
+    /// compares a read's binding depth with the innermost lambda's floor: a
+    /// binding below the floor belongs to an enclosing function or lambda and
+    /// must appear in the reading lambda's capture list.
+    fn name_scope_depth(&self, name: &str) -> Option<usize> {
+        self.scopes
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(depth, scope)| scope.contains_key(name).then_some(depth))
     }
 
     /// The capture mode of `name` in the innermost enclosing lambda that

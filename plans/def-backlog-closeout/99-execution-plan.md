@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 13:16
-> **Progress**: 33/44 tasks (75%)
+> **Last Updated**: 2026-10-04 13:18
+> **Progress**: 35/44 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -672,12 +672,21 @@ host C build), the filed DEF-69 shape. Logs: `/tmp/opencode/verify-5.1.2-red.log
 **Reference**: [03-05](03-05-capture-diagnostic.md) §Proposed Changes
 **Objective**: Reject an unlisted enclosing read with the scope-floor check.
 
-- [ ] 5.2.1 Implement the scope-floor capture check in the lambda checker — `compiler/src/sema/expr.rs`, `compiler/src/sema/mod.rs`
-- [ ] 5.2.2 Run the spec cases, the golden, and `spec/check.sh`; record the green phase
+- [x] 5.2.1 Implement the scope-floor capture check in the lambda checker — `compiler/src/sema/expr.rs`, `compiler/src/sema/mod.rs` ✅ (completed: 2026-10-04 13:18)
+- [x] 5.2.2 Run the spec cases, the golden, and `spec/check.sh`; record the green phase ✅ (completed: 2026-10-04 13:18)
 
 **Deliverables**:
-- [ ] DEF-69 fix
-- [ ] `spec/check.sh` and `make check` green
+- [x] DEF-69 fix
+- [x] `spec/check.sh` and `make check` green
+
+**Green-phase evidence (2026-10-04 13:18)** — the check records each lambda's scope floor
+(`lambda_floors`) and reports `E10405` when a body read resolves below the floor (an enclosing
+function local/parameter or an outer lambda's capture) without appearing in the capture list;
+module-level names stay above every floor. `cargo test --test def_backlog_closeout_spec_test
+--test compile_fail_spec_test`: 42 passed / 0 failed and 3 passed / 0 failed. `make check`: exit 0,
+42 suites green, including `spec/check.sh` (27 files, 105 compile-fail tests). The red cases now
+hold: `E10405_unlisted_capture.clo` reports `error E10405: lambda reads 'n' without listing it`,
+and `should_reject_a_nested_lambda_that_reads_the_outer_capture_without_listing_it` rejects.
 
 **Verify**: `make check`
 
