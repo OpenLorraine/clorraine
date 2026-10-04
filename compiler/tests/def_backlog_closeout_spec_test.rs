@@ -1471,3 +1471,137 @@ func main(): i32 {
     assert_exit("closeout-p3r23", &output, 3);
     assert_no_asan("closeout-p3r23", &output);
 }
+
+/// A deferred return from a do-while body releases the live condition
+/// temporary.
+///
+/// The condition `grow().count > 0 && i < 2` materializes an array at the
+/// bottom of each completed pass. The body registers a `defer` that returns on
+/// the second pass, and that return leaves the loop without ever evaluating
+/// the condition again. The array materialized after the first pass is still
+/// owned at that point, so the return must release it. The program answers
+/// two, and the sanitizer path reports a leak whenever the release is missing.
+#[test]
+fn should_release_the_condition_temporary_when_a_deferred_return_leaves_a_do_while_body() {
+    let source = r#"module spec.closeout.st16;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        defer {
+            if (i == 2) {
+                return i;
+            }
+        }
+    } while (grow().count > 0 && i < 2);
+    return 0;
+}
+"#;
+    let output = run_memory("closeout-st16-deferred", source);
+    assert_exit("closeout-st16-deferred", &output, 2);
+    assert_no_asan("closeout-st16-deferred", &output);
+}
+
+/// A deferred return from a while body keeps the condition release it already
+/// carries and adds no second one.
+///
+/// A `while` lowers its condition before the body, so the condition's owned
+/// temporary already has its release when the body registers the defer; the
+/// return inside the defer must keep that release unchanged. The program
+/// answers two, and the sanitizer path stays clean.
+#[test]
+fn should_stay_clean_when_a_deferred_return_leaves_a_while_body() {
+    let source = r#"module spec.closeout.st18;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (grow().count > 0 && i < 2) {
+        i = i + 1;
+        defer {
+            if (i == 2) {
+                return i;
+            }
+        }
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("closeout-st18-deferred", source);
+    assert_exit("closeout-st18-deferred", &output, 2);
+    assert_no_asan("closeout-st18-deferred", &output);
+}
+
+/// A deferred return that never fires leaves every loop exit's release alone.
+///
+/// Both loops register a deferred block whose return never runs, so the exits
+/// are `break` and the false condition, and each exit is followed by a return
+/// after the loop. The condition still materializes an array temporary, so
+/// every path must release it exactly once: a duplicated release aborts in the
+/// C library and a missing one leaks under AddressSanitizer. The first helper
+/// answers twenty and the second answers sixty, so `main` answers eighty.
+#[test]
+fn should_keep_one_release_per_exit_when_a_deferred_return_is_not_taken() {
+    let source = r#"module spec.closeout.st19;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func leaveByBreak(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        defer {
+            if (i == 99) {
+                return i;
+            }
+        }
+        if (i == 2) {
+            break;
+        }
+    } while (grow().count > 0 && i < 5);
+    return i * 10;
+}
+
+func leaveByFallThrough(): i32 {
+    let i: i32 = 5;
+    do {
+        i = i + 1;
+        defer {
+            if (i == 99) {
+                return i;
+            }
+        }
+    } while (grow().count > 0 && i < 5);
+    return i * 10;
+}
+
+func main(): i32 {
+    return leaveByBreak() + leaveByFallThrough();
+}
+"#;
+    let output = run_memory("closeout-st19-paths", source);
+    assert_exit("closeout-st19-paths", &output, 80);
+    assert_no_asan("closeout-st19-paths", &output);
+}

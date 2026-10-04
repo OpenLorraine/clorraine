@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 12:01
-> **Progress**: 24/44 tasks (55%)
+> **Last Updated**: 2026-10-04 12:19
+> **Progress**: 26/44 tasks (59%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -526,19 +526,39 @@ spurious `W10001` on `raw?`).
 
 ## Phase 4: Defer condition release (DEF-68)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `7e53c3121f147626046bedd0d2770cefbe4ee92c`
+> **Expected modification set**: `compiler/tests/def_backlog_closeout_spec_test.rs`,
+> `compiler/tests/def_backlog_closeout_impl_test.rs`, `compiler/src/own/loops.rs`
 
 ### Step 4.1: Specification Tests
 
 **Reference**: [03-04](03-04-defer-condition-release.md) · [AR-7](00-ambiguity-register.md)
 **Objective**: Pin the condition release on a deferred return and the unchanged paths.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from ST-16 – ST-19 — `compiler/tests/def_backlog_closeout_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and record the red phase (ST-16 leaks; ST-17/18 pass, justified; ST-19 pins the boundary)
+- [x] 4.1.1 [spec-author] Write specification tests from ST-16 – ST-19 — `compiler/tests/def_backlog_closeout_spec_test.rs` ✅ (completed: 2026-10-04 12:17)
+- [x] 4.1.2 Run the spec suite and record the red phase (ST-16 leaks; ST-17/18 pass, justified; ST-19 pins the boundary) ✅ (completed: 2026-10-04 12:19)
 
 **Deliverables**:
-- [ ] Specification suite with ST-16 – ST-19
-- [ ] Red-phase evidence
+- [x] Specification suite with ST-16 – ST-19
+- [x] Red-phase evidence
+
+**Red-phase evidence (2026-10-04 12:19)** — the host ASan oracle (gcc 13,
+`-fsanitize=address`, `ASAN_OPTIONS=detect_leaks=1:symbolize=0`) on the three new programs at the
+baseline tree `7e53c312`:
+
+| Case | Program | Exit | Sanitizer output |
+| ---- | ------- | ---- | ---------------- |
+| ST-16 | `closeout-st16-deferred` (`do ... while (grow().count > 0 && i < 2)`, deferred return on the second pass) | 1 | LeakSanitizer: direct 16 B + indirect 4 B = 20 bytes in 2 allocations — the filed reproduction |
+| ST-18 | `closeout-st18-deferred` (same body under `while`) | 2 | none |
+| ST-19 | `closeout-st19-paths` (`break` + fall-through exits, never-taken deferred return) | 80 | none |
+
+ST-17 reuses the existing pin `should_release_the_condition_temporary_when_a_do_while_body_returns_early`
+(direct early return, owned condition temporary) in `def_backlog_completion_spec_test.rs:1125`,
+green. The closeout suite runs 35/35 in the container at the baseline (the missing release is
+observable only under the sanitizer); `make check` green (42 suites). In-container `RDC_ASAN` is
+not usable for leak detection (the LSan reporting path loops on `AddressSanitizer:DEADLYSIGNAL`
+until the harness kill at 30 s), which matches the plan's host-probe oracle policy; the host probe
+is authoritative.
 
 **Verify**: `make check`
 
