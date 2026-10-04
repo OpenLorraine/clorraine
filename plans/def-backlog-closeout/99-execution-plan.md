@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-04 02:01
-> **Progress**: 13/44 tasks (30%)
+> **Progress**: 14/44 tasks (32%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -275,7 +275,7 @@ pin's red state is preserved (an abort leaves no exit code, failing the exit-zer
 
 ### Step 2.3: Implementation Tests & Hardening
 
-- [ ] 2.3.1 Write implementation tests for the intrinsic-argument release shape and the guard deferral — `compiler/tests/def_backlog_closeout_impl_test.rs`
+- [x] 2.3.1 Write implementation tests for the intrinsic-argument release shape and the guard deferral — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 02:02)
 - [ ] 2.3.2 Run the ST-8/10/11 host-ASan probes and `cargo test` for both suites
 - [ ] 2.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
 

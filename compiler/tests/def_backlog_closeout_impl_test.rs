@@ -554,3 +554,200 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// The plain `len` call result gains an owner and is released once.
+///
+/// The intrinsic only borrows its argument, so an unnamed string call result
+/// has no binding to drop and would leak. The emitted unit must store the call
+/// into a named local, read the length through that local, and keep the
+/// scope search to exactly one cleanup path. The exit code proves the value
+/// survived the read; a release regression aborts in the C library.
+#[test]
+fn should_bind_and_release_once_when_len_reads_a_string_call_result() {
+    let source = r#"module impl.closeout.exprlen;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    return i32(len(stringOf("abc")));
+}
+"#;
+    let emitted = emit_host("expr-len", source);
+    assert_contains(
+        "expr-len",
+        &emitted,
+        "__cl_owned0 = cl_std_text_stringOf",
+    );
+    assert_contains("expr-len", &emitted, "(cl_string_view(__cl_owned0)).len");
+    assert_absent(
+        "expr-len",
+        &emitted,
+        "(cl_string_view(cl_std_text_stringOf",
+    );
+    let output = run_host("expr-len-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "expr-len-run: expected exit 3; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The dot-`len` receiver on a call result gains the same owner.
+///
+/// `xs.len()` is the receiver-taking spelling of the intrinsic, so its
+/// receiver must travel through the same binding; otherwise the string
+/// returned by the call leaks. The case pins the binding and the read through
+/// it, and the pinned exit code proves the receiver is alive for the read.
+#[test]
+fn should_bind_the_receiver_when_the_dot_len_form_reads_a_call_result() {
+    let source = r#"module impl.closeout.exprdot;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    return i32(stringOf("a").len());
+}
+"#;
+    let emitted = emit_host("expr-dot", source);
+    assert_contains(
+        "expr-dot",
+        &emitted,
+        "__cl_owned0 = cl_std_text_stringOf",
+    );
+    assert_contains("expr-dot", &emitted, "(cl_string_view(__cl_owned0)).len");
+    assert_absent(
+        "expr-dot",
+        &emitted,
+        "(cl_string_view(cl_std_text_stringOf",
+    );
+    let output = run_host("expr-dot-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "expr-dot-run: expected exit 1; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A guarded `len` argument is filled inside the guard and released once.
+///
+/// The right side of `&&` runs only on the taken path, so the argument's
+/// binding cannot be a statement before the branch: the emitted condition must
+/// fill the materialized temporary in the same expression that measures it,
+/// and the statement's cleanup releases whatever the taken path filled. The
+/// case pins the fill-inside-the-condition shape and the pinned exit code.
+#[test]
+fn should_defer_the_fill_to_the_guard_when_a_guarded_len_call_reads_a_call_result() {
+    let source = r#"module impl.closeout.exprguard;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func make(): String {
+    calls = calls + 1;
+    return stringOf("abc");
+}
+
+func guarded(flag: bool): i32 {
+    let hit: bool = flag && len(make()) == 3;
+    if (hit && calls == 1) {
+        return 3;
+    }
+    if (!hit && calls == 0) {
+        return 5;
+    }
+    return 99;
+}
+
+func main(): i32 {
+    return guarded(true);
+}
+"#;
+    let emitted = emit_host("expr-guard", source);
+    assert_contains(
+        "expr-guard",
+        &emitted,
+        "__cl_tmp0 = cl_impl_closeout_exprguard_make()",
+    );
+    assert_contains("expr-guard", &emitted, "flag && ((");
+    assert_absent(
+        "expr-guard",
+        &emitted,
+        "(cl_string_view(cl_impl_closeout_exprguard_make())",
+    );
+    let output = run_host("expr-guard-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "expr-guard-run: expected exit 3; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A duplicable argument needs no owner and stays inline.
+///
+/// A fixed-array literal and a static string own nothing to release, so the
+/// argument stays inline and no owned local appears. An emitted local that is
+/// never read would also be rejected by the strict warning set, so the case
+/// pins both the absence of the binding and a successful strict build.
+#[test]
+fn should_leave_a_duplicable_argument_inline_when_len_reads_it() {
+    let source = r#"module impl.closeout.exprdup;
+
+func main(): i32 {
+    return i32(len([1, 2])) + i32(len("hi"));
+}
+"#;
+    let emitted = emit_host("expr-dup", source);
+    assert_absent("expr-dup", &emitted, "__cl_owned");
+    let output = run_host("expr-dup-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "expr-dup-run: expected exit 4; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A may-lend call result is not bound: its argument's owner releases it.
+///
+/// A generic callee that returns its lend parameter hands back storage the
+/// caller already owns through the argument. Binding that result into a second
+/// owned local would release the same storage twice, so the result stays an
+/// inline read of the argument's binding. The exit code proves the alias is
+/// intact and the storage is released once.
+#[test]
+fn should_not_bind_a_may_lend_result_when_len_reads_a_reborrow_call() {
+    let source = r#"module impl.closeout.exprlend;
+
+import { String, stringOf } from std.text;
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func outer<T>(x: T): T {
+    return apply(x, [x] (y: T) => y);
+}
+
+func main(): i32 {
+    return i32(len(outer<String>(stringOf("abc"))));
+}
+"#;
+    let emitted = emit_host("expr-lend", source);
+    assert_absent("expr-lend", &emitted, "__cl_owned1");
+    assert_contains(
+        "expr-lend",
+        &emitted,
+        "(cl_string_view(cl_outer__String(__cl_owned0))).len",
+    );
+    let output = run_host("expr-lend-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "expr-lend-run: expected exit 3; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
