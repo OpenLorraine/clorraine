@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 14:26
+> **Last Updated**: 2026-10-04 14:29
 > **Progress**: 38/44 tasks (86%)
 > **CodeOps Artifact Schema**: 1
 
@@ -757,7 +757,7 @@ observations are filed as DEF-91 – DEF-94.
 **Objective**: Prove the whole plan, record the evidence, and close the roadmap rows.
 
 - [x] 6.1.1 Run `make verify` (all hosted-amiga cross-toolchain legs) ✅ (completed: 2026-10-04 14:27) — `make check` 42 suites green; `spec/check.sh` OK; `corpus-amiga` all portable programs match (vamos), vbcc build warning-free, interrupt-counter and graphics built; `corpus-fs-uae` interrupt-counter and graphics outputs match; `run-fault-amiga` all six faults match; `verify: all legs passed`
-- [ ] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh`
+- [x] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh` ✅ (completed: 2026-10-04 14:29)
 - [ ] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done
 - [ ] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change
 - [ ] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included)
@@ -765,11 +765,36 @@ observations are filed as DEF-91 – DEF-94.
 
 **Deliverables**:
 - [ ] All verification passing
-- [ ] Close-out probe runner with recorded results
+- [x] Close-out probe runner with recorded results
 - [ ] Updated `AGENTS.md` and roadmap
 - [ ] Close-out review with no open critical/major finding
 
 **Verify**: `make verify`
+
+**Close-out probe runner evidence (2026-10-04 14:29)** — `bash
+build/def-backlog-closeout-probes/run-def-backlog-closeout.sh` exits 0; every run probe reaches its
+pinned exit under host AddressSanitizer with leak detection and prints no sanitizer report, and the
+front-end probe is rejected with `E10405` and writes no translation unit:
+
+| Probe | Defect (ST) | Exit | Sanitizer output |
+| ----- | ----------- | ---- | ---------------- |
+| `def63_guarded_member.clo` | DEF-63 (ST-1) | 7 | none |
+| `def64_aggregate_index.clo` | DEF-64 (ST-3) | 3 | none |
+| `def65_nonnull_slot.clo` | DEF-65 (ST-12) | 3 | none |
+| `def65_str_slot.clo` | DEF-65 (ST-14) | 3 | none |
+| `def66_slice_store.clo` | DEF-66 (ST-5) | 3 | none |
+| `def66_slice_take.clo` | DEF-66 (ST-6) | 3 | none |
+| `def66_len_store_literal.clo` | DEF-66 + DEF-67 chained literal spelling from the Phase 1 note | 3 | none |
+| `def67_len_call.clo` | DEF-67 (ST-8a) | 3 | none |
+| `def67_len_store.clo` | DEF-67 (ST-8b) | 1 | none |
+| `def67_dot_len.clo` | DEF-67 (ST-9) | 1 | none |
+| `def67_len_guard.clo` | DEF-67 (ST-10) | 3 | none |
+| `def67_storeat_regression.clo` | DEF-67 (ST-11) | 3 | none |
+| `def68_defer_return.clo` | DEF-68 (ST-16) | 2 | none |
+| `def69_unlisted_capture.clo` | DEF-69 rejection | `error E10405`, no C written | — |
+
+The Phase 1 follow-up note is satisfied: the literal `i32(len(storeSlice(...)))` spelling now runs
+clean with no expression-temporary leak.
 
 ---
 
