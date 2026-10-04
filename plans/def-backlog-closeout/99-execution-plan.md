@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 12:21
-> **Progress**: 30/44 tasks (68%)
+> **Last Updated**: 2026-10-04 12:42
+> **Progress**: 31/44 tasks (70%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -593,18 +593,38 @@ which it did not at the baseline.
 
 - [x] 4.3.1 Write implementation tests for the deferred return's release list and the post-loop return's absence of releases — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 12:21)
 - [x] 4.3.2 Run the ST-16 host-ASan probe and `cargo test` for both suites ✅ (completed: 2026-10-04 12:21)
-- [ ] 4.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+- [x] 4.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-04 12:42)
 
 **Deliverables**:
 - [x] Implementation suite for the release shape
 - [x] Clean probe matrix
-- [ ] Phase review with no open critical/major finding
+- [x] Phase review with no open critical/major finding
 
 **Implementation-test and probe evidence (2026-10-04 12:21)** — both suites
 (`def_backlog_closeout_impl_test` 27 passed, `def_backlog_closeout_spec_test` 35 passed); the host
 ASan probes exit 2/2/80 with no sanitizer output; `make check` green (42 suites). The two new
 implementation cases pin the emitted release between the deferred return's assignment and its
 return, and the post-loop return's single exit release with no appended duplicate.
+
+**Phase 4 review findings (2026-10-04 12:42)** — four reviewers dispatched in parallel on the phase
+diff (baseline `17bcc7d`, head `3341dfb`): correctness via the generic reviewer role, memory safety
+and emission integrity via the project auditors, semantics via the generic reviewer role (the
+manual-only semantics role fallback). No in-scope critical or major finding; no fix landed, so no
+bounded re-review applies.
+
+| Lens | Result |
+| ---- | ------ |
+| Correctness | Clean. The mandatory red check reproduced: with the walk hunk reverted, `should_release_the_condition_temporary_when_a_deferred_return_leaves_the_loop` fails (26/1) and the post-loop case is a regime pin; floors, dedupe, determinism, single `append_return_releases`, and the modification set hold; baseline tree matches `17bcc7d^{tree}` |
+| Memory safety | Clean. 20+ host-ASan probes (ST-16, nested loops with both temps live, outer-scope defer, two defers, deferred break/continue, scope-end defer, first-pass return, two condition calls): one null-safe release per deferred return, no leak, use-after-free, or double free; the baseline 20-byte reproduction confirmed independently |
+| Emission integrity | Clean. 938 programs × 3 profiles (2814 runs): 0 status changes, 8 byte diffs, all the intended deferred-return releases (4 programs × host + hosted-amiga); 1664 strict unit builds with 0 introduced failures; all changed units strict-clean |
+| Semantics | Clean. Release exactly once on every actual exit; defer order, `body_floor`/`release_floor` boundaries, and nested-loop unions correct; `record_release_events` aligned with the appended returns; no language rule changed; suites 35 spec / 27 impl / 33 completion green |
+
+Report-only notes: two error-table rows in `03-04` (direct + deferred dedupe, nested loops) are
+probe-verified but unpinned in committed tests (`SR-401`; the close-out probe runner covers them);
+the spec suite alone is not a red/green oracle without the host sanitizer (`SR-402`, the documented
+`RDC_ASAN` policy); one nested-in-defer path emits a null-safe second release whose effective count
+stays one (`SR-403`, no action). The reviewers' pre-existing, base-identical defects are filed as
+DEF-84 – DEF-90; none is caused by this phase.
 
 **Verify**: `make check`
 
