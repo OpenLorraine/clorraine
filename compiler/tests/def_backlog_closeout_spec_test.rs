@@ -1313,3 +1313,161 @@ func main(): i32 {
     assert_exit("closeout-p3f4", &output, 4);
     assert_no_asan("closeout-p3f4", &output);
 }
+
+/// A wrong-typed place reaching an out-slot inside a generic body is rejected.
+///
+/// The body is accepted while the slot type is still a parameter, so the
+/// instantiation audit applies the exact-place rule once `outer<str?>` fixes
+/// the slot to `str?`; the `i32` place cannot receive the write.
+#[test]
+fn should_reject_when_a_wrong_typed_place_reaches_an_out_slot_inside_a_generic_body() {
+    let source = r#"module spec.closeout.p3r21;
+
+func fill<T>(take v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func outer<T>(take v: T): i32 {
+    let i: i32 = 7;
+    fill<T>(v, borrow i);
+    return i;
+}
+
+func main(): i32 {
+    return outer<str?>("xyz");
+}
+"#;
+    assert_rejected("closeout-p3r21", source, "E10200");
+}
+
+/// A widened dot-call receiver reaching an out-slot is rejected.
+///
+/// The receiver is the first parameter of the receiver-taking call, so a
+/// nullable borrow receiver takes the same exact-place rule as a written
+/// argument: a `String` receiver cannot widen into a `String?` slot.
+#[test]
+fn should_reject_when_a_widened_receiver_reaches_an_out_slot_through_a_dot_call() {
+    let source = r#"module spec.closeout.p3r22;
+
+import { String, stringOf } from std.text;
+
+func fill(borrow slot: String?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("abc");
+    owned.fill();
+    return i32(len(owned));
+}
+"#;
+    assert_rejected("closeout-p3r22", source, "E10200");
+}
+
+/// A valid parameter-typed nullable slot still accepts a dot-call.
+///
+/// The declared slot type mentions a type parameter, so the exact-place rule
+/// waits for the instantiation; the `i32[]?` place is exact and the call is
+/// accepted with the receiver as the taken value.
+#[test]
+fn should_run_when_a_dot_call_passes_an_exact_place_to_a_parameter_typed_slot() {
+    let source = r#"module spec.closeout.p3r26;
+
+func prep<T>(take v: T, borrow slot: T[]?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let value: i32 = 1;
+    let xs: i32[]? = null;
+    value.prep(borrow xs);
+    return 0;
+}
+"#;
+    let output = run_memory("closeout-p3r26", source);
+    assert_exit("closeout-p3r26", &output, 0);
+    assert_no_asan("closeout-p3r26", &output);
+}
+
+/// Two instances that differ only by type-argument nullability both build.
+///
+/// `pick<String>` and `pick<String?>` are distinct instances: the nullable
+/// argument keys a distinct symbol, so the two emitted definitions do not
+/// collide.
+#[test]
+fn should_build_when_two_instances_differ_only_by_type_argument_nullability() {
+    let source = r#"module spec.closeout.p3r24;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let one: i32 = pick<String>(stringOf("ab"), stringOf("cd"));
+    let two: i32 = pick<String?>(stringOf("ef"), null);
+    return one + two + 4;
+}
+"#;
+    let output = run_memory("closeout-p3r24", source);
+    assert_exit("closeout-p3r24", &output, 4);
+    assert_no_asan("closeout-p3r24", &output);
+}
+
+/// A nested null conditional arm is measured through the zero view.
+///
+/// The chosen nested arm is the string, so the run measures three; the null
+/// arm would have been an invalid C comparison without the zero-view form.
+#[test]
+fn should_run_when_a_nested_conditional_arm_is_null() {
+    let source = r#"module spec.closeout.p3r25;
+
+func main(): i32 {
+    let a: bool = true;
+    let b: bool = false;
+    let view: str? = a ? (b ? null : "abc") : "z";
+    if (view == null) {
+        return 7;
+    }
+    return i32(len(view));
+}
+"#;
+    let output = run_memory("closeout-p3r25", source);
+    assert_exit("closeout-p3r25", &output, 3);
+    assert_no_asan("closeout-p3r25", &output);
+}
+
+/// A generic caller instantiating a generic callee with the same parameter
+/// name still passes the address of its exact place.
+///
+/// The caller's type parameter and the callee's share the name `T`; the
+/// callee's instance arguments must decide its slot type, so the write reaches
+/// the caller's slot and the run measures three.
+#[test]
+fn should_write_through_when_a_generic_caller_instantiates_a_generic_callee() {
+    let source = r#"module spec.closeout.p3r23;
+
+import { String, stringOf } from std.text;
+
+func inner<T>(take v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func outer<T>(take v: T): i32 {
+    let slot: String? = null;
+    inner<String?>(v, borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot));
+}
+
+func main(): i32 {
+    return outer<String>(stringOf("xyz"));
+}
+"#;
+    let output = run_memory("closeout-p3r23", source);
+    assert_exit("closeout-p3r23", &output, 3);
+    assert_no_asan("closeout-p3r23", &output);
+}

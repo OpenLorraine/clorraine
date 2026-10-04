@@ -482,7 +482,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let value_ty = self.ty(expr);
-        if value_ty.nullable && !expected.nullable && !expected.is_unknown() {
+        // A type that still mentions a parameter defers to the instance audit,
+        // exactly as the conversion check defers it.
+        if value_ty.nullable
+            && !expected.nullable
+            && !expected.is_unknown()
+            && !crate::types::contains_param(expected)
+        {
             self.check_nonnull_expr(expr, span);
         }
     }

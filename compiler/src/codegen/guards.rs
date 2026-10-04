@@ -360,12 +360,15 @@ impl<'a> Emitter<'a> {
                 condition,
                 then_value,
                 else_value,
-            } => format!(
-                "({} ? {} : {})",
-                self.guarded_value(condition),
-                self.guarded_value(then_value),
-                self.guarded_value(else_value)
-            ),
+            } => {
+                let result = self.substitute(&value.ty);
+                format!(
+                    "({} ? {} : {})",
+                    self.guarded_value(condition),
+                    self.conditional_arm(then_value, &result),
+                    self.conditional_arm(else_value, &result)
+                )
+            }
             _ => {
                 let mut guards: Vec<String> = Vec::new();
                 self.guard_expressions(value, &mut guards);

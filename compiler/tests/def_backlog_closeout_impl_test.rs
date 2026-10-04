@@ -1189,3 +1189,68 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// Two instances that differ only by type-argument nullability get distinct
+/// symbols.
+///
+/// `pick<String>` and `pick<String?>` are distinct instances, so the instance
+/// key must distinguish nullability; a collision would emit the same C
+/// definition twice.
+#[test]
+fn should_key_instance_symbols_by_nullability_when_only_type_argument_nullability_differs() {
+    let source = r#"module impl.closeout.instkey;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let one: i32 = pick<String>(stringOf("ab"), stringOf("cd"));
+    let two: i32 = pick<String?>(stringOf("ef"), null);
+    return one + two + 4;
+}
+"#;
+    let emitted = emit_host("inst-key", source);
+    assert_contains("inst-key", &emitted, "cl_pick__String(");
+    assert_contains("inst-key", &emitted, "cl_pick__StringQ(");
+    let output = run_host("inst-key-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "inst-key-run: expected exit 4; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A nested null conditional arm renders the zero view.
+///
+/// The nested arm's null literal is typed by the outer result, so the emitted
+/// expression uses `cl_zero_ClStr()` rather than a null pointer that would not
+/// build against the view struct.
+#[test]
+fn should_render_the_zero_view_when_a_nested_conditional_arm_is_null() {
+    let source = r#"module impl.closeout.nestnull;
+
+func main(): i32 {
+    let a: bool = true;
+    let b: bool = false;
+    let view: str? = a ? (b ? null : "abc") : "z";
+    if (view == null) {
+        return 7;
+    }
+    return i32(len(view));
+}
+"#;
+    let emitted = emit_host("nest-null", source);
+    assert_contains("nest-null", &emitted, "cl_zero_ClStr()");
+    assert_absent("nest-null", &emitted, "? NULL");
+    let output = run_host("nest-null-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "nest-null-run: expected exit 3; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

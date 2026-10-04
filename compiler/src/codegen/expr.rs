@@ -18,7 +18,9 @@ use super::render::{
     binary_token, element_type, escape_c_string, float_literal, index_text, unsigned_c,
     unsigned_scalar,
 };
-use super::types::{c_type, is_struct_view, scalar_of, type_key, zero_view_helper};
+use super::types::{
+    c_type, instance_arg_key, is_struct_view, scalar_of, type_key, zero_view_helper,
+};
 use super::Emitter;
 
 impl<'a> Emitter<'a> {
@@ -339,10 +341,30 @@ impl<'a> Emitter<'a> {
     /// Renders one conditional arm, giving a null arm the result's empty value.
     ///
     /// A null arm is typed by the conditional's result, so a struct-typed view
-    /// result needs its zero view rather than the untyped null literal.
-    fn conditional_arm(&self, value: &Value, result: &Ty) -> String {
+    /// result needs its zero view rather than the untyped null literal. A
+    /// nested conditional is not typed by the context on its own, so the outer
+    /// result type carries into its null arms.
+    pub(super) fn conditional_arm(&self, value: &Value, result: &Ty) -> String {
         if matches!(value.kind, ValueKind::Null) {
             return self.null_value(result);
+        }
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        {
+            let nested = if value.ty.is_unknown() {
+                result.clone()
+            } else {
+                self.substitute(&value.ty)
+            };
+            return format!(
+                "({} ? {} : {})",
+                self.value(condition),
+                self.conditional_arm(then_value, &nested),
+                self.conditional_arm(else_value, &nested)
+            );
         }
         self.guarded_value(value)
     }
@@ -544,7 +566,7 @@ impl<'a> Emitter<'a> {
             } else {
                 let keys: Vec<String> = type_args
                     .iter()
-                    .map(|ty| type_key(&self.substitute(ty)))
+                    .map(|ty| instance_arg_key(&self.substitute(ty)))
                     .collect();
                 format!("cl_{callee}__{}", keys.join("_"))
             };

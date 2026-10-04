@@ -770,31 +770,32 @@ impl<'a> Emitter<'a> {
     /// The parameter types of a known user function under the call's explicit
     /// type arguments.
     ///
-    /// An explicit instantiation fixes the callee's own type parameters, so the
-    /// rendered argument list must use the instance's parameter types rather
-    /// than the caller's. Without type arguments the call is inferred and
-    /// [`Self::callee_param_types`] already carries the substitution; an `ffi`
-    /// callee has no type parameters and keeps its own signature.
+    /// The call's own type arguments fix the callee's parameters, so the
+    /// caller's substitution must not leak into them: the declared parameter
+    /// types are resolved fresh and the instance substitution is applied. A
+    /// type argument that mentions the caller's parameter is substituted first.
+    /// Without type arguments the call is inferred and
+    /// [`Self::callee_param_types`] already carries the caller's substitution;
+    /// an `ffi` callee has no type parameters and keeps its own signature.
     pub(super) fn instance_param_types(
         &self,
         callee: &str,
         type_args: &[Ty],
     ) -> Option<Vec<Ty>> {
-        let base = self.callee_param_types(callee)?;
         if type_args.is_empty() {
-            return Some(base);
+            return self.callee_param_types(callee);
         }
         let info = self.resolve_function(callee)?;
-        let names: Vec<String> = info
-            .decl
-            .type_params
-            .iter()
-            .map(|param| param.name.clone())
-            .collect();
+        let names = type_param_names(info.decl);
         let concrete: Vec<Ty> = type_args.iter().map(|ty| self.substitute(ty)).collect();
         Some(
-            base.iter()
-                .map(|ty| substitute_instance(ty, &names, &concrete))
+            info.decl
+                .params
+                .iter()
+                .map(|param| {
+                    let ty = resolve_ty(&param.ty, &names, &self.sema.table);
+                    substitute_instance(&ty, &names, &concrete)
+                })
                 .collect(),
         )
     }

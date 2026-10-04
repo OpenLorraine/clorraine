@@ -45,6 +45,19 @@ pub(super) fn is_struct_view(ty: &Ty) -> bool {
         || matches!(&ty.kind, TyKind::Array { extents, .. } if extents.iter().any(Option::is_none))
 }
 
+/// The symbol key of one instance type argument.
+///
+/// Nullability changes the ABI of a nullable borrow parameter, so a nullable
+/// type argument keys a distinct instance symbol. The plain [`type_key`]
+/// ignores the flag because a value spelling never carries it.
+pub(super) fn instance_arg_key(ty: &Ty) -> String {
+    if ty.nullable {
+        format!("{}Q", type_key(ty))
+    } else {
+        type_key(ty)
+    }
+}
+
 /// The C helper name returning the empty value of a struct-typed view.
 ///
 /// The helper is emitted next to the view typedefs, so an empty view in an

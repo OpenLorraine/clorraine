@@ -141,6 +141,28 @@ pub struct RequiresNotLend {
     pub span: Span,
 }
 
+/// A body's obligation that a parameter-typed nullable borrow slot receives an
+/// exact-typed place.
+///
+/// While the slot's type is still a parameter the call check cannot tell
+/// whether the instance makes the slot nullable, so the body records this duty
+/// and the per-instance audit applies the exact-place rule once the type
+/// argument is known. A substitution that leaves the slot non-nullable is
+/// accepted, matching the concrete by-value path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresOutSlotPlace {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The written argument's declared type, substituted per instance.
+    pub argument: Ty,
+    /// The slot parameter's declared type, substituted per instance.
+    pub slot: Ty,
+    /// True when the written argument is a place.
+    pub place: bool,
+    /// The call site, for the diagnostic span.
+    pub span: Span,
+}
+
 /// One emitted specialization of a lifted lambda.
 ///
 /// A lifted function inside a generic declaration is emitted once per enclosing
@@ -172,6 +194,7 @@ pub struct Monomorphization {
     obligations: Vec<CopyObligation>,
     duplicable_requirements: Vec<RequiresDuplicable>,
     not_lend_requirements: Vec<RequiresNotLend>,
+    out_slot_requirements: Vec<RequiresOutSlotPlace>,
 }
 
 impl Monomorphization {
@@ -247,5 +270,15 @@ impl Monomorphization {
     /// Every lend-move duty recorded so far.
     pub fn not_lend_requirements(&self) -> &[RequiresNotLend] {
         &self.not_lend_requirements
+    }
+
+    /// Records an out-slot place duty the generic body owes.
+    pub fn require_out_slot(&mut self, requirement: RequiresOutSlotPlace) {
+        self.out_slot_requirements.push(requirement);
+    }
+
+    /// Every out-slot place duty recorded so far.
+    pub fn out_slot_requirements(&self) -> &[RequiresOutSlotPlace] {
+        &self.out_slot_requirements
     }
 }

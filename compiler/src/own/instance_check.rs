@@ -15,6 +15,8 @@
 //! a fill inside a lifted lambda body) is left to the host C compiler, which
 //! rejects the undeclared or unsubstituted type it emits.
 
+use std::collections::BTreeSet;
+
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ir::{Function, Monomorphization, Statement, Terminator, Value, ValueKind};
 use crate::load::Loaded;
@@ -48,6 +50,61 @@ pub fn check(
     check_fill_instances(program, functions, sema, mono, diagnostics);
     check_duplicable_requirements(program, sema, mono, diagnostics);
     check_not_lend_requirements(program, sema, mono, diagnostics);
+    check_out_slot_requirements(program, mono, diagnostics);
+}
+
+/// Reports `E10200` when an out-slot duty's instance makes the slot nullable
+/// and the recorded argument is not an exact-typed place.
+///
+/// The generic body accepted the call because its slot type was still a
+/// parameter; the audit substitutes each recorded instance's type arguments,
+/// then applies the same exact-place rule the concrete call paths use. One duty
+/// reports once, at its first invalid instance.
+fn check_out_slot_requirements(
+    program: &ProgramInfo,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    let mut reported: BTreeSet<(String, u32, u32)> = BTreeSet::new();
+    for requirement in mono.out_slot_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let slot = substitute_instance(&requirement.slot, &params, &instance.args);
+            if !slot.nullable {
+                continue;
+            }
+            let argument = substitute_instance(&requirement.argument, &params, &instance.args);
+            if requirement.place && argument == slot {
+                continue;
+            }
+            let key = (
+                requirement.function.clone(),
+                requirement.span.start,
+                requirement.span.end,
+            );
+            if !reported.insert(key) {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10200",
+                    format!(
+                        "cannot convert '{}' to '{}' implicitly",
+                        argument.display(),
+                        slot.display()
+                    ),
+                    requirement.span,
+                )
+                .with_help("pass a place of the exact slot type; the callee writes through it"),
+            );
+        }
+    }
 }
 
 /// Reports `E10034` when a recorded lend move instantiates with an owning type.

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 11:41
-> **Progress**: 23/44 tasks (52%)
+> **Last Updated**: 2026-10-04 12:01
+> **Progress**: 24/44 tasks (55%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -446,12 +446,12 @@ kind from AR-3. The first cut of the parameter-type keying broke the substituted
 
 - [x] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind, the unchanged by-value path for a duplicable struct, and the rejected widened out-slot argument — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 11:15)
 - [x] 3.3.2 Run the ST-12/13 host-ASan probes, a freestanding compile, and `cargo test` for both suites ✅ (completed: 2026-10-04 11:15)
-- [~] 3.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ⏳ (implemented: 2026-10-04 11:15)
+- [x] 3.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-04 12:01)
 
 **Deliverables**:
 - [x] Implementation suite for the ABI shapes
 - [x] Clean probe matrix and freestanding compile
-- [ ] Phase review with no open critical/major finding
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 
@@ -501,6 +501,26 @@ re-run on the head:
 Both suites green together (26 spec + 23 impl); `make check` green (42 suites); the phase probes
 re-run clean (`def65_nonnull_slot` exit 3, `def65_str_slot` exit 3, no sanitizer output); the
 freestanding `str?` program compiles no-libc with `cc -ffreestanding -c`.
+
+**Re-review outcome and second fix round (2026-10-04 12:01)** — the single permitted re-review,
+scoped to the fix diff (`8c82901..ea75a19`), confirmed F3, the top-level F4 positions, and F5
+closed, and found six remaining issues; the user authorized the recommended resolution for each.
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| R2-1 + MSA-P3-01 | 🔴 CRITICAL | Inside a generic body the exact-place rule could not see the instance, and the instantiation audit had no out-slot duty, so a wrong-typed place was accepted and written through (stack-buffer-overflow / SEGV) | ✅ fixed — out-slot duties are recorded in the ownership call check (`ir::RequiresOutSlotPlace`) and audited per instance in `own/instance_check.rs`; spec case `p3r21` rejects with `E10200` |
+| R2-2 + MSA-P3-02 | 🔴 CRITICAL | The dot-call receiver bypassed the rule: a `String` receiver widened into a `String?` slot and was written through (SEGV) | ✅ fixed — `check_dot_call` applies the exact-place rule to the receiver when the callee's first parameter is an out-slot; spec case `p3r22` rejects |
+| R2-3 + NS-2 | 🔴 CRITICAL | `instance_param_types` applied the caller's substitution first, so a caller and callee sharing a type-parameter name could not bind the instance arguments (by-value argument → SEGV) | ✅ fixed — the explicit-arguments path resolves the callee's declared parameter types fresh and then applies the instance substitution; spec case `p3r23` writes through |
+| R2-4 + NS-3 | 🔴/🟠 | Instance symbols ignored nullability, so `pick<String>` and `pick<String?>` collided and the accepted program failed the C build | ✅ fixed for function instances (`instance_arg_key` appends a nullability marker at the call site and the emission); the struct-instance variant is filed as DEF-79; spec case `p3r24` and impl case `inst-key` build both instances |
+| R2-5 + NS-4 | 🟠 MAJOR | Nested conditional null arms bypassed the zero-view rendering (`a ? (b ? null : "x") : "z"`, `flag ? null : null`) | ✅ fixed — `conditional_arm` recurses with the outer result type and `guarded_value` shares the same rendering; spec case `p3r25` and impl case `nest-null` |
+| R2-6 | 🟠 MAJOR | The dot-call fix over-rejected valid parameter-typed nullable slots (`borrow slot: T[]?`) with a spurious `E10200` | ✅ fixed — the out-slot rule defers while the declared type still mentions a type parameter (the instance audit decides); spec case `p3r26` accepts and runs |
+
+Targeted verification (the re-review budget is used; no third formal pass): spec 32 + impl 25 green;
+`make check` green (42 suites); the phase ASan probes exit 3 with no sanitizer output; the
+freestanding no-libc compile is clean. New backlog rows filed for the report-only residuals:
+DEF-78 – DEF-83 (generic by-value borrow reassignment double free; struct-instance keys;
+owned-struct empty-return compound literals; nullable-slice narrowing; out-slot self-assignment;
+spurious `W10001` on `raw?`).
 
 ---
 

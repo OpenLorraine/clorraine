@@ -40,7 +40,7 @@ impl Checker<'_, '_> {
         }
         if let ExprKind::Member { base, name } = &callee.kind {
             let base_ty = self.check_value(base, None);
-            return self.check_dot_call(base_ty, name, args, base.span);
+            return self.check_dot_call(Some(base), base_ty, name, args, base.span);
         }
         if let ExprKind::Qualified(name) = &callee.kind {
             // A dotted callee whose head is a value in scope is a dot-call,
@@ -49,7 +49,7 @@ impl Checker<'_, '_> {
                 let receiver = self.qualified_receiver_type(name);
                 if let Some(member) = name.segments.last() {
                     let member = member.clone();
-                    return self.check_dot_call(receiver, &member, args, name.span);
+                    return self.check_dot_call(None, receiver, &member, args, name.span);
                 }
             }
         }
@@ -338,7 +338,14 @@ impl Checker<'_, '_> {
     /// parameter. A free-function candidate takes the receiver as its first
     /// parameter, so the receiver is checked against it and the remaining
     /// parameters are matched against the written arguments.
-    fn check_dot_call(&mut self, receiver: Ty, name: &str, args: &[Arg], span: Span) -> Ty {
+    fn check_dot_call(
+        &mut self,
+        receiver_expr: Option<&Expr>,
+        receiver: Ty,
+        name: &str,
+        args: &[Arg],
+        span: Span,
+    ) -> Ty {
         match self.dot_call(&receiver, name) {
             Some(DotCall::Field(signature)) => {
                 // A callable field carries its own parameter modes, so a
@@ -349,7 +356,24 @@ impl Checker<'_, '_> {
             }
             Some(DotCall::Function(signature)) => {
                 if let Some((receiver_param, rest)) = signature.params.split_first() {
-                    self.check_conversion(&receiver, receiver_param, span);
+                    // The receiver is a written argument at index zero, so a
+                    // nullable borrow receiver takes the same exact-place rule
+                    // as a direct call's argument.
+                    let receiver_mode = signature
+                        .modes
+                        .first()
+                        .copied()
+                        .unwrap_or(crate::ast::Mode::None);
+                    if self.is_out_slot_param(receiver_param, receiver_mode) {
+                        self.check_out_slot_receiver(
+                            receiver_expr,
+                            &receiver,
+                            receiver_param,
+                            span,
+                        );
+                    } else {
+                        self.check_conversion(&receiver, receiver_param, span);
+                    }
                     // The receiver is not a written argument, so the remaining
                     // modes line up with the written arguments; a nullable
                     // borrow parameter keeps its exact-place rule on this route.
@@ -497,12 +521,13 @@ impl Checker<'_, '_> {
     /// True when a parameter is a nullable writable lend: an ownership
     /// out-slot the callee writes and releases through.
     ///
-    /// A generic parameter type is left to the ordinary conversion check
-    /// because only an instantiation knows the concrete slot type.
+    /// A parameter type that still mentions a type parameter is left to the
+    /// ordinary conversion check (and the instantiation audit) because only an
+    /// instantiation knows the concrete slot type.
     fn is_out_slot_param(&self, param: &Ty, mode: crate::ast::Mode) -> bool {
         mode == crate::ast::Mode::Borrow
             && param.nullable
-            && !param.is_param()
+            && !crate::types::contains_param(param)
             && !param.is_unknown()
     }
 
@@ -526,6 +551,30 @@ impl Checker<'_, '_> {
         if ty == param && self.is_place(&arg.value) {
             return;
         }
+        self.report_out_slot_conversion(ty, param, arg.span);
+    }
+
+    /// Rejects a dot-call receiver that is not an exact-typed place.
+    ///
+    /// A dotted receiver is not a written argument, so its place-ness is
+    /// checked on the receiver expression when the caller has one; a qualified
+    /// name is a place by construction.
+    fn check_out_slot_receiver(
+        &mut self,
+        receiver: Option<&Expr>,
+        ty: &Ty,
+        param: &Ty,
+        span: Span,
+    ) {
+        let place = receiver.map_or(true, |expr| self.is_place(expr));
+        if place && ty == param {
+            return;
+        }
+        self.report_out_slot_conversion(ty, param, span);
+    }
+
+    /// Reports the out-slot conversion diagnostic.
+    fn report_out_slot_conversion(&mut self, ty: &Ty, param: &Ty, span: Span) {
         self.error(
             "E10200",
             format!(
@@ -534,7 +583,7 @@ impl Checker<'_, '_> {
                 param.display()
             ),
             "pass a place of the exact slot type; the callee writes through it",
-            arg.span,
+            span,
         );
     }
 

@@ -103,6 +103,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.check_dot_receiver(callee, params.first(), &mut lent);
                 }
                 self.check_arguments(args, written_params, span, &mut lent);
+                // A slot parameter whose declared type still mentions a type
+                // parameter may become a nullable out-slot only at the
+                // instance; the audit applies the exact-place rule once the
+                // type argument is known.
+                for (index, arg) in args.iter().enumerate() {
+                    let Some((mode, slot)) = written_params.get(index) else {
+                        continue;
+                    };
+                    if *mode != Mode::Borrow || !crate::types::contains_param(slot) {
+                        continue;
+                    }
+                    self.out_slot_duties.push(ir::RequiresOutSlotPlace {
+                        function: self.decl.name.clone(),
+                        argument: self.ty(&arg.value),
+                        slot: slot.clone(),
+                        place: self.place_target(&arg.value).is_some(),
+                        span: arg.span,
+                    });
+                }
             }
             Callee::Ffi(signature) => {
                 if self.is_dot_call(callee) {
