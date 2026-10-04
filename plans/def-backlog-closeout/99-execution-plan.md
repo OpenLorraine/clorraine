@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 14:31
-> **Progress**: 41/44 tasks (93%)
+> **Last Updated**: 2026-10-04 14:30
+> **Progress**: 42/44 tasks (95%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -758,13 +758,13 @@ observations are filed as DEF-91 – DEF-94.
 
 - [x] 6.1.1 Run `make verify` (all hosted-amiga cross-toolchain legs) ✅ (completed: 2026-10-04 14:27) — `make check` 42 suites green; `spec/check.sh` OK; `corpus-amiga` all portable programs match (vamos), vbcc build warning-free, interrupt-counter and graphics built; `corpus-fs-uae` interrupt-counter and graphics outputs match; `run-fault-amiga` all six faults match; `verify: all legs passed`
 - [x] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh` ✅ (completed: 2026-10-04 14:29)
-- [x] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done ✅ (completed: 2026-10-04 14:31) — `AGENTS.md` test map entry added; all seven roadmap rows verified `Done ✅`
-- [ ] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change
+- [x] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done ✅ (completed: 2026-10-04 14:29) — `AGENTS.md` test map entry added; all seven roadmap rows verified `Done ✅`
+- [x] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change ✅ (completed: 2026-10-04 14:30)
 - [ ] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included)
 - [ ] 6.1.6 Resolve close-out findings within scope, write the plan summary into this document, and mark the plan Complete in `00-index.md`
 
 **Deliverables**:
-- [ ] All verification passing
+- [x] All verification passing
 - [x] Close-out probe runner with recorded results
 - [x] Updated `AGENTS.md` and roadmap
 - [ ] Close-out review with no open critical/major finding
@@ -795,6 +795,21 @@ front-end probe is rejected with `E10405` and writes no translation unit:
 
 The Phase 1 follow-up note is satisfied: the literal `i32(len(storeSlice(...)))` spelling now runs
 clean with no expression-temporary leak.
+
+**Acceptance verification (2026-10-04 14:30)** — criteria 1 – 8 from
+[01-requirements.md](01-requirements.md) §Acceptance Criteria verified against the tree at
+`2091fe2`:
+
+| # | Criterion | Evidence | Status |
+| - | --------- | -------- | ------ |
+| 1 | All seven defects fixed; R1 – R7 each covered by a specification test and an implementation test | spec 44 / impl 31 green; per requirement: R1 guarded member take (spec `should_keep_a_guarded_member_take_clean_when_the_guard_is_true_or_false`, `should_transfer_the_member_when_an_unguarded_take_reads_a_call_result`; impl `should_bind_the_root_call_when_a_guarded_member_take_selects_it`), R2 indexed aggregate consume (spec indexed and constant-index cases; impl `should_pin_the_index_and_empty_the_selected_slot_when_an_aggregate_field_reads_a_call_result`), R3 slice temporary (spec bound/taken/non-zero-start cases; impl `should_move_the_slice_element_before_the_row_release_when_a_statement_temporary_is_bound`), R4 nullable out-slot (spec write-through cases; impl `should_spell_nullable_borrow_out_slots_as_pointers_when_the_kinds_are_passed`), R5 ownerless len argument (spec call/store/dot-len/guard cases; impl `should_bind_and_release_once_when_len_reads_a_string_call_result`), R6 do-while deferred return (spec deferred-return cases; impl `should_release_the_condition_temporary_when_a_deferred_return_leaves_the_loop`), R7 unlisted capture (spec ST-21 – ST-24 plus the member and dot-call pins; impl `should_report_the_unlisted_name_and_its_suggestion_in_the_diagnostic_text`) | ✅ |
+| 2 | Host-ASan probe matrix clean for every fixed shape | 6.1.2 runner: 13 run probes at their pinned exits, sanitizer-clean; the per-phase probe tables in this document are clean | ✅ |
+| 3 | `make check` green at every phase; `make verify` green at close-out | every phase **Verify** block; 6.1.1 `verify: all legs passed` | ✅ |
+| 4 | The only `spec/` changes are the approved `E10405` row, golden, and `ASSERTED_CODES` entry; `spec/check.sh` passes | `git diff 12b02b668370bcb93594c557ece0de9c72f8fc5b..2091fe2 -- spec/` touches exactly `spec/14-diagnostics.md` (one-row registry addition) and `spec/tests/compile-fail/E10405_unlisted_capture.clo` (new golden); the `ASSERTED_CODES` entry lives in `compiler/tests/compile_fail_spec_test.rs`; `spec/check.sh` OK (27 files, 105 compile-fail tests) | ✅ |
+| 5 | The close-out probe runner reproduces each original defect as fixed and exits zero | 6.1.2 runner exit 0 | ✅ |
+| 6 | Unaffected programs keep their emitted C | the per-phase emission-integrity audits found no unintended differences (including the Phase 5 byte-identical re-review); determinism suite and every corpus leg green in `make verify`; the close-out review re-audits the plan-start baseline against the final head | ✅ |
+| 7 | `AGENTS.md` lists the new suites; roadmap DEF-63 – DEF-69 are Done; the plan is Complete | `AGENTS.md` test map entry added; all seven roadmap rows `Done ✅`; plan Complete is written by 6.1.6 | ⏳ final step |
+| 8 | Every phase review dispatched per the matrix with blast-radius and test-integrity steps; no open critical/major finding | every phase review record in this document names the blast-radius and test-integrity results and closes with no open critical/major; the close-out review runs in 6.1.5 | ⏳ 6.1.5 |
 
 ---
 
