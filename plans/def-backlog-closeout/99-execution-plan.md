@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 12:20
-> **Progress**: 28/44 tasks (64%)
+> **Last Updated**: 2026-10-04 12:21
+> **Progress**: 30/44 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -591,14 +591,20 @@ which it did not at the baseline.
 
 ### Step 4.3: Implementation Tests & Hardening
 
-- [ ] 4.3.1 Write implementation tests for the deferred return's release list and the post-loop return's absence of releases — `compiler/tests/def_backlog_closeout_impl_test.rs`
-- [ ] 4.3.2 Run the ST-16 host-ASan probe and `cargo test` for both suites
+- [x] 4.3.1 Write implementation tests for the deferred return's release list and the post-loop return's absence of releases — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 12:21)
+- [x] 4.3.2 Run the ST-16 host-ASan probe and `cargo test` for both suites ✅ (completed: 2026-10-04 12:21)
 - [ ] 4.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
 
 **Deliverables**:
-- [ ] Implementation suite for the release shape
-- [ ] Clean probe matrix
+- [x] Implementation suite for the release shape
+- [x] Clean probe matrix
 - [ ] Phase review with no open critical/major finding
+
+**Implementation-test and probe evidence (2026-10-04 12:21)** — both suites
+(`def_backlog_closeout_impl_test` 27 passed, `def_backlog_closeout_spec_test` 35 passed); the host
+ASan probes exit 2/2/80 with no sanitizer output; `make check` green (42 suites). The two new
+implementation cases pin the emitted release between the deferred return's assignment and its
+return, and the post-loop return's single exit release with no appended duplicate.
 
 **Verify**: `make check`
 

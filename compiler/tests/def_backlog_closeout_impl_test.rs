@@ -1254,3 +1254,105 @@ func main(): i32 {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+/// A deferred return releases the condition's materialized temporary.
+///
+/// The do-while condition materializes an array after each completed pass. The
+/// body's deferred return on the second pass leaves the loop without testing
+/// the condition again, so the previous pass's array is still owned and must
+/// be released on that return. The emitted release sits between the deferred
+/// return's assignment and its return.
+#[test]
+fn should_release_the_condition_temporary_when_a_deferred_return_leaves_the_loop() {
+    let source = r#"module impl.closeout.deferrelease;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        i = i + 1;
+        defer {
+            if (i == 2) {
+                return i;
+            }
+        }
+    } while (grow().count > 0 && i < 2);
+    return 0;
+}
+"#;
+    let emitted = emit_host("defer-release", source);
+    assert_contains(
+        "defer-release",
+        &emitted,
+        "    __cl_ret = i;\n    if (__cl_tmp0.data) { FreeBuffer(__cl_tmp0.data); }\n    __cl_tmp0.data = NULL;\n    return __cl_ret;",
+    );
+    let output = run_host("defer-release-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "defer-release-run: expected exit 2; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A return after the loop gets no appended condition release.
+///
+/// The walk that sends the condition's releases to the body's returns,
+/// including a deferred return that never fires, must stay inside the loop.
+/// The post-loop return keeps exactly the exit path's release before it; no
+/// second release is appended to the return itself.
+#[test]
+fn should_not_append_a_condition_release_to_a_return_after_the_loop() {
+    let source = r#"module impl.closeout.deferoutside;
+
+import { Array, arrayNew } from std.mem;
+
+func grow(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func drain(): i32 {
+    let i: i32 = 5;
+    do {
+        i = i + 1;
+        defer {
+            if (i == 99) {
+                return i;
+            }
+        }
+    } while (grow().count > 0 && i < 5);
+    return i * 10;
+}
+
+func main(): i32 {
+    return drain();
+}
+"#;
+    let emitted = emit_host("defer-outside", source);
+    let cleaned: String = emitted
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("#line"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_contains(
+        "defer-outside",
+        &cleaned,
+        "    __cl_tmp0.data = NULL;\n    __cl_ret = (i32)((u32)i * (u32)10);\n    return __cl_ret;",
+    );
+    let output = run_host("defer-outside-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(60),
+        "defer-outside-run: expected exit 60; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
