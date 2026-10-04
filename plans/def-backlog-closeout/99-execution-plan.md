@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 14:16
+> **Last Updated**: 2026-10-04 14:26
 > **Progress**: 38/44 tasks (86%)
 > **CodeOps Artifact Schema**: 1
 
@@ -749,14 +749,14 @@ observations are filed as DEF-91 – DEF-94.
 
 ## Phase 6: Close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `5c53c90`
 
 ### Step 6.1: Verification and Documentation
 
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria
 **Objective**: Prove the whole plan, record the evidence, and close the roadmap rows.
 
-- [ ] 6.1.1 Run `make verify` (all hosted-amiga cross-toolchain legs)
+- [x] 6.1.1 Run `make verify` (all hosted-amiga cross-toolchain legs) ✅ (completed: 2026-10-04 14:27) — `make check` 42 suites green; `spec/check.sh` OK; `corpus-amiga` all portable programs match (vamos), vbcc build warning-free, interrupt-counter and graphics built; `corpus-fs-uae` interrupt-counter and graphics outputs match; `run-fault-amiga` all six faults match; `verify: all legs passed`
 - [ ] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh`
 - [ ] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done
 - [ ] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change
