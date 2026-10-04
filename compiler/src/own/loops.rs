@@ -169,6 +169,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the condition was evaluated) and reversed to newest-first; the body's
     /// return blocks — the blocks created since `body_floor` that end in a
     /// return and are reachable from the body's entry — receive the copies.
+    /// A deferred block runs through the scope cleanup ladder rather than a
+    /// CFG edge, so the walk also follows the `defer` markers found in the
+    /// reachable blocks: a return inside an executed defer must release the
+    /// condition's temporaries exactly like a direct return.
     /// The same release events are recorded at each return, so the borrow
     /// checker sees that a view of a condition temporary cannot outlive it.
     fn append_condition_releases(
@@ -197,6 +201,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 )
             {
                 returns.push(block);
+            }
+            // The marker in a registering block names its deferred block, and
+            // that block holds the deferred statements and their terminators.
+            // It is not a terminator successor, so it joins the walk here.
+            let deferred: Vec<BlockId> = self.builder.function().blocks[block as usize]
+                .statements
+                .iter()
+                .filter_map(|instr| match &instr.statement {
+                    Statement::Defer { block: defer_block, .. } => Some(*defer_block),
+                    _ => None,
+                })
+                .collect();
+            for defer_block in deferred {
+                stack.push(defer_block);
             }
             for next in &successors[block as usize] {
                 stack.push(*next);

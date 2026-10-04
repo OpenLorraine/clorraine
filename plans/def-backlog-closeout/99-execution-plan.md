@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 12:19
-> **Progress**: 26/44 tasks (59%)
+> **Last Updated**: 2026-10-04 12:20
+> **Progress**: 28/44 tasks (64%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -567,12 +567,25 @@ is authoritative.
 **Reference**: [03-04](03-04-defer-condition-release.md) §Proposed Changes
 **Objective**: Union the registered defer blocks' return successors into the condition-release append.
 
-- [ ] 4.2.1 Extend `append_condition_releases` with the defer-marker scan — `compiler/src/own/loops.rs`
-- [ ] 4.2.2 Run the spec suite and record the green phase
+- [x] 4.2.1 Extend `append_condition_releases` with the defer-marker scan — `compiler/src/own/loops.rs` ✅ (completed: 2026-10-04 12:20)
+- [x] 4.2.2 Run the spec suite and record the green phase ✅ (completed: 2026-10-04 12:20)
 
 **Deliverables**:
-- [ ] DEF-68 fix
-- [ ] `make check` green
+- [x] DEF-68 fix
+- [x] `make check` green
+
+**Green-phase evidence (2026-10-04 12:20)** — after the defer-marker scan:
+
+| Probe | Before | After |
+| ----- | ------ | ----- |
+| ST-16 host ASan (`closeout-st16-deferred`) | direct 16 B + indirect 4 B leaked, exit 1 | exit 2, no sanitizer output |
+| ST-18 host ASan (`closeout-st18-deferred`) | exit 2, clean | exit 2, clean |
+| ST-19 host ASan (`closeout-st19-paths`) | exit 80, clean | exit 80, clean |
+
+The closeout suite runs 35/35; `make check` green (42 suites). The emitted C now releases the
+condition's materialized array temporary on the deferred return
+(`__cl_ret = i; if (__cl_tmp0.data) { FreeBuffer(__cl_tmp0.data); } ... return __cl_ret;`),
+which it did not at the baseline.
 
 **Verify**: `make check`
 
