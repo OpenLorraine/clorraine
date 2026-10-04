@@ -239,6 +239,12 @@ fn assert_before(tag: &str, text: &str, first: &str, second: &str) {
 
 /// Asserts the front end rejects the program with `code` and writes no C.
 fn assert_rejected(tag: &str, source: &str, code: &str) {
+    assert_rejected_with(tag, source, code, &[]);
+}
+
+/// Asserts the front end rejects the program with `code`, that the message
+/// contains every fragment, and that no translation unit is written.
+fn assert_rejected_with(tag: &str, source: &str, code: &str, fragments: &[&str]) {
     let (_scratch, output, c_path) = compile_only(tag, source);
     assert_ne!(
         output.status.code(),
@@ -250,6 +256,12 @@ fn assert_rejected(tag: &str, source: &str, code: &str) {
         stderr.contains(&format!("error {code}:")),
         "{tag}: expected {code}; stderr:\n{stderr}"
     );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: the diagnostic does not contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
     assert!(
         !c_path.exists(),
         "{tag}: a rejected program must not produce a translation unit"
@@ -1354,5 +1366,107 @@ func main(): i32 {
         Some(60),
         "defer-outside-run: expected exit 60; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A nested lambda that lists the outer capture relays it through the inner
+/// environment.
+///
+/// Each lambda owns its own environment struct. The outer environment is built
+/// from the enclosing local, the inner environment is built from the outer
+/// environment's member, and the inner body reads its own copy. The program
+/// runs and answers four.
+#[test]
+fn should_relay_an_outer_capture_into_a_nested_environment() {
+    let source = r#"module impl.closeout.capturenest;
+
+func main(): i32 {
+    let n: i32 = 4;
+    return ([n] () => ([n] () => n)())();
+}
+"#;
+    let emitted = emit_host("capture-nest", source);
+    assert_contains(
+        "capture-nest",
+        &emitted,
+        "return cl_lambda_0(&(((struct ClEnv_0){ n })));",
+    );
+    assert_contains(
+        "capture-nest",
+        &emitted,
+        "return cl_lambda_1(&(((struct ClEnv_1){ (__env->n) })));",
+    );
+    assert_contains("capture-nest", &emitted, "return (__env->n);");
+    let output = run_host("capture-nest-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "capture-nest-run: expected exit 4; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A capture-less lambda spells module names as plain module symbols.
+///
+/// A module constant and a module function sit above every scope floor, so the
+/// lambda needs no capture and stays a plain function pointer: it takes the
+/// parameter alone, with no environment, and its body calls the sanitized
+/// module function and reads the sanitized module constant. The program runs
+/// and answers forty-two.
+#[test]
+fn should_spell_module_names_inside_a_captureless_lambda() {
+    let source = r#"module impl.closeout.captureenv;
+
+const base: i32 = 40;
+
+func addTwo(v: i32): i32 {
+    return v + 2;
+}
+
+func main(): i32 {
+    let f: func(i32): i32 = (v: i32) => addTwo(base) + v;
+    return f(0);
+}
+"#;
+    let emitted = emit_host("capture-env", source);
+    assert_contains("capture-env", &emitted, "static i32 cl_lambda_0(i32 v)");
+    assert_contains(
+        "capture-env",
+        &emitted,
+        "return (i32)((u32)cl_impl_closeout_captureenv_addTwo(cl_impl_closeout_captureenv_base) + (u32)v);",
+    );
+    let output = run_host("capture-env-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(42),
+        "capture-env-run: expected exit 42; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The unlisted-capture rejection names the read and suggests the listing.
+///
+/// The diagnostic states the offending name in the message and repeats it in
+/// the help line, so a reader can paste the suggestion into the capture list.
+#[test]
+fn should_report_the_unlisted_name_and_its_suggestion_in_the_diagnostic_text() {
+    let source = r#"module impl.closeout.capturetext;
+
+func outer(n: i32, x: i32): i32 {
+    return ([x] () => n + x)();
+}
+
+func main(): i32 {
+    return outer(1, 2);
+}
+"#;
+    assert_rejected_with(
+        "capture-text",
+        source,
+        "E10405",
+        &[
+            "error E10405: lambda reads 'n' without listing it",
+            "help: add 'n' to the capture list",
+        ],
     );
 }

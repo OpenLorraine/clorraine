@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 13:18
-> **Progress**: 35/44 tasks (80%)
+> **Last Updated**: 2026-10-04 13:20
+> **Progress**: 37/44 tasks (84%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -692,13 +692,21 @@ and `should_reject_a_nested_lambda_that_reads_the_outer_capture_without_listing_
 
 ### Step 5.3: Implementation Tests & Hardening
 
-- [ ] 5.3.1 Write implementation tests for the emitted nested-capture environment names, the module-path spelling, and the E10405 diagnostic text (AR-21 correction) — `compiler/tests/def_backlog_closeout_impl_test.rs`
-- [ ] 5.3.2 Run `spec/check.sh` and `cargo test` for both new suites
+- [x] 5.3.1 Write implementation tests for the emitted nested-capture environment names, the module-path spelling, and the E10405 diagnostic text (AR-21 correction) — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 13:20)
+- [x] 5.3.2 Run `spec/check.sh` and `cargo test` for both new suites ✅ (completed: 2026-10-04 13:20)
 - [ ] 5.3.3 Dispatch the phase review — correctness, memory-safety, and semantics-reviewer per the `AGENTS.md` language-rule dispatch (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
 
 **Deliverables**:
-- [ ] Implementation suite for the diagnostic edge cases
+- [x] Implementation suite for the diagnostic edge cases
 - [ ] Phase review with no open critical/major finding
+
+**Implementation-test evidence (2026-10-04 13:20)** — the implementation suite grows to 30
+cases: the nested environment relay (`capture-nest`: outer env from the local, inner env from
+`(__env->n)`, inner body reading its own copy; exit 4), the capture-less module-symbol spelling
+(`capture-env`: `static i32 cl_lambda_0(i32 v)` with no environment, calling
+`cl_impl_closeout_captureenv_addTwo(cl_impl_closeout_captureenv_base)`; exit 42), and the E10405
+message/help text (`capture-text`). `spec/check.sh` OK (27 files, 105 compile-fail tests);
+`cargo test`: impl 30 / spec 42 / compile-fail 3, all green; `make check` exit 0 (42 suites).
 
 **Verify**: `make check`
 
