@@ -1,4 +1,5 @@
-//! Emitted-shape and internal-boundary tests for the take and move-out fixes.
+//! Emitted-shape and internal-boundary tests for the take, move-out, and
+//! nullable borrow out-slot fixes.
 //!
 //! The specification suite states the observable behavior; these cases pin the
 //! translation-unit text the behavior depends on: the deferred guard bind for a
@@ -869,5 +870,200 @@ func main(): i32 {
         Some(44),
         "expr-cond2-run: expected exit 44; stderr:\n{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A nullable borrow out-slot lowers per kind, and the call passes its address.
+///
+/// A `String?` slot is `ClString *`, a `File?` slot `BPTR *`, a `str?` slot
+/// `ClStr *`, and a slice `T[]?` slot `ClSlice_i32 *`; each call takes the
+/// address of the caller's exact place. The value parameter keeps its own
+/// spelling, so the fix changes only the out-slot.
+#[test]
+fn should_spell_nullable_borrow_out_slots_as_pointers_when_the_kinds_are_passed() {
+    let source = r#"module impl.closeout.outslot;
+
+import { String, stringOf } from std.text;
+import { File, openFile, MODE_OLDFILE } from std.io;
+import { slice } from std.mem;
+
+func fillString(take v: String, borrow slot: String?): void {
+    slot = v;
+}
+
+func fillStr(v: str, borrow slot: str?): void {
+    slot = v;
+}
+
+func fillFile(take v: File, borrow slot: File?): void {
+    slot = v;
+}
+
+func fillSlice(v: i32[], borrow slot: i32[]?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let owned: String? = null;
+    fillString(stringOf("xyz"), borrow owned);
+    let view: str? = null;
+    fillStr("abc", borrow view);
+    let a: i32[2] = [1, 2];
+    let xs: i32[]? = slice(a, 0, 2);
+    fillSlice(slice(a, 0, 2), borrow xs);
+    let f: File? = openFile("/dev/null", MODE_OLDFILE);
+    if (f == null) {
+        return 8;
+    }
+    let g: File? = openFile("/dev/null", MODE_OLDFILE);
+    if (g == null) {
+        return 9;
+    }
+    fillFile(g, borrow f);
+    return 0;
+}
+"#;
+    let emitted = emit_host("outslot-shapes", source);
+    assert_contains("outslot-shapes", &emitted, "(ClString v, ClString *slot)");
+    assert_contains("outslot-shapes", &emitted, "(ClStr v, ClStr *slot)");
+    assert_contains("outslot-shapes", &emitted, "(BPTR v, BPTR *slot)");
+    assert_contains(
+        "outslot-shapes",
+        &emitted,
+        "(ClSlice_i32 v, ClSlice_i32 *slot)",
+    );
+    assert_contains("outslot-shapes", &emitted, ", &(owned))");
+    assert_contains("outslot-shapes", &emitted, "fillStr(cl_str(\"abc\"), &(view))");
+    assert_contains("outslot-shapes", &emitted, ", &(xs))");
+    assert_contains("outslot-shapes", &emitted, ", &(f))");
+    // The null initializer of the `str?` local is the zero view, not a null
+    // pointer, and the null test reads the view's pointer member.
+    assert_contains("outslot-shapes", &emitted, "view = (ClStr){0};");
+    assert_absent("outslot-shapes", &emitted, "(ClString v, ClString slot)");
+}
+
+/// A non-nullable duplicable struct lend stays by value.
+///
+/// The deliberate by-value deviation for a duplicable struct is unchanged by
+/// the nullable out-slot fix: the parameter is `ClPoint`, the call passes the
+/// value without an address, and no pointer spelling appears. The declaration
+/// warns that the lend is unnecessary, which is the documented behavior.
+#[test]
+fn should_keep_a_duplicable_struct_lend_by_value_when_the_borrow_is_not_nullable() {
+    let source = r#"module impl.closeout.structlend;
+
+struct Point {
+    x: i32;
+    y: i32;
+}
+
+func bump(borrow p: Point): void {
+    p.x = p.x + 1;
+}
+
+func main(): i32 {
+    let p: Point = Point { x: 1, y: 2 };
+    bump(p);
+    return p.x;
+}
+"#;
+    let emitted = emit_host("struct-lend", source);
+    assert_contains("struct-lend", &emitted, "bump(ClPoint p)");
+    assert_contains("struct-lend", &emitted, "bump(p);");
+    assert_absent("struct-lend", &emitted, "ClPoint *p");
+}
+
+/// A nullable view initializes to its zero struct and narrows through `ptr`.
+///
+/// A view is an emitted pointer-and-length struct, so `null` becomes the zero
+/// view and `== null` tests the view's pointer member; assigning or comparing
+/// the struct with `NULL` would not build as C.
+#[test]
+fn should_use_the_zero_view_and_the_pointer_test_when_a_nullable_view_is_narrowed() {
+    let source = r#"module impl.closeout.viewnull;
+
+func main(): i32 {
+    let view: str? = null;
+    if (view == null) {
+        return 9;
+    }
+    return i32(len(view));
+}
+"#;
+    let emitted = emit_host("view-null", source);
+    assert_contains("view-null", &emitted, "view = (ClStr){0};");
+    assert_contains("view-null", &emitted, "((view).ptr == NULL)");
+    assert_absent("view-null", &emitted, "view = NULL;");
+}
+
+/// An out-slot argument that is not an exact-typed place is rejected.
+///
+/// The slot lowers to a pointer into the caller's storage, so a widened place
+/// (`String` into `str?` or `String?`) or a non-place exact-typed expression
+/// (a call result) cannot carry the callee's write back and is rejected with
+/// `E10200`; the non-place case names the exact-place rule in its help.
+#[test]
+fn should_reject_when_a_widened_or_non_place_argument_reaches_a_nullable_out_slot() {
+    let widened_str = r#"module impl.closeout.outslotwide1;
+
+import { String, stringOf } from std.text;
+
+func fill(borrow slot: str?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("abc");
+    fill(borrow owned);
+    return 0;
+}
+"#;
+    let widened_string = r#"module impl.closeout.outslotwide2;
+
+import { String, stringOf } from std.text;
+
+func fill(borrow slot: String?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("abc");
+    fill(borrow owned);
+    return 0;
+}
+"#;
+    let non_place = r#"module impl.closeout.outslotnonplace;
+
+import { File, openFile, MODE_OLDFILE } from std.io;
+
+func fill(borrow slot: File?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    fill(borrow openFile("/dev/null", MODE_OLDFILE));
+    return 0;
+}
+"#;
+    assert_rejected("outslot-wide-str", widened_str, "E10200");
+    assert_rejected("outslot-wide-string", widened_string, "E10200");
+    let (_scratch, output, c_path) = compile_only("outslot-nonplace", non_place);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "outslot-nonplace: the front end accepted a call result as an out-slot"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("error E10200:"),
+        "outslot-nonplace: expected E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("pass a place of the exact slot type"),
+        "outslot-nonplace: expected the exact-place help; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "outslot-nonplace: a rejected program must not produce a translation unit"
     );
 }

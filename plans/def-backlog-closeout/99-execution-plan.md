@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 11:12
-> **Progress**: 21/44 tasks (48%)
+> **Last Updated**: 2026-10-04 11:15
+> **Progress**: 23/44 tasks (52%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -444,16 +444,31 @@ kind from AR-3. The first cut of the parameter-type keying broke the substituted
 
 ### Step 3.3: Implementation Tests & Hardening
 
-- [ ] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind, the unchanged by-value path for a duplicable struct, and the rejected widened out-slot argument — `compiler/tests/def_backlog_closeout_impl_test.rs`
-- [ ] 3.3.2 Run the ST-12/13 host-ASan probes, a freestanding compile, and `cargo test` for both suites
-- [ ] 3.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff
+- [x] 3.3.1 Write implementation tests for the emitted declarators/arguments per nullable kind, the unchanged by-value path for a duplicable struct, and the rejected widened out-slot argument — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 11:15)
+- [x] 3.3.2 Run the ST-12/13 host-ASan probes, a freestanding compile, and `cargo test` for both suites ✅ (completed: 2026-10-04 11:15)
+- [~] 3.3.3 Dispatch the phase review (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ⏳ (implemented: 2026-10-04 11:15)
 
 **Deliverables**:
-- [ ] Implementation suite for the ABI shapes
-- [ ] Clean probe matrix and freestanding compile
+- [x] Implementation suite for the ABI shapes
+- [x] Clean probe matrix and freestanding compile
 - [ ] Phase review with no open critical/major finding
 
 **Verify**: `make check`
+
+**Test and probe evidence (2026-10-04 11:15)** — `cargo test --test def_backlog_closeout_spec_test
+--test def_backlog_closeout_impl_test` in the pinned container (log
+`/tmp/opencode/verify-3.3.1-tests.log`): 22 spec + 20 impl passed, 0 failed.
+
+| Probe | Exit | Sanitizer output |
+| ----- | ---- | ---------------- |
+| `def65_nonnull_slot.clo` (ST-12, `String?`) | 3 | none |
+| `def65_str_slot.clo` (ST-14, `str?`) | 3 | none |
+| `def65_freestanding.clo` (freestanding `str?` out-slot) | host no-libc `cc -ffreestanding -c` OK; `m68k-amigaos-gcc -std=c99 -c` OK (1568-byte object) | — |
+
+The four implementation cases pin the per-kind declarators (`ClString *`, `BPTR *`, `ClStr *`,
+`ClSlice_i32 *`), the address-taking call sites, the zero-view null init and `.ptr` null test, the
+unchanged by-value `ClPoint` lend, and the `E10200` rejection of both widened and non-place
+out-slot arguments.
 
 ---
 
