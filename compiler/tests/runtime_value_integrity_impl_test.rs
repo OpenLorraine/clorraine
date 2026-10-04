@@ -867,5 +867,5 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("rviimpl-statictail", source);
-    assert_contains("rviimpl-statictail", &emitted, "return (ClStr){0};");
+    assert_contains("rviimpl-statictail", &emitted, "return cl_zero_ClStr();");
 }

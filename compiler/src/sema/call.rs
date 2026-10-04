@@ -202,14 +202,26 @@ impl Checker<'_, '_> {
         self.check_callable_bounds(&signature.type_params, &bindings, span);
         self.check_ephemeral_bindings(name, &signature.type_params, &bindings, span);
         for (index, arg) in args.iter().enumerate() {
-            if signature.modes.get(index).copied() == Some(crate::ast::Mode::Take) {
+            let mode = signature
+                .modes
+                .get(index)
+                .copied()
+                .unwrap_or(crate::ast::Mode::None);
+            if mode == crate::ast::Mode::Take {
                 self.reject_capture_move(&arg.value);
             }
             if let (Some((ty, arg_span)), Some(param)) =
                 (arg_types.get(index), signature.params.get(index))
             {
                 let expected = crate::types::substitute(param, &bindings);
-                self.check_conversion(ty, &expected, *arg_span);
+                if self.is_out_slot_param(&expected, mode) {
+                    // The instance makes the parameter a nullable out-slot, so
+                    // the same exact-place rule a direct call enforces applies
+                    // to the inferred type arguments.
+                    self.check_out_slot_place(arg, ty, &expected);
+                } else {
+                    self.check_conversion(ty, &expected, *arg_span);
+                }
             }
         }
         let returns = crate::types::substitute(&signature.returns, &bindings);
@@ -338,7 +350,11 @@ impl Checker<'_, '_> {
             Some(DotCall::Function(signature)) => {
                 if let Some((receiver_param, rest)) = signature.params.split_first() {
                     self.check_conversion(&receiver, receiver_param, span);
-                    self.check_args(args, rest);
+                    // The receiver is not a written argument, so the remaining
+                    // modes line up with the written arguments; a nullable
+                    // borrow parameter keeps its exact-place rule on this route.
+                    let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
+                    self.check_args_impl(args, rest, rest_modes, false);
                 } else {
                     self.check_args(args, &signature.params);
                 }
@@ -499,7 +515,15 @@ impl Checker<'_, '_> {
     /// rejected with `E10200`, the implicit-conversion diagnostic.
     fn check_out_slot_argument(&mut self, arg: &Arg, param: &Ty) {
         let ty = self.check_value(&arg.value, Some(param));
-        if ty == *param && self.is_place(&arg.value) {
+        self.check_out_slot_place(arg, &ty, param);
+    }
+
+    /// Rejects an out-slot argument that is not an exact-typed place.
+    ///
+    /// The caller supplies the already-computed argument type so the generic
+    /// and direct routes share one rule.
+    fn check_out_slot_place(&mut self, arg: &Arg, ty: &Ty, param: &Ty) {
+        if ty == param && self.is_place(&arg.value) {
             return;
         }
         self.error(

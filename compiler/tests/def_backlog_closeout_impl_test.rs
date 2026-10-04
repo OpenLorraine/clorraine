@@ -938,7 +938,7 @@ func main(): i32 {
     assert_contains("outslot-shapes", &emitted, ", &(f))");
     // The null initializer of the `str?` local is the zero view, not a null
     // pointer, and the null test reads the view's pointer member.
-    assert_contains("outslot-shapes", &emitted, "view = (ClStr){0};");
+    assert_contains("outslot-shapes", &emitted, "view = cl_zero_ClStr();");
     assert_absent("outslot-shapes", &emitted, "(ClString v, ClString slot)");
 }
 
@@ -991,9 +991,10 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("view-null", source);
-    assert_contains("view-null", &emitted, "view = (ClStr){0};");
+    assert_contains("view-null", &emitted, "view = cl_zero_ClStr();");
     assert_contains("view-null", &emitted, "((view).ptr == NULL)");
     assert_absent("view-null", &emitted, "view = NULL;");
+    assert_absent("view-null", &emitted, "(ClStr){0}");
 }
 
 /// An out-slot argument that is not an exact-typed place is rejected.
@@ -1065,5 +1066,126 @@ func main(): i32 {
     assert!(
         !c_path.exists(),
         "outslot-nonplace: a rejected program must not produce a translation unit"
+    );
+}
+
+/// An explicit instance that makes a `borrow T` parameter nullable passes the
+/// address of the caller's slot.
+///
+/// The instance substitution fixes the parameter type, so the callee signature
+/// is `ClString *slot` and the call must take the slot's address; the write
+/// reaches the caller's storage and the run answers three.
+#[test]
+fn should_pass_the_address_when_an_explicit_instance_makes_the_slot_nullable() {
+    let source = r#"module impl.closeout.instslot;
+
+import { String, stringOf } from std.text;
+
+func fill<T>(take v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let slot: String? = null;
+    fill<String?>(stringOf("xyz"), borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot));
+}
+"#;
+    let emitted = emit_host("inst-slot", source);
+    assert_contains("inst-slot", &emitted, "(ClString v, ClString *slot)");
+    assert_contains("inst-slot", &emitted, ", &(slot))");
+    let output = run_host("inst-slot-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "inst-slot-run: expected exit 3; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// An `ffi` borrow parameter stays by value even when it names a slot.
+///
+/// The FFI prototype ignores modes and nullability, so the emitter must not
+/// take the address of the argument: the extern sees the declared ABI type by
+/// value. A non-duplicable struct argument would otherwise fail the strict C
+/// build, and a nullable handle would silently pass a stack address.
+#[test]
+fn should_keep_ffi_arguments_by_value_when_the_parameter_is_a_borrow_slot() {
+    let source = r#"module impl.closeout.ffislot;
+
+import { String, stringOf } from std.text;
+
+struct Entity {
+    name: String;
+}
+
+ffi lib {
+    func use(borrow e: Entity): void;
+    func rawSlot(borrow slot: String?): void;
+}
+
+func main(): i32 {
+    let e: Entity = Entity { name: stringOf("x") };
+    use(e);
+    let slot: String? = null;
+    rawSlot(borrow slot);
+    return 0;
+}
+"#;
+    let emitted = emit_host("ffi-slot", source);
+    assert_contains("ffi-slot", &emitted, "void use(ClEntity);");
+    assert_contains("ffi-slot", &emitted, "use(e);");
+    assert_absent("ffi-slot", &emitted, "&(e)");
+    assert_contains("ffi-slot", &emitted, "rawSlot(slot);");
+    assert_absent("ffi-slot", &emitted, "&(slot)");
+}
+
+/// A null view reaches call arguments, conditional arms, and global
+/// initializers through the emitted zero-view helper.
+///
+/// A view is a struct, so `NULL` does not type-check; the helper keeps the
+/// emitted C inside the C99 subset in every expression position. The program
+/// measures the argument and the conditional, so the run answers four.
+#[test]
+fn should_use_the_zero_view_helper_when_a_null_view_reaches_arguments_and_conditionals() {
+    let source = r#"module impl.closeout.nullviews;
+
+let g: str? = null;
+
+func check(s: str?): i32 {
+    if (s == null) {
+        return 1;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let flag: bool = false;
+    let one: i32 = check(null);
+    let view: str? = flag ? null : "abc";
+    if (view == null) {
+        return 7;
+    }
+    return one + i32(len(view));
+}
+"#;
+    let emitted = emit_host("null-views", source);
+    assert_contains("null-views", &emitted, "g = cl_zero_ClStr();");
+    assert_contains("null-views", &emitted, "check(cl_zero_ClStr())");
+    assert_contains(
+        "null-views",
+        &emitted,
+        "(flag ? cl_zero_ClStr() : cl_str(\"abc\"))",
+    );
+    assert_absent("null-views", &emitted, "(ClStr){0}");
+    let output = run_host("null-views-run", source);
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "null-views-run: expected exit 4; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }

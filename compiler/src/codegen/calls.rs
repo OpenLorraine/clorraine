@@ -125,14 +125,16 @@ impl Emitter<'_> {
     /// caller passes the address of its place; a nullable `borrow` parameter is
     /// an ownership out-slot and lowers to a pointer the same way. A call
     /// through a `func` value takes its parameter types and modes from
-    /// `func_ty`, so a `borrow` parameter passes the address too, and a `str`
-    /// parameter widens a `String` argument exactly as a declared signature
-    /// does. A `str` parameter accepts a `String` argument through the implicit
-    /// widening, which lowers to a view over the owned bytes. Every other
-    /// argument, and every `ffi` argument, is passed as its value.
+    /// `func_ty`. A declared function's parameter types follow the call's
+    /// explicit type arguments, so an instantiated nullable slot decides its own
+    /// pointer spelling. An `ffi` callee instead follows its mode-ignoring ABI
+    /// prototype, so its arguments stay by value. A `str` parameter widens a
+    /// `String` argument to a view over the owned bytes. Every other argument
+    /// is passed as its value.
     pub(super) fn call_arguments(
         &self,
         callee: &str,
+        type_args: &[Ty],
         args: &[Value],
         func_ty: Option<&Ty>,
     ) -> String {
@@ -152,8 +154,12 @@ impl Emitter<'_> {
             _ => None,
         }) {
             Some((modes, types)) => (Some(modes), Some(types)),
-            // A declared function or an FFI callee keeps its own signature.
-            None => (self.callee_modes(callee), self.callee_param_types(callee)),
+            // A declared function keeps its own signature, instantiated with
+            // the call's explicit type arguments when there are any.
+            None => (
+                self.callee_modes(callee),
+                self.instance_param_types(callee, type_args),
+            ),
         };
         let user_call = self.resolve_function(callee).is_some();
         let rendered: Vec<String> = args
@@ -161,26 +167,43 @@ impl Emitter<'_> {
             .enumerate()
             .map(|(index, arg)| {
                 let expected = param_types.as_ref().and_then(|types| types.get(index));
-                let text = self.argument_text(arg, expected);
                 let mode = modes.as_ref().and_then(|modes| modes.get(index)).copied();
+                // A null argument is typed by its parameter: a struct-typed
+                // view wants the zero view, while an `ffi` parameter keeps the
+                // plain null its mode-ignoring ABI prototype spells.
+                let text = if matches!(arg.kind, ValueKind::Null)
+                    && (func_ty.is_some() || user_call)
+                {
+                    match expected {
+                        Some(expected) => self.null_value(expected),
+                        None => self.argument_text(arg, expected),
+                    }
+                } else {
+                    self.argument_text(arg, expected)
+                };
                 // The declared parameter type decides whether the argument is
                 // the address of a writable out-slot, not the written argument
                 // type: a nullable borrow parameter always lowers to a pointer,
                 // and the front end has already required its argument to be an
                 // exact-typed place. A parameter type that still mentions a type
                 // parameter is not yet the instance's type, so the substituted
-                // argument type stands in for it.
-                let pointer = match expected.filter(|expected| !contains_param(expected)) {
-                    Some(expected) => {
-                        is_pointer_param(expected, mode.unwrap_or(Mode::None), &self.sema.table)
-                    }
-                    None => {
-                        user_call
-                            && is_pointer_param(
-                                &self.substitute(&arg.ty),
-                                mode.unwrap_or(Mode::None),
-                                &self.sema.table,
-                            )
+                // argument type stands in for it. An `ffi` callee ignores modes
+                // in its prototype, so its arguments stay by value.
+                let pointer = if func_ty.is_none() && !user_call {
+                    false
+                } else {
+                    match expected.filter(|expected| !contains_param(expected)) {
+                        Some(expected) => {
+                            is_pointer_param(expected, mode.unwrap_or(Mode::None), &self.sema.table)
+                        }
+                        None => {
+                            user_call
+                                && is_pointer_param(
+                                    &self.substitute(&arg.ty),
+                                    mode.unwrap_or(Mode::None),
+                                    &self.sema.table,
+                                )
+                        }
                     }
                 };
                 if pointer {

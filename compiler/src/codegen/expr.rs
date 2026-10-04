@@ -18,7 +18,7 @@ use super::render::{
     binary_token, element_type, escape_c_string, float_literal, index_text, unsigned_c,
     unsigned_scalar,
 };
-use super::types::{c_type, is_struct_view, scalar_of, type_key};
+use super::types::{c_type, is_struct_view, scalar_of, type_key, zero_view_helper};
 use super::Emitter;
 
 impl<'a> Emitter<'a> {
@@ -74,12 +74,15 @@ impl<'a> Emitter<'a> {
                 condition,
                 then_value,
                 else_value,
-            } => format!(
-                "({} ? {} : {})",
-                self.value(condition),
-                self.guarded_value(then_value),
-                self.guarded_value(else_value)
-            ),
+            } => {
+                let result = self.substitute(&value.ty);
+                format!(
+                    "({} ? {} : {})",
+                    self.value(condition),
+                    self.conditional_arm(then_value, &result),
+                    self.conditional_arm(else_value, &result)
+                )
+            }
             ValueKind::StructLit { name, fields } => {
                 self.struct_literal(&self.substitute(&value.ty), name, fields)
             }
@@ -324,13 +327,24 @@ impl<'a> Emitter<'a> {
     /// zero struct; `NULL` would not type-check against it.
     pub(super) fn null_value(&self, ty: &Ty) -> String {
         let ty = self.substitute(ty);
-        if is_struct_view(&ty) {
-            // An assignment or argument needs an expression, so the zero view
-            // is written as a compound literal rather than a bare brace form.
-            format!("({}){{0}}", c_type(&ty, &self.sema.table))
+        if let Some(helper) = zero_view_helper(&ty) {
+            // A view's empty state is its zero value; the helper is emitted
+            // with the view typedefs so no compound literal is needed.
+            format!("{helper}()")
         } else {
             self.null_literal().to_owned()
         }
+    }
+
+    /// Renders one conditional arm, giving a null arm the result's empty value.
+    ///
+    /// A null arm is typed by the conditional's result, so a struct-typed view
+    /// result needs its zero view rather than the untyped null literal.
+    fn conditional_arm(&self, value: &Value, result: &Ty) -> String {
+        if matches!(value.kind, ValueKind::Null) {
+            return self.null_value(result);
+        }
+        self.guarded_value(value)
     }
 
     /// Renders a null test on a struct-typed view, when the pair is one.
@@ -495,7 +509,7 @@ impl<'a> Emitter<'a> {
         let func_ty = self.callee_func_type(callee, receiver);
         let mut rendered: Vec<String> = Vec::new();
         if !args.is_empty() {
-            rendered.push(self.call_arguments(callee, args, func_ty.as_ref()));
+            rendered.push(self.call_arguments(callee, type_args, args, func_ty.as_ref()));
         }
         if let Some(destination) = destination {
             rendered.push(destination.to_owned());

@@ -1204,3 +1204,112 @@ func main(): i32 {
     assert_exit("closeout-st15-byvalue", &output, 1);
     assert_no_asan("closeout-st15-byvalue", &output);
 }
+
+/// A widened place reaching an out-slot through a generic call is rejected.
+///
+/// An explicit instance fixes the callee's parameter type, so the same
+/// exact-place rule as a direct call applies: a `String` place cannot widen
+/// into a `String?` slot, because the callee writes through the argument.
+#[test]
+fn should_reject_when_a_widened_place_reaches_an_out_slot_through_a_generic_call() {
+    let source = r#"module spec.closeout.p3f1;
+
+import { String, stringOf } from std.text;
+
+func fill<T>(take v: T, borrow slot: String?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("abc");
+    fill<String>(stringOf("xyz"), borrow owned);
+    return 0;
+}
+"#;
+    assert_rejected("closeout-p3f1", source, "E10200");
+}
+
+/// A widened place reaching an out-slot through a dot-call is rejected.
+///
+/// The dot-call route carries the callee's parameter modes, so the out-slot
+/// rule applies to the receiver-taking call as well.
+#[test]
+fn should_reject_when_a_widened_place_reaches_an_out_slot_through_a_dot_call() {
+    let source = r#"module spec.closeout.p3f1dot;
+
+import { String, stringOf } from std.text;
+
+func fill<T>(take v: T, borrow slot: String?): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let moved: String = stringOf("xyz");
+    let owned: String = stringOf("abc");
+    moved.fill(borrow owned);
+    return 0;
+}
+"#;
+    assert_rejected("closeout-p3f1dot", source, "E10200");
+}
+
+/// An explicit instance that makes a generic slot nullable writes through.
+///
+/// The instance substitution fixes the parameter type at the call site, so the
+/// callee receives a pointer to the caller's slot, replaces the value, and the
+/// caller measures the new string.
+#[test]
+fn should_write_through_when_an_explicit_instance_makes_a_generic_slot_nullable() {
+    let source = r#"module spec.closeout.p3f2;
+
+import { String, stringOf } from std.text;
+
+func fill<T>(take v: T, borrow slot: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let slot: String? = null;
+    fill<String?>(stringOf("xyz"), borrow slot);
+    if (slot == null) {
+        return 9;
+    }
+    return i32(len(slot));
+}
+"#;
+    let output = run_memory("closeout-p3f2", source);
+    assert_exit("closeout-p3f2", &output, 3);
+    assert_no_asan("closeout-p3f2", &output);
+}
+
+/// A null view runs through an argument, a conditional, and a global slot.
+///
+/// The zero-view form keeps every expression position type-correct; the
+/// argument and the conditional are measured and the run is clean.
+#[test]
+fn should_run_when_a_null_view_is_passed_and_measured() {
+    let source = r#"module spec.closeout.p3f4;
+
+let g: str? = null;
+
+func check(s: str?): i32 {
+    if (s == null) {
+        return 1;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let flag: bool = false;
+    let one: i32 = check(null);
+    let view: str? = flag ? null : "abc";
+    if (view == null) {
+        return 7;
+    }
+    return one + i32(len(view));
+}
+"#;
+    let output = run_memory("closeout-p3f4", source);
+    assert_exit("closeout-p3f4", &output, 4);
+    assert_no_asan("closeout-p3f4", &output);
+}

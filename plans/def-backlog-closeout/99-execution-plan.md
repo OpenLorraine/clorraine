@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 11:15
+> **Last Updated**: 2026-10-04 11:41
 > **Progress**: 23/44 tasks (52%)
 > **CodeOps Artifact Schema**: 1
 
@@ -469,6 +469,38 @@ The four implementation cases pin the per-kind declarators (`ClString *`, `BPTR 
 `ClSlice_i32 *`), the address-taking call sites, the zero-view null init and `.ptr` null test, the
 unchanged by-value `ClPoint` lend, and the `E10200` rejection of both widened and non-place
 out-slot arguments.
+
+**Phase 3 review findings (2026-10-04 11:41)** — four reviewers dispatched in parallel on the phase
+diff (baseline `2b2de6a0`): correctness via the generic reviewer role, memory safety and emission
+integrity via the project auditors, semantics via the generic reviewer role (the manual-only
+semantics role fallback).
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| RV-006 + SR-001 | 🔴 CRITICAL | The out-slot exact-place rule ran only on direct calls: generic calls skipped it (`check_generic_call` checked only conversion) and dot-calls passed an empty mode list, so a `String` place widened into a `String?` slot and the callee wrote through it (SEGV, ASan-confirmed) | ✅ fixed — the rule now runs in `check_generic_call` with the inferred/substituted parameter types and on the dot-call route with the signature's modes; spec cases `p3f1`/`p3f1dot` reject with `E10200` |
+| SR-002 + RV-007 | 🔴 CRITICAL | The `contains_param` fallback disagreed with the callee's instance signature: `fill<String?>(..., borrow slot: T)` emitted `ClString *slot` but passed the argument by value (SEGV/corruption); the own-stage call check also read the instantiated nullable slot as a possibly-null value (E10010) | ✅ fixed — `call_arguments` takes the call's type arguments and renders with `instance_param_types` (reusing `substitute_instance`); the own-stage call check substitutes the explicit type arguments; spec case `p3f2` runs green and impl case `inst-slot` pins `(ClString v, ClString *slot)` and `&(slot)` |
+| RV-008 + PE-006 | 🔴 CRITICAL | FFI borrow arguments took an address while the FFI prototype ignores modes (`spec/17-codegen.md:119-124`): wrong ABI for pointer typedefs, invalid C for non-duplicable structs; the base passed by value | ✅ fixed — the pointer decision is limited to user calls and func values; impl case `ffi-slot` pins `void use(ClEntity); use(e); rawSlot(slot);` with no addresses and a strict `-Werror` build |
+| RV-009 + SA-008 + PE-007 | 🟠 MAJOR | AR-20 null rendering covered only destination-typed stores; call arguments, conditional arms, and global initializers emitted `NULL` against `ClStr`/`ClSlice` (accepted programs failed the C build) | ✅ fixed — those positions render the zero view; impl case `null-views` and spec case `p3f4` exercise all three and run clean |
+| SR-003 | 🟠 MAJOR | The zero view was emitted as `(ClStr){0}`, a compound literal forbidden by `spec/17-codegen.md:20-22`; the impl test pinned it | ✅ fixed — the emitter emits `cl_zero_ClStr`/`cl_zero_ClSlice_<key>` helpers next to the view typedefs and uses them in expression positions; `empty_return_value` follows; the previous `(ClStr){0}` pin in `runtime_value_integrity_impl_test` was corrected |
+| RV (minors) | 🟡 | `T[]? == null` is `E10222` (AR-3's `T[]?` narrowing unproven); `slot = slot` destroys the out-slot value; spurious `W10001` on `raw?`; the ASan oracle is not gated in `make check`; the exact-place rule is plan-derived (the frozen spec is silent) and the same-type non-place message reads `cannot convert 'File?' to 'File?'`; missing generic/dot/FFI/non-store coverage | report-only — the coverage gaps are closed by the new cases; the `T[]?` narrowing and same-type message are noted for close-out |
+
+Re-review is dispatched on the fix diff only (one bounded pass, profile-gated).
+
+**Fix evidence (2026-10-04 11:41)** — spec-first regression coverage plus the reviewer repros
+re-run on the head:
+
+| Fix | Red before | Green after |
+| --- | ---------- | ----------- |
+| Generic call exact-place (`p3f1`) | accepted, SEGV | `E10200` |
+| Dot-call exact-place (`p3f1dot`) | accepted, SEGV | `E10200` |
+| Instance substitution (`p3f2` widening / valid shape) | widening accepted; valid shape `E10010` | widening `E10200`; valid shape exits 3, ASan clean |
+| FFI by value | `use(&(e))` failed the strict build | `void use(ClEntity); use(e); rawSlot(slot);` strict clean |
+| Zero-view helper | `slot = NULL` / `(ClStr){0}` | `cl_zero_ClStr()`; no compound literal on the changed paths |
+| Non-store null positions | argument/conditional/global invalid C | strict build clean; run exits 4 |
+
+Both suites green together (26 spec + 23 impl); `make check` green (42 suites); the phase probes
+re-run clean (`def65_nonnull_slot` exit 3, `def65_str_slot` exit 3, no sanitizer output); the
+freestanding `str?` program compiles no-libc with `cc -ffreestanding -c`.
 
 ---
 

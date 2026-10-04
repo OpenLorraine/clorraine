@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece};
-use crate::types::{resolve_ty, Ty, TyKind};
+use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::render::escape_c_string;
 use super::types::{declarator, function_declarator};
@@ -765,6 +765,38 @@ impl<'a> Emitter<'a> {
                 .map(|param| resolve_ty(&param.ty, &[], &self.sema.table))
                 .collect()
         })
+    }
+
+    /// The parameter types of a known user function under the call's explicit
+    /// type arguments.
+    ///
+    /// An explicit instantiation fixes the callee's own type parameters, so the
+    /// rendered argument list must use the instance's parameter types rather
+    /// than the caller's. Without type arguments the call is inferred and
+    /// [`Self::callee_param_types`] already carries the substitution; an `ffi`
+    /// callee has no type parameters and keeps its own signature.
+    pub(super) fn instance_param_types(
+        &self,
+        callee: &str,
+        type_args: &[Ty],
+    ) -> Option<Vec<Ty>> {
+        let base = self.callee_param_types(callee)?;
+        if type_args.is_empty() {
+            return Some(base);
+        }
+        let info = self.resolve_function(callee)?;
+        let names: Vec<String> = info
+            .decl
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
+        let concrete: Vec<Ty> = type_args.iter().map(|ty| self.substitute(ty)).collect();
+        Some(
+            base.iter()
+                .map(|ty| substitute_instance(ty, &names, &concrete))
+                .collect(),
+        )
     }
 
     /// The declared return type of a known user function, with the active

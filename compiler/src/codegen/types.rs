@@ -45,6 +45,22 @@ pub(super) fn is_struct_view(ty: &Ty) -> bool {
         || matches!(&ty.kind, TyKind::Array { extents, .. } if extents.iter().any(Option::is_none))
 }
 
+/// The C helper name returning the empty value of a struct-typed view.
+///
+/// The helper is emitted next to the view typedefs, so an empty view in an
+/// expression position obeys the C99-subset contract without a compound
+/// literal. `None` for every other type, which spells its empty state as a
+/// null pointer.
+pub(super) fn zero_view_helper(ty: &Ty) -> Option<String> {
+    match &ty.kind {
+        TyKind::Str | TyKind::StaticStr => Some("cl_zero_ClStr".to_owned()),
+        TyKind::Array { element, extents } if extents.iter().any(Option::is_none) => {
+            Some(format!("cl_zero_ClSlice_{}", slice_element_key(element)))
+        }
+        _ => None,
+    }
+}
+
 /// The C spelling of a type in a value position.
 pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
     match &ty.kind {

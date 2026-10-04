@@ -393,10 +393,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ExprKind::Call {
                 callee,
-                type_args: _,
+                type_args,
                 args,
             } => {
-                self.check_call_expr(callee, args, expr.span);
+                self.check_call_expr(callee, type_args, args, expr.span);
             }
         }
         ty

@@ -124,6 +124,14 @@ impl<'a> Emitter<'a> {
         self.push("    return view;");
         self.push("}");
         self.push("");
+        // A view's empty state is returned by a helper rather than a compound
+        // literal, which the C99-subset contract forbids.
+        self.push("static inline ClStr cl_zero_ClStr(void)");
+        self.push("{");
+        self.push("    ClStr value = {0};");
+        self.push("    return value;");
+        self.push("}");
+        self.push("");
         self.emit_slice_typedefs();
         self.emit_handle_typedefs();
     }
@@ -143,6 +151,15 @@ impl<'a> Emitter<'a> {
             self.push(&format!(
                 "typedef struct {{ {element_c} *ptr; usize len; }} ClSlice_{key};"
             ));
+        }
+        for (key, _) in &keys {
+            self.push(&format!(
+                "static inline ClSlice_{key} cl_zero_ClSlice_{key}(void)"
+            ));
+            self.push("{");
+            self.push(&format!("    ClSlice_{key} value = {{0}};"));
+            self.push("    return value;");
+            self.push("}");
         }
         self.push("");
     }
@@ -587,6 +604,17 @@ impl<'a> Emitter<'a> {
         if lowered.ty.is_unknown() {
             if let Some(ty) = self.expr_type(value) {
                 lowered.ty = ty;
+            }
+        }
+        // A null initializer carries no type of its own, so the declared global
+        // type supplies the empty state; a view needs its zero view.
+        if matches!(lowered.kind, ValueKind::Null) {
+            if let Some(declared) = self
+                .globals
+                .values()
+                .find(|global| global.module == module_name && global.name == name)
+            {
+                lowered.ty = declared.ty.clone();
             }
         }
         let rendered = self.value(&lowered);

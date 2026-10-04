@@ -665,11 +665,18 @@ impl<'a> Emitter<'a> {
             TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString | TyKind::Func(_) => {
                 self.null_literal().to_owned()
             }
-            // A view returns its pointer-and-length struct in its empty state.
-            TyKind::Str | TyKind::StaticStr | TyKind::Struct(..) => {
-                format!("({}){{0}}", super::types::c_type(&ret, &self.sema.table))
-            }
-            TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
+            // A view returns its zero value through the helper emitted with the
+            // view typedefs; the C99-subset contract forbids a compound literal.
+            TyKind::Str | TyKind::StaticStr => format!(
+                "{}()",
+                super::types::zero_view_helper(&ret).unwrap_or_else(|| "0".to_owned())
+            ),
+            TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => format!(
+                "{}()",
+                super::types::zero_view_helper(&ret).unwrap_or_else(|| "0".to_owned())
+            ),
+            // An owned struct keeps its brace-empty spelling.
+            TyKind::Struct(..) => {
                 format!("({}){{0}}", super::types::c_type(&ret, &self.sema.table))
             }
             _ => "0".to_owned(),

@@ -14,7 +14,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A `func`-typed field call is not a method taking the receiver: the
     /// field's own signature (already checked by the type stage) types it, so
     /// the ownership walk only reads the field and its arguments.
-    pub(super) fn check_call_expr(&mut self, callee: &'a Expr, args: &'a [Arg], span: Span) {
+    pub(super) fn check_call_expr(
+        &mut self,
+        callee: &'a Expr,
+        type_args: &'a [crate::ast::Type],
+        args: &'a [Arg],
+        span: Span,
+    ) {
         if let Some(field_ty) = self.callee_field_type(callee) {
             if let TyKind::Func(signature) = &field_ty.kind {
                 // The callee is a field, not a named function, so the
@@ -66,14 +72,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Callee::User(decl) => {
                 let type_params: Vec<String> =
                     decl.type_params.iter().map(|p| p.name.clone()).collect();
+                // An explicit instantiation fixes the callee's parameter types,
+                // so a nullable slot argument is not read as a possibly-null
+                // value. An inferred call keeps the declared parameter types.
+                let bindings: BTreeMap<String, Ty> = decl
+                    .type_params
+                    .iter()
+                    .zip(type_args)
+                    .map(|(param, ty)| (param.name.clone(), self.resolve(ty)))
+                    .collect();
                 let params: Vec<(Mode, Ty)> = decl
                     .params
                     .iter()
                     .map(|param| {
-                        (
-                            param.mode,
-                            resolve_ty(&param.ty, &type_params, &self.sema.table),
-                        )
+                        let ty = resolve_ty(&param.ty, &type_params, &self.sema.table);
+                        (param.mode, crate::types::substitute(&ty, &bindings))
                     })
                     .collect();
                 // A dot-call's receiver is the first parameter; the written
