@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 14:03
-> **Progress**: 37/44 tasks (84%)
+> **Last Updated**: 2026-10-04 14:16
+> **Progress**: 38/44 tasks (86%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -694,11 +694,11 @@ and `should_reject_a_nested_lambda_that_reads_the_outer_capture_without_listing_
 
 - [x] 5.3.1 Write implementation tests for the emitted nested-capture environment names, the module-path spelling, and the E10405 diagnostic text (AR-21 correction) — `compiler/tests/def_backlog_closeout_impl_test.rs` ✅ (completed: 2026-10-04 13:20)
 - [x] 5.3.2 Run `spec/check.sh` and `cargo test` for both new suites ✅ (completed: 2026-10-04 13:20)
-- [~] 5.3.3 Dispatch the phase review — correctness, memory-safety, and semantics-reviewer per the `AGENTS.md` language-rule dispatch (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ⏳ (review returned 2026-10-04 14:03; F1/F2 fixed and green, bounded re-review pending)
+- [x] 5.3.3 Dispatch the phase review — correctness, memory-safety, and semantics-reviewer per the `AGENTS.md` language-rule dispatch (blast-radius and test-integrity steps included); resolve in-scope findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-04 14:16)
 
 **Deliverables**:
 - [x] Implementation suite for the diagnostic edge cases
-- [ ] Phase review with no open critical/major finding
+- [x] Phase review with no open critical/major finding
 
 **Implementation-test evidence (2026-10-04 13:20)** — the implementation suite grows to 30
 cases: the nested environment relay (`capture-nest`: outer env from the local, inner env from
@@ -728,6 +728,20 @@ invalid C; `[base]` module-const capture emits an env-less call; the capture-les
 `len(stringOf(...))` segfault; a listed copy-capture field write reporting E10024 instead of
 E10402). The review also confirmed the phase closed two pre-existing holes: an unlisted nested
 parameter read and a silently dropped unlisted write.
+
+**Re-review evidence (2026-10-04 14:16)** — one bounded re-review on the fix diff
+`47851e6…8eeb884` (budget used; no third pass), correctness, memory safety, and semantics:
+
+| Lens | Result |
+| ---- | ------ |
+| Correctness | F1 closed: twelve unlisted dotted forms (read, write, compound, dot-call, index base and index write, call-result field, nested) each reject once with E10405; the listed counterparts build and run; F2 closed; no double report through `check_call` vs `check_expr_inner`; test integrity: without the fix spec 42/2, impl 30/1, compile-fail 3/0 — exactly the three new pins; head 44/31/3; `make check` 42 suites green |
+| Memory safety | No change-introduced defect: accepted probe emissions byte-identical to the pre-fix head after `#line` stripping; host ASan probes clean (exits 3/3/5, no sanitizer lines); rejected shapes write no C; the `lambda_listed` push/pop stays in sync |
+| Semantics | F1/F2 closed with one E10405 per unlisted root and spans rooted at the dotted expression; no over-rejection (module-qualified calls, enum members, imports, type paths, listed captures accepted); the rule is root-only, as designed (member-chain spellings are fields, not bindings) |
+
+Report-only notes: the write-target and index-base spellings ride the shared `check_qualified`
+path and have no dedicated pins (coverage hardening); `p.a = p.a + 1` reports E10405 twice per
+occurrence (the same per-occurrence style as F3). The reviewers' pre-existing, baseline-identical
+observations are filed as DEF-91 – DEF-94.
 
 **Verify**: `make check`
 
