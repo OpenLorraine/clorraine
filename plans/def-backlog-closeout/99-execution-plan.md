@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 01:50
-> **Progress**: 12/44 tasks (27%)
+> **Last Updated**: 2026-10-04 02:01
+> **Progress**: 13/44 tasks (30%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -242,13 +242,36 @@ timing-flaky in this environment; the host probes are the deterministic oracle.
 **Objective**: Bind and release the intrinsic argument and dot-`len` receiver.
 
 - [x] 2.2.1 Route intrinsic arguments and dot-`len` receivers through the owned-argument binding, guard-aware — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs` ✅ (completed: 2026-10-04 01:53)
-- [ ] 2.2.2 Run the spec suite and record the green phase
+- [x] 2.2.2 Run the spec suite and record the green phase ✅ (completed: 2026-10-04 02:01)
 
 **Deliverables**:
-- [ ] DEF-67 fix
-- [ ] `make check` green
+- [x] DEF-67 fix
+- [x] `make check` green
 
 **Verify**: `make check`
+
+**Green-phase evidence (2026-10-04 02:01)** — host ASan over `build/closeout/` with the fixed
+compiler:
+
+| Probe | Exit | Sanitizer output |
+| ----- | ---- | ---------------- |
+| `def67_len_call.clo` (ST-8a) | 3 | none |
+| `def67_len_store.clo` (ST-8b) | 1 | none |
+| `def67_dot_len.clo` (ST-9) | 1 | none |
+| `def67_len_guard.clo` (ST-10, true and false paths) | 3 | none |
+| `def67_storeat_regression.clo` (ST-11) | 3 | none |
+
+Both suites green together; `make check` green (42 suites). Two binding corrections came out of
+the full gate. First, the binding requires an owning or maybe-owning argument, so a duplicable
+fixed-array argument (`len([1, 2])`) stays inline — the strict build rejected an unused local the
+first cut emitted. Second, a call that may reborrow an owned argument (`outer<String>(...)`
+returning its lend parameter) is not bound: the argument's owner already releases that storage, so
+binding the result double-freed. The same lend shape double-frees on the baseline when the
+argument travels through a named call (`sink(outer<String>(s))` aborts, baseline-identical)
+— pre-existing, noted for the phase review. The nested multi-extent memory pin now follows the
+`RDC_ASAN` contract: the in-container sanitizer run is timing-flaky in this environment and is not
+a gate, while the plain relaxed build still catches a double free through the C library abort. The
+pin's red state is preserved (an abort leaves no exit code, failing the exit-zero assertion).
 
 ### Step 2.3: Implementation Tests & Hardening
 
