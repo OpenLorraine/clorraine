@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-04 14:30
+> **Last Updated**: 2026-10-08 00:08
 > **Progress**: 42/44 tasks (95%)
 > **CodeOps Artifact Schema**: 1
 
@@ -760,7 +760,7 @@ observations are filed as DEF-91 – DEF-94.
 - [x] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh` ✅ (completed: 2026-10-04 14:29)
 - [x] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done ✅ (completed: 2026-10-04 14:29) — `AGENTS.md` test map entry added; all seven roadmap rows verified `Done ✅`
 - [x] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change ✅ (completed: 2026-10-04 14:30)
-- [ ] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included)
+- [~] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included) ⏳ (review returned 2026-10-04 14:41; CO-1 fixed in-phase per the user's option A ruling; the memory and emission re-review lenses returned clean; the correctness re-review lens is pending on resume — session checkpoint for a machine restart 2026-10-08 00:08)
 - [ ] 6.1.6 Resolve close-out findings within scope, write the plan summary into this document, and mark the plan Complete in `00-index.md`
 
 **Deliverables**:
@@ -810,6 +810,40 @@ clean with no expression-temporary leak.
 | 6 | Unaffected programs keep their emitted C | the per-phase emission-integrity audits found no unintended differences (including the Phase 5 byte-identical re-review); determinism suite and every corpus leg green in `make verify`; the close-out review re-audits the plan-start baseline against the final head | ✅ |
 | 7 | `AGENTS.md` lists the new suites; roadmap DEF-63 – DEF-69 are Done; the plan is Complete | `AGENTS.md` test map entry added; all seven roadmap rows `Done ✅`; plan Complete is written by 6.1.6 | ⏳ final step |
 | 8 | Every phase review dispatched per the matrix with blast-radius and test-integrity steps; no open critical/major finding | every phase review record in this document names the blast-radius and test-integrity results and closes with no open critical/major; the close-out review runs in 6.1.5 | ⏳ 6.1.5 |
+
+**Close-out review findings (2026-10-04 14:41)** — correctness (generic), memory-safety, and
+emission-integrity lenses dispatched in parallel on the close-out diff (`5c53c90…f10d6f6`) and the
+whole-plan acceptance claims:
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| CO-1 | 🔴 critical | **DEF-91 provenance correction: the DEF-67 fix turned a leak into a crash.** At the plan-start tree `12b02b6`, `() => i32(len(stringOf("abc")))` emitted an inline read and ran with exit 3 (ASan leak only); at head it emits `__cl_owned0` bind → free/NULL → read, and the plain build exits 139 (SIGSEGV). Root cause: `lift_lambda` (`compiler/src/own/lower.rs:397`) runs `pop_scope()` before constructing the return terminator, so the temporary's scope drop is emitted before the terminator's value read; `Stmt::Return` avoids this through `emit_return_cleanup()` and the cleanup ladder (`compiler/src/own/statements.rs:974`, `compiler/src/own.rs:1176`). The DEF-91 row's "pre-existing, base=head" note is true only against the Phase 5 baseline `47851e6`, not the plan start. **Resolved**: the user ruled option A, "fix now in Phase 6"; fixed in `b788c3e` and `2848517` | ✅ fixed |
+| CO-2 | 🟡 minor | The runner does not neutralize an inherited `LSAN_OPTIONS`; a suppression could hide a leak while the probe still matches a pinned exit | report-only |
+| CO-3 | 🟡 minor | The runner has no `target/debug/clc` freshness check; a stale binary could mislead a re-run | report-only |
+| CO-4 | note | The plan-start baseline `12b02b668370bcb93594c557ece0de9c72f8fc5b` is an orphaned tree with no ref; diffs still resolve by tree | no action |
+| CO-5 | note | Two probe files emit `W10006: unused import 'String'`; four accepted units emit strict-C warnings at base and head alike (not in DEF-91 – DEF-94) | report-only |
+
+Reviewer evidence: the baseline runner is red on 13 of 14 probes (12 pinned defects plus the
+accepted pre-fix rejection) and exits non-zero — including an exit-matching leak caught by the
+sanitizer grep; the head runner re-runs to exit 0; the focused suites re-run 44 / 31 / 3; the spec
+diff check, roadmap rows, and `AGENTS.md` entry were independently confirmed; runner tamper tests
+(flipped exit, planted sanitizer text, timeout 124, SIGSEGV 139) are all caught; all 25 backlog
+rows DEF-70 – DEF-94 exist and no earlier phase finding is open.
+
+**CO-1 fix and re-review evidence (2026-10-08 00:08)** — the user ruled option A, "fix now in
+Phase 6". Specification-first: the spec pin `should_release_the_temporary_after_the_lifted_lambda_reads_it`
+failed red (the plain strict build faulted before reaching its exit), then the `LambdaBody::Expr`
+arm of `lift_lambda` was routed through `emit_return_cleanup()` and the return terminator like
+`Stmt::Return` (popping the scope without re-running its cleanup). Green: spec 45 / impl 32 /
+compile-fail 3, `make check` 42 suites, `spec/check.sh` OK. The close-out runner gained
+`def91_lambda_len` (exit 3, sanitizer-clean; 15 probes total, runner exit 0). One bounded re-review
+of the fix diff (`f10d6f6…2848517`): **memory safety PASS** (runner clean; ASan probes for the exact
+repro, a capture, two temporaries, a block body, a nested lambda, and owned returns all clean with
+exactly one release each; the non-lambda DEF-67 probes emit byte-identically), **emission integrity
+PASS** (986 jobs; 57 differ, all `cl_lambda_*`: 11 intended read-before-ladder reorders and 46
+`#line`-only markers; corpus, run, and staged sets byte-identical; 0 introduced strict-C failures),
+and **correctness pending** (the lens was cancelled with the session; the budgeted round re-dispatches
+it on resume).
 
 ---
 
