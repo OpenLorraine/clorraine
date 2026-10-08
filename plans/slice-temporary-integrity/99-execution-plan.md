@@ -191,7 +191,33 @@ targeted re-verify above is the final check.
 
 - [x] 2.3.1 Write implementation tests for the literal-field and indexed-assignment fill/move-out shapes, the consumer-side emptying at the indexed store, the store-form selection for a deferred consume and a deferred base fill, the pinned index on the move-out place, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-08 16:35)
 - [x] 2.3.2 Run the host-ASan probes and edge cases (row element, nested index chain, guarded operand, indexed-assignment RHS, the loop-form indexed assignment, the duplicable-element order variant) ✅ (completed: 2026-10-08 16:35)
-- [ ] 2.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer with the `spec/04-expressions.md` §3 evaluation-order lens; blast-radius (every `consume_place` call site, every fill-emitter arm) and test-integrity steps; resolve findings; one bounded re-review
+- [~] 2.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer with the `spec/04-expressions.md` §3 evaluation-order lens; blast-radius (every `consume_place` call site, every fill-emitter arm) and test-integrity steps; resolve findings; one bounded re-review ⏳ (implemented: 2026-10-08 16:40)
+
+**Phase 2 review findings (2026-10-08 16:40)** — four reviewers dispatched in parallel on the
+phase diff (baseline `c425d3e1`): correctness, memory-safety, emission-integrity, and semantics
+(the `spec/04-expressions.md` §3 evaluation-order lens). Corpus emission was byte-identical and
+the memory pass found no leak/double-free apart from the order defect below; two phase-introduced
+critical findings, resolved by user ruling (apply both fixes):
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| RV-001 + SA-001 + PE-001 + SR-002 | 🔴 CRITICAL | The new fixed-array fill arm delegated to `emit_fixed_array_assign_to`, which re-emits the inner guards the fill had already emitted, so a side-effecting source ran twice (`Box<String[2]>` field: head exit 202 vs base 102; also member rows, indexed-store rows, and array-literal rows). AddressSanitizer-invisible; wrong values. | ✅ fixed — the fill copies the already-evaluated object's bytes directly (`array_source_address`), with no second guard emission |
+| SR-001 | 🔴 CRITICAL | The deferred carrier was not emptied by a projection/compound-literal consumer (`(Box { v: mk().a }).v` in a loop), so the next fill's reassigned drop freed what the destination still owned (`free()`: double free; the base leaked instead). | ✅ fixed — the carrier is marked non-releasing (an `adopting` flag on the deferred materialization) and skips the reassigned-temp drop, matching AR-4's "non-releasing temporary" |
+| RV-003 + PE-003 | 🟡 MINOR | The migrated closeout pins passed on the eager shape, so they did not discriminate the deferred preparation. | ✅ fixed — both pins assert the deferred clear-before-call order, which the eager shape fails (verified against `55a9b99`) |
+| RV-002 | 🟡 MINOR | `has_deferred_fill` does not recurse through `Binary`/`Cast`, so a wrapped element read (`make()[i] + 1`) keeps the reversed order; base-identical. | report-only (pre-existing) |
+| PE-002 | 🟡 MINOR | A `?:`-arm literal with a deferred element read now uses the store form (source order improved); the packet's "guarded emission unchanged" wording covered member consumes only. | report-only (positive) |
+| pre-existing | — | The guarded/conditional literal sibling leak, the `len(mk().a)` loop-condition double free, the Member-of-Index order gap, and the DEF-75 struct-element store are base-identical and out of scope. | reported separately |
+
+**Fix evidence (2026-10-08 17:20)** — both fixes landed with regression coverage:
+
+| Fix | Coverage | Result |
+| --- | -------- | ------ |
+| Fixed-array fill single evaluation | impl `should_call_the_source_once_when_a_fixed_array_element_is_consumed` and `…_fixed_array_member_is_consumed` (call-count pins) | the emitted C contains exactly one call; the counting sources answer 1 and 12; host ASan clean |
+| Non-releasing carrier | spec `should_not_free_a_projected_literal_twice_when_the_loop_rebinds_it` (loop projection consumer) | exit 0, host ASan clean (the base leaks, the unfixed head double-frees) |
+| Discriminating pins | the two closeout pins assert the clear-before-call order | on `55a9b99` the first `make(` precedes the clear, so the pins fail as required |
+| all | full host-ASan matrix re-run (row element 4, nested 3, unguarded literal 2, indexed RHS 3, loop store 3, duplicable order 12, single-call and loop-projection regressions 1/0) | every shape exit-correct and ASan clean; the guarded literal keeps its base-identical pre-existing leak; `make check` green |
+
+One bounded re-review is dispatched on the fix diff.
 
 **Deliverables**:
 - [ ] Implementation suite

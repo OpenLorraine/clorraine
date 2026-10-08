@@ -130,6 +130,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 temp,
                                 value: Box::new(value),
                                 move_outs,
+                                adopting: false,
                             },
                         );
                     } else {
@@ -712,6 +713,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: Box::new(value),
                 move_outs: Vec::new(),
+                adopting: false,
             },
         )
     }
@@ -751,6 +753,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: inner,
                 move_outs,
+                adopting: _,
             } if self.defer_move_outs == 0 && move_outs.is_empty() => {
                 let place = Place {
                     base: ir::PlaceBase::Temp(temp),
@@ -823,6 +826,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     temp,
                     value: Box::new(index),
                     move_outs: Vec::new(),
+                    adopting: false,
                 },
             )
         } else {
@@ -860,6 +864,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     temp,
                     value: Box::new(value),
                     move_outs: Vec::new(),
+                    adopting: false,
                 },
             );
         }
@@ -926,6 +931,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: Box::new(value),
                 move_outs: vec![source],
+                adopting: true,
             },
         )
     }
@@ -1114,6 +1120,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: inner,
                 move_outs: _,
+                adopting: _,
             } => {
                 // A view-typed temporary owns no storage and is never released,
                 // so only an owning temporary is a loan owner; a type that may
@@ -1251,6 +1258,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     temp,
                     value: Box::new(value),
                     move_outs: Vec::new(),
+                    adopting: false,
                 },
             );
         }

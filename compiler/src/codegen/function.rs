@@ -2160,9 +2160,9 @@ pub(super) struct ArrayTarget {
     /// The C expression that names the array.
     text: String,
     /// The C expression that is the array's address.
-    address: String,
+    pub(super) address: String,
     /// The C expression for the array's byte count.
-    bytes: String,
+    pub(super) bytes: String,
 }
 
 impl ArrayTarget {

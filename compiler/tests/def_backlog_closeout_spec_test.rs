@@ -583,6 +583,15 @@ func main(): i32 {
 "#;
     let emitted = emit_host("constant-index", source);
     assert_before("constant-index", &emitted, "make(", "__cl_tmp1 = __cl_tmp0[0];");
+    // The deferred fill clears the reusable array temporary before the call;
+    // the eager shape emits the call first, so this order discriminates the
+    // deferred preparation.
+    assert_before(
+        "constant-index",
+        &emitted,
+        "__cl_tmp0[0] = NULL;",
+        "make(",
+    );
     assert_contains(
         "constant-index",
         &emitted,

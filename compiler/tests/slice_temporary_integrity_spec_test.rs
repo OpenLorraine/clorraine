@@ -752,3 +752,45 @@ func main(): i32 {
     assert_exit("sti-st13", &output, 0);
     assert_no_asan("sti-st13", &output);
 }
+
+/// A literal projection bound in a loop does not free its adopted value twice.
+///
+/// `(Box { v: mk().a }).v` renders the literal's field through the deferred
+/// carrier; the destination owns the value, and a later iteration's re-fill
+/// must not release it again. The binding checks run three times, so `main`
+/// answers zero and the sanitizer path reports no double free or leak.
+#[test]
+fn should_not_free_a_projected_literal_twice_when_the_loop_rebinds_it() {
+    let source = r#"module spec.sti.st14;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+struct Box {
+    v: String;
+}
+
+func mk(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    while (n < 3) {
+        let v: String = (Box { v: mk().a }).v;
+        if (i32(len(v)) != 2) {
+            return 81;
+        }
+        n = n + 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("sti-st14", source);
+    assert_exit("sti-st14", &output, 0);
+    assert_no_asan("sti-st14", &output);
+}

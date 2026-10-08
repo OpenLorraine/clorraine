@@ -276,6 +276,11 @@ pub enum ValueKind {
         /// The `take` argument places emptied after the call, on the
         /// evaluated path only.
         move_outs: Vec<Place>,
+        /// True when the consumer adopts the temporary's value and the
+        /// temporary is therefore non-releasing: the destination's own
+        /// cleanup is the sole owner, so a re-fill does not release the
+        /// previous value (a consume carrier the destination moved out).
+        adopting: bool,
     },
 }
 

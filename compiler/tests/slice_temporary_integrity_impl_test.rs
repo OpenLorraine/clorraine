@@ -617,3 +617,89 @@ func main(): i32 {
         "sti-impl9: two emissions of one program must be byte-identical"
     );
 }
+
+/// A consumed fixed-array element evaluates its call source exactly once.
+///
+/// The fixed-array fill copies the bytes of the object the field guards
+/// already evaluated; it must not emit those guards a second time, or the
+/// side-effecting root call would run twice. The counting source runs once,
+/// so `main` answers one.
+#[test]
+fn should_call_the_source_once_when_a_fixed_array_element_is_consumed() {
+    let source = r#"module spec.sti.impl10;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+let trace: i32 = 0;
+
+func makeGrid(): String[2][2] {
+    trace = trace + 1;
+    return [[stringOf("a"), stringOf("bb")], [stringOf("ccc"), stringOf("dddd")]];
+}
+
+func pack<T>(make: func(): T[2], i: i32): Box<T> {
+    return Box<T> { v: make()[i] };
+}
+
+func main(): i32 {
+    let b: Box<String[2]> = pack<String[2]>(makeGrid, 1);
+    if (i32(len(b.v[1])) != 4) {
+        return 90;
+    }
+    return trace;
+}
+"#;
+    let emitted = emit_host("sti-impl10", source);
+    assert_eq!(
+        emitted.matches("make(__cl_tmp0);").count(),
+        1,
+        "sti-impl10: the root call must be emitted exactly once"
+    );
+    let output = run_host("sti-impl10-run", source);
+    assert_exit("sti-impl10-run", &output, 1);
+}
+
+/// A consumed fixed-array member evaluates its call source exactly once.
+///
+/// `Box { r: mk().row }` moves a `String[2]` row out of the call result; the
+/// fill copies the already-evaluated row once, so the counting source runs
+/// once and `main` answers twelve (one call, the two-byte first row cell).
+#[test]
+fn should_call_the_source_once_when_a_fixed_array_member_is_consumed() {
+    let source = r#"module spec.sti.impl11;
+
+import { String, stringOf } from std.text;
+
+struct Grid {
+    row: String[2];
+}
+
+struct Box {
+    r: String[2];
+}
+
+let calls: i32 = 0;
+
+func mk(): Grid {
+    calls = calls + 1;
+    return Grid { row: [stringOf("ab"), stringOf("cde")] };
+}
+
+func main(): i32 {
+    let b: Box = Box { r: mk().row };
+    return calls * 10 + i32(len(b.r[0]));
+}
+"#;
+    let emitted = emit_host("sti-impl11", source);
+    assert_eq!(
+        emitted.matches("_mk();").count(),
+        1,
+        "sti-impl11: the root call must be emitted exactly once"
+    );
+    let output = run_host("sti-impl11-run", source);
+    assert_exit("sti-impl11-run", &output, 12);
+}

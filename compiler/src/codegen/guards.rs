@@ -112,9 +112,15 @@ impl<'a> Emitter<'a> {
                 temp,
                 value: inner,
                 move_outs,
+                adopting,
             } => {
                 self.emit_guards(inner);
-                self.emit_reassigned_temp_drop(*temp, &inner.ty);
+                // An adopting carrier's consumer owns the value, so the
+                // previous value must not be released on a re-fill: the
+                // destination's own cleanup is the sole owner.
+                if !adopting {
+                    self.emit_reassigned_temp_drop(*temp, &inner.ty);
+                }
                 let inner_ty = self.substitute(&inner.ty);
                 if let ValueKind::Conditional {
                     condition,
@@ -187,11 +193,19 @@ impl<'a> Emitter<'a> {
                             self.push(&format!("    {call};"));
                         }
                         // A fixed-array object has no C assignment form: the
-                        // fill copies the row's bytes into the temporary, so a
-                        // consumed element projection can travel as a value.
+                        // fill copies the row's bytes from the object its
+                        // guards already evaluated, and the carried move-outs
+                        // empty the source. The store core is not used here
+                        // because it would emit the inner guards a second
+                        // time, running a side-effecting source twice.
                         _ if inner_ty.is_fixed_array() => {
                             let target = ArrayTarget::object(&destination);
-                            self.emit_fixed_array_assign_to(&target, &inner_ty, inner, false);
+                            let value_c = self.value(inner);
+                            let source = self.array_source_address(inner, &value_c);
+                            self.push(&format!(
+                                "    memcpy({}, {source}, {});",
+                                target.address, target.bytes
+                            ));
                         }
                         _ => self.push(&format!("    {destination} = {};", self.value(inner))),
                     }
@@ -747,6 +761,7 @@ impl<'a> Emitter<'a> {
                 temp,
                 value: inner,
                 move_outs,
+                adopting: _,
             } => {
                 let inner_ty = self.substitute(&inner.ty);
                 let destination = format!("__cl_tmp{temp}");
