@@ -1,0 +1,291 @@
+# Execution Plan: Slice and Temporary Integrity
+
+> **Document**: 99-execution-plan.md
+> **Parent**: [Index](00-index.md)
+> **Last Updated**: 2026-10-08 07:36
+> **Progress**: 0/34 tasks (0%)
+> **CodeOps Artifact Schema**: 1
+
+## Overview
+
+Four phases close the seven defects of this batch: row-typed slice views (DEF-70), deferred consume
+preparation (DEF-72/73/74), root and receiver binding (DEF-71/89), and the element-store drop
+spelling (DEF-75) with the plan-wide hardening. Each phase follows the specification-first ordering
+and ends with its review dispatch per `AGENTS.md`.
+
+**🚨 Update this document after EACH completed task!**
+
+---
+
+## Implementation Phases
+
+| Phase | Title | Tasks |
+| ----- | ----- | ----- |
+| 1 | Row-typed slice views (DEF-70) | 11 |
+| 2 | Deferred consume preparation (DEF-72/73/74) | 8 |
+| 3 | Root and receiver binding (DEF-71/89) | 8 |
+| 4 | Element-store drop spelling (DEF-75) and plan hardening | 7 |
+
+**Total: 34 tasks across 4 phases** (scope is bounded by the task-size criteria in
+`quality-checklist.md`)
+
+> **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
+>
+> The task checkboxes in the phase sections below are the **single source of truth** for progress.
+> Every task line appears exactly once in this document. The executing agent MUST:
+>
+> 1. **On implementation:** mark the task `[~]` with a timestamp —
+>    `- [~] 1.1.1 Task description ⏳ (implemented: YYYY-MM-DD HH:MM)`
+> 2. **On verify pass:** promote it to `[x]` —
+>    `- [x] 1.1.1 Task description ✅ (completed: YYYY-MM-DD HH:MM)`
+> 3. **Update the Progress header** (`> **Progress**: X/Y tasks (Z%)`) and the Last Updated stamp
+>    after EVERY task — never batch updates. Only `[x]` counts as complete.
+> 4. **Resume** by scanning the phase sections top-to-bottom: the first `[~]` task is resumed first,
+>    else the first `[ ]` task.
+> 5. **On blocker:** mark the task `[!]` and append `Blocked: <short reason>` on the same line.
+>    The plan lifecycle is `Ready`, `Executing`, `Done`, or `Blocked`, derived from these markers.
+>
+> Timestamps come from `date '+%Y-%m-%d %H:%M'` — never invented.
+
+---
+
+## Phase 1: Row-typed slice views (DEF-70)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language; `spec/17-codegen` ABI lens (type keys, typedefs, lowering)
+> **Reasoning**: high — type-model, symbol-key, and emission changes with a cross-cutting audit
+
+### Step 1.1: Specification Tests
+
+**Reference**: [03-01 §Proposed Changes](03-01-slice-row-views.md) · [07 ST-1 – ST-5](07-testing-strategy.md) · [AR-3, AR-9](00-ambiguity-register.md)
+**Objective**: Pin the row-typed behavior before any implementation change.
+
+- [ ] 1.1.1 [spec-author] Write specification tests ST-1 – ST-5 in `compiler/tests/slice_temporary_integrity_spec_test.rs` on the established harness (strict host build, host ASan, diagnostic asserts)
+- [ ] 1.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic row move double-frees; nested access mis-types; the `E10200` mismatch is accepted; ST-1 is recorded as a justified pass)
+
+**Deliverables**:
+- [ ] ST-1 – ST-5 in the new spec suite
+- [ ] Red-phase evidence
+
+**Verify**: `make check` (the new suite fails as expected; the existing suites stay green)
+
+### Step 1.2: Implementation
+
+**Reference**: [03-01 §Implementation Details](03-01-slice-row-views.md) · [AR-3, AR-9](00-ambiguity-register.md)
+**Objective**: Make the view's element the row end to end.
+
+- [ ] 1.2.1 Type the slice result from the source's view element and add the explicit type-argument agreement check (`E10200`) — `compiler/src/own/call.rs`, `compiler/src/types/mod.rs`
+- [ ] 1.2.2 Key and register row-typed views; skip parameter-typed rows — `compiler/src/types/keys.rs`, `compiler/src/codegen/types.rs`
+- [ ] 1.2.3 Emit the row-typed typedef and builder — `compiler/src/codegen/program.rs`, `compiler/src/codegen/calls.rs`
+- [ ] 1.2.4 Replace the recovery gate with element agreement — `compiler/src/own/lower.rs`
+- [ ] 1.2.5 Migrate the flat-name shape pins this step breaks (`compiler/tests/residual_defect_completion_impl_test.rs`, `compiler/tests/array_value_integrity_impl_test.rs`, `compiler/src/codegen/types.rs` unit tests) so `make check` can be green
+- [ ] 1.2.6 Run the new suite and record the green phase
+
+**Deliverables**:
+- [ ] Row-typed view type, key, typedef, builder, and access path
+- [ ] ST-1 – ST-5 green
+
+**Verify**: `make check`
+
+### Step 1.3: Implementation Tests & Hardening
+
+**Reference**: [03-01 §Testing Requirements](03-01-slice-row-views.md)
+**Objective**: Pin the emitted shapes and prove memory safety.
+
+- [ ] 1.3.1 Write implementation tests for the typedef key and pointer declarator, the `zero_view_helper` key, a nullable row view, an empty `return;` from a view-returning function, the builder and index spellings, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs`
+- [ ] 1.3.2 Run the host-ASan probe matrix for the ST-1 – ST-5 shapes (row move, nested access, sub-slice, bounds trap) and the strict `-Werror` builds; record the results
+- [ ] 1.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, with the semantics reviewer on the view/element ownership boundary and the `spec/17-codegen` ABI lens; every packet carries the blast-radius (every key/typedef/builder/index call site) and test-integrity (assertions fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
+
+**Deliverables**:
+- [ ] Implementation suite and migrated pins
+- [ ] Clean probe matrix
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 2: Deferred consume preparation (DEF-72/73/74)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language; evaluation-order and statement-temporary contracts
+> **Reasoning**: high — deferred-fill lifecycle across lowering and emission, order-sensitive
+
+### Step 2.1: Specification Tests
+
+**Reference**: [03-02 §Proposed Changes](03-02-deferred-consume-preparation.md) · [07 ST-6 – ST-8](07-testing-strategy.md) · [AR-4](00-ambiguity-register.md)
+**Objective**: Pin the fill, the source order, and the member-rooted release before implementation.
+
+- [ ] 2.1.1 [spec-author] Write specification tests ST-6 – ST-8 in `compiler/tests/slice_temporary_integrity_spec_test.rs`
+- [ ] 2.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic index call never runs; trace 21 for the duplicable and owning instantiations; the sibling leak)
+
+**Deliverables**:
+- [ ] ST-6 – ST-8
+- [ ] Red-phase evidence
+
+**Verify**: `make check` (the new suite fails as expected)
+
+### Step 2.2: Implementation
+
+**Reference**: [03-02 §Proposed Changes](03-02-deferred-consume-preparation.md) · [AR-4](00-ambiguity-register.md)
+**Objective**: Carry the consume preparation and emit it at the consuming point.
+
+- [ ] 2.2.1 Defer the consume preparation: return the deferred value with its fill and move-out, and extend the fill emitter for a fixed-array (row) object — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`
+- [ ] 2.2.2 Prepare member roots, empty the consume temporary at the indexed-store adoption, and select the store form for a literal whose field carries a deferred consume or a deferred base fill of an element read (duplicable or owning) — `compiler/src/own/lower.rs`, `compiler/src/codegen/function.rs`
+- [ ] 2.2.3 Run the new suite and record the green phase
+
+**Deliverables**:
+- [ ] Deferred consume preparation with source-order fills
+- [ ] ST-6 – ST-8 green
+
+**Verify**: `make check`
+
+### Step 2.3: Implementation Tests & Hardening
+
+**Reference**: [03-02 §Testing Requirements](03-02-deferred-consume-preparation.md)
+**Objective**: Pin the emitted fill/move-out shapes and the edge cases.
+
+- [ ] 2.3.1 Write implementation tests for the literal-field and indexed-assignment fill/move-out shapes, the consumer-side emptying at the indexed store, the store-form selection for a deferred consume and a deferred base fill, the pinned index on the move-out place, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs`
+- [ ] 2.3.2 Run the host-ASan probes and edge cases (row element, nested index chain, guarded operand, indexed-assignment RHS, the loop-form indexed assignment, the duplicable-element order variant)
+- [ ] 2.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer with the `spec/04-expressions.md` §3 evaluation-order lens; blast-radius (every `consume_place` call site, every fill-emitter arm) and test-integrity steps; resolve findings; one bounded re-review
+
+**Deliverables**:
+- [ ] Implementation suite
+- [ ] Clean probe matrix
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 3: Root and receiver binding (DEF-71/89)
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language; ownership/lifetime rules for owners and receivers
+> **Reasoning**: high — release registration and conditional/receiver binding on ownership paths
+
+### Step 3.1: Specification Tests
+
+**Reference**: [03-03 §Proposed Changes](03-03-root-and-receiver-binding.md) · [07 ST-9 – ST-13](07-testing-strategy.md) · [AR-5](00-ambiguity-register.md)
+**Objective**: Pin the missing releases and the adoption forms before implementation.
+
+- [ ] 3.1.1 [spec-author] Write specification tests ST-9 – ST-13 in `compiler/tests/slice_temporary_integrity_spec_test.rs`
+- [ ] 3.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (sibling-field leaks; the member-receiver buffer leak; the eager-temp loop double free)
+
+**Deliverables**:
+- [ ] ST-9 – ST-13
+- [ ] Red-phase evidence
+
+**Verify**: `make check` (the new suite fails as expected)
+
+### Step 3.2: Implementation
+
+**Reference**: [03-03 §Proposed Changes](03-03-root-and-receiver-binding.md) · [AR-5](00-ambiguity-register.md)
+**Objective**: Extend the binds to the missing roots and receivers.
+
+- [ ] 3.2.1 Bind the eager temporary through the destination-temp materializer and emit the emptying adoption for registered destination temporaries; bind a conditional root as one value (guarded by the place-arm predicate) — `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs`
+- [ ] 3.2.2 Bind owned member receivers at the read positions only (cast/intrinsic/argument/return reads), excluding consume preparation, guarded positions, and loop-condition lowering — `compiler/src/own/lower.rs`
+- [ ] 3.2.3 Run the new suite and record the green phase
+
+**Deliverables**:
+- [ ] Destination-temp eager bind, conditional root bind, read-position member receiver bind
+- [ ] ST-9 – ST-13 green
+
+**Verify**: `make check`
+
+### Step 3.3: Implementation Tests & Hardening
+
+**Reference**: [03-03 §Testing Requirements](03-03-root-and-receiver-binding.md)
+**Objective**: Pin the new shapes and prove the single-owner invariant.
+
+- [ ] 3.3.1 Write implementation tests for the destination-temp mark and release, the emptying adoption shape, the conditional branch-store shape, the read-position member-receiver binding and its excluded positions, the place-arm conditional staying inline, the loop-condition pin migration, and the existing `__cl_owned` absence pins — `compiler/tests/slice_temporary_integrity_impl_test.rs`
+- [ ] 3.3.2 Run the host-ASan probes including the whole-result adoption, the loop form of the eager temporary (single release), the guarded literal, the loop-condition member receiver, and the `len(spawn())` regressions
+- [ ] 3.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer on the guarded receiver path's evaluation order; blast-radius (every root-bind and receiver-bind call site) and test-integrity steps; resolve findings; one bounded re-review
+
+**Deliverables**:
+- [ ] Implementation suite
+- [ ] Clean probe matrix
+- [ ] Phase review with no open critical/major finding
+
+**Verify**: `make check`
+
+---
+
+## Phase 4: Element-store drop spelling (DEF-75) and plan hardening
+
+> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Lenses**: compiler-and-language; emitted-C subset (`spec/17-codegen`)
+> **Reasoning**: medium — one emission spelling plus the plan-wide acceptance sweep
+
+### Step 4.1: Specification Test
+
+**Reference**: [03-04 §Proposed Changes](03-04-element-store-drop-spelling.md) · [07 ST-12](07-testing-strategy.md) · [AR-8, AR-10](00-ambiguity-register.md)
+**Objective**: Pin the strict-build acceptance before the fix.
+
+- [ ] 4.1.1 [spec-author] Write specification test ST-12 in `compiler/tests/slice_temporary_integrity_spec_test.rs` (both filed programs, strict host build and run)
+- [ ] 4.1.2 Run the test and record the red phase (pointer-arrow error under `-Werror`)
+
+**Deliverables**:
+- [ ] ST-12
+- [ ] Red-phase evidence
+
+**Verify**: `make check` (the new case fails as expected)
+
+### Step 4.2: Implementation
+
+**Reference**: [03-04 §Implementation Details](03-04-element-store-drop-spelling.md) · [AR-8, AR-10](00-ambiguity-register.md)
+**Objective**: Parenthesize the drop-expression suffix bases only where grouping is needed.
+
+- [ ] 4.2.1 Parenthesize a drop-expression suffix base only when it is not a primary/postfix expression (field and fixed-array index appends; statement and expression forms) — `compiler/src/codegen/drop.rs`
+- [ ] 4.2.2 Run the new suite and record the green phase
+
+**Deliverables**:
+- [ ] Valid emitted drop targets; unchanged handle spelling
+- [ ] ST-12 green
+
+**Verify**: `make check`
+
+### Step 4.3: Implementation Tests & Plan Hardening
+
+**Reference**: [01 §Acceptance Criteria](01-requirements.md)
+**Objective**: Pin the spelling and run the plan-wide acceptance.
+
+- [ ] 4.3.1 Write implementation tests for the `(*(&(out[i]))).a` shape, the untouched handle spelling, the byte-identical existing spellings for identifier/member/index bases, the expression-form grouping, and byte-identical re-emission for programs without the shape — `compiler/tests/slice_temporary_integrity_impl_test.rs`
+- [ ] 4.3.2 Plan-wide hardening: the base-vs-head emission sweep over the corpus in every profile with the strict unit builds (corpus emission byte-identical; retyped multi-extent test-suite pins expected, every diff traced to its requirement), the memory-safety sweep across all changed shapes, and the full `make verify`
+- [ ] 4.3.3 Final plan review and close-out: correctness plus the memory-safety and emission-integrity auditors (and the semantics reviewer over the plan diff's evaluation-order surfaces) over the plan diff; update the AGENTS.md test-naming map and sync the roadmap (per the roadmap skill); record the final evidence
+
+**Deliverables**:
+- [ ] Implementation suite
+- [ ] Emission and memory sweeps clean
+- [ ] `make verify: all legs passed`
+- [ ] Docs and roadmap updated
+
+**Verify**: `make verify`
+
+---
+
+## Dependencies
+
+```
+Phase 1 (row-typed views)
+    ↓
+Phase 2 (deferred consume preparation) ── row moves through literals use the row-typed element
+    ↓
+Phase 3 (root and receiver binding)
+    ↓
+Phase 4 (drop spelling + plan hardening)
+```
+
+## Success Criteria
+
+**Feature is complete when:**
+
+1. ✅ All phases completed
+2. ✅ All verification passing (`make check` per phase; `make verify` at completion)
+3. ✅ No new warnings or errors; all emitted units strict-clean
+4. ✅ No dead code — the removed recovery gate and unwrapping helper leave no unused path
+5. ✅ Security — no input, network, or persistence surface touched; not applicable beyond the
+   compiler's own strict builds
+6. ✅ Documentation updated (AGENTS.md test map, roadmap)
+7. ✅ Code reviewed per the repository's quality profile with no open critical/major finding
+8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
