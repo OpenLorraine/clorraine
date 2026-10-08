@@ -609,11 +609,14 @@ pub fn implicit_conversion(from: &Ty, to: &Ty) -> bool {
         (TyKind::StaticStr, TyKind::Str) => true,
         (TyKind::Handle(name), TyKind::Str) if name == "String" => true,
         (TyKind::Scalar(a), TyKind::Scalar(b)) => scalar_widens(*a, *b),
-        // Two views describe the same view when their elements agree: the
-        // written `T[][M]` and the inferred `T[]` whose element is `T[M]` are
-        // one view of `T[M]` rows, so they convert to each other.
+        // Two views describe the same view when their elements are the same
+        // type: the written `T[][M]` and the inferred `T[]` whose element is
+        // `T[M]` are one view of `T[M]` rows, so they convert to each other.
+        // The comparison is identity, not the conversion relation, so an
+        // element that merely widens (`u8[]` to `u16[]`, `String[]` to
+        // `str[]`) is still rejected: its view has a different C type.
         _ if from.is_slice() && to.is_slice() => {
-            implicit_conversion(&view_element(from), &view_element(to))
+            view_element(from).kind == view_element(to).kind
         }
         _ => false,
     }

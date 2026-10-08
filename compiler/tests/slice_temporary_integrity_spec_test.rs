@@ -524,3 +524,48 @@ func main(): i32 {
     let output = run_host("sti-st8", source);
     assert_exit("sti-st8", &output, 3);
 }
+
+/// A scalar-view element that merely widens does not convert.
+///
+/// `u8[]` and `u16[]` are different C view types (each `ClSlice_` name is
+/// keyed by its element), so returning a `u8[]` where a `u16[]` is declared
+/// is an implicit conversion the language does not allow: `E10200`, and no
+/// translation unit is written. Only the two representations of one row view
+/// convert to each other, not views whose elements differ.
+#[test]
+fn should_reject_when_two_scalar_views_have_different_element_types() {
+    let source = r#"module spec.sti.st9;
+
+func convert(v: u8[]): u16[] {
+    return v;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected("sti-st9", source, "E10200");
+}
+
+/// A `String[]` element does not convert to a `str[]` element.
+///
+/// The owned handle element and the view element name different view structs,
+/// so passing a `String[]` where a `str[]` is expected is rejected with
+/// `E10200`; an owned string widens to `str` only as a scalar argument, not as
+/// a view element.
+#[test]
+fn should_reject_when_a_view_element_widens_from_string_to_str() {
+    let source = r#"module spec.sti.st10;
+
+import { String } from std.text;
+
+func pass(v: String[]): str[] {
+    return v;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected("sti-st10", source, "E10200");
+}
