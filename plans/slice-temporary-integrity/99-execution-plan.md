@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 09:36
-> **Progress**: 8/34 tasks (24%)
+> **Last Updated**: 2026-10-08 09:38
+> **Progress**: 10/34 tasks (29%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -92,8 +92,8 @@ and ends with its review dispatch per `AGENTS.md`.
 **Reference**: [03-01 §Testing Requirements](03-01-slice-row-views.md)
 **Objective**: Pin the emitted shapes and prove memory safety.
 
-- [ ] 1.3.1 Write implementation tests for the typedef key and pointer declarator, the `zero_view_helper` key, a nullable row view, an empty `return;` from a view-returning function, the builder and index spellings, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs`
-- [ ] 1.3.2 Run the host-ASan probe matrix for the ST-1 – ST-5 shapes (row move, nested access, sub-slice, bounds trap) and the strict `-Werror` builds; record the results
+- [x] 1.3.1 Write implementation tests for the typedef key and pointer declarator, the `zero_view_helper` key, a nullable row view, an empty `return;` from a view-returning function, the builder and index spellings, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-08 09:38)
+- [x] 1.3.2 Run the host-ASan probe matrix for the ST-1 – ST-5 shapes (row move, nested access, sub-slice, bounds trap) and the strict `-Werror` builds; record the results ✅ (completed: 2026-10-08 09:38)
 - [ ] 1.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, with the semantics reviewer on the view/element ownership boundary and the `spec/17-codegen` ABI lens; every packet carries the blast-radius (every key/typedef/builder/index call site) and test-integrity (assertions fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
 
 **Deliverables**:
