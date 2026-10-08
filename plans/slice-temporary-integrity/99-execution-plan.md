@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 16:17
-> **Progress**: 16/34 tasks (47%)
+> **Last Updated**: 2026-10-08 16:35
+> **Progress**: 18/34 tasks (53%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -189,8 +189,8 @@ targeted re-verify above is the final check.
 **Reference**: [03-02 §Testing Requirements](03-02-deferred-consume-preparation.md)
 **Objective**: Pin the emitted fill/move-out shapes and the edge cases.
 
-- [ ] 2.3.1 Write implementation tests for the literal-field and indexed-assignment fill/move-out shapes, the consumer-side emptying at the indexed store, the store-form selection for a deferred consume and a deferred base fill, the pinned index on the move-out place, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs`
-- [ ] 2.3.2 Run the host-ASan probes and edge cases (row element, nested index chain, guarded operand, indexed-assignment RHS, the loop-form indexed assignment, the duplicable-element order variant)
+- [x] 2.3.1 Write implementation tests for the literal-field and indexed-assignment fill/move-out shapes, the consumer-side emptying at the indexed store, the store-form selection for a deferred consume and a deferred base fill, the pinned index on the move-out place, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-08 16:35)
+- [x] 2.3.2 Run the host-ASan probes and edge cases (row element, nested index chain, guarded operand, indexed-assignment RHS, the loop-form indexed assignment, the duplicable-element order variant) ✅ (completed: 2026-10-08 16:35)
 - [ ] 2.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer with the `spec/04-expressions.md` §3 evaluation-order lens; blast-radius (every `consume_place` call site, every fill-emitter arm) and test-integrity steps; resolve findings; one bounded re-review
 
 **Deliverables**:

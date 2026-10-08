@@ -208,6 +208,20 @@ fn assert_absent(tag: &str, text: &str, needle: &str) {
     );
 }
 
+/// Asserts the first fragment appears before the second one in the text.
+fn assert_before(tag: &str, text: &str, first: &str, second: &str) {
+    let first_at = text
+        .find(first)
+        .unwrap_or_else(|| panic!("{tag}: the text does not contain {first:?}"));
+    let second_at = text
+        .find(second)
+        .unwrap_or_else(|| panic!("{tag}: the text does not contain {second:?}"));
+    assert!(
+        first_at < second_at,
+        "{tag}: expected {first:?} before {second:?}"
+    );
+}
+
 /// Asserts the program exited with exactly `expected`, reporting its stderr.
 fn assert_exit(tag: &str, output: &Output, expected: i32) {
     assert_eq!(
@@ -361,5 +375,245 @@ func main(): i32 {
     assert_eq!(
         first, second,
         "sti-impl4: two emissions of one program must be byte-identical"
+    );
+}
+
+/// A generic aggregate field reads a call result at a run-time index in the
+/// consuming statement's order.
+///
+/// The field's guards fill the root array temporary, run the pinned index
+/// once, copy the selected slot into the deferred consume temporary, and empty
+/// the slot; the destination adopts the value and empties the temporary. The
+/// selected element measures three bytes, so `main` answers three.
+#[test]
+fn should_defer_the_literal_fill_and_empty_the_slot_when_a_generic_field_reads_a_runtime_index() {
+    let source = r#"module spec.sti.impl5;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func pack<T>(make: func(): T[2], i: i32): Box<T> {
+    return Box<T> { v: make()[i] };
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let i: i32 = 1;
+    let b: Box<String> = pack<String>(mkString, i);
+    return i32(len(b.v));
+}
+"#;
+    let emitted = emit_host("sti-impl5", source);
+    assert_contains("sti-impl5", &emitted, "__cl_tmp1 = i;");
+    assert_before(
+        "sti-impl5",
+        &emitted,
+        "make(",
+        "__cl_tmp2 = __cl_tmp0[__cl_tmp1];",
+    );
+    assert_contains(
+        "sti-impl5",
+        &emitted,
+        "__cl_tmp2 = __cl_tmp0[__cl_tmp1];\n    __cl_tmp0[__cl_tmp1] = NULL;",
+    );
+    assert_contains(
+        "sti-impl5",
+        &emitted,
+        "__cl_return_1.v = __cl_tmp2;\n    __cl_tmp2 = NULL;",
+    );
+    let output = run_host("sti-impl5-run", source);
+    assert_exit("sti-impl5-run", &output, 3);
+}
+
+/// A member-rooted consume stores its literal per field.
+///
+/// `Box { v: mk().a }` binds the root call through the deferred
+/// materialization, moves the selected field out of the bound temporary, and
+/// leaves the sibling to the statement cleanup. The per-field store form is
+/// selected because the field carries the deferred consume; `main` answers the
+/// two-byte bound field.
+#[test]
+fn should_store_per_field_when_a_member_rooted_consume_feeds_a_literal() {
+    let source = r#"module spec.sti.impl6;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+struct Box {
+    v: String;
+}
+
+func mk(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    let box: Box = Box { v: mk().a };
+    return i32(len(box.v));
+}
+"#;
+    let emitted = emit_host("sti-impl6", source);
+    assert_before("sti-impl6", &emitted, "__cl_tmp0 = cl_", "__cl_tmp1 = __cl_tmp0.a;");
+    assert_contains(
+        "sti-impl6",
+        &emitted,
+        "__cl_tmp1 = __cl_tmp0.a;\n    __cl_tmp0.a = NULL;",
+    );
+    assert_contains(
+        "sti-impl6",
+        &emitted,
+        "box.v = __cl_tmp1;\n    __cl_tmp1 = NULL;",
+    );
+    assert_absent("sti-impl6", &emitted, "(ClBox){");
+    let output = run_host("sti-impl6-run", source);
+    assert_exit("sti-impl6-run", &output, 2);
+}
+
+/// An indexed store empties the deferred consume carrier it adopts.
+///
+/// `out[target()] = mkArray()[rhsIndex()]` pins both run-time indices, copies
+/// the selected element into the carrier, empties the source slot, then moves
+/// the value into the element and empties both the store temporary and the
+/// carrier, so a loop's reassigned-temp drop cannot free what the element
+/// owns. The stored element measures three bytes.
+#[test]
+fn should_empty_the_deferred_carrier_when_an_indexed_store_adopts_it() {
+    let source = r#"module spec.sti.impl7;
+
+import { String, stringOf } from std.text;
+
+let cursor: i32 = 0;
+
+func target(): i32 {
+    cursor = cursor + 1;
+    return cursor - 1;
+}
+
+func rhsIndex(): i32 {
+    return 1;
+}
+
+func mkArray(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let out: String[4] = [stringOf("1"), stringOf("2"), stringOf("3"), stringOf("4")];
+    out[target()] = mkArray()[rhsIndex()];
+    return i32(len(out[0]));
+}
+"#;
+    let emitted = emit_host("sti-impl7", source);
+    assert_before(
+        "sti-impl7",
+        &emitted,
+        "_mkArray(__cl_tmp1);",
+        "__cl_tmp3 = __cl_tmp1[__cl_tmp2];",
+    );
+    assert_contains(
+        "sti-impl7",
+        &emitted,
+        "__cl_tmp3 = __cl_tmp1[__cl_tmp2];\n    __cl_tmp1[__cl_tmp2] = NULL;",
+    );
+    assert_contains(
+        "sti-impl7",
+        &emitted,
+        "__cl_arm_1 = NULL;\n    __cl_tmp3 = NULL;",
+    );
+    let output = run_host("sti-impl7-run", source);
+    assert_exit("sti-impl7-run", &output, 3);
+}
+
+/// A duplicable element read uses the store form and keeps source order.
+///
+/// `Box<i32> { w: f(), v: make()[i] }` has no consume carrier for an `i32`
+/// element, but the deferred base fill still forces the per-field store form
+/// so `f()` runs before `make()`. `main` answers the selected element (`42`).
+#[test]
+fn should_keep_source_order_when_a_duplicable_element_read_uses_the_store_form() {
+    let source = r#"module spec.sti.impl8;
+
+struct Box<T> {
+    w: i32;
+    v: T;
+}
+
+let trace: i32 = 0;
+
+func f(): i32 {
+    trace = trace * 10 + 1;
+    return 1;
+}
+
+func makeI32(): i32[2] {
+    trace = trace * 10 + 2;
+    return [7, 42];
+}
+
+func pack<T>(first: func(): i32, make: func(): T[2], i: i32): Box<T> {
+    return Box<T> { w: first(), v: make()[i] };
+}
+
+func main(): i32 {
+    let b: Box<i32> = pack<i32>(f, makeI32, 1);
+    return b.v;
+}
+"#;
+    let emitted = emit_host("sti-impl8", source);
+    assert_contains("sti-impl8", &emitted, "__cl_return_1.w = first();");
+    assert_before("sti-impl8", &emitted, "__cl_return_1.w = first();", "make(__cl_tmp0);");
+    assert_contains(
+        "sti-impl8",
+        &emitted,
+        "__cl_tmp2 = __cl_tmp0[__cl_tmp1];\n    cl_zero(&__cl_tmp0[__cl_tmp1]);",
+    );
+    let output = run_host("sti-impl8-run", source);
+    assert_exit("sti-impl8-run", &output, 42);
+}
+
+/// Two emissions of one consume-preparation program must be byte-identical.
+///
+/// Both runs name the source with the same relative path so the emitted
+/// `#line` directives stay comparable.
+#[test]
+fn should_emit_identical_translations_when_a_consume_program_is_emitted_twice() {
+    let source = r#"module spec.sti.impl9;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+func pack<T>(make: func(): T[2], i: i32): Box<T> {
+    return Box<T> { v: make()[i] };
+}
+
+func mkString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let b: Box<String> = pack<String>(mkString, 1);
+    return i32(len(b.v));
+}
+"#;
+    let scratch = ScratchDir::new("sti-impl9");
+    std::fs::write(scratch.path().join("main.clo"), source).expect("write the program");
+    let first = emit_relative(&scratch, "sti-impl9", "first.c");
+    let second = emit_relative(&scratch, "sti-impl9", "second.c");
+    assert_eq!(
+        first, second,
+        "sti-impl9: two emissions of one program must be byte-identical"
     );
 }
