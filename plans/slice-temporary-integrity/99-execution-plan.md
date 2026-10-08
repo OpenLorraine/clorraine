@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 13:23
-> **Progress**: 11/34 tasks (32%)
+> **Last Updated**: 2026-10-08 13:32
+> **Progress**: 13/34 tasks (38%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -151,7 +151,7 @@ targeted re-verify above is the final check.
 
 ## Phase 2: Deferred consume preparation (DEF-72/73/74)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: c425d3e1da054f2126c395a4bb4eb24c4cf8e7bb
 > **Lenses**: compiler-and-language; evaluation-order and statement-temporary contracts
 > **Reasoning**: high — deferred-fill lifecycle across lowering and emission, order-sensitive
 
@@ -160,8 +160,8 @@ targeted re-verify above is the final check.
 **Reference**: [03-02 §Proposed Changes](03-02-deferred-consume-preparation.md) · [07 ST-6 – ST-8](07-testing-strategy.md) · [AR-4](00-ambiguity-register.md)
 **Objective**: Pin the fill, the source order, and the member-rooted release before implementation.
 
-- [ ] 2.1.1 [spec-author] Write specification tests ST-6 – ST-8 in `compiler/tests/slice_temporary_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic index call never runs; trace 21 for the duplicable and owning instantiations; the sibling leak)
+- [x] 2.1.1 [spec-author] Write specification tests ST-6 – ST-8 in `compiler/tests/slice_temporary_integrity_spec_test.rs` ✅ (completed: 2026-10-08 13:32)
+- [x] 2.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic index call never runs; trace 21 for the duplicable and owning instantiations; the sibling leak) ✅ (completed: 2026-10-08 13:32)
 
 **Deliverables**:
 - [ ] ST-6 – ST-8

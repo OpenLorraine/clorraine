@@ -26,9 +26,17 @@
 //! declared view and the explicit type argument.
 //!
 //! The first and third cases already behave as required, so they are behavior
-//! and regression pins. The generic row move, the nested read, and the
-//! mismatched explicit argument are the expectations that fail until the fix
-//! lands.
+//! and regression pins; the generic row move, the nested read, and the
+//! mismatched explicit argument are the row-view expectations that the slice
+//! fix must satisfy. The deferred-consume cases add three more shapes: an
+//! index call inside a generic aggregate-literal field
+//! (`Box<T> { v: make()[pick()] }`), which must run the index exactly once and
+//! bind the slot it names; a generic literal whose earlier field must run
+//! before a later field's projection of a fresh call result (source order);
+//! and a member-rooted consume (`Box { v: mk().a }`) whose unconsumed sibling
+//! must be released when the statement ends. The first two are red until the
+//! deferred fill reaches the generic literal; the third leaks its sibling
+//! until the member root joins the preparation gate.
 //!
 //! The memory helper runs the same program as an ordinary strict host build
 //! and adds leak and use-after-free detection when `RDC_ASAN` is set.
@@ -568,4 +576,179 @@ func main(): i32 {
 }
 "#;
     assert_rejected("sti-st10", source, "E10200");
+}
+
+/// A generic aggregate field that reads a call result at a computed index runs
+/// the index exactly once and binds the named slot.
+///
+/// `pack<T>` fills `Box<T> { v: make()[pickIndex()] }`; the index call must run
+/// once and select slot one, so the owning (`String`) instance measures the
+/// three-character element and the duplicable (`i32`) instance reads forty-two.
+/// The first element of the owning call result is not consumed and must be
+/// released once when the statement ends. `main` answers zero when both
+/// instances bind the right slot and the index ran once per instance; the
+/// sanitizer path also proves the sibling release. Before the fix the generic
+/// form never runs the index call, so it reads slot zero and the owning check
+/// answers ninety.
+#[test]
+fn should_call_the_index_once_when_a_generic_literal_field_reads_a_call_result_at_that_index() {
+    let source = r#"module spec.sti.st11;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    v: T;
+}
+
+let trace: i32 = 0;
+
+func pick(): i32 {
+    trace = trace + 1;
+    return 1;
+}
+
+func makeString(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func makeI32(): i32[2] {
+    return [7, 42];
+}
+
+func pack<T>(make: func(): T[2], pickIndex: func(): i32): Box<T> {
+    return Box<T> { v: make()[pickIndex()] };
+}
+
+func main(): i32 {
+    let owning: Box<String> = pack<String>(makeString, pick);
+    if (trace != 1) {
+        return 90;
+    }
+    if (i32(len(owning.v)) != 3) {
+        return 91;
+    }
+    let plain: Box<i32> = pack<i32>(makeI32, pick);
+    if (trace != 2) {
+        return 92;
+    }
+    if (plain.v != 42) {
+        return 93;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("sti-st11", source);
+    assert_exit("sti-st11", &output, 0);
+    assert_no_asan("sti-st11", &output);
+}
+
+/// Aggregate-literal fields evaluate left to right, even when a later field
+/// projects a call result.
+///
+/// `pack<T>` fills `Box<T> { w: first(), v: make()[i] }`, so the earlier field
+/// records one and the later field's call records two, giving the trace twelve;
+/// running the call result's fill before the earlier field yields twenty-one.
+/// The case checks both the owning (`String`) and the duplicable (`i32`)
+/// instances and answers twelve; the sanitizer path also proves the owning call
+/// result releases once. Before the fix the generic form runs the fill first,
+/// so the owning instance's trace is twenty-one and `main` answers 111.
+#[test]
+fn should_keep_source_order_when_a_generic_literal_field_projects_a_call_result() {
+    let source = r#"module spec.sti.st12;
+
+import { String, stringOf } from std.text;
+
+struct Box<T> {
+    w: i32;
+    v: T;
+}
+
+let trace: i32 = 0;
+
+func f(): i32 {
+    trace = trace * 10 + 1;
+    return 1;
+}
+
+func makeString(): String[2] {
+    trace = trace * 10 + 2;
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func makeI32(): i32[2] {
+    trace = trace * 10 + 2;
+    return [7, 42];
+}
+
+func pack<T>(first: func(): i32, make: func(): T[2], i: i32): Box<T> {
+    return Box<T> { w: first(), v: make()[i] };
+}
+
+func main(): i32 {
+    trace = 0;
+    let owning: Box<String> = pack<String>(f, makeString, 0);
+    let owningTrace: i32 = trace;
+    trace = 0;
+    let plain: Box<i32> = pack<i32>(f, makeI32, 0);
+    let plainTrace: i32 = trace;
+    if (owningTrace != 12) {
+        return 90 + owningTrace;
+    }
+    if (plainTrace != 12) {
+        return 96 + plainTrace;
+    }
+    if (i32(len(owning.v)) != 2) {
+        return 99;
+    }
+    if (plain.v != 7) {
+        return 98;
+    }
+    return 12;
+}
+"#;
+    let output = run_memory("sti-st12", source);
+    assert_exit("sti-st12", &output, 12);
+    assert_no_asan("sti-st12", &output);
+}
+
+/// A member-rooted call result that feeds an aggregate literal releases its
+/// unconsumed sibling when the statement ends.
+///
+/// `Box { v: mk().a }` moves the `a` field into the box and leaves `b` to the
+/// statement cleanup; `main` checks the bound value and answers zero. The
+/// sibling `b` is a three-character string, so the sanitizer path reports a
+/// twelve-byte leak whenever the call result's remaining field is not
+/// released; the plain build still passes the value check. This case is red
+/// only under AddressSanitizer before the member root joins the preparation
+/// gate.
+#[test]
+fn should_release_the_sibling_when_a_member_rooted_call_result_is_stored_in_a_literal() {
+    let source = r#"module spec.sti.st13;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+struct Box {
+    v: String;
+}
+
+func mk(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    let box: Box = Box { v: mk().a };
+    if (i32(len(box.v)) != 2) {
+        return 9;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("sti-st13", source);
+    assert_exit("sti-st13", &output, 0);
+    assert_no_asan("sti-st13", &output);
 }
