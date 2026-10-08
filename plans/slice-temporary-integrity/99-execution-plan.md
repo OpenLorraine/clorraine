@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 07:36
-> **Progress**: 0/34 tasks (0%)
+> **Last Updated**: 2026-10-08 09:26
+> **Progress**: 2/34 tasks (6%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -51,7 +51,7 @@ and ends with its review dispatch per `AGENTS.md`.
 
 ## Phase 1: Row-typed slice views (DEF-70)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: c1cbb077038b00df95c915da624f10fac7268174
 > **Lenses**: compiler-and-language; `spec/17-codegen` ABI lens (type keys, typedefs, lowering)
 > **Reasoning**: high — type-model, symbol-key, and emission changes with a cross-cutting audit
 
@@ -60,8 +60,8 @@ and ends with its review dispatch per `AGENTS.md`.
 **Reference**: [03-01 §Proposed Changes](03-01-slice-row-views.md) · [07 ST-1 – ST-5](07-testing-strategy.md) · [AR-3, AR-9](00-ambiguity-register.md)
 **Objective**: Pin the row-typed behavior before any implementation change.
 
-- [ ] 1.1.1 [spec-author] Write specification tests ST-1 – ST-5 in `compiler/tests/slice_temporary_integrity_spec_test.rs` on the established harness (strict host build, host ASan, diagnostic asserts)
-- [ ] 1.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic row move double-frees; nested access mis-types; the `E10200` mismatch is accepted; ST-1 is recorded as a justified pass)
+- [x] 1.1.1 [spec-author] Write specification tests ST-1 – ST-5 in `compiler/tests/slice_temporary_integrity_spec_test.rs` on the established harness (strict host build, host ASan, diagnostic asserts) ✅ (completed: 2026-10-08 09:26)
+- [x] 1.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic row move double-frees; nested access mis-types; the `E10200` mismatch is accepted; ST-1 is recorded as a justified pass) ✅ (completed: 2026-10-08 09:26)
 
 **Deliverables**:
 - [ ] ST-1 – ST-5 in the new spec suite
