@@ -10,7 +10,7 @@ use crate::ast::{BinaryOp, ScalarType};
 use crate::ir::{Value, ValueKind, ValuePiece};
 use crate::types::{is_signed_scalar, Ty, TyKind};
 
-use super::function::arm_has_storage_root;
+use super::function::{arm_has_storage_root, ArrayTarget};
 use super::render::{bounds_condition, signed_min};
 use super::types::scalar_of;
 use super::Emitter;
@@ -156,14 +156,14 @@ impl<'a> Emitter<'a> {
                         self.push(&format!("    __cl_tmp{temp} = {};", self.value(inner)));
                     }
                 } else {
-                    let store = match &inner.kind {
+                    let destination = format!("__cl_tmp{temp}");
+                    match &inner.kind {
                         ValueKind::Call {
                             callee,
                             type_args,
                             args,
                             receiver,
                         } if inner_ty.is_fixed_array() => {
-                            let destination = format!("__cl_tmp{temp}");
                             let call = self.call_with_destination(
                                 callee,
                                 type_args,
@@ -171,7 +171,7 @@ impl<'a> Emitter<'a> {
                                 receiver.as_deref(),
                                 &destination,
                             );
-                            format!("{call};")
+                            self.push(&format!("    {call};"));
                         }
                         // A fixed-array closure call also writes through a
                         // hidden destination, which the lifted function takes
@@ -179,17 +179,22 @@ impl<'a> Emitter<'a> {
                         ValueKind::ClosureCall { callable, args }
                             if inner_ty.is_fixed_array() =>
                         {
-                            let destination = format!("__cl_tmp{temp}");
                             let call = self.closure_call_with_destination(
                                 callable,
                                 args,
                                 Some(&destination),
                             );
-                            format!("{call};")
+                            self.push(&format!("    {call};"));
                         }
-                        _ => format!("__cl_tmp{temp} = {};", self.value(inner)),
-                    };
-                    self.push(&format!("    {store}"));
+                        // A fixed-array object has no C assignment form: the
+                        // fill copies the row's bytes into the temporary, so a
+                        // consumed element projection can travel as a value.
+                        _ if inner_ty.is_fixed_array() => {
+                            let target = ArrayTarget::object(&destination);
+                            self.emit_fixed_array_assign_to(&target, &inner_ty, inner, false);
+                        }
+                        _ => self.push(&format!("    {destination} = {};", self.value(inner))),
+                    }
                 }
                 // The call's `take` arguments are emptied only now, on the
                 // evaluated path, so a skipped guard leaves them owned.

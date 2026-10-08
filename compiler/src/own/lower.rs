@@ -883,32 +883,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(ty, ValueKind::Temp(id))
     }
 
-    /// Consumes an owned place value as a move, emptying its source.
+    /// Consumes an owned place value as a deferred move, emptying its source.
     ///
     /// A place value whose type is non-duplicable and does not mention a generic
-    /// parameter is moved into a compiler temporary: `Statement::Move` copies
-    /// the value and then zeros the source, so a later drop of the source cannot
-    /// free the value the destination now owns. Every other value is returned
-    /// unchanged. This realizes the "a move is a copy plus a zero of the source"
-    /// rule for a value consumed inside an aggregate literal.
+    /// parameter travels through a deferred materialization: the temporary's
+    /// fill copies the value at the consuming point and the carried move-out
+    /// zeroes the source, so a later drop of the source cannot free the value
+    /// the destination now owns. Every other value is returned unchanged. This
+    /// realizes the "a move is a copy plus a zero of the source" rule for a
+    /// value consumed inside an aggregate literal or stored into an element.
     ///
-    /// A projection is prepared like a store before its place is derived: a
-    /// fresh call root is bound to an owned temporary, an eager base is filled,
-    /// and a run-time index is pinned. Without that preparation the root call
-    /// would never run and a run-time index would fall back to the element-zero
-    /// form, so the move could empty the wrong slot. The preparation is limited
-    /// to element projections, the shape whose root call and run-time index
-    /// were otherwise lost; a field projection keeps its inline read, so an
-    /// aggregate literal that worked before keeps its field evaluation order.
+    /// The preparation stays deferred so the fill runs where the value is
+    /// consumed: a fresh call root is bound through the guard-emitter
+    /// materialization, a run-time index is pinned, and the field or element
+    /// projection then moves out of the bound temporary. The consuming
+    /// destination adopts the value and empties the temporary; without that,
+    /// a loop's reassigned-temp drop would free what the destination owns.
+    /// A value that already names no storage is returned unchanged.
     pub(super) fn consume_place(&mut self, value: Value) -> Value {
         // A maybe-owning value moves through the same shape: the emitted move
         // copies and zeroes only for an owning instance.
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
         }
-        let value = if matches!(value.kind, ValueKind::Index { .. }) {
-            let value = self.bind_ownerless_projection_root(value);
-            let value = self.settle_projection_base(value);
+        let value = if matches!(
+            value.kind,
+            ValueKind::Index { .. } | ValueKind::Member { .. }
+        ) {
+            let value = self.bind_guarded_projection_root(value);
             self.materialize_index_chain(value)
         } else {
             value
@@ -917,17 +919,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         };
         let ty = self.materialized_ty(&value);
-        let id = self.new_temp(ty.clone());
-        let target = Place {
-            base: ir::PlaceBase::Temp(id),
-            projections: Vec::new(),
-            ty: ty.clone(),
-        };
-        self.emit(Statement::Move {
-            target,
-            source,
-        });
-        Value::new(ty, ValueKind::Temp(id))
+        let temp = self.new_temp(ty.clone());
+        Value::new(
+            ty,
+            ValueKind::Materialize {
+                temp,
+                value: Box::new(value),
+                move_outs: vec![source],
+            },
+        )
     }
 
     /// The place a value reads, when it is a field reached through a place.

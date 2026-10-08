@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 13:32
-> **Progress**: 13/34 tasks (38%)
+> **Last Updated**: 2026-10-08 16:17
+> **Progress**: 16/34 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -174,9 +174,9 @@ targeted re-verify above is the final check.
 **Reference**: [03-02 §Proposed Changes](03-02-deferred-consume-preparation.md) · [AR-4](00-ambiguity-register.md)
 **Objective**: Carry the consume preparation and emit it at the consuming point.
 
-- [ ] 2.2.1 Defer the consume preparation: return the deferred value with its fill and move-out, and extend the fill emitter for a fixed-array (row) object — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`
-- [ ] 2.2.2 Prepare member roots, empty the consume temporary at the indexed-store adoption, and select the store form for a literal whose field carries a deferred consume or a deferred base fill of an element read (duplicable or owning) — `compiler/src/own/lower.rs`, `compiler/src/codegen/function.rs`
-- [ ] 2.2.3 Run the new suite and record the green phase
+- [x] 2.2.1 Defer the consume preparation: return the deferred value with its fill and move-out, and extend the fill emitter for a fixed-array (row) object — `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs` ✅ (completed: 2026-10-08 16:17)
+- [x] 2.2.2 Prepare member roots, empty the consume temporary at the indexed-store adoption, and select the store form for a literal whose field carries a deferred consume or a deferred base fill of an element read (duplicable or owning) — `compiler/src/own/lower.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-08 16:17)
+- [x] 2.2.3 Run the new suite and record the green phase ✅ (completed: 2026-10-08 16:17)
 
 **Deliverables**:
 - [ ] Deferred consume preparation with source-order fills

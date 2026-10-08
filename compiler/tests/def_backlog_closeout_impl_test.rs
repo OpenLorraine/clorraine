@@ -317,10 +317,12 @@ func main(): i32 {
     );
 }
 
-/// An aggregate field at a constant index still emits the root call first.
+/// An aggregate field at a constant index emits the deferred root call fill
+/// before the read and empties the selected slot.
 ///
-/// No index temporary is needed for a constant, but the call must run before
-/// the read and the selected slot must be emptied.
+/// No index temporary is needed for a constant: the field's guards fill the
+/// root array first, the read copies the selected element into the consume
+/// temporary, and the move-out empties the slot the read selected.
 #[test]
 fn should_empty_slot_zero_when_an_aggregate_field_reads_a_call_result_at_a_constant_index() {
     let source = r#"module impl.closeout.constantbox;
@@ -345,12 +347,11 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("constant-index", source);
-    assert_before("constant-index", &emitted, "make(", "__cl_tmp0[0]");
-    assert_before(
+    assert_before("constant-index", &emitted, "make(", "__cl_tmp1 = __cl_tmp0[0];");
+    assert_contains(
         "constant-index",
         &emitted,
-        "make(",
-        "__cl_tmp0[0] = NULL;",
+        "__cl_tmp1 = __cl_tmp0[0];\n    __cl_tmp0[0] = NULL;",
     );
 }
 

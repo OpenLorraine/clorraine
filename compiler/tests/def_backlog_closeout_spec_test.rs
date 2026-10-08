@@ -553,9 +553,11 @@ func main(): i32 {
 /// An aggregate-literal field reads a call result at a constant index zero.
 ///
 /// The root call must still be emitted before the move, and the first slot
-/// must be emptied before the array temporary is released. The first element
-/// measures three bytes, so `main` answers three; the sanitizer path would
-/// report a missing root call as a crash or a leak.
+/// must be emptied after the read and before the array temporary is released.
+/// The deferred fill clears the reusable array temporary first, so the
+/// operative order is the call, the read, and the slot emptying. The first
+/// element measures three bytes, so `main` answers three; the sanitizer path
+/// would report a missing root call as a crash or a leak.
 #[test]
 fn should_move_slot_zero_when_an_aggregate_field_reads_a_call_result_at_a_constant_index() {
     let source = r#"module closeout.constantbox;
@@ -580,7 +582,12 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("constant-index", source);
-    assert_before("constant-index", &emitted, "make(", "__cl_tmp0[0] = NULL;");
+    assert_before("constant-index", &emitted, "make(", "__cl_tmp1 = __cl_tmp0[0];");
+    assert_contains(
+        "constant-index",
+        &emitted,
+        "__cl_tmp1 = __cl_tmp0[0];\n    __cl_tmp0[0] = NULL;",
+    );
 
     let output = run_memory("constant-index-run", source);
     assert_exit("constant-index-run", &output, 3);

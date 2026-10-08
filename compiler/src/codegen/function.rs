@@ -513,6 +513,14 @@ impl<'a> Emitter<'a> {
                         self.emit_drop_expr(&format!("*({pointer_c})"), &pointer_ty);
                         self.push(&format!("    *({pointer_c}) = {temp};"));
                         self.emit_move_zero(&temp, &pointer_ty);
+                        // A deferred consume carrier still holds a copy of the
+                        // value the element now owns; emptying it keeps a
+                        // loop's reassigned-temp drop from freeing the value
+                        // twice.
+                        if matches!(value.kind, ValueKind::Materialize { .. }) {
+                            let source = self.value(value);
+                            self.emit_move_zero(&source, &pointer_ty);
+                        }
                     }
                 } else {
                     self.emit_guards(value);
@@ -1465,6 +1473,18 @@ impl<'a> Emitter<'a> {
             {
                 return true;
             }
+            // A consumed projection carries its fill and move-out deferred, so
+            // the field must store through statements to emit them at its turn.
+            if matches!(field.kind, ValueKind::Materialize { .. }) {
+                return true;
+            }
+            // An element read whose base fill is deferred (`make()[i]`) must
+            // emit that fill at this field's turn too, for a duplicable element
+            // as much as an owning one; a C initializer would hoist the fill
+            // ahead of the earlier fields' evaluation.
+            if matches!(field.kind, ValueKind::Index { .. }) && has_deferred_fill(field) {
+                return true;
+            }
             if let ValueKind::StructLit { fields, .. } = &field.kind {
                 return self.struct_literal_needs_stores(fields);
             }
@@ -2248,6 +2268,23 @@ pub(super) fn arm_has_storage_root(value: &Value) -> bool {
         ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => true,
         ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
             arm_has_storage_root(base)
+        }
+        _ => false,
+    }
+}
+
+/// True when a value reads a deferred fill anywhere in its projection chain.
+///
+/// A [`ValueKind::Materialize`] is filled by a statement before the construct
+/// that reads it, so a C aggregate initializer would hoist the fill ahead of
+/// the fields it is written between; the per-field store form keeps the
+/// source order.
+fn has_deferred_fill(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Materialize { .. } => true,
+        ValueKind::Member { base, .. } => has_deferred_fill(base),
+        ValueKind::Index { base, index } => {
+            has_deferred_fill(base) || has_deferred_fill(index)
         }
         _ => false,
     }
