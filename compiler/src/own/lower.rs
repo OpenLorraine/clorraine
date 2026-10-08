@@ -1181,7 +1181,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .iter()
                     .map(|param| param.name.clone())
                     .collect();
-                let returns = resolve_ty(&decl.returns, &type_params, &self.sema.table);
+                let returns = self.resolve_with(&decl.returns, &type_params);
                 // A generic reborrow returns its type parameter, which is the
                 // view at the call site; only a call whose result is a view
                 // reaches this collector, so the parameter return qualifies.
@@ -1197,15 +1197,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .enumerate()
                     .filter(|(_, param)| {
                         param.mode != Mode::Take
-                            && (is_lend_candidate(&resolve_ty(
-                                &param.ty,
-                                &type_params,
-                                &self.sema.table,
-                            )) || mentions_type_param(&resolve_ty(
-                                &param.ty,
-                                &type_params,
-                                &self.sema.table,
-                            )))
+                            && (is_lend_candidate(&self.resolve_with(&param.ty, &type_params))
+                                || mentions_type_param(&self.resolve_with(
+                                    &param.ty,
+                                    &type_params,
+                                )))
                     })
                     .map(|(index, _)| index)
                     .collect();

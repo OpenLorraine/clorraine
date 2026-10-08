@@ -99,6 +99,8 @@ struct Binding {
 struct Checker<'a, 'd> {
     /// The module being checked.
     module: &'a Module,
+    /// Every loaded module, for imported-declaration lookups.
+    loaded: &'a Loaded,
     /// Every declared type of the program.
     table: &'a TypeTable,
     /// Folds the constant expressions of this module.
@@ -156,6 +158,7 @@ impl<'a, 'd> Checker<'a, 'd> {
     ) -> Self {
         Self {
             module,
+            loaded,
             table,
             folder: ConstFolder::new(table, module, loaded),
             scopes: Vec::new(),
@@ -549,6 +552,26 @@ impl<'a, 'd> Checker<'a, 'd> {
         self.table
             .function(&binding.module, &binding.original)
             .cloned()
+    }
+
+    /// The kind of the declaration a name resolves to in this module.
+    ///
+    /// A module declaration wins, then an import; a name with no visible
+    /// declaration has no kind. The kind tells a compiler-known intrinsic
+    /// declaration from a user or `ffi` function that shadows its spelling.
+    fn visible_decl_kind(&self, name: &str) -> Option<DeclKind> {
+        if let Some(decl) = self.module.decl(name) {
+            return Some(decl.kind);
+        }
+        let binding = self.module.import(name)?;
+        if binding.poisoned {
+            return None;
+        }
+        self.loaded
+            .modules
+            .get(&binding.module)?
+            .decl(&binding.original)
+            .map(|decl| decl.kind)
     }
 }
 

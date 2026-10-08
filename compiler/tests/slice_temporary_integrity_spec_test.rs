@@ -20,6 +20,11 @@
 //! * an explicit slice type argument that disagrees with the source's row,
 //!   which is rejected with `E10200`.
 //!
+//! Additional cases pin the view-element conversion rule and constant extent
+//! resolution: an inferred row view bound to a scalar view is rejected, and a
+//! `const`-sized or arithmetic row extent resolves to its constant in both the
+//! declared view and the explicit type argument.
+//!
 //! The first and third cases already behave as required, so they are behavior
 //! and regression pins. The generic row move, the nested read, and the
 //! mismatched explicit argument are the expectations that fail until the fix
@@ -445,4 +450,77 @@ func main(): i32 {
 }
 "#;
     assert_rejected_with("sti-st5", source, "E10200", &["cannot convert"]);
+}
+
+/// An inferred row view bound to a scalar view is rejected.
+///
+/// `slice(g, 0, 2)` over an `i32[2][3]` grid is a view of `i32[3]` rows, so
+/// binding it to a declared `i32[]`, whose elements are `i32`, is an implicit
+/// conversion the language does not allow: the front end reports `E10200` and
+/// writes no translation unit. A context that accepted the untyped result
+/// would emit C whose view type disagrees with the declared one.
+#[test]
+fn should_reject_when_an_inferred_row_view_is_bound_to_a_scalar_view() {
+    let source = r#"module spec.sti.st6;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let g: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let v: i32[] = slice(g, 0, 2);
+    return i32(len(v));
+}
+"#;
+    assert_rejected("sti-st6", source, "E10200");
+}
+
+/// A `const`-sized row extent resolves to its constant everywhere.
+///
+/// The view parameter `i32[][M]` and the explicit argument `slice<i32[M]>`
+/// both name `i32[3]` rows, exactly as the type stage resolves `M`, so the
+/// view the call builds matches the declared typedef and `sink` reads the
+/// second row cell (`3`). An extent resolved as a slice would disagree with
+/// the call site.
+#[test]
+fn should_run_when_a_const_sized_row_view_and_explicit_argument_agree() {
+    let source = r#"module spec.sti.st7;
+
+import { slice } from std.mem;
+
+const M: usize = 3;
+
+func sink(xs: i32[][M]): i32 {
+    return xs[0][2];
+}
+
+func main(): i32 {
+    let grid: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return sink(slice<i32[M]>(grid, 0, 2));
+}
+"#;
+    let output = run_host("sti-st7", source);
+    assert_exit("sti-st7", &output, 3);
+}
+
+/// An arithmetic extent folds with the same constant environment.
+///
+/// `slice<i32[2 + 1]>` names the same `i32[3]` row element as the source
+/// grid, so the call is accepted and `sink` reads `3`.
+#[test]
+fn should_run_when_an_arithmetic_extent_names_the_source_row() {
+    let source = r#"module spec.sti.st8;
+
+import { slice } from std.mem;
+
+func sink(xs: i32[][3]): i32 {
+    return xs[0][2];
+}
+
+func main(): i32 {
+    let grid: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return sink(slice<i32[2 + 1]>(grid, 0, 2));
+}
+"#;
+    let output = run_host("sti-st8", source);
+    assert_exit("sti-st8", &output, 3);
 }

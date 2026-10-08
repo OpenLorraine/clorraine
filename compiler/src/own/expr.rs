@@ -237,9 +237,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             || self.recorded_ty(callee).is_some_and(|ty| ty.is_closure())
     }
 
-    /// Resolves a written type in the current generic scope.
+    /// Resolves a written type in the current generic scope, folding constant
+    /// array extents through the module's constant environment.
     pub(super) fn resolve(&self, ty: &crate::ast::Type) -> Ty {
-        resolve_ty(ty, &self.type_params, &self.sema.table)
+        self.resolve_with(ty, &self.type_params)
+    }
+
+    /// Resolves a written type in a given generic scope, folding constant array
+    /// extents through the module's constant environment.
+    ///
+    /// A callee's declaration still names its own type parameters, so its
+    /// written types resolve against the callee's parameter list rather than
+    /// the scope of the calling body.
+    pub(super) fn resolve_with(&self, ty: &crate::ast::Type, type_params: &[String]) -> Ty {
+        resolve_ty_folded(ty, type_params, &self.sema.table, self.module, self.loaded)
     }
 
     /// Checks and walks an expression, returning its type.

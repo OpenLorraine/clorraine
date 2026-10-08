@@ -15,7 +15,7 @@ use crate::ir::GlobalId;
 use crate::load::{Loaded, Module};
 use crate::sema::SemaOutput;
 use crate::span::Span;
-use crate::types::{resolve_ty, Ty};
+use crate::types::{resolve_ty_folded, Ty};
 
 /// A user-declared function with a body.
 pub type UserFunc<'a> = &'a FuncDecl;
@@ -226,11 +226,16 @@ pub fn type_name_matches(ty: &crate::ast::Type, name: &str) -> bool {
 ///
 /// There are no drops at process exit, so a global must be duplicable; a
 /// `const` is exempt because it cannot own a released resource.
-pub(super) fn check_globals(module: &Module, sema: &SemaOutput, diagnostics: &mut Diagnostics) {
+pub(super) fn check_globals(
+    module: &Module,
+    loaded: &Loaded,
+    sema: &SemaOutput,
+    diagnostics: &mut Diagnostics,
+) {
     for item in &module.items {
         match item {
             Item::GlobalLet(decl) => {
-                let ty = resolve_ty(&decl.ty, &[], &sema.table);
+                let ty = resolve_ty_folded(&decl.ty, &[], &sema.table, module, loaded);
                 report_illegal_nullable(&ty, decl.name_span, diagnostics);
                 if !sema.table.duplicable(&ty) && !ty.is_unknown() {
                     diagnostics.push(
@@ -244,7 +249,7 @@ pub(super) fn check_globals(module: &Module, sema: &SemaOutput, diagnostics: &mu
                 }
             }
             Item::GlobalConst(decl) => {
-                let ty = resolve_ty(&decl.ty, &[], &sema.table);
+                let ty = resolve_ty_folded(&decl.ty, &[], &sema.table, module, loaded);
                 report_illegal_nullable(&ty, decl.name_span, diagnostics);
             }
             _ => {}
@@ -255,6 +260,7 @@ pub(super) fn check_globals(module: &Module, sema: &SemaOutput, diagnostics: &mu
 /// Rejects a `?` suffix on a struct field whose type cannot be empty.
 pub(super) fn check_struct_declarations(
     module: &Module,
+    loaded: &Loaded,
     sema: &SemaOutput,
     diagnostics: &mut Diagnostics,
 ) {
@@ -262,7 +268,7 @@ pub(super) fn check_struct_declarations(
         if let Item::Struct(decl) = item {
             let params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
             for field in &decl.fields {
-                let ty = resolve_ty(&field.ty, &params, &sema.table);
+                let ty = resolve_ty_folded(&field.ty, &params, &sema.table, module, loaded);
                 report_illegal_nullable(&ty, field.name_span, diagnostics);
             }
         }

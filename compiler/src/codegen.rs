@@ -20,7 +20,7 @@ use crate::own::OwnershipOutput;
 use crate::profile::Profile;
 use crate::sema::SemaOutput;
 use crate::span::{SourceMap, Span};
-use crate::types::{resolve_ty, Ty, TyKind};
+use crate::types::{resolve_ty, resolve_ty_folded, Ty, TyKind};
 
 mod calls;
 mod cleanup;
@@ -261,7 +261,7 @@ impl<'a> Emitter<'a> {
         volatile: bool,
     ) {
         let ty = declared
-            .map(|ty| resolve_ty(ty, &[], &self.sema.table))
+            .map(|ty| resolve_ty_folded(ty, &[], &self.sema.table, module, self.loaded))
             .or_else(|| self.expr_type(init))
             .unwrap_or_else(Ty::unknown);
         self.globals
@@ -452,22 +452,23 @@ impl<'a> Emitter<'a> {
     /// The signature of a non-generic function.
     fn function_signature(&self, module: &str, decl: &FuncDecl) -> String {
         let symbol = self.function_symbol(module, &decl.name);
-        self.signature_with_symbol(decl, &BTreeMap::new(), &symbol)
+        self.signature_with_symbol(module, decl, &BTreeMap::new(), &symbol)
     }
 
     /// Builds a full C function signature.
     fn signature_with_symbol(
         &self,
+        module: &str,
         decl: &FuncDecl,
         subst: &BTreeMap<String, Ty>,
         symbol: &str,
     ) -> String {
         let storage = if decl.exported { "" } else { "static " };
-        let ret = resolve_ty(&decl.returns, &type_param_names(decl), &self.sema.table);
+        let ret = self.resolve_in_module(module, &decl.returns, &type_param_names(decl));
         let ret = substitute_in(&ret, subst);
         let mut params: Vec<String> = Vec::new();
         for param in &decl.params {
-            let ty = resolve_ty(&param.ty, &type_param_names(decl), &self.sema.table);
+            let ty = self.resolve_in_module(module, &param.ty, &type_param_names(decl));
             let ty = substitute_in(&ty, subst);
             let c_name = sanitize_identifier(&param.name);
             if is_pointer_param(&ty, param.mode, &self.sema.table) {
@@ -562,8 +563,28 @@ impl<'a> Emitter<'a> {
     /// Resolves a written type in the current generic scope.
     pub(super) fn resolve_written(&self, ty: &Type) -> Ty {
         let params: Vec<String> = self.subst.keys().cloned().collect();
-        let resolved = resolve_ty(ty, &params, &self.sema.table);
+        let resolved = self.resolve_in_module(&self.current_module, ty, &params);
         self.substitute(&resolved)
+    }
+
+    /// Resolves a written type in a named module, folding constant extents.
+    ///
+    /// The module supplies the constant environment a `const`-sized extent
+    /// needs, so this matches the type stage's resolution; a name with no
+    /// loaded module (a program that was already rejected) falls back to the
+    /// literal-only resolver.
+    pub(super) fn resolve_in_module(
+        &self,
+        module_name: &str,
+        ty: &Type,
+        type_params: &[String],
+    ) -> Ty {
+        match self.loaded.module(module_name) {
+            Some(module) => {
+                resolve_ty_folded(ty, type_params, &self.sema.table, module, self.loaded)
+            }
+            None => resolve_ty(ty, type_params, &self.sema.table),
+        }
     }
 }
 

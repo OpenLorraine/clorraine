@@ -11,7 +11,7 @@ use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, Templ
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
-use crate::types::{resolve_ty, substitute_instance, CaptureMode, Ty, TyKind, TypeTable};
+use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, CaptureMode, Ty, TyKind, TypeTable};
 
 use super::types::{
     c_type, collect_slice_types, declarator, function_declarator, mangle_module,
@@ -177,18 +177,42 @@ impl<'a> Emitter<'a> {
                         let params: Vec<String> =
                             decl.type_params.iter().map(|p| p.name.clone()).collect();
                         for param in &decl.params {
-                            let ty = resolve_ty(&param.ty, &params, &self.sema.table);
+                            let ty = resolve_ty_folded(
+                                &param.ty,
+                                &params,
+                                &self.sema.table,
+                                module,
+                                self.loaded,
+                            );
                             collect_slice_types(&ty, &mut found);
                         }
-                        let ty = resolve_ty(&decl.returns, &params, &self.sema.table);
+                        let ty = resolve_ty_folded(
+                            &decl.returns,
+                            &params,
+                            &self.sema.table,
+                            module,
+                            self.loaded,
+                        );
                         collect_slice_types(&ty, &mut found);
                     }
                     Item::GlobalLet(decl) => {
-                        let ty = resolve_ty(&decl.ty, &[], &self.sema.table);
+                        let ty = resolve_ty_folded(
+                            &decl.ty,
+                            &[],
+                            &self.sema.table,
+                            module,
+                            self.loaded,
+                        );
                         collect_slice_types(&ty, &mut found);
                     }
                     Item::GlobalConst(decl) => {
-                        let ty = resolve_ty(&decl.ty, &[], &self.sema.table);
+                        let ty = resolve_ty_folded(
+                            &decl.ty,
+                            &[],
+                            &self.sema.table,
+                            module,
+                            self.loaded,
+                        );
                         collect_slice_types(&ty, &mut found);
                     }
                     _ => {}
@@ -223,10 +247,10 @@ impl<'a> Emitter<'a> {
                 .map(|param| param.name.clone())
                 .collect();
             for param in &info.decl.params {
-                let ty = resolve_ty(&param.ty, &params, &self.sema.table);
+                let ty = self.resolve_in_module(&info.module, &param.ty, &params);
                 collect_slice_types(&super::substitute_in(&ty, &subst), &mut found);
             }
-            let ret = resolve_ty(&info.decl.returns, &params, &self.sema.table);
+            let ret = self.resolve_in_module(&info.module, &info.decl.returns, &params);
             collect_slice_types(&super::substitute_in(&ret, &subst), &mut found);
             let module = info.module.clone();
             let Some(body) = self
@@ -471,7 +495,7 @@ impl<'a> Emitter<'a> {
             );
             lines.push(format!(
                 "{};",
-                self.signature_with_symbol(info.decl, &subst, &symbol)
+                self.signature_with_symbol(&info.module, info.decl, &subst, &symbol)
             ));
         }
         // A lifted lambda is used from the body that writes it, which is

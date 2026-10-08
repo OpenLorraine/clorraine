@@ -34,7 +34,7 @@ use crate::ir::{
 use crate::load::Loaded;
 use crate::sema::SemaOutput;
 use crate::span::Span;
-use crate::types::{resolve_ty, CaptureInfo, CaptureMode, Ty, TyKind};
+use crate::types::{resolve_ty_folded, view_type, CaptureInfo, CaptureMode, Ty, TyKind};
 
 pub mod program;
 
@@ -87,8 +87,8 @@ pub fn check(
     let program = ProgramInfo::collect(loaded, &sema.table);
     ffi::check_items(&program, diagnostics);
     for module in loaded.modules.values() {
-        program::check_globals(module, sema, diagnostics);
-        program::check_struct_declarations(module, sema, diagnostics);
+        program::check_globals(module, loaded, sema, diagnostics);
+        program::check_struct_declarations(module, loaded, sema, diagnostics);
     }
     let mut functions = Vec::new();
     let mut duplicable_requirements = Vec::new();
@@ -307,13 +307,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         next_lifted: &'a mut usize,
     ) -> Self {
         let type_params: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
-        let returns = resolve_ty(&decl.returns, &type_params, &sema.table);
+        let returns = resolve_ty_folded(&decl.returns, &type_params, &sema.table, module, loaded);
         let params: Vec<ir::Param> = decl
             .params
             .iter()
             .map(|param| ir::Param {
                 name: param.name.clone(),
-                ty: resolve_ty(&param.ty, &type_params, &sema.table),
+                ty: resolve_ty_folded(&param.ty, &type_params, &sema.table, module, loaded),
                 mode: param.mode,
             })
             .collect();

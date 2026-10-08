@@ -85,7 +85,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .params
                     .iter()
                     .map(|param| {
-                        let ty = resolve_ty(&param.ty, &type_params, &self.sema.table);
+                        let ty = self.resolve_with(&param.ty, &type_params);
                         (param.mode, crate::types::substitute(&ty, &bindings))
                     })
                     .collect();

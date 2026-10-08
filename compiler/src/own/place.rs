@@ -533,7 +533,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(Callee::User(decl)) => {
                 let type_params: Vec<String> =
                     decl.type_params.iter().map(|p| p.name.clone()).collect();
-                let returns = resolve_ty(&decl.returns, &type_params, &self.sema.table);
+                let returns = self.resolve_with(&decl.returns, &type_params);
                 if !is_elided_view(&returns) {
                     return BTreeSet::new();
                 }
@@ -543,11 +543,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .enumerate()
                     .filter(|(_, param)| {
                         param.mode != Mode::Take
-                            && is_lend_candidate(&resolve_ty(
-                                &param.ty,
-                                &type_params,
-                                &self.sema.table,
-                            ))
+                            && is_lend_candidate(&self.resolve_with(&param.ty, &type_params))
                     })
                     .map(|(index, _)| index)
                     .collect();
@@ -636,11 +632,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         match self.program.callee(&name) {
             Some(Callee::User(decl)) => {
-                let returns = resolve_ty(
-                    &decl.returns,
-                    &decl.type_params.iter().map(|p| p.name.clone()).collect::<Vec<_>>(),
-                    &self.sema.table,
-                );
+                let type_params: Vec<String> =
+                    decl.type_params.iter().map(|p| p.name.clone()).collect();
+                let returns = self.resolve_with(&decl.returns, &type_params);
                 if !is_elided_view(&returns) {
                     return Provenance::None;
                 }
@@ -650,15 +644,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .enumerate()
                     .filter(|(_, param)| {
                         param.mode != Mode::Take
-                            && is_lend_candidate(&resolve_ty(
-                                &param.ty,
-                                &decl
-                                    .type_params
-                                    .iter()
-                                    .map(|p| p.name.clone())
-                                    .collect::<Vec<_>>(),
-                                &self.sema.table,
-                            ))
+                            && is_lend_candidate(&self.resolve_with(&param.ty, &type_params))
                     })
                     .map(|(index, _)| index)
                     .collect();
@@ -858,7 +844,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .iter()
             .filter(|param| {
                 param.mode != Mode::Take
-                    && is_lend_candidate(&resolve_ty(&param.ty, &self.type_params, &self.sema.table))
+                    && is_lend_candidate(&self.resolve_with(&param.ty, &self.type_params))
             })
             .count();
     }

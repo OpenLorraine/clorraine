@@ -166,7 +166,10 @@ impl TypeTable {
                             .fields
                             .iter()
                             .map(|field| {
-                                (field.name.clone(), resolve_ty(&field.ty, &params, &table))
+                                (
+                                    field.name.clone(),
+                                    resolve_ty_folded(&field.ty, &params, &table, module, loaded),
+                                )
                             })
                             .collect();
                         let overlay = decl.fields.iter().any(|field| field.volatile);
@@ -180,7 +183,7 @@ impl TypeTable {
                         );
                     }
                     Item::Enum(decl) => {
-                        let backing = resolve_ty(&decl.backing, &[], &table);
+                        let backing = resolve_ty_folded(&decl.backing, &[], &table, module, loaded);
                         let members = decl.members.iter().map(|member| member.name.clone()).collect();
                         table
                             .enums
@@ -192,10 +195,24 @@ impl TypeTable {
                             params: decl
                                 .params
                                 .iter()
-                                .map(|param| resolve_ty(&param.ty, &params, &table))
+                                .map(|param| {
+                                    resolve_ty_folded(
+                                        &param.ty,
+                                        &params,
+                                        &table,
+                                        module,
+                                        loaded,
+                                    )
+                                })
                                 .collect(),
                             modes: decl.params.iter().map(|param| param.mode).collect(),
-                            returns: resolve_ty(&decl.returns, &params, &table),
+                            returns: resolve_ty_folded(
+                                &decl.returns,
+                                &params,
+                                &table,
+                                module,
+                                loaded,
+                            ),
                             type_params: type_param_sigs(&decl.type_params, &params, &table),
                         };
                         if let Some(module_functions) = table.functions.get_mut(&module.name) {
@@ -203,13 +220,13 @@ impl TypeTable {
                         }
                     }
                     Item::GlobalLet(decl) => {
-                        let ty = resolve_ty(&decl.ty, &[], &table);
+                        let ty = resolve_ty_folded(&decl.ty, &[], &table, module, loaded);
                         if let Some(module_globals) = table.globals.get_mut(&module.name) {
                             module_globals.insert(decl.name.clone(), ty);
                         }
                     }
                     Item::GlobalConst(decl) => {
-                        let ty = resolve_ty(&decl.ty, &[], &table);
+                        let ty = resolve_ty_folded(&decl.ty, &[], &table, module, loaded);
                         if let Some(module_globals) = table.globals.get_mut(&module.name) {
                             module_globals.insert(decl.name.clone(), ty);
                         }
@@ -538,6 +555,27 @@ fn resolve_callable_bound(
 /// arithmetic use [`resolve_ty_with`] to supply their own folder.
 pub fn resolve_ty(ty: &Type, type_params: &[String], table: &TypeTable) -> Ty {
     resolve_ty_with(ty, type_params, table, &mut |expr| int_literal_value(expr))
+}
+
+/// Resolves an AST type, folding constant array extents through the module's
+/// constant environment.
+///
+/// [`resolve_ty`] folds integer literals only, so a `const`-sized extent
+/// becomes an omitted (slice) extent. A declaration type must resolve the same
+/// way wherever it is read — the type stage, the ownership stage, and the
+/// emitter — or the view a call builds disagrees with the view a signature
+/// declares; those shared readers use this resolver.
+pub fn resolve_ty_folded(
+    ty: &Type,
+    type_params: &[String],
+    table: &TypeTable,
+    module: &crate::load::Module,
+    loaded: &Loaded,
+) -> Ty {
+    let mut folder = ConstFolder::new(table, module, loaded);
+    resolve_ty_with(ty, type_params, table, &mut |expr| {
+        folder.integer_at(expr, Some(ScalarType::Usize))
+    })
 }
 
 /// Resolves an AST type, folding each array extent with `fold`.

@@ -43,7 +43,11 @@ impl<'a> Emitter<'a> {
         self.local_names.clear();
         self.pointer_params.clear();
         for param in &info.decl.params {
-            let ty = resolve_ty(&param.ty, &type_param_names(info.decl), &self.sema.table);
+            let ty = self.resolve_in_module(
+                &info.module,
+                &param.ty,
+                &type_param_names(info.decl),
+            );
             let ty = substitute_in(&ty, &self.subst);
             if is_pointer_param(&ty, param.mode, &self.sema.table) {
                 self.pointer_params.insert(param.name.clone());
@@ -105,7 +109,7 @@ impl<'a> Emitter<'a> {
             Some((_, key)) => format!("cl_{}__{}", info.decl.name, key),
             None => self.function_symbol(&info.module, &info.decl.name),
         };
-        let signature = self.signature_with_symbol(&info.decl, &self.subst, &symbol);
+        let signature = self.signature_with_symbol(&info.module, &info.decl, &self.subst, &symbol);
         self.push(&signature);
         self.push("{");
         self.emit_local_declarations(function);
@@ -752,7 +756,7 @@ impl<'a> Emitter<'a> {
                     .params
                     .iter()
                     .map(|param| {
-                        let ty = resolve_ty(&param.ty, &names, &self.sema.table);
+                        let ty = self.resolve_in_module(&info.module, &param.ty, &names);
                         substitute_in(&ty, &self.subst)
                     })
                     .collect(),
@@ -793,7 +797,7 @@ impl<'a> Emitter<'a> {
                 .params
                 .iter()
                 .map(|param| {
-                    let ty = resolve_ty(&param.ty, &names, &self.sema.table);
+                    let ty = self.resolve_in_module(&info.module, &param.ty, &names);
                     substitute_instance(&ty, &names, &concrete)
                 })
                 .collect(),
@@ -810,7 +814,7 @@ impl<'a> Emitter<'a> {
     pub(super) fn callee_return_type(&self, callee: &str) -> Option<Ty> {
         self.resolve_function(callee).map(|info| {
             let names = type_param_names(info.decl);
-            let ty = resolve_ty(&info.decl.returns, &names, &self.sema.table);
+            let ty = self.resolve_in_module(&info.module, &info.decl.returns, &names);
             self.substitute(&ty)
         })
     }

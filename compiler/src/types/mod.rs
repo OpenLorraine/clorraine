@@ -18,8 +18,8 @@ use crate::ast::{Expr, ExprKind, Mode, ScalarType};
 mod keys;
 mod table;
 
-pub(crate) use keys::{closure_key, type_key, view_element};
-pub use table::{resolve_ty, resolve_ty_with, FuncSig, TypeParamSig, TypeTable};
+pub(crate) use keys::{closure_key, type_key, view_element, view_type};
+pub use table::{resolve_ty, resolve_ty_folded, resolve_ty_with, FuncSig, TypeParamSig, TypeTable};
 
 /// A checked type: a shape plus the `?` empty-state flag.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -609,6 +609,12 @@ pub fn implicit_conversion(from: &Ty, to: &Ty) -> bool {
         (TyKind::StaticStr, TyKind::Str) => true,
         (TyKind::Handle(name), TyKind::Str) if name == "String" => true,
         (TyKind::Scalar(a), TyKind::Scalar(b)) => scalar_widens(*a, *b),
+        // Two views describe the same view when their elements agree: the
+        // written `T[][M]` and the inferred `T[]` whose element is `T[M]` are
+        // one view of `T[M]` rows, so they convert to each other.
+        _ if from.is_slice() && to.is_slice() => {
+            implicit_conversion(&view_element(from), &view_element(to))
+        }
         _ => false,
     }
 }

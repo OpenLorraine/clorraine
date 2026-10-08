@@ -234,7 +234,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let param_types: Vec<Ty> = decl
             .params
             .iter()
-            .map(|param| resolve_ty(&param.ty, &declared, &self.sema.table))
+            .map(|param| self.resolve_with(&param.ty, &declared))
             .collect();
         let mut inferred: BTreeMap<String, Ty> = BTreeMap::new();
         for (param, arg) in param_types.iter().zip(arg_types) {
@@ -319,7 +319,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                     format!(
                                         "cannot convert '{}' to '{}' implicitly",
                                         self.materialized_ty(source).display(),
-                                        Ty::array(explicit_ty.clone(), vec![None]).display()
+                                        view_type(explicit_ty.clone()).display()
                                     ),
                                     type_args[0].span,
                                 )
@@ -345,7 +345,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 nullable: false,
             }
         } else {
-            Ty::array(type_arg.clone().unwrap_or_else(Ty::unknown), vec![None])
+            view_type(type_arg.clone().unwrap_or_else(Ty::unknown))
         };
         Some((
             result,

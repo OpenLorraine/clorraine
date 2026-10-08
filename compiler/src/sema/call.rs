@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::ast::{Arg, Expr, ExprKind, Type};
 use crate::span::Span;
-use crate::types::{implicit_conversion, FuncParam, FuncSig, Ty, TyKind};
+use crate::types::{implicit_conversion, view_type, FuncParam, FuncSig, Ty, TyKind};
 
 use super::Checker;
 
@@ -75,6 +75,17 @@ impl Checker<'_, '_> {
                     }
                     return Ty::handle("String");
                 }
+                // The view builders are compiler-known when their visible
+                // declaration is the intrinsic one; a user or `ffi` function
+                // that shadows the spelling keeps its own signature.
+                if (name == "slice" || name == "rawSlice")
+                    && matches!(
+                        self.visible_decl_kind(name),
+                        Some(crate::load::DeclKind::Intrinsic)
+                    )
+                {
+                    return self.check_view_builder(type_args, args);
+                }
             }
         }
         let callee_ty = self.check_value(callee, None);
@@ -116,6 +127,40 @@ impl Checker<'_, '_> {
             self.check_value(&arg.value, None);
         }
         Ty::unknown()
+    }
+
+    /// Types a compiler-known view builder call.
+    ///
+    /// `slice(v, lo, hi)` and `rawSlice<T>(p, n)` produce a view whose element
+    /// is one step of iteration over the source: whole rows for a multi-extent
+    /// source, the scalar for a single-extent one; an explicit type argument
+    /// names the element directly, and a `raw` source falls back to its
+    /// pointee. Recording the element here is what lets the ordinary
+    /// conversion rules reject a view offered where a different element is
+    /// expected, before the ownership stage lowers it.
+    fn check_view_builder(&mut self, type_args: &[Type], args: &[Arg]) -> Ty {
+        let mut explicit: Option<Ty> = None;
+        for ty in type_args {
+            let resolved = self.resolve_type(ty);
+            if explicit.is_none() {
+                explicit = Some(resolved);
+            }
+        }
+        let mut source: Option<Ty> = None;
+        for arg in args {
+            let ty = self.check_value(&arg.value, None);
+            if source.is_none() {
+                source = Some(ty);
+            }
+        }
+        let element = explicit.or_else(|| {
+            source.as_ref().map(|ty| match &ty.kind {
+                TyKind::Array { .. } => ty.iterated_element(),
+                TyKind::Raw(inner) => (**inner).clone(),
+                _ => Ty::unknown(),
+            })
+        });
+        view_type(element.unwrap_or_else(Ty::unknown))
     }
 
     /// The resolved callable bound of the current function's type parameter.

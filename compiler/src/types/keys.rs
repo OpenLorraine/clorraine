@@ -72,3 +72,21 @@ pub(crate) fn type_key(ty: &Ty) -> String {
 pub(crate) fn view_element(ty: &Ty) -> Ty {
     ty.iterated_element()
 }
+
+/// The view type of an element, in its written `T[][M]` form.
+///
+/// A scalar element becomes `E[]`; a fixed row element folds its extents after
+/// the omitted outer one, so a view of `i32[3]` rows reads `i32[][3]`, the
+/// form the language spells. Building the canonical form at the view-builder
+/// result sites keeps a view's recorded type and its diagnostic spelling the
+/// same as a declared one.
+pub(crate) fn view_type(element: Ty) -> Ty {
+    match &element.kind {
+        TyKind::Array { element: base, extents } if extents.iter().all(Option::is_some) => {
+            let mut view_extents = vec![None];
+            view_extents.extend(extents.iter().copied());
+            Ty::array((**base).clone(), view_extents)
+        }
+        _ => Ty::array(element, vec![None]),
+    }
+}

@@ -94,7 +94,7 @@ and ends with its review dispatch per `AGENTS.md`.
 
 - [x] 1.3.1 Write implementation tests for the typedef key and pointer declarator, the `zero_view_helper` key, a nullable row view, an empty `return;` from a view-returning function, the builder and index spellings, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-08 09:38)
 - [x] 1.3.2 Run the host-ASan probe matrix for the ST-1 – ST-5 shapes (row move, nested access, sub-slice, bounds trap) and the strict `-Werror` builds; record the results ✅ (completed: 2026-10-08 09:38)
-- [ ] 1.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, with the semantics reviewer on the view/element ownership boundary and the `spec/17-codegen` ABI lens; every packet carries the blast-radius (every key/typedef/builder/index call site) and test-integrity (assertions fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff
+- [~] 1.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, with the semantics reviewer on the view/element ownership boundary and the `spec/17-codegen` ABI lens; every packet carries the blast-radius (every key/typedef/builder/index call site) and test-integrity (assertions fail without the fix) steps; resolve in-scope findings; one bounded re-review of a fix diff ⏳ (implemented: 2026-10-08 09:38)
 
 **Deliverables**:
 - [ ] Implementation suite and migrated pins
@@ -102,6 +102,32 @@ and ends with its review dispatch per `AGENTS.md`.
 - [ ] Phase review with no open critical/major finding
 
 **Verify**: `make check`
+
+**Phase 1 review findings (2026-10-08 09:40)** — four reviewers dispatched in parallel on the
+phase diff (baseline `c1cbb077`): correctness, memory-safety, emission-integrity, and semantics
+(the last two per the `AGENTS.md` matrix for symbol-key/emission and view/element ownership
+changes). Memory safety was clean (23 host-ASan probes over the changed shapes, release-count
+table) and emission integrity found no `PE-*` finding (corpus emission byte-identical except
+deliberate multi-extent users, each traced to R1; every accepted variant strict-built; no
+declaration mismatch). Three 🟠 MAJOR findings, resolved by user ruling:
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| RV-001 | 🟠 MAJOR | An inferred row view used where a different slice type is expected was accepted and emitted uncompilable C (undeclared `ClSlice_arr3_i32`); the base emitted valid C. The type stage typed every `slice` result as unknown, so the context conversion never saw the row type. | ✅ resolved — user chose: type the `slice`/`rawSlice` result in the type stage (explicit type argument, else the source's iterated element) and align the two row representations in the conversion rules |
+| SR-001 | 🟠 MAJOR | A `const`-sized row extent in a written view (`i32[][M]`) resolved with the literals-only resolver in codegen, so the callee typedef referenced an undeclared `ClSlice_slice_i32`; the base ran it. | ✅ resolved — user chose: fold constant/arithmetic extents with the existing `ConstFolder` in the declaration/type resolvers (type table, ownership, emitter), matching the type stage |
+| SR-002 | 🟠 MAJOR | `slice<i32[M]>` / `slice<i32[2 + 1]>` were falsely rejected because the explicit type argument resolved literals-only. | ✅ resolved — the same folding resolver |
+| SR-003 | 🟡 MINOR | The `E10200` message spelled the requested row view as `i32[3][]`, not a legal source spelling. | ✅ fixed — the view type is built in its written `T[][M]` form at the result sites |
+| PE/PRE | — | Pre-existing defects reported separately by the reviewers (str-source slices, unannotated inference, compound-literal spelling, FFI/struct-extent resolution corners, generic borrow-view escape); base-identical evidence is in the review reports. | out of scope (not phase-introduced) |
+
+**Fix evidence (2026-10-08 10:25)** — the finding fixes landed with spec-first regression coverage:
+
+| Fix | Coverage | Result |
+| --- | -------- | ------ |
+| RV-001 (`slice`/`rawSlice` typed in the type stage; view-element conversion) | spec `should_reject_when_an_inferred_row_view_is_bound_to_a_scalar_view` (`E10200`); `implicit_conversion` accepts two views whose elements agree | the mismatched context rejects with `E10200` and writes no C (base accepted it); the agreeing written/inferred row views still compile and run |
+| SR-001/SR-002/SR-003 (constant and arithmetic extents) | spec `should_run_when_a_const_sized_row_view_and_explicit_argument_agree` and `should_run_when_an_arithmetic_extent_names_the_source_row` (both exit 3) | the counterexamples compile strict-clean and run under host ASan; the unfixed head failed them (invalid C / false `E10200`); the diagnostic now spells `i32[][M]` |
+| all | spec suite under host ASan; full `make check` | spec 8/8 ASan-clean (serial run; the parallel in-container run times out per the documented scheduling flake), `make check` green |
+
+One bounded re-review is dispatched on the fix diff.
 
 ---
 
