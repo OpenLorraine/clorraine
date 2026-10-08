@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 09:26
-> **Progress**: 2/34 tasks (6%)
+> **Last Updated**: 2026-10-08 09:36
+> **Progress**: 8/34 tasks (24%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -74,12 +74,12 @@ and ends with its review dispatch per `AGENTS.md`.
 **Reference**: [03-01 §Implementation Details](03-01-slice-row-views.md) · [AR-3, AR-9](00-ambiguity-register.md)
 **Objective**: Make the view's element the row end to end.
 
-- [ ] 1.2.1 Type the slice result from the source's view element and add the explicit type-argument agreement check (`E10200`) — `compiler/src/own/call.rs`, `compiler/src/types/mod.rs`
-- [ ] 1.2.2 Key and register row-typed views; skip parameter-typed rows — `compiler/src/types/keys.rs`, `compiler/src/codegen/types.rs`
-- [ ] 1.2.3 Emit the row-typed typedef and builder — `compiler/src/codegen/program.rs`, `compiler/src/codegen/calls.rs`
-- [ ] 1.2.4 Replace the recovery gate with element agreement — `compiler/src/own/lower.rs`
-- [ ] 1.2.5 Migrate the flat-name shape pins this step breaks (`compiler/tests/residual_defect_completion_impl_test.rs`, `compiler/tests/array_value_integrity_impl_test.rs`, `compiler/src/codegen/types.rs` unit tests) so `make check` can be green
-- [ ] 1.2.6 Run the new suite and record the green phase
+- [x] 1.2.1 Type the slice result from the source's view element and add the explicit type-argument agreement check (`E10200`) — `compiler/src/own/call.rs`, `compiler/src/types/mod.rs` ✅ (completed: 2026-10-08 09:36)
+- [x] 1.2.2 Key and register row-typed views; skip parameter-typed rows — `compiler/src/types/keys.rs`, `compiler/src/codegen/types.rs` ✅ (completed: 2026-10-08 09:36)
+- [x] 1.2.3 Emit the row-typed typedef and builder — `compiler/src/codegen/program.rs`, `compiler/src/codegen/calls.rs` ✅ (completed: 2026-10-08 09:36)
+- [x] 1.2.4 Replace the recovery gate with element agreement — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-08 09:36)
+- [x] 1.2.5 Migrate the flat-name shape pins this step breaks (`compiler/tests/residual_defect_completion_impl_test.rs`, `compiler/tests/array_value_integrity_impl_test.rs`, `compiler/src/codegen/types.rs` unit tests) so `make check` can be green ✅ (completed: 2026-10-08 09:36)
+- [x] 1.2.6 Run the new suite and record the green phase ✅ (completed: 2026-10-08 09:36)
 
 **Deliverables**:
 - [ ] Row-typed view type, key, typedef, builder, and access path

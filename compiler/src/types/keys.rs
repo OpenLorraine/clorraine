@@ -24,7 +24,9 @@ pub(crate) fn closure_key(closure: &ClosureTy) -> String {
 ///
 /// A fixed array renders every extent, so `i32[2]` and `i32[3]` never share a
 /// key. An array with an unknown extent is a slice and renders the slice
-/// marker instead; the two forms cannot collide with each other.
+/// marker over its element: a scalar view keys as `slice_i32`, and a view of
+/// rows keys by the whole row, so `i32[][3]` keys as `slice_arr3_i32`. The two
+/// forms cannot collide with each other.
 pub(crate) fn type_key(ty: &Ty) -> String {
     match &ty.kind {
         TyKind::Void => "void".to_owned(),
@@ -50,7 +52,7 @@ pub(crate) fn type_key(ty: &Ty) -> String {
                     .collect();
                 format!("arr{}_{}", dims.join("x"), type_key(element))
             } else {
-                format!("slice_{}", slice_element_key(element))
+                format!("slice_{}", type_key(&view_element(ty)))
             }
         }
         TyKind::Func(_) => "fn".to_owned(),
@@ -59,21 +61,14 @@ pub(crate) fn type_key(ty: &Ty) -> String {
     }
 }
 
-/// The base element a slice view points at, with nested rows unwrapped.
+/// The element a slice view exposes: the row for a multi-extent source.
 ///
-/// A slice of a fixed row (`i32[3][]`) and a row slice written with its
-/// extents after the marker (`i32[][3]`) describe the same view. Both flatten
-/// to the same base element, so their `ClSlice_` names stay shared and a view
-/// built by the `slice` intrinsic matches the declared typedef.
-pub(crate) fn slice_base_element(element: &Ty) -> &Ty {
-    let mut base = element;
-    while let TyKind::Array { element, .. } = &base.kind {
-        base = element;
-    }
-    base
-}
-
-/// The element key a slice's C spelling uses.
-pub(crate) fn slice_element_key(element: &Ty) -> String {
-    type_key(slice_base_element(element))
+/// A view's element is one step of iteration, exactly as an element loop binds
+/// it: a slice over a multi-extent source exposes whole rows (`i32[][3]`
+/// exposes `i32[3]`), while a single-extent view exposes its scalar. Both
+/// spellings of a row view — the written `T[][M]` and a `T[]` whose element is
+/// `T[M]` — yield the same element here, so the key, the typedef, the builder,
+/// and the access spelling all agree.
+pub(crate) fn view_element(ty: &Ty) -> Ty {
+    ty.iterated_element()
 }

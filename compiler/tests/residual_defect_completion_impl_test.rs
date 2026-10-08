@@ -371,11 +371,12 @@ func main(): i32 {
     assert_contains("subst", &emitted, "cl_sink__String(&((*p).v))");
 }
 
-/// A view built over a fixed grid must share the written row-slice name.
+/// A view built over a fixed grid must carry the written row-slice name.
 ///
 /// `slice<i32[3]>(grid, …)` and the parameter `xs: i32[][3]` describe the same
-/// view. Both must spell `ClSlice_i32`, and the typedef the parameter declares
-/// must cover the view the call builds.
+/// view of `i32[3]` rows. Both must spell `ClSlice_arr3_i32`, whose pointer
+/// field keeps the row extent, and the typedef the parameter declares must
+/// cover the view the call builds.
 #[test]
 fn should_share_the_slice_name_when_a_fixed_grid_is_sliced_by_rows() {
     let source = r#"module impl.rdc.rows;
@@ -395,10 +396,10 @@ func main(): i32 {
     assert_contains(
         "rows",
         &emitted,
-        "typedef struct { i32 *ptr; usize len; } ClSlice_i32;",
+        "typedef struct { i32 (*ptr)[3]; usize len; } ClSlice_arr3_i32;",
     );
-    assert_contains("rows", &emitted, "((ClSlice_i32){");
-    assert_absent("rows", &emitted, "ClSlice_arr3_i32");
+    assert_contains("rows", &emitted, "((ClSlice_arr3_i32){");
+    assert_absent("rows", &emitted, "ClSlice_i32");
 }
 
 /// Two emissions of one program must be byte-identical.

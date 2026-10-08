@@ -53,9 +53,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // The settled base knows its element type, and the element one
                 // step yields is the accessed type; recovering it lets the
                 // move-out path see the element's drop need instead of skipping
-                // it as unknown. The recovery is limited to bases whose viewed
-                // element agrees with the recorded element type.
-                if ty.is_unknown() && self.element_recovery_agrees(&base) {
+                // it as unknown. A view's element is the same step the emitted
+                // access yields, so the recovery always agrees with the view.
+                if ty.is_unknown() {
                     let element = self.materialized_ty(&base).iterated_element();
                     if !element.is_unknown() {
                         ty = element;
@@ -668,27 +668,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ty
             }
             _ => ty,
-        }
-    }
-
-    /// True when recovering an unknown element type from an index base agrees
-    /// with the type the emitted view actually reads.
-    ///
-    /// Only a fixed single-extent array is viewed with the recorded element
-    /// type. A dynamic or multi-extent source may be a flattened view of nested
-    /// storage (a slice of a slice stays single-extent in its recorded type),
-    /// so recovering its element would type the access as an owned value over
-    /// storage the view only borrows; those bases keep the unknown type and
-    /// stay borrowed reads. Every non-slice base keeps the recovery unchanged.
-    fn element_recovery_agrees(&self, base: &Value) -> bool {
-        match &base.kind {
-            ValueKind::Intrinsic { name, args, .. } if name == "slice" => matches!(
-                args.first().map(|arg| &arg.ty.kind),
-                Some(TyKind::Array { extents, .. })
-                    if extents.len() == 1 && extents[0].is_some()
-            ),
-            ValueKind::Materialize { value, .. } => self.element_recovery_agrees(value),
-            _ => true,
         }
     }
 

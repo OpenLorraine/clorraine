@@ -299,10 +299,41 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 *value = self.materialize_guard_operand(pending);
             }
         }
+        // The view's element is one step of iteration over the source: whole
+        // rows for a multi-extent source, the scalar for a single-extent one.
+        let source_element = lowered
+            .first()
+            .map(|value| self.materialized_ty(value).iterated_element());
+        // An explicit type argument fixes the view's element, so it must name
+        // the source's element exactly. The `slice` intrinsic is registered
+        // without a declared signature, so the agreement check runs here, at
+        // the call site, and reports the ordinary implicit-conversion error.
+        if name == "slice" {
+            if let (Some(explicit_ty), Some(source)) = (explicit.first(), lowered.first()) {
+                if let Some(source_element) = &source_element {
+                    if !source_element.is_unknown() && explicit_ty != source_element {
+                        if self.report_diagnostics {
+                            self.diagnostics.push(
+                                Diagnostic::error(
+                                    "E10200",
+                                    format!(
+                                        "cannot convert '{}' to '{}' implicitly",
+                                        self.materialized_ty(source).display(),
+                                        Ty::array(explicit_ty.clone(), vec![None]).display()
+                                    ),
+                                    type_args[0].span,
+                                )
+                                .with_help("use an explicit cast `T(expr)`"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
         let type_arg = explicit
             .first()
             .cloned()
-            .or_else(|| element_of(lowered.first()?.ty.clone()))
+            .or_else(|| source_element.filter(|element| !element.is_unknown()))
             .or_else(|| match &lowered.first()?.ty.kind {
                 TyKind::Raw(inner) => Some((**inner).clone()),
                 _ => None,
@@ -395,12 +426,4 @@ pub(super) struct LoweredCall {
     pub type_args: Vec<Ty>,
     /// Lowered arguments in source order.
     pub args: Vec<Value>,
-}
-
-/// The element type of an array, slice, or string view.
-fn element_of(ty: Ty) -> Option<Ty> {
-    match ty.kind {
-        TyKind::Array { element, .. } => Some(*element),
-        _ => None,
-    }
 }

@@ -14,8 +14,8 @@ use crate::profile::Profile;
 use crate::types::{resolve_ty, substitute_instance, CaptureMode, Ty, TyKind, TypeTable};
 
 use super::types::{
-    c_type, collect_slice_types, declarator, function_declarator, mangle_module, scalar_of,
-    type_key,
+    c_type, collect_slice_types, declarator, function_declarator, mangle_module,
+    pointer_to_array_declarator, scalar_of, type_key,
 };
 use super::{Emitter, FuncInfo};
 
@@ -140,16 +140,19 @@ impl<'a> Emitter<'a> {
     ///
     /// The element pointer is mutable so a store through a writable view
     /// compiles. A read-only view is protected by the ownership checks, not by
-    /// C `const`, because the same typedef is shared by both lend kinds.
+    /// C `const`, because the same typedef is shared by both lend kinds. The
+    /// pointer carries the row extents for a multi-extent element
+    /// (`T (*ptr)[M]`), so an indexed access yields a whole row.
     pub(super) fn emit_slice_typedefs(&mut self) {
         let keys = self.slice_element_types();
         if keys.is_empty() {
             return;
         }
         for (key, element) in &keys {
-            let element_c = c_type(element, &self.sema.table);
+            let pointer = pointer_to_array_declarator(element, "ptr", &self.sema.table)
+                .unwrap_or_else(|| format!("{} *ptr", c_type(element, &self.sema.table)));
             self.push(&format!(
-                "typedef struct {{ {element_c} *ptr; usize len; }} ClSlice_{key};"
+                "typedef struct {{ {pointer}; usize len; }} ClSlice_{key};"
             ));
         }
         for (key, _) in &keys {

@@ -7,9 +7,9 @@
 //! project size limit.
 
 use crate::ast::{BinaryOp, ScalarType};
-use crate::types::{Ty, TyKind, TypeTable};
+use crate::types::{Ty, TyKind};
 
-use super::types::{pointer_to_array_type, scalar_c_type};
+use super::types::scalar_c_type;
 
 /// The C condition of an index bounds guard.
 ///
@@ -26,30 +26,29 @@ pub(super) fn bounds_condition(index_c: &str, signed: bool, bound: &str) -> Stri
 }
 
 /// The C text of an indexed access, spelling the pointer of a view.
-pub(super) fn index_text(ty: &Ty, base: &str, index: &str, table: &TypeTable) -> String {
+///
+/// A string view and a slice view are structs whose `ptr` field addresses the
+/// view's element; for a slice of rows that pointer already carries the row
+/// extents, so an indexed access yields a whole row. Any other base is array
+/// or pointer storage indexed directly.
+pub(super) fn index_text(ty: &Ty, base: &str, index: &str) -> String {
     match &ty.kind {
         TyKind::Str | TyKind::StaticStr => format!("({base}).ptr[{index}]"),
-        TyKind::Array { element, extents } if extents.iter().any(Option::is_none) => {
-            // A slice of rows keeps a base-element pointer; a row-typed
-            // access reinterprets the pointer as a pointer to the row, so
-            // the element read yields the whole row rather than one scalar.
-            // The row type keeps every extent after the first.
-            if extents.len() > 1 {
-                let row = Ty::array((**element).clone(), extents[1..].to_vec());
-                if let Some(row_type) = pointer_to_array_type(&row, table) {
-                    return format!("(({row_type})({base}).ptr)[{index}]");
-                }
-            }
+        TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
             format!("({base}).ptr[{index}]")
         }
         _ => format!("{base}[{index}]"),
     }
 }
 
-/// The element type of an array, slice, or string view.
+/// The element one indexing step binds.
+///
+/// The element is one step of iteration: a multi-extent array or slice yields
+/// the whole row, and a single-extent one yields its element. A string view
+/// yields its byte, and any other type yields the unknown placeholder.
 pub(super) fn element_type(ty: &Ty) -> Ty {
     match &ty.kind {
-        TyKind::Array { element, .. } => (**element).clone(),
+        TyKind::Array { .. } => ty.iterated_element(),
         TyKind::Str | TyKind::StaticStr => Ty::scalar(ScalarType::U8),
         _ => Ty::unknown(),
     }

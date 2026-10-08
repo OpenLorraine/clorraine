@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 
 use crate::abi;
 use crate::ast::{Mode, ScalarType};
-use crate::types::{ClosureTy, Ty, TyKind, TypeTable};
+use crate::types::{contains_param, ClosureTy, Ty, TyKind, TypeTable};
 
-pub(super) use crate::types::{slice_base_element, slice_element_key, type_key};
+pub(super) use crate::types::{type_key, view_element};
 
 /// Replaces the dots of a dotted module path with underscores.
 pub(super) fn mangle_module(module: &str) -> String {
@@ -67,8 +67,8 @@ pub(super) fn instance_arg_key(ty: &Ty) -> String {
 pub(super) fn zero_view_helper(ty: &Ty) -> Option<String> {
     match &ty.kind {
         TyKind::Str | TyKind::StaticStr => Some("cl_zero_ClStr".to_owned()),
-        TyKind::Array { element, extents } if extents.iter().any(Option::is_none) => {
-            Some(format!("cl_zero_ClSlice_{}", slice_element_key(element)))
+        TyKind::Array { extents, .. } if extents.iter().any(Option::is_none) => {
+            Some(format!("cl_zero_ClSlice_{}", type_key(&view_element(ty))))
         }
         _ => None,
     }
@@ -98,7 +98,7 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
             if extents.iter().all(Option::is_some) {
                 c_type(element, table)
             } else {
-                format!("ClSlice_{}", slice_element_key(element))
+                format!("ClSlice_{}", type_key(&view_element(ty)))
             }
         }
         TyKind::Func(signature) => func_pointer_type(signature, table),
@@ -339,12 +339,15 @@ pub(super) fn collect_slice_types(ty: &Ty, found: &mut BTreeMap<String, Ty>) {
         TyKind::Array { element, extents } => {
             // A slice over a generic parameter has no concrete element type to
             // declare; its concrete instances add the typedefs they need. The
-            // typedef points at the base element, so a slice of a fixed row
-            // shares the spelling of the equivalent written row slice.
+            // typedef is keyed by the view's element — the whole row for a
+            // multi-extent view — so a written row slice and an inferred one
+            // share the spelling.
             if extents.iter().any(Option::is_none) {
-                let base = slice_base_element(element);
-                if !base.is_param() {
-                    found.entry(type_key(base)).or_insert_with(|| base.clone());
+                let view_element = view_element(ty);
+                if !contains_param(&view_element) {
+                    found
+                        .entry(type_key(&view_element))
+                        .or_insert_with(|| view_element.clone());
                 }
             }
             collect_slice_types(element, found);
@@ -466,13 +469,13 @@ mod tests {
     }
 
     #[test]
-    fn slice_keys_share_the_base_element() {
+    fn slice_keys_share_the_row_element() {
         let table = TypeTable::default();
         let flat = Ty::array(Ty::i32_ty(), vec![None, Some(3)]);
         let nested = Ty::array(Ty::array(Ty::i32_ty(), vec![Some(3)]), vec![None]);
-        assert_eq!(type_key(&flat), "slice_i32");
-        assert_eq!(type_key(&nested), "slice_i32");
-        assert_eq!(c_type(&flat, &table), "ClSlice_i32");
-        assert_eq!(c_type(&nested, &table), "ClSlice_i32");
+        assert_eq!(type_key(&flat), "slice_arr3_i32");
+        assert_eq!(type_key(&nested), "slice_arr3_i32");
+        assert_eq!(c_type(&flat, &table), "ClSlice_arr3_i32");
+        assert_eq!(c_type(&nested, &table), "ClSlice_arr3_i32");
     }
 }

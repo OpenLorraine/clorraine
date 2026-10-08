@@ -10,7 +10,7 @@ use crate::ir::{Value, ValueKind};
 use crate::types::{contains_param, Ty, TyKind};
 
 use super::render::escape_c_string;
-use super::types::{c_type, is_pointer_param, slice_element_key};
+use super::types::{c_type, is_pointer_param, type_key};
 use super::Emitter;
 
 impl Emitter<'_> {
@@ -49,72 +49,28 @@ impl Emitter<'_> {
         })
     }
 
-    /// The C pointer-to-array type and base-element type of a view of rows.
+    /// The pointer and element count of the storage a `slice` selects from.
     ///
-    /// A fixed or slice array with more than one extent has rows as its
-    /// elements, so its offsets and lengths count rows; the pointer addresses
-    /// a whole row (`T (*)[M]`). `None` for every shape that iterates scalars.
-    fn row_slice_types(&self, ty: &Ty) -> Option<(String, String)> {
-        let TyKind::Array { element, extents } = &ty.kind else {
-            return None;
-        };
-        if extents.len() < 2 {
-            return None;
-        }
-        let row = Ty::array((**element).clone(), extents[1..].to_vec());
-        let row_type = super::types::pointer_to_array_type(&row, &self.sema.table)?;
-        Some((row_type, c_type(element, &self.sema.table)))
-    }
-
-    /// The pointer, count, and stored-pointer cast of the storage a `slice`
-    /// selects from.
-    ///
-    /// A growable slice or string view carries its own `ptr` and `len` fields;
-    /// a view of rows measures both in rows, so its pointer is cast to a
-    /// pointer-to-array and offset row by row, then cast back to the
-    /// base-element pointer the view stores. A fixed array has no fields, so
-    /// its address decays to the element pointer and its extent is a
-    /// compile-time constant. This lets `slice` accept a fixed array without
-    /// emitting `(arr).ptr`, which is not C.
+    /// A growable view carries its own `ptr` and `len` fields; a fixed array
+    /// decays to a pointer to its first element. The view's element is one
+    /// iteration step, so a view of rows stores a row pointer and both the
+    /// length and the guard bound count rows. This lets `slice` accept a fixed
+    /// array without emitting `(arr).ptr`, which is not C.
     fn slice_source(&self, view: &Value) -> SliceSource {
         let ty = self.substitute(&view.ty);
         let value = self.value(view);
-        let rows = self.row_slice_types(&ty);
         match &ty.kind {
             TyKind::Array { extents, .. } if extents.iter().all(Option::is_some) => {
-                if let Some((row_type, base)) = rows {
-                    let count = extents.first().and_then(|size| *size).unwrap_or(0);
-                    return SliceSource {
-                        pointer: format!("({row_type}){value}"),
-                        length: format!("(usize){count}"),
-                        store_cast: Some(format!("({base} *)")),
-                    };
-                }
-                let extent = extents
-                    .iter()
-                    .filter_map(|size| *size)
-                    .fold(1usize, usize::saturating_mul);
-                let element = self.intrinsic_element(None, Some(view));
+                let count = extents.first().and_then(|size| *size).unwrap_or(0);
                 SliceSource {
-                    pointer: format!("({} *){value}", c_type(&element, &self.sema.table)),
-                    length: format!("(usize){extent}"),
-                    store_cast: None,
+                    pointer: value,
+                    length: format!("(usize){count}"),
                 }
             }
-            _ => {
-                if let Some((row_type, base)) = rows {
-                    return SliceSource {
-                        pointer: format!("({row_type})({value}).ptr"),
-                        length: format!("(usize)(({value}).len)"),
-                        store_cast: Some(format!("({base} *)")),
-                    };
-                }
-                SliceSource {
-                    pointer: format!("({value}).ptr"),
-                    length: format!("(usize)(({value}).len)"),
-                    store_cast: None,
-                }
-            }
+            _ => SliceSource {
+                pointer: format!("({value}).ptr"),
+                length: format!("(usize)(({value}).len)"),
+            },
         }
     }
 
@@ -291,7 +247,7 @@ impl Emitter<'_> {
                 let element = self.intrinsic_element(type_arg, args.first());
                 format!(
                     "((ClSlice_{}){{ {}, (usize)({}) }})",
-                    slice_element_key(&element),
+                    type_key(&element),
                     pointer,
                     count
                 )
@@ -307,20 +263,15 @@ impl Emitter<'_> {
                     None => SliceSource {
                         pointer: "0".to_owned(),
                         length: "0".to_owned(),
-                        store_cast: None,
                     },
                 };
                 let low = self.intrinsic_arg(args, 1);
                 let high = self.intrinsic_arg(args, 2);
                 let element = self.intrinsic_element(type_arg, args.first());
                 let offset = format!("({}) + ({low})", source.pointer);
-                let stored = match &source.store_cast {
-                    Some(cast) => format!("{cast}({offset})"),
-                    None => offset,
-                };
                 format!(
-                    "((ClSlice_{}){{ {stored}, (usize)(({high}) - ({low})) }})",
-                    slice_element_key(&element)
+                    "((ClSlice_{}){{ {offset}, (usize)(({high}) - ({low})) }})",
+                    type_key(&element)
                 )
             }
             "sizeof" => match type_arg {
@@ -354,8 +305,9 @@ impl Emitter<'_> {
 
     /// The element type of a view-builder intrinsic.
     ///
-    /// An explicit type argument wins; otherwise the element type comes from
-    /// the source view, or the pointee of a first `raw` argument.
+    /// An explicit type argument wins; otherwise the element is one step of
+    /// iteration over the source view, so a multi-extent source yields whole
+    /// rows, or the pointee of a first `raw` argument.
     fn intrinsic_element(&self, type_arg: Option<&Ty>, first: Option<&Value>) -> Ty {
         if let Some(ty) = type_arg {
             return self.substitute(ty);
@@ -363,24 +315,22 @@ impl Emitter<'_> {
         let Some(first) = first else {
             return Ty::unknown();
         };
-        match self.substitute(&first.ty).kind {
-            TyKind::Array { element, .. } => *element,
-            TyKind::Raw(inner) => *inner,
+        let ty = self.substitute(&first.ty);
+        match &ty.kind {
+            TyKind::Array { .. } => ty.iterated_element(),
+            TyKind::Raw(inner) => (**inner).clone(),
             _ => Ty::unknown(),
         }
     }
 }
 
-/// The pointer, element count, and stored-pointer cast of a slice source.
+/// The pointer and element count of a slice source.
 struct SliceSource {
     /// The pointer the slice offsets advance in elements; for a view of rows
     /// it advances a whole row at a time.
     pointer: String,
     /// The number of elements the source holds.
     length: String,
-    /// The cast that stores the offset pointer back in the view's
-    /// base-element field, when the pointer addresses rows.
-    store_cast: Option<String>,
 }
 
 /// The C scalar name a volatile intrinsic accesses, keyed by its name.

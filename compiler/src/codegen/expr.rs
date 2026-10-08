@@ -48,7 +48,7 @@ impl<'a> Emitter<'a> {
             ValueKind::Index { base, index } => {
                 let base_c = self.value(base);
                 let index_c = self.value(index);
-                index_text(&self.substitute(&base.ty), &base_c, &index_c, &self.sema.table)
+                index_text(&self.substitute(&base.ty), &base_c, &index_c)
             }
             ValueKind::Unary { op, operand } => self.unary(*op, operand, value),
             // A short-circuit operator evaluates its right operand only when
@@ -129,11 +129,11 @@ impl<'a> Emitter<'a> {
                     ty = self.field_type(&ty, field);
                 }
                 Projection::Element(Some(index)) => {
-                    text = index_text(&ty, &text, &index.to_string(), &self.sema.table);
+                    text = index_text(&ty, &text, &index.to_string());
                     ty = element_type(&ty);
                 }
                 Projection::ElementTemp(temp) => {
-                    text = index_text(&ty, &text, &format!("__cl_tmp{temp}"), &self.sema.table);
+                    text = index_text(&ty, &text, &format!("__cl_tmp{temp}"));
                     ty = element_type(&ty);
                 }
                 Projection::Element(None) => {
@@ -141,7 +141,7 @@ impl<'a> Emitter<'a> {
                     // the value forms carry it instead. A projected place only
                     // reaches here as an assignment target the checker bounded,
                     // so element zero keeps the C total.
-                    text = index_text(&ty, &text, "0", &self.sema.table);
+                    text = index_text(&ty, &text, "0");
                     ty = element_type(&ty);
                 }
             }

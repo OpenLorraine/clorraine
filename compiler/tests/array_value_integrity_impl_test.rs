@@ -546,8 +546,9 @@ func main(): i32 {
 /// A row slice offsets its pointer in rows and stores the row count.
 ///
 /// The source is a two-row fixed array; slicing rows one through two must
-/// advance the pointer a whole row, keep the length and the guard bound in
-/// rows, and cast the offset pointer back to the view's stored type.
+/// advance the pointer a whole row and keep the length and the guard bound in
+/// rows. The view field is already the row pointer, so the offset stores
+/// directly without a cast.
 #[test]
 fn should_offset_in_rows_when_a_row_slice_is_built() {
     let source = r#"module codegen.av.impl12;
@@ -562,7 +563,7 @@ func main(): i32 {
 "#;
     let (output, emitted) = emit_build_run("ai12", source);
     assert!(
-        emitted.contains("(i32 *)(((i32 (*)[3])m) + (1))"),
+        emitted.contains("(m) + (1)"),
         "ai12: the row pointer should advance by whole rows"
     );
     assert!(
