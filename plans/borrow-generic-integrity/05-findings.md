@@ -15,6 +15,8 @@ evidence lives in the reviewers' reports and in the dispositions below.
 | RV-005 | 1 | MINOR (pre-existing) | field store into a non-nullable borrow parameter | accepted — field stores keep their existing rules by design |
 | MS-002 | 1 | MAJOR (pre-existing) | concrete `borrow T?` return double-frees | deferred — filed DEF-101 |
 | PF-005 residual | 1 | MINOR (pre-existing) | runtime-indexed out-slot element self-assign | deferred — filed DEF-102 |
+| EI-P2-1 | 2 | MINOR (newly reachable) | `type_key` `Q` marker vs identifier collision in nested positions | accepted — documented limitation, filed DEF-103 |
+| Lifted-closure capture return | 2 | MAJOR (pre-existing) | emitted alias between a captured owner and its returned value | deferred — filed DEF-104 |
 
 ## Phase 1 dispositions (2026-10-09)
 
@@ -68,3 +70,32 @@ rejected (SR-001 fix), so this residual is unreachable through the new rules.
 **PF-005 residual — deferred, DEF-102.** The runtime-indexed element
 self-assign (`xs[i] = xs[i]`) stays unguarded; the exact constant-projection
 form is covered.
+
+## Phase 2 dispositions (2026-10-09)
+
+**EI-P2-1 (MINOR, newly reachable) — accepted, filed DEF-103.** The `Q` marker
+collides with a user identifier ending in `Q` in nested instance positions: a
+type named `StringQ` used as `Wrap<StringQ>` keys the same `ClWrap__StringQ` as
+`Wrap<String?>`, and the strict build fails on the struct redefinition. The
+collision is fail-closed (never a runnable wrong program), needs an unusual
+type name, and the marker spelling is pinned by the confirmed AR-4 decision;
+the correctness reviewer recorded it as the known limitation the `type_key` doc
+and the nested-key implementation test already document. An escaping scheme
+would change internal C symbol spellings — an ABI-affecting choice outside this
+batch's confirmed scope. Filed so the backlog carries it.
+
+**Pre-existing lifted-closure capture double free — deferred, DEF-104.**
+An immediately-invoked closure returning its captured owner by value
+(`func outer<T>(x: T): T { return ([x] () => x)(); }`) aliases the result and
+the source, so both release one allocation (`free(): double free detected`,
+exit 134; base and head identical, and it reproduces without a nullable type).
+The emission auditor surfaced it during the sweep and routed it here as
+pre-existing, outside this phase's symbol-key scope; filed with the
+reproduction.
+
+No other findings in Phase 2: the correctness review reported none, the
+memory audit found no leak, double free, or release-count mistake on the
+changed shapes, and the emission sweep over 1837 units found only the intended
+`Q`-class diffs (14 diffs, all in the batch programs; 7 base-fail-to-head-ok
+strict builds; zero head-only failures over 760 accepted host units; no
+dangling symbol references).

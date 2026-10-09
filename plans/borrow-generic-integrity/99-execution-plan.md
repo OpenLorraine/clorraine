@@ -191,6 +191,18 @@ review.
 
 **Verify**: `make check`
 
+### Phase 2 Review (2026-10-09 22:38)
+
+Independent review (correctness reviewer + memory-safety auditor + emission-integrity auditor) found
+no phase-introduced critical or major issues. The emission sweep over 1837 units showed only the
+intended `Q`-class diffs (nested nullable arguments; 7 base-fail-to-head-ok strict builds; zero
+head-only failures); the memory audit is clean on the changed shapes; the correctness review
+reports no findings and confirms the test-integrity pins. One minor newly-reachable item — the `Q`
+marker's collision with a user identifier ending in `Q` in nested positions — is accepted as the
+documented AR-4 limitation and filed as DEF-103; a pre-existing lifted-closure capture double free
+routed by the emission audit is filed as DEF-104. Rulings and evidence:
+[05-findings.md](05-findings.md).
+
 ---
 
 ## Phase 3: Nullable view comparison (DEF-81)
