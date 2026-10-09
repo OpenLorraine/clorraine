@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 14:05
-> **Progress**: 29/34 tasks (85%)
+> **Last Updated**: 2026-10-09 14:19
+> **Progress**: 31/34 tasks (91%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -329,8 +329,8 @@ reproducer (`return mk().b.c;`) and the lambda-in-condition reproducer are host-
 **Reference**: [03-04 §Proposed Changes](03-04-element-store-drop-spelling.md) · [07 ST-12](07-testing-strategy.md) · [AR-8, AR-10](00-ambiguity-register.md)
 **Objective**: Pin the strict-build acceptance before the fix.
 
-- [ ] 4.1.1 [spec-author] Write specification test ST-12 in `compiler/tests/slice_temporary_integrity_spec_test.rs` (both filed programs, strict host build and run)
-- [ ] 4.1.2 Run the test and record the red phase (pointer-arrow error under `-Werror`)
+- [x] 4.1.1 [spec-author] Write specification test ST-12 in `compiler/tests/slice_temporary_integrity_spec_test.rs` (both filed programs, strict host build and run) ✅ (completed: 2026-10-09 14:19)
+- [x] 4.1.2 Run the test and record the red phase (pointer-arrow error under `-Werror`) ✅ (completed: 2026-10-09 14:19)
 
 **Deliverables**:
 - [ ] ST-12

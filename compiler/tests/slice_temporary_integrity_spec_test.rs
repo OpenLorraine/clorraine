@@ -48,6 +48,14 @@
 //! bindings land the sibling field and the receiver buffer leak and the loop
 //! adoption double-frees.
 //!
+//! The element-store case pins the drop spelling of a call-indexed store that
+//! replaces an owning struct element: `out[target()] = mkvArray()[rhsIndex()]`
+//! and `out[target()] = Pair { ... }` must both build under the strict host
+//! compiler, store the selected value, and release the replaced element once.
+//! Before the fix the replaced element's drop target is spelled
+//! `*(&(out[i])).a` — parsed as `*((&(out[i])).a)` — so the strict build rejects
+//! the unit with a pointer-arrow error.
+//!
 //! The memory helper runs the same program as an ordinary strict host build
 //! and adds leak and use-after-free detection when `RDC_ASAN` is set.
 
@@ -1172,4 +1180,103 @@ func main(): i32 {
     let output = run_memory("sti-st20", source);
     assert_exit("sti-st20", &output, 4);
     assert_no_asan("sti-st20", &output);
+}
+
+/// A call-indexed store of an owned array element or struct literal builds
+/// under the strict host compiler and releases the replaced element once.
+///
+/// Both filed spells store at a run-time index into `out: Pair[4]`, whose
+/// `Pair` elements own two strings. The element form
+/// `out[target()] = mkvArray()[rhsIndex()]` moves an element read from another
+/// call result; the literal form `out[target()] = Pair { ... }` stores a fresh
+/// literal. The module counter proves the index call runs once, the stored
+/// element/literal is observable, and the replaced element releases exactly
+/// once. The element form answers three (the stored `a` length) and the literal
+/// form answers two; both runs are host-ASan clean. Before the fix the replaced
+/// element's drop target is spelled `*(&(out[i])).a`, which C parses as
+/// `*((&(out[i])).a)`, so the strict compiler reports a pointer-arrow error and
+/// rejects the emitted unit.
+#[test]
+fn should_store_and_release_once_when_a_call_indexed_store_replaces_an_owned_element() {
+    let element_source = r#"module spec.sti.st21;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+let picks: i32 = 0;
+
+func target(): usize {
+    picks = picks + 1;
+    return 2;
+}
+
+func rhsIndex(): usize {
+    return 1;
+}
+
+func mkvArray(): Pair[2] {
+    return [Pair { a: stringOf("x"), b: stringOf("b0") }, Pair { a: stringOf("yyy"), b: stringOf("b1") }];
+}
+
+func main(): i32 {
+    let out: Pair[4] = [
+        Pair { a: stringOf("a"), b: stringOf("p") },
+        Pair { a: stringOf("bb"), b: stringOf("q") },
+        Pair { a: stringOf("ccc"), b: stringOf("r") },
+        Pair { a: stringOf("dddd"), b: stringOf("s") }
+    ];
+    out[target()] = mkvArray()[rhsIndex()];
+    if (picks != 1) {
+        return 90;
+    }
+    return i32(len(out[2].a));
+}
+"#;
+    let element_output = run_host("sti-st21-element", element_source);
+    assert_exit("sti-st21-element", &element_output, 3);
+
+    let element_memory = run_memory("sti-st21-element", element_source);
+    assert_exit("sti-st21-element", &element_memory, 3);
+    assert_no_asan("sti-st21-element", &element_memory);
+
+    let literal_source = r#"module spec.sti.st21;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+let picks: i32 = 0;
+
+func target(): usize {
+    picks = picks + 1;
+    return 2;
+}
+
+func main(): i32 {
+    let out: Pair[4] = [
+        Pair { a: stringOf("a"), b: stringOf("p") },
+        Pair { a: stringOf("bb"), b: stringOf("q") },
+        Pair { a: stringOf("ccc"), b: stringOf("r") },
+        Pair { a: stringOf("dddd"), b: stringOf("s") }
+    ];
+    out[target()] = Pair { a: stringOf("zz"), b: stringOf("w") };
+    if (picks != 1) {
+        return 90;
+    }
+    return i32(len(out[2].a));
+}
+"#;
+    let literal_output = run_host("sti-st21-literal", literal_source);
+    assert_exit("sti-st21-literal", &literal_output, 2);
+
+    let literal_memory = run_memory("sti-st21-literal", literal_source);
+    assert_exit("sti-st21-literal", &literal_memory, 2);
+    assert_no_asan("sti-st21-literal", &literal_memory);
 }
