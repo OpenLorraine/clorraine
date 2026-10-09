@@ -3,9 +3,9 @@
 //! The specification suite proves *what* a deferred block computes; these cases
 //! prove *how* the emitter spells it. A scope's cleanup emits one copy of each
 //! registered deferred block per cleanup activation (so the fall-through, the
-//! continue/break edges, and the return rung each run it), the first copy keeps
-//! the plain `__cl_b<N>` label spelling while later copies suffix their labels,
-//! and two emissions of one program must be byte-identical.
+//! continue/break edges, and the return rung each run it), every copy takes its
+//! activation's label suffix while plain `__cl_b<N>` labels stay with the
+//! main-body walk, and two emissions of one program must be byte-identical.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};

@@ -122,6 +122,33 @@ impl Diagnostics {
         }
     }
 
+    /// Drops diagnostics added at or after `from` that repeat an earlier one
+    /// (same code, message, and span).
+    ///
+    /// A deferred block is checked on every exit edge and through nested
+    /// continuations, so a check can re-report the same source occurrence; the
+    /// occurrence is kept once while distinct diagnostics stay.
+    pub fn dedupe_from(&mut self, from: usize) {
+        let mut unique: Vec<Diagnostic> = Vec::new();
+        for (index, diagnostic) in std::mem::take(&mut self.items).into_iter().enumerate() {
+            let repeated = index >= from
+                && unique.iter().any(|known| {
+                    known.code == diagnostic.code
+                        && known.message == diagnostic.message
+                        && known.span == diagnostic.span
+                });
+            if repeated {
+                match diagnostic.severity {
+                    Severity::Error => self.error_count -= 1,
+                    Severity::Warning => self.warning_count -= 1,
+                }
+            } else {
+                unique.push(diagnostic);
+            }
+        }
+        self.items = unique;
+    }
+
     /// Kept diagnostics in report order.
     pub fn items(&self) -> &[Diagnostic] {
         &self.items

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 18:18
-> **Progress**: 29/32 tasks (91%)
+> **Last Updated**: 2026-10-09 18:27
+> **Progress**: 31/32 tasks (97%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -375,7 +375,17 @@ struct/move/call-temp results; ordering root-cause loops) — one plan-introduce
 **Objective**: Independent review of the whole plan diff.
 
 - [x] 4.2.1 Dispatch the final plan review (correctness + memory-safety + emission-integrity + semantics over the plan diff) and resolve findings ✅ (completed: 2026-10-09 18:18)
-- [~] 4.2.2 Bounded re-review of any fix diff ⏳ (implemented: 2026-10-09 18:18)
+- [x] 4.2.2 Bounded re-review of any fix diff ✅ (completed: 2026-10-09 18:27)
+
+**Bounded re-review (2026-10-09 18:27)** — the semantics re-review confirmed SR-001 resolved
+(`dupedges` 1×, `v3` 1×; distinct reads preserved) but found **SR-002** 🟠: the first dedupe
+attempt consumed the reporting slot on a clean first check, suppressing a later edge's genuine
+diagnostic (a correct rejection flipped to acceptance, dereferencing NULL at runtime). Re-fixed in
+the same fix cycle: every check reports again, and only repeats of an identical
+(code, message, span) diagnostic added by a deferred check are dropped (a targeted collector
+`dedupe_from`; a global dedupe broke an intended duplicate in the constants tests). Self-verified:
+`dupedges`/`v3`/`retgap`/`edgegap` report once, `crossedge` keeps two distinct reads, the
+constants test and the full workspace pass; per the review cap no third pass was run.
 
 **Final review results and fixes (2026-10-09 18:18)** — four reviewers over the whole-plan diff
 (`01b778fb..fd923cb`, 3266 lines). No critical or major finding: correctness clean (blast radius,
@@ -387,13 +397,13 @@ consistent (acceptance, order, values) with one minor finding:
 
 | ID | Severity | Finding | Resolution |
 | -- | -------- | ------- | ---------- |
-| SR-001 | 🟡 MINOR | A deferred block re-checked on every edge and through nested continuations reported the same diagnostic once per check (`dupedges` 3×, `v3` 2×). | ✅ Fixed: only the first check that can report emits diagnostics (a per-registration seen-set, AR-21); `dupedges` 1×, `v3` 1× (the single report closes a base false negative once); pinned by an implementation case. |
+| SR-001 | 🟡 MINOR | A deferred block re-checked on every edge and through nested continuations reported the same diagnostic once per check (`dupedges` 3×, `v3` 2×). | ✅ Fixed via AR-21 (the targeted collector dedupe; the first attempt's over-suppression was caught and re-fixed as SR-002): `dupedges` 1×, `v3` 1×, `retgap` keeps its single correct report; pinned by an implementation case. |
 | RV-001 | 🟡 MINOR | Plan records said the first copy keeps the plain label spelling and that defer-free programs are byte-identical, contradicting the landed AR-16 suffixing and the accepted lone-`#line` cleanup. | ✅ Fixed: the register, 03-01, 07, and R6 wording now record the supersession and the accepted exception. |
 | RV-002 | 🟡 MINOR | The PE-001 stabilization had no regression pin. | ✅ Fixed: an implementation case pins the base local-name numbering for a ladder drop. |
 | PRE (memory) | 🟠 pre-existing | A deferred `break`/`continue` preempting a pending **ordinary** owned return leaks the abandoned value (base-identical at the plan baseline). | Reported; out of scope (backlog decision). |
 
 **Deliverables**:
-- [ ] Final review with no open critical/major finding
+- [x] Final review with no open critical/major finding
 
 **Verify**: `make check`
 

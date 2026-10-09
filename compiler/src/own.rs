@@ -199,12 +199,6 @@ struct FunctionChecker<'a, 'd> {
     /// while its first check is still running. Each registration is checked
     /// once per cleanup run and once per exit edge.
     active_defer_checks: BTreeSet<u32>,
-    /// Registrations whose deferred block has already reported diagnostics.
-    ///
-    /// The block is checked on every edge for its flow effects, but its
-    /// diagnostics describe one source occurrence, so only the first check
-    /// reports them.
-    reported_defer_checks: BTreeSet<u32>,
     /// The ordered loan event log for the function being checked.
     events: Vec<LoanEvent>,
     /// The next ordinal to hand out in each block's event sequence.
@@ -356,7 +350,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             exits: Vec::new(),
             defer_entries: Vec::new(),
             active_defer_checks: BTreeSet::new(),
-            reported_defer_checks: BTreeSet::new(),
             events: Vec::new(),
             next_ordinal: BTreeMap::new(),
             loan_ids: BTreeMap::new(),
@@ -579,17 +572,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     let anchor = self.builder.current();
                     let saved = self.state.clone();
-                    // Every edge checks the block for its flow effects, but its
-                    // diagnostics describe one source occurrence: only the
-                    // first check that can report does so. A check during the
-                    // registration lowering (or a speculative pass) runs with
-                    // reporting off and must not consume the report.
-                    let report = self.report_diagnostics;
-                    if report && !self.reported_defer_checks.insert(registration) {
-                        self.report_diagnostics = false;
-                    }
+                    // Every edge checks the block for its flow effects, so a
+                    // diagnostic it re-reports describes the same source
+                    // occurrence; drop the repeats while keeping distinct ones.
+                    let reported = self.diagnostics.items().len();
                     self.check_defer_exit(block, anchor);
-                    self.report_diagnostics = report;
+                    self.diagnostics.dedupe_from(reported);
                     self.restore_enclosing_state(&saved, scope_index);
                     self.active_defer_checks.remove(&registration);
                 }

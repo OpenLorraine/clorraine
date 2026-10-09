@@ -25,7 +25,7 @@
 | AR-18 | Technical (runtime) | The Phase 4 memory sweep found a plan-introduced leak: a deferred return stores its value, an older deferred `break`/`continue` preempts the pending return, and an ordinary store then overwrites the result without releasing it | A: gate the ordinary store's release on a per-pass flag set by a preceding deferred result store · B: release before every ordinary owned store (byte churn for ordinary multi-return functions) · C: track result liveness (larger model) | **A** — it releases exactly the reachable supersede shapes, keeps ordinary returns byte-identical (probed), and reuses the existing null-safe drop. | ✅ Resolved (runtime, auto-design) |
 | AR-19 | Technical (runtime) | The Phase 4 memory sweep surfaced a plan-introduced false rejection (`E10021`): an older defer reading an owned local after a newer returning defer is rejected, because `restore_enclosing_state` restored only scopes strictly enclosing the running one | A: restore the running scope's dropped bindings too (`take(scope_index + 1)`); the release action drops them again in emitted order · B: file it as a residual and accept the regression · C: restructure the checker's state restoration | **A** — it keeps every base-accepted program accepted, matches the emitted order (the scope's own release still runs later in the same cleanup), and the full workspace stays green. | ✅ Resolved (runtime, auto-design) |
 | AR-20 | Technical (runtime) | The Phase 4 emission sweep found `MINOR` PE-001: the ladder's used-rung subset skipped the planning pass's local-name allocations, renumbering growable-array temporaries in defer-free programs (cosmetic, behavior identical), contradicting the plan's byte-identity statement | A: the planning pass walks every rung (recovering the base numbering) while the real pass emits only reached rungs · B: accept the renumbering and amend the byte-identity requirement | **A** — the minimal repro matches the base bytes after the change; the emitted (real-pass) output for used-rung programs is unchanged; the fix keeps the strict-build guarantee (no unused labels) intact. | ✅ Resolved (runtime, auto-design) |
-| AR-21 | Technical (runtime) | The final review found duplicated diagnostics: a deferred block re-checked on every exit edge and through nested continuations reported the same diagnostic once per check (`dupedges` 3×, `v3` 2×), violating the once-per-occurrence contract | A: report only from the first check that can report — a per-registration seen-set consumed only while reporting is on, so registration-pass and speculative checks do not consume the report · B: accept the duplicates | **A** — `dupedges` reports once (base 1×) and `v3` reports once (base 0× — the single report closes a base false negative rather than duplicating); the full workspace stays green. | ✅ Resolved (runtime, auto-design) |
+| AR-21 | Technical (runtime) | The final review found duplicated diagnostics: a deferred block re-checked on every exit edge and through nested continuations reported the same diagnostic once per check (`dupedges` 3×, `v3` 2×), violating the once-per-occurrence contract. The first remediation (consuming a per-registration slot on the first reportable check) over-suppressed: a clean first check consumed the slot, so a later edge's genuine diagnostic was dropped (`retgap` flipped from rejection to acceptance, with a NULL deref at runtime — SR-002) | A: a collector-level `dedupe_from` scoped to the deferred check — every check runs with reporting on, and only repeats of an identical (code, message, span) diagnostic added by a deferred check are dropped · B: a global (code, message, span) dedupe in the collector (broke an intended duplicate in the constants tests) · C: accept the duplicates or the over-suppression | **A** — `dupedges`/`v3`/`retgap`/`edgegap` report once, `crossedge` keeps both distinct reads (2), the constants test keeps its intended duplicate, and the full workspace is green. | ✅ Resolved (runtime, auto-design) |
 
 ## Resolution Notes
 
@@ -193,15 +193,18 @@ point).
 
 **AR-21 (runtime, delegated record):** Authority: AI — delegated by --auto-design · Root invocation
 ID `ad-defer-integrity-20261009` · Eligibility: review-driven diagnostics dedupe inside the
-confirmed scope (the final review's SR-001) · Objective: each deferred read occurrence is reported
-once while keeping the per-edge effect checks · Decision: a per-registration `reported_defer_checks`
-set; the first check that runs with reporting on emits the diagnostics, later checks run with
-reporting off; checks during registration lowering or speculative passes do not consume the report
-· Evidence: `dupedges` 3→1 (base 1), `v3` 2→1 (base 0 — one report closes a base false negative),
-full workspace and `make check` green · Rejected: accepting the duplicates (violates
-`spec/14-diagnostics.md`'s once-per-occurrence contract) · Confidence: High — reproduced and pinned
-by an implementation case · Reopen triggers: a later-edge diagnostic that the first check cannot
-see (recorded as a known approximation matching the base) · Policy version 1.
+confirmed scope (the final review's SR-001, and the re-review's SR-002) · Objective: each deferred
+read occurrence is reported once, without suppressing a genuine later-edge diagnostic · Decision: a
+collector-level `dedupe_from` applied after each deferred check drops repeats of an identical
+(code, message, span) diagnostic, while every check runs with reporting on · Evidence: `dupedges`
+3→1 (base 1), `v3` 2→1 (base 0 — one report closes a base false negative), `retgap` restored to a
+rejection (the over-suppressed first attempt accepted it and segfaulted at runtime), `edgegap` 1,
+`crossedge` 2 (distinct reads preserved), the constants unit test keeps its intended duplicate, and
+the full workspace plus `make check` are green · Rejected: the first per-registration slot (SR-002
+over-suppression), a global collector dedupe (broke an intended duplicate), accepting the
+duplicates · Confidence: High — every shape reproduced and the workspace is green; per the review
+cap no third review pass was run, so the fix rests on these probes and the suites · Reopen
+triggers: a deferred diagnostic distinct only by message/help text at one span · Policy version 1.
 
 **AR-18/AR-19/AR-20 (runtime, delegated records):** Authority: AI — delegated by --auto-design ·
 Root invocation ID `ad-defer-integrity-20261009` · Eligibility: review-driven corrective
