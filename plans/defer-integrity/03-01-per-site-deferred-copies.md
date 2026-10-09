@@ -40,10 +40,10 @@ deferred block checked on every exit edge.
    remaining-actions rule for nested re-entry is [03-03](03-03-deferred-return.md)'s frame work;
    this phase only needs the active-root rule.
 3. **Deterministic copy namespace.** A per-root copy counter is incremented at each `emit_defer`
-   activation in emission order. The **first** copy of each root keeps the existing block-label
-   spelling (`__cl_b{id}`) so single-site defers stay byte-identical; later copies suffix their
-   block labels (`__cl_b{id}__{n}`, `n` ≥ 2). C labels are function-scoped, so the suffix is
-   required, not cosmetic. The counter is assigned during emission from the deterministic block /
+   activation in emission order. Every copy suffixes its block labels (`__cl_b{id}__{n}`, `n` ≥ 1)
+   and plain `__cl_b{id}` stays reserved for the main-body walk, so a copy can never collide with a
+   block the main flow prints (a `break` target, for example — the implementation superseded the
+   original first-copy-plain rule, AR-16). The counter is assigned during emission from the deterministic block /
    action order; the pinned rule is: `n` is the 1-based ordinal of the activation for that root in
    the emitter's deterministic emission order (the same order in every run — the re-emission
    determinism suite is the oracle).
@@ -107,7 +107,7 @@ exactly once.
 | Error Case | Handling Strategy | AR Ref |
 | ---------- | ----------------- | ------ |
 | Nested activation of an actively-emitting root | No-op (active-root suppression) | AR-7 |
-| Copy label collision across activations | Per-copy suffix (`__cl_b{id}__{n}`); first copy unchanged | AR-7 |
+| Copy label collision across activations | Per-copy suffix (`__cl_b{id}__{n}`); plain labels reserved for the main walk | AR-7 (superseded by AR-16) |
 | Non-deterministic copy numbering | Rejected by the determinism suite and byte-identical re-emission tests; the pinned ordinal rule above is the only source | AR-4 |
 | A deferred block re-entered while its check is in progress | Active-entry guard; nested `check_defer_exit` truncation stays | AR-7 |
 
@@ -120,7 +120,7 @@ exactly once.
   ST-3 (early-return sibling), ST-4 (three cleanup sites in one scope) — see
   [07-testing-strategy.md](07-testing-strategy.md).
 - Implementation tests: the emitted shape has one copy per site (count the deferred guard in the
-  emitted C), the first-copy label spelling is unchanged, later copies use the suffix, and two
+  emitted C), every copy takes its activation's suffix (plain labels stay with the main walk), and two
   emissions are byte-identical.
 - The checker probe: a deferred move/loan is visible on the fall-through edge (diagnostic or
   state evidence recorded in the phase).

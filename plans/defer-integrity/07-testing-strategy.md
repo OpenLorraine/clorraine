@@ -87,9 +87,9 @@ Memory shapes (ST-1, ST-2, ST-3, ST-9, ST-12, ST-13, ST-14) additionally run thr
 
 | Test File | Description | Priority |
 | --------- | ----------- | -------- |
-| `compiler/tests/defer_integrity_impl_test.rs` | One copy per cleanup site (count the deferred guard in the emitted C); the first-copy label spelling unchanged and later copies suffixed; the bounded copy contains no outer block; the `continue;`/`break;` spelling | High |
+| `compiler/tests/defer_integrity_impl_test.rs` | One copy per cleanup site (count the deferred guard in the emitted C); every copy takes its activation's suffix while plain labels stay with the main walk; the bounded copy contains no outer block; the `continue;`/`break;` spelling | High |
 | `compiler/tests/defer_integrity_impl_test.rs` | The continuation shape and remaining-actions order; the buffered-cleanup order for value returns; the rung path unchanged | High |
-| `compiler/tests/defer_integrity_impl_test.rs` | Byte-identical re-emission for the defect programs; defer-free programs byte-identical to the baseline | High |
+| `compiler/tests/defer_integrity_impl_test.rs` | Byte-identical re-emission for the defect programs; defer-free programs byte-identical to the baseline except the accepted lone-`#line` cleanup | High |
 | `compiler/src/**/tests.rs` (focused) | Copy-ordinal determinism; the out-edge rung guard predicate | Medium |
 
 ### Integration Tests

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 17:57
-> **Progress**: 28/32 tasks (88%)
+> **Last Updated**: 2026-10-09 18:18
+> **Progress**: 29/32 tasks (91%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -374,8 +374,23 @@ struct/move/call-temp results; ordering root-cause loops) — one plan-introduce
 **Reference**: [00-index](00-index.md) · all three component docs
 **Objective**: Independent review of the whole plan diff.
 
-- [ ] 4.2.1 Dispatch the final plan review (correctness + memory-safety + emission-integrity + semantics over the plan diff) and resolve findings
-- [ ] 4.2.2 Bounded re-review of any fix diff
+- [x] 4.2.1 Dispatch the final plan review (correctness + memory-safety + emission-integrity + semantics over the plan diff) and resolve findings ✅ (completed: 2026-10-09 18:18)
+- [~] 4.2.2 Bounded re-review of any fix diff ⏳ (implemented: 2026-10-09 18:18)
+
+**Final review results and fixes (2026-10-09 18:18)** — four reviewers over the whole-plan diff
+(`01b778fb..fd923cb`, 3266 lines). No critical or major finding: correctness clean (blast radius,
+two-pass determinism, test integrity confirmed), memory clean at HEAD (the SA-001 and E10021 fixes
+verified end to end; one pre-existing base-identical leak reported), emission clean (PE-001
+verified fixed — the 13 renumbered programs match the base bytes; the `deferred_result_store`
+release appears in exactly the four superseding programs; defer-free code unchanged), semantics
+consistent (acceptance, order, values) with one minor finding:
+
+| ID | Severity | Finding | Resolution |
+| -- | -------- | ------- | ---------- |
+| SR-001 | 🟡 MINOR | A deferred block re-checked on every edge and through nested continuations reported the same diagnostic once per check (`dupedges` 3×, `v3` 2×). | ✅ Fixed: only the first check that can report emits diagnostics (a per-registration seen-set, AR-21); `dupedges` 1×, `v3` 1× (the single report closes a base false negative once); pinned by an implementation case. |
+| RV-001 | 🟡 MINOR | Plan records said the first copy keeps the plain label spelling and that defer-free programs are byte-identical, contradicting the landed AR-16 suffixing and the accepted lone-`#line` cleanup. | ✅ Fixed: the register, 03-01, 07, and R6 wording now record the supersession and the accepted exception. |
+| RV-002 | 🟡 MINOR | The PE-001 stabilization had no regression pin. | ✅ Fixed: an implementation case pins the base local-name numbering for a ladder drop. |
+| PRE (memory) | 🟠 pre-existing | A deferred `break`/`continue` preempting a pending **ordinary** owned return leaks the abandoned value (base-identical at the plan baseline). | Reported; out of scope (backlog decision). |
 
 **Deliverables**:
 - [ ] Final review with no open critical/major finding

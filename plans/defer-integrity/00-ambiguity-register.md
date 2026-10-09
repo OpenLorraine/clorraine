@@ -1,7 +1,7 @@
 # Ambiguity Register: defer-integrity
 
-> **Status**: ✅ GATE PASSED — all 20 items resolved (AR-1–AR-14 at plan time; AR-15–AR-20 added and resolved during execution)
-> **Last Updated**: 2026-10-09 17:57
+> **Status**: ✅ GATE PASSED — all 21 items resolved (AR-1–AR-14 at plan time; AR-15–AR-21 added and resolved during execution)
+> **Last Updated**: 2026-10-09 18:18
 
 | # | Category | Ambiguity / Gap | Options Presented | Decision | Status |
 |---|----------|-----------------|-------------------|----------|--------|
@@ -25,6 +25,7 @@
 | AR-18 | Technical (runtime) | The Phase 4 memory sweep found a plan-introduced leak: a deferred return stores its value, an older deferred `break`/`continue` preempts the pending return, and an ordinary store then overwrites the result without releasing it | A: gate the ordinary store's release on a per-pass flag set by a preceding deferred result store · B: release before every ordinary owned store (byte churn for ordinary multi-return functions) · C: track result liveness (larger model) | **A** — it releases exactly the reachable supersede shapes, keeps ordinary returns byte-identical (probed), and reuses the existing null-safe drop. | ✅ Resolved (runtime, auto-design) |
 | AR-19 | Technical (runtime) | The Phase 4 memory sweep surfaced a plan-introduced false rejection (`E10021`): an older defer reading an owned local after a newer returning defer is rejected, because `restore_enclosing_state` restored only scopes strictly enclosing the running one | A: restore the running scope's dropped bindings too (`take(scope_index + 1)`); the release action drops them again in emitted order · B: file it as a residual and accept the regression · C: restructure the checker's state restoration | **A** — it keeps every base-accepted program accepted, matches the emitted order (the scope's own release still runs later in the same cleanup), and the full workspace stays green. | ✅ Resolved (runtime, auto-design) |
 | AR-20 | Technical (runtime) | The Phase 4 emission sweep found `MINOR` PE-001: the ladder's used-rung subset skipped the planning pass's local-name allocations, renumbering growable-array temporaries in defer-free programs (cosmetic, behavior identical), contradicting the plan's byte-identity statement | A: the planning pass walks every rung (recovering the base numbering) while the real pass emits only reached rungs · B: accept the renumbering and amend the byte-identity requirement | **A** — the minimal repro matches the base bytes after the change; the emitted (real-pass) output for used-rung programs is unchanged; the fix keeps the strict-build guarantee (no unused labels) intact. | ✅ Resolved (runtime, auto-design) |
+| AR-21 | Technical (runtime) | The final review found duplicated diagnostics: a deferred block re-checked on every exit edge and through nested continuations reported the same diagnostic once per check (`dupedges` 3×, `v3` 2×), violating the once-per-occurrence contract | A: report only from the first check that can report — a per-registration seen-set consumed only while reporting is on, so registration-pass and speculative checks do not consume the report · B: accept the duplicates | **A** — `dupedges` reports once (base 1×) and `v3` reports once (base 0× — the single report closes a base false negative rather than duplicating); the full workspace stays green. | ✅ Resolved (runtime, auto-design) |
 
 ## Resolution Notes
 
@@ -122,8 +123,9 @@ break/continue-in-defer shapes, or a rung-hosted copy still cannot spell its out
 implementation mechanism (copy-site policy and checker entry lifetime) in AR-4's design ·
 Objective: the deferred block runs on every exit edge of its scope, exactly once per runtime pass ·
 Decision: Option A — one copy per cleanup site with a per-copy printed-block set and label
-namespace (first copy of each block keeps its `__cl_b{id}` spelling for byte-identity; later
-copies take fresh numbers), and the checker's defer entry survives later edges so each edge
+namespace (the design's first-copy-plain rule was superseded during implementation, AR-16: every
+copy takes its activation's suffix, whose ordinal is assigned in the emitter's deterministic
+emission order), and the checker's defer entry survives later edges so each edge
 re-checks the block's effects · Evidence: `d86` (trace: the second site's `emit_closure` emits
 nothing because the global `emitted` set already holds the blocks), `d87d` (the nested copy is
 required on the guard path; the outer copy must still exist), the early-return sibling
@@ -188,6 +190,18 @@ the ordering fix into the same phase as the continuation keeps every ST case gre
 end; the dependency analysis, mechanisms, and Option A verdict are unchanged. This amendment was
 recorded before any plan document was written (the register is the only artifact on disk at this
 point).
+
+**AR-21 (runtime, delegated record):** Authority: AI — delegated by --auto-design · Root invocation
+ID `ad-defer-integrity-20261009` · Eligibility: review-driven diagnostics dedupe inside the
+confirmed scope (the final review's SR-001) · Objective: each deferred read occurrence is reported
+once while keeping the per-edge effect checks · Decision: a per-registration `reported_defer_checks`
+set; the first check that runs with reporting on emits the diagnostics, later checks run with
+reporting off; checks during registration lowering or speculative passes do not consume the report
+· Evidence: `dupedges` 3→1 (base 1), `v3` 2→1 (base 0 — one report closes a base false negative),
+full workspace and `make check` green · Rejected: accepting the duplicates (violates
+`spec/14-diagnostics.md`'s once-per-occurrence contract) · Confidence: High — reproduced and pinned
+by an implementation case · Reopen triggers: a later-edge diagnostic that the first check cannot
+see (recorded as a known approximation matching the base) · Policy version 1.
 
 **AR-18/AR-19/AR-20 (runtime, delegated records):** Authority: AI — delegated by --auto-design ·
 Root invocation ID `ad-defer-integrity-20261009` · Eligibility: review-driven corrective

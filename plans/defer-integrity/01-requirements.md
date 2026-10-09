@@ -37,9 +37,10 @@ language feature, no `spec/` change, no new dependency.
   scope, or a loop body) evaluates its value before any cleanup that releases storage the value
   reads; the defer-local and the loop-local shapes are host-AddressSanitizer clean. (AR-8)
 - [ ] **R6 (regression):** Programs that do not exercise the five shapes keep byte-identical
-  emission where the design says so (defer-free programs; single-site defers without loop edges
-  or returns); every existing specification and implementation suite stays green; the corpus
-  emission sweep shows only traced, intended diffs. (AR-4, AR-10)
+  emission where the design says so (defer-free programs, byte-identical except the accepted
+  removal of lone `#line` directives for empty cleanup scopes; single-site defers without loop
+  edges or returns); every existing specification and implementation suite stays green; the
+  corpus emission sweep shows only traced, intended diffs. (AR-4, AR-10)
 
 ### Should Have
 

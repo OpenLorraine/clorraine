@@ -773,3 +773,103 @@ func main(): i32 {
     let output = run_host("defer-impl15-run", source);
     assert_exit("defer-impl15-run", &output, 7);
 }
+
+/// A deferred read is reported once across every exit edge of its scope.
+///
+/// The loop body's deferred block reads a conditionally initialized local, so
+/// the checker rejects the program. The block is checked on the continue, the
+/// break, and the fall-through edges, but the diagnostic describes one source
+/// occurrence and must be reported exactly once.
+#[test]
+fn should_report_a_deferred_read_once_across_exit_edges() {
+    let source = r#"module spec.defer_integrity.impl16;
+
+import { String, stringOf } from std.text;
+
+func use(v: str): void {}
+
+func f(c: bool): i32 {
+    let i: i32 = 0;
+    while (i < 4) {
+        let a: String;
+        if (c) {
+            a = stringOf("abc");
+        }
+        defer {
+            use(a);
+        }
+        i = i + 1;
+        if (i == 1) {
+            continue;
+        }
+        if (i == 3) {
+            break;
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f(true);
+}
+"#;
+    let scratch = ScratchDir::new("defer-impl16");
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("defer-impl16: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "defer-impl16: expected rejection; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("error E10021").count(),
+        1,
+        "defer-impl16: the deferred read must be reported once; stderr:\n{stderr}"
+    );
+}
+
+/// The ladder's planning pass keeps the base local-name numbering.
+///
+/// The planning pass walks every rung so a growable-array cleanup's temporary
+/// names match the numbering the emitted output has always used; a regression
+/// would shift the suffixes down. The program is defer-free and answers zero.
+#[test]
+fn should_keep_the_base_local_name_numbering_for_a_ladder_drop() {
+    let source = r#"module spec.defer_integrity.impl17;
+
+import { String, stringOf } from std.text;
+import { Array, arrayNew } from std.mem;
+
+func f(c: bool): void {
+    let xs: Array<String> = arrayNew<String>();
+    xs.push(stringOf("ab"));
+    if (c) {
+        return;
+    }
+    xs.push(stringOf("cd"));
+}
+
+func main(): i32 {
+    f(true);
+    return 0;
+}
+"#;
+    let emitted = emit_host("defer-impl17", source);
+    assert_contains("defer-impl17", &emitted, "__cl_elems_3");
+    assert!(
+        !emitted.contains("__cl_elems_2"),
+        "defer-impl17: the planning pass must keep the base name numbering"
+    );
+    let output = run_host("defer-impl17-run", source);
+    assert_exit("defer-impl17-run", &output, 0);
+}
