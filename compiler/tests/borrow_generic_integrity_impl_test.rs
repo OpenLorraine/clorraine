@@ -405,6 +405,85 @@ func main(): i32 {
     );
 }
 
+/// A func-typed parameter named like a module lender keeps its masked
+/// spelling on the signature and the call.
+///
+/// The parameter is emitted as `give_0` in both the prototype and the
+/// definition, and the body calls it through that C local; the same-named
+/// module function keeps its own symbol and must not be reached. The
+/// function-shadowing pins in the runtime and call-value implementation
+/// suites carry the same masked spellings.
+#[test]
+fn should_name_a_colliding_func_typed_parameter_with_its_masked_spelling() {
+    let source = r#"module spec.bgi.impl.p4maskfunc;
+
+import { String, stringOf } from std.text;
+
+func give(borrow v: str): str {
+    return v;
+}
+
+func copier(borrow v: String): String {
+    return stringOf("y");
+}
+
+func demo(give: func(borrow String): String): i32 {
+    let s: String = stringOf("x");
+    return i32(len(give(s)));
+}
+
+func main(): i32 {
+    return demo(copier);
+}
+"#;
+    let emitted = emit_host("p4-mask-func", source);
+    assert_contains("p4-mask-func", &emitted, "(ClString (*give_0)(ClString))");
+    assert_contains("p4-mask-func", &emitted, "give_0(s);");
+    assert!(
+        !emitted.contains("cl_spec_bgi_impl_p4maskfunc_give(s)"),
+        "p4-mask-func: the parameter call must not reach the module lender"
+    );
+}
+
+/// A colliding non-func parameter agrees on its masked spelling everywhere.
+///
+/// The prototype, the definition, and the body all spell the parameter
+/// `give_0`, so the strict build cannot see a signature/body mismatch; the
+/// module call in the sibling function still resolves to the lender's symbol.
+#[test]
+fn should_agree_on_a_colliding_parameter_spelling_across_its_signature_and_body() {
+    let source = r#"module spec.bgi.impl.p4masksibling;
+
+func give(v: i32): i32 {
+    return v + 1;
+}
+
+func useModule(): i32 {
+    return give(41);
+}
+
+func sibling(give: i32): i32 {
+    return give;
+}
+
+func main(): i32 {
+    return useModule() + sibling(1);
+}
+"#;
+    let emitted = emit_host("p4-mask-sibling", source);
+    assert_contains(
+        "p4-mask-sibling",
+        &emitted,
+        "static i32 cl_spec_bgi_impl_p4masksibling_sibling(i32 give_0);",
+    );
+    assert_contains("p4-mask-sibling", &emitted, "return give_0;");
+    assert_contains(
+        "p4-mask-sibling",
+        &emitted,
+        "return cl_spec_bgi_impl_p4masksibling_give(41);",
+    );
+}
+
 /// A view-versus-`null` comparison lowers to a pointer test in both orders.
 ///
 /// The emitter renders the emptiness test on the view's `ptr` field whatever

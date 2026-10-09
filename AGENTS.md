@@ -194,6 +194,18 @@ in `CMD`).
   remaining-actions order, the value-before-drop order, the outer-rung jump,
   the base local-name numbering, the once-per-occurrence diagnostics, and
   byte-identical re-emission).
+- `compiler/tests/borrow_generic_integrity_spec_test.rs` holds the
+  **specification tests** for the borrow/generic integrity batch (a whole-value
+  store into a lend parameter is rejected once; a parameter-typed slot is
+  judged per instance and nullable out-slots stay accepted; an out-slot
+  self-assignment is rejected; instance keys distinguish nullable type
+  arguments; a view compares with `null` and narrows; a func-typed callee named
+  like a module lender keeps its own identity), and
+  `compiler/tests/borrow_generic_integrity_impl_test.rs` holds their
+  **implementation tests** (the emitted out-slot store shape, the loop-site
+  diagnostic counts, the instance typedef and symbol spellings, the lowered
+  `.ptr` null tests, the masked parameter spellings, and byte-identical
+  re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

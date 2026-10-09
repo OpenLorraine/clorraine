@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 23:33
-> **Progress**: 26/30 tasks (87%)
+> **Last Updated**: 2026-10-09 23:40
+> **Progress**: 30/30 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -330,10 +330,12 @@ DEF-107). Rulings: [05-findings.md](05-findings.md).
 **Reference**: [03-04](03-04-may-lend-callee-identity.md) §Testing Requirements
 **Objective**: Pin the suffixed names, close the phase, and run the final acceptance.
 
-- [ ] 4.3.1 Write implementation tests (suffixed IR/emitted names for colliding bindings; the updated pins of the two existing tests; unchanged module-call emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
-- [ ] 4.3.2 Full phase verification — `make check`
-- [ ] 4.3.3 Final acceptance — `make verify` (all legs)
-- [ ] 4.3.4 Close-out: correct the DEF-78/DEF-79 roadmap row notes, add the two new suites to the AGENTS.md test-naming map, file the residual defects (DEF-100 generic whole-binding self-assign, DEF-101 concrete nullable out-slot return release, DEF-102 runtime-indexed out-slot element self-assign), and sync the roadmap (PF-005, PF-014; phase-1 review rulings in [05-findings.md](05-findings.md))
+- [~] 4.3.1 Write implementation tests (suffixed IR/emitted names for colliding bindings; the updated pins of the two existing tests; unchanged module-call emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs` ⏳ (implemented: 2026-10-09 23:35)
+- [x] 4.3.2 Full phase verification — `make check` ✅ (completed: 2026-10-09 23:36)
+- [x] 4.3.3 Final acceptance — `make verify` (all legs) ✅ (completed: 2026-10-09 23:38)
+- [x] 4.3.4 Close-out: correct the DEF-78/DEF-79 roadmap row notes, add the two new suites to the AGENTS.md test-naming map, file the residual defects (DEF-100 generic whole-binding self-assign, DEF-101 concrete nullable out-slot return release, DEF-102 runtime-indexed out-slot element self-assign), and sync the roadmap (PF-005, PF-014; phase-1 review rulings in [05-findings.md](05-findings.md)) ✅ (completed: 2026-10-09 23:40)
+
+**Verification (2026-10-09 23:36–23:38)**: spec 27/27, impl 10/10, `make check` green, the leak probe clean under the sanitizer, and `make verify` green — "all legs passed" including every hosted-amiga cross-toolchain leg.
 
 **Deliverables**:
 - Implementation suite for P4
