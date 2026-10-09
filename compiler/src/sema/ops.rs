@@ -466,12 +466,15 @@ fn comparable(ty: &Ty) -> bool {
         || ty.is_param()
 }
 
-/// True for the `null` literal's type: an unknown shape that is nullable.
+/// True for a nullable unknown type: the `null` literal's shape.
 ///
 /// The null literal types as a nullable unknown, while an untyped local or an
-/// unresolved operand is unknown *without* the flag. Only the literal may pair
-/// with a view, so an untyped operand keeps the operand rules and reports on
-/// the view side instead of emitting a comparison C cannot represent.
+/// unresolved operand is unknown *without* the flag. Only a nullable unknown
+/// may pair with a view, so an untyped operand keeps the operand rules and
+/// reports on the view side instead of emitting a comparison C cannot
+/// represent. A binding initialized from `null` shares the literal's type and
+/// therefore pairs too; making that binding's own type and emission exact is
+/// separate work.
 fn null_operand(ty: &Ty) -> bool {
     ty.is_unknown() && ty.nullable
 }

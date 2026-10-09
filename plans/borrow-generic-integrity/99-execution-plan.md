@@ -273,8 +273,12 @@ memory audit is clean on the changed shapes and the correctness review reports n
 pre-existing defects it surfaced (unguarded nullable-view element store, missing constant-index
 slice bounds trap, `str`/`static str` equality emission, inferred-null local emission) are filed as
 DEF-105–DEF-108. The strict expected-modification set is corrected to include
-`compiler/src/own/place.rs` (the AR-16 narrowing correction), the register, and 03-03. Rulings:
-[05-findings.md](05-findings.md).
+`compiler/src/own/place.rs` (the AR-16 narrowing correction), the register, and 03-03. The scoped
+re-review confirmed SR-001 resolved (counterexample rejected once; intended acceptances unchanged;
+test integrity proven) and raised only minor documented residuals: the nullable-unknown proxy also
+matches a binding initialized from `null` (SR-002/RV-001 — tied to DEF-108, predicate documentation
+corrected) and the untyped-operand spelling for `str`/`cstring` views (RV-002 — folded into
+DEF-107). Rulings: [05-findings.md](05-findings.md).
 
 ---
 

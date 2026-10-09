@@ -23,6 +23,8 @@ evidence lives in the reviewers' reports and in the dispositions below.
 | PRE-001 | 3 | MAJOR (pre-existing) | `str`/`static str` pair equality emits invalid C | deferred — filed DEF-107 |
 | PRE-002 | 3 | MINOR (pre-existing) | inferred-null local emits into an integer declaration | deferred — filed DEF-108 |
 | Field-rooted narrowing conservatism | 3 | note | an element write through a narrowed field view keeps the read-back rejected | accepted — conservative, mirrors the pre-existing field-write behavior |
+| SR-002 / RV-001 | 3 | MINOR (re-review) | the nullable-unknown proxy also matches a binding initialized from `null` | accepted — the predicate doc states the exact rule; tied to DEF-108 |
+| RV-002 | 3 | MINOR (pre-existing) | untyped operand versus `str`/`cstring` views emits invalid C | accepted — folded into DEF-107 |
 
 ## Phase 1 dispositions (2026-10-09)
 
@@ -144,3 +146,27 @@ whole-binding narrowing case. Recorded, not filed.
 The correctness reviewer reported no findings and the memory audit found no
 in-scope defect (every newly accepted guarded store releases exactly once on
 the normal, early-return, loop, break/continue, and both-branch paths).
+
+### Phase 3 re-review (2026-10-09)
+
+The single scoped re-review confirmed **SR-001 resolved**: the untyped-local
+counterexample and its operand-order mirrors report `E10222` on the view side
+exactly once and write no translation unit; the intended acceptances are
+unchanged (both orders, nullable and non-nullable views) and `str`/`static
+str`/`cstring`, view pairs, view-versus-non-view, and handle/raw emissions are
+byte-identical to the phase head; the new assertion is proven red at the phase
+head and green after; `make check` is green.
+
+Two minor residuals were ruled accepted and recorded:
+
+- **SR-002 / RV-001 (MINOR, re-review):** the nullable-unknown proxy also
+  matches a local initialized from `null`, which pairs with a view and is
+  accepted. The program is already unbuildable at that point (DEF-108: the
+  declaration itself emits an invalid integer initialization), the handle path
+  has the same pre-existing acceptance, and tightening the pairing to the
+  literal expression would change `binary_result`'s signature for a construct
+  whose real defect is the binding's type. The predicate's documentation now
+  states the exact rule; the binding's type and emission are DEF-108's work.
+- **RV-002 (MINOR, pre-existing):** an untyped operand compared with a
+  `str`/`cstring` view is accepted by the operand rules and emits invalid C at
+  base and head; folded into DEF-107's evidence.
