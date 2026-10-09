@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 13:58
-> **Progress**: 26/34 tasks (76%)
+> **Last Updated**: 2026-10-09 14:05
+> **Progress**: 29/34 tasks (85%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -288,12 +288,31 @@ the host-ASan matrix, and `make check`) is the final check.
 
 - [x] 3.3.1 Write implementation tests for the destination-temp mark and release, the emptying adoption shape, the conditional branch-store shape, the read-position member-receiver binding and its excluded positions, the place-arm conditional staying inline, the loop-condition pin migration, and the existing `__cl_owned` absence pins — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-09 13:58)
 - [x] 3.3.2 Run the host-ASan probes including the whole-result adoption, the loop form of the eager temporary (single release), the guarded literal, the loop-condition member receiver, and the `len(spawn())` regressions ✅ (completed: 2026-10-09 13:58)
-- [ ] 3.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer on the guarded receiver path's evaluation order; blast-radius (every root-bind and receiver-bind call site) and test-integrity steps; resolve findings; one bounded re-review
+- [x] 3.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer on the guarded receiver path's evaluation order; blast-radius (every root-bind and receiver-bind call site) and test-integrity steps; resolve findings; one bounded re-review ✅ (completed: 2026-10-09 14:05)
+
+**Phase 3 review findings (2026-10-09 14:00)** — four reviewers dispatched in parallel on the phase
+diff (baseline `8940ce5d` / phase start `e26f55f`): correctness, memory-safety, emission-integrity,
+and semantics (the guarded receiver path's evaluation order). The memory auditor found no
+phase-introduced memory defect (all head-vs-base deltas are fixes) and the semantics reviewer
+found no in-scope finding (evaluation order, short-circuits, diagnostics, and `len` regressions
+byte-identical or fixed). Two findings, resolved under the active auto-design delegation (AR-13):
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| PE-001 | 🟠 MAJOR | The new member-receiver bind bound the immediate member base, so a nested chain off a call root (`mk().b.c`) bound the intermediate sub-struct and leaked the root's remaining fields; the phase-start code was clean (it bound the whole root through the pre-existing consume path, which the phase preempted). | ✅ fixed — the bind now binds the projection-chain root (`bind_ownerless_projection_root`), and the new spec case `should_release_the_root_when_a_nested_member_chain_is_read` pins it |
+| RV-001 | 🟡 MINOR (mechanism; base-identical symptom) | The new `in_loop_condition` flag was not reset for a lifted lambda body written inside a loop condition, suppressing the receiver bind there (base leaked the same 24 bytes). | ✅ fixed — `lift_lambda` resets the flag exactly like `defer_move_outs`; the reproducer is now ASan-clean |
+| PRE-1 | 🔴 CRITICAL (pre-existing) | A `return` inside a loop that reads a body-local projection frees the local before evaluating the return value (SEGV at base and head, byte-identical return-path order). | reported separately (pre-existing; out of this phase's scope) |
+| PRE-2..5 | MAJOR/MINOR (pre-existing) | Discarded take-call results, receivers in the explicitly excluded read positions, a nested member root at intrinsic/borrow positions, and conditional members in literal-consume positions all leak, base-identically. | reported separately |
+
+**Fix evidence (2026-10-09 14:05):** both fixes are one-mechanism corrections; the PE-001
+reproducer (`return mk().b.c;`) and the lambda-in-condition reproducer are host-ASan clean
+(exit 4 / exit 1, no sanitizer output), the spec suite is 20/20, the impl suite 15/15, and
+`make check` is green. The re-review budget is spent; this targeted re-verify is the final check.
 
 **Deliverables**:
-- [ ] Implementation suite
-- [ ] Clean probe matrix
-- [ ] Phase review with no open critical/major finding
+- [x] Implementation suite
+- [x] Clean probe matrix
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 

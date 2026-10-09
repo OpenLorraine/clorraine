@@ -439,6 +439,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_continues = std::mem::take(&mut self.continue_states);
         let saved_defer = self.defer_anchor;
         let saved_move_outs = self.defer_move_outs;
+        let saved_loop_condition = self.in_loop_condition;
         let saved_registration = self.next_registration;
         let saved_owned_temp = self.next_owned_temp;
         let saved_returns = self.returns.clone();
@@ -448,8 +449,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_anchor = None;
         // A lifted lambda body is evaluated when the closure is called, not
         // where the closure literal is written, so the enclosing operand's
-        // deferred move-out context does not apply inside it.
+        // deferred move-out and loop-condition contexts do not apply inside
+        // it.
         self.defer_move_outs = 0;
+        self.in_loop_condition = false;
         self.returns = ret.clone();
 
         let body_span = match body {
@@ -536,6 +539,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.continue_states = saved_continues;
         self.defer_anchor = saved_defer;
         self.defer_move_outs = saved_move_outs;
+        self.in_loop_condition = saved_loop_condition;
         self.next_registration = saved_registration;
         self.next_owned_temp = saved_owned_temp;
         self.returns = saved_returns;
@@ -1514,30 +1518,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Binds an owned member receiver at a read position.
     ///
-    /// A plain member read of an ownerless owned value (`spawn().count`)
-    /// leaves the receiver without an owner, so its storage leaks; only
-    /// intrinsic arguments and dot-`len` receivers were bound before. The
-    /// member's base is bound exactly like a borrow-taking intrinsic argument,
-    /// so the enclosing construct's cleanup releases the receiver. The bind
-    /// runs only at the read positions that take the member value (casts,
-    /// intrinsic arguments, call arguments, and return reads); consume
-    /// preparation, conditionally evaluated operands, and loop conditions keep
-    /// their own machinery and are excluded.
+    /// A plain member read of an ownerless owned value (`spawn().count`,
+    /// `mk().b.c`) leaves the projection root without an owner, so its
+    /// storage leaks; only intrinsic arguments and dot-`len` receivers were
+    /// bound before. The projection chain is bound at its root exactly like a
+    /// consumed projection, so the enclosing construct's cleanup releases the
+    /// whole result and the chain reads through the bound root. The bind runs
+    /// only at the read positions that take the member value (casts, intrinsic
+    /// arguments, call arguments, and return reads); consume preparation,
+    /// conditionally evaluated operands, and loop conditions keep their own
+    /// machinery and are excluded. A chain that already roots in storage, or a
+    /// root that owns nothing, is returned unchanged.
     pub(super) fn bind_member_receiver(&mut self, value: Value) -> Value {
         if self.defer_move_outs > 0 || self.in_loop_condition {
             return value;
         }
         match value.kind {
-            ValueKind::Member { base, name } => {
-                let base = self.bind_intrinsic_argument(*base);
-                Value::new(
-                    value.ty,
-                    ValueKind::Member {
-                        base: Box::new(base),
-                        name,
-                    },
-                )
-            }
+            ValueKind::Member { .. } => self.bind_ownerless_projection_root(value),
             other => Value::new(value.ty, other),
         }
     }

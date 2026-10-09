@@ -1133,3 +1133,43 @@ func main(): i32 {
     assert_exit("sti-st19-project", &project_output, 2);
     assert_no_asan("sti-st19-project", &project_output);
 }
+
+/// A nested member chain through a fresh call result releases the root once.
+///
+/// `mk().b.c` binds the whole call result and reads the chain through it, so
+/// the root's remaining fields release at statement end and the selected
+/// `String` comes from owned storage; `main` answers the four-byte `c`. A bind
+/// of the intermediate `mk().b` instead would drop the root and leak its other
+/// fields.
+#[test]
+fn should_release_the_root_when_a_nested_member_chain_is_read() {
+    let source = r#"module spec.sti.st20;
+
+import { String, stringOf } from std.text;
+
+struct Inner {
+    c: String;
+}
+
+struct Outer {
+    a: String;
+    b: Inner;
+}
+
+func mk(): Outer {
+    return Outer { a: stringOf("ab"), b: Inner { c: stringOf("abcd") } };
+}
+
+func main(): i32 {
+    return i32(len(mk().b.c));
+}
+"#;
+    let emitted = emit_host("sti-st20", source);
+    assert!(
+        emitted.contains("__cl_owned0 = cl_spec_sti_st20_mk();"),
+        "sti-st20: the projection chain must bind the whole call result"
+    );
+    let output = run_memory("sti-st20", source);
+    assert_exit("sti-st20", &output, 4);
+    assert_no_asan("sti-st20", &output);
+}
