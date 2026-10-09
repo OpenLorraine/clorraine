@@ -83,7 +83,8 @@ impl<'a> Emitter<'a> {
             if !self.needs_drop(&field_ty) {
                 continue;
             }
-            self.emit_drop_expr(&format!("{c_name}.{field}"), &field_ty);
+            let base = suffix_base(c_name);
+            self.emit_drop_expr(&format!("{base}.{field}"), &field_ty);
         }
     }
 
@@ -97,7 +98,8 @@ impl<'a> Emitter<'a> {
             None => self.emit_drop_expr(c_name, element),
             Some((head, tail)) => {
                 for index in 0..*head {
-                    self.emit_fixed_array_drop(&format!("{c_name}[{index}]"), element, tail);
+                    let base = suffix_base(c_name);
+                    self.emit_fixed_array_drop(&format!("{base}[{index}]"), element, tail);
                 }
             }
         }
@@ -181,8 +183,9 @@ impl<'a> Emitter<'a> {
             Some((head, tail)) => {
                 let mut parts = Vec::new();
                 for index in 0..*head {
+                    let base = suffix_base(c_name);
                     parts.push(self.fixed_array_drop_expr(
-                        &format!("{c_name}[{index}]"),
+                        &format!("{base}[{index}]"),
                         element,
                         tail,
                     )?);
@@ -212,7 +215,8 @@ impl<'a> Emitter<'a> {
             if !self.needs_drop(&field_ty) {
                 continue;
             }
-            parts.push(self.drop_expr_text(&format!("{c_name}.{field}"), &field_ty)?);
+            let base = suffix_base(c_name);
+            parts.push(self.drop_expr_text(&format!("{base}.{field}"), &field_ty)?);
         }
         if parts.is_empty() {
             Some("0".to_owned())
@@ -291,5 +295,22 @@ impl<'a> Emitter<'a> {
             }
         }
         None
+    }
+}
+
+/// The base a field or element suffix appends to.
+///
+/// A suffix binds tighter than a unary operator, so a base that is not a
+/// primary or postfix expression — the dereferenced element-store target
+/// `*(&(out[i]))` — must be parenthesized before `.field` or `[index]` is
+/// appended; the target otherwise parses as `*((&(out[i])).a)`, which the
+/// strict C build rejects. Identifier, member, index, and already
+/// parenthesized bases keep their existing spelling, so every other emitted
+/// drop stays byte-identical.
+fn suffix_base(c_name: &str) -> String {
+    if c_name.starts_with('*') || c_name.starts_with('&') {
+        format!("({c_name})")
+    } else {
+        c_name.to_owned()
     }
 }

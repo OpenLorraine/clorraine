@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 14:19
-> **Progress**: 31/34 tasks (91%)
+> **Last Updated**: 2026-10-09 14:21
+> **Progress**: 33/34 tasks (97%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -343,8 +343,8 @@ reproducer (`return mk().b.c;`) and the lambda-in-condition reproducer are host-
 **Reference**: [03-04 §Implementation Details](03-04-element-store-drop-spelling.md) · [AR-8, AR-10](00-ambiguity-register.md)
 **Objective**: Parenthesize the drop-expression suffix bases only where grouping is needed.
 
-- [ ] 4.2.1 Parenthesize a drop-expression suffix base only when it is not a primary/postfix expression (field and fixed-array index appends; statement and expression forms) — `compiler/src/codegen/drop.rs`
-- [ ] 4.2.2 Run the new suite and record the green phase
+- [x] 4.2.1 Parenthesize a drop-expression suffix base only when it is not a primary/postfix expression (field and fixed-array index appends; statement and expression forms) — `compiler/src/codegen/drop.rs` ✅ (completed: 2026-10-09 14:21)
+- [x] 4.2.2 Run the new suite and record the green phase ✅ (completed: 2026-10-09 14:21)
 
 **Deliverables**:
 - [ ] Valid emitted drop targets; unchanged handle spelling
