@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 17:31
-> **Progress**: 26/32 tasks (81%)
+> **Last Updated**: 2026-10-09 17:57
+> **Progress**: 28/32 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -343,13 +343,29 @@ same `__cl_ret[i]` elements the store writes. One pre-existing, base-identical o
 **Reference**: [00-index](00-index.md) §Minimum-Sufficient Baseline · [AR-10, AR-13](00-ambiguity-register.md)
 **Objective**: Prove the plan-wide emission and memory behavior.
 
-- [ ] 4.1.1 Base-vs-head emission sweep over the corpus in every profile and the suite programs; classify every diff against the design and confirm defer-free programs are byte-identical
-- [ ] 4.1.2 Plan-wide host-ASan matrix over all changed shapes and `make verify` (all legs)
+- [x] 4.1.1 Base-vs-head emission sweep over the corpus in every profile and the suite programs; classify every diff against the design and confirm defer-free programs are byte-identical ✅ (completed: 2026-10-09 17:57)
+- [x] 4.1.2 Plan-wide host-ASan matrix over all changed shapes and `make verify` (all legs) ✅ (completed: 2026-10-09 17:57)
+
+**Sweep results and fixes (2026-10-09 17:57)** — the emission sweep compared the plan baseline
+`01b778fb` with the head over 737 emissions (corpus × 3 profiles + 892 inline suite programs):
+every diff traced, 690 are the lone-`#line` cleanup, all 185 rejections byte-identical, strict
+builds clean, determinism 930/930 — one MINOR finding (PE-001, below). The memory sweep ran the
+plan-wide ASan matrix over every changed shape (multi-site loop/switch/nested defers with owned
+locals; all deferred-return forms; guarded-not-taken returns; superseded `String`/growable/fixed/
+struct/move/call-temp results; ordering root-cause loops) — one plan-introduced MAJOR leak
+(SA-001, below) and one plan-introduced false rejection (`E10021`, below); the rest clean.
+
+| ID | Severity | Finding | Resolution |
+| -- | -------- | ------- | ---------- |
+| SA-001 | 🟠 MAJOR | A deferred return's stored value, preempted by an older deferred `break`/`continue`, was overwritten by an ordinary store without release (newly reachable). | ✅ Fixed: a per-pass flag set by a deferred result store gates the ordinary store's release (AR-18); ST-16 + impl14 added; `String` and continue-preempt probes ASan clean. |
+| `E10021` | 🟠 MAJOR | An older defer reading an owned local after a newer returning defer was falsely rejected (`restore_enclosing_state` restored only strictly-enclosing scopes). | ✅ Fixed: the running scope's dropped bindings are restored too (AR-19); impl15 added; the shape is accepted and answers 7. |
+| PE-001 | 🟡 MINOR | Growable-array temporary suffixes renumbered in defer-free programs (the planning pass skipped the ladder's name allocations). | ✅ Fixed: the planning pass walks every rung (AR-20); the minimal repro emits the base suffixes; the real-pass emission is unchanged. |
+| PRE (emission) | 🟡 pre-existing | Two base-identical strict-build failures (unused-but-set array; `RawConsume` coercion) and a base-identical deferred-break supersede leak (PRE-1). | Reported; out of scope (backlog decision). |
 
 **Deliverables**:
-- [ ] Emission sweep with every diff traced
-- [ ] Memory sweep clean
-- [ ] `make verify: all legs passed`
+- [x] Emission sweep with every diff traced
+- [x] Memory sweep clean
+- [x] `make verify: all legs passed`
 
 **Verify**: `make verify`
 

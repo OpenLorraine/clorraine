@@ -58,6 +58,7 @@
 | ST-13 | `f(): defer { let s: String = stringOf("x"); return i32(len(s)); } return 0;` (probe `d88`) | exit 1; host-ASan clean (baseline: segfault, exit 139) | §15, CL-3; AR-8 |
 | ST-14 | `f(): let i = 0; while (i < 1) { let s: String = stringOf("abc"); return i32(len(s)); } return 0;` (the root-cause shape, probe `d88c`) | exit 3; host-ASan clean (baseline: segfault, exit 139) | CL-3; AR-8 |
 | ST-15 | `f(): defer { return stringOf("abcdefgh"); } return stringOf("x");` — `main`: `let s: String = f(); return i32(len(s));` | exit 8; host-ASan clean — the superseded body value is released before the deferred store (added with the Phase 3 review fix; the reviewers' spec-cited reproduction) | §15, 04 §4 (assignment to a live owner); AR-4 |
+| ST-16 | `f(): switch (1) { case 1: { defer { break; } defer { return stringOf("inner-value"); } } default: { } } return stringOf("f");` — `main`: `return i32(len(f()));` | exit 1; host-ASan clean — the preempted deferred value is released before the ordinary store (added with the Phase 4 sweep fix) | §15, 04 §4; AR-18 |
 
 > **⚠️ AUTHORING RULE:** Derive expectations from the frozen rules above. Do NOT imagine or infer
 > what the implementation will produce. Each phase's red task records the exact baseline failure

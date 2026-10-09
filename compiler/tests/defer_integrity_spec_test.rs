@@ -749,3 +749,40 @@ func main(): i32 {
     assert_exit("defer-st15", &output, 8);
     assert_no_asan("defer-st15", &output);
 }
+
+/// A superseded deferred result is released when an older defer preempts it.
+///
+/// The newer defer returns an owned value; the older defer's `break` preempts
+/// the pending return, so control reaches the ordinary return after the
+/// switch. That ordinary store supersedes the deferred return's value, which
+/// must be released first. The program answers the ordinary value's length and
+/// is sanitizer clean when the abandoned value is released once.
+#[test]
+fn should_release_the_abandoned_deferred_result_when_a_break_preempts_the_return() {
+    let source = r#"module spec.defer_integrity.st16;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    switch (1) {
+    case 1: {
+        defer {
+            break;
+        }
+        defer {
+            return stringOf("inner-value");
+        }
+    }
+    default: { }
+    }
+    return stringOf("f");
+}
+
+func main(): i32 {
+    return i32(len(f()));
+}
+"#;
+    let output = run_memory("defer-st16", source);
+    assert_exit("defer-st16", &output, 1);
+    assert_no_asan("defer-st16", &output);
+}

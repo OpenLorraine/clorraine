@@ -134,6 +134,15 @@ pub(super) struct Emitter<'a> {
     /// scopes inline leaves later rungs unreached, and a defined-but-unused
     /// label fails the strict build.
     pub(super) used_rung_labels: BTreeSet<usize>,
+    /// True once an owned result store has been emitted inside a deferred copy.
+    ///
+    /// A deferred return leaves its value in the result variable; a later
+    /// ordinary store that supersedes it (a deferred `break` or `continue`
+    /// preempts the pending return and control reaches another `return`) must
+    /// release the pending owner first. The flag limits that release to
+    /// functions where such a store exists, so ordinary returns keep their
+    /// unchanged shape.
+    pub(super) deferred_result_store: bool,
     /// Name of the result variable, set when the function has a ladder.
     pub(super) result_var: Option<String>,
     /// The open function's return type.
@@ -242,6 +251,7 @@ impl<'a> Emitter<'a> {
             rungs: Vec::new(),
             labels: BTreeMap::new(),
             used_rung_labels: BTreeSet::new(),
+            deferred_result_store: false,
             result_var: None,
             return_ty: Ty::void(),
             reachable: BTreeSet::new(),

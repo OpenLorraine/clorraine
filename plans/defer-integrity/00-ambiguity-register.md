@@ -1,7 +1,7 @@
 # Ambiguity Register: defer-integrity
 
-> **Status**: ✅ GATE PASSED — all 17 items resolved (AR-1–AR-14 at plan time; AR-15/AR-16/AR-17 added and resolved during execution)
-> **Last Updated**: 2026-10-09 17:07
+> **Status**: ✅ GATE PASSED — all 20 items resolved (AR-1–AR-14 at plan time; AR-15–AR-20 added and resolved during execution)
+> **Last Updated**: 2026-10-09 17:57
 
 | # | Category | Ambiguity / Gap | Options Presented | Decision | Status |
 |---|----------|-----------------|-------------------|----------|--------|
@@ -22,6 +22,9 @@
 | AR-15 | Technical (runtime) | The ST-3 program `return count * 10 + f(true) + f(false);` reads the module counter before the calls under the frozen left-to-right evaluation order (`spec/04-expressions.md` §3), so the recorded expectation 21 was not derivable from the spec for that program (left-to-right yields 1); the emitted code was already correct | A: bind the call sum first (`let a: i32 = f(true) + f(false); return count * 10 + a;`) so the counter is observable and 21 follows from left-to-right evaluation plus the once-per-edge defer runs · B: keep the program and change the expectation to 1 | **A** — the expectation must derive from the spec; binding the sum keeps the intended behavior oracle (two defer runs, observable counter) and avoids pinning an evaluation-order artifact | ✅ Resolved (runtime, auto-design) |
 | AR-16 | Technical (runtime) | The Phase 1 review found a duplicate-label defect (PE-001) for a `break` inside a defer: the per-site copy still walks the unbounded successor closure, so it re-emits a break-target block that the main walk also prints. A label-namespace-only remediation builds but mis-executes (the copied exit block runs on the defer's fall-through path); the correct remediation is the bounded closure plus ambient flow context scheduled for Phase 2 | A: pull Phase 2's bounded-closure and ambient-context mechanism forward as the Phase 1 fix (write Phase 2's ST-5 – ST-7 first per spec-first ordering, then implement; keep the rung guard in Phase 2) · B: keep the suffix-only fix and file the mis-execution · C: revert per-site copies | **A** — B leaves a wrong-code defect; C loses DEF-86/87. Implementation sequencing is an eligible technical class; the change reorders plan tasks only (no scope or acceptance change) | ✅ Resolved (runtime, auto-design) |
 | AR-17 | Technical (runtime) | Phase 3's planned mechanism was a continuation label emitted after a returning copy. While implementing, the same semantics proved achievable without a new label: a `ScopeExit` of a scope whose cleanup is running is a nested re-entry that emits only the remaining (older) actions, and a value return defers its inline cleanup past the value store; the return then jumps to the next outer rung or returns directly | A: label-free continuation (nested remaining-actions re-entry + value-first buffering); no new label beyond the per-scope rungs · B: the planned per-action continuation label | **A** — it realizes AR-5's semantics exactly (remaining actions, then outer rungs) and resolves AR-5's tightening counterargument (CL-2's one-label-per-scope) by adding no label at all; the suites, `make check`, and the direct probes confirm the semantics | ✅ Resolved (runtime, auto-design) |
+| AR-18 | Technical (runtime) | The Phase 4 memory sweep found a plan-introduced leak: a deferred return stores its value, an older deferred `break`/`continue` preempts the pending return, and an ordinary store then overwrites the result without releasing it | A: gate the ordinary store's release on a per-pass flag set by a preceding deferred result store · B: release before every ordinary owned store (byte churn for ordinary multi-return functions) · C: track result liveness (larger model) | **A** — it releases exactly the reachable supersede shapes, keeps ordinary returns byte-identical (probed), and reuses the existing null-safe drop. | ✅ Resolved (runtime, auto-design) |
+| AR-19 | Technical (runtime) | The Phase 4 memory sweep surfaced a plan-introduced false rejection (`E10021`): an older defer reading an owned local after a newer returning defer is rejected, because `restore_enclosing_state` restored only scopes strictly enclosing the running one | A: restore the running scope's dropped bindings too (`take(scope_index + 1)`); the release action drops them again in emitted order · B: file it as a residual and accept the regression · C: restructure the checker's state restoration | **A** — it keeps every base-accepted program accepted, matches the emitted order (the scope's own release still runs later in the same cleanup), and the full workspace stays green. | ✅ Resolved (runtime, auto-design) |
+| AR-20 | Technical (runtime) | The Phase 4 emission sweep found `MINOR` PE-001: the ladder's used-rung subset skipped the planning pass's local-name allocations, renumbering growable-array temporaries in defer-free programs (cosmetic, behavior identical), contradicting the plan's byte-identity statement | A: the planning pass walks every rung (recovering the base numbering) while the real pass emits only reached rungs · B: accept the renumbering and amend the byte-identity requirement | **A** — the minimal repro matches the base bytes after the change; the emitted (real-pass) output for used-rung programs is unchanged; the fix keeps the strict-build guarantee (no unused labels) intact. | ✅ Resolved (runtime, auto-design) |
 
 ## Resolution Notes
 
@@ -185,6 +188,24 @@ the ordering fix into the same phase as the continuation keeps every ST case gre
 end; the dependency analysis, mechanisms, and Option A verdict are unchanged. This amendment was
 recorded before any plan document was written (the register is the only artifact on disk at this
 point).
+
+**AR-18/AR-19/AR-20 (runtime, delegated records):** Authority: AI — delegated by --auto-design ·
+Root invocation ID `ad-defer-integrity-20261009` · Eligibility: review-driven corrective
+mechanisms inside the confirmed Phase 4 scope (sweep findings; no scope or acceptance change) ·
+Objectives: close the plan-introduced leak (SA-001), the plan-introduced false rejection
+(`E10021`), and the cosmetic renumbering (PE-001) with the smallest correct changes · Decisions:
+(AR-18) a per-pass flag set by a deferred result store gates the ordinary store's release;
+(AR-19) `restore_enclosing_state` restores the running scope's dropped bindings
+(`take(scope_index + 1)`), because that scope's release action still runs later in the same
+cleanup; (AR-20) the planning pass walks every ladder rung so local-name numbering matches the
+base while the real pass emits only reached rungs · Evidence: the SA-001 shapes (`String`,
+continue-preempt) are ASan clean with values unchanged; the `E10021` shape is accepted and
+answers 7 with the full workspace green; the PE-001 minimal repro emits the base suffixes
+(`__cl_elems_3/4/5`); `make check` green · Rejected: releasing before every ordinary store
+(byte churn), accepting the renumbering and weakening R6, or filing the false rejection ·
+Confidence: High — each fix is reproduced end to end and pinned by a regression case (ST-16,
+impl14, impl15) · Reopen triggers: a path where an ordinary store releases a still-owned result
+or fails to release a superseded one (ASan evidence) · Policy version 1.
 
 **AR-17 (runtime, delegated record):** Authority: AI — delegated by --auto-design · Root invocation
 ID `ad-defer-integrity-20261009` · Eligibility: implementation mechanism inside AR-5's confirmed

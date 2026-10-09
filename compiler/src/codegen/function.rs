@@ -57,6 +57,7 @@ impl<'a> Emitter<'a> {
         self.rungs.clear();
         self.labels.clear();
         self.used_rung_labels.clear();
+        self.deferred_result_store = false;
         self.result_var = None;
         self.reachable.clear();
         self.emitted.clear();
@@ -164,6 +165,7 @@ impl<'a> Emitter<'a> {
         self.rungs.clear();
         self.labels.clear();
         self.used_rung_labels.clear();
+        self.deferred_result_store = false;
         self.result_var = None;
         self.reachable.clear();
         self.emitted.clear();

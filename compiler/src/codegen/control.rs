@@ -88,6 +88,7 @@ impl<'a> Emitter<'a> {
         self.label_copy = 0;
         self.copy_region = None;
         self.used_rung_labels.clear();
+        self.deferred_result_store = false;
         self.emit_regions(function, has_cleanup);
         self.suppress_output = false;
         self.emitted.clear();
@@ -96,6 +97,7 @@ impl<'a> Emitter<'a> {
         self.label_copy = 0;
         self.copy_region = None;
         self.used_rung_labels.clear();
+        self.deferred_result_store = false;
         self.emit_regions(function, has_cleanup);
     }
 

@@ -644,16 +644,26 @@ impl<'a> Emitter<'a> {
         true
     }
 
-    /// Releases the pending result value a deferred return is about to replace.
+    /// Releases the pending result value a return is about to replace.
     ///
-    /// A deferred return supersedes the value an earlier return stored: the
-    /// store targets the live result variable, so the pending owner is released
+    /// A deferred return stores into the live result variable and continues the
+    /// running cleanup; a deferred `break` or `continue` among the older
+    /// actions can then preempt the pending return, so control reaches an
+    /// ordinary store that supersedes it. Both cases release the pending owner
     /// first, exactly as an assignment to a live owner does. The release is
-    /// null-safe, so the first store inside a copy is a no-op, and a return
-    /// outside a deferred copy keeps its unchanged shape.
+    /// null-safe and gated: an ordinary return releases only when a deferred
+    /// store preceded it in the walk, so ordinary returns keep their unchanged
+    /// shape.
     fn emit_superseded_result_release(&mut self, result: &str, ret_ty: &Ty) {
-        if self.active_defers.is_empty() || !self.needs_drop(ret_ty) {
+        if !self.needs_drop(ret_ty) {
             return;
+        }
+        if self.active_defers.is_empty() {
+            if !self.deferred_result_store {
+                return;
+            }
+        } else {
+            self.deferred_result_store = true;
         }
         self.emit_drop_expr(result, ret_ty);
     }
@@ -796,20 +806,28 @@ impl<'a> Emitter<'a> {
     ///
     /// Only rungs an early edge (or the chain from one) reaches are emitted:
     /// an edge that ran its scopes inline leaves its outer rungs unreachable,
-    /// and a defined-but-unused label fails the strict build. The chain runs
-    /// through the emitted rungs in order and ends at the function tail.
+    /// and a defined-but-unused label fails the strict build. The planning
+    /// pass, which writes nothing, still walks every rung so the local names a
+    /// rung's cleanup allocates keep the same numbering they have in the
+    /// emitted output. The chain runs through the emitted rungs in order and
+    /// ends at the function tail.
     pub(super) fn emit_ladder(&mut self) {
         let rungs = self.rungs.clone();
         // A directly reached rung keeps every outer rung alive through the
         // chain, so the emitted set starts at the innermost reached label.
-        let Some(start) = self.used_rung_labels.iter().min().copied() else {
-            return;
+        let start = self.used_rung_labels.iter().min().copied();
+        let emitted: Vec<usize> = if self.suppress_output {
+            rungs.clone()
+        } else {
+            let Some(start) = start else {
+                return;
+            };
+            rungs
+                .iter()
+                .copied()
+                .filter(|scope| self.labels[scope] >= start)
+                .collect()
         };
-        let emitted: Vec<usize> = rungs
-            .iter()
-            .copied()
-            .filter(|scope| self.labels[scope] >= start)
-            .collect();
         for (index, scope) in emitted.iter().enumerate() {
             let label = self.labels[scope];
             self.emit_line_for_scope(*scope);

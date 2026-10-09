@@ -703,3 +703,73 @@ func main(): i32 {
     let output = run_host("defer-impl13-run", source);
     assert_exit("defer-impl13-run", &output, 1);
 }
+
+/// An ordinary return releases a superseded deferred result before its store.
+///
+/// A deferred return stores an owned value; an older deferred `break` preempts
+/// the pending return and control reaches the ordinary return. The ordinary
+/// store releases the abandoned value first, so the emitted release precedes
+/// the ordinary store. The program answers one.
+#[test]
+fn should_release_a_superseded_deferred_result_before_an_ordinary_return() {
+    let source = r#"module spec.defer_integrity.impl14;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    switch (1) {
+    case 1: {
+        defer {
+            break;
+        }
+        defer {
+            return stringOf("inner-value");
+        }
+    }
+    default: { }
+    }
+    return stringOf("f");
+}
+
+func main(): i32 {
+    return i32(len(f()));
+}
+"#;
+    let emitted = emit_host("defer-impl14", source);
+    let release = "    if (__cl_ret) { FreeString(__cl_ret); }\n    __cl_ret = NULL;\n    __cl_ret = cl_std_text_stringOf(cl_str(\"f\"));";
+    assert_contains("defer-impl14", &emitted, release);
+    let output = run_host("defer-impl14-run", source);
+    assert_exit("defer-impl14-run", &output, 1);
+}
+
+/// An older defer reading an owned local stays accepted before a newer return.
+///
+/// The newer defer returns; the older defer still runs first in cleanup order
+/// and reads the owned local, whose release comes after it. The program is
+/// accepted and answers seven.
+#[test]
+fn should_accept_an_older_defer_reading_an_owned_local_before_a_newer_return() {
+    let source = r#"module spec.defer_integrity.impl15;
+
+import { String, stringOf } from std.text;
+
+func sink(v: str): void {}
+
+func f(): i32 {
+    let a: String = stringOf("abc");
+    defer {
+        sink(a);
+    }
+    defer {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_host("defer-impl15-run", source);
+    assert_exit("defer-impl15-run", &output, 7);
+}

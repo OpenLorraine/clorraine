@@ -580,18 +580,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Restores the enclosing scopes after a deferred block was checked.
+    /// Restores the scopes of the running cleanup after a deferred block was
+    /// checked.
     ///
     /// A `return`, `break`, or `continue` inside a deferred block cleans the
     /// scopes it leaves as part of its own path, and that cleanup removes their
-    /// bindings from the flow state. Those scopes still enclose the flow that
-    /// follows the deferred block's scope, so a binding the deferred check
-    /// dropped is put back, while a binding the deferred block itself rewrote,
-    /// moved, or cleared keeps its new state. `saved` is the state before the
-    /// block was checked, and `scope_index` is the scope running the cleanup.
+    /// bindings from the flow state. The running scope and its enclosers still
+    /// owe their own release actions in this same cleanup run, so a binding the
+    /// deferred check dropped is put back and dropped again when its release
+    /// action's turn comes, in the emitted order. Deeper scopes already ran
+    /// their cleanup and stay dropped, and a binding the deferred block itself
+    /// rewrote, moved, or cleared keeps its new state. `saved` is the state
+    /// before the block was checked, and `scope_index` is the scope running the
+    /// cleanup.
     fn restore_enclosing_state(&mut self, saved: &FlowState, scope_index: usize) {
         let mut dropped: Vec<usize> = Vec::new();
-        for scope in self.scopes.iter().take(scope_index) {
+        for scope in self.scopes.iter().take(scope_index + 1) {
             for id in &scope.order {
                 if saved.places.contains_key(id) && !self.state.places.contains_key(id) {
                     dropped.push(*id);
