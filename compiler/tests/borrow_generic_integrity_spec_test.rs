@@ -1164,3 +1164,135 @@ func main(): i32 {
 "#;
     assert_rejected_once("untyped-view", source, "E10222", &["operator '=='"]);
 }
+
+/// A call through a func-typed parameter named like a module lender is bound.
+///
+/// The parameter `give` shares its written name with a module function, but
+/// the call goes through the parameter's value. The owned result must be bound
+/// and released like any other owned temporary; before the callee identity is
+/// fixed the gate mistakes the call for the module lender, skips binding the
+/// result, and the host sanitizer reports the leak. The run also pins the
+/// result length (one).
+#[test]
+fn should_bound_and_release_when_a_func_typed_parameter_masks_a_module_lender() {
+    let source = r#"module spec.bgi.maylend;
+
+import { String, stringOf } from std.text;
+
+func give(borrow v: str): str {
+    return v;
+}
+
+func copier(borrow v: String): String {
+    return stringOf("y");
+}
+
+func demo(give: func(borrow String): String): i32 {
+    let s: String = stringOf("x");
+    return i32(len(give(s)));
+}
+
+func main(): i32 {
+    return demo(copier);
+}
+"#;
+    let output = run_memory("maylend-param", source);
+    assert_exit("maylend-param", &output, 1);
+    assert_no_asan("maylend-param", &output);
+}
+
+/// A func-typed field call stays clean when the field name matches a lender.
+///
+/// A field call lowers through the receiver projection, not through a name, so
+/// the module lookup never sees the field. The result is bound and released
+/// once as before; the run exits with one.
+#[test]
+fn should_stay_clean_when_a_func_typed_field_is_named_like_a_module_lender() {
+    let source = r#"module spec.bgi.maylendfield;
+
+import { String, stringOf } from std.text;
+
+func give(borrow v: str): str {
+    return v;
+}
+
+func copier(borrow v: String): String {
+    return stringOf("y");
+}
+
+struct Holder {
+    give: func(borrow String): String;
+}
+
+func callIt(h: Holder): i32 {
+    let s: String = stringOf("x");
+    return i32(len(h.give(s)));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { give: copier };
+    return callIt(h);
+}
+"#;
+    let output = run_memory("maylend-field", source);
+    assert_exit("maylend-field", &output, 1);
+    assert_no_asan("maylend-field", &output);
+}
+
+/// A genuine module lender call releases its argument exactly once.
+///
+/// No binding shadows the lender here, so the call resolves to the module
+/// function; the borrowed argument stays alive for the call and is released
+/// once at scope end. The run measures both the view and the result: 45.
+#[test]
+fn should_release_once_when_a_genuine_module_lender_is_called() {
+    let source = r#"module spec.bgi.maylendgenuine;
+
+import { String, stringOf } from std.text;
+
+func lend(borrow v: String): i32 {
+    return i32(len(v));
+}
+
+func main(): i32 {
+    let s: String = stringOf("abc");
+    let n: i32 = lend(s);
+    return i32(len(s)) + n + 39;
+}
+"#;
+    let output = run_memory("maylend-genuine", source);
+    assert_exit("maylend-genuine", &output, 45);
+    assert_no_asan("maylend-genuine", &output);
+}
+
+/// A module call by its written name still reaches the lender, and a
+/// non-func parameter that collides with the name emits agreeing C.
+///
+/// `useModule` declares no colliding binding, so `give(41)` resolves to the
+/// module function and returns 42. `sibling` declares an `i32` parameter named
+/// `give`; whatever spelling that parameter receives, the signature, the local
+/// table, and the body must agree or the strict C build fails. The run reaches
+/// both: 42 + 1 = 43.
+#[test]
+fn should_reach_the_lender_when_a_sibling_parameter_collides() {
+    let source = r#"module spec.bgi.maylendmixed;
+
+func give(v: i32): i32 {
+    return v + 1;
+}
+
+func useModule(): i32 {
+    return give(41);
+}
+
+func sibling(give: i32): i32 {
+    return give;
+}
+
+func main(): i32 {
+    return useModule() + sibling(1);
+}
+"#;
+    let output = run_host("maylend-mixed", source);
+    assert_exit("maylend-mixed", &output, 43);
+}

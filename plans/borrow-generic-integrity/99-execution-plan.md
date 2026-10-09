@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:43
-> **Progress**: 22/30 tasks (73%)
+> **Last Updated**: 2026-10-09 22:59
+> **Progress**: 24/30 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -284,7 +284,8 @@ DEF-107). Rulings: [05-findings.md](05-findings.md).
 
 ## Phase 4: May-lend callee identity (DEF-77)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `638ba9d5eff7c105951b23d04ed68bf9fc4882b4` (clean tree at phase start; pre-P4)
+> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/tests/call_value_integrity_impl_test.rs`, `compiler/src/own.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs`, `plans/borrow-generic-integrity/99-execution-plan.md`, `plans/borrow-generic-integrity/05-findings.md`, `plans/00-roadmap.md`, `AGENTS.md`
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer + emission-integrity auditor (borrow gate, IR parameter names, and emitted C names; AGENTS.md dispatch matrix; PF-001)
 > **Reasoning**: high — ownership binding semantics; the leak oracle is ASan
 
@@ -293,8 +294,10 @@ DEF-107). Rulings: [05-findings.md](05-findings.md).
 **Reference**: [03-04](03-04-may-lend-callee-identity.md) §Proposed Changes · [AR-3](00-ambiguity-register.md)
 **Objective**: Pin the leak repro and the unchanged sibling behaviors.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from ST-17 – ST-20 — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and record the red phase (expected: ST-17 fails under ASan — run it with `RDC_ASAN=1`; ST-18 – ST-20 pass as pins)
+- [x] 4.1.1 [spec-author] Write specification tests from ST-17 – ST-20 — `compiler/tests/borrow_generic_integrity_spec_test.rs` ✅ (completed: 2026-10-09 22:59)
+- [x] 4.1.2 Run the spec suite and record the red phase (expected: ST-17 fails under ASan — run it with `RDC_ASAN=1`; ST-18 – ST-20 pass as pins) ✅ (completed: 2026-10-09 22:59)
+
+**Red phase** (2026-10-09 22:59): the plain suite is 27/27 green (the leak is invisible without the sanitizer); the filtered ASan run of ST-17 fails exactly as planned — `LeakSanitizer: detected memory leaks`, `Direct leak of 10 byte(s) in 1 object(s)` (the owned result of the parameter call). ST-18, ST-19, and ST-20 pass as pins. The module lender had to carry the gate's lender shape (a view return with one lend candidate) for the gate to misresolve the call; the first draft's `i32` function did not qualify and leaked nothing (test-source correction).
 
 **Deliverables**:
 - Specification cases ST-17 – ST-20 added
