@@ -54,7 +54,8 @@ in `CMD`).
 | `docker/` | The pinned Amiga SDK: toolchain config, scripts, and the emulator wrappers |
 | `demo/` | The demo story (`story.ts`), a per-file scaffold (`cube.demo.ts`), the kept `clorraine.vim`, the recorder shim, and the committed poster; rendered media is gitignored |
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript toolkit that renders the demo (headless Chrome, Shiki, VHS, ffmpeg) |
-| `plans/` | CodeOps artifacts: the feature plans (one directory per plan) and `plans/00-roadmap.md` (flat layout, no `codeops/` directory) |
+| `examples/` | Small example programs (`hello`, `graphics`, `hosted-skeleton`) and a compile-fail ownership sample |
+| `plans/` | CodeOps artifacts: the feature plans (one directory per plan) and `plans/00-roadmap.md` (flat layout: plans live under `plans/`, not `codeops/features/`) |
 | `spikes/`, `docs/` | Phase 1 toolchain spikes and findings records |
 
 ## Test naming map
@@ -216,8 +217,17 @@ in `CMD`).
 
 ## CodeOps
 
-- Layout: **flat** (no `codeops/` directory). Each feature plan lives at
+- Layout: **flat** — each feature plan lives at
   `plans/<feature>/99-execution-plan.md`; the roadmap is `plans/00-roadmap.md`.
+  There is no nested `codeops/features/` tree; `codeops/` holds only the
+  project-level specialist check state (`codeops/specialist-check.json`).
+- Specialist coverage: up to date (2026-10-09) — see
+  `codeops/specialist-check.json`; re-run `analyze-agents` after new plans land.
+- Never run the CodeOps installer from inside this repository: its scope
+  auto-detection installs project-scope copies into `.opencode/` and would
+  replace the project reviewer briefs (`correctness-reviewer`,
+  `semantics-reviewer`) with catalog defaults. Run installs/upgrades from
+  outside the repo (for example, `cd ~`).
 - Keep `plans/*/99-...`/roadmap state in sync through the CodeOps skills, and
   follow the repository's quality profile (strict: independent review, stop on
   critical/major findings).
