@@ -7,7 +7,8 @@
 //! be rejected assert the diagnostics instead, and no translation unit may be
 //! written for them.
 //!
-//! The batch pins one rule at two granularities:
+//! The batch pins the whole-slot and element store rules at two granularities,
+//! plus the return semantics of a nullable out-slot:
 //!
 //! * a whole-slot store of a binding into itself, where the judgment depends on
 //!   the instantiation — an owning slot is rejected as a released lend, a
@@ -15,7 +16,10 @@
 //!   moved value;
 //! * an element store through a nullable view, where two variable indices may
 //!   alias and are rejected, two distinct literal indices are accepted, and the
-//!   same element written to itself is rejected.
+//!   same element written to itself is rejected;
+//! * a whole-slot return through a nullable out-slot, where the callee owns the
+//!   incoming value and the move-out empties the caller's slot, while a
+//!   projected element return and a read-only lend return stay rejected.
 //!
 //! The memory helper runs a case as an ordinary strict host build and adds
 //! leak and use-after-free detection when `RDC_ASAN` is set.
@@ -638,4 +642,199 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("nullable-whole-self", source, "E10020", &["'slot'"]);
+}
+
+/// A direct whole-slot return transfers the slot value and empties the caller's
+/// slot.
+///
+/// The callee receives the caller's `String?` slot as an in-out lend, so it
+/// owns the incoming value. Returning the slot directly moves that value out:
+/// the caller's slot must be `null` after the call, and the returned handle
+/// must hold the payload. A non-empty caller slot exits 90 and a null result
+/// exits 91, so the pinned success exit 3 proves both the emptying and the
+/// payload. The sanitizer run must show no double free and no leak — the two
+/// handles must never release one allocation twice.
+#[test]
+fn should_transfer_and_empty_the_slot_when_a_whole_out_slot_is_returned() {
+    let source = r#"module spec.bsi.wholeoutslotreturn;
+
+import { String, stringOf } from std.text;
+
+func cid(borrow v: String?): String? {
+    return v;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("abc");
+    let r: String? = cid(borrow s);
+    if (s != null) {
+        return 90;
+    }
+    if (r == null) {
+        return 91;
+    }
+    return i32(len(r));
+}
+"#;
+    let output = run_memory("whole-out-slot-return", source);
+    assert_exit("whole-out-slot-return", &output, 3);
+    assert_no_asan("whole-out-slot-return", &output);
+}
+
+/// The guarded-arm return transfers the payload for a non-null slot and yields
+/// null for a null slot.
+///
+/// When the slot holds a value, the guarded arm returns it exactly as the
+/// unguarded whole-slot return does: the caller's slot empties (a non-empty
+/// slot exits 90) and the result holds the payload (the non-null run exits 3).
+/// When the slot is null, the guard is false, the fallback returns null, and
+/// the result is null (the null run exits 9). Both runs must be
+/// sanitizer-clean.
+#[test]
+fn should_transfer_the_payload_and_return_null_when_the_guarded_arm_runs() {
+    let non_null = r#"module spec.bsi.guardedarmnonnull;
+
+import { String, stringOf } from std.text;
+
+func cid2(borrow v: String?): String? {
+    if (v != null) {
+        return v;
+    }
+    return null;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("abc");
+    let r: String? = cid2(borrow s);
+    if (s != null) {
+        return 90;
+    }
+    if (r == null) {
+        return 91;
+    }
+    return i32(len(r));
+}
+"#;
+    let output = run_memory("guarded-arm-non-null", non_null);
+    assert_exit("guarded-arm-non-null", &output, 3);
+    assert_no_asan("guarded-arm-non-null", &output);
+
+    let null_slot = r#"module spec.bsi.guardedarmnull;
+
+import { String } from std.text;
+
+func cid2(borrow v: String?): String? {
+    if (v != null) {
+        return v;
+    }
+    return null;
+}
+
+func main(): i32 {
+    let s: String? = null;
+    let r: String? = cid2(borrow s);
+    if (r != null) {
+        return 1;
+    }
+    return 9;
+}
+"#;
+    let output = run_memory("guarded-arm-null", null_slot);
+    assert_exit("guarded-arm-null", &output, 9);
+    assert_no_asan("guarded-arm-null", &output);
+}
+
+/// A projected whole-slot return stays rejected by the v1 element-move limit.
+///
+/// Returning an element of a nullable `String[]` out-slot (`return v[0]` or
+/// `return v[i]`) reads the element out of the borrowed view, which the v1
+/// element-move limit forbids; the guard only supplies the null check. Each
+/// spelling reports exactly one `E10026` and writes no translation unit. The
+/// unnarrowed spelling also reports the read path's `E10010`; that behavior is
+/// unchanged and is not asserted here.
+#[test]
+fn should_reject_a_projected_out_slot_return_when_the_slot_is_narrowed() {
+    let literal = r#"module spec.bsi.projectedliteral;
+
+import { String, stringOf } from std.text;
+
+func pick(borrow v: String[]?): String {
+    if (v != null) {
+        return v[0];
+    }
+    return stringOf("z");
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once("projected-literal-return", literal, "E10026", &["partial moves"]);
+
+    let indexed = r#"module spec.bsi.projectedindexed;
+
+import { String, stringOf } from std.text;
+
+func pick(borrow v: String[]?): String {
+    let i: i32 = 0;
+    if (v != null) {
+        return v[i];
+    }
+    return stringOf("z");
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once("projected-indexed-return", indexed, "E10026", &["partial moves"]);
+}
+
+/// A read-only lend returned as a value stays rejected.
+///
+/// A `borrow v: String` parameter is a read-only lend the callee may not
+/// release or store. Returning it as an owned `String` transfers ownership out
+/// of the caller, so the callee would release the caller's value when the
+/// result drops. Exactly one `E10034` names `v`.
+#[test]
+fn should_reject_a_read_only_lend_return_when_the_lend_is_non_nullable() {
+    let source = r#"module spec.bsi.readonlylendreturn;
+
+import { String } from std.text;
+
+func gid(borrow v: String): String {
+    return v;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once("read-only-lend-return", source, "E10034", &["'v'"]);
+}
+
+/// A generic read-only lend returned as a value stays rejected at a nullable
+/// instance.
+///
+/// The body `gid<T>(borrow v: T): T { return v; }` at `T = String?` returns the
+/// borrowed parameter as an owned value, so the instance is rejected exactly as
+/// its concrete `borrow String?` spelling is. The instantiation is judged after
+/// substitution, so exactly one `E10034` names `v`.
+#[test]
+fn should_reject_a_generic_read_only_lend_return_when_the_instance_is_nullable() {
+    let source = r#"module spec.bsi.genericreadonlylendreturn;
+
+import { String, stringOf } from std.text;
+
+func gid<T>(borrow v: T): T {
+    return v;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    gid<String?>(borrow s);
+    return 0;
+}
+"#;
+    assert_rejected_once("generic-read-only-lend-return", source, "E10034", &["'v'"]);
 }

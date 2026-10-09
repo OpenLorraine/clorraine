@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 01:36
-> **Progress**: 8/22 tasks (36%)
+> **Last Updated**: 2026-10-10 01:46
+> **Progress**: 10/22 tasks (45%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -122,8 +122,8 @@ document the conservative runtime-index comparison (DEF-102, no semantic change)
 **Objective**: Pin the move-out semantics and the unchanged guard rejections before any
 implementation.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-12 — `compiler/tests/borrow_store_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-8 and ST-9 fail; ST-10 – ST-12 pass as green pins)
+- [x] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-12 — `compiler/tests/borrow_store_integrity_spec_test.rs` ✅ (completed: 2026-10-10 01:46)
+- [x] 2.1.2 Run the spec suite and record the red phase (expected: ST-8 and ST-9 fail; ST-10 – ST-12 pass as green pins) ✅ (completed: 2026-10-10 01:46)
 
 **Deliverables**:
 - Specification clauses for P2
