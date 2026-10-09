@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 00:34
-> **Progress**: 0/22 tasks (0%)
+> **Last Updated**: 2026-10-10 01:31
+> **Progress**: 2/22 tasks (9%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -51,7 +51,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 1: Self-assign rules (DEF-100, DEF-102)
 
-> **Phase baseline tree**: (recorded by the exec-plan skill at phase start)
+> **Phase baseline tree**: `12454a7ec4670700c0bbb40f5a8355900da7f299`
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (ownership and
 > self-assign language rules; AGENTS.md dispatch matrix)
 > **Reasoning**: high — ownership semantics on the lend-store path with memory-safety
@@ -63,8 +63,8 @@ task-size criteria in the make-plan quality checklist)
 **Objective**: Pin the corrected self-assign judgments and the preserved accepted shapes before
 any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 and the extension cases ST-23 – ST-27 — `compiler/tests/borrow_store_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1, ST-3, and ST-27 fail; ST-2, ST-4, ST-5, ST-6, ST-7 and the ST-23 – ST-26 pins pass as green pins)
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 and the extension cases ST-23 – ST-27 — `compiler/tests/borrow_store_integrity_spec_test.rs` ✅ (completed: 2026-10-10 01:31)
+- [x] 1.1.2 Run the spec suite and record the red phase (expected: ST-1, ST-3, and ST-27 fail; ST-2, ST-4, ST-5, ST-6, ST-7 and the ST-23 – ST-26 pins pass as green pins) ✅ (completed: 2026-10-10 01:31)
 
 **Deliverables**:
 - Specification suite with ST-1 – ST-7 and ST-23 – ST-27
