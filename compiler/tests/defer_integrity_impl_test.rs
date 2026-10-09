@@ -565,3 +565,111 @@ func main(): i32 {
     let output = run_host("defer-impl9-run", source);
     assert_exit("defer-impl9-run", &output, 111);
 }
+
+/// A deferred return reads its own local before the drop of that local.
+///
+/// The deferred block's scope owns the string; the return's value reads it, so
+/// the store must come first and the drop after it. The program answers one.
+#[test]
+fn should_store_a_deferred_returns_value_before_its_drop() {
+    let source = r#"module spec.defer_integrity.impl10;
+
+import { String, stringOf } from std.text;
+
+func f(): i32 {
+    defer {
+        let s: String = stringOf("x");
+        return i32(len(s));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let emitted = emit_host("defer-impl10", source);
+    let store = emitted
+        .find("__cl_ret = (i32)((cl_string_view(s)).len);")
+        .expect("defer-impl10: the value store is missing");
+    let drop = emitted
+        .find("    if (s) { FreeString(s); }\n    s = NULL;\n    return __cl_ret;")
+        .expect("defer-impl10: the drop-before-return tail is missing");
+    assert!(
+        store < drop,
+        "defer-impl10: the deferred return must store its value before the drop"
+    );
+    let output = run_host("defer-impl10-run", source);
+    assert_exit("defer-impl10-run", &output, 1);
+}
+
+/// The remaining cleanup of a scope runs after a returning defer's value store.
+///
+/// The newer defer returns 7; the older defer still runs, so the counter is
+/// one and the program answers 71.
+#[test]
+fn should_run_the_remaining_defer_after_a_deferred_return() {
+    let source = r#"module spec.defer_integrity.impl11;
+
+let runs: i32 = 0;
+
+func f(): i32 {
+    defer {
+        runs = runs + 1;
+    }
+    defer {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let r: i32 = f();
+    return r * 10 + runs;
+}
+"#;
+    let emitted = emit_host("defer-impl11", source);
+    let store = emitted
+        .find("    __cl_ret = 7;")
+        .expect("defer-impl11: the deferred return's store is missing");
+    let remaining = emitted
+        .find("cl_spec_defer_integrity_impl11_runs = (i32)((u32)cl_spec_defer_integrity_impl11_runs + (u32)1);")
+        .expect("defer-impl11: the remaining defer's effect is missing");
+    assert!(
+        store < remaining,
+        "defer-impl11: the returning defer must run before the remaining defer"
+    );
+    let output = run_host("defer-impl11-run", source);
+    assert_exit("defer-impl11-run", &output, 71);
+}
+
+/// A deferred return from a nested scope jumps to the outer cleanup rung.
+///
+/// The inner block's deferred return leaves the enclosing function scope, so
+/// the emitted copy jumps to that scope's rung and the outer drop runs there.
+/// The program answers three and is sanitizer-clean.
+#[test]
+fn should_jump_to_the_outer_rung_when_a_deferred_return_leaves_a_nested_scope() {
+    let source = r#"module spec.defer_integrity.impl12;
+
+import { String, stringOf } from std.text;
+
+func f(): i32 {
+    let a: String = stringOf("abc");
+    {
+        defer {
+            return i32(len(a));
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let emitted = emit_host("defer-impl12", source);
+    assert_contains("defer-impl12", &emitted, "goto __cl_c1;");
+    let output = run_host("defer-impl12-run", source);
+    assert_exit("defer-impl12-run", &output, 3);
+}

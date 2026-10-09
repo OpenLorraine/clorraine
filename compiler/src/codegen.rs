@@ -63,6 +63,19 @@ pub(super) struct EnumInfo<'a> {
     pub(super) decl: &'a EnumDecl,
 }
 
+/// One cleanup activation that is currently emitting.
+///
+/// The frame records which scope's cleanup is running and which action of the
+/// scope's list is emitting, so a re-entry into the same scope from inside a
+/// deferred copy runs only the actions older than the running one.
+#[derive(Clone, Copy)]
+pub(super) struct CleanupFrame {
+    /// The scope whose cleanup is running.
+    pub(super) scope: usize,
+    /// Index of the action currently emitting in the scope's action list.
+    pub(super) position: usize,
+}
+
 /// The translation-unit emitter.
 pub(super) struct Emitter<'a> {
     /// The loaded program.
@@ -152,6 +165,13 @@ pub(super) struct Emitter<'a> {
     /// activation of a root already emitting would recurse forever; it is a
     /// no-op. Activations of other roots emit normally.
     pub(super) active_defers: Vec<ir::BlockId>,
+    /// The cleanup activations currently emitting, innermost last.
+    ///
+    /// A return or edge inside a deferred copy re-enters the running scope's
+    /// cleanup; the frame records which action of the scope's list is emitting,
+    /// so the re-entry runs only the actions older than it — the newer ones
+    /// already ran.
+    pub(super) cleanup_frames: Vec<CleanupFrame>,
     /// The label namespace of the innermost deferred copy being emitted.
     ///
     /// Zero means no copy is active (plain `__cl_b<N>` labels); a copy's
@@ -229,6 +249,7 @@ impl<'a> Emitter<'a> {
             pending_labels: BTreeSet::new(),
             defer_copies: BTreeMap::new(),
             active_defers: Vec::new(),
+            cleanup_frames: Vec::new(),
             label_copy: 0,
             copy_region: None,
             loop_entry: BTreeMap::new(),

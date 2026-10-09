@@ -15,7 +15,7 @@ use crate::ir::{self, BlockId, Place, Statement, Terminator, ValueKind};
 use crate::types::{Ty, TyKind};
 
 use super::control::FlowContext;
-use super::Emitter;
+use super::{CleanupFrame, Emitter};
 
 /// One cleanup entry of a scope, in registration order.
 #[derive(Clone)]
@@ -127,17 +127,29 @@ impl<'a> Emitter<'a> {
     /// (the ladder returns), so their cleanup runs inline before the jump. The
     /// caller emits the block's terminator, because the structured emitter
     /// turns most terminators into C control flow rather than a `goto`.
+    ///
+    /// A value return also returns the inline cleanup it deferred: the
+    /// terminator stores the value before that cleanup releases the storage the
+    /// value reads.
     pub(super) fn emit_block_body(
         &mut self,
         function: &'a ir::Function,
         id: BlockId,
         jump_out: bool,
         ctx: FlowContext,
-    ) -> Option<usize> {
+    ) -> (Option<usize>, Vec<usize>) {
         let block = &function.blocks[id];
+        // A value return reads the storage its inline cleanup releases, so the
+        // inline cleanup is deferred to the terminator, which stores the value
+        // first. A void return has no value to read and runs it in place.
+        let value_return = matches!(
+            &block.terminator,
+            Terminator::Return { value: Some(_), .. }
+        );
         let mut pending_scope: Option<usize> = None;
         let mut inlined_edge: BTreeSet<usize> = BTreeSet::new();
         let mut edge_scopes: Vec<usize> = Vec::new();
+        let mut deferred_inline: Vec<usize> = Vec::new();
         for instr in &block.statements {
             match &instr.statement {
                 Statement::ScopeEnd { scope } => {
@@ -150,10 +162,12 @@ impl<'a> Emitter<'a> {
                 Statement::ScopeExit { scope } => {
                     // An early edge carries the scopes it leaves. A scope with
                     // a ladder rung is reached through the ladder; any other
-                    // scope, including one inside a loop and one whose only
-                    // cleanup is a `defer`, runs its actions inline here.
+                    // scope — one inside a loop, one whose deferred bodies
+                    // carry a control-flow out-edge, or one whose cleanup is
+                    // running right now — runs its actions inline here.
                     pending_scope = None;
-                    if !jump_out && self.labels.contains_key(scope) {
+                    let running = self.active_frame_position(*scope).is_some();
+                    if !jump_out && !running && self.labels.contains_key(scope) {
                         if !edge_scopes.contains(scope) {
                             edge_scopes.push(*scope);
                         }
@@ -173,9 +187,19 @@ impl<'a> Emitter<'a> {
                         if owns_cleanup {
                             let inline_scopes = std::mem::take(&mut edge_scopes);
                             for edge_scope in inline_scopes {
-                                self.emit_scope_inline(edge_scope, ctx);
+                                self.emit_or_defer_cleanup(
+                                    edge_scope,
+                                    value_return,
+                                    &mut deferred_inline,
+                                    ctx,
+                                );
                             }
-                            self.emit_scope_inline(*scope, ctx);
+                            self.emit_or_defer_cleanup(
+                                *scope,
+                                value_return,
+                                &mut deferred_inline,
+                                ctx,
+                            );
                         }
                     }
                 }
@@ -186,9 +210,15 @@ impl<'a> Emitter<'a> {
                         // no-op here.
                         continue;
                     }
-                    if jump_out || self.scope_is_inline(function, *scope) {
+                    let running = self.active_frame_position(*scope).is_some();
+                    if jump_out || running || self.scope_is_inline(function, *scope) {
                         if inlined_edge.insert(*scope) {
-                            self.emit_scope_inline(*scope, ctx);
+                            self.emit_or_defer_cleanup(
+                                *scope,
+                                value_return,
+                                &mut deferred_inline,
+                                ctx,
+                            );
                         }
                     } else if !edge_scopes.contains(scope) {
                         edge_scopes.push(*scope);
@@ -205,9 +235,29 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
-        edge_scopes
+        let jump = edge_scopes
             .first()
-            .and_then(|scope| self.labels.get(scope).copied())
+            .and_then(|scope| self.labels.get(scope).copied());
+        (jump, deferred_inline)
+    }
+
+    /// Emits a scope's cleanup now, or defers it to a value return's store.
+    ///
+    /// A value return must read its value before the cleanup that releases the
+    /// storage it reads, so the inline cleanup of the scopes it leaves is
+    /// collected and emitted by the terminator after the value store.
+    fn emit_or_defer_cleanup(
+        &mut self,
+        scope: usize,
+        defer: bool,
+        deferred: &mut Vec<usize>,
+        ctx: FlowContext,
+    ) {
+        if defer {
+            deferred.push(scope);
+        } else {
+            self.emit_scope_inline(scope, ctx);
+        }
     }
 
     /// Emits one copy of a deferred block at its cleanup activation.
@@ -235,10 +285,18 @@ impl<'a> Emitter<'a> {
     }
 
     /// Emits a scope's cleanup actions inline, once.
+    ///
+    /// A scope re-entered from inside its own running cleanup runs only the
+    /// actions older than the running one: the newer ones already ran, and a
+    /// second run would double their effects.
     fn emit_scope_inline(&mut self, scope: usize, ctx: FlowContext) {
         self.emit_line_for_scope(scope);
         let actions = self.scope_actions.get(&scope).cloned().unwrap_or_default();
-        self.emit_actions(&actions, ctx);
+        let remaining = match self.active_frame_position(scope) {
+            Some(position) => actions[..position].to_vec(),
+            None => actions,
+        };
+        self.emit_actions(&remaining, scope, ctx);
     }
 
     /// Writes a `#line` mapping for generated cleanup to the scope's close.
@@ -279,13 +337,25 @@ impl<'a> Emitter<'a> {
     /// the single reverse-registration cleanup order. `ctx` is the ambient flow
     /// context at the cleanup site, threaded into a deferred copy so its
     /// out-edges print as the enclosing loop's edges.
-    fn emit_actions(&mut self, actions: &[(u32, Action)], ctx: FlowContext) {
-        for (_, action) in actions.iter().rev() {
+    fn emit_actions(&mut self, actions: &[(u32, Action)], scope: usize, ctx: FlowContext) {
+        for (position, (_, action)) in actions.iter().enumerate().rev() {
+            self.cleanup_frames.push(CleanupFrame { scope, position });
             match action {
                 Action::Defer(root, end) => self.emit_defer(*root, *end, ctx),
                 Action::Drop(place) => self.emit_drop(place),
             }
+            self.cleanup_frames.pop();
         }
+    }
+
+    /// The position of the innermost running action of `scope`, when its
+    /// cleanup is re-entered from inside itself.
+    fn active_frame_position(&self, scope: usize) -> Option<usize> {
+        self.cleanup_frames
+            .iter()
+            .rev()
+            .find(|frame| frame.scope == scope)
+            .map(|frame| frame.position)
     }
 
     // -- terminators ----------------------------------------------------------
@@ -296,13 +366,18 @@ impl<'a> Emitter<'a> {
     /// and jumps to the innermost scope label it leaves, so the ladder can drop
     /// the scopes on the way out. A function without one returns directly.
     /// Statement temporaries the returned expression read are released after
-    /// the value has been evaluated and before control leaves.
+    /// the value has been evaluated and before control leaves. The scopes in
+    /// `deferred` are the inline cleanup of a value return's edge: they run
+    /// after the value store, because the value may read the storage they
+    /// release.
     pub(super) fn emit_return(
         &mut self,
         span: crate::span::Span,
         value: Option<&ir::Value>,
         releases: &[ir::Release],
         jump: Option<usize>,
+        deferred: &[usize],
+        ctx: FlowContext,
     ) {
         self.emit_line_directive(span);
         if let Some(value) = value {
@@ -317,7 +392,8 @@ impl<'a> Emitter<'a> {
                 let mut value_stored = false;
                 if let ValueKind::StructLit { fields, .. } = &value.kind {
                     if self.struct_literal_needs_stores(fields) {
-                        if self.emit_struct_literal_return(&ret_ty, fields, releases) {
+                        if self.emit_struct_literal_return(&ret_ty, fields, releases, deferred, ctx)
+                        {
                             return;
                         }
                         value_stored = true;
@@ -336,6 +412,8 @@ impl<'a> Emitter<'a> {
                             then_value,
                             else_value,
                             releases,
+                            deferred,
+                            ctx,
                         ) {
                             return;
                         }
@@ -356,6 +434,8 @@ impl<'a> Emitter<'a> {
                                 then_value,
                                 else_value,
                                 releases,
+                                deferred,
+                                ctx,
                             ) {
                                 return;
                             }
@@ -405,11 +485,13 @@ impl<'a> Emitter<'a> {
                                 }
                             }
                             self.emit_temp_releases(releases);
+                            self.emit_deferred_return_cleanup(deferred, ctx);
                             self.push(&format!("        return {local};"));
                             self.push("    }");
                             return;
                         }
                         None => {
+                            self.emit_deferred_return_cleanup(deferred, ctx);
                             self.push(&format!("    return {lowered};"));
                             return;
                         }
@@ -418,6 +500,7 @@ impl<'a> Emitter<'a> {
             }
         }
         self.emit_temp_releases(releases);
+        self.emit_deferred_return_cleanup(deferred, ctx);
         if let Some(label) = jump {
             if !self.suppress_output {
                 self.used_rung_labels.insert(label);
@@ -455,6 +538,8 @@ impl<'a> Emitter<'a> {
         then_value: &ir::Value,
         else_value: &ir::Value,
         releases: &[ir::Release],
+        deferred: &[usize],
+        ctx: FlowContext,
     ) -> bool {
         if let Some(result) = self.result_var.clone() {
             self.emit_conditional_move_assign(
@@ -475,6 +560,7 @@ impl<'a> Emitter<'a> {
         ));
         self.emit_conditional_move_assign(&local, ret_ty, condition, then_value, else_value);
         self.emit_temp_releases(releases);
+        self.emit_deferred_return_cleanup(deferred, ctx);
         self.push(&format!("        return {local};"));
         self.push("    }");
         true
@@ -492,6 +578,8 @@ impl<'a> Emitter<'a> {
         ret_ty: &Ty,
         fields: &[(String, ir::Value)],
         releases: &[ir::Release],
+        deferred: &[usize],
+        ctx: FlowContext,
     ) -> bool {
         if let Some(result) = self.result_var.clone() {
             self.emit_struct_literal_fields(&result, ret_ty, fields);
@@ -506,6 +594,7 @@ impl<'a> Emitter<'a> {
         ));
         self.emit_struct_literal_fields(&local, ret_ty, fields);
         self.emit_temp_releases(releases);
+        self.emit_deferred_return_cleanup(deferred, ctx);
         self.push(&format!("        return {local};"));
         self.push("    }");
         true
@@ -525,6 +614,8 @@ impl<'a> Emitter<'a> {
         then_value: &ir::Value,
         else_value: &ir::Value,
         releases: &[ir::Release],
+        deferred: &[usize],
+        ctx: FlowContext,
     ) -> bool {
         if let Some(result) = self.result_var.clone() {
             self.emit_struct_conditional_assign(&result, ret_ty, condition, then_value, else_value);
@@ -539,9 +630,29 @@ impl<'a> Emitter<'a> {
         ));
         self.emit_struct_conditional_assign(&local, ret_ty, condition, then_value, else_value);
         self.emit_temp_releases(releases);
+        self.emit_deferred_return_cleanup(deferred, ctx);
         self.push(&format!("        return {local};"));
         self.push("    }");
         true
+    }
+
+    /// Emits the inline cleanup a value return deferred past its value store.
+    ///
+    /// The scopes are emitted in the order the walk met them (innermost
+    /// first), after the value has been stored and its statement temporaries
+    /// released. A scope with no remaining cleanup emits nothing — skipping it
+    /// keeps the emitted bytes free of a lone line directive.
+    fn emit_deferred_return_cleanup(&mut self, deferred: &[usize], ctx: FlowContext) {
+        for scope in deferred {
+            let remaining = match self.active_frame_position(*scope) {
+                Some(position) => position,
+                None => self.scope_actions.get(scope).map_or(0, Vec::len),
+            };
+            if remaining == 0 {
+                continue;
+            }
+            self.emit_scope_inline(*scope, ctx);
+        }
     }
 
     /// Drops every statement temporary a return carries, in list order.
@@ -686,7 +797,7 @@ impl<'a> Emitter<'a> {
             // switch, so its copies have no ambient edge context. A scope whose
             // deferred bodies carry an out-edge never takes a rung (the rung
             // filter keeps it inline).
-            self.emit_actions(&actions, FlowContext::default());
+            self.emit_actions(&actions, *scope, FlowContext::default());
             if index + 1 < emitted.len() {
                 let next = self.labels[&emitted[index + 1]];
                 self.push(&format!("    goto __cl_c{next};"));

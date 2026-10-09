@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 17:01
-> **Progress**: 19/32 tasks (59%)
+> **Last Updated**: 2026-10-09 17:07
+> **Progress**: 23/32 tasks (72%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -261,15 +261,24 @@ the value read; both reproduced outside the harness). The seven pre-existing tes
 **Reference**: [03-03](03-03-deferred-return.md) §Proposed Changes
 **Objective**: Continue the running cleanup on a deferred return; reorder value returns.
 
-- [ ] 3.2.1 Add the running-cleanup frame and the continuation label for returning copies (returns inside a copy jump to the continuation) — `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`
-- [ ] 3.2.2 Nested re-entry into a running scope emits only the actions older than the frame's position — `compiler/src/codegen/cleanup.rs`
-- [ ] 3.2.3 For value returns, store the value (and run the terminator's releases) before the trailing inline cleanup, on every return form — `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`
-- [ ] 3.2.4 Run the spec suite and record the green phase
+- [x] 3.2.1 Add the running-cleanup frame and the continuation for returning copies (returns inside a copy continue the running cleanup) — `compiler/src/codegen.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs` ✅ (completed: 2026-10-09 17:07)
+- [x] 3.2.2 Nested re-entry into a running scope emits only the actions older than the frame's position — `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-10-09 17:07)
+- [x] 3.2.3 For value returns, store the value (and run the terminator's releases) before the trailing inline cleanup, on every return form — `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs` ✅ (completed: 2026-10-09 17:07)
+- [x] 3.2.4 Run the spec suite and record the green phase ✅ (completed: 2026-10-09 17:07)
+
+**Green-phase evidence (2026-10-09 17:07)** — ST-8 – ST-14 all green (spec 14/14; impl 9/9 at
+implementation time, 12/12 after the Step 3.3 pins); the full workspace is green; `make check` is
+green. The continuation is realized **label-free** (AR-17): the running scope's `ScopeExit` is a
+nested re-entry that emits only the remaining actions, and a value return's inline cleanup is
+buffered past the value store. A runtime discovery during the green run: an empty deferred-cleanup
+emission added a lone `#line` directive and broke the byte pin
+`def_backlog_closeout_impl_test.rs:171`; skipping scopes with no remaining actions restored the
+pinned bytes.
 
 **Deliverables**:
-- [ ] Continuation and remaining-actions rule
-- [ ] Value-before-cleanup ordering
-- [ ] ST-8 – ST-14 green
+- [x] Continuation and remaining-actions rule
+- [x] Value-before-cleanup ordering
+- [x] ST-8 – ST-14 green
 
 **Verify**: `make check`
 
@@ -278,13 +287,19 @@ the value read; both reproduced outside the harness). The seven pre-existing tes
 **Reference**: [03-03](03-03-deferred-return.md) §Testing Requirements
 **Objective**: Pin the continuation, the action order, and the return ordering; review the phase.
 
-- [ ] 3.3.1 Write implementation tests for the continuation shape, the remaining-actions order, the buffered-cleanup order, and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs`
-- [ ] 3.3.2 Run the host-ASan matrix (release counts and side effects exactly once per path) and `make check`
+- [x] 3.3.1 Write implementation tests for the continuation shape, the remaining-actions order, the buffered-cleanup order, and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs` ✅ (completed: 2026-10-09 17:07)
+- [x] 3.3.2 Run the host-ASan matrix (release counts and side effects exactly once per path) and `make check` ✅ (completed: 2026-10-09 17:07)
+- [ ] 3.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff
+
+**Implementation-test evidence (2026-10-09 17:07)** — three new emission cases pin the store-before-
+drop order, the remaining-defer-after-return order, and the outer-rung jump for a nested deferred
+return (impl 12/12). Direct host-ASan probes confirm the nested-rung release is clean, and
+`make check` is green.
 - [ ] 3.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff
 
 **Deliverables**:
-- [ ] Implementation suite for the return family
-- [ ] Clean probe matrix
+- [x] Implementation suite for the return family
+- [x] Clean probe matrix
 - [ ] Phase review with no open critical/major finding
 
 **Verify**: `make check`

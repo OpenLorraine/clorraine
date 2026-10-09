@@ -205,7 +205,7 @@ impl<'a> Emitter<'a> {
                 ),
                 _ => false,
             };
-            let jump = self.emit_block_body(function, current, jump_out, ctx);
+            let (jump, deferred_inline) = self.emit_block_body(function, current, jump_out, ctx);
             let (terminator, span) = {
                 let block = &function.blocks[current];
                 (&block.terminator, block.terminator_span)
@@ -255,7 +255,14 @@ impl<'a> Emitter<'a> {
                     current = *join;
                 }
                 Terminator::Return { value, releases } => {
-                    self.emit_return(span, value.as_ref(), releases, jump);
+                    self.emit_return(
+                        span,
+                        value.as_ref(),
+                        releases,
+                        jump,
+                        &deferred_inline,
+                        ctx,
+                    );
                     return;
                 }
                 Terminator::Unreachable => return,
