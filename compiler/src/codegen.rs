@@ -115,6 +115,12 @@ pub(super) struct Emitter<'a> {
     pub(super) rungs: Vec<usize>,
     /// The cleanup label number assigned to each rung scope.
     pub(super) labels: BTreeMap<usize, usize>,
+    /// Rung labels an early edge (or a chain from one) actually reaches.
+    ///
+    /// A rung is emitted only when something jumps to it. An edge that ran its
+    /// scopes inline leaves later rungs unreached, and a defined-but-unused
+    /// label fails the strict build.
+    pub(super) used_rung_labels: BTreeSet<usize>,
     /// Name of the result variable, set when the function has a ladder.
     pub(super) result_var: Option<String>,
     /// The open function's return type.
@@ -215,6 +221,7 @@ impl<'a> Emitter<'a> {
             scope_actions: BTreeMap::new(),
             rungs: Vec::new(),
             labels: BTreeMap::new(),
+            used_rung_labels: BTreeSet::new(),
             result_var: None,
             return_ty: Ty::void(),
             reachable: BTreeSet::new(),

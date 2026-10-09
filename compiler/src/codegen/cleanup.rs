@@ -158,7 +158,25 @@ impl<'a> Emitter<'a> {
                             edge_scopes.push(*scope);
                         }
                     } else if inlined_edge.insert(*scope) {
-                        self.emit_scope_inline(*scope, ctx);
+                        // An inline scope that owns cleanup runs the whole
+                        // edge's cleanup inline, innermost first. Jumping to a
+                        // rung for an inner scope would skip this scope's
+                        // actions, and running this scope before an inner rung
+                        // would invert the cleanup order — a deferred `break`
+                        // here would preempt the rung jump entirely. A scope
+                        // that owns no cleanup contributes nothing, so inner
+                        // rungs stay deferred to the ladder.
+                        let owns_cleanup = self
+                            .scope_actions
+                            .get(scope)
+                            .is_some_and(|actions| !actions.is_empty());
+                        if owns_cleanup {
+                            let inline_scopes = std::mem::take(&mut edge_scopes);
+                            for edge_scope in inline_scopes {
+                                self.emit_scope_inline(edge_scope, ctx);
+                            }
+                            self.emit_scope_inline(*scope, ctx);
+                        }
                     }
                 }
                 Statement::Drop { scope, .. } => {
@@ -401,6 +419,9 @@ impl<'a> Emitter<'a> {
         }
         self.emit_temp_releases(releases);
         if let Some(label) = jump {
+            if !self.suppress_output {
+                self.used_rung_labels.insert(label);
+            }
             self.push(&format!("    goto __cl_c{label};"));
         } else if self.return_ty.is_fixed_array() {
             // A fixed-array return lowers to a `void` function whose result
@@ -639,9 +660,24 @@ impl<'a> Emitter<'a> {
     }
 
     /// Writes the function-end cleanup ladder.
+    ///
+    /// Only rungs an early edge (or the chain from one) reaches are emitted:
+    /// an edge that ran its scopes inline leaves its outer rungs unreachable,
+    /// and a defined-but-unused label fails the strict build. The chain runs
+    /// through the emitted rungs in order and ends at the function tail.
     pub(super) fn emit_ladder(&mut self) {
         let rungs = self.rungs.clone();
-        for (index, scope) in rungs.iter().enumerate() {
+        // A directly reached rung keeps every outer rung alive through the
+        // chain, so the emitted set starts at the innermost reached label.
+        let Some(start) = self.used_rung_labels.iter().min().copied() else {
+            return;
+        };
+        let emitted: Vec<usize> = rungs
+            .iter()
+            .copied()
+            .filter(|scope| self.labels[scope] >= start)
+            .collect();
+        for (index, scope) in emitted.iter().enumerate() {
             let label = self.labels[scope];
             self.emit_line_for_scope(*scope);
             self.push(&format!("__cl_c{label}:"));
@@ -651,8 +687,8 @@ impl<'a> Emitter<'a> {
             // deferred bodies carry an out-edge never takes a rung (the rung
             // filter keeps it inline).
             self.emit_actions(&actions, FlowContext::default());
-            if index + 1 < rungs.len() {
-                let next = self.labels[&rungs[index + 1]];
+            if index + 1 < emitted.len() {
+                let next = self.labels[&emitted[index + 1]];
                 self.push(&format!("    goto __cl_c{next};"));
             } else if self.return_ty.is_fixed_array() {
                 // The result already sits in the caller's out-parameter and

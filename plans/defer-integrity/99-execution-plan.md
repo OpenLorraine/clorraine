@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 16:27
-> **Progress**: 14/32 tasks (44%)
+> **Last Updated**: 2026-10-09 16:41
+> **Progress**: 17/32 tasks (53%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -204,14 +204,26 @@ freestanding profiles and runs correctly; `make check` green.
 **Reference**: [03-02](03-02-bounded-closure-and-context.md) §Testing Requirements
 **Objective**: Pin the bounded copy, the edge spelling, and the guard; review the phase.
 
-- [ ] 2.3.1 Write implementation tests for the bounded copy (no outer block inside it), the `continue;`/`break;` spelling, and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs`
-- [ ] 2.3.2 Run the host-ASan and strict-build probes for ST-5 – ST-7, the rung guard probe, and `make check`
-- [ ] 2.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff
+- [x] 2.3.1 Write implementation tests for the bounded copy (no outer block inside it), the `continue;`/`break;` spelling, and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs` ✅ (completed: 2026-10-09 16:41)
+- [x] 2.3.2 Run the host-ASan and strict-build probes for ST-5 – ST-7, the rung guard probe, and `make check` ✅ (completed: 2026-10-09 16:41)
+- [x] 2.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-09 16:41)
+
+**Phase 2 review findings and fixes (2026-10-09 16:41)** — the memory-safety and semantics
+reviewers covered the pulled-forward mechanism (the correctness and emission lenses were covered by
+the Phase 1 fix re-review on the same diff). The memory audit is clean across the loop forms,
+owned locals, nested defers, moves, and the guard-forced inline scopes. The semantics review found
+one critical ordering defect, fixed immediately:
+
+| ID | Severity | Finding | Resolution |
+| -- | -------- | ------- | ---------- |
+| SR-001 | 🔴 CRITICAL | The rung guard inverted the cleanup order when an inner scope kept a rung: a guard-excluded outer scope ran inline before the inner rung, and its deferred `break` preempted the rung jump, skipping the inner cleanup and return store. | ✅ Fixed: an inline scope that owns cleanup flushes the edge's inner rungs inline, innermost first; the ladder emits only rungs an edge (or the chain) reaches. Pinned by the impl suite; the SR-001 shape answers 111. |
+| (side effect) | — | The pre-existing PRE-1 unused-rung label (`break` out of a non-loop scope owning cleanup) is naturally resolved by the used-rung emission: the unreachable rung is no longer emitted. | ✅ Verified: the shape builds strict. |
+| (regression found during the fix) | 🔴 | The first flush attempt fired for action-less outer scopes, inlining inner rungs everywhere and reintroducing the store-before-release bug (`ai2` and the array suite failed). | ✅ Fixed: the flush runs only for scopes that own cleanup; the full workspace is green. |
 
 **Deliverables**:
-- [ ] Implementation suite for the bounded copy
-- [ ] Clean probe matrix (including the rung sibling outcome)
-- [ ] Phase review with no open critical/major finding
+- [x] Implementation suite for the bounded copy
+- [x] Clean probe matrix (including the rung sibling outcome)
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 

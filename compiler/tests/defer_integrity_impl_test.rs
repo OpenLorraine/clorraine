@@ -489,3 +489,79 @@ func main(): i32 {
     let output = run_host("defer-impl7-run", source);
     assert_exit("defer-impl7-run", &output, 10);
 }
+
+/// A deferred loop edge prints as the enclosing loop's C statement, and the
+/// copy stays inside its own blocks.
+///
+/// The do-while body's deferred `continue` must reach the loop's condition
+/// edge as a plain `continue;` — the copy is bounded to its own block range,
+/// so no label machinery (and no outer block) leaks into it. The loop leaves
+/// with `i == 3`.
+#[test]
+fn should_emit_the_loop_edge_inside_a_deferred_copy() {
+    let source = r#"module spec.defer_integrity.impl8;
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        defer {
+            if (i == 1) {
+                continue;
+            }
+        }
+        i = i + 1;
+    } while (i < 3);
+    return i;
+}
+"#;
+    let emitted = emit_host("defer-impl8", source);
+    assert_contains("defer-impl8", &emitted, "continue;");
+    assert!(
+        !emitted.contains("goto __cl_b"),
+        "defer-impl8: the bounded copy must not need a label"
+    );
+    let output = run_host("defer-impl8-run", source);
+    assert_exit("defer-impl8-run", &output, 3);
+}
+
+/// A guard-excluded outer scope's cleanup runs after an inner rung's cleanup.
+///
+/// The switch arm registers an outer defer with a `break` (no rung — it runs
+/// inline) and an inner block whose defer keeps a rung. The inner cleanup must
+/// run first (innermost first), so the inner block's `return` edge must not be
+/// preempted by the outer inline `break`. The program answers 111: the inner
+/// defer adds one, the outer adds ten and leaves the switch, and the function
+/// falls out of the switch.
+#[test]
+fn should_keep_the_cleanup_order_when_an_inner_scope_keeps_a_rung() {
+    let source = r#"module spec.defer_integrity.impl9;
+
+let order: i32 = 0;
+
+func f(k: i32): i32 {
+    switch (k) {
+    case 1: {
+        defer {
+            order = order + 10;
+            break;
+        }
+        {
+            defer {
+                order = order + 1;
+            }
+            return 0;
+        }
+    }
+    default: { }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let r: i32 = f(1);
+    return (r + 100) + order;
+}
+"#;
+    let output = run_host("defer-impl9-run", source);
+    assert_exit("defer-impl9-run", &output, 111);
+}
