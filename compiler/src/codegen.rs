@@ -575,18 +575,37 @@ impl<'a> Emitter<'a> {
                     .map(|param| param.name.clone())
                     .collect()
             });
-        decl.params
-            .iter()
-            .enumerate()
-            .map(|(index, param)| {
-                let name = ir_names
-                    .as_ref()
-                    .and_then(|names| names.get(index))
-                    .map(String::as_str)
-                    .unwrap_or(param.name.as_str());
-                sanitize_identifier(name)
-            })
-            .collect()
+        match &ir_names {
+            Some(names) => self.unique_param_names(names.iter().map(String::as_str)),
+            None => self.unique_param_names(decl.params.iter().map(|param| param.name.as_str())),
+        }
+    }
+
+    /// The unique C names of a parameter list, in declaration order.
+    ///
+    /// Each name is sanitized and then de-duplicated against the names
+    /// assigned before it, so a masked spelling (`give#0` becoming `give_0`)
+    /// can never collide with a literally-named sibling parameter. The emitted
+    /// signature, the local-name table, and the pointer-param keys resolve
+    /// through this one pass, so they agree by construction.
+    pub(super) fn unique_param_names<'n>(
+        &self,
+        names: impl Iterator<Item = &'n str>,
+    ) -> Vec<String> {
+        let mut used: BTreeSet<String> = BTreeSet::new();
+        let mut resolved: Vec<String> = Vec::new();
+        for name in names {
+            let base = sanitize_identifier(name);
+            let mut candidate = base.clone();
+            let mut counter = 1;
+            while used.contains(&candidate) {
+                candidate = format!("{base}_{counter}");
+                counter += 1;
+            }
+            used.insert(candidate.clone());
+            resolved.push(candidate);
+        }
+        resolved
     }
 
     /// Resolves a called function name against the emitting module.

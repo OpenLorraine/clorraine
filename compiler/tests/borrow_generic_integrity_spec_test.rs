@@ -1296,3 +1296,29 @@ func main(): i32 {
     let output = run_host("maylend-mixed", source);
     assert_exit("maylend-mixed", &output, 43);
 }
+
+/// A masked parameter name cannot collide with a literally-named sibling.
+///
+/// A parameter named like a module callee keeps a masked IR spelling whose
+/// sanitized C form (`give_0`) could equal a sibling parameter's literal name;
+/// the emitted names must stay unique, so the program builds and runs. `give`
+/// holds one and `give_0` holds two, so the run exits with three.
+#[test]
+fn should_distinguish_a_masked_parameter_from_a_literal_suffixed_sibling() {
+    let source = r#"module spec.bgi.paramcollide;
+
+func give(v: i32): i32 {
+    return v + 1;
+}
+
+func demo(give: i32, give_0: i32): i32 {
+    return give + give_0;
+}
+
+func main(): i32 {
+    return demo(1, 2);
+}
+"#;
+    let output = run_host("param-collide", source);
+    assert_exit("param-collide", &output, 3);
+}

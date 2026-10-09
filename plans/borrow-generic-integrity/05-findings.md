@@ -25,6 +25,12 @@ evidence lives in the reviewers' reports and in the dispositions below.
 | Field-rooted narrowing conservatism | 3 | note | an element write through a narrowed field view keeps the read-back rejected | accepted — conservative, mirrors the pre-existing field-write behavior |
 | SR-002 / RV-001 | 3 | MINOR (re-review) | the nullable-unknown proxy also matches a binding initialized from `null` | accepted — the predicate doc states the exact rule; tied to DEF-108 |
 | RV-002 | 3 | MINOR (pre-existing) | untyped operand versus `str`/`cstring` views emits invalid C | accepted — folded into DEF-107 |
+| RV-001, SR-001, EI-P4-1 | 4 | MAJOR | masked parameter spelling collides with a literal `<callee>_<n>` sibling | fixed |
+| SR-002 | 4 | MAJOR (pre-existing) | captured func-typed binding named like a lender under-binds and leaks | deferred — filed DEF-109 |
+| SR-OBS-1 | 4 | MINOR (pre-existing) | an unbound type-parameter call emits invalid C | deferred — filed DEF-110 |
+| Memory observation (o8) | 4 | MAJOR (pre-existing) | generic borrow field projection folds `len` to zero | deferred — filed DEF-111 |
+| Stdlib parameter rename | 4 | note | a user callee name renames an unrelated stdlib parameter | accepted — valid C, cosmetic |
+| RV-002, RV-003, RV-004 | 4 | MINOR | bookkeeping (scope prose, suite counts, roadmap status) | fixed |
 
 ## Phase 1 dispositions (2026-10-09)
 
@@ -170,3 +176,49 @@ Two minor residuals were ruled accepted and recorded:
 - **RV-002 (MINOR, pre-existing):** an untyped operand compared with a
   `str`/`cstring` view is accepted by the operand rules and emits invalid C at
   base and head; folded into DEF-107's evidence.
+
+## Phase 4 dispositions (2026-10-09)
+
+**RV-001 / SR-001 / EI-P4-1 (MAJOR, phase-introduced, three reviewers) —
+fixed.** A parameter named like a module callee masks to `give#<index>`, whose
+sanitized C form `give_0` could equal a literally-named sibling parameter's
+spelling, so accepted source emitted a duplicate C parameter and the strict
+build failed (base emitted distinct names). Fix: one de-duplicating resolver
+(`Emitter::unique_param_names`) resolves every parameter list in declaration
+order, shared by the emitted signature, the local-name table, and the
+lifted-lambda signature, so two distinct IR bindings can never share a C
+identifier. Pinned by a new specification run (exit 3) and an implementation
+shape pin (`(i32 give_0, i32 give_0_1)`); the generic-instance and
+lifted-lambda variants rebuild and run, and `make check` plus `make verify` are
+green on the fix.
+
+**SR-002 (MAJOR, pre-existing) — deferred, DEF-109.** A *captured* func-typed
+binding named like a module lender still under-binds: the capture path sets the
+IR spelling directly (`declare_captures`, whose comment claims the name is
+never read — false when the capture is func-typed and called), so the may-lend
+gate resolves the source name to the module lender and leaks the owned result
+(10 bytes under ASan; base identical). The phase's parameter, field, and
+lambda-parameter cases are fixed; the capture kind stays open and is filed.
+
+**SR-OBS-1 (MINOR, pre-existing) — deferred, DEF-110.** `func g<T>(x: T): i32
+{ return x(5); }` is accepted with no callable bound, and the non-callable
+instance emits a call on a struct value (invalid C); base and head identical.
+
+**Generic borrow projection folds `len` to zero (MAJOR, pre-existing) —
+deferred, DEF-111.** `takeBox<T>(borrow b: T, fallback: i32)` with
+`T = Box { s: String }` and a body reading `len(b.s)` emits a folded zero, so
+the fallback returns: the recorded repro returns 3 where 7 is expected
+(reproduced at HEAD; the surfacing audit reproduced it with and without a name
+collision).
+
+**Stdlib parameter rename (note) — accepted.** The mask keys on
+`program.callee(name)`, which is program-global, so a user function named like
+a stdlib parameter renames that parameter in the emitted C (valid and
+consistent, cosmetic). Narrowing the mask to the callable's own visibility
+scope is possible future work, not a defect.
+
+**RV-002 / RV-003 / RV-004 (MINOR, bookkeeping) — fixed.** The Phase 4 scope
+prose now names the files the phase actually changed (`own/call.rs`,
+`own/lower.rs`); the verification note records the correct suite counts
+(runtime 31, call-value 61); the DEF-77 row's leak size is corrected to the
+recorded 10 bytes, and the roadmap rows flip to Done once the re-review closes.

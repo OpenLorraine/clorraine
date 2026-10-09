@@ -285,7 +285,7 @@ DEF-107). Rulings: [05-findings.md](05-findings.md).
 ## Phase 4: May-lend callee identity (DEF-77)
 
 > **Phase baseline tree**: `638ba9d5eff7c105951b23d04ed68bf9fc4882b4` (clean tree at phase start; pre-P4)
-> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/tests/call_value_integrity_impl_test.rs`, `compiler/src/own.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs`, `plans/borrow-generic-integrity/99-execution-plan.md`, `plans/borrow-generic-integrity/05-findings.md`, `plans/00-roadmap.md`, `AGENTS.md`
+> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/tests/runtime_value_integrity_impl_test.rs`, `compiler/tests/call_value_integrity_impl_test.rs`, `compiler/src/own.rs`, `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs`, `plans/borrow-generic-integrity/99-execution-plan.md`, `plans/borrow-generic-integrity/05-findings.md`, `plans/00-roadmap.md`, `AGENTS.md`
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer + emission-integrity auditor (borrow gate, IR parameter names, and emitted C names; AGENTS.md dispatch matrix; PF-001)
 > **Reasoning**: high — ownership binding semantics; the leak oracle is ASan
 
@@ -335,7 +335,9 @@ DEF-107). Rulings: [05-findings.md](05-findings.md).
 - [x] 4.3.3 Final acceptance — `make verify` (all legs) ✅ (completed: 2026-10-09 23:38)
 - [x] 4.3.4 Close-out: correct the DEF-78/DEF-79 roadmap row notes, add the two new suites to the AGENTS.md test-naming map, file the residual defects (DEF-100 generic whole-binding self-assign, DEF-101 concrete nullable out-slot return release, DEF-102 runtime-indexed out-slot element self-assign), and sync the roadmap (PF-005, PF-014; phase-1 review rulings in [05-findings.md](05-findings.md)) ✅ (completed: 2026-10-09 23:40)
 
-**Verification (2026-10-09 23:36–23:38)**: spec 27/27, impl 10/10, `make check` green, the leak probe clean under the sanitizer, and `make verify` green — "all legs passed" including every hosted-amiga cross-toolchain leg.
+**Verification (2026-10-09 23:36–23:38)**: spec 27/27, impl 10/10, `make check` green, the leak probe clean under the sanitizer, and `make verify` green — "all legs passed" including every hosted-amiga cross-toolchain leg. (The runtime implementation suite counts 31 tests and the call-value suite 61.)
+
+**Phase-4 review fix (2026-10-09 23:52)**: the review found that a masked parameter spelling (`give#0` sanitizing to `give_0`) could collide with a literally-named `give_0` sibling parameter, emitting invalid C. The emitter now resolves every parameter list through one de-duplicating resolver (`unique_param_names`), shared by the emitted signature, the local-name table, and the lifted-lambda signature, so two distinct IR bindings can never share a C identifier. Pinned by a new specification case and an implementation shape pin; the generic-instance and lifted-lambda variants rebuild and run. `make check` and `make verify` are green on the fix. See [05-findings.md](05-findings.md).
 
 **Deliverables**:
 - Implementation suite for P4
@@ -357,10 +359,12 @@ Phase 3 (nullable view comparison)
 Phase 4 (may-lend callee identity)
 ```
 
-The phases run sequentially; P1, P2, and P3 are independent in code. P4 carries the masked
-parameter spelling through `codegen/expr.rs`, which P2 also owns (the sequential order absorbs
-the overlap; PF-001). Within Phase 1, tasks 1.2.1 → 1.2.2 are sequential; 1.2.3 and 1.2.4 are
-independent of each other and of 1.2.1/1.2.2.
+The phases run sequentially; P1, P2, and P3 are independent in code. P4 carries the masked parameter
+spelling through the emitter's signature and local-name tables (`codegen.rs`,
+`codegen/function.rs`); the share with P2's `codegen/expr.rs` observed at planning time did not
+materialize because the emitter resolves the callee from the IR name (PF-001). Within Phase 1,
+tasks 1.2.1 → 1.2.2 are sequential; 1.2.3 and 1.2.4 are independent of each other and of
+1.2.1/1.2.2.
 
 ---
 

@@ -80,8 +80,9 @@ impl<'a> Emitter<'a> {
             self.result_var = Some("__cl_ret".to_owned());
         }
 
-        for param in &function.params {
-            let c_name = sanitize_identifier(&param.name);
+        let param_names = self
+            .unique_param_names(function.params.iter().map(|param| param.name.as_str()));
+        for (param, c_name) in function.params.iter().zip(param_names) {
             self.used_names.insert(c_name.clone());
             self.local_names.insert(param.name.clone(), c_name);
             let ty = self.substitute(&param.ty);
@@ -181,8 +182,9 @@ impl<'a> Emitter<'a> {
             self.result_var = Some("__cl_ret".to_owned());
         }
 
-        for param in &function.params {
-            let c_name = sanitize_identifier(&param.name);
+        let param_names = self
+            .unique_param_names(function.params.iter().map(|param| param.name.as_str()));
+        for (param, c_name) in function.params.iter().zip(param_names) {
             self.used_names.insert(c_name.clone());
             self.local_names.insert(param.name.clone(), c_name);
         }
@@ -239,15 +241,14 @@ impl<'a> Emitter<'a> {
         capturing: bool,
         symbol: &str,
     ) -> String {
+        let param_names = self
+            .unique_param_names(function.params.iter().map(|param| param.name.as_str()));
         let params: Vec<String> = function
             .params
             .iter()
-            .map(|param| {
-                declarator(
-                    &self.substitute(&param.ty),
-                    &sanitize_identifier(&param.name),
-                    &self.sema.table,
-                )
+            .zip(param_names)
+            .map(|(param, c_name)| {
+                declarator(&self.substitute(&param.ty), &c_name, &self.sema.table)
             })
             .collect();
         let env = capturing.then(|| format!("{} *__env", self.env_struct_name(site)));

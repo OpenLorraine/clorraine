@@ -484,6 +484,36 @@ func main(): i32 {
     );
 }
 
+/// Parameter C names stay unique when a masked spelling meets a literal one.
+///
+/// The masked parameter takes `give_0` and the literally-named sibling takes
+/// the de-duplicated `give_0_1`, in the signature and in the body, so two
+/// distinct IR bindings can never share a C identifier.
+#[test]
+fn should_de_duplicate_parameter_names_when_a_masked_spelling_collides() {
+    let source = r#"module spec.bgi.impl.p4paramdedup;
+
+func give(v: i32): i32 {
+    return v + 1;
+}
+
+func demo(give: i32, give_0: i32): i32 {
+    return give + give_0;
+}
+
+func main(): i32 {
+    return demo(1, 2);
+}
+"#;
+    let emitted = emit_host("p4-param-dedup", source);
+    assert_contains("p4-param-dedup", &emitted, "(i32 give_0, i32 give_0_1)");
+    assert_contains(
+        "p4-param-dedup",
+        &emitted,
+        "return (i32)((u32)give_0 + (u32)give_0_1);",
+    );
+}
+
 /// A view-versus-`null` comparison lowers to a pointer test in both orders.
 ///
 /// The emitter renders the emptiness test on the view's `ptr` field whatever
