@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:04
-> **Progress**: 9/30 tasks (30%)
+> **Last Updated**: 2026-10-09 22:22
+> **Progress**: 11/30 tasks (37%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -131,7 +131,8 @@ remaining minor notes are accepted with rationale. Rulings and evidence:
 
 ## Phase 2: Instance keys (DEF-79)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `05900efb61c9b30f361c076c9ca06bbed4c86998` (clean tree at phase start; pre-P2)
+> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/src/types/keys.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/expr.rs`, `plans/borrow-generic-integrity/99-execution-plan.md`
 > **Lenses**: correctness reviewer + memory-safety auditor + emission-integrity auditor
 > (symbol-name and emission change; AGENTS.md dispatch matrix)
 > **Reasoning**: high — C symbol/ABI spellings across the corpus
@@ -142,8 +143,10 @@ remaining minor notes are accepted with rationale. Rulings and evidence:
 **Objective**: Pin the distinct-instance behavior, the unchanged function-instance spellings, and
 determinism.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-9 – ST-12 — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-9, ST-11, and ST-10's nested clause fail on the redefinition; ST-10's top-level clause and ST-12 pass as pins)
+- [x] 2.1.1 [spec-author] Write specification tests from ST-9 – ST-12 — `compiler/tests/borrow_generic_integrity_spec_test.rs` ✅ (completed: 2026-10-09 22:22)
+- [x] 2.1.2 Run the spec suite and record the red phase (expected: ST-9, ST-11, and ST-10's nested clause fail on the redefinition; ST-10's top-level clause and ST-12 pass as pins) ✅ (completed: 2026-10-09 22:22)
+
+**Red phase** (2026-10-09 22:22, 13 passed / 3 failed — the planned set exactly): failed as expected — the distinct-struct case, the nested-and-slice case, and the nested function-instance clause, each on `error: redefinition of 'struct ClWrap__String'` from the strict host C build; passed as planned — the top-level function-instance clause and the byte-identical re-emission pin (plus all P1 cases).
 
 **Deliverables**:
 - Specification cases ST-9 – ST-12 added

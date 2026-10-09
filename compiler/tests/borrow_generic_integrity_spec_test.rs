@@ -741,3 +741,200 @@ func main(): i32 {
 "#;
     assert_rejected_once("read-only-source", source, "E10034", &["'v'"]);
 }
+
+/// Emits the same program twice into one directory and returns both units.
+///
+/// Both emissions share the source path, so their `#line` directives match and
+/// a difference between the two strings is a difference in the translation
+/// itself, not in the scratch directory name.
+fn emit_twice(tag: &str, source: &str) -> (String, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let mut emitted = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emitted.push(std::fs::read_to_string(&c_path).unwrap_or_default());
+    }
+    (emitted[0].clone(), emitted[1].clone())
+}
+
+/// Struct instances that differ only by nullability get distinct C types.
+///
+/// `Wrap<String>` and `Wrap<String?>` share one type key today, so the emitter
+/// writes two definitions of the same C type and the strict host build fails.
+/// Distinct keys make the program build, run, and read both fields: the
+/// non-nullable field measures two and the nullable field measures three, so
+/// the run exits with five.
+#[test]
+fn should_keep_struct_instances_distinct_when_they_differ_only_by_nullability() {
+    let source = r#"module spec.bgi.keys.structs;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func main(): i32 {
+    let a: Wrap<String> = Wrap<String> { v: stringOf("ab") };
+    let b: Wrap<String?> = Wrap<String?> { v: stringOf("cde") };
+    if (b.v == null) {
+        return 9;
+    }
+    return i32(len(a.v)) + i32(len(b.v));
+}
+"#;
+    let output = run_memory("keys-structs", source);
+    assert_exit("keys-structs", &output, 5);
+    assert_no_asan("keys-structs", &output);
+}
+
+/// Top-level function instances that differ only by nullability keep working.
+///
+/// A nullable top-level type argument already keyed its own symbol before the
+/// key change, so this case is a regression pin: `pick<String>` and
+/// `pick<String?>` both build and run, and the program exits with four.
+#[test]
+fn should_run_when_top_level_function_instances_differ_only_by_nullability() {
+    let source = r#"module spec.bgi.keys.picktop;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let one: i32 = pick<String>(stringOf("ab"), stringOf("cd"));
+    let two: i32 = pick<String?>(stringOf("ef"), null);
+    return one + two + 4;
+}
+"#;
+    let output = run_memory("keys-pick-top", source);
+    assert_exit("keys-pick-top", &output, 4);
+    assert_no_asan("keys-pick-top", &output);
+}
+
+/// Nested function instances that differ only by nullability get distinct
+/// symbols.
+///
+/// `pick<Wrap<String>>` and `pick<Wrap<String?>>` both key `Wrap__String`
+/// today, so their instance definitions collide and the strict host build
+/// fails. The nested nullable argument must carry its own marker inside the
+/// key; the run exits with four once both instances build.
+#[test]
+fn should_run_when_nested_function_instances_differ_only_by_nullability() {
+    let source = r#"module spec.bgi.keys.picknested;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func pick<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let a1: Wrap<String> = Wrap<String> { v: stringOf("ab") };
+    let a2: Wrap<String> = Wrap<String> { v: stringOf("cd") };
+    let one: i32 = pick<Wrap<String>>(a1, a2);
+    let b1: Wrap<String?> = Wrap<String?> { v: stringOf("ef") };
+    let b2: Wrap<String?> = Wrap<String?> { v: null };
+    let two: i32 = pick<Wrap<String?>>(b1, b2);
+    return one + two + 4;
+}
+"#;
+    let output = run_memory("keys-pick-nested", source);
+    assert_exit("keys-pick-nested", &output, 4);
+    assert_no_asan("keys-pick-nested", &output);
+}
+
+/// Instances nested two levels deep and nullable-slice instances stay
+/// distinct.
+///
+/// `Outer<Wrap<String>>` and `Outer<Wrap<String?>>` differ two levels down,
+/// and `Wrap<String[]>` and `Wrap<String[]?>` differ by the slice's own
+/// nullability. An element type is never nullable (`String?[]` is not a
+/// type), so only the slice's own flag can carry a marker. Each pair must key
+/// distinct C symbols for the strict host build to pass; the run then reads
+/// the fields and exits with four.
+#[test]
+fn should_keep_nested_and_slice_instances_distinct_when_they_differ_only_by_nullability() {
+    let source = r#"module spec.bgi.keys.nestedslice;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+struct Outer<T> {
+    w: T;
+}
+
+func main(): i32 {
+    let innerA: Wrap<String> = Wrap<String> { v: stringOf("ab") };
+    let a: Outer<Wrap<String>> = Outer<Wrap<String>> { w: innerA };
+    let innerB: Wrap<String?> = Wrap<String?> { v: null };
+    let b: Outer<Wrap<String?>> = Outer<Wrap<String?>> { w: innerB };
+    let xs: String[2] = [stringOf("a"), stringOf("b")];
+    let c: Wrap<String[]> = Wrap<String[]> { v: slice(xs, 0, 2) };
+    let d: Wrap<String[]?> = Wrap<String[]?> { v: null };
+    if (b.w.v != null) {
+        return 8;
+    }
+    return i32(len(a.w.v)) + i32(len(c.v));
+}
+"#;
+    let output = run_memory("keys-nested-slice", source);
+    assert_exit("keys-nested-slice", &output, 4);
+    assert_no_asan("keys-nested-slice", &output);
+}
+
+/// A program with nullable-argument instances re-emits byte-identically.
+///
+/// Determinism needs no state carried between emissions: two independent runs
+/// of the same accepted program must produce the same translation unit,
+/// whatever the key scheme does with the nullability marker.
+#[test]
+fn should_emit_byte_identical_units_when_a_nullable_instance_program_is_emitted_twice() {
+    let source = r#"module spec.bgi.keys.determinism;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func main(): i32 {
+    let a: Wrap<String> = Wrap<String> { v: stringOf("ab") };
+    let b: Wrap<String?> = Wrap<String?> { v: stringOf("cde") };
+    if (b.v == null) {
+        return 9;
+    }
+    return i32(len(a.v)) + i32(len(b.v));
+}
+"#;
+    let (first, second) = emit_twice("keys-determinism", source);
+    assert_eq!(
+        first, second,
+        "keys-determinism: two emissions of one program must be byte-identical"
+    );
+}
