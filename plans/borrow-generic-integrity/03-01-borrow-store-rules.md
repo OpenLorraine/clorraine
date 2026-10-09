@@ -45,23 +45,41 @@ resolved and before the store is emitted:
 3. Every other target keeps today's behavior: `BindingKind::OutSlot` accepts the store (the
    nullable out-parameter is the caller's slot), duplicable and view types accept it, and
    unmarked/`const` parameters keep the existing read-only-write rule.
+4. The sibling not-lend audit (`check_not_lend_requirements`) exempts nullable substitutions the
+   same way the store exemption does: the concrete `borrow v: String?` spelling is legal today,
+   and the generic `borrow v: T` at `T = String?` must stay legal too (PF-006). The audit's
+   existing duplicable carve-out gains a `substituted.nullable` clause, and an ST pins the
+   generic nullable acceptance.
 
-**One report per assignment site (AR-13).** A site whose right side is itself a lend-place move
-already judged by `move_place` (concrete) or by the `RequiresNotLend` duty (parameter-typed) must
-not produce a second `E10034`. State the invariant as an assertion in the spec tests; the
-implementation may reach it by not recording/reporting the target-side judgment when the right
-side's move effects already judge the same site.
+**One report per assignment site (AR-13, PF-004).** A site whose right side is itself a lend-place
+move already judged by `move_place` (concrete) or by the `RequiresNotLend` duty
+(parameter-typed) must not produce a second `E10034`. The selected mechanism is a recording-time
+skip: the target-side judgment is skipped when the right side's move sources are lend-place moves
+already judged by the existing path — `BindingKind::Param` with mode `None`/`Const`/`Borrow`, or
+parameter-typed sources owing a not-lend duty at the same span (mirroring `move_place`'s exact
+reporting set; do not broaden to `OutSlot` sources). ST-3 asserts exactly one `E10034` for both
+the concrete and the generic both-borrow spellings.
 
-**DEF-82 (R4).** In the same whole-binding branch, when the target binding is
-`BindingKind::OutSlot` and the right side is exactly the target place (same binding, same
-projections), report `E10020` with the existing message (`'{name}' was moved and cannot be
-used`) — the same diagnostic a local self-assignment receives. The rule is whole-binding only;
-projected self-assignment on an out-slot is unreachable because nullable-capable kinds (handles,
-`raw`, `cstring`, views) expose no owned members.
+**DEF-82 (R4, PF-005).** When the target is a `BindingKind::OutSlot` root and the right side is
+exactly the target place — same binding **and** equal projections — report `E10020` with the
+existing message (`'{name}' was moved and cannot be used`), the diagnostic a local moved-value
+use receives. This covers the whole-binding form (`slot = slot`) and the exact projected form
+(`slot[0] = slot[0]`), which this batch's P3 makes expressible for `T[]?` (indexing a nullable
+slice requires narrowing). Corrected boundary, replacing the earlier "projected self-assign is
+unreachable" claim: concrete owning element moves through an out-slot root are stopped by the
+`E10026` element-move limit, and non-nullable lend roots by the not-lend duty; the substituted
+maybe-owning element under an out-slot root records no duty, so the exact self-assign rule above
+covers the shape this batch unlocks. The runtime-indexed variant (`xs[i] = xs[i]`) remains
+unguarded and is a filed residual. ST-7 carries the projected clause (tested at P3).
 
-**DEF-83 (R5).** In `own/call_check.rs`'s borrow-argument arm, skip the `W10001` warning when the
-parameter is a nullable borrow — the same predicate `declare_param` uses (`mode == Borrow` and
-the parameter type is nullable). A non-nullable duplicable lend (`borrow i32`) still warns.
+**DEF-83 (R5, PF-002).** In `own/call_check.rs`'s borrow-argument arm, skip the `W10001` warning
+when the effective parameter is a nullable borrow — `mode == Borrow` and the *substituted*
+parameter type nullable, where the substitution is explicit or inferred. Compute the call's
+inferred bindings once (the same `infer_call_types` the lowering uses, passed down from the call
+check) so an inferred `setIt(p, borrow r)` with `raw u8?` is exempt exactly like the explicit
+`setIt<raw u8?>(...)` spelling; warn only when the substituted type is duplicable, not a view,
+and not nullable. A non-nullable duplicable lend (`borrow i32`, explicit or inferred) still
+warns.
 
 ## Implementation Details
 
@@ -88,6 +106,10 @@ next to `check_not_lend_requirements` and `check_out_slot_requirements` (AR-5).
 - `own/instance_check.rs` — `check_storable_slot_requirements`: substitute each instance's type
   arguments into the recorded slot type, report `E10034` for the first non-nullable owning
   substitution, skip nullable substitutions (out-slots) and duplicable substitutions.
+- `ir.rs` re-export and `own.rs` plumbing — the new duty record joins the existing collection
+  (checker fields, constructor, `check` return tuple, module-level collection loop; PF-013).
+- `own/instance_check.rs` — `check_not_lend_requirements` gains the nullable-substitution
+  exemption (PF-006).
 
 ### Integration Points
 
@@ -120,7 +142,10 @@ func self(borrow slot: String?): void { slot = slot; }           // E10020
 | Owning store into a concrete lend parameter | `E10034`, existing message/help | AR-2, AR-13 |
 | Owning store into a parameter-typed lend parameter | `RequiresStorableSlot` duty; `E10034` per offending instance | AR-2, AR-5 |
 | Out-slot self-assignment | `E10020`, existing message | AR-8 |
+| Exact projected out-slot self-assignment | `E10020`, same as the whole-binding form | PF-005 |
 | Nullable borrow parameter | No `W10001` | AR-9 |
+| Inferred nullable borrow argument | No `W10001` (the substituted type is consulted) | PF-002 |
+| Nullable substitution in a generic lend/store | Accepted — both audits exempt it | PF-006 |
 | Duplicable lend store | Unchanged (accepted; `W10001` at the call) | AR-2 |
 | Unmarked/`const` parameter write | Unchanged (existing read-only rule) | AR-13 |
 
@@ -130,8 +155,9 @@ func self(borrow slot: String?): void { slot = slot; }           // E10020
 ## Testing Requirements
 
 - Specification tests ST-1 – ST-8 ([07-testing-strategy.md](07-testing-strategy.md)): rejection
-  shapes, the duplicable and nullable acceptance shapes, the one-report pins, and the warning
-  exemption.
+  shapes, the duplicable and nullable acceptance shapes (concrete and generic), the one-report
+  pins (ST-3 concrete and generic), the inferred warning exemption, and the projected self-assign
+  clause of ST-7 (exercised at P3).
 - Host-ASan probes for the accepted store shapes (the `T[]?` out-slot write and the duplicable
   lend) prove no leak or double free.
 - Implementation tests pin the emitted shape for the accepted out-slot stores and the absence of

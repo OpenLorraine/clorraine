@@ -14,37 +14,55 @@
 | AR-3 | Technical | DEF-77: how the may-lend gate makes callee identity unambiguous | Extend the callee-name guard (recommended) / IR callee-kind marker | **User:** confirmed — extend `unique_ir_name`'s callee-masking guard to every binding kind whose IR name can be a lowered callee. | ✅ Resolved |
 | AR-4 | Technical | DEF-79: where nullability enters the type key | In `type_key` itself (recommended) / struct-instance key only | **User:** confirmed — fold nullability into `type_key`; keep the existing `Q` suffix; preserve the text-conversion helper spelling by clearing the flag at that consumer. | ✅ Resolved |
 | AR-5 | Naming | DEF-78: name and shape of the per-instance store duty | `RequiresStorableSlot` / reuse `RequiresNotLend` with a flag / generalized store-policy enum | **AI — delegated (eligible: internal interface)** → `ir::RequiresStorableSlot { function, parameter, ty, span }`, audited in `own/instance_check.rs`. See notes. | ✅ Resolved (delegated) |
-| AR-6 | Technical | DEF-79: disposition of `instance_arg_key` after the key change | Remove (use `type_key`) / keep as a delegation | **AI — delegated (eligible: internal interface, DRY)** → remove it; its three call sites call `type_key` directly. See notes. | ✅ Resolved (delegated) |
-| AR-7 | Behavioral | DEF-81: the exact comparison rule for views | View-vs-`null` only (recommended) / general view equality | **User:** confirmed — `==`/`!=` accept a view with `null` in either order; `view == view` stays `E10222`. Derived: the view's own nullability does not restrict the comparison (consistent with the handle path). | ✅ Resolved |
-| AR-8 | Behavioral | DEF-82: out-slot self-assignment semantics | Reject with `E10020` (recommended) / no-op | **User:** confirmed — reject `slot = slot` with the existing `E10020` message, the same as locals. Whole-binding coverage; projected self-assign is unreachable for out-slot kinds (`T?` is pointer-like only). | ✅ Resolved |
+| AR-6 | Technical | DEF-79: disposition of `instance_arg_key` after the key change | Remove (use `type_key`) / keep as a delegation | **AI — delegated (eligible: internal interface, DRY)** → remove it; its two call sites (`codegen.rs`, `codegen/expr.rs`) call `type_key` directly. See notes. | ✅ Resolved (delegated) |
+| AR-7 | Behavioral | DEF-81: the exact comparison rule for views | View-vs-`null` only (recommended) / general view equality | **User:** confirmed — `==`/`!=` accept a view with `null` in either order; slice-view `==` slice-view stays `E10222` (PF-010: non-slice views already compare). Derived: the view's own nullability does not restrict the comparison (consistent with the handle path). | ✅ Resolved |
+| AR-8 | Behavioral | DEF-82: out-slot self-assignment semantics | Reject with `E10020` (recommended) / no-op | **User:** confirmed — reject `slot = slot` with the existing `E10020` message, the same as locals. Coverage: whole-binding and exact projected self-assignment (preflight PF-005 corrected the original "unreachable" premise — P3 unlocks the slice form; user ruling B). | ✅ Resolved |
 | AR-9 | Behavioral | DEF-83: which parameters the `W10001` exemption covers | All nullable borrow params (recommended) / `raw?` only | **User:** confirmed — exempt every nullable borrow (out-slot) parameter. | ✅ Resolved |
 | AR-10 | Scope / process | Whether `spec/` may change | Keep `spec/` untouched (recommended) / add clarifications | **User:** confirmed — `spec/` stays byte-identical; the plan cites T8, OW-16/FN-7, D9, and the out-param carve-out and conforms the implementation. | ✅ Resolved |
 | AR-11 | Sequencing | Phase structure for the execution plan | 4 phases (recommended) / one per defect | **User:** confirmed — P1 DEF-78+82+83, P2 DEF-79, P3 DEF-81, P4 DEF-77. | ✅ Resolved |
-| AR-12 | Testing | Verify command and test-file layout | Confirm (recommended) / different | **User:** confirmed — `make check` per phase; host-ASan probes for P1; strict host build check for P2; `make verify` final; suites `compiler/tests/borrow_generic_integrity_spec_test.rs` and `borrow_generic_integrity_impl_test.rs`. | ✅ Resolved |
-| AR-13 | Technical | DEF-78: check placement and interaction with the existing lend-move duty | Site rules (see notes) | **AI — delegated (eligible: compiler mechanism)** → whole-binding `Mode::Borrow` parameters only; the check runs in the ownership assignment path before the store is emitted; the per-instance duty is recorded at the same site; at most one `E10034` per assignment site (deduped against the existing lend-move duty); field and element stores keep their existing rules. See notes. | ✅ Resolved (delegated) |
+| AR-12 | Testing | Verify command and test-file layout | Confirm (recommended) / different | **User:** confirmed — `make check` per phase; host-ASan probes for P1 and P4 (preflight PF-007: `RDC_ASAN=1` inside the container command, since a plain run cannot observe a leak; run memory probes individually); strict host build check for P2; `make verify` final; suites `compiler/tests/borrow_generic_integrity_spec_test.rs` and `borrow_generic_integrity_impl_test.rs`. | ✅ Resolved |
+| AR-13 | Technical | DEF-78: check placement and interaction with the existing lend-move duty | Site rules (see notes) | **AI — delegated (eligible: compiler mechanism)** → whole-binding `Mode::Borrow` parameters, plus exact projected self-assign on out-slot roots (PF-005); the check runs in the ownership assignment path before the store is emitted; the per-instance duty is recorded at the same site; at most one `E10034` per assignment site — the target-side judgment is skipped when the right side's move sources are lend-place moves already judged by the existing path (`Param` ∧ mode ∈ {None, Const, Borrow}, including parameter-typed sources owing a not-lend duty at the same span; PF-004); field and element stores otherwise keep their existing rules. See notes. | ✅ Resolved (delegated) |
 
 ## Resolution Notes
 
 **AR-2 (derived facts):** the storage predicate mirrors `owns_drop` in
 `compiler/src/own.rs` (`!duplicable`, not a view, not unknown). Legal-shape pins that must stay
 accepted: `borrow i32` stores (warning-only today) and the nullable out-slot forms pinned by the
-existing `p3f2`/`p3r26`/`inst-slot` cases.
+existing `p3f2`/`p3r26`/`inst-slot` cases. Preflight PF-006 extends the same nullable exemption to
+the sibling not-lend audit (`check_not_lend_requirements`), which otherwise still rejects the
+generic spelling at a nullable substitution; see the preflight report.
+
+**AR-3 (preflight PF-001):** the confirmed mask mechanism is unchanged, but its plumbing surface
+is larger than "one condition": the masked parameter spelling must reach `ir::Param`, the C
+definition signature, the local-name and pointer-param tables, and the func/closure lookups
+(`03-04` carries the detail). Two existing pinned tests update; Phase 4 adds the
+emission-integrity reviewer.
 
 **AR-4 (derived facts):** the text-conversion fallback
 (`compiler/src/codegen/expr.rs:771`) clears the flag before calling `type_key`; the runtime
 helpers (`cl_text_*` in `compiler/runtime/shim_host.c`) keep their fixed names. The `Q` marker
-keeps the function-instance spellings byte-identical (`instance_arg_key` today produces the same
-`StringQ` form).
+keeps the *top-level* function-instance spellings byte-identical (`instance_arg_key` today
+produces the same `StringQ` form). Preflight PF-003: nested nullable arguments change spelling
+(they gain `Q` recursively; today `Wrap<String>` and `Wrap<String?>` collide on one symbol) — R7
+is narrowed to top-level arguments. Preflight PF-009: slice element types cannot be nullable, so
+slice keys never gain the marker.
 
 **AR-7 (derived facts):** the narrowing machinery is type-agnostic and needs no view-specific
 change — `own/place.rs` (`narrowing`) matches any `x == null` / `!= null` shape and
 `own/statements.rs` (`apply_narrowing`) records a narrowed place path; the emitter's
 `view_null_test` (`compiler/src/codegen/expr.rs`) already lowers the `.ptr` test. The sema
-operator rule is the only blocker.
+operator rule is the only blocker. Preflight PF-010: the preserved rejection is *slice*-view
+versus slice-view; `str`/`static str`/`cstring` already compare today (a pre-existing acceptance
+outside the batch's scope).
 
-**AR-8 (derived facts):** reference behavior verified — a local `s = s` is rejected
-`E10020: 's' was moved and cannot be used`; the out-slot case is accepted today and empties the
-caller's storage (probe exits 1 where the value should survive).
+**AR-8 (derived facts):** reference behavior verified — a local `s = s;` alone compiles; the
+`E10020: 's' was moved and cannot be used` diagnostic fires at the later *use* of the moved
+binding (the store-site rule reuses the same code and message). The out-slot case is accepted
+today and empties the caller's storage (probe exits 1 where the value should survive). Preflight
+PF-005: the "projected self-assign unreachable" premise is false — slices expose elements and
+this batch's own P3 unlocks `if (xs != null) { xs[0] = xs[0]; }` on `T[]?`; the rule extends to
+exact projected self-assign on out-slot roots (user ruling B). The runtime-indexed
+`xs[i] = xs[i]` variant remains unguarded and is filed as a residual at close-out.
 
 **AR-5 (delegated):**
 
@@ -69,7 +87,7 @@ Reopen triggers: a third store-like duty appears, or review finds the record can
 Authority: AI — delegated by --auto-design
 Eligibility: internal interface; implementation mechanism
 Objective: one rule for one fact — instance keys include nullability
-Decision: remove instance_arg_key; its three call sites use type_key directly
+Decision: remove instance_arg_key; its two call sites (compiler/src/codegen.rs, compiler/src/codegen/expr.rs) use type_key directly
 Evidence: compiler/src/codegen/types.rs:53 is a one-line wrapper today; with AR-4 it duplicates the same rule
 Rejected alternatives: keep it as a thin delegation — two names for one rule invite drift; keep and special-case — no second behavior remains to preserve
 Strongest counterargument: the name documents instance intent at the call sites; the component doc names those sites instead
@@ -90,7 +108,7 @@ Decision: in the ownership assignment path (own/expr.rs check_assign, whole-bind
 Evidence: own/expr.rs check_assign (whole-binding branch); own/place.rs move_place (the existing release/store rule, reachable for moves but not stores); own/statements.rs emit_store; the duty recorders at own/place.rs (mark_moved_if_owning, record_requires_duplicable) and the audit at own/instance_check.rs
 Rejected alternatives: suppress the target release in the emitter for lend params — accepts a statement the spec forbids (OW-16) and leaves the stored copy unreleased; reject every parameter-typed store at the declaration site — over-rejects the legal nullable instances (p3r26, inst-slot)
 Strongest counterargument: the check restates part of move_place's rule at another stage; the two guard different operations (release vs store) that the spec words together, so a shared helper may be warranted if review finds drift
-Confidence: Med-High — placement traced through the assignment and emission paths; the dedupe shape is exercised by the ST-1/ST-4 pairs
+Confidence: Med-High — placement traced through the assignment and emission paths; the one-report shape is exercised by ST-3 (both its concrete and generic both-borrow clauses, per PF-004)
 Hardening: not required — bounded internal mechanism; P1 carries correctness and memory-safety reviews and an ASan probe
 Policy version: 1
 Root invocation ID: ad-borrow-generic-integrity-20261009
@@ -106,10 +124,11 @@ Reopen triggers: a store shape reaches the target release without passing check_
 | Scope ambiguities | AR-1, AR-10 |
 | Technical unknowns | AR-3, AR-4, AR-6, AR-13 |
 | Edge cases | AR-2 (duplicable/nullable boundaries), AR-7 (non-nullable view), AR-8 (whole-binding reach) |
-| Integration points | Clear — compiler-internal stages only; the emitted-C ABI/name changes are covered by P2's emission sweep |
+| Integration points | Clear — compiler-internal stages only; the emitted-C ABI/name changes are covered by P2's and P4's emission reviews (PF-001) |
 | Data & state | Clear — no persisted data, no migration surface |
-| Security & compliance | Clear — no input, auth, secrets, or network surface; memory safety is the host-ASan control in P1 |
+| Security & compliance | Clear — no input, auth, secrets, or network surface; memory safety is the host-ASan control in P1 and P4 (PF-007) |
 | Non-functional | Clear — no performance targets; emission determinism stays pinned by the existing re-emission tests |
 | UX & presentation | Items recorded (AR-8, AR-9) — diagnostics and the warning behavior; no new message text |
 | Stakeholder conflicts | Clear — priorities set by the confirmed scope |
+| Sequencing (AR-11) | Decided by the plan-structure decision (four phases, specification-first; PF-017) |
 | Naming & terminology | Items recorded (AR-1 folder, AR-5 duty, AR-12 suites; AR-4 marker) |

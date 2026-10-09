@@ -32,9 +32,11 @@ detect the view-versus-`null` pairing: when one operand is a view (`is_view` in
 the null type (`TyKind::Unknown`), accept the comparison. Every other combination keeps today's
 rule:
 
-- `view == view` (neither side null) stays `E10222` on the view operand;
+- slice-view `==` slice-view (neither side null) stays `E10222` on the view operand; `str`,
+  `static str`, and `cstring` already compare today (a pre-existing acceptance outside this
+  batch; PF-010);
 - ordering (`<`, `<=`, `>`, `>=`) on a view stays `E10222`;
-- handle, `str`, and scalar comparisons are unchanged.
+- handle and scalar comparisons are unchanged.
 
 The view's own nullability does not restrict the pairing (AR-7): a non-nullable view compared
 with `null` is accepted, consistent with the handle path.
@@ -62,7 +64,7 @@ func firstOr(xs: u8[]?, fallback: u8): u8 {
     return fallback;
 }
 
-// Rejected: two views have no defined equality.
+// Rejected: two slice views have no defined equality.
 // let same: bool = xs == ys;   // E10222
 ```
 
@@ -71,7 +73,7 @@ func firstOr(xs: u8[]?, fallback: u8): u8 {
 | Error Case | Handling Strategy | AR Ref |
 | ---------- | ----------------- | ------ |
 | View versus `null` (either order, any view nullability) | Accepted | AR-7 |
-| View versus view | `E10222`, unchanged | AR-7 |
+| Slice-view versus slice-view | `E10222`, unchanged (non-slice views already compare; PF-010) | AR-7 |
 | View ordering | `E10222`, unchanged | AR-7 |
 | Handle/`str`/scalar comparisons | Unchanged | — |
 

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-09 20:23
-> **Progress**: 0/29 tasks (0%)
+> **Progress**: 0/30 tasks (0%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -25,9 +25,9 @@ ordering and cites its owning [03-XX](00-index.md) document and the ST-cases in
 | 1 | Borrow-store rules (DEF-78, DEF-82, DEF-83) | 9 |
 | 2 | Instance keys (DEF-79) | 7 |
 | 3 | Nullable view comparison (DEF-81) | 6 |
-| 4 | May-lend callee identity (DEF-77) | 7 |
+| 4 | May-lend callee identity (DEF-77) | 8 |
 
-**Total: 29 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
+**Total: 30 tasks across 4 phases** (no fabricated hour estimates — scope is bounded by the
 task-size criteria in the make-plan quality checklist)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
@@ -65,7 +65,7 @@ task-size criteria in the make-plan quality checklist)
 implementation.
 
 - [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-8 — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 – ST-4, ST-7, ST-8 fail; ST-5, ST-6 pass as legal-shape regression pins)
+- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1, ST-2, ST-4, ST-7, ST-8 fail; ST-3 passes (the dedupe pin, both spellings), ST-5 passes, and ST-6's concrete clauses pass while its generic-nullable clause fails; PF-004, PF-006)
 
 **Deliverables**:
 - Specification suite with ST-1 – ST-8
@@ -81,17 +81,17 @@ implementation.
 **Objective**: Implement the target-side store rule, the duty audit, the out-slot self-assign
 rejection, and the warning exemption.
 
-- [ ] 1.2.1 [DEF-78] Record `RequiresStorableSlot` and reject the concrete owning store — `compiler/src/ir/mono.rs`, `compiler/src/own/expr.rs`
-- [ ] 1.2.2 [DEF-78] Audit the duty per instance — `compiler/src/own/instance_check.rs`
-- [ ] 1.2.3 [DEF-82] Reject the whole-binding out-slot self-assignment — `compiler/src/own/expr.rs`
-- [ ] 1.2.4 [DEF-83] Exempt nullable borrow parameters from `W10001` — `compiler/src/own/call_check.rs`
-- [ ] 1.2.5 Run the spec suite to green (ST-1 – ST-8) and the host-ASan probes for ST-6; on any failure STOP and fix the implementation, never the test
+- [ ] 1.2.1 [DEF-78] Record `RequiresStorableSlot` and reject the concrete owning store, with the recording-time dedupe — `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`, `compiler/src/own/expr.rs`
+- [ ] 1.2.2 [DEF-78] Audit the duty per instance and exempt nullable substitutions in the not-lend audit — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs`
+- [ ] 1.2.3 [DEF-82] Reject the whole-binding and exact projected out-slot self-assignment — `compiler/src/own/expr.rs`
+- [ ] 1.2.4 [DEF-83] Exempt nullable borrow parameters from `W10001` using the effective (explicit or inferred) parameter type — `compiler/src/own/call_check.rs`, `compiler/src/own/call.rs`
+- [ ] 1.2.5 Run the spec suite to green (ST-1 – ST-8) and the host-ASan probes for ST-6 (`RDC_ASAN=1` inside the container command; run probes individually — the full-suite sanitizer run is flaky); on any failure STOP and fix the implementation, never the test
 
 **Deliverables**:
-- The four source changes
+- The source changes
 - Green spec suite and clean ASan probes
 
-**Verify**: `make -C docker exec CMD="cargo test --test borrow_generic_integrity_spec_test"`
+**Verify**: `make -C docker exec CMD="cargo test --test borrow_generic_integrity_spec_test"` and, for the memory cases, `make -C docker exec CMD="RDC_ASAN=1 cargo test --test borrow_generic_integrity_spec_test"`
 
 ---
 
@@ -100,7 +100,7 @@ rejection, and the warning exemption.
 **Reference**: [03-01](03-01-borrow-store-rules.md) §Testing Requirements
 **Objective**: Pin the internal shapes and run the phase verification.
 
-- [ ] 1.3.1 Write implementation tests (emitted out-slot store shapes, one-report counts, duty dedupe) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
+- [ ] 1.3.1 Write implementation tests (emitted out-slot store shapes; a loop-body store reporting exactly one `E10034`; no duplicated counts) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
 - [ ] 1.3.2 Full phase verification — `make check`
 
 **Deliverables**:
@@ -125,7 +125,7 @@ rejection, and the warning exemption.
 determinism.
 
 - [ ] 2.1.1 [spec-author] Write specification tests from ST-9 – ST-12 — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-9, ST-11 fail on the redefinition; ST-10, ST-12 pass as pins)
+- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-9, ST-11, and ST-10's nested clause fail on the redefinition; ST-10's top-level clause and ST-12 pass as pins)
 
 **Deliverables**:
 - Specification cases ST-9 – ST-12 added
@@ -141,8 +141,8 @@ determinism.
 **Objective**: Fold nullability into the key and remove the wrapper.
 
 - [ ] 2.2.1 Fold nullability into `type_key`; preserve the text-conversion spelling — `compiler/src/types/keys.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 2.2.2 Remove `instance_arg_key`; point its call sites at `type_key` — `compiler/src/codegen/types.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 2.2.3 Run the spec suite to green (ST-9 – ST-12); on any failure STOP and fix the implementation
+- [ ] 2.2.2 Remove `instance_arg_key`; point its two call sites at `type_key` — `compiler/src/codegen/types.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/expr.rs`
+- [ ] 2.2.3 Run the spec suite to green (ST-9 – ST-12, including the nested function-instance key); on any failure STOP and fix the implementation
 
 **Deliverables**:
 - The key change and the wrapper removal
@@ -158,13 +158,13 @@ determinism.
 **Objective**: Pin the symbol spellings and byte stability; hand the emission sweep to the phase
 review.
 
-- [ ] 2.3.1 Write implementation tests (typedef and symbol names, function-instance byte pins, re-emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
+- [ ] 2.3.1 Write implementation tests (typedef and symbol names, top-level function-instance byte pins, the nested `Q` key, the `Q`-limitation note, re-emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
 - [ ] 2.3.2 Full phase verification — `make check`
 
 **Deliverables**:
 - Implementation suite for P2
 - `make check` green
-- The emission sweep runs in the phase review (base↔head, expected diffs only)
+- The emission sweep runs in the phase review (base↔head; nested function-instance renames are expected fixing diffs — PF-003)
 
 **Verify**: `make check`
 
@@ -182,8 +182,8 @@ review.
 **Reference**: [03-03](03-03-nullable-view-comparison.md) §Proposed Changes · [AR-7](00-ambiguity-register.md)
 **Objective**: Pin the acceptance, the narrowing run, and the preserved rejections.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-16 — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-16 fail; ST-15 passes as the preserved-rejection pin)
+- [ ] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-16 and ST-7's projected clause (the out-slot self-assign rule becomes expressible with the view acceptance) — `compiler/tests/borrow_generic_integrity_spec_test.rs`
+- [ ] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-16, and ST-7's projected clause fail; ST-15 passes as the preserved-rejection pin)
 
 **Deliverables**:
 - Specification cases ST-13 – ST-16 added
@@ -214,7 +214,7 @@ review.
 **Reference**: [03-03](03-03-nullable-view-comparison.md) §Testing Requirements
 **Objective**: Pin the emitted `.ptr` comparison and the preserved diagnostic.
 
-- [ ] 3.3.1 Write implementation tests (emitted comparison shape, E10222 for view-versus-view) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
+- [ ] 3.3.1 Write implementation tests (the emitted `.ptr` comparison shape for both operand orders; ST-15 owns the E10222 rejection) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
 - [ ] 3.3.2 Full phase verification — `make check`
 
 **Deliverables**:
@@ -228,8 +228,7 @@ review.
 ## Phase 4: May-lend callee identity (DEF-77)
 
 > **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
-> **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (borrow gate and
-> emitted names; AGENTS.md dispatch matrix)
+> **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer + emission-integrity auditor (borrow gate, IR parameter names, and emitted C names; AGENTS.md dispatch matrix; PF-001)
 > **Reasoning**: high — ownership binding semantics; the leak oracle is ASan
 
 ### Step 4.1: Specification Tests
@@ -238,7 +237,7 @@ review.
 **Objective**: Pin the leak repro and the unchanged sibling behaviors.
 
 - [ ] 4.1.1 [spec-author] Write specification tests from ST-17 – ST-20 — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and record the red phase (expected: ST-17 fails under ASan; ST-18 – ST-20 pass as pins)
+- [ ] 4.1.2 Run the spec suite and record the red phase (expected: ST-17 fails under ASan — run it with `RDC_ASAN=1`; ST-18 – ST-20 pass as pins)
 
 **Deliverables**:
 - Specification cases ST-17 – ST-20 added
@@ -253,14 +252,14 @@ review.
 **Reference**: [03-04](03-04-may-lend-callee-identity.md) §Proposed Changes
 **Objective**: Extend the callee-name masking guard to every binding kind.
 
-- [ ] 4.2.1 Extend the mask condition in `unique_ir_name` — `compiler/src/own.rs`
-- [ ] 4.2.2 Run the spec suite to green (ST-17 – ST-20) and the ST-17 ASan probe; on any failure STOP and fix the implementation
+- [ ] 4.2.1 Extend the mask condition in `unique_ir_name` and carry the masked parameter spelling through the IR and emitter — `compiler/src/own.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs`
+- [ ] 4.2.2 Run the spec suite to green (ST-17 – ST-20) and the ST-17 ASan probe (`RDC_ASAN=1` inside the container); update the two existing pinned tests before the green gate (`runtime_value_integrity_impl_test.rs`, `call_value_integrity_impl_test.rs`); on any failure STOP and fix the implementation
 
 **Deliverables**:
-- The guard change
+- The guard and plumbing changes
 - Green spec suite and clean ASan probe
 
-**Verify**: `make -C docker exec CMD="cargo test --test borrow_generic_integrity_spec_test"`
+**Verify**: `make -C docker exec CMD="cargo test --test borrow_generic_integrity_spec_test"` and, for the leak case, `make -C docker exec CMD="RDC_ASAN=1 cargo test --test borrow_generic_integrity_spec_test"`
 
 ---
 
@@ -269,9 +268,10 @@ review.
 **Reference**: [03-04](03-04-may-lend-callee-identity.md) §Testing Requirements
 **Objective**: Pin the suffixed names, close the phase, and run the final acceptance.
 
-- [ ] 4.3.1 Write implementation tests (suffixed IR/emitted names for colliding bindings, unchanged module-call emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
+- [ ] 4.3.1 Write implementation tests (suffixed IR/emitted names for colliding bindings; the updated pins of the two existing tests; unchanged module-call emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
 - [ ] 4.3.2 Full phase verification — `make check`
 - [ ] 4.3.3 Final acceptance — `make verify` (all legs)
+- [ ] 4.3.4 Close-out: correct the DEF-78/DEF-79 roadmap row notes, add the two new suites to the AGENTS.md test-naming map, file the runtime-indexed element self-assign residual, and sync the roadmap (PF-005, PF-014)
 
 **Deliverables**:
 - Implementation suite for P4
@@ -293,9 +293,10 @@ Phase 3 (nullable view comparison)
 Phase 4 (may-lend callee identity)
 ```
 
-The phases are independent in code; the order runs from the memory-safety-heavy store rules to
-the isolated name/operator fixes. Within Phase 1, tasks 1.2.1 → 1.2.2 are sequential; 1.2.3 and
-1.2.4 are independent of each other and of 1.2.1/1.2.2.
+The phases run sequentially; P1, P2, and P3 are independent in code. P4 carries the masked
+parameter spelling through `codegen/expr.rs`, which P2 also owns (the sequential order absorbs
+the overlap; PF-001). Within Phase 1, tasks 1.2.1 → 1.2.2 are sequential; 1.2.3 and 1.2.4 are
+independent of each other and of 1.2.1/1.2.2.
 
 ---
 

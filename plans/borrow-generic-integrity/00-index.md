@@ -31,7 +31,9 @@ correctly, without reopening the frozen specification.
 **Smallest viable design:** reuse the machinery each site already uses — the established
 per-instance duty pattern (`ir::Requires*` records plus the `own/instance_check.rs` audits), the
 existing diagnostics (`E10034`, `E10020`, `W10001`), the existing callee-name masking guard, and
-the existing type-key function. Every change lands in an existing function or an existing audit.
+the existing type-key function. Every change lands in an existing function or an existing audit,
+except the one approved internal addition: the `ir::RequiresStorableSlot` duty record and its
+audit alongside the existing audits (AR-5; PF-012).
 **Excluded machinery:** None considered beyond those patterns — no new diagnostic codes, no
 generalized store-policy layer, no new verification harness (the host ASan probes and the strict
 build checks reuse the repo's existing tooling).
@@ -89,31 +91,38 @@ func demo(give: func(borrow String): String): i32 {
 | Decision | Outcome | AR Ref |
 | -------- | ------- | ------ |
 | DEF-78 rule and the corrected scope | Declaration-site rejection of owning stores into lend params + a per-instance duty; nullable out-slots and duplicable lends stay legal | AR-2, AR-13 |
-| DEF-82 out-slot self-assignment | Reject with `E10020`, same as locals | AR-8 |
+| DEF-82 out-slot self-assignment | Reject with `E10020`, same as locals — whole-binding and exact projected self-assign | AR-8, PF-005 |
 | DEF-83 warning exemption | Every nullable borrow (out-slot) parameter is exempt | AR-9 |
-| DEF-79 key surface | Nullability folds into `type_key`; the text-conversion spelling is preserved | AR-4, AR-6 |
-| DEF-81 comparison rule | View-vs-`null` only, either order; `view == view` stays `E10222` | AR-7 |
-| DEF-77 callee identity | Extend the callee-name masking guard to every binding kind | AR-3 |
+| DEF-79 key surface | Nullability folds into `type_key`; the text-conversion spelling is preserved; top-level function-instance symbols stay identical (nested nullable arguments gain `Q`) | AR-4, AR-6, PF-003 |
+| DEF-81 comparison rule | View-vs-`null` only, either order; slice-view `==` slice-view stays `E10222` | AR-7, PF-010 |
+| DEF-77 callee identity | Extend the callee-name masking guard to every binding kind, with the parameter-name plumbing through the IR and emitter | AR-3, PF-001 |
 | Frozen spec | `spec/` stays byte-identical | AR-10 |
-| Verification | `make check` per phase, host-ASan probes for P1, strict build check for P2, `make verify` final | AR-12 |
+| Verification | `make check` per phase, host-ASan probes for P1 and P4 (`RDC_ASAN`), strict build check for P2, `make verify` final | AR-12, PF-007 |
 
 ## Specialist Agents
 
 **None** — the capability-gap check found no gap a standing specialist would close.
 
 _Detection evidence: every phase surface maps onto an installed project agent — P1's store rules
-and P4's borrow gate onto the correctness and memory-safety reviewers, P2's symbol/emission change
-onto the emission-integrity auditor, and P3's operator rule onto the semantics reviewer
-(`.opencode/agents/`, dispatch matrix in `AGENTS.md`); the on-demand `analyze-agents` check ran on
-2026-10-09 with the same outcome (`None`) and is recorded in `codeops/specialist-check.json`. No
-new domain invariant, DSL, or review checklist was identified beyond those briefs._
+onto the correctness and memory-safety reviewers, P2's symbol/emission change onto the
+emission-integrity auditor, P3's operator rule onto the semantics reviewer, and P4's borrow gate
+plus parameter-name/emission change onto the correctness, memory-safety, and emission-integrity
+reviewers (`.opencode/agents/`, dispatch matrix in `AGENTS.md`); the on-demand `analyze-agents`
+check ran again on 2026-10-09 21:09 — now including this plan — with the same outcome (`None`,
+reduced evidence: no findings ledgers) and is recorded in `codeops/specialist-check.json`. No new
+domain invariant, DSL, or review checklist was identified beyond those briefs._
 
 ## Related Files
 
 - New: `compiler/tests/borrow_generic_integrity_spec_test.rs`,
   `compiler/tests/borrow_generic_integrity_impl_test.rs`
-- Modified: `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`,
-  `compiler/src/own/instance_check.rs`, `compiler/src/own/call_check.rs`,
-  `compiler/src/ir/mono.rs`, `compiler/src/own.rs`, `compiler/src/types/keys.rs`,
-  `compiler/src/codegen/types.rs`, `compiler/src/codegen.rs`,
+- Modified: `compiler/src/own/expr.rs`, `compiler/src/own/instance_check.rs`,
+  `compiler/src/own/call_check.rs`, `compiler/src/own/call.rs`,
+  `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`,
+  `compiler/src/types/keys.rs`, `compiler/src/codegen/types.rs`,
+  `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs`,
   `compiler/src/codegen/expr.rs`, `compiler/src/sema/ops.rs`
+- Conditional: `compiler/src/own/place.rs` — only if the dedupe needs the shared
+  release/store helper (AR-13)
+- Shared by P2 and P4: `compiler/src/codegen/expr.rs` (P4 carries the masked parameter
+  spelling through the call/place lookups; PF-001)

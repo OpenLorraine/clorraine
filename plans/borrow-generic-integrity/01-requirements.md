@@ -6,10 +6,12 @@
 ## Feature Overview
 
 The plan fixes the six remaining defects of the borrow/out-slot and generic-instance machinery
-filed by `def-backlog-closeout` (DEF-78 – DEF-83) plus the may-lend callee-identity defect
-(DEF-77). Each defect has a verified reproduction at the plan baseline
+filed by `def-backlog-closeout` (DEF-77, DEF-78, DEF-79, DEF-81, DEF-82, DEF-83). Each defect
+has a verified reproduction at the plan baseline
 ([02-current-state.md](02-current-state.md)); each fix implements an existing rule of the frozen
-specification. The plan adds no language surface, no diagnostic code, and no support machinery.
+specification. The plan adds no language surface and no diagnostic code; the one internal
+addition is the `RequiresStorableSlot` duty record and its audit, following the existing
+`Requires*` pattern (AR-5).
 
 ## Functional Requirements
 
@@ -17,36 +19,43 @@ specification. The plan adds no language surface, no diagnostic code, and no sup
 
 - [ ] R1 — A whole-binding store into a non-nullable non-duplicable `borrow` parameter is
   rejected `E10034` (concrete spelling). Source: spec/03 OW-16, spec/06 FN-7 · AR-2, AR-13.
-- [ ] R2 — The same store in a generic body is rejected `E10034` for every owning instantiation;
-  a duplicable instantiation stays accepted. Source: spec/03 OW-16 · AR-2.
+- [ ] R2 — The same store in a generic body is rejected `E10034` when any instantiation owns;
+  one report per site (the first offending instance). A duplicable instantiation stays accepted.
+  Source: spec/03 OW-16 · AR-2, PF-006.
 - [ ] R3 — The nullable out-slot exemption is preserved: stores into `borrow T?` parameters
   (including the `T[]?` instance) stay accepted. Source: spec/16 out-parameter carve-out · AR-2.
-- [ ] R4 — `slot = slot` on an out-slot parameter is rejected `E10020`, the same diagnostic as a
-  local self-assignment. Source: spec/03 E10020 rule · AR-8.
+- [ ] R4 — `slot = slot` on an out-slot parameter — whole-binding and exact projected
+  (`slot[0] = slot[0]`) — is rejected `E10020`, the message the local moved-value rule uses.
+  Source: spec/03 E10020 rule · AR-8, PF-005.
 - [ ] R5 — A nullable `borrow` parameter (out-slot) does not warn `W10001`; a non-nullable
   duplicable lend still does. Source: spec/decisions D9, spec/16 writable-lend rules · AR-9.
 - [ ] R6 — `Wrap<String>` and `Wrap<String?>` (and every other keyed spelling that carries a
   nullable type argument) produce distinct C symbols; accepted source builds strict. Source:
   spec/07 §9 · AR-4.
-- [ ] R7 — Function-instance symbol spellings are unchanged by R6. Source: spec/17 §7 · AR-4,
-  AR-6.
+- [ ] R7 — Top-level function-instance symbol spellings are unchanged by R6; nested nullable
+  type arguments gain the `Q` marker (an expected fixing diff — they collide today). Source:
+  spec/17 §7 · AR-4, AR-6, PF-003.
 - [ ] R8 — `==`/`!=` accept a view with `null` in either order, so a nullable view narrows; the
-  non-nullable view-versus-`null` form is accepted; `view == view` and ordering stay `E10222`.
-  Source: spec/decisions T8, spec/02 TY-6 · AR-7.
+  non-nullable view-versus-`null` form is accepted; slice-view `==` slice-view and ordering stay
+  `E10222` (`str`/`static str`/`cstring` already compare — pre-existing, out of scope). Source:
+  spec/decisions T8, spec/02 TY-6 · AR-7, PF-010.
 - [ ] R9 — A func-typed parameter named like a module lender no longer makes the may-lend gate
   leak the owned call result; the result is bound and released once. Source: spec/03 loan rules ·
   AR-3.
 
 ### Should Have
 
-- [ ] R10 — Each fix ships with a specification test proving the corrected behavior (red before,
-  green after) and an implementation test pinning the internal shape. Source: AR-12,
-  [07-testing-strategy.md](07-testing-strategy.md).
+- [ ] R10 — Each fix ships with a specification test proving the corrected behavior (red where
+  the baseline is wrong, green pins where the baseline is already right) and an implementation
+  test pinning the observable internal shapes listed in
+  [07-testing-strategy.md](07-testing-strategy.md). Source: AR-12, PF-015.
 
 ### Won't Have (Out of Scope)
 
 - DEF-76, DEF-80, DEF-90, DEF-92–DEF-95 (other open backlog rows).
 - Any change under `spec/` (AR-10).
+- The runtime-indexed element self-assign variant (`xs[i] = xs[i]` with a run-time index) —
+  noted as a residual and filed at close-out (PF-005).
 - New diagnostic codes, new language surface, generalized store-policy layers, or new
   verification harnesses (minimum-sufficient baseline, [00-index.md](00-index.md)).
 
@@ -54,8 +63,9 @@ specification. The plan adds no language surface, no diagnostic code, and no sup
 
 ### Compatibility
 
-- The emitted-C ABI change is limited to keyed spellings that carry a nullable type argument
-  (DEF-79); function-instance symbols stay byte-identical (R7).
+- The emitted-C ABI change covers keyed spellings that carry a nullable type argument and
+  nested nullable function-instance arguments (DEF-79); top-level function-instance spellings
+  stay byte-identical (R7).
 - The may-lend fix changes emitted names only for bindings whose source name masks a module
   callee (DEF-77).
 
@@ -86,7 +96,8 @@ specification. The plan adds no language surface, no diagnostic code, and no sup
 2. [ ] `compiler/tests/borrow_generic_integrity_spec_test.rs` is green with its red phase
    recorded.
 3. [ ] `compiler/tests/borrow_generic_integrity_impl_test.rs` is green.
-4. [ ] Host-ASan probes for the P1 store shapes report no leak, double free, or invalid free.
+4. [ ] Host-ASan probes for the P1 store shapes and the P4 leak shape report no leak, double
+   free, or invalid free (`RDC_ASAN=1` in the container; PF-007).
 5. [ ] `make check` is green after every phase; `make verify` passes every leg at final
    acceptance (AR-12).
 6. [ ] No change under `spec/` (AR-10).

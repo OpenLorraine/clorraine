@@ -28,16 +28,22 @@ symbol and the emitted translation unit redefines the type. The fix folds the nu
 
 1. **Fold nullability into `type_key` (AR-4).** Return the same rendering with a `Q` suffix when
    the type carries the nullable flag, before the kind match, so the marker applies uniformly
-   (including recursively through instance arguments and slice element keys). The marker spelling
-   stays the existing `Q` (AR-4).
+   (including recursively through instance arguments; slice element types are never nullable,
+   PF-009). The marker spelling stays the existing `Q` (AR-4).
 2. **Remove `instance_arg_key` (AR-6).** With the rule in `type_key`, the wrapper would
-   duplicate it; its three call sites use `type_key` directly. Function-instance symbol spellings
-   stay byte-identical because the wrapper produced the same `Q` form.
+   duplicate it; its two call sites (`codegen.rs`, `codegen/expr.rs`) use `type_key` directly.
+   Top-level function-instance symbol spellings stay byte-identical because the wrapper produced
+   the same `Q` form; nested nullable arguments change spelling because the wrapper only looked
+   at the top-level flag — `pick<Wrap<String?>>` gains `Q` (an expected fixing diff; the two
+   spellings collide on one symbol today; PF-003).
 3. **Preserve the text-conversion spelling.** The text fallback in `compiler/src/codegen/expr.rs`
    (`text_call`) converts a value through the shim helpers, whose names are fixed
    (`cl_text_i32`, `cl_text_str`, ...). Clear the nullable flag before that one `type_key` call so
    the helper spelling is unchanged; every other consumer keys a type identity and keeps the
-   marker.
+   marker. Limitation (PF-012): the `Q` marker is not distinguishable from a user identifier
+   ending in `Q` (`Wrap<StringQ>` and `Wrap<String?>` render `Wrap__StringQ` after the fold;
+   function instances carry the same pre-existing ambiguity). AR-4 pinned the marker spelling;
+   the limitation is recorded here and pinned by an implementation-test note.
 
 ## Implementation Details
 
@@ -50,9 +56,11 @@ None — one existing function changes, one wrapper is removed.
 - Struct instance symbols and typedefs (`codegen/program.rs`, `codegen/types.rs`): gain `Q` only
   for nullable arguments; non-nullable spellings are unchanged.
 - Slice keys, zero-view helpers, and builtin conversion keys (`codegen/types.rs`,
-  `codegen/calls.rs`): gain `Q` only when the element type is nullable, consistently at every
-  use site because they all call `type_key`.
-- Function-instance keys (`codegen.rs`, `codegen/expr.rs`): identical output to today.
+  `codegen/calls.rs`): unchanged for nullable *slices* (`String[]?`), because a slice's element
+  type cannot itself be nullable (the grammar forbids `String?[]`; PF-009) — only keys whose
+  arguments carry nullability gain the marker.
+- Function-instance keys (`codegen.rs`, `codegen/expr.rs`): top-level arguments identical to
+  today; nested nullable arguments gain `Q` (PF-003).
 
 ## Code Examples
 
@@ -74,7 +82,8 @@ No new diagnostics — the fix removes an emitted-C build failure for accepted s
 | ---------- | ----------------- | ------ |
 | Two instances differing only in nullability | Distinct keys; distinct C types | AR-4 |
 | Text conversion of a nullable value | Flag cleared at the fallback; helper name unchanged | AR-4 |
-| Function instance with a nullable argument | Key identical to today | AR-4, AR-6 |
+| Function instance with a top-level nullable argument | Key identical to today | AR-4, AR-6 |
+| Function instance with a nested nullable argument | Key gains `Q` (fixes a duplicate symbol) | PF-003 |
 
 > **Traceability:** every decision above back-references the register entry that resolved it. See
 > [00-ambiguity-register.md](00-ambiguity-register.md).
@@ -82,8 +91,9 @@ No new diagnostics — the fix removes an emitted-C build failure for accepted s
 ## Testing Requirements
 
 - Specification tests ST-9 – ST-12 ([07-testing-strategy.md](07-testing-strategy.md)): distinct
-  struct instances building and running, function-instance spellings unchanged, nested and slice
-  keys, and byte-identical re-emission.
+  struct instances building and running, top-level function-instance spellings unchanged, nested
+  function-instance keys gaining `Q`, the keyed nullable-slice witness, and byte-identical
+  re-emission.
 - The base-versus-head emission sweep over the corpus must show only expected key diffs
   (nullable-argument spellings) and no function-instance symbol changes.
 - Implementation tests pin the emitted symbol names and the typedef shapes.
