@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 18:27
-> **Progress**: 31/32 tasks (97%)
+> **Last Updated**: 2026-10-09 18:32
+> **Progress**: 32/32 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -412,12 +412,22 @@ consistent (acceptance, order, values) with one minor finding:
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria
 **Objective**: Record the outcome and sync the project records.
 
-- [ ] 4.3.1 Update the AGENTS.md test-naming map with the new suites and sync the roadmap (DEF-84 – DEF-88 to Done per the roadmap skill)
-- [ ] 4.3.2 Record the final evidence, clean the session's temporary artifacts, and present the summary
+- [x] 4.3.1 Update the AGENTS.md test-naming map with the new suites and sync the roadmap (DEF-84 – DEF-88 to Done per the roadmap skill) ✅ (completed: 2026-10-09 18:32)
+- [x] 4.3.2 Record the final evidence, clean the session's temporary artifacts, and present the summary ✅ (completed: 2026-10-09 18:32)
+
+**Close-out (2026-10-09 18:32)** — `make verify` reports all legs passed at the close-out tree
+(code `ac6d552` plus these doc edits); `make check` green; the defer suites are 16 spec + 17 impl.
+The AGENTS.md test-naming map records both new suites; the roadmap's DEF-84 – DEF-88 rows are Done
+with the plan link. Temporary artifacts: the session's logs and probe scratch are removed;
+`build/defer-probe/` is deliberately retained (the reproduction evidence cited by
+[02-current-state.md](02-current-state.md); gitignored). Plan-wide outcome: 32/32 tasks across four
+phases, no open critical or major finding, three pre-existing/base-identical items reported for the
+backlog (a deferred-break supersede leak for an ordinary return; two strict-build failures; a
+growable-slice `len` const-fold) plus the accepted lone-`#line` cleanup.
 
 **Deliverables**:
-- [ ] Docs and roadmap updated
-- [ ] Final evidence recorded
+- [x] Docs and roadmap updated
+- [x] Final evidence recorded
 
 **Verify**: `make verify`
 

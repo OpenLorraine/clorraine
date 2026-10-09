@@ -183,6 +183,16 @@ in `CMD`).
   helpers, builder and index spellings, deferred fill/move-out and adoption
   shapes, conditional branch stores, read-position receiver binds and their
   exclusions, the drop-suffix grouping, and byte-identical re-emission).
+- `compiler/tests/defer_integrity_spec_test.rs` holds the **specification
+  tests** for the defer-integrity batch (a `defer` runs on every exit edge; a
+  deferred `continue`/`break` reaches the loop's edge; a deferred return
+  continues the running cleanup and stores its value before the cleanup
+  releases what it reads; a superseded owned result is released), and
+  `compiler/tests/defer_integrity_impl_test.rs` holds their **implementation
+  tests** (per-site copies with per-copy label suffixes, bounded copies, the
+  remaining-actions order, the value-before-drop order, the outer-rung jump,
+  the base local-name numbering, the once-per-occurrence diagnostics, and
+  byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo
