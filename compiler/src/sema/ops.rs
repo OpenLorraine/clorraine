@@ -131,13 +131,14 @@ impl Checker<'_, '_> {
                 Ty::boolean()
             }
             BinaryOp::Eq | BinaryOp::Ne => {
-                // A view is nullable by definition, so comparing it with `null`
-                // is its emptiness test: the emitter lowers the pairing to a
-                // pointer test and the ownership walk narrows the place. Every
-                // other pairing keeps the operand rules, so two slice views
-                // still have no defined equality and a view never pairs with a
-                // non-null operand.
-                let null_on_either_side = left_ty.is_unknown() || right_ty.is_unknown();
+                // A view is nullable by definition, so comparing it with the
+                // `null` literal is its emptiness test: the emitter lowers the
+                // pairing to a pointer test and the ownership walk narrows the
+                // place. Every other pairing keeps the operand rules, so two
+                // slice views still have no defined equality, a view never
+                // pairs with a non-null operand, and an untyped operand is
+                // not a null literal.
+                let null_on_either_side = null_operand(left_ty) || null_operand(right_ty);
                 let view_on_either_side = is_view(left_ty) || is_view(right_ty);
                 if !(null_on_either_side && view_on_either_side) {
                     if !comparable(left_ty) {
@@ -463,6 +464,16 @@ fn comparable(ty: &Ty) -> bool {
             | TyKind::StaticStr
     ) || ty.is_unknown()
         || ty.is_param()
+}
+
+/// True for the `null` literal's type: an unknown shape that is nullable.
+///
+/// The null literal types as a nullable unknown, while an untyped local or an
+/// unresolved operand is unknown *without* the flag. Only the literal may pair
+/// with a view, so an untyped operand keeps the operand rules and reports on
+/// the view side instead of emitting a comparison C cannot represent.
+fn null_operand(ty: &Ty) -> bool {
+    ty.is_unknown() && ty.nullable
 }
 
 /// The source spelling of a binary operator.

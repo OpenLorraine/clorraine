@@ -208,7 +208,7 @@ routed by the emission audit is filed as DEF-104. Rulings and evidence:
 ## Phase 3: Nullable view comparison (DEF-81)
 
 > **Phase baseline tree**: `bdf597aee0cf63f7b6a1207b354b42c7b56f934b` (clean tree at phase start; pre-P3)
-> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/src/sema/ops.rs`, `plans/borrow-generic-integrity/99-execution-plan.md`
+> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/src/sema/ops.rs`, `compiler/src/own/place.rs` (the AR-16 narrowing correction), `plans/borrow-generic-integrity/99-execution-plan.md`, `plans/borrow-generic-integrity/00-ambiguity-register.md`, `plans/borrow-generic-integrity/03-03-nullable-view-comparison.md`
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (operator rule;
 > AGENTS.md dispatch matrix)
 > **Reasoning**: medium — one sema rule with an existing emitter path; bounded
@@ -262,6 +262,19 @@ routed by the emission audit is filed as DEF-104. Rulings and evidence:
 - `make check` green
 
 **Verify**: `make check`
+
+### Phase 3 Review (2026-10-09 22:52)
+
+Independent review (correctness reviewer + memory-safety auditor + semantics reviewer) found one
+phase-introduced major issue: the view/`null` pairing matched any unknown-typed operand, so an
+untyped local compared with a view was accepted and emitted invalid C. Fixed by requiring the null
+literal (a nullable unknown) and pinned by a new rejection case; a scoped re-review follows. The
+memory audit is clean on the changed shapes and the correctness review reports no findings; four
+pre-existing defects it surfaced (unguarded nullable-view element store, missing constant-index
+slice bounds trap, `str`/`static str` equality emission, inferred-null local emission) are filed as
+DEF-105–DEF-108. The strict expected-modification set is corrected to include
+`compiler/src/own/place.rs` (the AR-16 narrowing correction), the register, and 03-03. Rulings:
+[05-findings.md](05-findings.md).
 
 ---
 

@@ -17,6 +17,12 @@ evidence lives in the reviewers' reports and in the dispositions below.
 | PF-005 residual | 1 | MINOR (pre-existing) | runtime-indexed out-slot element self-assign | deferred — filed DEF-102 |
 | EI-P2-1 | 2 | MINOR (newly reachable) | `type_key` `Q` marker vs identifier collision in nested positions | accepted — documented limitation, filed DEF-103 |
 | Lifted-closure capture return | 2 | MAJOR (pre-existing) | emitted alias between a captured owner and its returned value | deferred — filed DEF-104 |
+| SR-001 | 3 | MAJOR | `sema/ops.rs` null pairing matched any unknown operand | fixed |
+| PRE-1 | 3 | MAJOR (pre-existing) | unguarded element store through a possibly-null view | deferred — filed DEF-105 |
+| PRE-2 | 3 | MAJOR (pre-existing) | constant-index slice store missing its bounds trap | deferred — filed DEF-106 |
+| PRE-001 | 3 | MAJOR (pre-existing) | `str`/`static str` pair equality emits invalid C | deferred — filed DEF-107 |
+| PRE-002 | 3 | MINOR (pre-existing) | inferred-null local emits into an integer declaration | deferred — filed DEF-108 |
+| Field-rooted narrowing conservatism | 3 | note | an element write through a narrowed field view keeps the read-back rejected | accepted — conservative, mirrors the pre-existing field-write behavior |
 
 ## Phase 1 dispositions (2026-10-09)
 
@@ -99,3 +105,42 @@ changed shapes, and the emission sweep over 1837 units found only the intended
 `Q`-class diffs (14 diffs, all in the batch programs; 7 base-fail-to-head-ok
 strict builds; zero head-only failures over 760 accepted host units; no
 dangling symbol references).
+
+## Phase 3 dispositions (2026-10-09)
+
+**SR-001 (MAJOR, phase-introduced) — fixed.** The view/`null` pairing keyed on
+"unknown shape", which also matches a local declared without a type; `let x;
+x = 5; if (x == xs)` with a slice view was accepted and emitted a C comparison
+of an `int` and a slice struct, which the strict build rejects (the base
+reported `E10222`). Fix: the pairing's null side is the null literal's type — an
+unknown shape that is *nullable*; an unknown without the flag keeps the operand
+rules. Pinned by a new rejection case.
+
+**PRE-1 (MAJOR, pre-existing) — deferred, DEF-105.** An unguarded element store
+through a possibly-null view dereferences NULL (`xs[0] = 1` on a null view emits
+`((*xs)).ptr[0] = 1u;` with no test; SEGV, base and head identical).
+
+**PRE-2 (MAJOR, pre-existing) — deferred, DEF-106.** A constant-index element
+store into a slice emits no bounds trap, while the read path and the
+runtime-index store path do (`E11211`); an empty non-null view store is an
+out-of-bounds write (ASan, base and head identical).
+
+**PRE-001 (MAJOR, pre-existing) — deferred, DEF-107.** `str` and `static str`
+pair equality is accepted and emits a C comparison of `ClStr` structs, which
+the strict build rejects; `cstring` comparisons work (pointer equality).
+
+**PRE-002 (MINOR, pre-existing) — deferred, DEF-108.** An inferred-null local
+emits into an integer declaration (`let x = null;` → `i32 x = NULL;`), which
+the strict build rejects; the phase's acceptance stops an unrelated diagnostic
+from masking it in one spelling.
+
+**Field-rooted narrowing conservatism (note) — accepted.** An element write
+through a narrowed *field* view (`if (s.a != null) { s.a[0] = 1; use s.a }`)
+keeps the read-back rejected because the field arm clears the field's narrowing
+on any write whose first projection is that field — the pre-existing behavior
+for handle fields, conservative in the safe direction, and outside the phase's
+whole-binding narrowing case. Recorded, not filed.
+
+The correctness reviewer reported no findings and the memory audit found no
+in-scope defect (every newly accepted guarded store releases exactly once on
+the normal, early-return, loop, break/continue, and both-branch paths).

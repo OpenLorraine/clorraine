@@ -1138,3 +1138,29 @@ func main(): i32 {
 "#;
     assert_rejected_once("out-slot-projected", source, "E10020", &["'xs'"]);
 }
+
+/// An untyped operand does not pair with a view.
+///
+/// The null side of the pairing is the `null` literal, which types as a
+/// nullable unknown; a local declared without a type is unknown without that
+/// flag, so `x == xs` keeps the operand rule and reports on the view side
+/// instead of emitting a comparison the C compiler cannot represent.
+#[test]
+fn should_reject_an_untyped_operand_compared_with_a_view() {
+    let source = r#"module spec.bgi.untypedview;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let x;
+    x = 5;
+    let a: u8[2] = [1, 2];
+    let xs: u8[] = slice(a, 0, 2);
+    if (x == xs) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once("untyped-view", source, "E10222", &["operator '=='"]);
+}

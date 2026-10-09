@@ -199,6 +199,22 @@ Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
 Reopen triggers: element-relative narrowing facts become expressible (a nullable element type is added)
 ```
 
+**AR-7 refinement (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: mechanism within the confirmed AR-7 acceptance (only the null literal pairs with a view)
+Objective: stop the pairing from admitting an untyped operand that the emitter cannot represent
+Decision: the null side of the pairing is the null literal's type — an unknown shape that is nullable; an unknown without the flag keeps the operand rules
+Evidence: phase-3 semantics review — `let x; x = 5; if (x == xs)` with `xs: u8[]` was accepted at the phase head and emitted `(x == xs)` (`int` versus `ClSlice_u8`), which the strict C build rejects; the base reported `E10222`
+Rejected alternatives: thread the expression kind into `binary_result` (a larger signature change for the same effect); accept as a residual (it is a phase-introduced sema/emitter disagreement)
+Strongest counterargument: the nullable flag is a type-level proxy for the literal; the null literal is the only nullable unknown the type stage produces, so the proxy is exact
+Confidence: High — probe falsification plus the new rejection case
+Hardening: not required — one predicate and one test
+Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
+Reopen triggers: another nullable unknown type is introduced that is not the null literal
+```
+
 ### Systematic 12-category scan
 
 | Category | Outcome |
