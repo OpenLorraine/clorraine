@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 16:41
-> **Progress**: 17/32 tasks (53%)
+> **Last Updated**: 2026-10-09 17:01
+> **Progress**: 19/32 tasks (59%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -231,7 +231,8 @@ one critical ordering defect, fixed immediately:
 
 ## Phase 3: Deferred Return Continuation and Ordering (DEF-85, DEF-88)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `e29a748840171b7602130d840e84c4854c5c73a6`
+> **Expected modification set**: `compiler/tests/defer_integrity_spec_test.rs`, `compiler/tests/defer_integrity_impl_test.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`, `plans/defer-integrity/*` · Scope: `strict`
 > **Lenses**: correctness, maintainability, standards; semantics (evaluation order and cleanup order)
 > **Reasoning**: high — the continuation interacts with the ladder, nested re-entry, and return forms
 
@@ -241,12 +242,17 @@ one critical ordering defect, fixed immediately:
 **Objective**: Pin the deferred-return values, the remaining-actions behavior, and the
 value-before-cleanup ordering.
 
-- [ ] 3.1.1 [spec-author] Write specification tests ST-8 – ST-14 in `compiler/tests/defer_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the new suite and record the red phase (the self-loop hangs; the segfaults)
+- [x] 3.1.1 [spec-author] Write specification tests ST-8 – ST-14 in `compiler/tests/defer_integrity_spec_test.rs` ✅ (completed: 2026-10-09 16:52)
+- [x] 3.1.2 Run the new suite and record the red phase (the self-loop hangs; the segfaults) ✅ (completed: 2026-10-09 16:52)
+
+**Red-phase evidence (2026-10-09 16:52, baseline `e29a7488`)** — ST-8/9/10/11/12 hang (the
+deferred return's self-loop; isolated re-runs confirm), ST-13/14 segfault (the drop prints before
+the value read; both reproduced outside the harness). The seven pre-existing tests stay green
+(7 passed; 7 failed).
 
 **Deliverables**:
-- [ ] ST-8 – ST-14 in the spec suite
-- [ ] Red-phase evidence
+- [x] ST-8 – ST-14 in the spec suite
+- [x] Red-phase evidence
 
 **Verify**: `make check` (the new cases fail as expected)
 

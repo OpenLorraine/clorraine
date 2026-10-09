@@ -504,3 +504,218 @@ func main(): i32 {
     let output = run_host("defer-st7", source);
     assert_exit("defer-st7", &output, 22);
 }
+
+/// A function-scope `defer` that returns answers with its own value.
+///
+/// The `defer` registered in `f`'s body returns seven when the body's scope
+/// ends. The trailing `return 0` cannot take effect, because the pending
+/// deferred return replaces it. `f` therefore answers seven and `main` answers
+/// seven. A cleanup that only runs side effects, or that loses the deferred
+/// return's value, answers zero instead.
+#[test]
+fn should_answer_with_a_function_scope_deferred_returns_own_value() {
+    let source = r#"module spec.defer_integrity.st8;
+
+func f(): i32 {
+    defer {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_host("defer-st8", source);
+    assert_exit("defer-st8", &output, 7);
+}
+
+/// A deferred return reads an outer owned local before its release, and the
+/// release still runs.
+///
+/// `f` owns a `String` local. The `defer` returns the string's length while the
+/// local is still live, then the scope exit releases the value. The run must
+/// answer three and stay host-ASan clean, so reading a local from a deferred
+/// return neither uses it after release nor leaks it. A cleanup that releases
+/// before it evaluates the deferred return reads freed memory.
+#[test]
+fn should_read_an_outer_owned_local_in_a_deferred_return_before_its_release() {
+    let source = r#"module spec.defer_integrity.st9;
+
+import { String, stringOf } from std.text;
+
+func f(): i32 {
+    let a: String = stringOf("abc");
+    defer {
+        return i32(len(a));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_memory("defer-st9", source);
+    assert_exit("defer-st9", &output, 3);
+    assert_no_asan("defer-st9", &output);
+}
+
+/// A returning `switch` arm inside a `defer` produces its arm's value.
+///
+/// `f(1)` enters the defer and the `case 1` arm returns five; `f(2)` enters the
+/// defer and the default arm falls through, so the trailing `return 0` stands.
+/// `main` folds them as `f(1) * 10 + f(2)`, answering fifty. A cleanup that
+/// drops the returned value or mishandles the switch exit answers differently.
+#[test]
+fn should_return_a_value_from_a_switch_arm_inside_a_defer() {
+    let source = r#"module spec.defer_integrity.st10;
+
+func f(x: i32): i32 {
+    defer {
+        switch (x) {
+        case 1: {
+            return 5;
+        }
+        default: { }
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f(1) * 10 + f(2);
+}
+"#;
+    let output = run_host("defer-st10", source);
+    assert_exit("defer-st10", &output, 50);
+}
+
+/// Two defers in one function body; the earlier returning one fires.
+///
+/// The first `defer` returns seven unconditionally; the second only rewrites
+/// `i` when it is ninety-nine, which never happens. The pending return from the
+/// earlier defer must survive the later cleanup's evaluation, so `f` answers
+/// seven. A cleanup that lets the later defer overwrite the pending return
+/// answers zero.
+#[test]
+fn should_fire_the_earlier_returning_defer_when_two_defers_share_a_body() {
+    let source = r#"module spec.defer_integrity.st11;
+
+func f(): i32 {
+    let i: i32 = 1;
+    defer {
+        return 7;
+    }
+    defer {
+        if (i == 99) {
+            i = 0;
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_host("defer-st11", source);
+    assert_exit("defer-st11", &output, 7);
+}
+
+/// An older defer still runs after a newer returning defer.
+///
+/// The first `defer` increments the module counter; the second returns seven.
+/// The deferred return answers seven, and the older cleanup still runs once, so
+/// `runs` is one. `main` folds them as `r * 10 + runs`, answering seventy-one.
+/// A cleanup that skips the older defer when a newer one returns leaves `runs`
+/// at zero and answers seventy. The run is host-ASan clean.
+#[test]
+fn should_run_an_older_defer_after_a_newer_returning_defer() {
+    let source = r#"module spec.defer_integrity.st12;
+
+let runs: i32 = 0;
+
+func f(): i32 {
+    defer {
+        runs = runs + 1;
+    }
+    defer {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let r: i32 = f();
+    return r * 10 + runs;
+}
+"#;
+    let output = run_memory("defer-st12", source);
+    assert_exit("defer-st12", &output, 71);
+    assert_no_asan("defer-st12", &output);
+}
+
+/// A deferred return reads its own defer-local before its drop.
+///
+/// The `defer` declares a `String` local and returns its length. The local must
+/// stay live until the return value is read, then be released on the defer's
+/// own scope exit. The run must answer one and stay host-ASan clean. A cleanup
+/// that releases the defer-local before evaluating the return, or that leaks
+/// it, fails here.
+#[test]
+fn should_read_a_defer_local_before_its_drop() {
+    let source = r#"module spec.defer_integrity.st13;
+
+import { String, stringOf } from std.text;
+
+func f(): i32 {
+    defer {
+        let s: String = stringOf("x");
+        return i32(len(s));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_memory("defer-st13", source);
+    assert_exit("defer-st13", &output, 1);
+    assert_no_asan("defer-st13", &output);
+}
+
+/// The same ordering without a defer: a return inside a loop body reading a
+/// loop-local.
+///
+/// The `while` body owns a `String` local and returns its length, so the return
+/// value is read while the loop-local is live and the local is released on the
+/// return edge. The run must answer three and stay host-ASan clean. This pins
+/// the same read-before-release ordering that a deferred return needs, using an
+/// ordinary local scope as the control. A cleanup that releases the loop-local
+/// before reading the return, or that leaks it, fails here.
+#[test]
+fn should_read_a_loop_local_before_its_drop_without_a_defer() {
+    let source = r#"module spec.defer_integrity.st14;
+
+import { String, stringOf } from std.text;
+
+func f(): i32 {
+    let i: i32 = 0;
+    while (i < 1) {
+        let s: String = stringOf("abc");
+        return i32(len(s));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_memory("defer-st14", source);
+    assert_exit("defer-st14", &output, 3);
+    assert_no_asan("defer-st14", &output);
+}
