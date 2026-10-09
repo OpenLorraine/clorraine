@@ -34,11 +34,12 @@ use super::program::{Callee, ProgramInfo};
 ///
 /// It reports `E10205` for a substituted view-typed field and `E10215` for a
 /// substituted non-duplicable fill, `E10020` when a maybe-owning store's later
-/// use needs a duplicable instance, and `E10034` when a lend moved into an
-/// owned position instantiates with an owning type. Only declared types that
-/// mention a type parameter are checked for the field and fill guards, so a
-/// program whose illegal field or fill is already concrete keeps its single
-/// declaration-site diagnostic.
+/// use needs a duplicable instance, `E10034` when a lend moved into an owned
+/// position instantiates with an owning type, and the whole-binding
+/// self-assign judgments (`E10020` for a nullable substitution, `E10034` for
+/// an owning one). Only declared types that mention a type parameter are
+/// checked for the field and fill guards, so a program whose illegal field or
+/// fill is already concrete keeps its single declaration-site diagnostic.
 pub fn check(
     loaded: &Loaded,
     program: &ProgramInfo,
@@ -53,6 +54,7 @@ pub fn check(
     check_not_lend_requirements(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
+    check_self_assign_requirements(program, sema, mono, diagnostics);
 }
 
 /// Reports `E10200` when an out-slot duty's instance makes the slot nullable
@@ -199,6 +201,69 @@ fn check_storable_slot_requirements(
                 || is_view(&substituted)
                 || sema.table.duplicable(&substituted)
             {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10034",
+                    format!(
+                        "cannot release or store borrowed parameter '{}'",
+                        requirement.parameter
+                    ),
+                    requirement.span,
+                )
+                .with_help(
+                    "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                ),
+            );
+            break;
+        }
+    }
+}
+
+/// Reports the whole-binding self-assign judgment at each recorded instance.
+///
+/// A generic body that assigns a lend root to itself is accepted while the
+/// root's type is still a parameter, because the concrete rule depends on the
+/// substitution. The audit substitutes each recorded instance's type arguments
+/// and reproduces the concrete spelling's judgment: a nullable substitution
+/// reports `E10020` — checked before the kind skips, so a nullable view, raw,
+/// or cstring substitution reports exactly as its concrete `borrow T?`
+/// spelling does — an owning non-nullable substitution reports `E10034`, and a
+/// duplicable, view, or unknown substitution stays accepted. One duty reports
+/// once — the first offending instance in instantiation order — so the body
+/// site is not repeated.
+fn check_self_assign_requirements(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.self_assign_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
+            if substituted.is_unknown() {
+                continue;
+            }
+            if substituted.nullable {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10020",
+                        format!("'{}' was moved and cannot be used", requirement.parameter),
+                        requirement.span,
+                    )
+                    .with_help("re-initialize the binding or use a view"),
+                );
+                break;
+            }
+            if sema.table.duplicable(&substituted) || is_view(&substituted) {
                 continue;
             }
             diagnostics.push(

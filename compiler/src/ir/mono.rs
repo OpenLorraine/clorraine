@@ -198,6 +198,29 @@ pub struct RequiresStorableSlot {
     pub span: Span,
 }
 
+/// A body's obligation that a whole-binding self-assign through a lend root is
+/// judged per instance.
+///
+/// A concrete lend parameter that owns storage rejects `slot = slot` outright
+/// — the store would release the caller's value and write the emptied source
+/// back — and a concrete nullable out-slot spelling rejects it the same way.
+/// While the slot's type is still a parameter the checker cannot tell which
+/// rule applies, so the body records this duty and the per-instance audit
+/// reports the concrete diagnostic: `E10020` for a nullable substitution and
+/// `E10034` for an owning one, while a duplicable or view substitution stays
+/// accepted, exactly as its concrete spelling does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresSelfAssign {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The lend parameter's source name, for the diagnostic text.
+    pub parameter: String,
+    /// The lend root's declared type, substituted per instance by the audit.
+    pub ty: Ty,
+    /// The store site, for the diagnostic span.
+    pub span: Span,
+}
+
 /// One emitted specialization of a lifted lambda.
 ///
 /// A lifted function inside a generic declaration is emitted once per enclosing
@@ -231,6 +254,7 @@ pub struct Monomorphization {
     not_lend_requirements: Vec<RequiresNotLend>,
     out_slot_requirements: Vec<RequiresOutSlotPlace>,
     storable_slot_requirements: Vec<RequiresStorableSlot>,
+    self_assign_requirements: Vec<RequiresSelfAssign>,
 }
 
 impl Monomorphization {
@@ -326,5 +350,15 @@ impl Monomorphization {
     /// Every lend-slot store duty recorded so far.
     pub fn storable_slot_requirements(&self) -> &[RequiresStorableSlot] {
         &self.storable_slot_requirements
+    }
+
+    /// Records a whole-binding self-assign duty the generic body owes.
+    pub fn require_self_assign(&mut self, requirement: RequiresSelfAssign) {
+        self.self_assign_requirements.push(requirement);
+    }
+
+    /// Every whole-binding self-assign duty recorded so far.
+    pub fn self_assign_requirements(&self) -> &[RequiresSelfAssign] {
+        &self.self_assign_requirements
     }
 }

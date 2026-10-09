@@ -95,6 +95,7 @@ pub fn check(
     let mut not_lend_requirements = Vec::new();
     let mut out_slot_duties = Vec::new();
     let mut storable_duties = Vec::new();
+    let mut self_assign_duties = Vec::new();
     // Capture-less lambda sites have no recorded semantic site, so the stage
     // hands out ids above every recorded capturing site. The prefix keeps the
     // lifted function names of the two kinds disjoint.
@@ -115,8 +116,15 @@ pub fn check(
                     diagnostics,
                     &mut next_lifted,
                 );
-                let (mut function, lifted, requirements, lend_duties, slot_duties, store_duties) =
-                    checker.check();
+                let (
+                    mut function,
+                    lifted,
+                    requirements,
+                    lend_duties,
+                    slot_duties,
+                    store_duties,
+                    self_assign_reqs,
+                ) = checker.check();
                 function.module = module.name.clone();
                 functions.push(function);
                 functions.extend(lifted);
@@ -124,6 +132,7 @@ pub fn check(
                 not_lend_requirements.extend(lend_duties);
                 out_slot_duties.extend(slot_duties);
                 storable_duties.extend(store_duties);
+                self_assign_duties.extend(self_assign_reqs);
             }
         }
     }
@@ -139,6 +148,9 @@ pub fn check(
     }
     for duty in storable_duties {
         monomorphization.require_storable_slot(duty);
+    }
+    for duty in self_assign_duties {
+        monomorphization.require_self_assign(duty);
     }
     generics::collect_ir_instances(&functions, &program, sema, &mut monomorphization);
     instance_check::check(loaded, &program, &functions, sema, &monomorphization, diagnostics);
@@ -303,10 +315,19 @@ struct FunctionChecker<'a, 'd> {
     /// reports `E10034` when the type argument owns the slot and stays exempt
     /// when the slot is nullable.
     storable_slot_requirements: Vec<ir::RequiresStorableSlot>,
+    /// The whole-binding self-assign duties this body owes its instances.
+    ///
+    /// A self-assign through a lend root whose declared type still mentions a
+    /// type parameter is judged after substitution: the per-instance audit
+    /// reports the owning or nullable diagnostic, while a duplicable or view
+    /// substitution stays accepted.
+    self_assign_requirements: Vec<ir::RequiresSelfAssign>,
     /// Move sites already recorded, so one site owes one lend duty.
     recorded_not_lend: BTreeSet<(String, u32, u32)>,
     /// Store sites already recorded, so one site owes one slot duty.
     recorded_storable_slot: BTreeSet<(String, u32, u32)>,
+    /// Self-assign sites already recorded, so one site owes one duty.
+    recorded_self_assign: BTreeSet<(String, u32, u32)>,
     /// Binding indices already recorded, so one binding owes one duty.
     recorded_requirements: BTreeSet<usize>,
     /// The lifted functions of every lambda this function lowers.
@@ -382,8 +403,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             not_lend_requirements: Vec::new(),
             out_slot_duties: Vec::new(),
             storable_slot_requirements: Vec::new(),
+            self_assign_requirements: Vec::new(),
             recorded_not_lend: BTreeSet::new(),
             recorded_storable_slot: BTreeSet::new(),
+            recorded_self_assign: BTreeSet::new(),
             recorded_requirements: BTreeSet::new(),
             lifted: Vec::new(),
             next_lifted,
@@ -395,7 +418,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// Returns the declared body, every lambda lifted out of it, the
     /// duplicability duties the body owes its instances, the lend-move duties
-    /// it owes them, and the out-slot place duties it owes them.
+    /// it owes them, the out-slot place duties it owes them, the lend-slot
+    /// store duties it owes them, and the whole-binding self-assign duties it
+    /// owes them.
     fn check(
         mut self,
     ) -> (
@@ -405,6 +430,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::RequiresNotLend>,
         Vec<ir::RequiresOutSlotPlace>,
         Vec<ir::RequiresStorableSlot>,
+        Vec<ir::RequiresSelfAssign>,
     ) {
         let returns = self.returns.clone();
         self.check_nullable_decl(&returns, self.decl.name_span);
@@ -446,6 +472,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.not_lend_requirements,
             self.out_slot_duties,
             self.storable_slot_requirements,
+            self.self_assign_requirements,
         )
     }
 

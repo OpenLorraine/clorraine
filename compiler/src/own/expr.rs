@@ -623,6 +623,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.check_value_into(value, &target_ty, value.span);
     }
 
+    /// True when the store's value is the target place itself.
+    ///
+    /// The binding and the projection list must both match: a projected store
+    /// reads or writes part of the place rather than the whole binding, and a
+    /// different binding is an ordinary move or copy.
+    fn is_exact_self_assign(
+        &self,
+        id: usize,
+        projections: &[ir::Projection],
+        value: &Expr,
+    ) -> bool {
+        match self.place_target(value) {
+            Some(PlaceTarget::Local(source_id, source_projections)) => {
+                source_id == id && source_projections == projections
+            }
+            _ => false,
+        }
+    }
+
     /// Judges a store whose target is a lend parameter or an out-parameter
     /// slot.
     ///
@@ -635,7 +654,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A nullable out-parameter slot accepts the store, because it owns its
     /// incoming value. An exact self-assignment through it is the exception:
     /// the store would release that value and write the emptied source back,
-    /// so the caller would lose it.
+    /// so the caller would lose it. The self-assignment test compares the
+    /// recorded projection lists: two run-time index projections compare equal
+    /// (a run-time index records no index value), so any same-root run-time
+    /// pair — `xs[i] = xs[j]` as well as `xs[i] = xs[i]` — is judged a
+    /// self-assign, while literal indices distinguish (`xs[1] = xs[0]` is
+    /// accepted).
     fn check_lend_target_store(
         &mut self,
         id: usize,
@@ -644,13 +668,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
     ) {
         if self.bindings[id].kind == BindingKind::OutSlot {
-            let self_assign = match self.place_target(value) {
-                Some(PlaceTarget::Local(source_id, source_projections)) => {
-                    source_id == id && source_projections == projections
-                }
-                _ => false,
-            };
-            if self_assign {
+            if self.is_exact_self_assign(id, projections, value) {
                 let name = self.bindings[id].name.clone();
                 self.error(
                     "E10020",
@@ -669,6 +687,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let ty = binding.ty.clone();
+        // A whole-binding self-assign through a still-parameter lend root is
+        // judged after substitution: the concrete spellings reject an owning
+        // or nullable instance while a duplicable or view instance stays a
+        // copy. Recording the site before the deferral below is essential —
+        // the self source would otherwise look like an already-reported lend
+        // move and the judgment would be skipped entirely.
+        if self.maybe_owns(&ty) && self.is_exact_self_assign(id, projections, value) {
+            let parameter = binding.name.clone();
+            let ir_name = binding.ir_name.clone();
+            if self.recorded_self_assign.insert((ir_name, span.start, span.end)) {
+                self.self_assign_requirements.push(ir::RequiresSelfAssign {
+                    function: self.decl.name.clone(),
+                    parameter,
+                    ty,
+                    span,
+                });
+            }
+            return;
+        }
         if self.lend_moves_judged(&ty, value) {
             return;
         }

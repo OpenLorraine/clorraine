@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 01:31
-> **Progress**: 2/22 tasks (9%)
+> **Last Updated**: 2026-10-10 01:33
+> **Progress**: 6/22 tasks (27%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -80,10 +80,10 @@ any implementation.
 **Objective**: Record the parameter-typed lend self-assign site, audit it per instance, and
 document the conservative runtime-index comparison (DEF-102, no semantic change).
 
-- [ ] 1.2.1 [DEF-100] Add the `RequiresSelfAssign` record, its re-export, the monomorphization transfer (`require_self_assign`, mirroring `require_storable_slot`), and the recorder at the lend-store site — `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`, `compiler/src/own/expr.rs`
-- [ ] 1.2.2 [DEF-100] Audit the duty per instance with nullability checked before the duplicable/view/unknown skips (`E10034` / `E10020` mapping), one report per site (the first offending instance in instantiation order) — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs`
-- [ ] 1.2.3 [DEF-102] State the conservative runtime-index comparison in the rule's documentation — `compiler/src/own/expr.rs`
-- [ ] 1.2.4 Run the spec suite to green (ST-1 – ST-7 and ST-23 – ST-27) and the ASan probes for ST-2 and ST-6; on any failure STOP and fix the implementation, never the test
+- [x] 1.2.1 [DEF-100] Add the `RequiresSelfAssign` record, its re-export, the monomorphization transfer (`require_self_assign`, mirroring `require_storable_slot`), and the recorder at the lend-store site — `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`, `compiler/src/own/expr.rs` ✅ (completed: 2026-10-10 01:33)
+- [x] 1.2.2 [DEF-100] Audit the duty per instance with nullability checked before the duplicable/view/unknown skips (`E10034` / `E10020` mapping), one report per site (the first offending instance in instantiation order) — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs` ✅ (completed: 2026-10-10 01:33)
+- [x] 1.2.3 [DEF-102] State the conservative runtime-index comparison in the rule's documentation — `compiler/src/own/expr.rs` ✅ (completed: 2026-10-10 01:33)
+- [x] 1.2.4 Run the spec suite to green (ST-1 – ST-7 and ST-23 – ST-27) and the ASan probes for ST-2 and ST-6; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 01:33)
 
 **Deliverables**:
 - The source changes
