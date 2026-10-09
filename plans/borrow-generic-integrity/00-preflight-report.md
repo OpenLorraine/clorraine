@@ -2,9 +2,9 @@
 
 > **Status**: ✅ PREFLIGHT PASSED — all 17 findings resolved (1 🔴, 6 🟠, 9 🟡, 1 🔵)
 > **Iteration**: 2 (fixes applied and verified — see §Iteration 2)
-> **Artifact**: implementation plan at `plans/borrow-generic-integrity/` — 10 documents, HEAD `823e008`, tree `4e93c84a17c8b26d76190c395f23b23eea08447d`
+> **Artifact**: implementation plan at `plans/borrow-generic-integrity/` — 10 plan documents plus this report. Initially scanned at HEAD `823e008` (tree `4e93c84a17c8b26d76190c395f23b23eea08447d`); **pass verified at HEAD `6657f21`, plan tree `df4402d1b4d09c4258f88e9317096b9dd269a9af`** (the applied fixes are the only artifact change)
 > **Codebase Grounded**: ~20 compiler/test files examined; every file:line reference in the plan verified; 13 execution probes run with `target/debug/clc`
-> **Last Updated**: 2026-10-09 21:01
+> **Last Updated**: 2026-10-09 21:35
 >
 > ⚠️ **SAME-SESSION REVIEW**: this artifact was created in the current session. Same-agent
 > bias is elevated. Countermeasures: the 13-dimension scan ran as five independent auditor
@@ -274,7 +274,12 @@ applied in iteration 2.
 ## Iteration 2 — Fix Verification
 
 Applied and verified (bounded re-scan; the artifact changed only inside the plan folder plus
-`codeops/specialist-check.json`):
+`codeops/specialist-check.json`).
+
+**Verified revision:** HEAD `6657f21` — plan tree `df4402d1b4d09c4258f88e9317096b9dd269a9af`,
+specialist-check blob `32ad79752f20f327e6bfe272e9b5eeb15a542dd7`. If the artifact's git blob
+changes from this revision, consume only a targeted re-check of the changed sections (the
+protocol's staleness rule), not a set-wide audit.
 
 | Finding | Resolution applied | Where |
 |---------|--------------------|-------|
