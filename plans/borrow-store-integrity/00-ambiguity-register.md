@@ -73,6 +73,16 @@ Root invocation ID: plans-borrow-store-integrity-20261010
 Reopen triggers: a spec rule that makes constant slice stores unchecked; a read-path guard-spelling change
 ```
 
+**AR-6 (preflight clarification, 2026-10-10):** the `Guards` statement is constructed only when at
+least one selected level's base has a dynamic bound (a fixed-array-only chain constructs no
+statement, so fixed-array emission and `for`-step headers stay unchanged), and it covers every
+constant-index store form (plain, compound, update, row). The original "the emitter cannot
+recompute the per-level base types" premise was incorrect (`codegen/expr.rs` walks per-level place
+types); an emitter-side derivation was considered and rejected because the checker has one
+insertion point per assignment path while the store forms fan out across several emitter arms, and
+the guard then reuses the read path's guard-value recursion verbatim. See the preflight report
+PF-005/PF-007.
+
 **AR-7 (delegated):**
 
 ```text
@@ -90,14 +100,25 @@ Root invocation ID: plans-borrow-store-integrity-20261010
 Reopen triggers: a change to the concrete out-slot self-assign diagnostic
 ```
 
+**AR-7 (preflight clarification, 2026-10-10):** the audit checks nullability before the
+duplicable/view skips — every nullable `borrow` concrete spelling reports `E10020`, including
+view, `raw`, and `cstring` substitutions — while a non-nullable duplicable/view/unknown
+substitution stays accepted; one site reports once (the first offending instance in instantiation
+order). See the preflight report PF-003/PF-008.
+
 **AR-8 (delegated):** verified in probes p101d/p101e — `return xs[0]` and `return xs[i]` through a `String[]?` slot are rejected `E10026` ("partial moves are limited to top-level fields in v1"). The plan pins both rejections as guards; no fix work.
 
 **AR-9 (delegated):** verified in probe q102e — `xs[i] = xs[i]` on a non-nullable `borrow xs: i32[]` is accepted and emits a plain self-copy with the read's guard. The out-slot self-assign carve-out does not apply; no change, guard test only.
 
+**AR-11 (preflight clarification, 2026-10-10):** the in-container `RDC_ASAN=1` full-suite run is a
+non-gating convenience (timing-flaky, matching the previous cycles); the per-case host ASan probe
+(emit, `cc -fsanitize=address -no-pie`, run) is the phase memory oracle. See the preflight report
+PF-013.
+
 **AR-12 (delegated):** P1 groups the two self-assign judgments (DEF-100's parameter-typed lend root and DEF-102's out-slot element root) because they share the comparison/classification machinery; P2 is the return emission alone; P3 groups the two store-guard changes that both sit in the assignment-target emission path (null requirement and bounds trap).
 
-**AR-13 (delegated):** per `AGENTS.md` — P1 (ownership rules) → correctness + memory-safety reviewers; P2 (return emission) and P3 (store emission) → those two plus the emission-integrity auditor (base/head emission diff, strict-build hunt). Packets include the blast-radius step for the changed construct.
+**AR-13 (delegated):** per `AGENTS.md` — P1 (ownership rules, a lend language-rule change) → correctness + memory-safety + semantics reviewers; P2 (return emission) and P3 (store emission) → correctness + memory-safety plus the emission-integrity auditor (base/head emission diff, strict-build hunt). Packets include the blast-radius step for the changed construct. *(Preflight correction 2026-10-10: the P1 list now matches 99's phase lenses and the AGENTS.md matrix; see PF-012.)*
 
 **AR-14 (delegated):** plan folder `plans/borrow-store-integrity/` (flat layout, the repository convention); tests `compiler/tests/borrow_store_integrity_spec_test.rs` and `_impl_test.rs`; new internal names follow `Requires*` duty and `emit_*` emitter patterns.
 
-**Scan completeness (12 categories):** Feature gaps — covered by the per-defect requirements (01) and components (03). Behavioral — AR-3, AR-4, AR-5, AR-7 (open ones pending). Scope — AR-1, AR-8, AR-9, AR-10. Technical — AR-2, AR-5, AR-6, AR-11, AR-12. Edge cases — covered in 03 (nested element targets, narrowed bases, projected returns, duplicable/nullable/view substitutions) and pinned in 07. Integration points — the duty audit (`own/instance_check.rs`), the checker (`own/expr.rs`, `own/place.rs`), the emitter (`codegen/function.rs`, `codegen/cleanup.rs`, `codegen/guards.rs`); owned by 03. Data & state — no new data model or state; the existing place/duty state only. Security & compliance — memory safety is the security surface for a compiler; AR-11's ASan probes cover it. Non-functional — determinism (byte-identical re-emission) follows the existing suite convention; no performance surface. UX & presentation — all diagnostics reuse existing codes/messages (`E10010`, `E10020`, `E10034`, `E11211`); no new user-facing text. Stakeholder conflicts — none. Naming — AR-14.
+**Scan completeness (12 categories):** Feature gaps — covered by the per-defect requirements (01) and components (03). Behavioral — AR-3, AR-4, AR-5, AR-7. Scope — AR-1, AR-8, AR-9, AR-10. Technical — AR-2, AR-5, AR-6, AR-11, AR-12. Edge cases — covered in 03 (nested element targets, narrowed bases, projected returns, duplicable/nullable/view substitutions) and pinned in 07. Integration points — the duty audit (`own/instance_check.rs`), the checker (`own/expr.rs`, `own/place.rs`), the emitter (`codegen/function.rs`, `codegen/cleanup.rs`, `codegen/guards.rs`), the instance-collection walks (`own/generics.rs`); owned by 03. Data & state — no new data model or state; the existing place/duty state only. Security & compliance — memory safety is the security surface for a compiler; AR-11's ASan probes cover it. Non-functional — determinism (byte-identical re-emission) follows the existing suite convention; no performance surface. UX & presentation — all diagnostics reuse existing codes/messages (`E10010`, `E10020`, `E10034`, `E11211`); no new user-facing text. Stakeholder conflicts — none. Naming — AR-14.

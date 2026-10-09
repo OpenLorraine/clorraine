@@ -22,6 +22,11 @@ runtime-indexed element pair (AR-4, user ruling). DEF-101 follows the user's mov
 return transfers the slot's value and empties the caller's slot, matching the accepted
 `let local = v` store (AR-3).
 
+A verified adjacent defect is deliberately out of scope: a conditional-result store through a
+non-nullable lend root (`slot = cond ? slot : other`) stays accepted and frees the caller's value
+when the non-slot arm runs (`lend_moves_judged` defers on any lend source). It is documented in
+[03-01](03-01-self-assign-rules.md) and filed as DEF-113 (user ruling at preflight).
+
 `02-current-state.md` records the verified reproduction of each defect at the plan baseline;
 `03-01` through `03-03` own the designs; `07-testing-strategy.md` owns the ST-cases; the
 `00-ambiguity-register.md` entries own the decisions this plan cites as `AR ##`.
@@ -52,6 +57,7 @@ DEF-105) were changes to existing paths, not new support surfaces (AR-4, AR-5, A
 | 03-01 | [Self-assign rules](03-01-self-assign-rules.md)   | P1: DEF-100, DEF-102                        |
 | 03-02 | [Out-slot return](03-02-out-slot-return.md)       | P2: DEF-101                                 |
 | 03-03 | [View-store guards](03-03-view-store-guards.md)   | P3: DEF-105, DEF-106                        |
+| 05  | [Findings Ledger](05-findings.md)                   | Per-phase review rulings (appended in execution) |
 | 07  | [Testing Strategy](07-testing-strategy.md)          | ST-cases and verification                   |
 | 99  | [Execution Plan](99-execution-plan.md)              | Phases, sessions, task checklist            |
 
@@ -93,11 +99,11 @@ func g(borrow xs: i32[]?): i32 {
 | -------- | ------- | ------ |
 | Batch membership | DEF-100, DEF-101, DEF-102, DEF-105, DEF-106 (user choice) | AR-1 |
 | DEF-100 mechanism | New `RequiresSelfAssign` duty following the `Requires*` pattern | AR-2 |
-| DEF-100 diagnostics | Owning → `E10034`; nullable → `E10020`; duplicable/view → accepted | AR-7 |
+| DEF-100 diagnostics | Nullable → `E10020` (checked before the skips); owning → `E10034`; non-nullable duplicable/view/unknown → accepted | AR-7 |
 | DEF-101 direction | Move out: the return stores the value and empties the caller's slot | AR-3 |
 | DEF-102 resolution | Keep the conservative runtime-index guard; pin and document it | AR-4 |
-| DEF-105 rule | Compile-time `E10010`, mirroring the read path | AR-5 |
-| DEF-106 emission | The read path's `E11211` trap before the store, carried by a `Guards` statement | AR-6 |
+| DEF-105 rule | Compile-time `E10010` for assignment and compound-assignment write targets, mirroring the read path (updates already report once through the operand read) | AR-5 |
+| DEF-106 emission | The read path's `E11211` trap before the store in every constant-index form, carried by a `Guards` statement built only for dynamic-bound levels | AR-6 |
 | Frozen spec | `spec/` stays byte-identical | AR-10 |
 | Verification | `make check` per phase, ASan probes for the memory phases (`RDC_ASAN`), `make verify` final | AR-11 |
 
@@ -116,9 +122,10 @@ briefs._
 ## Related Files
 
 - New: `compiler/tests/borrow_store_integrity_spec_test.rs`,
-  `compiler/tests/borrow_store_integrity_impl_test.rs`
+  `compiler/tests/borrow_store_integrity_impl_test.rs`, `plans/borrow-store-integrity/05-findings.md`
+  (the per-phase review ledger, appended during execution)
 - Modified: `compiler/src/ir.rs`, `compiler/src/ir/mono.rs`, `compiler/src/own.rs`,
-  `compiler/src/own/expr.rs`, `compiler/src/own/instance_check.rs`,
+  `compiler/src/own/expr.rs`, `compiler/src/own/instance_check.rs`, `compiler/src/own/generics.rs`,
   `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/function.rs`
 - Referenced by the design (no change expected): `compiler/src/own/place.rs`,
-  `compiler/src/codegen/guards.rs`, `compiler/src/ir/place.rs`
+  `compiler/src/own/statements.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/ir/place.rs`

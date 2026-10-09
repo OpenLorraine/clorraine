@@ -63,11 +63,11 @@ task-size criteria in the make-plan quality checklist)
 **Objective**: Pin the corrected self-assign judgments and the preserved accepted shapes before
 any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/borrow_store_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 and ST-3 fail; ST-2, ST-4, ST-5, ST-6, ST-7 pass as green pins)
+- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 and the extension cases ST-23 – ST-27 — `compiler/tests/borrow_store_integrity_spec_test.rs`
+- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1, ST-3, and ST-27 fail; ST-2, ST-4, ST-5, ST-6, ST-7 and the ST-23 – ST-26 pins pass as green pins)
 
 **Deliverables**:
-- Specification suite with ST-1 – ST-7
+- Specification suite with ST-1 – ST-7 and ST-23 – ST-27
 - Red-phase evidence with per-case justification for the passing pins
 
 **Verify**: `make -C docker exec CMD="cargo test --test borrow_store_integrity_spec_test"`
@@ -80,16 +80,16 @@ any implementation.
 **Objective**: Record the parameter-typed lend self-assign site, audit it per instance, and
 document the conservative runtime-index comparison (DEF-102, no semantic change).
 
-- [ ] 1.2.1 [DEF-100] Add the `RequiresSelfAssign` record, its re-export, and the recorder at the lend-store site — `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`, `compiler/src/own/expr.rs`
-- [ ] 1.2.2 [DEF-100] Audit the duty per instance (`E10034` / `E10020` mapping), one report per site — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs`
+- [ ] 1.2.1 [DEF-100] Add the `RequiresSelfAssign` record, its re-export, the monomorphization transfer (`require_self_assign`, mirroring `require_storable_slot`), and the recorder at the lend-store site — `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`, `compiler/src/own/expr.rs`
+- [ ] 1.2.2 [DEF-100] Audit the duty per instance with nullability checked before the duplicable/view/unknown skips (`E10034` / `E10020` mapping), one report per site (the first offending instance in instantiation order) — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs`
 - [ ] 1.2.3 [DEF-102] State the conservative runtime-index comparison in the rule's documentation — `compiler/src/own/expr.rs`
-- [ ] 1.2.4 Run the spec suite to green (ST-1 – ST-7) and the ASan probes for ST-2 and ST-6; on any failure STOP and fix the implementation, never the test
+- [ ] 1.2.4 Run the spec suite to green (ST-1 – ST-7 and ST-23 – ST-27) and the ASan probes for ST-2 and ST-6; on any failure STOP and fix the implementation, never the test
 
 **Deliverables**:
 - The source changes
 - Green spec suite and clean ASan probes
 
-**Verify**: `make -C docker exec CMD="cargo test --test borrow_store_integrity_spec_test"` and, for the memory cases, `make -C docker exec CMD="RDC_ASAN=1 cargo test --test borrow_store_integrity_spec_test"`
+**Verify**: `make -C docker exec CMD="cargo test --test borrow_store_integrity_spec_test"`; for the memory cases, the per-case host probes are the oracle (emit, `cc -std=c99 -g -fsanitize=address -no-pie`, run), with `make -C docker exec CMD="RDC_ASAN=1 cargo test --test borrow_store_integrity_spec_test"` as a non-gating convenience run (timing-flaky)
 
 ---
 
@@ -123,7 +123,7 @@ document the conservative runtime-index comparison (DEF-102, no semantic change)
 implementation.
 
 - [ ] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-12 — `compiler/tests/borrow_store_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-8 fails; ST-9 – ST-12 pass as green pins)
+- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-8 and ST-9 fail; ST-10 – ST-12 pass as green pins)
 
 **Deliverables**:
 - Specification clauses for P2
@@ -140,13 +140,13 @@ implementation.
 zeroing step.
 
 - [ ] 2.2.1 [DEF-101] Detect the caller-storage source (`pointer_params`) in the direct-return branch and emit the block-local plus source-empty form — `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/function.rs`
-- [ ] 2.2.2 Run the spec suite to green (ST-8 – ST-12) and the ASan probe for ST-8; on any failure STOP and fix the implementation, never the test
+- [ ] 2.2.2 Run the spec suite to green (ST-8 – ST-12) and the ASan probes for ST-8 and ST-9; on any failure STOP and fix the implementation, never the test
 
 **Deliverables**:
 - The return emission change
 - Green spec suite and clean ASan probe
 
-**Verify**: `make -C docker exec CMD="cargo test --test borrow_store_integrity_spec_test"` and `make -C docker exec CMD="RDC_ASAN=1 cargo test --test borrow_store_integrity_spec_test"`
+**Verify**: `make -C docker exec CMD="cargo test --test borrow_store_integrity_spec_test"`; the ST-8 and ST-9 host ASan probes are the memory oracle (the `RDC_ASAN=1` container run is a non-gating convenience)
 
 ---
 
@@ -179,8 +179,8 @@ zeroing step.
 **Objective**: Pin the store null requirement, the bounds trap, and the unchanged acceptances
 before any implementation.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-22 — `compiler/tests/borrow_store_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-18 fail; the remaining cases pass as green pins)
+- [ ] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-22 and the extension cases ST-28 – ST-30 — `compiler/tests/borrow_store_integrity_spec_test.rs`
+- [ ] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-18, and ST-29 fail; the remaining cases pass as green pins)
 
 **Deliverables**:
 - Specification clauses for P3
@@ -195,15 +195,15 @@ before any implementation.
 **Reference**: [03-03](03-03-view-store-guards.md) §Proposed Changes
 **Objective**: Add the store-target null requirement and the constant-index bounds trap.
 
-- [ ] 3.2.1 [DEF-105] Walk every write target for the read path's nullable-base check — `compiler/src/own/expr.rs`
-- [ ] 3.2.2 [DEF-106] Add the `Guards` statement, lower the target's element selection into it, and emit the guard pass — `compiler/src/ir.rs`, `compiler/src/own/expr.rs`, `compiler/src/codegen/function.rs`
-- [ ] 3.2.3 Run the spec suite to green (ST-13 – ST-22) and the ASan probes for ST-8 and ST-18; on any failure STOP and fix the implementation, never the test
+- [ ] 3.2.1 [DEF-105] Walk every assignment and compound-assignment write target for the read path's nullable-base check (the update form is already covered by the operand's read walk; ST-28 pins it) — `compiler/src/own/expr.rs`
+- [ ] 3.2.2 [DEF-106] Add the `Guards` statement (constructed only when a level's base has a dynamic bound), lower the store target's element selection into it for every constant-index store form (plain, compound, and update; row stores via the same assignment path), and emit the guard pass — `compiler/src/ir.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen/function.rs`
+- [ ] 3.2.3 Run the spec suite to green (ST-13 – ST-22 and ST-28 – ST-30) and the ASan probes for ST-15, ST-18, and ST-20; on any failure STOP and fix the implementation, never the test
 
 **Deliverables**:
 - The checker walk and the `Guards` statement
 - Green spec suite and clean ASan probes
 
-**Verify**: `make -C docker exec CMD="cargo test --test borrow_store_integrity_spec_test"` and `make -C docker exec CMD="RDC_ASAN=1 cargo test --test borrow_store_integrity_spec_test"`
+**Verify**: `make -C docker exec CMD="cargo test --test borrow_store_integrity_spec_test"`; the per-case host ASan probes are the memory oracle (the `RDC_ASAN=1` container run is a non-gating convenience)
 
 ---
 
@@ -213,7 +213,7 @@ before any implementation.
 **Objective**: Pin the internal shapes, run the phase verification, and close the plan with the
 full acceptance run.
 
-- [ ] 3.3.1 Write implementation tests (the trap line spelled before a slice element store, the unchanged fixed-array emission, the `E10010` store-site shape, byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs`
+- [ ] 3.3.1 Write implementation tests (the trap line spelled before a slice element store in the plain, compound, and update forms; no `Guards` statement for fixed-array-only targets; the unchanged fixed-array emission; the `E10010` store-site shape with one report for the update form; byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs`
 - [ ] 3.3.2 Full phase verification — `make check`
 - [ ] 3.3.3 Full acceptance — `make verify`
 

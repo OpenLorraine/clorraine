@@ -23,10 +23,12 @@ guard that already exists (AR-4).
 ### Must Have
 
 - [ ] R1 — DEF-100: a whole-binding self-assign through a parameter-typed lend root
-  (`copySelf<T>(borrow slot: T) { slot = slot; }`) is judged per substituted type: an owning
-  non-nullable instance is rejected `E10034` (the concrete spelling's diagnostic), a nullable
-  instance is rejected `E10020` (the concrete out-slot self-assign diagnostic), and a duplicable,
-  view, or unknown instance stays accepted; one report per site.
+  (`copySelf<T>(borrow slot: T) { slot = slot; }`) is judged per substituted type: a nullable
+  instance is rejected `E10020` (the concrete out-slot self-assign diagnostic — nullability takes
+  precedence even when the substitution is also a view, `raw`, or `cstring`), an owning
+  non-nullable instance is rejected `E10034` (the concrete spelling's diagnostic), and a
+  non-nullable duplicable, view, or unknown instance stays accepted; one report per site — the
+  first offending instance in instantiation order.
   Source: spec/03 OW-16, spec/14 E10020/E10034 · AR-2, AR-7.
 - [ ] R2 — DEF-102: the runtime-indexed element self-assign on a nullable out-slot root
   (`if (xs != null) { xs[i] = xs[i]; }`) is rejected `E10020`; the conservative comparison (any
@@ -43,7 +45,9 @@ guard that already exists (AR-4).
   Source: spec/decisions T8/D9, spec/02 TY-6 · AR-5.
 - [ ] R5 — DEF-106: a constant-index element store into a dynamically-bounded view emits the
   `E11211` bounds trap before the store, exactly as the read path and the runtime-index store path
-  do; a fixed-array base keeps the semantic-layer check and its emission is unchanged.
+  do — in every store form (plain assignment, compound assignment, update, and the row store);
+  the guard statement is constructed only when a level's base has a dynamic bound, and a
+  fixed-array-only base keeps the semantic-layer check and its emission is unchanged.
   Source: spec/14 E11211, spec/06 FN · AR-6.
 
 ### Should Have
@@ -62,6 +66,10 @@ guard that already exists (AR-4).
   the conservative guard (AR-4).
 - Relaxing the generic-instance audit for nullable lend moves into owned positions: the concrete
   return is fixed, the generic spelling stays `E10034`-rejected (AR-3; a documented conservatism).
+- Judging a conditional-result store through a lend root (`slot = cond ? slot : other`): a
+  verified adjacent defect (`lend_moves_judged` defers on any lend source, so the emitted store
+  frees the caller's saved value when the non-slot arm runs). Documented as a known limitation in
+  [03-01](03-01-self-assign-rules.md) and filed as `DEF-113` (user ruling at preflight).
 - New diagnostic codes, new language surface, or a new verification harness (minimum-sufficient
   baseline, [00-index.md](00-index.md)).
 
@@ -73,7 +81,9 @@ guard that already exists (AR-4).
   bounds-trap line, the slot-empty store) and no symbol or signature changes.
 - The accepted-shape emissions of fixed-array element stores, runtime-index stores, and non-null
   element stores stay byte-identical except where R5 requires the new trap line (slice/`str`
-  constant-index stores).
+  constant-index stores). A fixed-array-only target constructs no guard statement, so its emission
+  — including a `for`-step header — is unchanged; a dynamic-bound store inside a `for` step
+  degrades the header to the flat label/goto form, as any non-`Assign` step statement does.
 
 ### Security
 
@@ -98,9 +108,9 @@ guard that already exists (AR-4).
 
 ## Acceptance Criteria
 
-1. [ ] R1–R5 verified by the specification tests ST-1 – ST-21
-   ([07-testing-strategy.md](07-testing-strategy.md)); the red-phase cases fail at the plan
-   baseline and pass after the fix.
+1. [ ] R1–R5 verified by the specification tests ST-1 – ST-30 (P1 extension ST-23 – ST-27, P3
+   extension ST-28 – ST-30; [07-testing-strategy.md](07-testing-strategy.md)); the red-phase cases
+   fail at the plan baseline and pass after the fix.
 2. [ ] Every memory-relevant accepted shape is ASan-clean on the host (`RDC_ASAN` probes).
 3. [ ] `make check` green per phase; `make verify` green before the plan is marked complete.
 4. [ ] No regression in the existing suites, including the pinned borrow-generic-integrity

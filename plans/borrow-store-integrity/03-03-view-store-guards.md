@@ -26,16 +26,21 @@ before the store.
   constant-index element path renders the place directly (`((*xs)).ptr[0] = v;`), and only the
   run-time-index path routes through `Statement::StorePointer`, whose `AddressOf(Index)` operand
   earns the guard.
-- The emitter's `Place` carries only the final type, so an emission-side bounds guard cannot
-  recompute the per-level base types for DEF-106; the checker, which types every AST node, can.
+- An emission-side guard can walk per-level place types (`codegen/expr.rs` `place`/`place_base_type`),
+  but the constant-index store forms funnel through several emitter arms while the checker has one
+  insertion point per assignment path, and the checker already types every AST node — lowering the
+  guard into an index value lets the emitter reuse the read path's guard recursion verbatim. The
+  emitter-side derivation is recorded as a considered alternative (AR-6).
 
 ### Proposed Changes
 
 **DEF-105 — a store target's element base obeys the read's null requirement.**
 
 A new checker walk `FunctionChecker::check_store_index_nonnull(&mut self, target: &Expr, span: Span)`
-runs for every write target (assignment, compound assignment, and update). It walks the target
-expression exactly as the read path walks a value:
+runs for every assignment and compound-assignment write target. The update form (`xs[0]++`) is
+already covered — the statement dispatcher evaluates the operand first, so the read walk reports
+exactly one `E10010` (pinned by ST-28); calling the walker in `check_update` as well would
+double-report. The walk goes over the target expression exactly as the read path walks a value:
 
 - `ExprKind::Index { base, .. }`: let `base_ty = self.ty(base)`; when `base_ty` is not `raw` and
   `base_ty.nullable` and `self.unsafe_depth == 0`, report through `check_nonnull_expr(base, span)`
@@ -44,8 +49,8 @@ expression exactly as the read path walks a value:
 - `ExprKind::Member { base, .. }`: recurse into `base` (a nullable struct base is not expressible
   — `E10011` — and a view field is not expressible — `E10205`; the recursion keeps the walk
   faithful for any future nullable-capable field).
-- `ExprKind::Unsafe(inner)`: recurse (the `unsafe_depth` gate already disables the check inside an
-  `unsafe` block, matching the read path).
+- `ExprKind::Unsafe(inner)`: recurse with `unsafe_depth` bumped around the recursion, mirroring the
+  read path's expression wrapper (`own/expr.rs:383-387`).
 - Anything else: stop.
 
 **DEF-106 — a constant-index element store carries the read's bounds trap.**
@@ -70,14 +75,20 @@ Guards {
   `Value::new(element_ty, ValueKind::Index { base: lower_value(base_expr), index: lower_value(index_expr) })`
   for the outermost `Index` node of an element selection. One check per outermost selection; the
   guard pass recurses into the index chain and emits each level's trap in order.
-- The checker emits `Statement::Guards { checks }` immediately before the store statement in the
-  constant-index element path (the run-time-index path is unchanged — its `StorePointer` pointer
-  already carries the guard).
-- The emitter arm is `for check in checks { self.emit_guards(check); }`; fixed-array bases reduce
-  to `bounds_guard_condition == None` and emit nothing, so their emission stays byte-identical.
+- The checker emits `Statement::Guards { checks }` immediately before the store statement for every
+  constant-index element store form: the plain and compound assignment paths in `check_assign`
+  (before `emit_assigned`) and the constant update path in `check_update` (before
+  `emit_compound_store`); the row-valued store goes through the same assignment path. The
+  run-time-index path is unchanged — its `StorePointer` pointer already carries the guard.
+- The statement is constructed only when at least one selected level's base has a dynamic bound
+  (slice/`str`/dynamic array); a fixed-array-only chain constructs no statement, so its emission —
+  including a `for`-step header — is unchanged. A dynamic-bound store inside a `for` step degrades
+  the header to the flat label/goto form, as any non-`Assign` step statement does.
+- The emitter arm is `for check in checks { self.emit_guards(check); }`; `bounds_guard_condition`
+  returns `None` for in-range fixed-array constants and the dynamic condition otherwise.
 - The read-analysis pass for local liveness (`codegen/function.rs`, the statement match near
-  `note_value`) gains an arm that notes the check values' places as reads, so the guard counts as
-  a use of its base.
+  `note_value`) gains an arm that notes the check values' places as reads; only dynamic-bound
+  statements exist, so a marker is removed only when the emitted guard really reads the base.
 
 ## Implementation Details
 
@@ -95,8 +106,13 @@ Guards {
 - `check_nonnull_expr` and the narrowing state are reused unchanged (DEF-105).
 - `bounds_guard_condition`, `emit_bounds_guard`, and `emit_guards` are reused unchanged
   (DEF-106).
-- The `StorePointer` path keeps its existing guard behavior; fixed-array and non-element stores
-  keep their existing emission.
+- The `StorePointer` path keeps its existing guard behavior; fixed-array-only and non-element
+  stores keep their existing emission.
+- `own/generics.rs`'s `Statement` walk gains the `Guards` arm (each check is walked like an
+  `Assign` value, so guard values join instance collection). The remaining wildcard matches over
+  `Statement` (`own/generics.rs:588`, `own/instance_check.rs:355`, `codegen/control.rs:508`,
+  `own/loops.rs:806`) intentionally ignore guard values: with the dynamic-bound construction gate
+  a check can only hold place/int chains, never a fill or a call.
 
 ## Code Examples
 
@@ -138,7 +154,8 @@ func f(borrow xs: i32[]?): i32 {
 
 ## Testing Requirements
 
-- Specification cases ST-13 – ST-21 ([07-testing-strategy.md](07-testing-strategy.md)), including
-  the trap runs, the narrowed acceptance, and the ASan probes.
-- Implementation pins: the trap line spelled before the store, the fixed-array emission unchanged,
-  the `Guards` statement shape, and byte-identical re-emission.
+- Specification cases ST-13 – ST-22 and ST-28 – ST-30 ([07-testing-strategy.md](07-testing-strategy.md)),
+  including the trap runs, the narrowed acceptance, the update coverage pin, and the ASan probes.
+- Implementation pins: the trap line spelled before the store in the plain, compound, and update
+  forms; no `Guards` statement for fixed-array-only targets; the fixed-array emission unchanged;
+  the `Guards` statement shape; and byte-identical re-emission.
