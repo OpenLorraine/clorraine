@@ -2,10 +2,11 @@
 //!
 //! These cases pin the observable internals of the fixes: the emitted C shape
 //! of an accepted nullable out-slot store, the diagnostic counts of a store
-//! site that the checker visits on more than one pass, and the C typedef and
-//! symbol spellings of instances that differ only by nullability. They
-//! complement the specification suite, which pins the accepted and rejected
-//! behavior.
+//! site that the checker visits on more than one pass, the C typedef and
+//! symbol spellings of instances that differ only by nullability, and the
+//! lowered pointer test of a view-versus-`null` comparison with the store and
+//! read-back through the narrowed view. They complement the specification
+//! suite, which pins the accepted and rejected behavior.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -402,4 +403,103 @@ func main(): i32 {
         first, second,
         "keys-reemit: two emissions of one program must be byte-identical"
     );
+}
+
+/// A view-versus-`null` comparison lowers to a pointer test in both orders.
+///
+/// The emitter renders the emptiness test on the view's `ptr` field whatever
+/// the operand order, so `xs == null` and `null == ys` produce the same shape
+/// over their own operand. The `!=` form is the negated test, and the element
+/// store and read-back inside the narrowed branch keep the pointer spelling
+/// with the bounds trap between them.
+#[test]
+fn should_emit_pointer_null_tests_when_a_view_is_compared_with_null() {
+    let source = r#"module spec.bgi.impl.viewshape;
+
+import { slice } from std.mem;
+
+func check(borrow xs: u8[]?, borrow ys: u8[]?): i32 {
+    let n: i32 = 0;
+    if (xs == null) {
+        n = n + 1;
+    }
+    if (null == ys) {
+        n = n + 2;
+    }
+    if (xs != null) {
+        xs[0] = 7;
+        n = n + i32(xs[0]);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let data: u8[2] = [1, 2];
+    let live: u8[]? = slice(data, 0, 2);
+    let empty: u8[]? = null;
+    return check(borrow live, borrow empty);
+}
+"#;
+    let emitted = emit_host("view-shape", source);
+    assert_contains("view-shape", &emitted, "(((*xs)).ptr == NULL)");
+    assert_contains("view-shape", &emitted, "(((*ys)).ptr == NULL)");
+    assert_contains("view-shape", &emitted, "(((*xs)).ptr != NULL)");
+    assert_contains("view-shape", &emitted, "((*xs)).ptr[0] = 7u;");
+    assert_eq!(
+        count_occurrences(&emitted, "((*xs)).ptr[0]"),
+        2,
+        "view-shape: expected the element store and its read-back"
+    );
+}
+
+/// Two slice views report the operator rule once per operator use.
+///
+/// Equality and ordering on a pair of slice views have no defined meaning, so
+/// each use reports `E10222` on the view operand; the acceptance for the
+/// `null` comparison must not weaken either report.
+#[test]
+fn should_report_view_pair_rejections_once_per_operator_use() {
+    let source = r#"module spec.bgi.impl.viewpair;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let b: u8[2] = [3, 4];
+    let xs: u8[] = slice(a, 0, 2);
+    let ys: u8[] = slice(b, 0, 2);
+    if (xs == ys) {
+        return 1;
+    }
+    if (xs < ys) {
+        return 2;
+    }
+    return 0;
+}
+"#;
+    let (scratch, output, c_path) = compile_only("view-pair", source);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "view-pair: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        count_occurrences(&stderr, "error E10222:"),
+        2,
+        "view-pair: expected one report per operator use; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("operator '==' is not defined"),
+        "view-pair: expected the equality report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("operator '<' is not defined"),
+        "view-pair: expected the ordering report; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "view-pair: a rejected program must not produce a translation unit"
+    );
+    drop(scratch);
 }

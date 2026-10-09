@@ -173,11 +173,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     place.initialized = true;
                     place.moved = false;
                     // Only the written element and its sub-paths are cleared;
-                    // a whole-binding consume or another element stays.
+                    // a whole-binding consume or another element stays. A null
+                    // narrowing is a fact about the root, and an element write
+                    // cannot change it, so it survives the write exactly as it
+                    // survives a field write — the guarded block keeps the
+                    // narrowed value usable (TY-6).
                     place
                         .moved_if_owning
                         .retain(|path| path.first() != first.as_ref());
-                    place.narrowed.clear();
+                    place
+                        .narrowed
+                        .retain(|path| path.first() != first.as_ref());
                 }
             }
         });

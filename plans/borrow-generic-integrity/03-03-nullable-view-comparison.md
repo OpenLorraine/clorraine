@@ -49,8 +49,9 @@ None — one arm of `binary_result` gains a pairing test.
 
 ### Integration Points
 
-- The narrowing path needs no change (verified in [02-current-state.md](02-current-state.md));
-  the run tests pin it end-to-end.
+- The narrowing path needs one correction the acceptance makes reachable: an element write keeps the
+  root's null narrowing, exactly as a field write does (AR-16); the run tests pin the read-back
+  after a store through the narrowed view.
 - The emitter path needs no change (`view_null_test`); the acceptance tests pin the lowered
   `.ptr` form through the run behavior.
 

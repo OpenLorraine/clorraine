@@ -983,10 +983,12 @@ func main(): i32 {
 
 /// A null check narrows a nullable view so its elements can be read.
 ///
-/// The `!= null` branch reads the first element and the `== null` branch
-/// returns the fallback; the run combines both functions over a live view and
-/// an empty one, so the exit code pins the narrowed reads: the first element
-/// (four), the fallback (five), and the second element (six) sum to 51.
+/// The `!= null` branch reads the first element, and the narrowing survives an
+/// element write inside the same branch, so the stored value can be read back.
+/// The `== null` branch returns the fallback. The run combines both forms over
+/// a live view and an empty one, so the exit code pins the narrowed reads and
+/// the read-back: the first element (four), the fallback (five), the second
+/// element (six), and the stored eight sum to 59.
 #[test]
 fn should_read_through_a_narrowed_nullable_view() {
     let source = r#"module spec.bgi.viewnarrow;
@@ -1007,17 +1009,26 @@ func second(xs: u8[]?, fallback: u8): u8 {
     return xs[1];
 }
 
+func setFirst(borrow xs: u8[]?, value: u8): i32 {
+    if (xs != null) {
+        xs[0] = value;
+        return i32(xs[0]);
+    }
+    return 0;
+}
+
 func main(): i32 {
     let xs: u8[2] = [4, 6];
     let view: u8[]? = slice(xs, 0, 2);
     let a: u8 = first(view, 9);
     let b: u8 = second(null, 5);
     let c: u8 = second(view, 5);
-    return i32(a) * 10 + i32(b) + i32(c);
+    let stored: i32 = setFirst(borrow view, 8);
+    return i32(a) * 10 + i32(b) + i32(c) + stored;
 }
 "#;
     let output = run_memory("view-narrow", source);
-    assert_exit("view-narrow", &output, 51);
+    assert_exit("view-narrow", &output, 59);
     assert_no_asan("view-narrow", &output);
 }
 

@@ -183,6 +183,22 @@ Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
 Reopen triggers: view-typed struct fields become legal, at which point the struct-form slice witness can return
 ```
 
+**AR-16 (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: necessary correction on the narrowing path the phase's acceptance makes reachable; one line, mirroring the existing field arm
+Objective: keep a null narrowing valid through an element write, per TY-6 ("known to be non-null inside the guarded block")
+Decision: the element arm of `write_place` retains narrowing paths that do not start with the written element, exactly as the field arm does, instead of clearing every narrowing fact
+Evidence: probe — `if (xs != null) { xs[0] = 7; return i32(xs[0]); }` reported `E10010: value 'xs' may be null here` on the read; with the retain the read-back is accepted (the run exits 59)
+Rejected alternatives: file it as a residual and ship the acceptance without the store-then-read pattern (the narrowed store shape is part of the phase's implementation tests and TY-6 states the fact holds inside the guarded block); keep the clear (contradicts TY-6 and the field behavior)
+Strongest counterargument: element writes are conservative on purpose for run-time indices; but elements are never nullable, so no element-relative narrowing fact exists to protect, and the root fact cannot change
+Confidence: High — probe, spec text TY-6, and the full suite
+Hardening: not required — one-line retain mirroring the existing field arm
+Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
+Reopen triggers: element-relative narrowing facts become expressible (a nullable element type is added)
+```
+
 ### Systematic 12-category scan
 
 | Category | Outcome |

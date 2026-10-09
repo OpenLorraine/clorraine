@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:41
-> **Progress**: 20/30 tasks (67%)
+> **Last Updated**: 2026-10-09 22:43
+> **Progress**: 22/30 tasks (73%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -254,8 +254,8 @@ routed by the emission audit is filed as DEF-104. Rulings and evidence:
 **Reference**: [03-03](03-03-nullable-view-comparison.md) §Testing Requirements
 **Objective**: Pin the emitted `.ptr` comparison and the preserved diagnostic.
 
-- [ ] 3.3.1 Write implementation tests (the emitted `.ptr` comparison shape for both operand orders; ST-15 owns the E10222 rejection) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
-- [ ] 3.3.2 Full phase verification — `make check`
+- [x] 3.3.1 Write implementation tests (the emitted `.ptr` comparison shape for both operand orders; ST-15 owns the E10222 rejection) — `compiler/tests/borrow_generic_integrity_impl_test.rs` ✅ (completed: 2026-10-09 22:43)
+- [x] 3.3.2 Full phase verification — `make check` ✅ (completed: 2026-10-09 22:43)
 
 **Deliverables**:
 - Implementation suite for P3
