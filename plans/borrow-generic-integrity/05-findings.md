@@ -222,3 +222,27 @@ prose now names the files the phase actually changed (`own/call.rs`,
 `own/lower.rs`); the verification note records the correct suite counts
 (runtime 31, call-value 61); the DEF-77 row's leak size is corrected to the
 recorded 10 bytes, and the roadmap rows flip to Done once the re-review closes.
+
+### Phase 4 re-review (2026-10-10)
+
+The single scoped re-review confirmed the collision fix resolved by all three
+finders:
+
+- **RV-001 resolved** (correctness): the resolver is shared by the prototype,
+  definition, and lifted-signature paths; no site sanitizes parameters
+  independently; the two new pins fail at the pre-fix head and pass after;
+  `make check` and `make verify` are green.
+- **SR-001 resolved** (semantics): every collision class builds valid C — plain,
+  higher index, triple, stdlib callee, generic instance, lifted lambda,
+  freestanding (m68k link) — with prototype/definition agreement, source-name
+  diagnostics, and byte-identical re-emission.
+- **EI-P4-1 resolved** (emission): 968 of 970 re-run units are byte-identical
+  (the two new test programs are the only diffs, each the intended de-dup);
+  1814 prototype↔definition parameter-list comparisons with zero mismatches;
+  no new accepted-source-emits-invalid-C case.
+
+Two pre-existing items were ruled and recorded: **RV-005 / P-2 — filed
+DEF-112** (generated names `__env`/`__cl_ret`/`__cl_tmpN` are not reserved, so
+a source binding named like one collides; base and head identical), and
+**P-1** — already filed as DEF-98 (slice/view passed to an uncontracted
+extern).

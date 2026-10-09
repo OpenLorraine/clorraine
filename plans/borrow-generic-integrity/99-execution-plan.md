@@ -345,6 +345,10 @@ DEF-107). Rulings: [05-findings.md](05-findings.md).
 
 **Verify**: `make verify`
 
+### Phase 4 Review (2026-10-10 00:04)
+
+Independent review (correctness reviewer + memory-safety auditor + semantics reviewer + emission-integrity auditor) found no in-scope memory defect and one phase-introduced major issue, confirmed independently by three reviewers: a masked parameter spelling collided with a literal `<callee>_<n>` sibling parameter, so accepted source emitted invalid C. Fixed by the shared de-duplicating parameter-name resolver and pinned both ways; the scoped re-review confirmed the fix resolved (968/970 emissions byte-identical, 1814 prototype-to-definition comparisons with zero mismatches, no new invalid-C). Pre-existing items were filed (the captured func-typed lender leak as DEF-109, the unbound type-parameter call as DEF-110, the generic projection fold as DEF-111, the reserved generated-name collision as DEF-112) and one was already filed (DEF-98, the slice-to-extern coercion). Rulings: [05-findings.md](05-findings.md).
+
 ---
 
 ## Dependencies
