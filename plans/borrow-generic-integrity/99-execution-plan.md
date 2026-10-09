@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:22
-> **Progress**: 11/30 tasks (37%)
+> **Last Updated**: 2026-10-09 22:25
+> **Progress**: 14/30 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -161,9 +161,11 @@ determinism.
 **Reference**: [03-02](03-02-instance-keys.md) §Proposed Changes
 **Objective**: Fold nullability into the key and remove the wrapper.
 
-- [ ] 2.2.1 Fold nullability into `type_key`; preserve the text-conversion spelling — `compiler/src/types/keys.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 2.2.2 Remove `instance_arg_key`; point its two call sites at `type_key` — `compiler/src/codegen/types.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 2.2.3 Run the spec suite to green (ST-9 – ST-12, including the nested function-instance key); on any failure STOP and fix the implementation
+- [x] 2.2.1 Fold nullability into `type_key`; preserve the text-conversion spelling — `compiler/src/types/keys.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-09 22:24)
+- [x] 2.2.2 Remove `instance_arg_key`; point its two call sites at `type_key` — `compiler/src/codegen/types.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-09 22:24)
+- [x] 2.2.3 Run the spec suite to green (ST-9 – ST-12, including the nested function-instance key); on any failure STOP and fix the implementation ✅ (completed: 2026-10-09 22:25)
+
+**Test-source corrections (2026-10-09 22:24)**: the first ST-11 sources were not expressible as written — `slice` needs `import { slice } from std.mem;`, and a generic struct instance cannot carry a view field (`E10205`, spec/07 §9), so the slice witness rides a top-level function type argument (`pick<String[]?>` versus `pick<String[]>`). With the corrected source, the baseline probe confirms the red reason is the strict-build redefinition (`ClWrap__String`); ST-11's struct pair (`Outer<Wrap<String?>>` versus `Outer<Wrap<String>>`) is the nested red clause and the slice pair is a green pin. Recorded as AR-15 (runtime).
 
 **Deliverables**:
 - The key change and the wrapper removal

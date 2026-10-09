@@ -35,7 +35,7 @@ mod render;
 mod types;
 
 use cleanup::Action;
-use types::{declarator, function_declarator, instance_arg_key, is_pointer_param, mangle_module};
+use types::{declarator, function_declarator, is_pointer_param, mangle_module, type_key};
 
 /// Everything the emitter needs about one function with a body.
 pub(super) struct FuncInfo<'a> {
@@ -624,7 +624,7 @@ impl<'a> Emitter<'a> {
     /// A call site and the instance prototype both derive the key here, so the
     /// call and its emitted copy always name the same symbol.
     fn instance_typekey(&self, args: &[Ty]) -> String {
-        let keys: Vec<String> = args.iter().map(instance_arg_key).collect();
+        let keys: Vec<String> = args.iter().map(type_key).collect();
         keys.join("_")
     }
 

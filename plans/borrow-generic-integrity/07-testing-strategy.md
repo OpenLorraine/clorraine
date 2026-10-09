@@ -48,7 +48,7 @@ an AR entry.
 | - | ---------------- | -------------------------- | ------ |
 | ST-9 | `struct Wrap<T> { v: T; }` used as `Wrap<String>` and `Wrap<String?>` in one program | Compiles; the emitted C defines two distinct types; the strict host build passes; a run reads both fields | spec/07 §9 · AR-4 |
 | ST-10 | `pick<String>` and `pick<String?>` function instances, plus `pick<Wrap<String>>` and `pick<Wrap<String?>>` (nested) in one program | All compile and run; top-level spellings unchanged, the nested pair gains distinct `Q` keys (today the nested pair collides — the strict build fails; PF-003) | spec/17 §7 · AR-4, AR-6, PF-003 |
-| ST-11 | `Outer<Wrap<String?>>` versus `Outer<Wrap<String>>`, and a keyed instance carrying a nullable slice (`Wrap<String[]?>` versus `Wrap<String[]>`), in one program | Compiles; distinct symbols (a nullable element type is not expressible — `String?[]` is a syntax error; PF-009); the strict host build passes | spec/07 §9 · AR-4, PF-009 |
+| ST-11 | `Outer<Wrap<String?>>` versus `Outer<Wrap<String>>`, and the function-instance slice pair `pick<String[]?>` versus `pick<String[]>` (a struct field cannot hold a view — `E10205` — so the slice witness rides a type argument), in one program | The nested struct pair gains distinct symbols (both key `Outer__Wrap__String` today — a strict-build redefinition); the top-level slice pair stays distinct; a nullable element type is not expressible — `String?[]` is a syntax error (PF-009) | spec/07 §9 · AR-4, PF-009, AR-15 |
 | ST-12 | Emitting the same program twice | The two emissions are byte-identical | spec/17 determinism · AR-4 |
 
 ### P3 — Nullable view comparison (03-03)

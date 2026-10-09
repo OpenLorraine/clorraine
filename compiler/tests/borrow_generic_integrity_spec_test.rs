@@ -869,17 +869,19 @@ func main(): i32 {
 /// Instances nested two levels deep and nullable-slice instances stay
 /// distinct.
 ///
-/// `Outer<Wrap<String>>` and `Outer<Wrap<String?>>` differ two levels down,
-/// and `Wrap<String[]>` and `Wrap<String[]?>` differ by the slice's own
-/// nullability. An element type is never nullable (`String?[]` is not a
-/// type), so only the slice's own flag can carry a marker. Each pair must key
-/// distinct C symbols for the strict host build to pass; the run then reads
-/// the fields and exits with four.
+/// `Outer<Wrap<String>>` and `Outer<Wrap<String?>>` differ two levels down, so
+/// both key `Outer__Wrap__String` today and the strict host build fails on the
+/// redefinition. A struct field cannot hold a view (`E10205`), so the slice
+/// witness rides a function type argument instead: `pick<String[]>` and
+/// `pick<String[]?>` differ by the slice's own nullability, while an element
+/// type is never nullable (`String?[]` is not a type). The run then reads the
+/// fields and exits with four.
 #[test]
 fn should_keep_nested_and_slice_instances_distinct_when_they_differ_only_by_nullability() {
     let source = r#"module spec.bgi.keys.nestedslice;
 
 import { String, stringOf } from std.text;
+import { slice } from std.mem;
 
 struct Wrap<T> {
     v: T;
@@ -889,18 +891,23 @@ struct Outer<T> {
     w: T;
 }
 
+func pick<T>(a: T, b: T): i32 {
+    return 0;
+}
+
 func main(): i32 {
     let innerA: Wrap<String> = Wrap<String> { v: stringOf("ab") };
     let a: Outer<Wrap<String>> = Outer<Wrap<String>> { w: innerA };
     let innerB: Wrap<String?> = Wrap<String?> { v: null };
     let b: Outer<Wrap<String?>> = Outer<Wrap<String?>> { w: innerB };
     let xs: String[2] = [stringOf("a"), stringOf("b")];
-    let c: Wrap<String[]> = Wrap<String[]> { v: slice(xs, 0, 2) };
-    let d: Wrap<String[]?> = Wrap<String[]?> { v: null };
+    let fixed: i32 = pick<String[]>(slice(xs, 0, 2), slice(xs, 0, 1));
+    let view: String[]? = slice(xs, 0, 2);
+    let nullable: i32 = pick<String[]?>(view, view);
     if (b.w.v != null) {
         return 8;
     }
-    return i32(len(a.w.v)) + i32(len(c.v));
+    return i32(len(a.w.v)) + fixed + nullable + 2;
 }
 "#;
     let output = run_memory("keys-nested-slice", source);

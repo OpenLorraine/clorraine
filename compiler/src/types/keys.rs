@@ -27,8 +27,16 @@ pub(crate) fn closure_key(closure: &ClosureTy) -> String {
 /// marker over its element: a scalar view keys as `slice_i32`, and a view of
 /// rows keys by the whole row, so `i32[][3]` keys as `slice_arr3_i32`. The two
 /// forms cannot collide with each other.
+///
+/// A nullable type carries a `Q` suffix. Nullability changes the C
+/// representation of a borrow parameter and the identity of an instance, so
+/// `String` and `String?` never share a key; the suffix applies recursively
+/// with the arguments, so the instance argument `Wrap<String?>` keys as
+/// `Wrap__StringQ`. A user identifier may itself end in `Q`, in which case its
+/// spelling collides with the marker — a known limitation shared with the
+/// function-instance symbols.
 pub(crate) fn type_key(ty: &Ty) -> String {
-    match &ty.kind {
+    let base = match &ty.kind {
         TyKind::Void => "void".to_owned(),
         TyKind::Scalar(scalar) => super::scalar_name(*scalar).to_owned(),
         TyKind::Str => "str".to_owned(),
@@ -58,6 +66,11 @@ pub(crate) fn type_key(ty: &Ty) -> String {
         TyKind::Func(_) => "fn".to_owned(),
         TyKind::Closure(closure) => closure_key(closure),
         TyKind::Unknown => "unknown".to_owned(),
+    };
+    if ty.nullable {
+        format!("{base}Q")
+    } else {
+        base
     }
 }
 

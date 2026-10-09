@@ -19,7 +19,7 @@ use super::render::{
     unsigned_scalar,
 };
 use super::types::{
-    c_type, instance_arg_key, is_struct_view, scalar_of, type_key, zero_view_helper,
+    c_type, is_struct_view, scalar_of, type_key, zero_view_helper,
 };
 use super::Emitter;
 
@@ -566,7 +566,7 @@ impl<'a> Emitter<'a> {
             } else {
                 let keys: Vec<String> = type_args
                     .iter()
-                    .map(|ty| instance_arg_key(&self.substitute(ty)))
+                    .map(|ty| type_key(&self.substitute(ty)))
                     .collect();
                 format!("cl_{callee}__{}", keys.join("_"))
             };
@@ -768,7 +768,16 @@ impl<'a> Emitter<'a> {
             // promoted to `double`, matching how C already passes it to a
             // variadic formatter.
             TyKind::Scalar(scalar) => self.scalar_text(*scalar, &value),
-            _ => format!("cl_text_{}({value})", type_key(&ty)),
+            _ => {
+                // The shim defines one converter per value type; a nullable
+                // value formats through the same converter, so the helper
+                // spelling must not carry the nullability marker.
+                let value_ty = Ty {
+                    kind: ty.kind.clone(),
+                    nullable: false,
+                };
+                format!("cl_text_{}({value})", type_key(&value_ty))
+            }
         }
     }
 

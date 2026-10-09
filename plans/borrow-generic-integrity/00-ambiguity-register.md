@@ -167,6 +167,22 @@ Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
 Reopen triggers: a store shape reaches the target release without passing check_assign
 ```
 
+**AR-15 (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: testing-mechanism correction; the rule under test is unchanged
+Objective: make the slice witness of the instance-key case expressible
+Decision: respell the ST-11 slice clause from `Wrap<String[]?>` versus `Wrap<String[]>` (a struct field cannot hold a view) to the function-instance pair `pick<String[]?>` versus `pick<String[]>`; keep the nested struct pair as the red clause
+Evidence: `E10205: view-typed field 'v' is not allowed` at the struct declaration for the `Wrap<String[]>` instance (spec/07 §9, spec/14); the baseline probe with the corrected source fails on the strict-build redefinition as intended (`struct ClWrap__String` defined twice)
+Rejected alternatives: dropping the slice witness (loses the PF-009 pin that a slice's own flag keys and its element never does); adding view-typed struct fields (a language change outside this batch)
+Strongest counterargument: the corrected slice pair is a green pin, not a red one, because a top-level nullable argument already keyed correctly; the nested red clause still fails at baseline, so the case keeps its red-phase value
+Confidence: High — the baseline probe and the green suite pin both directions
+Hardening: not required — a test-source respelling with recorded evidence
+Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
+Reopen triggers: view-typed struct fields become legal, at which point the struct-form slice witness can return
+```
+
 ### Systematic 12-category scan
 
 | Category | Outcome |
