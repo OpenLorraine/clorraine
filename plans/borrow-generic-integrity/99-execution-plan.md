@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 21:40
-> **Progress**: 2/30 tasks (7%)
+> **Last Updated**: 2026-10-09 21:49
+> **Progress**: 7/30 tasks (23%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -83,11 +83,13 @@ implementation.
 **Objective**: Implement the target-side store rule, the duty audit, the out-slot self-assign
 rejection, and the warning exemption.
 
-- [ ] 1.2.1 [DEF-78] Record `RequiresStorableSlot` and reject the concrete owning store, with the recording-time dedupe — `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`, `compiler/src/own/expr.rs`
-- [ ] 1.2.2 [DEF-78] Audit the duty per instance and exempt nullable substitutions in the not-lend audit — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs`
-- [ ] 1.2.3 [DEF-82] Reject the whole-binding and exact projected out-slot self-assignment — `compiler/src/own/expr.rs`
-- [ ] 1.2.4 [DEF-83] Exempt nullable borrow parameters from `W10001` using the effective (explicit or inferred) parameter type — `compiler/src/own/call_check.rs`, `compiler/src/own/call.rs`
-- [ ] 1.2.5 Run the spec suite to green (ST-1 – ST-8) and the host-ASan probes for ST-6 (`RDC_ASAN=1` inside the container command; run probes individually — the full-suite sanitizer run is flaky); on any failure STOP and fix the implementation, never the test
+- [x] 1.2.1 [DEF-78] Record `RequiresStorableSlot` and reject the concrete owning store, with the recording-time dedupe — `compiler/src/ir/mono.rs`, `compiler/src/ir.rs`, `compiler/src/own.rs`, `compiler/src/own/expr.rs` ✅ (completed: 2026-10-09 21:49)
+- [x] 1.2.2 [DEF-78] Audit the duty per instance and exempt nullable substitutions in the not-lend audit — `compiler/src/own/instance_check.rs`, `compiler/src/own.rs` ✅ (completed: 2026-10-09 21:49)
+- [x] 1.2.3 [DEF-82] Reject the whole-binding and exact projected out-slot self-assignment — `compiler/src/own/expr.rs` ✅ (completed: 2026-10-09 21:49)
+- [x] 1.2.4 [DEF-83] Exempt nullable borrow parameters from `W10001` using the effective (explicit or inferred) parameter type — `compiler/src/own/call_check.rs`, `compiler/src/own/call.rs` ✅ (completed: 2026-10-09 21:49)
+- [x] 1.2.5 Run the spec suite to green (ST-1 – ST-8) and the host-ASan probes for ST-6 (`RDC_ASAN=1` inside the container command; run probes individually — the full-suite sanitizer run is flaky); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-09 21:49)
+
+**Verification (2026-10-09 21:45–21:49)**: spec suite 8/8 green; ASan probe on the nullable-slot case clean; `make check` green. Runtime note: the pinned container's ASan runtime crash-loops on PIE images under the host kernel's full page-address entropy (a trivial ASan C control hangs; the same control and the emitted program with `-no-pie` start cleanly), so the suite's sanitizer helper links `-no-pie` (AR-14, runtime delegated).
 
 **Deliverables**:
 - The source changes

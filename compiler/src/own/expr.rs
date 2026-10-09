@@ -521,6 +521,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
                 self.eval(value);
+                self.check_lend_target_store(id, &projections, value, target.span);
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026
                 // through the shared consume point, while an ownerless element
@@ -620,6 +621,117 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         self.check_value_into(value, &target_ty, value.span);
+    }
+
+    /// Judges a store whose target is a lend parameter or an out-parameter
+    /// slot.
+    ///
+    /// A whole-value store into a lend parameter that owns storage would
+    /// release the caller's value, so it is rejected — unless the right side
+    /// is a lend-place move the existing lend-move path already reports at the
+    /// same site, which keeps one diagnostic per assignment. A slot whose type
+    /// is still a parameter defers the judgment to its instances.
+    ///
+    /// A nullable out-parameter slot accepts the store, because it owns its
+    /// incoming value. An exact self-assignment through it is the exception:
+    /// the store would release that value and write the emptied source back,
+    /// so the caller would lose it.
+    fn check_lend_target_store(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        value: &'a Expr,
+        span: Span,
+    ) {
+        if self.bindings[id].kind == BindingKind::OutSlot {
+            let self_assign = match self.place_target(value) {
+                Some(PlaceTarget::Local(source_id, source_projections)) => {
+                    source_id == id && source_projections == projections
+                }
+                _ => false,
+            };
+            if self_assign {
+                let name = self.bindings[id].name.clone();
+                self.error(
+                    "E10020",
+                    format!("'{name}' was moved and cannot be used"),
+                    "re-initialize the binding or use a view",
+                    span,
+                );
+            }
+            return;
+        }
+        if !projections.is_empty() {
+            return;
+        }
+        let binding = &self.bindings[id];
+        if binding.kind != BindingKind::Param || binding.mode != Mode::Borrow {
+            return;
+        }
+        let ty = binding.ty.clone();
+        if self.lend_moves_judged(&ty, value) {
+            return;
+        }
+        let parameter = binding.name.clone();
+        let ir_name = binding.ir_name.clone();
+        if self.maybe_owns(&ty) {
+            if ty.is_unknown()
+                || !self
+                    .recorded_storable_slot
+                    .insert((ir_name, span.start, span.end))
+            {
+                return;
+            }
+            self.storable_slot_requirements.push(ir::RequiresStorableSlot {
+                function: self.decl.name.clone(),
+                parameter,
+                ty,
+                span,
+            });
+            return;
+        }
+        if self.owns_drop(&ty) {
+            self.error(
+                "E10034",
+                format!("cannot release or store borrowed parameter '{parameter}'"),
+                "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                span,
+            );
+        }
+    }
+
+    /// True when the lend-move path already judges every source the store's
+    /// right side would consume.
+    ///
+    /// The source set mirrors the binding effect the assignment applies: a
+    /// maybe-owning target consumes a place root or the arms of a conditional
+    /// as maybe-moves, while an owning target consumes them as moves. Every
+    /// source must be a lend parameter with a read-only mode, because those
+    /// are the moves the existing path reports — directly for a concrete type
+    /// and through the per-instance duty while the type is still a parameter.
+    fn lend_moves_judged(&self, target_ty: &Ty, value: &Expr) -> bool {
+        let sources = if self.maybe_owns(target_ty) {
+            match self.place_target(value) {
+                Some(source) => vec![source],
+                None => self.maybe_owning_move_sources(value),
+            }
+        } else if is_view(target_ty) || self.sema.table.duplicable(target_ty) {
+            Vec::new()
+        } else {
+            match self.place_target(value) {
+                Some(source) => vec![source],
+                None => self.conditional_move_sources(value),
+            }
+        };
+        !sources.is_empty()
+            && sources.iter().all(|source| match source {
+                PlaceTarget::Local(source_id, _) => {
+                    let binding = &self.bindings[*source_id];
+                    binding.kind == BindingKind::Param
+                        && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)
+                }
+                PlaceTarget::Global(_, _) => false,
+            })
     }
 
     /// Checks an increment or decrement used as a statement.

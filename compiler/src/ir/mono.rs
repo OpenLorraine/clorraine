@@ -163,6 +163,25 @@ pub struct RequiresOutSlotPlace {
     pub span: Span,
 }
 
+/// A body's obligation that a parameter-typed lend slot accepts a store.
+///
+/// A concrete lend parameter that owns storage rejects a whole-value store,
+/// because the store would release the caller's value. While the slot type is
+/// still a parameter the checker records this duty instead, and the
+/// per-instance audit reports the same diagnostic once a substitution owns the
+/// slot. A nullable substitution is an out-parameter slot and stays exempt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresStorableSlot {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The lend parameter's source name, for the diagnostic text.
+    pub parameter: String,
+    /// The slot's declared type, substituted per instance by the audit.
+    pub ty: Ty,
+    /// The store site, for the diagnostic span.
+    pub span: Span,
+}
+
 /// One emitted specialization of a lifted lambda.
 ///
 /// A lifted function inside a generic declaration is emitted once per enclosing
@@ -195,6 +214,7 @@ pub struct Monomorphization {
     duplicable_requirements: Vec<RequiresDuplicable>,
     not_lend_requirements: Vec<RequiresNotLend>,
     out_slot_requirements: Vec<RequiresOutSlotPlace>,
+    storable_slot_requirements: Vec<RequiresStorableSlot>,
 }
 
 impl Monomorphization {
@@ -280,5 +300,15 @@ impl Monomorphization {
     /// Every out-slot place duty recorded so far.
     pub fn out_slot_requirements(&self) -> &[RequiresOutSlotPlace] {
         &self.out_slot_requirements
+    }
+
+    /// Records a lend-slot store duty the generic body owes.
+    pub fn require_storable_slot(&mut self, requirement: RequiresStorableSlot) {
+        self.storable_slot_requirements.push(requirement);
+    }
+
+    /// Every lend-slot store duty recorded so far.
+    pub fn storable_slot_requirements(&self) -> &[RequiresStorableSlot] {
+        &self.storable_slot_requirements
     }
 }

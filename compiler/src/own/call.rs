@@ -224,7 +224,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// Returns `None` when the callee is not generic or some parameter stays
     /// unbound; the emitter then treats the call as opaque rather than guessing.
-    fn infer_call_types(&self, name: &str, arg_types: &[Ty]) -> Option<Vec<Ty>> {
+    pub(super) fn infer_call_types(&self, name: &str, arg_types: &[Ty]) -> Option<Vec<Ty>> {
         let Some(Callee::User(decl)) = self.program.callee(name) else {
             return None;
         };

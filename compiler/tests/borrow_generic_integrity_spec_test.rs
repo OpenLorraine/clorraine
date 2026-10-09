@@ -228,7 +228,11 @@ fn run_host(tag: &str, source: &str) -> Output {
 /// detection on, returning its output.
 ///
 /// A leaked allocation fails the run and a double free aborts, so a clean exit
-/// pins release-once for the case.
+/// pins release-once for the case. The sanitizer build is linked non-PIE
+/// (`-no-pie`): the pinned container's sanitizer runtime crash-loops during
+/// start-up on PIE images when the host kernel's page-address randomization
+/// uses its full entropy range, while a non-PIE image starts reliably, and
+/// leak and use-after-free detection are unaffected by the link layout.
 fn run_asan(tag: &str, source: &str) -> Output {
     let scratch = ScratchDir::new(tag);
     let source_path = scratch.path().join("main.clo");
@@ -255,6 +259,7 @@ fn run_asan(tag: &str, source: &str) -> Output {
             "-O0",
             "-g",
             "-fsanitize=address",
+            "-no-pie",
             "-o",
             program.to_str().expect("program path"),
             c_path.to_str().expect("emitted C path"),

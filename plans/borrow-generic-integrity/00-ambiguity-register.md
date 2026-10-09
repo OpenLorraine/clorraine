@@ -1,7 +1,7 @@
 # Ambiguity Register: Borrow/Generic Integrity (DEF-77/78/79/81/82/83)
 
-> **Status**: ✅ GATE PASSED — all 13 items resolved
-> **Last Updated**: 2026-10-09 20:23
+> **Status**: ✅ GATE PASSED — all 14 items resolved
+> **Last Updated**: 2026-10-09 21:48
 > **CodeOps Artifact Schema**: 1
 > **Auto-design**: root invocation `ad-borrow-generic-integrity-20261009` (policy version 1) —
 > eligible technical decisions carry delegated provenance; product behavior, scope, and
@@ -22,6 +22,7 @@
 | AR-11 | Sequencing | Phase structure for the execution plan | 4 phases (recommended) / one per defect | **User:** confirmed — P1 DEF-78+82+83, P2 DEF-79, P3 DEF-81, P4 DEF-77. | ✅ Resolved |
 | AR-12 | Testing | Verify command and test-file layout | Confirm (recommended) / different | **User:** confirmed — `make check` per phase; host-ASan probes for P1 and P4 (preflight PF-007: `RDC_ASAN=1` inside the container command, since a plain run cannot observe a leak; run memory probes individually); strict host build check for P2; `make verify` final; suites `compiler/tests/borrow_generic_integrity_spec_test.rs` and `borrow_generic_integrity_impl_test.rs`. | ✅ Resolved |
 | AR-13 | Technical | DEF-78: check placement and interaction with the existing lend-move duty | Site rules (see notes) | **AI — delegated (eligible: compiler mechanism)** → whole-binding `Mode::Borrow` parameters, plus exact projected self-assign on out-slot roots (PF-005); the check runs in the ownership assignment path before the store is emitted; the per-instance duty is recorded at the same site; at most one `E10034` per assignment site — the target-side judgment is skipped when the right side's move sources are lend-place moves already judged by the existing path (`Param` ∧ mode ∈ {None, Const, Borrow}, including parameter-typed sources owing a not-lend duty at the same span; PF-004); field and element stores otherwise keep their existing rules. See notes. | ✅ Resolved (delegated) |
+| AR-14 | Technical (runtime) | The pinned container's AddressSanitizer runtime crash-loops on PIE images under the host kernel's full page-address-randomization entropy — a trivial ASan C control hangs with repeated `DEADLYSIGNAL`, while the same control and the emitted program built with `-no-pie` start cleanly | Link the suite's sanitizer builds with `-no-pie` / skip ASan evidence / change host sysctls | **AI — delegated (eligible: testing mechanism)** → `-no-pie` on the ASan build in the spec suite's helper; detection is unchanged and the flag is portable. See notes. | ✅ Resolved (runtime, delegated) |
 
 ## Resolution Notes
 
@@ -113,6 +114,23 @@ Hardening: not required — bounded internal mechanism; P1 carries correctness a
 Policy version: 1
 Root invocation ID: ad-borrow-generic-integrity-20261009
 Reopen triggers: a store shape reaches the target release without passing check_assign, or review shows one report per site cannot be achieved
+```
+
+**AR-14 (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: testing mechanism; no behavior or scope change; the ASan oracle keeps its coverage
+Objective: make the pinned host-ASan probes executable in the pinned toolchain container
+Decision: link the sanitizer builds in the spec suite with -no-pie
+Evidence: container control — a trivial `int main(void) { return 0; }` built with `-fsanitize=address` hangs with repeated `AddressSanitizer:DEADLYSIGNAL` (host kernel 7.0.0-38, Debian GCC 12.2); the same control and the emitted nullable-out-slot program built with `-no-pie` both start and exit cleanly (the program exits 3 as specified)
+Rejected alternatives: skip ASan evidence — weakens a confirmed acceptance control (AR-12); host sysctl change — an environment mutation outside the repository that other developers cannot reproduce
+Strongest counterargument: a non-PIE sanitizer image differs from the default PIE image; ASan supports both link layouts and leak/use-after-free detection is unaffected
+Confidence: High — reproduced with a language-independent control program
+Hardening: not required — the flag changes only the link layout; the probes exercise the same code
+Policy version: 1
+Root invocation ID: ad-borrow-generic-integrity-20261009
+Reopen triggers: the pinned container's sanitizer runtime starts on PIE images again (runtime/kernel update)
 ```
 
 ### Systematic 12-category scan

@@ -75,7 +75,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // An explicit instantiation fixes the callee's parameter types,
                 // so a nullable slot argument is not read as a possibly-null
                 // value. An inferred call keeps the declared parameter types.
-                let bindings: BTreeMap<String, Ty> = decl
+                let mut bindings: BTreeMap<String, Ty> = decl
                     .type_params
                     .iter()
                     .zip(type_args)
@@ -97,12 +97,53 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let is_dot = self.is_dot_call(callee);
                 let skip = usize::from(is_dot).min(params.len());
                 let written_params = &params[skip..];
+                // The effective parameter types also fold in the inferred
+                // bindings of a generic call, so a slot that resolves to a
+                // nullable type is recognized even when the call spells no
+                // type arguments. Every other check keeps the declared types,
+                // which defer a parameter-typed slot to its instances.
+                let mut inferred = false;
+                if bindings.is_empty() && !decl.type_params.is_empty() {
+                    let mut arg_types: Vec<Ty> = Vec::new();
+                    if is_dot {
+                        arg_types.push(self.dot_receiver_type(callee));
+                    }
+                    arg_types.extend(args.iter().map(|arg| self.ty(&arg.value)));
+                    if let Some(found) = self.infer_call_types(&name, &arg_types) {
+                        for (param, ty) in decl.type_params.iter().zip(found) {
+                            bindings.insert(param.name.clone(), ty);
+                        }
+                        inferred = true;
+                    }
+                }
+                let effective_params: Vec<Ty> = if inferred {
+                    decl.params
+                        .iter()
+                        .map(|param| {
+                            let ty = self.resolve_with(&param.ty, &type_params);
+                            crate::types::substitute(&ty, &bindings)
+                        })
+                        .collect()
+                } else {
+                    params.iter().map(|(_, ty)| ty.clone()).collect()
+                };
                 self.check_marker_matches(&name, args, written_params);
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
                 if is_dot {
-                    self.check_dot_receiver(callee, params.first(), &mut lent);
+                    self.check_dot_receiver(
+                        callee,
+                        params.first(),
+                        effective_params.first(),
+                        &mut lent,
+                    );
                 }
-                self.check_arguments(args, written_params, span, &mut lent);
+                self.check_arguments(
+                    args,
+                    written_params,
+                    &effective_params[skip..],
+                    span,
+                    &mut lent,
+                );
                 // A slot parameter whose declared type still mentions a type
                 // parameter may become a nullable out-slot only at the
                 // instance; the audit applies the exact-place rule once the
@@ -195,17 +236,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &mut self,
         args: &'a [Arg],
         params: &[(Mode, Ty)],
+        effective: &[Ty],
         _span: Span,
         lent: &mut BTreeSet<usize>,
     ) {
         for (index, arg) in args.iter().enumerate() {
             let expected = params.get(index).map(|(_, ty)| ty.clone());
+            let resolved = effective.get(index);
             let arg_ty = self.eval(&arg.value);
             if let Some(expected) = &expected {
                 self.check_value_into(&arg.value, expected, arg.span);
             }
             let mode = params.get(index).map(|(mode, _)| *mode).unwrap_or(Mode::None);
-            self.check_argument_place(&arg.value, arg.span, mode, expected.as_ref(), &arg_ty, lent);
+            self.check_argument_place(
+                &arg.value,
+                arg.span,
+                mode,
+                expected.as_ref(),
+                resolved,
+                &arg_ty,
+                lent,
+            );
         }
     }
 
@@ -219,6 +270,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         &mut self,
         callee: &'a Expr,
         expected: Option<&(Mode, Ty)>,
+        effective: Option<&Ty>,
         lent: &mut BTreeSet<usize>,
     ) {
         let arg_ty = self.dot_receiver_type(callee);
@@ -256,6 +308,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     base.span,
                     mode,
                     param_ty.as_ref(),
+                    effective,
                     &arg_ty,
                     lent,
                 );
@@ -266,6 +319,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     receiver.span,
                     mode,
                     param_ty.as_ref(),
+                    effective,
                     &arg_ty,
                     lent,
                 );
@@ -298,13 +352,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a writable lend is a needless lend of a duplicable value.
+    ///
+    /// The decision uses the parameter's effective type — its declared type
+    /// with the call's explicit or inferred substitutions — so a slot that
+    /// resolves to a nullable type is recognized as an out-parameter slot no
+    /// matter how the argument is spelled. A slot whose declared type is
+    /// nullable is exempt for every instance, and a type that still mentions
+    /// an unresolved parameter falls back to the argument's type, matching the
+    /// declared-parameter behavior.
+    fn warns_needless_lend(&self, effective: Option<&Ty>, arg_ty: &Ty) -> bool {
+        match effective {
+            Some(ty) if !crate::types::contains_param(ty) => {
+                !ty.nullable && self.sema.table.duplicable(ty) && !is_view(ty)
+            }
+            Some(ty) if ty.nullable => false,
+            _ => self.sema.table.duplicable(arg_ty) && !is_view(arg_ty),
+        }
+    }
+
     /// Applies the ownership effect of one argument.
+    ///
+    /// `effective` is the parameter's declared type with the call's explicit
+    /// or inferred substitutions, when the call resolved one; the warning
+    /// decision uses it so a slot that resolves to nullable stays exempt.
     pub(super) fn check_argument_place(
         &mut self,
         expr: &Expr,
         span: Span,
         mode: Mode,
         expected: Option<&Ty>,
+        effective: Option<&Ty>,
         arg_ty: &Ty,
         lent: &mut BTreeSet<usize>,
     ) {
@@ -368,7 +446,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     return;
                 }
-                if self.sema.table.duplicable(arg_ty) && !is_view(arg_ty) {
+                if self.warns_needless_lend(effective, arg_ty) {
                     // A writable lend of a duplicable value binds a copy, so
                     // the write reaches the copy only.
                     let name = match &target {
@@ -528,7 +606,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 continue;
             }
             self.check_value_into(&arg.value, expected, arg.span);
-            self.check_argument_place(&arg.value, arg.span, *mode, Some(expected), &arg_ty, &mut lent);
+            self.check_argument_place(
+                &arg.value,
+                arg.span,
+                *mode,
+                Some(expected),
+                Some(expected),
+                &arg_ty,
+                &mut lent,
+            );
         }
     }
 

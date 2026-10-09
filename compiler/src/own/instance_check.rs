@@ -17,6 +17,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::borrow::is_view;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ir::{Function, Monomorphization, Statement, Terminator, Value, ValueKind};
 use crate::load::Loaded;
@@ -51,6 +52,7 @@ pub fn check(
     check_duplicable_requirements(program, sema, mono, diagnostics);
     check_not_lend_requirements(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
+    check_storable_slot_requirements(program, sema, mono, diagnostics);
 }
 
 /// Reports `E10200` when an out-slot duty's instance makes the slot nullable
@@ -131,7 +133,62 @@ fn check_not_lend_requirements(
                 continue;
             }
             let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
-            if sema.table.duplicable(&substituted) {
+            // A nullable substitution is an out-parameter slot, which owns its
+            // incoming value, so the move stays legal exactly as the concrete
+            // `borrow T?` spelling is.
+            if sema.table.duplicable(&substituted) || substituted.nullable {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10034",
+                    format!(
+                        "cannot release or store borrowed parameter '{}'",
+                        requirement.parameter
+                    ),
+                    requirement.span,
+                )
+                .with_help(
+                    "declare the parameter `take` or by value; the `borrow T?` out-param slot is exempt",
+                ),
+            );
+            break;
+        }
+    }
+}
+
+/// Reports `E10034` when a recorded lend-slot store instantiates with an
+/// owning type.
+///
+/// A generic body that stores a whole value into a lend parameter is accepted
+/// while the slot type is still a parameter, because the checker cannot yet
+/// tell whether the store would release caller storage. The audit substitutes
+/// each recorded instance's type arguments into the slot type: a nullable
+/// substitution is an out-parameter slot and a duplicable or view-typed one
+/// stores no owned storage, so those stay legal, while an owning substitution
+/// reports the same diagnostic the concrete spelling emits. One duty reports
+/// once — the first owning instance — so the store site is not repeated.
+fn check_storable_slot_requirements(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.storable_slot_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
+            if substituted.nullable
+                || substituted.is_unknown()
+                || is_view(&substituted)
+                || sema.table.duplicable(&substituted)
+            {
                 continue;
             }
             diagnostics.push(
