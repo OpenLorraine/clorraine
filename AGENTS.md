@@ -37,8 +37,8 @@ in `CMD`).
 | `make -C docker exec CMD="target/debug/clorraine run FILE.clo"` | The driver directly: `run`, `build`, or `emit` (`-p host\|hosted-amiga\|freestanding`, `--release`, `--capture`, `--emulator`, `--emit-c`) |
 | `cargo test --workspace` | Rust tests; run in the container via `make check` |
 | `make -C docker exec CMD="cargo build --workspace"` | Build `clc` at `target/debug/clc` |
-| `make demo` | Render the demo video from `demo/story.ts` (host-only: needs Chrome, VHS, ffmpeg, and the FS-UAE SDK) |
-| `make demo-youtube` | Render the story at 1920×1080 for upload (pillarboxed 1100×700 design) |
+| `make demo` | Render the demo video from `demo/story.ts` plus the emulator chapter (host-only: needs Chrome, VHS, ffmpeg, and the FS-UAE SDK) |
+| `make demo-youtube` | Render the story and the emulator chapter at 1920×1080 for upload (pillarboxed 1100×700 design) |
 | `make channel-assets` | Render the YouTube banner, avatar, and thumbnail into `build/channel/` |
 | `make demo-check` | Type-check and unit-test the `tools/demo/` toolkit (`tsc --noEmit` + `node --test`) |
 
@@ -48,7 +48,7 @@ in `CMD`).
 |------|----------|
 | `spec/` | The frozen specification: chapters, the grammar, the diagnostics registry, and the golden test data (`spec/tests/{compile-fail,run,staged,corpus}`) |
 | `stdlib/` | The embedded standard-library sources (`std.*.clo`), including the Amiga modules (`std.amiga.dos`, `std.amiga.interrupt`, `std.amiga.intuition`, `std.amiga.graphics`, `std.amiga.custom`) |
-| `compiler/src/` | The compiler crate: stage modules (`lex`, `parse`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, and the `clorraine` build/run driver |
+| `compiler/src/` | The compiler crate: stage modules (`lex`, `parse`, `ast`, `load`, `resolve`, `sema`, `own`, `ir`, `codegen`, `types`, `consts`) plus `driver`, `diag`, `abi`, `profile`, `stdlib`, `borrow`, `ffi`, `span`, `token`, `init_graph` (module-initializer dependencies shared by `sema` and `codegen`), and the `clorraine` build/run driver |
 | `compiler/runtime/` | The host, hosted-amiga, and freestanding C runtime shims (`shim_host.c`, `shim_hosted_amiga.c`, `shim_freestanding.c`); the hosted-amiga shim carries the screen and drawing calls |
 | `compiler/tests/` | The Rust integration test drivers |
 | `docker/` | The pinned Amiga SDK: toolchain config, scripts, and the emulator wrappers |
@@ -56,7 +56,7 @@ in `CMD`).
 | `tools/demo/` | `@clorraine/demo`, the zero-build TypeScript toolkit that renders the demo (headless Chrome, Shiki, VHS, ffmpeg) |
 | `examples/` | Small example programs (`hello`, `graphics`, `hosted-skeleton`) and a compile-fail ownership sample |
 | `plans/` | CodeOps artifacts: the feature plans (one directory per plan) and `plans/00-roadmap.md` (flat layout: plans live under `plans/`, not `codeops/features/`) |
-| `spikes/`, `docs/` | Phase 1 toolchain spikes and findings records |
+| `spikes/`, `docs/` | Toolchain spike records and phase findings/ergonomics documents |
 
 ## Test naming map
 
