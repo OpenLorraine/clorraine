@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 15:36
-> **Progress**: 2/32 tasks (6%)
+> **Last Updated**: 2026-10-09 15:43
+> **Progress**: 5/32 tasks (16%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -55,7 +55,7 @@ task-size criteria in the make-plan quality checklist)
 ## Phase 1: Per-Site Deferred Copies (DEF-86, DEF-87)
 
 > **Phase baseline tree**: `01b778fb8812c6e8e566f7c2cb0a5d3813f6ccf8`
-> **Expected modification set**: `compiler/tests/defer_integrity_spec_test.rs`, `compiler/tests/defer_integrity_impl_test.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`, `compiler/src/own.rs`, `plans/defer-integrity/*` · Scope: `strict`
+> **Expected modification set**: `compiler/tests/defer_integrity_spec_test.rs`, `compiler/tests/defer_integrity_impl_test.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`, `compiler/src/codegen/function.rs`, `compiler/src/own.rs`, `compiler/src/own/statements.rs`, `plans/defer-integrity/*` · Scope: `strict`
 > **Lenses**: correctness, maintainability, standards (base lenses; profile-driven)
 > **Reasoning**: medium — a focused emission-mechanism change with traced root causes
 
@@ -86,14 +86,22 @@ fires); ST-3 exits 1 (expected 21 — the defer runs on at most one path); ST-4 
 **Objective**: Emit one copy per cleanup activation with a copy-local printed set and label
 namespace, and keep the deferred effects checked on every edge.
 
-- [ ] 1.2.1 Emit one copy per cleanup activation: copy-local printed set, per-root copy counter, deterministic label suffix (first copy unchanged) — `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`
-- [ ] 1.2.2 Keep the deferred entries available across exit edges with an active-entry guard (per-edge effect checking) — `compiler/src/own.rs`
-- [ ] 1.2.3 Run the spec suite and record the green phase
+- [x] 1.2.1 Emit one copy per cleanup activation: copy-local printed set, per-root copy counter, deterministic label suffix (first copy unchanged) — `compiler/src/codegen.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-09 15:43)
+- [x] 1.2.2 Keep the deferred entries available across exit edges with an active-entry guard (per-edge effect checking) — `compiler/src/own.rs`, `compiler/src/own/statements.rs` ✅ (completed: 2026-10-09 15:43)
+- [x] 1.2.3 Run the spec suite and record the green phase ✅ (completed: 2026-10-09 15:43)
+
+**Green-phase evidence (2026-10-09 15:43)** — the spec suite passes 4/4 (the four cases exit
+9/7/21/33 with the sanitizer clean); the full workspace is green with no regressions. Two runtime
+discoveries were resolved: the ST-3 expectation program was corrected to make the counter
+observable (AR-15, runtime); and the checker's per-edge effect check needed
+`close_scope_after_edge` so a block that ended in `return`/`break`/`continue` does not re-run the
+scope it already left (the first implementation produced a spurious `E10021` on two NLL spec
+cases; the corrected version is green).
 
 **Deliverables**:
-- [ ] Per-site copies with stable labels
-- [ ] Per-edge effect checking
-- [ ] ST-1 – ST-4 green
+- [x] Per-site copies with stable labels
+- [x] Per-edge effect checking
+- [x] ST-1 – ST-4 green
 
 **Verify**: `make check`
 

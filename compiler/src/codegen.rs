@@ -129,6 +129,25 @@ pub(super) struct Emitter<'a> {
     /// and then prints them in the real pass, so a forward `goto` finds a label
     /// already in place.
     pub(super) pending_labels: BTreeSet<ir::BlockId>,
+    /// How many copies of each deferred block this function has emitted.
+    ///
+    /// A scope's cleanup activation emits its own copy of the scope's deferred
+    /// blocks, so one deferred block can be copied several times into the
+    /// function. The count gives each copy its own C label namespace: the
+    /// first copy keeps the plain `__cl_b<N>` spelling and later copies suffix
+    /// their labels, because C labels are function-scoped.
+    pub(super) defer_copies: BTreeMap<ir::BlockId, u32>,
+    /// The deferred roots whose copies are currently being emitted.
+    ///
+    /// A copy's own return cleanup can re-enter the running scope, so a nested
+    /// activation of a root already emitting would recurse forever; it is a
+    /// no-op. Activations of other roots emit normally.
+    pub(super) active_defers: Vec<ir::BlockId>,
+    /// The label namespace of the innermost deferred copy being emitted.
+    ///
+    /// Zero means no copy is active (plain `__cl_b<N>` labels); a copy's
+    /// ordinal makes labels unique per copy.
+    pub(super) label_copy: u32,
     /// Entry block of each structured loop, mapped to the branch that describes
     /// it. The entry is the branch block for a `while`/`for` and the body block
     /// for a `do ... while`, whose test lives after the body.
@@ -192,6 +211,9 @@ impl<'a> Emitter<'a> {
             reachable: BTreeSet::new(),
             emitted: BTreeSet::new(),
             pending_labels: BTreeSet::new(),
+            defer_copies: BTreeMap::new(),
+            active_defers: Vec::new(),
+            label_copy: 0,
             loop_entry: BTreeMap::new(),
             suppress_output: false,
             diagnostics,

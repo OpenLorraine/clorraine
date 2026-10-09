@@ -35,7 +35,7 @@
 |---|------------------|----------------------------|--------|
 | ST-1 | `f(): let i = 0; while (i < 2) { defer { if (i == 2) { return 9; } } i = i + 1; if (i == 1) { continue; } } return 0;` — `main` returns `f()` | exit 9; host-ASan clean (baseline: exit 0 — the fall-through site emits no copy) | §15; AR-7 |
 | ST-2 | `f(): let i = 1; { defer { return 7; } defer { if (i == 99) { return 0; } } } return 0;` (the filed DEF-87 shape, probe `d87d`) | exit 7 (baseline: exit 0 — the outer site's copy is suppressed) | §13, §15; AR-7 |
-| ST-3 | module counter `count = 0`; `f(c): { defer { count = count + 1; } if (c) { return 1; } } return 0;` — `main` returns `count * 10 + f(true) + f(false)` | exit 21 (two defer runs; baseline recorded at the phase — the return edge's rung emits no copy) | §15; AR-7 |
+| ST-3 | module counter `count = 0`; `f(c): { defer { count = count + 1; } if (c) { return 1; } } return 0;` — `main`: `let a: i32 = f(true) + f(false); return count * 10 + a;` | exit 21 (two defer runs, observably counted; baseline recorded at the phase — the return edge's rung emits no copy) | §15; AR-7, AR-15 |
 | ST-4 | module counter `runs = 0`; `f(): let i = 0; while (i < 4) { defer { runs = runs + 1; } i = i + 1; if (i == 1) { continue; } if (i == 3) { break; } } return runs * 10 + i;` | exit 33 (three defer runs, one per site; baseline recorded at the phase) | §15; AR-7 |
 
 ### Phase 2 — Bounded Closure and Ambient Context (03-02)

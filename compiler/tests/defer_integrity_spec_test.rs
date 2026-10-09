@@ -338,9 +338,9 @@ func main(): i32 {
 ///
 /// `f(true)` and `f(false)` each enter a scope whose `defer` increments the
 /// module counter. The `true` call takes the `return 1` edge; the `false` call
-/// falls through to `return 0`. Both must run the `defer` exactly once, so
-/// `count` is two and the returned sum is one; `main` folds them into `count *
-/// 10 + f(true) + f(false)` and answers twenty-one. The run is host-ASan clean.
+/// falls through to `return 0`. Both must run the `defer` exactly once. The
+/// calls are bound first (left-to-right evaluation), then `main` folds the
+/// counter in: `count * 10 + a` answers twenty-one. The run is host-ASan clean.
 #[test]
 fn should_run_a_defer_on_both_the_return_and_fall_through_edges() {
     let source = r#"module spec.defer_integrity.st3;
@@ -360,7 +360,8 @@ func f(c: bool): i32 {
 }
 
 func main(): i32 {
-    return count * 10 + f(true) + f(false);
+    let a: i32 = f(true) + f(false);
+    return count * 10 + a;
 }
 "#;
     let output = run_memory("defer-st3", source);

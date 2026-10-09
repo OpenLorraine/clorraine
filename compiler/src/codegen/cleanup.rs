@@ -183,12 +183,26 @@ impl<'a> Emitter<'a> {
             .and_then(|scope| self.labels.get(scope).copied())
     }
 
-    /// Emits one deferred block and its closure at a ladder rung.
+    /// Emits one copy of a deferred block at its cleanup activation.
+    ///
+    /// Every activation of the owning scope's cleanup emits its own copy of
+    /// the block, and the activation ordinal selects the copy's label
+    /// namespace. A nested activation of a root that is already emitting is a
+    /// no-op: a copy's own return cleanup can re-enter the running scope, and
+    /// re-emitting the same block there would recurse without end.
     fn emit_defer(&mut self, root: BlockId) {
         let Some(function) = self.function else {
             return;
         };
-        self.emit_closure(function, root);
+        if self.active_defers.contains(&root) {
+            return;
+        }
+        let activation = self.defer_copies.entry(root).or_insert(0);
+        *activation += 1;
+        let activation = *activation;
+        self.active_defers.push(root);
+        self.emit_closure(function, root, activation);
+        self.active_defers.pop();
     }
 
     /// Emits a scope's cleanup actions inline, once.

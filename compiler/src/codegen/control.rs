@@ -83,9 +83,15 @@ impl<'a> Emitter<'a> {
         self.pending_labels.clear();
         self.suppress_output = true;
         self.emitted.clear();
+        self.defer_copies.clear();
+        self.active_defers.clear();
+        self.label_copy = 0;
         self.emit_regions(function, has_cleanup);
         self.suppress_output = false;
         self.emitted.clear();
+        self.defer_copies.clear();
+        self.active_defers.clear();
+        self.label_copy = 0;
         self.emit_regions(function, has_cleanup);
     }
 
@@ -129,13 +135,25 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Emits a deferred block's closure at its ladder rung.
+    /// Emits a deferred block's closure at its cleanup activation.
     ///
-    /// A deferred block is reached only through the ladder, not from the
-    /// function entry, so its closure becomes the reachable set for the walk.
-    pub(super) fn emit_closure(&mut self, function: &'a ir::Function, root: BlockId) {
+    /// A deferred block is reached only through the cleanup actions, not from
+    /// the function entry, so its closure becomes the reachable set for the
+    /// walk. Every cleanup activation emits its own copy: the walk runs with a
+    /// copy-local printed-block set (so an earlier activation's set cannot
+    /// suppress it) and the activation's label namespace (so copies do not
+    /// collide on function-scoped C labels).
+    pub(super) fn emit_closure(
+        &mut self,
+        function: &'a ir::Function,
+        root: BlockId,
+        activation: u32,
+    ) {
         let closure = super::cleanup::closure_from(function, root);
-        let saved = std::mem::replace(&mut self.reachable, closure.clone());
+        let saved_reachable = std::mem::replace(&mut self.reachable, closure.clone());
+        let saved_emitted = std::mem::take(&mut self.emitted);
+        let saved_label_copy = self.label_copy;
+        self.label_copy = activation;
         let empty = BTreeSet::new();
         let ctx = FlowContext::default();
         self.emit_flow(function, root, &empty, ctx);
@@ -144,7 +162,9 @@ impl<'a> Emitter<'a> {
                 self.emit_flow(function, id, &empty, ctx);
             }
         }
-        self.reachable = saved;
+        self.label_copy = saved_label_copy;
+        self.emitted = saved_emitted;
+        self.reachable = saved_reachable;
     }
 
     /// Emits one block followed by the structured constructs that reach from it.
@@ -235,7 +255,20 @@ impl<'a> Emitter<'a> {
     /// Prints a `__cl_b` label for a block a surviving `goto` reaches.
     fn emit_block_label(&mut self, entry: BlockId, id: BlockId) {
         if id != entry && self.pending_labels.contains(&id) {
-            self.push(&format!("__cl_b{id}:"));
+            self.push(&format!("{}:", self.block_label(id)));
+        }
+    }
+
+    /// The C label spelling of a block in the active deferred copy.
+    ///
+    /// The first copy of a deferred block keeps the plain `__cl_b<N>` spelling;
+    /// later copies suffix their labels because C labels are function-scoped and
+    /// two copies of one block would otherwise collide.
+    fn block_label(&self, id: BlockId) -> String {
+        if self.label_copy > 1 {
+            format!("__cl_b{id}__{}", self.label_copy)
+        } else {
+            format!("__cl_b{id}")
         }
     }
 
@@ -264,7 +297,7 @@ impl<'a> Emitter<'a> {
     /// Prints a surviving `goto` and records the label it needs.
     fn emit_goto(&mut self, target: BlockId) {
         self.pending_labels.insert(target);
-        self.push(&format!("    goto __cl_b{target};"));
+        self.push(&format!("    goto {};", self.block_label(target)));
     }
 
     /// Prints a branch with no structured form as a label-and-`goto` pair.
@@ -280,8 +313,10 @@ impl<'a> Emitter<'a> {
         let condition_c = self.value(condition);
         self.pending_labels.insert(on_true);
         self.pending_labels.insert(on_false);
+        let true_label = self.block_label(on_true);
+        let false_label = self.block_label(on_false);
         self.push(&format!(
-            "    if ({condition_c}) goto __cl_b{on_true}; else goto __cl_b{on_false};"
+            "    if ({condition_c}) goto {true_label}; else goto {false_label};"
         ));
     }
 

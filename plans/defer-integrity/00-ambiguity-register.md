@@ -1,7 +1,7 @@
 # Ambiguity Register: defer-integrity
 
-> **Status**: ✅ GATE PASSED — all 14 items resolved (AR-1–AR-14; AR-4–AR-8 resolved under the active auto-design delegation with an independent challenger verdict)
-> **Last Updated**: 2026-10-09 15:32
+> **Status**: ✅ GATE PASSED — all 15 items resolved (AR-1–AR-14 at plan time; AR-15 added and resolved during Phase 1 execution)
+> **Last Updated**: 2026-10-09 15:39
 
 | # | Category | Ambiguity / Gap | Options Presented | Decision | Status |
 |---|----------|-----------------|-------------------|----------|--------|
@@ -19,6 +19,7 @@
 | AR-12 | Naming | Plan slug and test suite names | **`defer-integrity`**; `compiler/tests/defer_integrity_spec_test.rs` and `compiler/tests/defer_integrity_impl_test.rs` | **`defer-integrity`**, matching the sibling slugs (`element-loop-integrity`, `slice-temporary-integrity`) and the batch's subject. | ✅ Resolved |
 | AR-13 | Technical (testing) | Verify commands and the container sanitizer policy | A: `make check` per phase, `make verify` for the final phase; host AddressSanitizer probes for memory shapes; the in-container full-suite `RDC_ASAN` run stays non-gating because of its documented 30 s startup flake · B: gate on the in-container `RDC_ASAN` suite | **A** — `make check` per phase and `make verify` at the end (both from `AGENTS.md`); host ASan is the memory oracle; a flaked in-container run is retried alone and never treated as a failure. | ✅ Resolved |
 | AR-14 | Technical (complexity escalation) | Does the fix design add a material support surface (new layer, dependency, harness, framework, infrastructure, or cross-cutting refactor)? | A: no — the fixes are ordinary feature code inside the existing ownership/emission machinery (copy context, closure bound, frame continuation, emit ordering); no new dependency, harness, or external surface · B: a larger mechanism (new emission pass, generalized cleanup framework, or per-edge IR re-lowering) | **A** — the challenger searched for escalations and found none smaller than the accepted design; option C (the larger mechanism) was rejected on blast radius and byte-identity. No material support surface is added, so no complexity stop packet is open. | ✅ Resolved |
+| AR-15 | Technical (runtime) | The ST-3 program `return count * 10 + f(true) + f(false);` reads the module counter before the calls under the frozen left-to-right evaluation order (`spec/04-expressions.md` §3), so the recorded expectation 21 was not derivable from the spec for that program (left-to-right yields 1); the emitted code was already correct | A: bind the call sum first (`let a: i32 = f(true) + f(false); return count * 10 + a;`) so the counter is observable and 21 follows from left-to-right evaluation plus the once-per-edge defer runs · B: keep the program and change the expectation to 1 | **A** — the expectation must derive from the spec; binding the sum keeps the intended behavior oracle (two defer runs, observable counter) and avoids pinning an evaluation-order artifact | ✅ Resolved (runtime, auto-design) |
 
 ## Resolution Notes
 
@@ -182,6 +183,18 @@ the ordering fix into the same phase as the continuation keeps every ST case gre
 end; the dependency analysis, mechanisms, and Option A verdict are unchanged. This amendment was
 recorded before any plan document was written (the register is the only artifact on disk at this
 point).
+
+**AR-15 (runtime, delegated record):** Authority: AI — delegated by --auto-design · Root invocation
+ID `ad-defer-integrity-20261009` · Eligibility: testing-strategy correction inside the confirmed
+scope (the ST case's expectation must derive from the spec; no behavior or scope change) ·
+Objective: an ST-3 oracle whose expectation follows from the frozen rules · Decision: bind
+`let a: i32 = f(true) + f(false);` and return `count * 10 + a` · Evidence: the spec's
+left-to-right evaluation order (`spec/04-expressions.md` §3) makes `count * 10` read the counter
+before the calls (observed exit 1 with the emitted C evaluating the counter first); with the sum
+bound first, both defer runs are observable and 21 follows · Rejected: changing the expectation to
+1 pins an ordering artifact, not the defer behavior · Confidence: High — hand-traced from the spec
+and confirmed by the phase's probe runs · Reopen triggers: none expected; the phase's red and green
+runs re-verify the corrected program · Policy version 1.
 
 **AR-14:** The challenger's missing-option search (outlined helpers — impossible in C99 without an
 environment/ABI change; static per-position label chains — cannot split the inline normal/return

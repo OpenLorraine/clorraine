@@ -100,8 +100,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         if !self.is_terminated() {
             self.emit(Statement::ScopeEnd { scope });
+            self.pop_scope();
+        } else {
+            // The block ended in `return`, `break`, or `continue`, and that
+            // edge already ran the scope's cleanup (or the block diverged, so
+            // no cleanup runs). The scope is left without checking its
+            // deferred blocks again: a second check would read state the edge
+            // already released.
+            self.close_scope_after_edge();
         }
-        self.pop_scope();
     }
 
     /// Checks one statement.

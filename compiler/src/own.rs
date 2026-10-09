@@ -192,6 +192,13 @@ struct FunctionChecker<'a, 'd> {
     exits: Vec<ExitFrame>,
     /// Deferred blocks registered by the open scopes, in registration order.
     defer_entries: Vec<DeferEntry<'a>>,
+    /// Registrations whose deferred block is currently being checked.
+    ///
+    /// A deferred block's own return path re-enters the enclosing scope's
+    /// cleanup, so without this guard the same block would be checked again
+    /// while its first check is still running. Each registration is checked
+    /// once per cleanup run and once per exit edge.
+    active_defer_checks: BTreeSet<u32>,
     /// The ordered loan event log for the function being checked.
     events: Vec<LoanEvent>,
     /// The next ordinal to hand out in each block's event sequence.
@@ -342,6 +349,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             current_span: Span::default(),
             exits: Vec::new(),
             defer_entries: Vec::new(),
+            active_defer_checks: BTreeSet::new(),
             events: Vec::new(),
             next_ordinal: BTreeMap::new(),
             loan_ids: BTreeMap::new(),
@@ -455,6 +463,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes.last().map(|scope| scope.id).unwrap_or(0)
     }
 
+    /// Leaves the innermost scope when its exit edge already ran the cleanup.
+    ///
+    /// A block that ended in `return`, `break`, or `continue` ran the scope's
+    /// cleanup as part of that edge, so the scope's deferred entries are
+    /// dropped here without checking them again: a second check would read
+    /// state the edge already released, and the fall-through cleanup this
+    /// scope would otherwise run is unreachable.
+    fn close_scope_after_edge(&mut self) {
+        let depth = self.scopes.len();
+        if depth == 0 {
+            return;
+        }
+        while self
+            .defer_entries
+            .last()
+            .is_some_and(|entry| entry.depth == depth)
+        {
+            self.defer_entries.pop();
+        }
+        self.scopes.pop();
+    }
+
     /// Leaves the innermost scope, running its cleanup in registration order.
     ///
     /// A scope's drops and `defer` blocks share one registration sequence and
@@ -467,6 +497,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         self.run_scope_cleanup(depth - 1);
+        // The scope's deferred entries end with the scope: a cleanup for an
+        // enclosing scope must not see them again. Entries kept across earlier
+        // exit edges are dropped here, at the scope's final edge.
+        while self
+            .defer_entries
+            .last()
+            .is_some_and(|entry| entry.depth == depth)
+        {
+            self.defer_entries.pop();
+        }
         self.scopes.pop();
     }
 
@@ -489,13 +529,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 CleanupAction::Release(*id),
             ));
         }
-        while self
-            .defer_entries
-            .last()
-            .is_some_and(|entry| entry.depth == scope_depth)
-        {
-            let entry = self.defer_entries.pop().expect("defer entry");
-            actions.push((entry.registration, CleanupAction::Defer(entry.block)));
+        for entry in self.defer_entries.iter().rev() {
+            if entry.depth != scope_depth {
+                break;
+            }
+            actions.push((
+                entry.registration,
+                CleanupAction::Defer(entry.block, entry.registration),
+            ));
         }
         actions.sort_by(|left, right| right.0.cmp(&left.0));
         for (_, action) in actions {
@@ -520,11 +561,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.state.places.remove(&id);
                     self.state.loans.remove(&id);
                 }
-                CleanupAction::Defer(block) => {
+                CleanupAction::Defer(block, registration) => {
+                    // A deferred block's own return path re-enters the
+                    // enclosing scope's cleanup; the block already running must
+                    // not be checked a second time on that path.
+                    if !self.active_defer_checks.insert(registration) {
+                        continue;
+                    }
                     let anchor = self.builder.current();
                     let saved = self.state.clone();
                     self.check_defer_exit(block, anchor);
                     self.restore_enclosing_state(&saved, scope_index);
+                    self.active_defer_checks.remove(&registration);
                 }
             }
         }
@@ -1201,8 +1249,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 enum CleanupAction<'a> {
     /// Release a binding and emit its drop.
     Release(usize),
-    /// Check a deferred block on the exit edge.
-    Defer(&'a Block),
+    /// Check a deferred block on the exit edge, identified by its registration
+    /// so a running check can be recognized.
+    Defer(&'a Block, u32),
 }
 
 impl PlaceTarget {
