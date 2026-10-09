@@ -719,3 +719,33 @@ func main(): i32 {
     assert_exit("defer-st14", &output, 3);
     assert_no_asan("defer-st14", &output);
 }
+
+/// A deferred return that supersedes an owned return value releases it.
+///
+/// The body returns one owned string; the deferred return stores another into
+/// the same result, so the body's value is superseded and must be released
+/// before the store, exactly as an assignment to a live owner drops the old
+/// target. The program answers the deferred value's length and is sanitizer
+/// clean when both values are released once.
+#[test]
+fn should_release_the_superseded_value_when_a_deferred_return_overrides_a_return() {
+    let source = r#"module spec.defer_integrity.st15;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    defer {
+        return stringOf("abcdefgh");
+    }
+    return stringOf("x");
+}
+
+func main(): i32 {
+    let s: String = f();
+    return i32(len(s));
+}
+"#;
+    let output = run_memory("defer-st15", source);
+    assert_exit("defer-st15", &output, 8);
+    assert_no_asan("defer-st15", &output);
+}

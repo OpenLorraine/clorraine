@@ -673,3 +673,33 @@ func main(): i32 {
     let output = run_host("defer-impl12-run", source);
     assert_exit("defer-impl12-run", &output, 3);
 }
+
+/// A deferred return releases the pending owned result before its store.
+///
+/// The body stores one owned string in the result; the deferred return
+/// supersedes it, so the emitted copy releases the pending value first (the
+/// release is null-safe, so the first store in a copy is a no-op) and then
+/// stores its own. The program answers one.
+#[test]
+fn should_release_the_superseded_result_before_a_deferred_returns_store() {
+    let source = r#"module spec.defer_integrity.impl13;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    defer {
+        return stringOf("x");
+    }
+    return stringOf("ABCDEFGH");
+}
+
+func main(): i32 {
+    return i32(len(f()));
+}
+"#;
+    let emitted = emit_host("defer-impl13", source);
+    let release = "    if (__cl_ret) { FreeString(__cl_ret); }\n    __cl_ret = NULL;\n    __cl_ret = cl_std_text_stringOf(cl_str(\"x\"));";
+    assert_contains("defer-impl13", &emitted, release);
+    let output = run_host("defer-impl13-run", source);
+    assert_exit("defer-impl13-run", &output, 1);
+}

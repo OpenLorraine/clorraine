@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 17:07
-> **Progress**: 23/32 tasks (72%)
+> **Last Updated**: 2026-10-09 17:25
+> **Progress**: 25/32 tasks (78%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -289,13 +289,29 @@ pinned bytes.
 
 - [x] 3.3.1 Write implementation tests for the continuation shape, the remaining-actions order, the buffered-cleanup order, and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs` ✅ (completed: 2026-10-09 17:07)
 - [x] 3.3.2 Run the host-ASan matrix (release counts and side effects exactly once per path) and `make check` ✅ (completed: 2026-10-09 17:07)
-- [ ] 3.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff
+- [~] 3.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff ⏳ (implemented: 2026-10-09 17:25)
 
 **Implementation-test evidence (2026-10-09 17:07)** — three new emission cases pin the store-before-
 drop order, the remaining-defer-after-return order, and the outer-rung jump for a nested deferred
 return (impl 12/12). Direct host-ASan probes confirm the nested-rung release is clean, and
 `make check` is green.
-- [ ] 3.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff
+
+**Phase 3 review findings and fixes (2026-10-09 17:25)** — four reviewers over the phase diff
+(`e29a7488..402b94e`). The emission audit is clean (20 intended diffs, every one classified;
+determinism 930/930; no duplicate/unused labels). Three reviewers independently found the same
+phase-introduced defect, fixed immediately; two bookkeeping findings fixed; several pre-existing
+observations reported. Per the protocol cap, one bounded re-review follows this fix.
+
+| ID | Severity | Finding | Resolution |
+| -- | -------- | ------- | ---------- |
+| RV-001 / SA-001 / SR-001 | 🟠 MAJOR | A deferred return that overrides a pending **owned** return value leaked the superseded value (`__cl_ret` overwritten without releasing the earlier owner); newly reachable because the base hangs. Reproduced for `String`, growable arrays, fixed arrays, structs, moves, and nested cases. | ✅ Fixed: a deferred store now releases the pending result first (`emit_drop_expr` on the live result; gated to deferred copies so ordinary returns stay byte-identical). ASan-clean probes; ST-15 spec case added; impl pin added. |
+| RV-002 | 🟡 MINOR | Plan bookkeeping: a duplicate `3.3.3` task line; stale progress count; an imprecise "byte pin" citation. | ✅ Fixed (duplicate removed; progress corrected; citation reworded). |
+| RV-003 | 🟡 MINOR | Register bookkeeping: the AR-17 row was glued to AR-16 by a literal `\n`. | ✅ Fixed (separate rows). |
+| PRE (emission) | 🟡 pre-existing | Two base-identical strict-build failures (`codegen_run_spec_test__036` unused-but-set array; `ownership_drop_spec_test__019` `RawConsume` coercion). | Reported; out of this plan's scope (backlog decision). |
+| OBS (semantics) | — | Pre-existing exponential emit time for many returning defers (base-identical) and emitted-C growth from the nested remaining actions. | Reported; the code-size note is bounded by the per-site copy model (AR-4/AR-17); no behavior defect. |
+
+**Fix evidence (2026-10-09 17:25)** — the leak shapes are ASan clean (String override: exit 1; fixed
+array: exit 1); defer suites 15 spec + 13 impl; full workspace green; `make check` green.
 
 **Deliverables**:
 - [x] Implementation suite for the return family

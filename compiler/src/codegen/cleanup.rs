@@ -382,6 +382,10 @@ impl<'a> Emitter<'a> {
         self.emit_line_directive(span);
         if let Some(value) = value {
             if self.return_ty.is_fixed_array() {
+                if let Some(result) = self.result_var.clone() {
+                    let ret_ty = self.return_ty.clone();
+                    self.emit_superseded_result_release(&result, &ret_ty);
+                }
                 self.emit_fixed_array_return(value);
             } else {
                 // A literal whose fields need stores, and an owned conditional,
@@ -450,6 +454,7 @@ impl<'a> Emitter<'a> {
                     let lowered = self.store_text(value, &ret_ty);
                     match self.result_var.clone() {
                         Some(result) => {
+                            self.emit_superseded_result_release(&result, &ret_ty);
                             self.push(&format!("    {result} = {lowered};"));
                             // Returning an owned value transfers it to the
                             // caller, so the source is emptied before the
@@ -542,6 +547,7 @@ impl<'a> Emitter<'a> {
         ctx: FlowContext,
     ) -> bool {
         if let Some(result) = self.result_var.clone() {
+            self.emit_superseded_result_release(&result, ret_ty);
             self.emit_conditional_move_assign(
                 &result,
                 ret_ty,
@@ -582,6 +588,7 @@ impl<'a> Emitter<'a> {
         ctx: FlowContext,
     ) -> bool {
         if let Some(result) = self.result_var.clone() {
+            self.emit_superseded_result_release(&result, ret_ty);
             self.emit_struct_literal_fields(&result, ret_ty, fields);
             return false;
         }
@@ -618,6 +625,7 @@ impl<'a> Emitter<'a> {
         ctx: FlowContext,
     ) -> bool {
         if let Some(result) = self.result_var.clone() {
+            self.emit_superseded_result_release(&result, ret_ty);
             self.emit_struct_conditional_assign(&result, ret_ty, condition, then_value, else_value);
             return false;
         }
@@ -634,6 +642,20 @@ impl<'a> Emitter<'a> {
         self.push(&format!("        return {local};"));
         self.push("    }");
         true
+    }
+
+    /// Releases the pending result value a deferred return is about to replace.
+    ///
+    /// A deferred return supersedes the value an earlier return stored: the
+    /// store targets the live result variable, so the pending owner is released
+    /// first, exactly as an assignment to a live owner does. The release is
+    /// null-safe, so the first store inside a copy is a no-op, and a return
+    /// outside a deferred copy keeps its unchanged shape.
+    fn emit_superseded_result_release(&mut self, result: &str, ret_ty: &Ty) {
+        if self.active_defers.is_empty() || !self.needs_drop(ret_ty) {
+            return;
+        }
+        self.emit_drop_expr(result, ret_ty);
     }
 
     /// Emits the inline cleanup a value return deferred past its value store.
