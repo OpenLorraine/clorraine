@@ -111,7 +111,7 @@ document the conservative runtime-index comparison (DEF-102, no semantic change)
 
 ## Phase 2: Out-slot return (DEF-101)
 
-> **Phase baseline tree**: (recorded by the exec-plan skill at phase start)
+> **Phase baseline tree**: `6b2ccba4bfaaaf4428ca58d04bc78e52b138cbfb`
 > **Lenses**: correctness reviewer + memory-safety auditor + emission-integrity auditor (return
 > emission change; AGENTS.md dispatch matrix)
 > **Reasoning**: high — ownership transfer through an emitted return path

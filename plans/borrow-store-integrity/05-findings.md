@@ -10,4 +10,4 @@ and test-integrity steps.
 
 | Finding | Phase | Severity | Area | Ruling |
 |---------|-------|----------|------|--------|
-| *(rows are appended when each phase's review closes)* | | | | |
+| — (clean) | 1 | — | `own/expr.rs` recorder, `own/instance_check.rs` audit, duty plumbing | no findings — correctness, memory-safety, and semantics reviews all clean; report-only observations: no `raw`/`cstring` nullable-substitution pin in the suite (equivalence proven by the semantics review's predicate argument); the bare-name instance filter is shared with the existing audits (pre-existing) |
