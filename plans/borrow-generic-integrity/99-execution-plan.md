@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:26
-> **Progress**: 16/30 tasks (53%)
+> **Last Updated**: 2026-10-09 22:40
+> **Progress**: 18/30 tasks (60%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -207,7 +207,8 @@ routed by the emission audit is filed as DEF-104. Rulings and evidence:
 
 ## Phase 3: Nullable view comparison (DEF-81)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `bdf597aee0cf63f7b6a1207b354b42c7b56f934b` (clean tree at phase start; pre-P3)
+> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/src/sema/ops.rs`, `plans/borrow-generic-integrity/99-execution-plan.md`
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (operator rule;
 > AGENTS.md dispatch matrix)
 > **Reasoning**: medium — one sema rule with an existing emitter path; bounded
@@ -217,8 +218,10 @@ routed by the emission audit is filed as DEF-104. Rulings and evidence:
 **Reference**: [03-03](03-03-nullable-view-comparison.md) §Proposed Changes · [AR-7](00-ambiguity-register.md)
 **Objective**: Pin the acceptance, the narrowing run, and the preserved rejections.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-16 and ST-7's projected clause (the out-slot self-assign rule becomes expressible with the view acceptance) — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-16, and ST-7's projected clause fail; ST-15 passes as the preserved-rejection pin)
+- [x] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-16 and ST-7's projected clause (the out-slot self-assign rule becomes expressible with the view acceptance) — `compiler/tests/borrow_generic_integrity_spec_test.rs` ✅ (completed: 2026-10-09 22:40)
+- [x] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-16, and ST-7's projected clause fail; ST-15 passes as the preserved-rejection pin) ✅ (completed: 2026-10-09 22:40)
+
+**Red phase** (2026-10-09 22:40, 18 passed / 4 failed — the planned set exactly): failed as expected — the both-orders acceptance, the narrowing run, the non-nullable form, and the projected out-slot self-assign, each on `E10222 operator '…' is not defined for 'u8[]…'` (the parameter-typed form reports `'T[]?'`); passed as planned — both preserved-rejection pins (slice-view equality and ordering).
 
 **Deliverables**:
 - Specification cases ST-13 – ST-16 added

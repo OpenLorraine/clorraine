@@ -945,3 +945,184 @@ func main(): i32 {
         "keys-determinism: two emissions of one program must be byte-identical"
     );
 }
+
+/// A nullable view compares with `null` in either operand order.
+///
+/// A view is a nullable type, so `view == null`, `null == view`, and the two
+/// `!=` forms must be accepted, exactly as they are for handles. The run pins
+/// the truth values: a live view is not null and an empty view is.
+#[test]
+fn should_accept_a_nullable_view_compared_with_null_in_both_orders() {
+    let source = r#"module spec.bgi.vieworders;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let xs: u8[2] = [10, 20];
+    let view: u8[]? = slice(xs, 0, 2);
+    let empty: u8[]? = null;
+    if (view == null) {
+        return 9;
+    }
+    if (null == view) {
+        return 8;
+    }
+    if (empty != null) {
+        return 7;
+    }
+    if (null != empty) {
+        return 6;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("view-orders", source);
+    assert_exit("view-orders", &output, 0);
+    assert_no_asan("view-orders", &output);
+}
+
+/// A null check narrows a nullable view so its elements can be read.
+///
+/// The `!= null` branch reads the first element and the `== null` branch
+/// returns the fallback; the run combines both functions over a live view and
+/// an empty one, so the exit code pins the narrowed reads: 456.
+#[test]
+fn should_read_through_a_narrowed_nullable_view() {
+    let source = r#"module spec.bgi.viewnarrow;
+
+import { slice } from std.mem;
+
+func first(xs: u8[]?, fallback: u8): u8 {
+    if (xs != null) {
+        return xs[0];
+    }
+    return fallback;
+}
+
+func second(xs: u8[]?, fallback: u8): u8 {
+    if (xs == null) {
+        return fallback;
+    }
+    return xs[1];
+}
+
+func main(): i32 {
+    let xs: u8[2] = [4, 6];
+    let view: u8[]? = slice(xs, 0, 2);
+    let a: u8 = first(view, 9);
+    let b: u8 = second(null, 5);
+    let c: u8 = second(view, 5);
+    return i32(a) * 100 + i32(b) * 10 + i32(c);
+}
+"#;
+    let output = run_memory("view-narrow", source);
+    assert_exit("view-narrow", &output, 456);
+    assert_no_asan("view-narrow", &output);
+}
+
+/// Equality between two slice views stays rejected.
+///
+/// Two views of the same kind have no defined equality — their storage may
+/// overlap in ways a pointer-and-length comparison cannot express — so the
+/// operator report stays unchanged. A `null` operand does not appear here.
+#[test]
+fn should_reject_equality_between_two_slice_views() {
+    let source = r#"module spec.bgi.viewpairsame;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let b: u8[2] = [3, 4];
+    let xs: u8[] = slice(a, 0, 2);
+    let ys: u8[] = slice(b, 0, 2);
+    if (xs == ys) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once("view-pair-same", source, "E10222", &["operator '=='"]);
+}
+
+/// Ordering between two slice views stays rejected.
+///
+/// A slice has no defined order, so `<` reports the operator rule on the view
+/// operand; the acceptance for `null` comparisons must not widen to view
+/// pairs.
+#[test]
+fn should_reject_ordering_between_two_slice_views() {
+    let source = r#"module spec.bgi.viewpairorder;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let b: u8[2] = [3, 4];
+    let xs: u8[] = slice(a, 0, 2);
+    let ys: u8[] = slice(b, 0, 2);
+    if (xs < ys) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once("view-pair-order", source, "E10222", &["operator '<'"]);
+}
+
+/// A non-nullable view also compares with `null`.
+///
+/// The empty state is a property of the value, not of its declared type, so a
+/// view that is not spelled `T[]?` still evaluates `== null` to false and
+/// `!= null` to true. The run pins both outcomes with its exit code.
+#[test]
+fn should_run_when_a_non_nullable_view_is_compared_with_null() {
+    let source = r#"module spec.bgi.viewnonnull;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let xs: u8[2] = [10, 20];
+    let view: u8[] = slice(xs, 0, 2);
+    let flagged: i32 = 0;
+    if (view == null) {
+        return 8;
+    }
+    if (view != null) {
+        flagged = 1;
+    }
+    return flagged;
+}
+"#;
+    let output = run_memory("view-nonnull", source);
+    assert_exit("view-nonnull", &output, 1);
+    assert_no_asan("view-nonnull", &output);
+}
+
+/// An out-slot element assigned from itself is rejected once the null check
+/// makes the element reachable.
+///
+/// The null comparison on a parameter-typed nullable slice is what makes the
+/// element store expressible; the exact self-assignment through the slot root
+/// is then rejected with the moved-value diagnostic, exactly as the
+/// whole-binding form is. One report names the slot.
+#[test]
+fn should_reject_an_out_slot_projected_self_assignment() {
+    let source = r#"module spec.bgi.outslotprojected;
+
+import { String, stringOf } from std.text;
+
+func prep<T>(take v: T, borrow xs: T[]?): void {
+    if (xs != null) {
+        xs[0] = xs[0];
+    }
+}
+
+func main(): i32 {
+    let xs: String[]? = null;
+    prep<String>(stringOf("ab"), borrow xs);
+    return 0;
+}
+"#;
+    assert_rejected_once("out-slot-projected", source, "E10020", &["'xs'"]);
+}
