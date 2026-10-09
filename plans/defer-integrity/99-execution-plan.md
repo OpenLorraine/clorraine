@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 15:38
-> **Progress**: 0/32 tasks (0%)
+> **Last Updated**: 2026-10-09 15:36
+> **Progress**: 2/32 tasks (6%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -54,7 +54,8 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 1: Per-Site Deferred Copies (DEF-86, DEF-87)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `01b778fb8812c6e8e566f7c2cb0a5d3813f6ccf8`
+> **Expected modification set**: `compiler/tests/defer_integrity_spec_test.rs`, `compiler/tests/defer_integrity_impl_test.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`, `compiler/src/own.rs`, `plans/defer-integrity/*` · Scope: `strict`
 > **Lenses**: correctness, maintainability, standards (base lenses; profile-driven)
 > **Reasoning**: medium — a focused emission-mechanism change with traced root causes
 
@@ -63,12 +64,19 @@ task-size criteria in the make-plan quality checklist)
 **Reference**: [03-01](03-01-per-site-deferred-copies.md) §Proposed Changes · [AR-7, AR-10](00-ambiguity-register.md)
 **Objective**: Register the every-edge behavior as specification tests before any emitter change.
 
-- [ ] 1.1.1 [spec-author] Write specification tests ST-1 – ST-4 in `compiler/tests/defer_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the new suite and record the red phase (the fall-through site's empty copy; the suppressed outer copy; the early-return sibling; the multi-site counter)
+- [x] 1.1.1 [spec-author] Write specification tests ST-1 – ST-4 in `compiler/tests/defer_integrity_spec_test.rs` ✅ (completed: 2026-10-09 15:36)
+- [x] 1.1.2 Run the new suite and record the red phase (the fall-through site's empty copy; the suppressed outer copy; the early-return sibling; the multi-site counter) ✅ (completed: 2026-10-09 15:36)
+
+**Red-phase evidence (2026-10-09 15:36)** — the new suite (`defer_integrity_spec_test`, four
+tests) fails at the phase baseline exactly as designed: ST-1 exits 0 (expected 9 — the
+fall-through site runs no defer); ST-2 exits 0 (expected 7 — the earlier returning defer never
+fires); ST-3 exits 1 (expected 21 — the defer runs on at most one path); ST-4 exits 13 (expected
+33 — one of three cleanup sites runs the defer). Run: `cargo test --test defer_integrity_spec_test`
+→ 0 passed, 4 failed.
 
 **Deliverables**:
-- [ ] ST-1 – ST-4 in the new spec suite
-- [ ] Red-phase evidence
+- [x] ST-1 – ST-4 in the new spec suite
+- [x] Red-phase evidence
 
 **Verify**: `make check` (the new suite fails as expected)
 
