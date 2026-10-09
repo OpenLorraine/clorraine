@@ -894,9 +894,11 @@ fn a_destination_temporary_joins_the_statement_release_set() {
 }
 
 #[test]
-fn a_take_call_result_temporary_is_not_released() {
-    // The take call result travels into `r`, which owns it, so no statement
-    // release covers the temporary; releasing it would free the value twice.
+fn a_take_call_result_temporary_is_emptied_by_its_adoption() {
+    // The take call result travels through a destination temporary the
+    // statement end releases; the adopting store moves the value out of the
+    // temporary, which empties it, so the value is owned by `r` alone and the
+    // release is a no-op.
     let source = with_view_helper(
         "func sink(take s: String): String { return s; }\n\
          func demo(): i32 {\n\
@@ -907,15 +909,39 @@ fn a_take_call_result_temporary_is_not_released() {
     );
     let (_, output) = compile(&source);
     let output = output.expect("the clean program lowers");
+    let demo = output
+        .functions
+        .iter()
+        .find(|function| function.name == "demo")
+        .expect("the demo function is lowered");
+    let released: Vec<crate::ir::TempId> = demo
+        .blocks
+        .iter()
+        .flat_map(|block| block.statements.iter())
+        .filter_map(|instr| match &instr.statement {
+            Statement::ReleaseTemp(release) => Some(release.temp),
+            _ => None,
+        })
+        .collect();
     assert!(
-        !output.functions.iter().any(|function| function
-            .blocks
-            .iter()
-            .any(|block| block
-                .statements
-                .iter()
-                .any(|instr| matches!(instr.statement, Statement::ReleaseTemp(_))))),
-        "a transfer temporary must not join the statement release set"
+        !released.is_empty(),
+        "the statement end releases the take-call temporary"
+    );
+    let emptied: Vec<crate::ir::TempId> = demo
+        .blocks
+        .iter()
+        .flat_map(|block| block.statements.iter())
+        .filter_map(|instr| match &instr.statement {
+            Statement::MoveOut { place } => match place.base {
+                crate::ir::PlaceBase::Temp(temp) => Some(temp),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert!(
+        released.iter().any(|temp| emptied.contains(temp)),
+        "the adopting store must empty the release-registered temporary"
     );
 }
 

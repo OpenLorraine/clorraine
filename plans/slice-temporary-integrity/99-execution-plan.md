@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 13:46
-> **Progress**: 21/34 tasks (62%)
+> **Last Updated**: 2026-10-09 13:57
+> **Progress**: 24/34 tasks (71%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -271,9 +271,9 @@ the host-ASan matrix, and `make check`) is the final check.
 **Reference**: [03-03 §Proposed Changes](03-03-root-and-receiver-binding.md) · [AR-5](00-ambiguity-register.md)
 **Objective**: Extend the binds to the missing roots and receivers.
 
-- [ ] 3.2.1 Bind the eager temporary through the destination-temp materializer and emit the emptying adoption for registered destination temporaries; bind a conditional root as one value (guarded by the place-arm predicate) — `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs`
-- [ ] 3.2.2 Bind owned member receivers at the read positions only (cast/intrinsic/argument/return reads), excluding consume preparation, guarded positions, and loop-condition lowering — `compiler/src/own/lower.rs`
-- [ ] 3.2.3 Run the new suite and record the green phase
+- [x] 3.2.1 Bind the eager temporary through the destination-temp materializer and emit the emptying adoption for registered destination temporaries; bind a conditional root as one value (guarded by the place-arm predicate) — `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs` ✅ (completed: 2026-10-09 13:57)
+- [x] 3.2.2 Bind owned member receivers at the read positions only (cast/intrinsic/argument/return reads), excluding consume preparation, guarded positions, and loop-condition lowering — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-09 13:57)
+- [x] 3.2.3 Run the new suite and record the green phase ✅ (completed: 2026-10-09 13:57)
 
 **Deliverables**:
 - [ ] Destination-temp eager bind, conditional root bind, read-position member receiver bind

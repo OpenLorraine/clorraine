@@ -46,7 +46,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.state = entry.clone();
         self.switch_to(head);
         self.eval(&decl.condition);
+        let saved_loop_condition = self.in_loop_condition;
+        self.in_loop_condition = true;
         let mut condition = self.lower_value(&decl.condition);
+        self.in_loop_condition = saved_loop_condition;
         self.materialize_owned_calls(&mut condition);
         // The condition may move an owner, so the state after evaluating it is
         // the exit state on the false path, not the head state.
@@ -138,7 +141,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // evaluated, so only the entries added after this point belong to it.
         let release_floor = self.pending_releases.len();
         self.eval(&decl.condition);
+        let saved_loop_condition = self.in_loop_condition;
+        self.in_loop_condition = true;
         let mut condition = self.lower_value(&decl.condition);
+        self.in_loop_condition = saved_loop_condition;
         self.materialize_owned_calls(&mut condition);
         self.append_condition_releases(body_block, body_floor, release_floor);
         let shape = self.loop_shape(
@@ -316,7 +322,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let condition = match &decl.condition {
             Some(condition) => {
+                let saved_loop_condition = self.in_loop_condition;
+                self.in_loop_condition = true;
                 let mut lowered = self.lower_value(condition);
+                self.in_loop_condition = saved_loop_condition;
                 self.materialize_owned_calls(&mut lowered);
                 lowered
             }

@@ -136,9 +136,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     } else {
                         // The call consumes a `take` argument before the
                         // enclosing statement continues, so the result is
-                        // stored in a temporary and the consumed places are
-                        // emptied immediately afterward.
-                        let temp = self.materialize_value(Value::new(ty.clone(), kind));
+                        // stored in a destination temporary the statement end
+                        // releases, and the consumed places are emptied
+                        // immediately afterward. An adopting store moves the
+                        // whole value out of the temporary (emptying it, so
+                        // the release is a no-op); a projection of the
+                        // temporary reads it and the release drops the fields
+                        // the take did not move out.
+                        let temp =
+                            self.materialize_value_type(Value::new(ty.clone(), kind), ty.clone());
                         for place in move_outs {
                             self.emit(Statement::MoveOut { place });
                         }
@@ -184,6 +190,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A float-to-integer cast guard re-reads its operand, so a
                 // side-effecting one is stored once.
                 let inner = self.lower_value(value);
+                let inner = self.bind_member_receiver(inner);
                 let inner_ty = self.ty(value);
                 let inner = if ty.is_integer() && inner_ty.is_numeric() && !inner_ty.is_integer() {
                     self.materialize_guard_operand(inner)
@@ -265,6 +272,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             // arguments, so an unnamed owned result passed here
                             // needs the caller-side binding its cleanup uses.
                             let value = self.lower_value(inner);
+                            let value = self.bind_member_receiver(value);
                             values.push(self.bind_intrinsic_argument(value));
                         }
                         IntrinsicArg::Type(written) => type_arg = Some(self.resolve(written)),
@@ -1362,6 +1370,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     value
                 }
             }
+            // A conditional whose arms own their values is bound as one value:
+            // the owned-conditional store adopts the chosen arm, so every
+            // arm's result is released exactly once. A conditional with a
+            // place-rooted arm keeps its inline read, because adopting it would
+            // empty storage the caller still owns.
+            ValueKind::Conditional { .. } => {
+                if self.conditional_borrows_place(&value) {
+                    value
+                } else {
+                    let owning =
+                        !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                    if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                        self.materialize_owned_argument(value, false)
+                    } else {
+                        value
+                    }
+                }
+            }
             _ => value,
         }
     }
@@ -1410,6 +1436,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.materialize_guard_operand(value)
                 } else {
                     value
+                }
+            }
+            // A conditional whose arms own their values is bound as one value
+            // through the deferred materialization: the guard emitter fills it
+            // with the chosen arm on the evaluated path only, and its release
+            // drops that arm's storage. A conditional with a place-rooted arm
+            // keeps its inline read.
+            ValueKind::Conditional { .. } => {
+                if self.conditional_borrows_place(&value) {
+                    value
+                } else {
+                    let owning =
+                        !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                    if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                        self.materialize_guard_operand(value)
+                    } else {
+                        value
+                    }
                 }
             }
             _ => value,
@@ -1465,6 +1509,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.materialize_guard_operand(value)
         } else {
             self.materialize_owned_argument(value, false)
+        }
+    }
+
+    /// Binds an owned member receiver at a read position.
+    ///
+    /// A plain member read of an ownerless owned value (`spawn().count`)
+    /// leaves the receiver without an owner, so its storage leaks; only
+    /// intrinsic arguments and dot-`len` receivers were bound before. The
+    /// member's base is bound exactly like a borrow-taking intrinsic argument,
+    /// so the enclosing construct's cleanup releases the receiver. The bind
+    /// runs only at the read positions that take the member value (casts,
+    /// intrinsic arguments, call arguments, and return reads); consume
+    /// preparation, conditionally evaluated operands, and loop conditions keep
+    /// their own machinery and are excluded.
+    pub(super) fn bind_member_receiver(&mut self, value: Value) -> Value {
+        if self.defer_move_outs > 0 || self.in_loop_condition {
+            return value;
+        }
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.bind_intrinsic_argument(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            other => Value::new(value.ty, other),
         }
     }
 

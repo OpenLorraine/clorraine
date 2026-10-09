@@ -247,6 +247,12 @@ struct FunctionChecker<'a, 'd> {
     /// move-out must not run eagerly: it is carried on the materialized value
     /// and emitted on the evaluated path instead.
     defer_move_outs: u32,
+    /// True while a loop condition is being lowered.
+    ///
+    /// A loop condition has its own owned-call materialization and release
+    /// plumbing, so the member-receiver bind must not also fire there: the
+    /// condition machinery already binds the calls it contains.
+    in_loop_condition: bool,
     /// Which temporaries are destinations the compiler releases at the
     /// statement's end, parallel to `temps`.
     ///
@@ -346,6 +352,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             next_owned_temp: 0,
             pending_releases: Vec::new(),
             defer_move_outs: 0,
+            in_loop_condition: false,
             destination_temps: Vec::new(),
             materialize_owned_temporaries: true,
             report_diagnostics: true,

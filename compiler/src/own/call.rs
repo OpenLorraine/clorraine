@@ -179,6 +179,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         for arg in args {
             let value = self.lower_value(&arg.value);
+            let value = self.bind_member_receiver(value);
             arg_types.push(value.ty.clone());
             values.push(value);
         }

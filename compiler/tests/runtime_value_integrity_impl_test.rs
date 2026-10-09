@@ -165,10 +165,11 @@ func main(): i32 { return vlen(mk()[1]); }
     );
 }
 
-/// A `take` call result travels to a binding, so its temporary is not released
-/// at the statement's end.
+/// A `take` call result travels to a binding through a destination temporary
+/// the statement end releases; the adopting store empties the temporary, so
+/// the binding owns the value alone and the release is a no-op.
 #[test]
-fn should_not_release_a_take_call_result_temporary() {
+fn should_empty_a_take_call_result_temporary_when_a_binding_adopts_it() {
     let source = r#"module impl.rvi.taketemp;
 import { String, stringOf } from std.text;
 func sink(take s: String): String { return s; }
@@ -182,8 +183,12 @@ func main(): i32 {
     assert_contains("rviimpl-take", &emitted, "__cl_tmp0 = cl_impl_rvi_taketemp_sink(s);");
     let tail = after("rviimpl-take", &emitted, "r = __cl_tmp0;");
     assert!(
-        !tail.contains("__cl_tmp0"),
-        "rviimpl-take: the binding owns the take result, so its temporary must not be released"
+        tail.contains("__cl_tmp0 = NULL;"),
+        "rviimpl-take: the adopting store must empty the temporary"
+    );
+    assert!(
+        tail.contains("if (__cl_tmp0) { FreeString(__cl_tmp0); }"),
+        "rviimpl-take: the registered release stays as the null-safe statement-end drop"
     );
 }
 

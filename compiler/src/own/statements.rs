@@ -308,6 +308,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         let lowered = self.lower_value(value);
+        // A registered destination temporary is adopted by moving its value
+        // out: the store copies it into the destination and the move-out
+        // empties the temporary, so the statement-end release this temporary
+        // joined becomes a no-op. Without the move-out the temporary and the
+        // destination would both own the value and the release would free it
+        // twice (the whole-result adoption of a take-call result).
+        if owning {
+            if let ValueKind::Temp(id) = &lowered.kind {
+                if self.is_destination_temp(*id) {
+                    let source = Place {
+                        base: ir::PlaceBase::Temp(*id),
+                        projections: Vec::new(),
+                        ty: lowered.ty.clone(),
+                    };
+                    return PreparedStore::AssignThenMoveOut {
+                        value: lowered,
+                        source,
+                    };
+                }
+            }
+        }
         // A consumed projection of fresh statement-owned storage is a move:
         // a call result's projection is bound to an owned temporary first,
         // while a projection over an existing destination temporary (a
@@ -925,6 +946,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             let lowered = self.lower_value(value);
+            let lowered = self.bind_member_receiver(lowered);
             // A consumed projection of a fresh call result is bound and
             // re-rooted, so the return emission empties the selected field and
             // the temporary releases only the remaining fields. A whole call
