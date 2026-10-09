@@ -530,13 +530,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ));
         }
         for entry in self.defer_entries.iter().rev() {
-            if entry.depth != scope_depth {
-                break;
+            // Deeper scopes' entries can still sit above this scope's on the
+            // stack (their cleanup kept them), so the scan collects every
+            // matching entry instead of stopping at the first depth change.
+            if entry.depth == scope_depth {
+                actions.push((
+                    entry.registration,
+                    CleanupAction::Defer(entry.block, entry.registration),
+                ));
             }
-            actions.push((
-                entry.registration,
-                CleanupAction::Defer(entry.block, entry.registration),
-            ));
         }
         actions.sort_by(|left, right| right.0.cmp(&left.0));
         for (_, action) in actions {
@@ -634,7 +636,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for statement in &block.statements {
             self.check_stmt(statement);
         }
-        self.pop_scope();
+        if self.is_terminated() {
+            // The block left through `return`, `break`, or `continue`, and that
+            // edge already ran the enclosing cleanup (or the block diverged).
+            // Leaving the block scope must not check its deferred blocks again.
+            self.close_scope_after_edge();
+        } else {
+            self.pop_scope();
+        }
         self.defer_anchor = saved_anchor;
         self.builder = saved_builder;
         self.bindings.truncate(saved_bindings);

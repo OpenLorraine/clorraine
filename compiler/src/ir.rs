@@ -396,6 +396,13 @@ pub enum Statement {
         /// Registration order of the `defer` within the function, shared with
         /// drops so a scope's cleanup can interleave.
         order: u32,
+        /// One past the last block the deferred body owns.
+        ///
+        /// The body's blocks (nested deferred bodies included) occupy the
+        /// contiguous arena range `block..end`, so the emitter can copy the
+        /// body without following an out-edge (a `break` or `continue`) into
+        /// the enclosing flow.
+        end: BlockId,
     },
     /// The normal fall-through end of a scope, emitted just before the scope's
     /// cleanup.

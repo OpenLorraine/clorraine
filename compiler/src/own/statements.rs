@@ -744,7 +744,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 self.check_stmt(statement);
             }
-            self.pop_scope();
+            if self.is_terminated() {
+                // The clause left through `return`, `break`, or `continue`,
+                // and that edge already ran the clause scope's cleanup (or the
+                // clause diverged). Leaving it must not check its deferred
+                // blocks again.
+                self.close_scope_after_edge();
+            } else {
+                self.pop_scope();
+            }
             let terminated = self.is_terminated();
             let frame = self.exits.pop().expect("switch frame");
             if frame.saw_break {
@@ -793,11 +801,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let scope = self.current_scope();
         let defer_block = self.new_block();
         let registration = self.register_cleanup();
-        self.emit(Statement::Defer {
-            block: defer_block,
-            scope,
-            order: registration,
-        });
 
         let saved_state = self.state.clone();
         let saved_scopes = self.scopes.len();
@@ -808,6 +811,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.materialize_owned_temporaries = false;
         self.switch_to(defer_block);
         self.check_block(block);
+        // The body's blocks occupy the contiguous arena range from the defer
+        // block to `region_end`, so the range is recorded for the emitter's
+        // bounded copy.
+        let region_end = self.builder.function().blocks.len();
         self.report_diagnostics = saved_report;
         self.materialize_owned_temporaries = saved_owned;
         self.state = saved_state;
@@ -817,6 +824,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.scopes.truncate(saved_scopes);
         self.defer_entries.truncate(saved_defers);
         self.switch_to(saved_block);
+
+        // The registration marker is emitted once the body's range is known; a
+        // `defer` runs from its scope's cleanup, not from this position, so the
+        // marker's place among the block's statements carries no runtime
+        // meaning.
+        self.emit(Statement::Defer {
+            block: defer_block,
+            scope,
+            order: registration,
+            end: region_end,
+        });
 
         self.defer_entries.push(DeferEntry {
             depth: self.scopes.len(),

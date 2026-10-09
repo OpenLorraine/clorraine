@@ -123,12 +123,15 @@ pub(super) struct Emitter<'a> {
     pub(super) reachable: BTreeSet<ir::BlockId>,
     /// Blocks already emitted during the current structured pass.
     pub(super) emitted: BTreeSet<ir::BlockId>,
-    /// Blocks that need a `__cl_b<N>` label because a `goto` reaches them.
+    /// Blocks that need a label because a `goto` reaches them, keyed by the
+    /// label namespace that needs it.
     ///
     /// The structured emitter plans these in a first pass that writes no output
     /// and then prints them in the real pass, so a forward `goto` finds a label
-    /// already in place.
-    pub(super) pending_labels: BTreeSet<ir::BlockId>,
+    /// already in place. The namespace is the active deferred copy (zero for
+    /// the main-body walk): a label needed inside a copy must not make the main
+    /// walk print its own unused label, and vice versa.
+    pub(super) pending_labels: BTreeSet<(ir::BlockId, u32)>,
     /// How many copies of each deferred block this function has emitted.
     ///
     /// A scope's cleanup activation emits its own copy of the scope's deferred
@@ -148,6 +151,12 @@ pub(super) struct Emitter<'a> {
     /// Zero means no copy is active (plain `__cl_b<N>` labels); a copy's
     /// ordinal makes labels unique per copy.
     pub(super) label_copy: u32,
+    /// The block range of the innermost deferred copy being emitted.
+    ///
+    /// A copy's own labels are namespaced, but a `goto` that leaves the range
+    /// targets a block the main walk owns and prints, so that target keeps the
+    /// main walk's plain label spelling.
+    pub(super) copy_region: Option<(ir::BlockId, ir::BlockId)>,
     /// Entry block of each structured loop, mapped to the branch that describes
     /// it. The entry is the branch block for a `while`/`for` and the body block
     /// for a `do ... while`, whose test lives after the body.
@@ -214,6 +223,7 @@ impl<'a> Emitter<'a> {
             defer_copies: BTreeMap::new(),
             active_defers: Vec::new(),
             label_copy: 0,
+            copy_region: None,
             loop_entry: BTreeMap::new(),
             suppress_output: false,
             diagnostics,

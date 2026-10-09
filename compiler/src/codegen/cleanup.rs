@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 use crate::ir::{self, BlockId, Place, Statement, Terminator, ValueKind};
 use crate::types::{Ty, TyKind};
 
+use super::control::FlowContext;
 use super::Emitter;
 
 /// One cleanup entry of a scope, in registration order.
@@ -21,8 +22,9 @@ use super::Emitter;
 pub(crate) enum Action {
     /// Drop a place through its type's deleter.
     Drop(Place),
-    /// Run a deferred block's statements.
-    Defer(BlockId),
+    /// Run a deferred block's statements: the body's root block and one past
+    /// its last block.
+    Defer(BlockId, BlockId),
 }
 
 impl<'a> Emitter<'a> {
@@ -43,8 +45,13 @@ impl<'a> Emitter<'a> {
                     Statement::Drop { place, scope, order } => {
                         self.push_action(*scope, *order, Action::Drop(place.clone()));
                     }
-                    Statement::Defer { block, scope, order } => {
-                        self.push_action(*scope, *order, Action::Defer(*block));
+                    Statement::Defer {
+                        block,
+                        scope,
+                        order,
+                        end,
+                    } => {
+                        self.push_action(*scope, *order, Action::Defer(*block, *end));
                     }
                     _ => {}
                 }
@@ -71,6 +78,7 @@ impl<'a> Emitter<'a> {
                 !actions.is_empty()
                     && !function.scopes[**scope].in_loop
                     && edge_scopes.contains(scope)
+                    && !defer_region_has_out_edge(function, actions)
             })
             .map(|(scope, _)| *scope)
             .collect();
@@ -94,7 +102,7 @@ impl<'a> Emitter<'a> {
         let actions = self.scope_actions.entry(scope).or_default();
         let duplicate = actions.iter().any(|(_, known)| match (known, &action) {
             (Action::Drop(a), Action::Drop(b)) => a == b,
-            (Action::Defer(a), Action::Defer(b)) => a == b,
+            (Action::Defer(a, _), Action::Defer(b, _)) => a == b,
             _ => false,
         });
         if !duplicate {
@@ -124,6 +132,7 @@ impl<'a> Emitter<'a> {
         function: &'a ir::Function,
         id: BlockId,
         jump_out: bool,
+        ctx: FlowContext,
     ) -> Option<usize> {
         let block = &function.blocks[id];
         let mut pending_scope: Option<usize> = None;
@@ -136,7 +145,7 @@ impl<'a> Emitter<'a> {
                     // Cleanup runs at the closing brace on the normal
                     // fall-through path, so it happens for every scope and not
                     // only for an edge that jumps into the ladder.
-                    self.emit_scope_inline(*scope);
+                    self.emit_scope_inline(*scope, ctx);
                 }
                 Statement::ScopeExit { scope } => {
                     // An early edge carries the scopes it leaves. A scope with
@@ -149,7 +158,7 @@ impl<'a> Emitter<'a> {
                             edge_scopes.push(*scope);
                         }
                     } else if inlined_edge.insert(*scope) {
-                        self.emit_scope_inline(*scope);
+                        self.emit_scope_inline(*scope, ctx);
                     }
                 }
                 Statement::Drop { scope, .. } => {
@@ -161,7 +170,7 @@ impl<'a> Emitter<'a> {
                     }
                     if jump_out || self.scope_is_inline(function, *scope) {
                         if inlined_edge.insert(*scope) {
-                            self.emit_scope_inline(*scope);
+                            self.emit_scope_inline(*scope, ctx);
                         }
                     } else if !edge_scopes.contains(scope) {
                         edge_scopes.push(*scope);
@@ -189,8 +198,10 @@ impl<'a> Emitter<'a> {
     /// the block, and the activation ordinal selects the copy's label
     /// namespace. A nested activation of a root that is already emitting is a
     /// no-op: a copy's own return cleanup can re-enter the running scope, and
-    /// re-emitting the same block there would recurse without end.
-    fn emit_defer(&mut self, root: BlockId) {
+    /// re-emitting the same block there would recurse without end. The ambient
+    /// flow context lets an edge that leaves the body (a `break` or `continue`)
+    /// print as the enclosing loop's edge instead of a raw `goto`.
+    fn emit_defer(&mut self, root: BlockId, end: BlockId, ctx: FlowContext) {
         let Some(function) = self.function else {
             return;
         };
@@ -201,15 +212,15 @@ impl<'a> Emitter<'a> {
         *activation += 1;
         let activation = *activation;
         self.active_defers.push(root);
-        self.emit_closure(function, root, activation);
+        self.emit_closure(function, root, end, activation, ctx);
         self.active_defers.pop();
     }
 
     /// Emits a scope's cleanup actions inline, once.
-    fn emit_scope_inline(&mut self, scope: usize) {
+    fn emit_scope_inline(&mut self, scope: usize, ctx: FlowContext) {
         self.emit_line_for_scope(scope);
         let actions = self.scope_actions.get(&scope).cloned().unwrap_or_default();
-        self.emit_actions(&actions);
+        self.emit_actions(&actions, ctx);
     }
 
     /// Writes a `#line` mapping for generated cleanup to the scope's close.
@@ -247,11 +258,13 @@ impl<'a> Emitter<'a> {
     /// Drops and `defer` entries interleave exactly as the checker registered
     /// them, and the whole list runs backwards, so the last registered cleanup
     /// runs first. Running drops and defers as one reversed list is what honours
-    /// the single reverse-registration cleanup order.
-    fn emit_actions(&mut self, actions: &[(u32, Action)]) {
+    /// the single reverse-registration cleanup order. `ctx` is the ambient flow
+    /// context at the cleanup site, threaded into a deferred copy so its
+    /// out-edges print as the enclosing loop's edges.
+    fn emit_actions(&mut self, actions: &[(u32, Action)], ctx: FlowContext) {
         for (_, action) in actions.iter().rev() {
             match action {
-                Action::Defer(block) => self.emit_defer(*block),
+                Action::Defer(root, end) => self.emit_defer(*root, *end, ctx),
                 Action::Drop(place) => self.emit_drop(place),
             }
         }
@@ -633,7 +646,11 @@ impl<'a> Emitter<'a> {
             self.emit_line_for_scope(*scope);
             self.push(&format!("__cl_c{label}:"));
             let actions = self.scope_actions.get(scope).cloned().unwrap_or_default();
-            self.emit_actions(&actions);
+            // A ladder rung sits at the function level, outside any loop or
+            // switch, so its copies have no ambient edge context. A scope whose
+            // deferred bodies carry an out-edge never takes a rung (the rung
+            // filter keeps it inline).
+            self.emit_actions(&actions, FlowContext::default());
             if index + 1 < rungs.len() {
                 let next = self.labels[&rungs[index + 1]];
                 self.push(&format!("    goto __cl_c{next};"));
@@ -696,6 +713,30 @@ impl<'a> Emitter<'a> {
             _ => "0".to_owned(),
         }
     }
+}
+
+/// True when a scope's deferred bodies contain a control-flow edge that leaves
+/// the body's own block range.
+///
+/// Such an edge is a `break` or `continue` (the checker emits only those as
+/// `goto`s out of a deferred body), and it can only be spelled from a site
+/// inside the enclosing loop or switch. A scope whose deferred bodies carry
+/// one therefore runs its cleanup inline at each exit edge instead of from the
+/// function-level ladder, where the ambient context is unavailable.
+fn defer_region_has_out_edge(function: &ir::Function, actions: &[(u32, Action)]) -> bool {
+    for action in actions.iter().map(|(_, action)| action) {
+        let Action::Defer(root, end) = action else {
+            continue;
+        };
+        for block in function.blocks.iter().filter(|block| block.id >= *root && block.id < *end) {
+            if let Terminator::Goto(target) = &block.terminator {
+                if *target < *root || *target >= *end {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The block ids reachable from a function's entry through its terminators.

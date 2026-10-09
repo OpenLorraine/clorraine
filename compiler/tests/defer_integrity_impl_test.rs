@@ -260,15 +260,16 @@ fn should_emit_one_deferred_copy_per_cleanup_site() {
     assert_exit("defer-impl1-run", &output, 33);
 }
 
-/// A deferred body that needs block labels keeps the first copy plain and
-/// suffixes later copies.
+/// A deferred body that needs block labels takes a per-copy suffixed
+/// namespace.
 ///
 /// The `for` step with a call forces label-and-`goto` blocks inside the
 /// deferred copy; the same block is copied at the continue edge and at the
-/// fall-through end, so the second copy's labels take the `__2` suffix while
-/// the first copy keeps the plain spelling. The program answers two.
+/// fall-through end, so the two copies spell their labels `__1` and `__2`.
+/// Plain labels stay reserved for the main-body walk, so a copy can never
+/// collide with a block the main flow also prints. The program answers two.
 #[test]
-fn should_keep_the_first_copy_labels_plain_and_suffix_later_copies() {
+fn should_suffix_labels_per_deferred_copy() {
     let source = r#"module spec.defer_integrity.impl2;
 
 func mk(): i32[2] {
@@ -300,8 +301,8 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("defer-impl2", source);
-    assert_contains("defer-impl2", &emitted, "goto __cl_b5;");
-    assert_contains("defer-impl2", &emitted, "__cl_b5:");
+    assert_contains("defer-impl2", &emitted, "goto __cl_b5__1;");
+    assert_contains("defer-impl2", &emitted, "__cl_b5__1:");
     assert_contains("defer-impl2", &emitted, "goto __cl_b5__2;");
     assert_contains("defer-impl2", &emitted, "__cl_b5__2:");
     let output = run_host("defer-impl2-run", source);
@@ -320,4 +321,171 @@ fn should_emit_identically_when_a_defer_program_is_emitted_twice() {
         first, second,
         "defer-impl3: two emissions of one program must be byte-identical"
     );
+}
+
+/// A deferred `break` builds and leaves the loop on the iteration it fires.
+///
+/// The break target block also lies on the main flow (the loop exit), so the
+/// deferred copy's labels must not collide with the main walk's labels: every
+/// copy takes a suffixed namespace while plain labels stay reserved for the
+/// main body. The loop leaves when the deferred guard sees `i == 2`, so the
+/// program answers two.
+#[test]
+fn should_build_and_run_when_a_deferred_break_exits_the_loop() {
+    let source = r#"module spec.defer_integrity.impl4;
+
+func f(): i32 {
+    let i: i32 = 0;
+    while (i < 5) {
+        defer {
+            if (i == 2) {
+                break;
+            }
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_host("defer-impl4-run", source);
+    assert_exit("defer-impl4-run", &output, 2);
+}
+
+/// A nested defer inside a continuing deferred block stays accepted.
+///
+/// The outer defer's `continue` runs the inner deferred block exactly once,
+/// and the enclosing scope's cleanup must not be re-checked on that same edge:
+/// a second check reads the released string and reports a spurious
+/// use-before-initialization. The program answers the three-character length.
+#[test]
+fn should_accept_when_a_nested_defer_precedes_a_continue() {
+    let source = r#"module spec.defer_integrity.impl5;
+
+import { String, stringOf } from std.text;
+
+func f(): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 1) {
+        let s: String = stringOf("abc");
+        defer {
+            defer {
+                total = total + i32(len(s));
+            }
+            continue;
+        }
+        i = i + 1;
+    }
+    return total;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_host("defer-impl5-run", source);
+    assert_exit("defer-impl5-run", &output, 3);
+}
+
+/// A use of a value an outer scope's defer moved stays rejected.
+///
+/// The outer defer moves the owned string; the inner deferred block's presence
+/// must not stop the outer scope's cleanup from checking that move, so the
+/// later use (the next iteration's deferred call) is a use-after-move. The
+/// compiler must report `E10020` and exit 1 rather than accepting the program.
+#[test]
+fn should_reject_using_a_value_an_outer_defer_moved() {
+    let source = r#"module spec.defer_integrity.impl6;
+
+import { String, stringOf } from std.text;
+
+let runs: i32 = 0;
+
+func sink(take s: String): void {
+    runs = runs + 1;
+}
+
+func f(): i32 {
+    let x: String = stringOf("x");
+    let i: i32 = 0;
+    while (i < 2) {
+        defer {
+            sink(x);
+        }
+        {
+            defer {
+                runs = runs + 10;
+            }
+            i = i + 1;
+            continue;
+        }
+    }
+    return runs;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let scratch = ScratchDir::new("defer-impl6");
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("defer-impl6: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "defer-impl6: expected rejection; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("E10020"),
+        "defer-impl6: expected a use-after-move diagnostic; stderr:\n{stderr}"
+    );
+}
+
+/// A deferred `break` inside a guard-stepped `for` builds and leaves the loop.
+///
+/// A `for` whose step needs a guard is emitted as a label-and-`goto` form with
+/// no surrounding `break` target, so the deferred copy's edge leaves its own
+/// block range and must keep the main walk's plain label spelling; a namespaced
+/// label there would never be defined. One body pass runs, so the program
+/// answers ten (`n == 1`, `j == 0`).
+#[test]
+fn should_build_when_a_deferred_break_leaves_a_guard_stepped_for() {
+    let source = r#"module spec.defer_integrity.impl7;
+
+func mk(): i32[2] {
+    return [1, 2];
+}
+
+func f(): i32 {
+    let j: i32 = 0;
+    let n: i32 = 0;
+    for (; j < 3; j = j + mk()[1]) {
+        defer {
+            break;
+        }
+        n = n + 1;
+    }
+    return n * 10 + j;
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    let output = run_host("defer-impl7-run", source);
+    assert_exit("defer-impl7-run", &output, 10);
 }

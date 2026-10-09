@@ -21,6 +21,12 @@
 //! * a single scope reached through `continue`, fall-through, and `break`,
 //!   where each of the three cleanup sites must run the `defer` exactly once.
 //!
+//! Three further cases pin the loop-edge forms the same defect can corrupt: a
+//! `defer` whose cleanup runs `continue` in a `do`/`while` body, the `while`
+//! form of that body, and a `defer` whose cleanup runs `break` and leaves the
+//! loop with the counted iterations intact. Each states its answer as the exit
+//! code under the strict host build.
+//!
 //! The memory helper runs the same program as an ordinary strict host build
 //! and adds leak and use-after-free detection when `RDC_ASAN` is set.
 
@@ -405,4 +411,96 @@ func main(): i32 {
 "#;
     let output = run_host("defer-st4", source);
     assert_exit("defer-st4", &output, 33);
+}
+
+/// A deferred `continue` in a `do`/`while` body leaves the counter at three.
+///
+/// The body runs three times because `i` starts at zero and increments before
+/// the condition is checked. The `defer` body is registered on every pass and
+/// runs when the pass ends; on the pass where `i` is one it runs `continue`,
+/// which must only end the current pass and re-check the condition. After the
+/// third pass `i` is three, so `main` answers three. The strict host C build
+/// must accept the emitted translation unit. A defer whose cleanup mishandles
+/// the `continue` edge exits with a different value or fails to build.
+#[test]
+fn should_run_a_deferred_continue_in_a_do_while_body() {
+    let source = r#"module spec.defer_integrity.st5;
+
+func main(): i32 {
+    let i: i32 = 0;
+    do {
+        defer {
+            if (i == 1) {
+                continue;
+            }
+        }
+        i = i + 1;
+    } while (i < 3);
+    return i;
+}
+"#;
+    let output = run_host("defer-st5", source);
+    assert_exit("defer-st5", &output, 3);
+}
+
+/// A deferred `continue` in a `while` body leaves the counter at three.
+///
+/// The body runs three times because `i` starts at zero and only increments on
+/// the passes the `defer` does not force to end early. The deferred cleanup runs
+/// `continue` on the pass where `i` is one, which must end that pass without
+/// skipping the next one. After the third pass `i` is three, so `main` answers
+/// three. The strict host C build must accept the emitted translation unit. A
+/// defer whose cleanup mishandles the `continue` edge loops forever, exits with
+/// a different value, or fails to build.
+#[test]
+fn should_run_a_deferred_continue_in_a_while_body() {
+    let source = r#"module spec.defer_integrity.st6;
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 3) {
+        defer {
+            if (i == 1) {
+                continue;
+            }
+        }
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let output = run_host("defer-st6", source);
+    assert_exit("defer-st6", &output, 3);
+}
+
+/// A deferred `break` leaves the loop with the counted iterations observable.
+///
+/// The `while` body increments `n` and `i` on each pass, then the deferred
+/// cleanup runs when the pass ends. On the pass where `i` is two the cleanup
+/// runs `break`, which must leave the loop after this pass. Two passes have
+/// completed at that point, so `n` is two and `i` is two and `main` answers
+/// `2 * 10 + 2`, twenty-two. The strict host C build must accept the emitted
+/// translation unit. A defer whose cleanup mishandles the `break` edge runs
+/// extra passes (a different answer) or fails to build.
+#[test]
+fn should_run_a_deferred_break_and_leave_the_loop() {
+    let source = r#"module spec.defer_integrity.st7;
+
+func main(): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < 5) {
+        defer {
+            if (i == 2) {
+                break;
+            }
+        }
+        n = n + 1;
+        i = i + 1;
+    }
+    return n * 10 + i;
+}
+"#;
+    let output = run_host("defer-st7", source);
+    assert_exit("defer-st7", &output, 22);
 }

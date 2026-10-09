@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 15:44
-> **Progress**: 7/32 tasks (22%)
+> **Last Updated**: 2026-10-09 16:27
+> **Progress**: 14/32 tasks (44%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -112,18 +112,35 @@ cases; the corrected version is green).
 
 - [x] 1.3.1 Write implementation tests for the per-site copy shape, the label spelling (first copy unchanged, later copies suffixed), and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs` ✅ (completed: 2026-10-09 15:44)
 - [x] 1.3.2 Run the host-ASan probes for ST-1 – ST-4 and `make check` ✅ (completed: 2026-10-09 15:44)
-- [ ] 1.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity; blast-radius and test-integrity steps) and resolve findings; one bounded re-review of a fix diff
+- [x] 1.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity; blast-radius and test-integrity steps) and resolve findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-09 16:27)
 
 **Implementation-test evidence (2026-10-09 15:44)** — the three implementation cases pass: the
 three-site program spells the deferred increment exactly three times; the label-bearing deferred
 copy keeps the plain first-copy labels and suffixes the second copy (`__cl_b5__2:`); and two
 emissions are byte-identical. Host-ASan runs (the specification suite's memory cases) are clean,
-and `make check` is green.
+and `make check` is green. The three finding-regression cases were added with the fixes.
+
+**Phase 1 review findings and fixes (2026-10-09 16:27)** — three reviewers on the phase diff
+(correctness, memory-safety, emission-integrity). All findings resolved; the bounded re-review
+(effectiveness of the label fix + correctness of the per-edge entry lifetime) confirmed the three
+primary findings fixed and surfaced two more, which were fixed immediately with direct evidence
+(full workspace + `make check` green; the repros build strict and run correctly in the host and
+freestanding profiles). Per the protocol cap, no third review pass was run; the pulled-forward
+mechanism is covered by Phase 2's own review.
+
+| ID | Severity | Finding | Resolution |
+| -- | -------- | ------- | ---------- |
+| PE-001 | 🔴 CRITICAL | `{ defer { break; } }` emitted a duplicate C label: a per-site copy still walked the unbounded successor closure and re-emitted the break target block the main walk prints. | ✅ Fixed structurally by the bounded copy + ambient flow context (AR-16): the deferred copy walks only its own block range and prints `break;`/`continue;` for loop edges. |
+| RV-001 | 🟠 MAJOR | `check_switch` and `check_defer_exit` closed a terminated scope with `pop_scope()`, re-running the cleanup the edge already ran and rejecting a valid program with a spurious `E10021`. | ✅ Fixed: both sites use `close_scope_after_edge`; the `dupdiag3`-shape case is accepted and runs (pinned by the impl suite). |
+| OBS-2 | 🟠 MAJOR | `run_scope_cleanup` stopped its depth scan at the first deeper entry, so a shallower scope's defers were never effect-checked (missed `E10020`). | ✅ Fixed: the scan collects every matching-depth entry; the moved-value case is rejected again (pinned by the impl suite). |
+| PE-002 | 🟠 MAJOR | A guard-stepped `for` (plain branch shape, no ambient break target) with a deferred `break`/`continue` emitted a namespaced `goto` to a label the main walk owns and prints plain. | ✅ Fixed: only blocks inside the active copy's own range take the copy namespace; out-of-range targets keep the main walk's plain spelling (pinned by an impl case; host and freestanding strict builds pass). |
+| PE-003 | 🟡 MINOR | An unused `region_start` binding introduced a compiler warning. | ✅ Fixed (removed); the build is warning-free. |
+| PRE-1 | 🟡 pre-existing | A `break` out of a non-loop scope that owns cleanup takes a rung while the edge always inlines, emitting an unused `__cl_cN` label (byte-identical at the phase baseline). | Reported; out of this phase's scope. |
 
 **Deliverables**:
 - [x] Implementation suite for the copy shapes
 - [x] Clean probe matrix
-- [ ] Phase review with no open critical/major finding
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 
@@ -131,21 +148,32 @@ and `make check` is green.
 
 ## Phase 2: Bounded Closure and Ambient Context (DEF-84)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: _(pulled forward during Phase 1's fix cycle — see the note below; the phase-start snapshot was taken at Phase 1's start per AR-16)_
+> **Expected modification set**: `compiler/tests/defer_integrity_spec_test.rs`, `compiler/tests/defer_integrity_impl_test.rs`, `compiler/src/own/statements.rs`, `compiler/src/ir.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen.rs`, `plans/defer-integrity/*` · Scope: `strict`
 > **Lenses**: correctness, maintainability, standards; semantics (defer exit edges are a language-rule surface)
 > **Reasoning**: high — control-flow edge classification across the copy boundary
 
+> **Pull-forward note (AR-16, 2026-10-09 16:27)**: the Phase 1 review's PE-001 required the bounded
+> copy and the ambient flow context to be correct, so Steps 2.1 and 2.2 executed inside Phase 1's
+> fix cycle; their evidence is recorded here. Step 2.3 (implementation tests, probes, phase review)
+> remains Phase 2's own work.
+
 ### Step 2.1: Specification Tests
 
-**Reference**: [03-02](03-02-bounded-closure-and-context.md) §Proposed Changes · [AR-6](00-ambiguity-register.md)
+**Reference**: [03-02](03-02-bounded-closure-and-context.md) §Proposed Changes · [AR-6, AR-16](00-ambiguity-register.md)
 **Objective**: Pin the strict-build and loop-edge behavior of `continue`/`break` inside a defer.
 
-- [ ] 2.1.1 [spec-author] Write specification tests ST-5 – ST-7 in `compiler/tests/defer_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the new suite and record the red phase (the undefined `__cl_b2` label; the swallowed loop; the break variant baseline)
+- [x] 2.1.1 [spec-author] Write specification tests ST-5 – ST-7 in `compiler/tests/defer_integrity_spec_test.rs` ✅ (completed: 2026-10-09 16:27)
+- [x] 2.1.2 Run the new suite and record the red phase (the undefined `__cl_b2` label; the swallowed loop; the break variant baseline) ✅ (completed: 2026-10-09 16:27)
+
+**Red-phase evidence (pre-mechanism head `cb0ec2f`)** — ST-5 (do-while continue) hangs; ST-6 (while
+continue) already passed as a justified green pin (the per-site copies from Phase 1 fixed that
+shape); ST-7 (deferred break) exited 11 with a duplicate `__cl_b3` build failure. All three pass at
+the mechanism head (3 / 3 / 22).
 
 **Deliverables**:
-- [ ] ST-5 – ST-7 in the spec suite
-- [ ] Red-phase evidence
+- [x] ST-5 – ST-7 in the spec suite
+- [x] Red-phase evidence
 
 **Verify**: `make check` (the new cases fail as expected)
 
@@ -155,15 +183,19 @@ and `make check` is green.
 **Objective**: Give the copy its own region and the ambient flow context; guard rung-hosted
 out-edges.
 
-- [ ] 2.2.1 Record the deferred block's own block range at lowering and bound the copy to it — `compiler/src/own/statements.rs`, `compiler/src/ir.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs`
-- [ ] 2.2.2 Thread the ambient flow context through the cleanup chain so out-edges classify as `continue`/`break` — `compiler/src/codegen/control.rs`, `compiler/src/codegen/cleanup.rs`
-- [ ] 2.2.3 Add the inline-only guard for scopes whose deferred regions contain break/continue out-edges, and run the rung-hosted sibling verification probe — `compiler/src/codegen/cleanup.rs`
-- [ ] 2.2.4 Run the spec suite and record the green phase
+- [x] 2.2.1 Record the deferred block's own block range at lowering and bound the copy to it — `compiler/src/own/statements.rs`, `compiler/src/ir.rs`, `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/control.rs` ✅ (completed: 2026-10-09 16:27)
+- [x] 2.2.2 Thread the ambient flow context through the cleanup chain so out-edges classify as `continue`/`break` — `compiler/src/codegen/control.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-10-09 16:27)
+- [x] 2.2.3 Add the inline-only guard for scopes whose deferred regions contain break/continue out-edges, and run the rung-hosted sibling verification probe — `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-10-09 16:27)
+- [x] 2.2.4 Run the spec suite and record the green phase ✅ (completed: 2026-10-09 16:27)
+
+**Green-phase evidence (2026-10-09 16:27)** — ST-5/6/7 green; the guard probe (a switch-arm defer
+with a `break`) builds and runs; the guard-step `for` repro (PE-002) builds strict in the host and
+freestanding profiles and runs correctly; `make check` green.
 
 **Deliverables**:
-- [ ] Bounded copy with ambient context
-- [ ] Rung guard and its probe evidence
-- [ ] ST-5 – ST-7 green
+- [x] Bounded copy with ambient context
+- [x] Rung guard and its probe evidence
+- [x] ST-5 – ST-7 green
 
 **Verify**: `make check`
 

@@ -1,7 +1,7 @@
 # Ambiguity Register: defer-integrity
 
-> **Status**: ✅ GATE PASSED — all 15 items resolved (AR-1–AR-14 at plan time; AR-15 added and resolved during Phase 1 execution)
-> **Last Updated**: 2026-10-09 15:39
+> **Status**: ✅ GATE PASSED — all 16 items resolved (AR-1–AR-14 at plan time; AR-15/AR-16 added and resolved during execution)
+> **Last Updated**: 2026-10-09 16:06
 
 | # | Category | Ambiguity / Gap | Options Presented | Decision | Status |
 |---|----------|-----------------|-------------------|----------|--------|
@@ -20,6 +20,7 @@
 | AR-13 | Technical (testing) | Verify commands and the container sanitizer policy | A: `make check` per phase, `make verify` for the final phase; host AddressSanitizer probes for memory shapes; the in-container full-suite `RDC_ASAN` run stays non-gating because of its documented 30 s startup flake · B: gate on the in-container `RDC_ASAN` suite | **A** — `make check` per phase and `make verify` at the end (both from `AGENTS.md`); host ASan is the memory oracle; a flaked in-container run is retried alone and never treated as a failure. | ✅ Resolved |
 | AR-14 | Technical (complexity escalation) | Does the fix design add a material support surface (new layer, dependency, harness, framework, infrastructure, or cross-cutting refactor)? | A: no — the fixes are ordinary feature code inside the existing ownership/emission machinery (copy context, closure bound, frame continuation, emit ordering); no new dependency, harness, or external surface · B: a larger mechanism (new emission pass, generalized cleanup framework, or per-edge IR re-lowering) | **A** — the challenger searched for escalations and found none smaller than the accepted design; option C (the larger mechanism) was rejected on blast radius and byte-identity. No material support surface is added, so no complexity stop packet is open. | ✅ Resolved |
 | AR-15 | Technical (runtime) | The ST-3 program `return count * 10 + f(true) + f(false);` reads the module counter before the calls under the frozen left-to-right evaluation order (`spec/04-expressions.md` §3), so the recorded expectation 21 was not derivable from the spec for that program (left-to-right yields 1); the emitted code was already correct | A: bind the call sum first (`let a: i32 = f(true) + f(false); return count * 10 + a;`) so the counter is observable and 21 follows from left-to-right evaluation plus the once-per-edge defer runs · B: keep the program and change the expectation to 1 | **A** — the expectation must derive from the spec; binding the sum keeps the intended behavior oracle (two defer runs, observable counter) and avoids pinning an evaluation-order artifact | ✅ Resolved (runtime, auto-design) |
+| AR-16 | Technical (runtime) | The Phase 1 review found a duplicate-label defect (PE-001) for a `break` inside a defer: the per-site copy still walks the unbounded successor closure, so it re-emits a break-target block that the main walk also prints. A label-namespace-only remediation builds but mis-executes (the copied exit block runs on the defer's fall-through path); the correct remediation is the bounded closure plus ambient flow context scheduled for Phase 2 | A: pull Phase 2's bounded-closure and ambient-context mechanism forward as the Phase 1 fix (write Phase 2's ST-5 – ST-7 first per spec-first ordering, then implement; keep the rung guard in Phase 2) · B: keep the suffix-only fix and file the mis-execution · C: revert per-site copies | **A** — B leaves a wrong-code defect; C loses DEF-86/87. Implementation sequencing is an eligible technical class; the change reorders plan tasks only (no scope or acceptance change) | ✅ Resolved (runtime, auto-design) |
 
 ## Resolution Notes
 
@@ -183,6 +184,23 @@ the ordering fix into the same phase as the continuation keeps every ST case gre
 end; the dependency analysis, mechanisms, and Option A verdict are unchanged. This amendment was
 recorded before any plan document was written (the register is the only artifact on disk at this
 point).
+
+**AR-16 (runtime, delegated record):** Authority: AI — delegated by --auto-design · Root invocation
+ID `ad-defer-integrity-20261009` · Eligibility: implementation sequencing and mechanism selection
+inside the confirmed design (AR-4/AR-6); no scope, behavior, or acceptance change · Objective:
+close the Phase 1 review's duplicate-label and mis-execution findings with the smallest correct
+mechanism · Decision: pull Phase 2's bounded closure (the deferred block's own block range) and
+ambient flow context forward; write Phase 2's ST-5 – ST-7 first, then implement · Evidence: the
+Phase 1 review's PE-001 (duplicate `__cl_b3` for `{ defer { break; } }`) and the observed
+mis-execution after the suffix-only remediation (the copy's unbounded closure emits the break
+target block inline, so the exit code runs on the defer's fall-through path — exit 1 instead of
+2); the ambient `continue;`/`break;` spelling handles every loop kind, while main-label gotos
+cannot (do-while and for-step targets have no printable label position) · Rejected: suffix-only
+(wrong code), revert per-site (loses DEF-86/87) · Confidence: High — grounded in reproduced
+emission traces and the Phase 1 review's fix direction · Reopen triggers: the bounded copy changes
+emission for programs without defer-with-out-edge shapes, or an out-edge target cannot be
+classified by the ambient context (the rung guard's verification probe covers that case) ·
+Policy version 1.
 
 **AR-15 (runtime, delegated record):** Authority: AI — delegated by --auto-design · Root invocation
 ID `ad-defer-integrity-20261009` · Eligibility: testing-strategy correction inside the confirmed

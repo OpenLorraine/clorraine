@@ -63,6 +63,7 @@ impl<'a> Emitter<'a> {
         self.defer_copies.clear();
         self.active_defers.clear();
         self.label_copy = 0;
+        self.copy_region = None;
         self.loop_entry.clear();
         self.suppress_output = false;
 
@@ -167,6 +168,7 @@ impl<'a> Emitter<'a> {
         self.defer_copies.clear();
         self.active_defers.clear();
         self.label_copy = 0;
+        self.copy_region = None;
         self.loop_entry.clear();
         self.suppress_output = false;
 

@@ -30,7 +30,7 @@ use super::Emitter;
 
 /// The enclosing `break` and `continue` targets while a region is emitted.
 #[derive(Clone, Copy, Default)]
-struct FlowContext {
+pub(super) struct FlowContext {
     /// Where a `continue` edge goes: a loop head, step, or condition block.
     continue_target: Option<BlockId>,
     /// Where a `break` edge goes: the innermost loop or switch exit.
@@ -86,12 +86,14 @@ impl<'a> Emitter<'a> {
         self.defer_copies.clear();
         self.active_defers.clear();
         self.label_copy = 0;
+        self.copy_region = None;
         self.emit_regions(function, has_cleanup);
         self.suppress_output = false;
         self.emitted.clear();
         self.defer_copies.clear();
         self.active_defers.clear();
         self.label_copy = 0;
+        self.copy_region = None;
         self.emit_regions(function, has_cleanup);
     }
 
@@ -138,30 +140,37 @@ impl<'a> Emitter<'a> {
     /// Emits a deferred block's closure at its cleanup activation.
     ///
     /// A deferred block is reached only through the cleanup actions, not from
-    /// the function entry, so its closure becomes the reachable set for the
-    /// walk. Every cleanup activation emits its own copy: the walk runs with a
-    /// copy-local printed-block set (so an earlier activation's set cannot
-    /// suppress it) and the activation's label namespace (so copies do not
-    /// collide on function-scoped C labels).
+    /// the function entry. The copy walks only the body's own block range:
+    /// an edge that leaves the body (a `break` or `continue`) is classified
+    /// against the ambient context instead of dragging the enclosing flow
+    /// into the copy. Every cleanup activation emits its own copy: the walk
+    /// runs with a copy-local printed-block set (so an earlier activation's
+    /// set cannot suppress it) and the activation's label namespace (so copies
+    /// do not collide on function-scoped C labels).
     pub(super) fn emit_closure(
         &mut self,
         function: &'a ir::Function,
         root: BlockId,
+        end: BlockId,
         activation: u32,
+        ctx: FlowContext,
     ) {
-        let closure = super::cleanup::closure_from(function, root);
+        let mut closure = super::cleanup::closure_from(function, root);
+        closure.retain(|id| *id >= root && *id < end);
         let saved_reachable = std::mem::replace(&mut self.reachable, closure.clone());
         let saved_emitted = std::mem::take(&mut self.emitted);
         let saved_label_copy = self.label_copy;
+        let saved_region = self.copy_region;
         self.label_copy = activation;
+        self.copy_region = Some((root, end));
         let empty = BTreeSet::new();
-        let ctx = FlowContext::default();
         self.emit_flow(function, root, &empty, ctx);
         for id in 0..function.blocks.len() {
             if closure.contains(&id) && !self.emitted.contains(&id) {
                 self.emit_flow(function, id, &empty, ctx);
             }
         }
+        self.copy_region = saved_region;
         self.label_copy = saved_label_copy;
         self.emitted = saved_emitted;
         self.reachable = saved_reachable;
@@ -194,7 +203,7 @@ impl<'a> Emitter<'a> {
                 ),
                 _ => false,
             };
-            let jump = self.emit_block_body(function, current, jump_out);
+            let jump = self.emit_block_body(function, current, jump_out, ctx);
             let (terminator, span) = {
                 let block = &function.blocks[current];
                 (&block.terminator, block.terminator_span)
@@ -252,23 +261,40 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Prints a `__cl_b` label for a block a surviving `goto` reaches.
+    /// Prints a label for a block a surviving `goto` reaches in its namespace.
     fn emit_block_label(&mut self, entry: BlockId, id: BlockId) {
-        if id != entry && self.pending_labels.contains(&id) {
+        let namespace = self.label_namespace(id);
+        if id != entry && self.pending_labels.contains(&(id, namespace)) {
             self.push(&format!("{}:", self.block_label(id)));
         }
     }
 
-    /// The C label spelling of a block in the active deferred copy.
+    /// The label namespace of a block in the active deferred copy.
     ///
-    /// The first copy of a deferred block keeps the plain `__cl_b<N>` spelling;
-    /// later copies suffix their labels because C labels are function-scoped and
-    /// two copies of one block would otherwise collide.
+    /// A copy's own blocks (`label_copy` ordinal) take a suffixed namespace so
+    /// copies never collide. Every other target belongs to the main-body walk
+    /// and keeps the plain spelling, because the main walk prints its label.
+    fn label_namespace(&self, id: BlockId) -> u32 {
+        match self.copy_region {
+            Some((root, end)) if self.label_copy > 0 && id >= root && id < end => self.label_copy,
+            _ => 0,
+        }
+    }
+
+    /// The C label spelling of a block.
+    ///
+    /// Plain `__cl_b<N>` labels belong to the main-body walk. A block inside
+    /// the active deferred copy's own range takes the copy's suffixed
+    /// namespace; a target outside that range is a main-flow block the main
+    /// walk labels, so its `goto` keeps the plain spelling. Labels are
+    /// function-scoped, so a copy must never re-use the main walk's name for a
+    /// block it prints itself.
     fn block_label(&self, id: BlockId) -> String {
-        if self.label_copy > 1 {
-            format!("__cl_b{id}__{}", self.label_copy)
-        } else {
+        let namespace = self.label_namespace(id);
+        if namespace == 0 {
             format!("__cl_b{id}")
+        } else {
+            format!("__cl_b{id}__{namespace}")
         }
     }
 
@@ -296,7 +322,8 @@ impl<'a> Emitter<'a> {
 
     /// Prints a surviving `goto` and records the label it needs.
     fn emit_goto(&mut self, target: BlockId) {
-        self.pending_labels.insert(target);
+        self.pending_labels
+            .insert((target, self.label_namespace(target)));
         self.push(&format!("    goto {};", self.block_label(target)));
     }
 
@@ -311,8 +338,10 @@ impl<'a> Emitter<'a> {
         self.emit_line_directive(span);
         self.emit_guards(condition);
         let condition_c = self.value(condition);
-        self.pending_labels.insert(on_true);
-        self.pending_labels.insert(on_false);
+        self.pending_labels
+            .insert((on_true, self.label_namespace(on_true)));
+        self.pending_labels
+            .insert((on_false, self.label_namespace(on_false)));
         let true_label = self.block_label(on_true);
         let false_label = self.block_label(on_false);
         self.push(&format!(
