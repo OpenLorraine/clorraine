@@ -1,0 +1,28 @@
+{
+  "checkedAt": "2026-10-09T19:41:29+02:00",
+  "plans": [
+    "array-value-integrity",
+    "borrow-view-and-shadowing",
+    "call-value-integrity",
+    "clorraine-compiler-mvp",
+    "clorraine-demo-video",
+    "clorraine-driver",
+    "clorraine-freestanding-profile",
+    "clorraine-graphics",
+    "clorraine-v1-language-completion",
+    "codegen-ownership-safety",
+    "def-backlog-closeout",
+    "def-backlog-completion",
+    "defer-integrity",
+    "element-loop-integrity",
+    "generic-field-integrity",
+    "generic-substitution-guards",
+    "non-lexical-lifetimes",
+    "ownership-drop-completion",
+    "partial-move-drop-coherence",
+    "residual-defect-completion",
+    "residual-defect-hardening",
+    "runtime-value-integrity",
+    "slice-temporary-integrity"
+  ]
+}
