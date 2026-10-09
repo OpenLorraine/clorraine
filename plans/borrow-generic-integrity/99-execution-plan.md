@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 20:23
-> **Progress**: 0/30 tasks (0%)
+> **Last Updated**: 2026-10-09 21:40
+> **Progress**: 2/30 tasks (7%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -52,8 +52,8 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 1: Borrow-store rules (DEF-78, DEF-82, DEF-83)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: `1463b89ef537fadba98cc69c124fc5b8dc954ecb` (clean tree at phase start; pre-Phase-1)
+> **Scope**: strict — expected modification set: `compiler/tests/borrow_generic_integrity_spec_test.rs`, `compiler/tests/borrow_generic_integrity_impl_test.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/instance_check.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/call.rs`, `compiler/src/own.rs`, `compiler/src/ir.rs`, `compiler/src/ir/mono.rs`, `plans/borrow-generic-integrity/99-execution-plan.md`
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (ownership/lend
 > store rules; AGENTS.md dispatch matrix)
 > **Reasoning**: high — ownership and memory-safety semantics on an assignment path
@@ -64,8 +64,10 @@ task-size criteria in the make-plan quality checklist)
 **Objective**: Pin the corrected store rules and the preserved legal shapes before any
 implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-8 — `compiler/tests/borrow_generic_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1, ST-2, ST-4, ST-7, ST-8 fail; ST-3 passes (the dedupe pin, both spellings), ST-5 passes, and ST-6's concrete clauses pass while its generic-nullable clause fails; PF-004, PF-006)
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-8 — `compiler/tests/borrow_generic_integrity_spec_test.rs` ✅ (completed: 2026-10-09 21:39)
+- [x] 1.1.2 Run the spec suite and record the red phase (expected: ST-1, ST-2, ST-4, ST-7, ST-8 fail; ST-3 passes (the dedupe pin, both spellings), ST-5 passes, and ST-6's concrete clauses pass while its generic-nullable clause fails; PF-004, PF-006) ✅ (completed: 2026-10-09 21:40)
+
+**Red phase** (2026-10-09 21:40, 2 passed / 6 failed — the planned set exactly): failed as expected — the concrete store, the fresh-value store, the owning generic store, the out-slot self-assignment, the warning exemption, and the nullable instantiation (its generic clause); passed as planned — the both-lends dedupe pins (concrete and generic) and the duplicable-slot acceptance.
 
 **Deliverables**:
 - Specification suite with ST-1 – ST-8
