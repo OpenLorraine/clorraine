@@ -425,6 +425,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 });
         }
         let mut function = self.builder.finish();
+        Self::sync_param_names(&mut function, &self.bindings);
         function.locals = self
             .bindings
             .iter()
@@ -824,7 +825,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             Provenance::None
         };
-        let ir_name = self.unique_ir_name(name, kind);
+        let ir_name = self.unique_ir_name(name);
         self.bindings.push(Binding {
             name: name.to_owned(),
             ir_name,
@@ -853,17 +854,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// shadows it appends `#<binding-index>`. The binding table is not
     /// truncated when a scope closes, so every binding declared so far in the
     /// function counts and sibling scopes get distinct spellings even though
-    /// neither shadows the other. A local whose name matches a module-level
-    /// callee is suffixed too: the emitter would otherwise resolve a call
-    /// through that binding to the same-named function, and the local must win
-    /// because it shadows the module name.
-    fn unique_ir_name(&self, name: &str, kind: BindingKind) -> String {
+    /// neither shadows the other. A binding whose name matches a module-level
+    /// callee is suffixed for every binding kind: the emitter would otherwise
+    /// resolve a call through that binding to the same-named function, and the
+    /// binding must win because it shadows the module name. The suffix makes
+    /// the name unresolvable by the module lookup, so every name-based
+    /// consumer treats the call as a call through the binding.
+    fn unique_ir_name(&self, name: &str) -> String {
         let shadowed = self.bindings.iter().any(|binding| binding.name == name);
-        let masks_callee = kind == BindingKind::Local && self.program.callee(name).is_some();
+        let masks_callee = self.program.callee(name).is_some();
         if shadowed || masks_callee {
             format!("{name}#{}", self.bindings.len())
         } else {
             name.to_owned()
+        }
+    }
+
+    /// Copies the declared parameter spellings onto a finished function.
+    ///
+    /// A parameter that shares its written name with a module callee keeps a
+    /// masked IR name, so the emitted signature, the local-name table, and the
+    /// lowered callee names all agree. Parameters are the first bindings
+    /// declared, in declaration order, so the function's parameter list lines
+    /// up with the binding table.
+    fn sync_param_names(function: &mut ir::Function, bindings: &[Binding]) {
+        for (index, param) in function.params.iter_mut().enumerate() {
+            if let Some(binding) = bindings.get(index) {
+                param.name = binding.ir_name.clone();
+            }
         }
     }
 

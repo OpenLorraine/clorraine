@@ -1364,7 +1364,7 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("cviimpl-rr3shadow", source);
-    assert_contains("cviimpl-rr3shadow", &emitted, "((f).fn((f).env, 5));");
+    assert_contains("cviimpl-rr3shadow", &emitted, "((f_0).fn((f_0).env, 5));");
     assert!(
         !emitted.contains("cl_impl_cvi_rr3shadow_f(5)"),
         "cviimpl-rr3shadow: the parameter must shadow the module function"

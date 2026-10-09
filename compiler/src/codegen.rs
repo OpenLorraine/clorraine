@@ -537,20 +537,56 @@ impl<'a> Emitter<'a> {
         let ret = self.resolve_in_module(module, &decl.returns, &type_param_names(decl));
         let ret = substitute_in(&ret, subst);
         let mut params: Vec<String> = Vec::new();
-        for param in &decl.params {
+        let c_names = self.param_c_names(module, decl);
+        for (index, param) in decl.params.iter().enumerate() {
             let ty = self.resolve_in_module(module, &param.ty, &type_param_names(decl));
             let ty = substitute_in(&ty, subst);
-            let c_name = sanitize_identifier(&param.name);
+            let c_name = &c_names[index];
             if is_pointer_param(&ty, param.mode, &self.sema.table) {
-                params.push(declarator(&Ty::raw(ty), &c_name, &self.sema.table));
+                params.push(declarator(&Ty::raw(ty), c_name, &self.sema.table));
             } else {
-                params.push(declarator(&ty, &c_name, &self.sema.table));
+                params.push(declarator(&ty, c_name, &self.sema.table));
             }
         }
         // The shared declarator adds the hidden destination for a by-value
         // fixed-array return and nests a func-typed return in place.
         let signature = function_declarator(&ret, params, symbol, None, &self.sema.table);
         format!("{storage}{signature}")
+    }
+
+    /// The C names of a declaration's parameters, in order.
+    ///
+    /// A parameter whose written name collides with a module callee carries a
+    /// masked IR spelling, so the emitted signature must use the same spelling
+    /// as the local-name table and the lowered callee names. The IR function
+    /// is found by its declaration: its parameter list is the declaration's in
+    /// order, and masking never changes the count. A declaration without an
+    /// emitted body keeps its written names.
+    fn param_c_names(&self, module: &str, decl: &FuncDecl) -> Vec<String> {
+        let ir_names: Option<Vec<String>> = self
+            .ownership
+            .functions
+            .iter()
+            .find(|function| function.module == module && function.name == decl.name)
+            .map(|function| {
+                function
+                    .params
+                    .iter()
+                    .map(|param| param.name.clone())
+                    .collect()
+            });
+        decl.params
+            .iter()
+            .enumerate()
+            .map(|(index, param)| {
+                let name = ir_names
+                    .as_ref()
+                    .and_then(|names| names.get(index))
+                    .map(String::as_str)
+                    .unwrap_or(param.name.as_str());
+                sanitize_identifier(name)
+            })
+            .collect()
     }
 
     /// Resolves a called function name against the emitting module.

@@ -505,6 +505,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Builder::new("__cl_lifted_placeholder", Vec::new(), Ty::void()),
         );
         let mut function = lambda_builder.finish();
+        Self::sync_param_names(&mut function, &self.bindings);
         function.locals = self
             .bindings
             .iter()

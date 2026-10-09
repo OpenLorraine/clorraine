@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:59
-> **Progress**: 24/30 tasks (80%)
+> **Last Updated**: 2026-10-09 23:33
+> **Progress**: 26/30 tasks (87%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -312,8 +312,10 @@ DEF-107). Rulings: [05-findings.md](05-findings.md).
 **Reference**: [03-04](03-04-may-lend-callee-identity.md) §Proposed Changes
 **Objective**: Extend the callee-name masking guard to every binding kind.
 
-- [ ] 4.2.1 Extend the mask condition in `unique_ir_name` and carry the masked parameter spelling through the IR and emitter — `compiler/src/own.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 4.2.2 Run the spec suite to green (ST-17 – ST-20) and the ST-17 ASan probe (`RDC_ASAN=1` inside the container); update the two existing pinned tests before the green gate (`runtime_value_integrity_impl_test.rs`, `call_value_integrity_impl_test.rs`); on any failure STOP and fix the implementation
+- [x] 4.2.1 Extend the mask condition in `unique_ir_name` and carry the masked parameter spelling through the IR and emitter — `compiler/src/own.rs`, `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`, `compiler/src/codegen.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-09 23:33)
+- [x] 4.2.2 Run the spec suite to green (ST-17 – ST-20) and the ST-17 ASan probe (`RDC_ASAN=1` inside the container); update the two existing pinned tests before the green gate (`runtime_value_integrity_impl_test.rs`, `call_value_integrity_impl_test.rs`); on any failure STOP and fix the implementation ✅ (completed: 2026-10-09 23:33)
+
+**Implementation notes (2026-10-09 23:33)**: the mask now applies to every binding kind; `sync_param_names` copies the masked spellings onto the finished IR function at both finish sites (a method was impossible after the builder move — it is an associated function over the binding table). The emitter resolves the signature parameter names from the IR function (`param_c_names`) and builds the pointer-param table from the IR parameters. A runtime correction was needed in `own/call.rs`: the local-callee guard only recognized `TyKind::Func`, so a generic `f: F` callee kept the written name and the masked spelling never reached the closure-call rendering (the emitter fell back to the module function — a regression caught by the existing closure-shadow pin). The guard now also accepts `TyKind::Param`, so the call carries the binding's IR spelling. The two existing pins updated to `run_0` and `f_0`; spec 27/27, runtime impl 61/61, call-value impl 31/31, the leak probe clean under the sanitizer, and `make check` green.
 
 **Deliverables**:
 - The guard and plumbing changes

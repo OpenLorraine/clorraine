@@ -157,7 +157,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut local_callee = false;
         let name = match &callee.kind {
             ExprKind::Name(written) => match self.lookup(written) {
-                Some(id) if matches!(self.bindings[id].ty.kind, TyKind::Func(_)) => {
+                Some(id)
+                    if matches!(
+                        self.bindings[id].ty.kind,
+                        TyKind::Func(_) | TyKind::Param(_)
+                    ) =>
+                {
                     local_callee = true;
                     // Calling the binding reads it, so an unused-local warning
                     // would be spurious.

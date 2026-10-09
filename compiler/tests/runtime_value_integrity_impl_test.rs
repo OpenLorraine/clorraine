@@ -635,7 +635,7 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("rviimpl-paramshadow", source);
-    assert_contains("rviimpl-paramshadow", &emitted, "return run(0);");
+    assert_contains("rviimpl-paramshadow", &emitted, "return run_0(0);");
     assert!(
         !emitted.contains("cl_impl_rvi_paramshadow_run(0)"),
         "rviimpl-paramshadow: the parameter shadows the module function"

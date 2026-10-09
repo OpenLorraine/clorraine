@@ -42,17 +42,6 @@ impl<'a> Emitter<'a> {
         self.used_names.clear();
         self.local_names.clear();
         self.pointer_params.clear();
-        for param in &info.decl.params {
-            let ty = self.resolve_in_module(
-                &info.module,
-                &param.ty,
-                &type_param_names(info.decl),
-            );
-            let ty = substitute_in(&ty, &self.subst);
-            if is_pointer_param(&ty, param.mode, &self.sema.table) {
-                self.pointer_params.insert(param.name.clone());
-            }
-        }
         self.scope_actions.clear();
         self.rungs.clear();
         self.labels.clear();
@@ -95,6 +84,10 @@ impl<'a> Emitter<'a> {
             let c_name = sanitize_identifier(&param.name);
             self.used_names.insert(c_name.clone());
             self.local_names.insert(param.name.clone(), c_name);
+            let ty = self.substitute(&param.ty);
+            if is_pointer_param(&ty, param.mode, &self.sema.table) {
+                self.pointer_params.insert(param.name.clone());
+            }
         }
         let mut declared: BTreeSet<String> = BTreeSet::new();
         for local in &function.locals {
