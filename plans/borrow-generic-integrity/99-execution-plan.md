@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 21:51
+> **Last Updated**: 2026-10-09 22:04
 > **Progress**: 9/30 tasks (30%)
 > **CodeOps Artifact Schema**: 1
 
@@ -112,6 +112,17 @@ rejection, and the warning exemption.
 - `make check` green
 
 **Verify**: `make check`
+
+### Phase 1 Review (2026-10-09 22:04)
+
+Independent review (correctness reviewer + memory-safety auditor + semantics reviewer) found one
+critical issue and one phase-introduced major issue, both fixed within the phase: the not-lend
+audit's nullable exemption was narrowed to nullable out-slot destinations (a generic `return` of
+a nullable lend had been newly accepted and double-freed), and the one-report skip now applies
+when any right-side move source is already judged (a mixed conditional had produced two
+`E10034`). Pre-existing defects and the runtime-indexed residual are filed as
+DEF-100/DEF-101/DEF-102; the remaining minor notes are accepted with rationale. Rulings and
+evidence: [05-findings.md](05-findings.md).
 
 ---
 
@@ -275,7 +286,7 @@ review.
 - [ ] 4.3.1 Write implementation tests (suffixed IR/emitted names for colliding bindings; the updated pins of the two existing tests; unchanged module-call emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
 - [ ] 4.3.2 Full phase verification — `make check`
 - [ ] 4.3.3 Final acceptance — `make verify` (all legs)
-- [ ] 4.3.4 Close-out: correct the DEF-78/DEF-79 roadmap row notes, add the two new suites to the AGENTS.md test-naming map, file the runtime-indexed element self-assign residual, and sync the roadmap (PF-005, PF-014)
+- [ ] 4.3.4 Close-out: correct the DEF-78/DEF-79 roadmap row notes, add the two new suites to the AGENTS.md test-naming map, file the residual defects (DEF-100 generic whole-binding self-assign, DEF-101 concrete nullable out-slot return release, DEF-102 runtime-indexed out-slot element self-assign), and sync the roadmap (PF-005, PF-014; phase-1 review rulings in [05-findings.md](05-findings.md))
 
 **Deliverables**:
 - Implementation suite for P4

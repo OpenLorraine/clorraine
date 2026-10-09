@@ -21,7 +21,7 @@
 | AR-10 | Scope / process | Whether `spec/` may change | Keep `spec/` untouched (recommended) / add clarifications | **User:** confirmed — `spec/` stays byte-identical; the plan cites T8, OW-16/FN-7, D9, and the out-param carve-out and conforms the implementation. | ✅ Resolved |
 | AR-11 | Sequencing | Phase structure for the execution plan | 4 phases (recommended) / one per defect | **User:** confirmed — P1 DEF-78+82+83, P2 DEF-79, P3 DEF-81, P4 DEF-77. | ✅ Resolved |
 | AR-12 | Testing | Verify command and test-file layout | Confirm (recommended) / different | **User:** confirmed — `make check` per phase; host-ASan probes for P1 and P4 (preflight PF-007: `RDC_ASAN=1` inside the container command, since a plain run cannot observe a leak; run memory probes individually); strict host build check for P2; `make verify` final; suites `compiler/tests/borrow_generic_integrity_spec_test.rs` and `borrow_generic_integrity_impl_test.rs`. | ✅ Resolved |
-| AR-13 | Technical | DEF-78: check placement and interaction with the existing lend-move duty | Site rules (see notes) | **AI — delegated (eligible: compiler mechanism)** → whole-binding `Mode::Borrow` parameters, plus exact projected self-assign on out-slot roots (PF-005); the check runs in the ownership assignment path before the store is emitted; the per-instance duty is recorded at the same site; at most one `E10034` per assignment site — the target-side judgment is skipped when the right side's move sources are lend-place moves already judged by the existing path (`Param` ∧ mode ∈ {None, Const, Borrow}, including parameter-typed sources owing a not-lend duty at the same span; PF-004); field and element stores otherwise keep their existing rules. See notes. | ✅ Resolved (delegated) |
+| AR-13 | Technical | DEF-78: check placement and interaction with the existing lend-move duty | Site rules (see notes) | **AI — delegated (eligible: compiler mechanism)** → whole-binding `Mode::Borrow` parameters, plus exact projected self-assign on out-slot roots (PF-005); the check runs in the ownership assignment path before the store is emitted; the per-instance duty is recorded at the same site; at most one `E10034` per assignment site — the target-side judgment is skipped when any of the right side's move sources is a lend-place move already judged by the existing path (`Param` ∧ mode ∈ {None, Const, Borrow}, including parameter-typed sources owing a not-lend duty at the same span; PF-004; refined at the phase-1 review — see the AR-13 refinement below); field and element stores otherwise keep their existing rules. See notes. | ✅ Resolved (delegated) |
 | AR-14 | Technical (runtime) | The pinned container's AddressSanitizer runtime crash-loops on PIE images under the host kernel's full page-address-randomization entropy — a trivial ASan C control hangs with repeated `DEADLYSIGNAL`, while the same control and the emitted program built with `-no-pie` start cleanly | Link the suite's sanitizer builds with `-no-pie` / skip ASan evidence / change host sysctls | **AI — delegated (eligible: testing mechanism)** → `-no-pie` on the ASan build in the spec suite's helper; detection is unchanged and the flag is portable. See notes. | ✅ Resolved (runtime, delegated) |
 
 ## Resolution Notes
@@ -31,7 +31,9 @@
 accepted: `borrow i32` stores (warning-only today) and the nullable out-slot forms pinned by the
 existing `p3f2`/`p3r26`/`inst-slot` cases. Preflight PF-006 extends the same nullable exemption to
 the sibling not-lend audit (`check_not_lend_requirements`), which otherwise still rejects the
-generic spelling at a nullable substitution; see the preflight report.
+generic spelling at a nullable substitution; see the preflight report. The phase-1 review
+narrowed that exemption to nullable out-slot destinations (AR-2 refinement below; findings
+ledger `05-findings.md`).
 
 **AR-3 (preflight PF-001):** the confirmed mask mechanism is unchanged, but its plumbing surface
 is larger than "one condition": the masked parameter spelling must reach `ir::Param`, the C
@@ -131,6 +133,38 @@ Hardening: not required — the flag changes only the link layout; the probes ex
 Policy version: 1
 Root invocation ID: ad-borrow-generic-integrity-20261009
 Reopen triggers: the pinned container's sanitizer runtime starts on PIE images again (runtime/kernel update)
+```
+
+**AR-2 refinement (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: mechanism within the confirmed PF-006 intent (the both-borrow store into a nullable out-slot)
+Objective: keep the intended nullable acceptance while never newly admitting an aliasing move
+Decision: the not-lend audit exempts a nullable substitution only when the duty's move destination is a writable parameter slot (`RequiresNotLend.stores_into_slot`)
+Evidence: phase-1 review probes — the blanket exemption accepted generic `let`, `return`, and `take` moves at `T = String?`; the `return` shape double-frees (MS-001), and the concrete spellings of those forms either alias (`return`, filed DEF-101) or are safe only incidentally
+Rejected alternatives: gate on the source mode alone (still admits a returning borrow move, whose concrete form double-frees); fix the concrete return release now (outside this batch's scope; filed DEF-101)
+Strongest counterargument: generics become stricter than the concrete spellings for borrow-mode `let`; that is the safe direction and preserves base behavior for the generic forms
+Confidence: High — two new specification cases and the lattice probes pin both directions
+Hardening: not required — bounded mechanism, covered by the phase re-review
+Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
+Reopen triggers: DEF-101 is fixed, or a concrete-clean move destination is found that should stay legal at a nullable substitution
+```
+
+**AR-13 refinement (runtime, delegated):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: mechanism within the AR-13 invariant (at most one E10034 per assignment site)
+Objective: restore one report per site for mixed-source right sides
+Decision: the recording-time skip applies when any of the right side's move sources is a lend-place move already judged at the site
+Evidence: phase-1 review probe — `slot = c ? local : v` emitted two E10034 (target `'slot'` and source `'v'`) under the all-source skip; the base emitted one
+Rejected alternatives: audit-time shared span-keyed reported set (more machinery than the invariant needs); accepting the extra report (violates the stated rule)
+Strongest counterargument: a mixed conditional holds two potential offenses on different run-time paths; the site still reports exactly one, matching base and the invariant
+Confidence: High — the mixed clause is pinned in the specification suite
+Hardening: not required — bounded change, covered by the phase re-review
+Policy version: 1 · Root invocation ID: ad-borrow-generic-integrity-20261009
+Reopen triggers: a store shape reaches the target release without passing check_assign
 ```
 
 ### Systematic 12-category scan

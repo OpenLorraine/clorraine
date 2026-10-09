@@ -700,15 +700,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// True when the lend-move path already judges every source the store's
-    /// right side would consume.
+    /// True when the lend-move path already judges a source the store's right
+    /// side would consume.
     ///
     /// The source set mirrors the binding effect the assignment applies: a
     /// maybe-owning target consumes a place root or the arms of a conditional
-    /// as maybe-moves, while an owning target consumes them as moves. Every
-    /// source must be a lend parameter with a read-only mode, because those
-    /// are the moves the existing path reports — directly for a concrete type
-    /// and through the per-instance duty while the type is still a parameter.
+    /// as maybe-moves, while an owning target consumes them as moves. When any
+    /// source is a lend parameter with a read-only mode, the existing path
+    /// already reports this site — directly for a concrete type and through
+    /// the per-instance duty while the type is still a parameter — so the
+    /// target-side judgment stays silent and the site keeps one diagnostic.
     fn lend_moves_judged(&self, target_ty: &Ty, value: &Expr) -> bool {
         let sources = if self.maybe_owns(target_ty) {
             match self.place_target(value) {
@@ -724,7 +725,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         };
         !sources.is_empty()
-            && sources.iter().all(|source| match source {
+            && sources.iter().any(|source| match source {
                 PlaceTarget::Local(source_id, _) => {
                     let binding = &self.bindings[*source_id];
                     binding.kind == BindingKind::Param

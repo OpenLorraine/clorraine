@@ -114,9 +114,12 @@ fn check_out_slot_requirements(
 /// A generic body that moves a lend into an owned position is accepted while
 /// the type is a parameter, because the checker cannot yet tell whether the
 /// move is real. The audit substitutes each recorded instance's type arguments
-/// into the moved type: a duplicable substitution stays a copy, while an owning
-/// one reports the same diagnostic the concrete spelling emits. One duty
-/// reports once — the first owning instance — so the body site is not repeated.
+/// into the moved type: a duplicable substitution stays a copy, while an
+/// owning one reports the same diagnostic the concrete spelling emits. A
+/// nullable substitution is exempt only where the move's destination is a
+/// slot that may be the `borrow T?` out-slot carve-out; every other
+/// destination keeps the strict judgment. One duty reports once — the first
+/// owning instance — so the body site is not repeated.
 fn check_not_lend_requirements(
     program: &ProgramInfo,
     sema: &SemaOutput,
@@ -133,10 +136,15 @@ fn check_not_lend_requirements(
                 continue;
             }
             let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
-            // A nullable substitution is an out-parameter slot, which owns its
-            // incoming value, so the move stays legal exactly as the concrete
-            // `borrow T?` spelling is.
-            if sema.table.duplicable(&substituted) || substituted.nullable {
+            // A nullable substitution is the `borrow T?` out-slot carve-out,
+            // so a move stays legal where the concrete spelling is — but only
+            // for a move whose destination is a slot that may be that
+            // out-slot. A move into an owned position keeps the strict
+            // judgment, because a nullable lend moved there would leave the
+            // source and the destination aliasing one allocation.
+            if sema.table.duplicable(&substituted)
+                || (substituted.nullable && requirement.stores_into_slot)
+            {
                 continue;
             }
             diagnostics.push(

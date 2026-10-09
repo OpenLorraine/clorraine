@@ -297,6 +297,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// legal only for a duplicable instance, and the `borrow T?` out-param slot
     /// stays exempt.
     pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget, span: Span) {
+        self.mark_moved_if_owning_from(target, span, false);
+    }
+
+    /// Records a maybe-owning move whose destination is a writable parameter
+    /// slot.
+    ///
+    /// The destination is the `borrow T?` out-slot carve-out for a nullable
+    /// instance, so the per-instance audit exempts a nullable substitution
+    /// only for these moves; every other destination keeps the strict
+    /// judgment.
+    pub(super) fn mark_moved_into_slot_if_owning(&mut self, target: PlaceTarget, span: Span) {
+        self.mark_moved_if_owning_from(target, span, true);
+    }
+
+    /// Records a value-consuming move of a maybe-owning place, flagging
+    /// whether the destination is a writable parameter slot.
+    fn mark_moved_if_owning_from(
+        &mut self,
+        target: PlaceTarget,
+        span: Span,
+        stores_into_slot: bool,
+    ) {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
                 place.moved_if_owning.insert(projections.clone());
@@ -324,6 +346,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 function: self.decl.name.clone(),
                 parameter,
                 ty,
+                stores_into_slot,
                 span,
             });
         }

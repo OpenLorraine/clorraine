@@ -366,13 +366,14 @@ func main(): i32 {
     assert_rejected_once("fresh-store", source, "E10034", &["'slot'"]);
 }
 
-/// A store whose both sides are lend parameters reports one diagnostic per
-/// site.
+/// A store whose right side mixes a local and a lend reports one diagnostic
+/// per site.
 ///
-/// The right side already reports the illegal move out of `v`; the target side
-/// must not add a second report for the same assignment. The concrete and the
-/// parameter-typed spellings behave the same way, each with exactly one
-/// `E10034`.
+/// The right side already reports the illegal move out of a lend arm; the
+/// target side must not add a second report for the same assignment. The
+/// concrete and the parameter-typed spells behave the same way, each with
+/// exactly one `E10034`, and so does a conditional that mixes an owned local
+/// arm with a lend arm.
 #[test]
 fn should_report_one_borrow_store_error_when_both_sides_are_lends() {
     let concrete = r#"module spec.bgi.bothconcrete;
@@ -408,6 +409,24 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("both-lends-generic", generic, "E10034", &[]);
+
+    let mixed = r#"module spec.bgi.bothmixed;
+
+import { String, stringOf } from std.text;
+
+func pick(borrow slot: String, borrow v: String, c: bool): void {
+    let local: String = stringOf("q");
+    slot = c ? local : v;
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let t: String = stringOf("cd");
+    pick(borrow s, borrow t, true);
+    return 0;
+}
+"#;
+    assert_rejected_once("both-mixed-conditional", mixed, "E10034", &[]);
 }
 
 /// A parameter-typed store is rejected for the instantiation that owns the
@@ -618,4 +637,61 @@ func main(): i32 {
 
     let output = run_host("nullable-warning-run", source);
     assert_exit("nullable-warning-run", &output, 1);
+}
+
+/// A generic nullable lend cannot move into an owned local.
+///
+/// A by-value parameter is a read-only lend, and the concrete nullable
+/// spelling is rejected for a move into an owned local. The generic body is
+/// judged the same way once its instance substitutes a nullable type: the move
+/// destination is not a slot, so the strict rule applies and the program is
+/// rejected with exactly one `E10034` naming the parameter. Only a store into
+/// the callee's own out-parameter slot is exempt.
+#[test]
+fn should_reject_a_generic_nullable_lend_moved_into_an_owned_local() {
+    let source = r#"module spec.bgi.owneddestination;
+
+import { String, stringOf } from std.text;
+
+func moveout<T>(a: T): i32 {
+    let b: T = a;
+    return 0;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    return moveout<String?>(s);
+}
+"#;
+    assert_rejected_once("owned-destination", source, "E10034", &["'a'"]);
+}
+
+/// A generic nullable lend cannot be returned from a borrow parameter.
+///
+/// A return transfers ownership to the caller. The concrete `borrow T?` return
+/// is accepted today but leaves the source aliasing the result, a pre-existing
+/// release bug filed as a residual defect; the generic spelling must not newly
+/// admit the same aliasing. A nullable substitution is exempt only for a store
+/// into the callee's out-parameter slot, so this program stays rejected with
+/// exactly one `E10034` naming the parameter.
+#[test]
+fn should_reject_a_generic_nullable_lend_returned_from_a_borrow_parameter() {
+    let source = r#"module spec.bgi.returnedlend;
+
+import { String, stringOf } from std.text;
+
+func gid<T>(borrow v: T): T {
+    return v;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    let r: String? = gid<String?>(borrow s);
+    if (r == null) {
+        return 0;
+    }
+    return i32(len(r));
+}
+"#;
+    assert_rejected_once("returned-lend", source, "E10034", &["'v'"]);
 }

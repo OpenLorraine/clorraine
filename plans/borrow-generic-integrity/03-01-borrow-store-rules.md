@@ -45,11 +45,13 @@ resolved and before the store is emitted:
 3. Every other target keeps today's behavior: `BindingKind::OutSlot` accepts the store (the
    nullable out-parameter is the caller's slot), duplicable and view types accept it, and
    unmarked/`const` parameters keep the existing read-only-write rule.
-4. The sibling not-lend audit (`check_not_lend_requirements`) exempts nullable substitutions the
-   same way the store exemption does: the concrete `borrow v: String?` spelling is legal today,
-   and the generic `borrow v: T` at `T = String?` must stay legal too (PF-006). The audit's
-   existing duplicable carve-out gains a `substituted.nullable` clause, and an ST pins the
-   generic nullable acceptance.
+4. The sibling not-lend audit (`check_not_lend_requirements`) exempts a nullable substitution only
+   for a duty whose move destination is a writable parameter slot that may become the `borrow T?`
+   out-slot carve-out — the both-borrow store PF-006 demonstrated. Every other destination (a
+   local, a return, a `take` position) keeps the strict judgment: the phase-1 review probed that
+   the concrete spellings of those forms either alias or rely on a pre-existing release bug
+   (filed DEF-101), so the generic body must not newly accept them. ST-21/ST-22 pin the rejected
+   forms; ST-6's generic clause pins the accepted store.
 
 **One report per assignment site (AR-13, PF-004).** A site whose right side is itself a lend-place
 move already judged by `move_place` (concrete) or by the `RequiresNotLend` duty

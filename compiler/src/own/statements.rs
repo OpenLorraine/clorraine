@@ -531,13 +531,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             BindingEffect::MoveIfOwning { sources } => {
+                // A move whose destination is a writable parameter slot may be
+                // the `borrow T?` out-slot carve-out at some instance, so the
+                // per-instance audit exempts a nullable substitution there.
+                // Every other destination keeps the strict lend judgment.
+                let into_slot = matches!(
+                    self.bindings[id].kind,
+                    BindingKind::Param | BindingKind::OutSlot
+                ) && self.bindings[id].mode == Mode::Borrow;
                 for source in sources {
                     if let PlaceTarget::Local(source_id, projections) = &source {
                         if *source_id == id && projections.is_empty() {
                             continue;
                         }
                     }
-                    self.mark_moved_if_owning(source, span);
+                    if into_slot {
+                        self.mark_moved_into_slot_if_owning(source, span);
+                    } else {
+                        self.mark_moved_if_owning(source, span);
+                    }
                 }
             }
             BindingEffect::View {

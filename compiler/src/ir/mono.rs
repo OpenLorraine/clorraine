@@ -137,6 +137,15 @@ pub struct RequiresNotLend {
     pub parameter: String,
     /// The moved value's declared type, substituted per instance by the audit.
     pub ty: Ty,
+    /// True when the move's destination is a writable parameter slot.
+    ///
+    /// Such a store is the `borrow T?` out-slot carve-out when the instance's
+    /// type argument makes the slot nullable, so the audit exempts a nullable
+    /// substitution only for these duties. Every other destination — a local,
+    /// a return, a `take` position — keeps the strict judgment, because a
+    /// nullable lend moved into an owned position would leave the source and
+    /// the destination aliasing one allocation.
+    pub stores_into_slot: bool,
     /// The move site, for the diagnostic span.
     pub span: Span,
 }
