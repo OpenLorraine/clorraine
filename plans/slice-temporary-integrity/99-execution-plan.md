@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 12:00
-> **Progress**: 19/34 tasks (56%)
+> **Last Updated**: 2026-10-09 13:46
+> **Progress**: 21/34 tasks (62%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -248,7 +248,7 @@ the host-ASan matrix, and `make check`) is the final check.
 
 ## Phase 3: Root and receiver binding (DEF-71/89)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: 8940ce5d67983df91890f77bf06c38eff65091ef
 > **Lenses**: compiler-and-language; ownership/lifetime rules for owners and receivers
 > **Reasoning**: high — release registration and conditional/receiver binding on ownership paths
 
@@ -257,8 +257,8 @@ the host-ASan matrix, and `make check`) is the final check.
 **Reference**: [03-03 §Proposed Changes](03-03-root-and-receiver-binding.md) · [07 ST-9 – ST-13](07-testing-strategy.md) · [AR-5](00-ambiguity-register.md)
 **Objective**: Pin the missing releases and the adoption forms before implementation.
 
-- [ ] 3.1.1 [spec-author] Write specification tests ST-9 – ST-13 in `compiler/tests/slice_temporary_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (sibling-field leaks; the member-receiver buffer leak; the eager-temp loop double free)
+- [x] 3.1.1 [spec-author] Write specification tests ST-9 – ST-11 and ST-13 in `compiler/tests/slice_temporary_integrity_spec_test.rs` (ST-12 is the Phase 4 element-store case) ✅ (completed: 2026-10-09 13:46)
+- [x] 3.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (sibling-field leaks; the member-receiver buffer leak; the eager-temp loop double free) ✅ (completed: 2026-10-09 13:46)
 
 **Deliverables**:
 - [ ] ST-9 – ST-13

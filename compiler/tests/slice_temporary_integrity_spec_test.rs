@@ -38,6 +38,16 @@
 //! deferred fill reaches the generic literal; the third leaks its sibling
 //! until the member root joins the preparation gate.
 //!
+//! The root-and-receiver cases cover the ownership bindings that non-direct
+//! call roots and plain member receivers still miss: a take argument on a root
+//! call whose result keeps an unowned sibling (`sink(mkfrom(mka()).a)`), a
+//! conditional-of-calls root guarded by `&&` (both arms, both guard paths),
+//! an owned `Array` receiver read through `.count` beside the unchanged `len`
+//! form, and the whole-result adoption, its loop re-assignment, and the
+//! borrowed `.a` projection. Every path must stay host-ASan clean; before the
+//! bindings land the sibling field and the receiver buffer leak and the loop
+//! adoption double-frees.
+//!
 //! The memory helper runs the same program as an ordinary strict host build
 //! and adds leak and use-after-free detection when `RDC_ASAN` is set.
 
@@ -842,4 +852,284 @@ func main(): i32 {
 "#;
     let output = run_host("sti-st15", source);
     assert_exit("sti-st15", &output, 12);
+}
+
+/// A take argument on a root call releases the result's unconsumed sibling.
+///
+/// `sink(mkfrom(mka()).a)` passes `mka()` to the `take` parameter of
+/// `mkfrom`, so the argument's place empties there, while `mkfrom` returns a
+/// `Pair` whose `a` moves into `sink` and whose `b` has no named owner. Binding
+/// the eager temporary must release `b` once when the statement ends, so the
+/// case is host-ASan clean. `sink` measures the two-character `a`, so `main`
+/// answers two. Before the binding the eager temporary registers no release,
+/// so the three-character sibling `b` leaks twelve bytes (ASan red); the value
+/// check still passes, so the sanitizer run is the memory oracle.
+#[test]
+fn should_release_the_sibling_when_a_take_argument_roots_the_call_result() {
+    let source = r#"module spec.sti.st16;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mka(): String {
+    return stringOf("ab");
+}
+
+func mkfrom(take s: String): Pair {
+    return Pair { a: stringOf("xy"), b: stringOf("cde") };
+}
+
+func sink(take v: String): i32 {
+    return i32(len(v));
+}
+
+func main(): i32 {
+    return sink(mkfrom(mka()).a);
+}
+"#;
+    let output = run_memory("sti-st16", source);
+    assert_exit("sti-st16", &output, 2);
+    assert_no_asan("sti-st16", &output);
+}
+
+/// A conditional-of-calls root releases the chosen call's sibling on the
+/// evaluated guard path and runs no call on the short-circuited path.
+///
+/// `flag && sink((c ? mk1() : mk2()).a) == 2` is exercised for all four
+/// `(flag, c)` combinations in one program. Module counters prove the chosen
+/// call runs exactly once and the skipped arm never runs: with `flag` true the
+/// chosen arm runs once, and with `flag` false neither arm runs. Each chosen
+/// call's one-character sibling `b` must release once, so every path is
+/// host-ASan clean; the four results are folded into the exit code. Before the
+/// conditional root is bound, neither arm's result is released, so each taken
+/// path leaks its sibling (ASan red).
+#[test]
+fn should_release_the_chosen_sibling_when_a_conditional_call_roots_a_guarded_take() {
+    let source = r#"module spec.sti.st17;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+let calls1: i32 = 0;
+let calls2: i32 = 0;
+
+func mk1(): Pair {
+    calls1 = calls1 + 1;
+    return Pair { a: stringOf("ab"), b: stringOf("z") };
+}
+
+func mk2(): Pair {
+    calls2 = calls2 + 1;
+    return Pair { a: stringOf("ab"), b: stringOf("y") };
+}
+
+func sink(take v: String): i32 {
+    return i32(len(v));
+}
+
+func guarded(flag: bool, c: bool): i32 {
+    let base: i32 = c ? 1 : 2;
+    let hit: bool = flag && sink((c ? mk1() : mk2()).a) == 2;
+    if (hit) {
+        return base;
+    }
+    return base + 10;
+}
+
+func main(): i32 {
+    let a1: i32 = guarded(true, true);
+    let n1: i32 = calls1;
+    let m1: i32 = calls2;
+    let a2: i32 = guarded(true, false);
+    let n2: i32 = calls1;
+    let m2: i32 = calls2;
+    let a3: i32 = guarded(false, true);
+    let n3: i32 = calls1;
+    let m3: i32 = calls2;
+    let a4: i32 = guarded(false, false);
+    let n4: i32 = calls1;
+    let m4: i32 = calls2;
+    if (n1 != 1 || m1 != 0) {
+        return 91;
+    }
+    if (n2 != 1 || m2 != 1) {
+        return 92;
+    }
+    if (n3 != 1 || m3 != 1) {
+        return 93;
+    }
+    if (n4 != 1 || m4 != 1) {
+        return 94;
+    }
+    return a1 + a2 * 2 + a3 * 4 + a4 * 8;
+}
+"#;
+    let output = run_memory("sti-st17", source);
+    assert_exit("sti-st17", &output, 145);
+    assert_no_asan("sti-st17", &output);
+}
+
+/// An owned `Array` receiver read through `.count` releases the array once.
+///
+/// `i32(spawn().count)` reads the element count of a five-element array
+/// returned by a call. The receiver has no named owner, so binding it like a
+/// dot-`len` receiver must release the array's buffer and descriptor when the
+/// statement ends, and `main` answers five. The read is bound to a local first,
+/// because at `-O0` a direct `return i32(spawn().count);` leaves the returned
+/// temporary reachable on the stack and the sanitizer cannot observe the leak.
+/// Before the binding the receiver is left inline and the two live allocations
+/// (a sixteen-byte descriptor and a twenty-byte data block) leak, so the
+/// sanitizer run is the memory oracle.
+#[test]
+fn should_release_the_receiver_when_an_owned_array_count_is_read() {
+    let member_source = r#"module spec.sti.st18;
+
+import { Array, arrayNew } from std.mem;
+
+func spawn(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    a.push(2);
+    a.push(3);
+    a.push(4);
+    a.push(5);
+    return a;
+}
+
+func main(): i32 {
+    let n: i32 = i32(spawn().count);
+    return n;
+}
+"#;
+    let member_output = run_memory("sti-st18-count", member_source);
+    assert_exit("sti-st18-count", &member_output, 5);
+    assert_no_asan("sti-st18-count", &member_output);
+
+    let len_source = r#"module spec.sti.st18;
+
+import { Array, arrayNew } from std.mem;
+
+func spawn(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    a.push(2);
+    a.push(3);
+    a.push(4);
+    a.push(5);
+    return a;
+}
+
+func main(): i32 {
+    return i32(len(spawn()));
+}
+"#;
+    let len_output = run_memory("sti-st18-len", len_source);
+    assert_exit("sti-st18-len", &len_output, 5);
+    assert_no_asan("sti-st18-len", &len_output);
+}
+
+/// Whole-result adoption, its loop re-assignment, and a borrowed projection
+/// each release the eager temporary exactly once.
+///
+/// `let r: Pair = mkfrom(mka());` must move the whole result out of the eager
+/// temporary (register-only release would double-free it); the loop form
+/// re-assigns the binding each pass and must free the previous value exactly
+/// once per iteration; and `len(mkfrom(mka()).a)` borrows `a` while the
+/// sibling `b` still releases once. All three are host-ASan clean. The
+/// adoption values are folded into the exit codes: the plain and loop forms
+/// answer the two- and three-character lengths, and the projection answers the
+/// two-character `a`. Before the binding the loop form double-frees and the
+/// projection leaks its sibling.
+#[test]
+fn should_release_once_when_a_take_result_is_adopted_looped_or_projected() {
+    let adopt_source = r#"module spec.sti.st19;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mka(): String {
+    return stringOf("ab");
+}
+
+func mkfrom(take s: String): Pair {
+    return Pair { a: stringOf("xy"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    let r: Pair = mkfrom(mka());
+    return i32(len(r.a)) * 10 + i32(len(r.b));
+}
+"#;
+    let adopt_output = run_memory("sti-st19-adopt", adopt_source);
+    assert_exit("sti-st19-adopt", &adopt_output, 23);
+    assert_no_asan("sti-st19-adopt", &adopt_output);
+
+    let loop_source = r#"module spec.sti.st19;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mka(): String {
+    return stringOf("ab");
+}
+
+func mkfrom(take s: String): Pair {
+    return Pair { a: stringOf("xy"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let total: i32 = 0;
+    while (n < 3) {
+        let r: Pair = mkfrom(mka());
+        total = total + i32(len(r.a)) * 10 + i32(len(r.b));
+        n = n + 1;
+    }
+    return total;
+}
+"#;
+    let loop_output = run_memory("sti-st19-loop", loop_source);
+    assert_exit("sti-st19-loop", &loop_output, 69);
+    assert_no_asan("sti-st19-loop", &loop_output);
+
+    let project_source = r#"module spec.sti.st19;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mka(): String {
+    return stringOf("ab");
+}
+
+func mkfrom(take s: String): Pair {
+    return Pair { a: stringOf("xy"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    return i32(len(mkfrom(mka()).a));
+}
+"#;
+    let project_output = run_memory("sti-st19-project", project_source);
+    assert_exit("sti-st19-project", &project_output, 2);
+    assert_no_asan("sti-st19-project", &project_output);
 }

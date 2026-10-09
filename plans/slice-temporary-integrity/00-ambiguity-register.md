@@ -1,7 +1,7 @@
 # Ambiguity Register: slice-temporary-integrity
 
-> **Status**: ✅ GATE PASSED — all 11 items resolved (AR-10 resolved during authoring; AR-11 resolved during Phase 2 execution; gate reopened and closed)
-> **Last Updated**: 2026-10-08 13:52
+> **Status**: ✅ GATE PASSED — all 12 items resolved (AR-10 resolved during authoring; AR-11 resolved during Phase 2 execution; AR-12 resolved during Phase 3 execution; gate reopened and closed)
+> **Last Updated**: 2026-10-09 12:10
 
 | # | Category | Ambiguity / Gap | Options Presented | User Decision | Status |
 |---|----------|-----------------|-------------------|---------------|--------|
@@ -16,6 +16,7 @@
 | AR-9 | Edge cases | An explicit `slice<T>` type argument that disagrees with the source element type is unchecked | A: report the existing `E10200` implicit-conversion diagnostic directly at the intrinsic call site; no new code, no spec change · B: add a new diagnostic code | **A** — existing E10200 (direct comparison in the intrinsic lowering; preflight PF-002) | ✅ Resolved |
 | AR-10 | Technical | DEF-75 follow-through surfaced while authoring 03-04: the fixed-array index append in the drop-expression builder has the same suffix-precedence hazard as the field append; AR-8 named only the field-append site | A: parenthesize both suffix sites (field and fixed-array index), keeping the handle spelling untouched · B: field append only, as literally written in AR-8 | **A** — parenthesize both suffix sites | ✅ Resolved |
 | AR-11 | Technical (runtime) | Phase 2's deferred consume fill emits the base array temporary's defensive reassigned-drop (`if (...) FreeString(...); __cl_tmp0[0] = NULL; ...`) before the root call, so the closeout spec pin `assert_before("make(", "__cl_tmp0[0] = NULL;")` no longer matches textually; the operative read and move-out still follow the call, and the program is strict-clean and host-ASan clean | A: migrate the textual spec pin to the deferred shape, preserving its intent (call before the operative read; read then move-out) · B: suppress the defensive drop for fixed-array fills (loop-condition fills reuse the temp per iteration and rely on it — the DEF-39 class; a leak regression) · C: new checker/IR statement-released context flag to emit the drop only where needed (new machinery) | **A** — migrate the textual spec pin; the run and ASan assertions stay untouched | ✅ Resolved (runtime) |
+| AR-12 | Technical (runtime) | ST-11's literal member form `return i32(spawn().count);` cannot produce red evidence under the mandated `-O0` ASan harness: at `-O0` the returned `Array` temporary keeps the buffer pointer reachable at process exit, so LeakSanitizer reports no leak, although the filed defect is real (red at `-O2`, or whenever the read is bound first) | A: bind the read (`let n: i32 = i32(spawn().count); return n;`) — same defect and program semantics, harness-visible red at `-O0` with exactly 36 bytes in 2 allocations, green post-fix; the `len(spawn())` regression form is unchanged · B: keep the literal form as a documented justified pass with `-O2` probe evidence | **A** — bind the read | ✅ Resolved (runtime) |
 
 ## Resolution Notes
 
@@ -28,5 +29,7 @@
 **AR-9:** The agreement guard is part of the row-typing change because `slice` has no sema-registered type; it is implemented as a direct comparison in the intrinsic lowering (`lower_intrinsic_call`) and reported as the existing `E10200` at the call site. Declared-signature registration and the sema conversion table stay out of scope (preflight PF-002). The Phase 1 review (RV-001) later added the *result* typing in the type stage (`check_view_builder`); the explicit-argument comparison stays in `lower_intrinsic_call` for the single-report shape.
 
 **AR-11:** The deferred consume preparation changes the emitted statement order for a root call over a fixed-array source: the guard emitter clears the reusable array temporary before the call (loop-reuse protection), so the closeout spec pin's first-occurrence search sees the clear before `make(`. The spec pin migrates its textual assertion only; its run and AddressSanitizer assertions are unchanged, and the operative evaluation order (call, read, slot emptying) is verified by the emitted C and host ASan.
+
+**AR-12:** The mandated `-O0` ASan harness cannot observe ST-11's filed spelling: at `-O0` the returned `Array` temporary stays reachable on the stack at process exit, so LeakSanitizer reports no leak even though the defect is real (red at `-O2`, and red at `-O0` whenever the read is bound first). Binding the read keeps the same defect and program semantics and restores a harness-visible red oracle (36 bytes in 2 allocations).
 
 > **Complexity check:** no chosen option adds a new layer, dependency, harness, or generalized mechanism; the Complexity Escalation Gate did not trigger. (`Excluded machinery: None`.)
