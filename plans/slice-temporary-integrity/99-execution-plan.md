@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 13:57
-> **Progress**: 24/34 tasks (71%)
+> **Last Updated**: 2026-10-09 13:58
+> **Progress**: 26/34 tasks (76%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -286,8 +286,8 @@ the host-ASan matrix, and `make check`) is the final check.
 **Reference**: [03-03 §Testing Requirements](03-03-root-and-receiver-binding.md)
 **Objective**: Pin the new shapes and prove the single-owner invariant.
 
-- [ ] 3.3.1 Write implementation tests for the destination-temp mark and release, the emptying adoption shape, the conditional branch-store shape, the read-position member-receiver binding and its excluded positions, the place-arm conditional staying inline, the loop-condition pin migration, and the existing `__cl_owned` absence pins — `compiler/tests/slice_temporary_integrity_impl_test.rs`
-- [ ] 3.3.2 Run the host-ASan probes including the whole-result adoption, the loop form of the eager temporary (single release), the guarded literal, the loop-condition member receiver, and the `len(spawn())` regressions
+- [x] 3.3.1 Write implementation tests for the destination-temp mark and release, the emptying adoption shape, the conditional branch-store shape, the read-position member-receiver binding and its excluded positions, the place-arm conditional staying inline, the loop-condition pin migration, and the existing `__cl_owned` absence pins — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-09 13:58)
+- [x] 3.3.2 Run the host-ASan probes including the whole-result adoption, the loop form of the eager temporary (single release), the guarded literal, the loop-condition member receiver, and the `len(spawn())` regressions ✅ (completed: 2026-10-09 13:58)
 - [ ] 3.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer on the guarded receiver path's evaluation order; blast-radius (every root-bind and receiver-bind call site) and test-integrity steps; resolve findings; one bounded re-review
 
 **Deliverables**:

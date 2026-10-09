@@ -733,3 +733,130 @@ func main(): i32 {
     let output = run_host("sti-impl12-run", source);
     assert_exit("sti-impl12-run", &output, 0);
 }
+
+/// A conditional root adopted by a projection stores the chosen arm.
+///
+/// `(c ? mk1() : mk2()).a` binds the conditional to an owned local through
+/// the branch-store: each arm assigns the whole call result, the old value is
+/// saved and released once, and the projection reads the adopted `a`; `main`
+/// answers the two-byte `a`.
+#[test]
+fn should_adopt_the_chosen_arm_when_a_conditional_roots_a_projection() {
+    let source = r#"module spec.sti.impl13;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func mk1(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("z") };
+}
+
+func mk2(): Pair {
+    return Pair { a: stringOf("ab"), b: stringOf("y") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let r: String = (c ? mk1() : mk2()).a;
+    return i32(len(r));
+}
+"#;
+    let emitted = emit_host("sti-impl13", source);
+    assert_contains("sti-impl13", &emitted, "ClPair __cl_owned0 = {0};");
+    assert_before("sti-impl13", &emitted, "if (c) {", "__cl_owned0 = cl_");
+    assert_contains("sti-impl13", &emitted, "} else {");
+    let output = run_host("sti-impl13-run", source);
+    assert_exit("sti-impl13-run", &output, 2);
+}
+
+/// A cast read binds an owned member receiver; a loop condition does not.
+///
+/// `i32(spawn().count)` binds the array receiver to an owned local, so the
+/// cast reads `__cl_owned0.count` and the cleanup releases the array. A loop
+/// condition keeps its own machinery: the condition materializes the call
+/// into a `__cl_tmp` and binds no owned local.
+#[test]
+fn should_bind_the_receiver_at_a_cast_read_and_leave_the_loop_condition_alone() {
+    let cast_source = r#"module spec.sti.impl14;
+
+import { Array, arrayNew } from std.mem;
+
+func spawn(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    a.push(2);
+    a.push(3);
+    a.push(4);
+    a.push(5);
+    return a;
+}
+
+func main(): i32 {
+    let n: i32 = i32(spawn().count);
+    return n;
+}
+"#;
+    let emitted = emit_host("sti-impl14", cast_source);
+    assert_contains("sti-impl14", &emitted, "ClArray__i32 __cl_owned0 = {0};");
+    assert_contains("sti-impl14", &emitted, "__cl_owned0 = cl_spec_sti_impl14_spawn();");
+    assert_contains("sti-impl14", &emitted, "n = (i32)(__cl_owned0.count);");
+    let output = run_host("sti-impl14-run", cast_source);
+    assert_exit("sti-impl14-run", &output, 5);
+
+    let loop_source = r#"module spec.sti.impl15;
+
+import { Array, arrayNew } from std.mem;
+
+func spawn(): Array<i32> {
+    let a: Array<i32> = arrayNew<i32>();
+    a.push(1);
+    return a;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i32(spawn().count) > 0 && i < 2) {
+        i = i + 1;
+    }
+    return i;
+}
+"#;
+    let emitted = emit_host("sti-impl15", loop_source);
+    assert_absent("sti-impl15", &emitted, "__cl_owned");
+    assert_contains("sti-impl15", &emitted, "__cl_tmp0 = cl_spec_sti_impl15_spawn();");
+    let output = run_host("sti-impl15-run", loop_source);
+    assert_exit("sti-impl15-run", &output, 2);
+}
+
+/// A place-arm conditional read by an intrinsic stays inline.
+///
+/// `len(c ? p.a : p.b)` reads either field of a named local, so the owned-read
+/// bind must leave the conditional inline: no branch store is emitted, the
+/// conditional renders directly, and `main` answers the two-byte `a`.
+#[test]
+fn should_keep_a_place_arm_conditional_inline_when_an_intrinsic_reads_it() {
+    let source = r#"module spec.sti.impl16;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let p: Pair = Pair { a: stringOf("ab"), b: stringOf("cde") };
+    return i32(len(c ? p.a : p.b));
+}
+"#;
+    let emitted = emit_host("sti-impl16", source);
+    assert_absent("sti-impl16", &emitted, "__cl_save");
+    assert_contains("sti-impl16", &emitted, "(c ? p.a : p.b)");
+    let output = run_host("sti-impl16-run", source);
+    assert_exit("sti-impl16-run", &output, 2);
+}
