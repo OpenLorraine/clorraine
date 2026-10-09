@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 21:49
-> **Progress**: 7/30 tasks (23%)
+> **Last Updated**: 2026-10-09 21:51
+> **Progress**: 9/30 tasks (30%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -104,8 +104,8 @@ rejection, and the warning exemption.
 **Reference**: [03-01](03-01-borrow-store-rules.md) §Testing Requirements
 **Objective**: Pin the internal shapes and run the phase verification.
 
-- [ ] 1.3.1 Write implementation tests (emitted out-slot store shapes; a loop-body store reporting exactly one `E10034`; no duplicated counts) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
-- [ ] 1.3.2 Full phase verification — `make check`
+- [x] 1.3.1 Write implementation tests (emitted out-slot store shapes; a loop-body store reporting exactly one `E10034`; no duplicated counts) — `compiler/tests/borrow_generic_integrity_impl_test.rs` ✅ (completed: 2026-10-09 21:51)
+- [x] 1.3.2 Full phase verification — `make check` ✅ (completed: 2026-10-09 21:51)
 
 **Deliverables**:
 - Implementation suite for P1
