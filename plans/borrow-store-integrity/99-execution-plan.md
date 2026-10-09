@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 01:46
-> **Progress**: 10/22 tasks (45%)
+> **Last Updated**: 2026-10-10 01:48
+> **Progress**: 15/22 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -139,8 +139,8 @@ implementation.
 **Objective**: The direct-return branch empties a caller-storage source through the existing
 zeroing step.
 
-- [ ] 2.2.1 [DEF-101] Detect the caller-storage source (`pointer_params`) in the direct-return branch and emit the block-local plus source-empty form — `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/function.rs`
-- [ ] 2.2.2 Run the spec suite to green (ST-8 – ST-12) and the ASan probes for ST-8 and ST-9; on any failure STOP and fix the implementation, never the test
+- [x] 2.2.1 [DEF-101] Detect the caller-storage source (`pointer_params`) in the direct-return branch and emit the block-local plus source-empty form — `compiler/src/codegen/cleanup.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-10 01:48)
+- [x] 2.2.2 Run the spec suite to green (ST-8 – ST-12) and the ASan probes for ST-8 and ST-9; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 01:48)
 
 **Deliverables**:
 - The return emission change
@@ -155,8 +155,8 @@ zeroing step.
 **Reference**: [03-02](03-02-out-slot-return.md) §Testing Requirements
 **Objective**: Pin the emitted return shape and run the phase verification.
 
-- [ ] 2.3.1 Write implementation tests (the `__cl_return` block-local, `(*v) = NULL;`, the unchanged direct emission for a view slot, byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs`
-- [ ] 2.3.2 Full phase verification — `make check`
+- [x] 2.3.1 Write implementation tests (the `__cl_return` block-local, `(*v) = NULL;`, the unchanged direct emission for a view slot, byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs` ✅ (completed: 2026-10-10 01:48)
+- [x] 2.3.2 Full phase verification — `make check` ✅ (completed: 2026-10-10 01:48)
 
 **Deliverables**:
 - Implementation suite for P2

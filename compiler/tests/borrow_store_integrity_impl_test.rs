@@ -300,3 +300,98 @@ func main(): i32 {
     );
     assert_eq!(first, second, "the two emissions must be byte-identical");
 }
+
+/// A direct whole-slot return emits a block-local copy and empties the slot.
+///
+/// The returned handle copies the caller's slot, so the slot must be zeroed
+/// before control leaves or both the slot and the result would release one
+/// allocation. The value store precedes the zeroing so the copy still reads
+/// the payload.
+#[test]
+fn should_empty_the_caller_slot_when_a_direct_return_copies_it() {
+    let unit = emit_host(
+        "direct-return-empty",
+        r#"module spec.bsi.impl.directreturn;
+
+import { String, stringOf } from std.text;
+
+func cid(borrow v: String?): String? { return v; }
+
+func main(): i32 {
+    let s: String? = stringOf("abc");
+    let r: String? = cid(borrow s);
+    if (s != null) { return 90; }
+    if (r != null) { return i32(len(r)); }
+    return -1;
+}
+"#,
+    );
+    let body = instance_body(&unit, "static ClString cl_spec_bsi_impl_directreturn_cid(ClString *v)");
+    assert!(
+        body.contains("__cl_return"),
+        "the direct return must use a block-local; body:\n{body}"
+    );
+    assert!(
+        body.contains("(*v) = NULL;"),
+        "the caller's slot must be emptied; body:\n{body}"
+    );
+    let store = body.find("= (*v);").expect("the value store");
+    let empty = body.find("(*v) = NULL;").expect("the emptying");
+    assert!(
+        store < empty,
+        "the value must be read before the slot is emptied; body:\n{body}"
+    );
+}
+
+/// A view return keeps its direct emission: a view owns no storage to empty.
+///
+/// The returned slice aliases the caller's view; zeroing it would not release
+/// anything and the ownership transfer rule does not apply to a view, so the
+/// emission stays a plain return.
+#[test]
+fn should_keep_the_direct_emission_when_a_view_slot_is_returned() {
+    let unit = emit_host(
+        "view-return-direct",
+        r#"module spec.bsi.impl.viewreturn;
+
+func vid(borrow v: u8[]?): u8[]? { return v; }
+
+func main(): i32 {
+    return 0;
+}
+"#,
+    );
+    let body =
+        instance_body(&unit, "static ClSlice_u8 cl_spec_bsi_impl_viewreturn_vid(ClSlice_u8 *v)");
+    assert!(
+        body.contains("return (*v);"),
+        "the view return must stay direct; body:\n{body}"
+    );
+    assert!(
+        !body.contains("(*v) = NULL;"),
+        "a view has no storage to empty; body:\n{body}"
+    );
+}
+
+/// The out-slot return program re-emits byte-identically.
+#[test]
+fn should_re_emit_identically_when_the_out_slot_return_program_is_emitted_twice() {
+    let (first, second) = emit_twice(
+        "out-slot-reemission",
+        r#"module spec.bsi.impl.outslotreemission;
+
+import { String, stringOf } from std.text;
+
+func cid(borrow v: String?): String? { return v; }
+
+func main(): i32 {
+    let s: String? = stringOf("abc");
+    let r: String? = cid(borrow s);
+    if (s != null) { return 90; }
+    if (r != null) { return i32(len(r)); }
+    return -1;
+}
+"#,
+    );
+    assert_eq!(first, second, "the two emissions must be byte-identical");
+}

@@ -470,7 +470,9 @@ impl<'a> Emitter<'a> {
                                 }
                             }
                         }
-                        None if !releases.is_empty() => {
+                        None if !releases.is_empty()
+                            || self.return_source_needs_emptying(value, &ret_ty) =>
+                        {
                             // Without a cleanup ladder the value would return
                             // directly, and a release cannot run after a
                             // `return`. The value is stored in a block-local
@@ -478,7 +480,10 @@ impl<'a> Emitter<'a> {
                             // A storage-rooted source is emptied before the
                             // releases, exactly as the result-var branch does:
                             // otherwise a release of the temporary would free
-                            // the element the returned value still aliases.
+                            // the element the returned value still aliases. A
+                            // return that copies caller storage takes the same
+                            // form even without releases, so the caller's slot
+                            // is emptied before control leaves.
                             let local = self.unique_local("__cl_return");
                             let decl = super::types::declarator(&ret_ty, &local, &self.sema.table);
                             self.push("    {");
@@ -527,6 +532,27 @@ impl<'a> Emitter<'a> {
             let value = self.empty_return_value();
             self.push(&format!("    return {value};"));
         }
+    }
+
+    /// True when a direct return must empty storage the caller owns.
+    ///
+    /// A returned value that copied caller storage — the pointee of a `borrow`
+    /// pointer parameter — leaves the caller's slot and the result aliasing
+    /// one allocation, so the direct branch stores the value in a block-local
+    /// and empties the source before control leaves. A by-value parameter, a
+    /// local, a view, and a fresh temporary have no caller storage to empty
+    /// and keep the direct emission.
+    fn return_source_needs_emptying(&self, value: &ir::Value, ret_ty: &Ty) -> bool {
+        if !self.needs_drop(ret_ty) {
+            return false;
+        }
+        let ir::ValueKind::Place(place) = &value.kind else {
+            return false;
+        };
+        let ir::PlaceBase::Param(name) = &place.base else {
+            return false;
+        };
+        self.pointer_params.contains(name) && self.needs_drop(&self.substitute(&value.ty))
     }
 
     /// Emits an owned conditional return through the branch store.
