@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 01:33
-> **Progress**: 6/22 tasks (27%)
+> **Last Updated**: 2026-10-10 01:36
+> **Progress**: 8/22 tasks (36%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -98,8 +98,8 @@ document the conservative runtime-index comparison (DEF-102, no semantic change)
 **Reference**: [03-01](03-01-self-assign-rules.md) §Testing Requirements
 **Objective**: Pin the internal shapes and run the phase verification.
 
-- [ ] 1.3.1 Write implementation tests (the per-instance report shape — one report per site; the duty naming; byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs`
-- [ ] 1.3.2 Full phase verification — `make check`
+- [x] 1.3.1 Write implementation tests (the per-instance report shape — one report per site; the duty naming; byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs` ✅ (completed: 2026-10-10 01:36)
+- [x] 1.3.2 Full phase verification — `make check` ✅ (completed: 2026-10-10 01:36)
 
 **Deliverables**:
 - Implementation suite for P1
