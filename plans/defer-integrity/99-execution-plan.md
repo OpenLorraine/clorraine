@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 15:43
-> **Progress**: 5/32 tasks (16%)
+> **Last Updated**: 2026-10-09 15:44
+> **Progress**: 7/32 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -110,13 +110,19 @@ cases; the corrected version is green).
 **Reference**: [03-01](03-01-per-site-deferred-copies.md) §Testing Requirements
 **Objective**: Pin the copy shapes and prove the memory behavior; review the phase.
 
-- [ ] 1.3.1 Write implementation tests for the per-site copy shape, the label spelling (first copy unchanged, later copies suffixed), and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs`
-- [ ] 1.3.2 Run the host-ASan probes for ST-1 – ST-4 and `make check`
+- [x] 1.3.1 Write implementation tests for the per-site copy shape, the label spelling (first copy unchanged, later copies suffixed), and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs` ✅ (completed: 2026-10-09 15:44)
+- [x] 1.3.2 Run the host-ASan probes for ST-1 – ST-4 and `make check` ✅ (completed: 2026-10-09 15:44)
 - [ ] 1.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity; blast-radius and test-integrity steps) and resolve findings; one bounded re-review of a fix diff
 
+**Implementation-test evidence (2026-10-09 15:44)** — the three implementation cases pass: the
+three-site program spells the deferred increment exactly three times; the label-bearing deferred
+copy keeps the plain first-copy labels and suffixes the second copy (`__cl_b5__2:`); and two
+emissions are byte-identical. Host-ASan runs (the specification suite's memory cases) are clean,
+and `make check` is green.
+
 **Deliverables**:
-- [ ] Implementation suite for the copy shapes
-- [ ] Clean probe matrix
+- [x] Implementation suite for the copy shapes
+- [x] Clean probe matrix
 - [ ] Phase review with no open critical/major finding
 
 **Verify**: `make check`
