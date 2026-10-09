@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 17:25
-> **Progress**: 25/32 tasks (78%)
+> **Last Updated**: 2026-10-09 17:31
+> **Progress**: 26/32 tasks (81%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -289,7 +289,7 @@ pinned bytes.
 
 - [x] 3.3.1 Write implementation tests for the continuation shape, the remaining-actions order, the buffered-cleanup order, and byte-identical re-emission — `compiler/tests/defer_integrity_impl_test.rs` ✅ (completed: 2026-10-09 17:07)
 - [x] 3.3.2 Run the host-ASan matrix (release counts and side effects exactly once per path) and `make check` ✅ (completed: 2026-10-09 17:07)
-- [~] 3.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff ⏳ (implemented: 2026-10-09 17:25)
+- [x] 3.3.3 Dispatch the phase review (correctness + memory-safety + emission-integrity + semantics) and resolve findings; one bounded re-review of a fix diff ✅ (completed: 2026-10-09 17:31)
 
 **Implementation-test evidence (2026-10-09 17:07)** — three new emission cases pin the store-before-
 drop order, the remaining-defer-after-return order, and the outer-rung jump for a nested deferred
@@ -313,10 +313,19 @@ observations reported. Per the protocol cap, one bounded re-review follows this 
 **Fix evidence (2026-10-09 17:25)** — the leak shapes are ASan clean (String override: exit 1; fixed
 array: exit 1); defer suites 15 spec + 13 impl; full workspace green; `make check` green.
 
+**Bounded re-review (2026-10-09 17:31)** — the memory-safety re-review of the fix diff confirms the
+leak is resolved across every reproduced form (`String`, growable `Array<i32>`/`Array<String>`,
+fixed `String[2]` including conditional/call forms, structs, moves, call temporaries, two-defer
+pairs, loop edges, generic `String` substitution) with values unchanged; no double or invalid free
+(the release nulls the result, and the guarded-not-taken path keeps the body value); ordinary
+non-deferred returns and the host corpus are byte-identical; the fixed-array release addresses the
+same `__cl_ret[i]` elements the store writes. One pre-existing, base-identical observation reported
+(a growable-slice `len` const-folds to zero) — out of scope.
+
 **Deliverables**:
 - [x] Implementation suite for the return family
 - [x] Clean probe matrix
-- [ ] Phase review with no open critical/major finding
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 
@@ -324,7 +333,8 @@ array: exit 1); defer suites 15 spec + 13 impl; full workspace green; `make chec
 
 ## Phase 4: Plan-wide Hardening and Close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill at phase start)_
+> **Phase baseline tree**: `d4f530cc2ed614a9a36cb78b6ab1661241575b0e`
+> **Expected modification set**: `compiler/src/**`, `compiler/tests/**`, `AGENTS.md`, `plans/00-roadmap.md`, `plans/defer-integrity/*` · Scope: `strict`
 > **Lenses**: all four project review roles over the plan diff
 > **Reasoning**: medium — sweeps and the final review
 
