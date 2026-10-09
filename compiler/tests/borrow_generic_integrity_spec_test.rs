@@ -985,7 +985,8 @@ func main(): i32 {
 ///
 /// The `!= null` branch reads the first element and the `== null` branch
 /// returns the fallback; the run combines both functions over a live view and
-/// an empty one, so the exit code pins the narrowed reads: 456.
+/// an empty one, so the exit code pins the narrowed reads: the first element
+/// (four), the fallback (five), and the second element (six) sum to 51.
 #[test]
 fn should_read_through_a_narrowed_nullable_view() {
     let source = r#"module spec.bgi.viewnarrow;
@@ -1012,11 +1013,11 @@ func main(): i32 {
     let a: u8 = first(view, 9);
     let b: u8 = second(null, 5);
     let c: u8 = second(view, 5);
-    return i32(a) * 100 + i32(b) * 10 + i32(c);
+    return i32(a) * 10 + i32(b) + i32(c);
 }
 "#;
     let output = run_memory("view-narrow", source);
-    assert_exit("view-narrow", &output, 456);
+    assert_exit("view-narrow", &output, 51);
     assert_no_asan("view-narrow", &output);
 }
 

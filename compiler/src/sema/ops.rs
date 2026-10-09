@@ -7,6 +7,7 @@
 //! calls, literals, and aggregates.
 
 use crate::ast::{AssignOp, BinaryOp, Expr, ExprKind, ScalarType, UnaryOp};
+use crate::borrow::is_view;
 use crate::span::Span;
 use crate::types::{implicit_conversion, int_fits, int_literal_value, unify_numeric, Ty, TyKind};
 
@@ -130,10 +131,20 @@ impl Checker<'_, '_> {
                 Ty::boolean()
             }
             BinaryOp::Eq | BinaryOp::Ne => {
-                if !comparable(left_ty) {
-                    self.report_operator(op, left_ty, left_span);
-                } else if !comparable(right_ty) {
-                    self.report_operator(op, right_ty, right_span);
+                // A view is nullable by definition, so comparing it with `null`
+                // is its emptiness test: the emitter lowers the pairing to a
+                // pointer test and the ownership walk narrows the place. Every
+                // other pairing keeps the operand rules, so two slice views
+                // still have no defined equality and a view never pairs with a
+                // non-null operand.
+                let null_on_either_side = left_ty.is_unknown() || right_ty.is_unknown();
+                let view_on_either_side = is_view(left_ty) || is_view(right_ty);
+                if !(null_on_either_side && view_on_either_side) {
+                    if !comparable(left_ty) {
+                        self.report_operator(op, left_ty, left_span);
+                    } else if !comparable(right_ty) {
+                        self.report_operator(op, right_ty, right_span);
+                    }
                 }
                 Ty::boolean()
             }

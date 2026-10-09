@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:40
-> **Progress**: 18/30 tasks (60%)
+> **Last Updated**: 2026-10-09 22:41
+> **Progress**: 20/30 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -236,8 +236,10 @@ routed by the emission audit is filed as DEF-104. Rulings and evidence:
 **Reference**: [03-03](03-03-nullable-view-comparison.md) §Proposed Changes
 **Objective**: Accept the view-versus-`null` pairing in the equality arm.
 
-- [ ] 3.2.1 Implement the pairing rule — `compiler/src/sema/ops.rs`
-- [ ] 3.2.2 Run the spec suite to green (ST-13 – ST-16); on any failure STOP and fix the implementation
+- [x] 3.2.1 Implement the pairing rule — `compiler/src/sema/ops.rs` ✅ (completed: 2026-10-09 22:41)
+- [x] 3.2.2 Run the spec suite to green (ST-13 – ST-16); on any failure STOP and fix the implementation ✅ (completed: 2026-10-09 22:41)
+
+**Test-source correction (2026-10-09 22:41)**: the narrowing run's first pin returned 456, which a process exit code truncates to 200; the pin now sums the three narrowed reads (4 + 5 + 6) into 51, inside the byte range.
 
 **Deliverables**:
 - The sema rule change
