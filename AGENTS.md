@@ -172,6 +172,17 @@ in `CMD`).
   **implementation tests** (guard zeroing, indexed store and move-out shapes,
   the pointer out-slot declarators, release counts and ordering, the capture
   scope floor and its listed-name exemption, and byte-identical re-emission).
+- `compiler/tests/slice_temporary_integrity_spec_test.rs` holds the
+  **specification tests** for the slice-and-temporary batch (row-typed slice
+  views, the view-element conversion and const-extent agreement, the deferred
+  consume fill and source order, the root and receiver binding on
+  take/conditional/member shapes, the loop projection adoption, and the
+  call-indexed element store), and
+  `compiler/tests/slice_temporary_integrity_impl_test.rs` holds their
+  **implementation tests** (row view keys, pointer declarators and zero
+  helpers, builder and index spellings, deferred fill/move-out and adoption
+  shapes, conditional branch stores, read-position receiver binds and their
+  exclusions, the drop-suffix grouping, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

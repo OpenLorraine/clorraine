@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 14:26
-> **Progress**: 33/34 tasks (97%)
+> **Last Updated**: 2026-10-09 14:35
+> **Progress**: 34/34 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -64,8 +64,8 @@ and ends with its review dispatch per `AGENTS.md`.
 - [x] 1.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic row move double-frees; nested access mis-types; the `E10200` mismatch is accepted; ST-1 is recorded as a justified pass) ✅ (completed: 2026-10-08 09:26)
 
 **Deliverables**:
-- [ ] ST-1 – ST-5 in the new spec suite
-- [ ] Red-phase evidence
+- [x] ST-1 – ST-5 in the new spec suite
+- [x] Red-phase evidence
 
 **Verify**: `make check` (the new suite fails as expected; the existing suites stay green)
 
@@ -82,8 +82,8 @@ and ends with its review dispatch per `AGENTS.md`.
 - [x] 1.2.6 Run the new suite and record the green phase ✅ (completed: 2026-10-08 09:36)
 
 **Deliverables**:
-- [ ] Row-typed view type, key, typedef, builder, and access path
-- [ ] ST-1 – ST-5 green
+- [x] Row-typed view type, key, typedef, builder, and access path
+- [x] ST-1 – ST-5 green
 
 **Verify**: `make check`
 
@@ -164,8 +164,8 @@ targeted re-verify above is the final check.
 - [x] 2.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (the generic index call never runs; trace 21 for the duplicable and owning instantiations; the sibling leak) ✅ (completed: 2026-10-08 13:32)
 
 **Deliverables**:
-- [ ] ST-6 – ST-8
-- [ ] Red-phase evidence
+- [x] ST-6 – ST-8
+- [x] Red-phase evidence
 
 **Verify**: `make check` (the new suite fails as expected)
 
@@ -179,8 +179,8 @@ targeted re-verify above is the final check.
 - [x] 2.2.3 Run the new suite and record the green phase ✅ (completed: 2026-10-08 16:17)
 
 **Deliverables**:
-- [ ] Deferred consume preparation with source-order fills
-- [ ] ST-6 – ST-8 green
+- [x] Deferred consume preparation with source-order fills
+- [x] ST-6 – ST-8 green
 
 **Verify**: `make check`
 
@@ -261,8 +261,8 @@ the host-ASan matrix, and `make check`) is the final check.
 - [x] 3.1.2 Run the new suite and record the red phase under the host-ASan command named in 07 (sibling-field leaks; the member-receiver buffer leak; the eager-temp loop double free) ✅ (completed: 2026-10-09 13:46)
 
 **Deliverables**:
-- [ ] ST-9 – ST-13
-- [ ] Red-phase evidence
+- [x] ST-9 – ST-13
+- [x] Red-phase evidence
 
 **Verify**: `make check` (the new suite fails as expected)
 
@@ -276,8 +276,8 @@ the host-ASan matrix, and `make check`) is the final check.
 - [x] 3.2.3 Run the new suite and record the green phase ✅ (completed: 2026-10-09 13:57)
 
 **Deliverables**:
-- [ ] Destination-temp eager bind, conditional root bind, read-position member receiver bind
-- [ ] ST-9 – ST-13 green
+- [x] Destination-temp eager bind, conditional root bind, read-position member receiver bind
+- [x] ST-9 – ST-13 green
 
 **Verify**: `make check`
 
@@ -333,8 +333,8 @@ reproducer (`return mk().b.c;`) and the lambda-in-condition reproducer are host-
 - [x] 4.1.2 Run the test and record the red phase (pointer-arrow error under `-Werror`) ✅ (completed: 2026-10-09 14:19)
 
 **Deliverables**:
-- [ ] ST-12
-- [ ] Red-phase evidence
+- [x] ST-12
+- [x] Red-phase evidence
 
 **Verify**: `make check` (the new case fails as expected)
 
@@ -347,8 +347,8 @@ reproducer (`return mk().b.c;`) and the lambda-in-condition reproducer are host-
 - [x] 4.2.2 Run the new suite and record the green phase ✅ (completed: 2026-10-09 14:21)
 
 **Deliverables**:
-- [ ] Valid emitted drop targets; unchanged handle spelling
-- [ ] ST-12 green
+- [x] Valid emitted drop targets; unchanged handle spelling
+- [x] ST-12 green
 
 **Verify**: `make check`
 
@@ -359,13 +359,35 @@ reproducer (`return mk().b.c;`) and the lambda-in-condition reproducer are host-
 
 - [x] 4.3.1 Write implementation tests for the `(*(&(out[i]))).a` shape, the untouched handle spelling, the byte-identical existing spellings for identifier/member/index bases, the expression-form grouping, and byte-identical re-emission for programs without the shape — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-09 14:26)
 - [x] 4.3.2 Plan-wide hardening: the base-vs-head emission sweep over the corpus in every profile with the strict unit builds (corpus emission byte-identical; retyped multi-extent test-suite pins expected, every diff traced to its requirement), the memory-safety sweep across all changed shapes, and the full `make verify` ✅ (completed: 2026-10-09 14:26)
-- [ ] 4.3.3 Final plan review and close-out: correctness plus the memory-safety and emission-integrity auditors (and the semantics reviewer over the plan diff's evaluation-order surfaces) over the plan diff; update the AGENTS.md test-naming map and sync the roadmap (per the roadmap skill); record the final evidence
+- [x] 4.3.3 Final plan review and close-out: correctness plus the memory-safety and emission-integrity auditors (and the semantics reviewer over the plan diff's evaluation-order surfaces) over the plan diff; update the AGENTS.md test-naming map and sync the roadmap (per the roadmap skill); record the final evidence ✅ (completed: 2026-10-09 14:35)
+
+**Phase 4 review and final plan review (2026-10-09 14:30)** — the element-store fix landed with
+shape pins and the plan-wide sweeps; the four final reviewers then covered the whole plan diff
+(`55a9b99..99eefe3`):
+
+| Area | Result |
+| ---- | ------ |
+| Corpus emission sweep | 30/30 (plus the staged suite) byte-identical across host, hosted-amiga, and freestanding; no status diffs; host strict builds clean; the one freestanding strict failure is the filed pre-existing DEF-90 |
+| Inline emission sweep | 703 accepted units; 107 diffs, each traced to R1–R7 (view retyping, deferred fill, adoption emptying, receiver binds, drop grouping); no head-only acceptance; declaration agreement clean |
+| Memory-safety sweep | no plan-introduced leak, double free, use-after-free, or release-count error across all changed shapes, the combined cross-phase shapes, the statement/return/break/continue paths, and the `String`/`i32`/`String[2]`/struct substitutions; the documented no-go areas are base-identical |
+| Semantics | frozen spec unamended; evaluation order, conversions, diagnostics, ABI, and determinism consistent; all recorded limitations accurate |
+| Correctness | no phase-blocking finding; blast radius clean (the removed helpers have zero references; no dead code; no plan references in source) |
+| Verdict | the plan is complete and clean within its authorized scope |
+
+Reported separately (pre-existing or report-only, not phase findings): the growable-array drop
+suffix class (`*(&(out[i])).data`, the DEF-75 class outside the authorized field/fixed-array
+sites; base-identical), the unregistered view-temporary typedef and const-extent struct-field
+gaps, DEF-90, and the MINOR dead row-keyed zero helper (the scalar form already emitted dead
+helpers at base). Filing them in the backlog is left to the user's next backlog decision.
+
+**Final evidence:** `make verify` → all legs passed; `make check` green; spec suite 21/21;
+impl suite 19/19; 368 lib tests; the AGENTS.md test-naming map and the roadmap are updated.
 
 **Deliverables**:
-- [ ] Implementation suite
-- [ ] Emission and memory sweeps clean
-- [ ] `make verify: all legs passed`
-- [ ] Docs and roadmap updated
+- [x] Implementation suite
+- [x] Emission and memory sweeps clean
+- [x] `make verify: all legs passed`
+- [x] Docs and roadmap updated
 
 **Verify**: `make verify`
 
