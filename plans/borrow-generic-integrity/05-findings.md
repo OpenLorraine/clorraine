@@ -7,12 +7,13 @@ evidence lives in the reviewers' reports and in the dispositions below.
 |---------|-------|----------|------|--------|
 | SR-001, MS-001 | 1 | CRITICAL | `own/instance_check.rs` nullable exemption too broad | fixed |
 | RV-001, SR-004 | 1 | MAJOR | `own/expr.rs` mixed-conditional duplicate `E10034` | fixed |
+| MS-003 (re-review) | 1 | CRITICAL | read-only-source nullable slot exemption | fixed |
 | SR-002, RV-002 | 1 | MAJOR (pre-existing) | generic whole-binding self-assign through a lend slot | deferred — filed DEF-100 |
 | SR-003 | 1 | MINOR | out-slot self-assign on non-droppable slot types | accepted — root-based rule as confirmed; the projected clause depends on it |
 | RV-003 | 1 | MINOR | out-slot shape impl test is a base-green guard | accepted — the loop-count test is the red pin |
 | RV-004 | 1 | MINOR (pre-existing) | all-borrow conditional reports two diagnostics at one site | accepted — base-identical; folded into the AR-13 refinement reasoning |
 | RV-005 | 1 | MINOR (pre-existing) | field store into a non-nullable borrow parameter | accepted — field stores keep their existing rules by design |
-| MS-002 | 1 | MINOR (pre-existing) | concrete `borrow T?` return double-frees | deferred — filed DEF-101 |
+| MS-002 | 1 | MAJOR (pre-existing) | concrete `borrow T?` return double-frees | deferred — filed DEF-101 |
 | PF-005 residual | 1 | MINOR (pre-existing) | runtime-indexed out-slot element self-assign | deferred — filed DEF-102 |
 
 ## Phase 1 dispositions (2026-10-09)
@@ -35,6 +36,18 @@ two `E10034` at one site (base produced one). Fix: the skip applies when any
 source is judged. Pinned by the mixed-conditional clause of the both-lends
 specification case.
 
+**MS-003 (CRITICAL, scoped re-review) — fixed.** The first fix gated the
+nullable exemption on the destination alone, so a read-only source
+(`put<T>(borrow slot: T, v: T)` at `T = String?`) was still exempted and the
+emitted store aliased the caller's value (ASan double-free); the concrete
+spelling rejects it. Fix: the duty also records whether the source is a
+writable lend (`RequiresNotLend.writable_source`), and the exemption requires
+both conditions. Probes: read-only and `const` sources rejected with one
+`E10034`; the both-borrow and `take`-source stores stay accepted and
+ASan-clean. Pinned by ST-23. Per the phase-review budget cap this follow-on
+fix was not re-reviewed a third time; it is covered by the new specification
+case, the lattice probes, and `make check`.
+
 **SR-002 / RV-002 (MAJOR, pre-existing) — deferred, DEF-100.** The exact
 self-assign through a parameter-typed lend root (`copySelf<T>(borrow slot: T)`)
 is unguarded at base and head; at `T = String` it double-frees. Filing it as a
@@ -47,7 +60,7 @@ on an out-slot root regardless of the slot's element or pointee type; the
 droppable slot types is recorded as a possible future refinement, not a phase
 change.
 
-**MS-002 (MINOR, pre-existing) — deferred, DEF-101.** The concrete
+**MS-002 (MAJOR, pre-existing) — deferred, DEF-101.** The concrete
 `borrow String?` return emits a non-emptying return and double-frees; base and
 head emission is byte-identical apart from `#line`. The generic form stays
 rejected (SR-001 fix), so this residual is unreachable through the new rules.

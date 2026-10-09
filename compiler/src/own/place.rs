@@ -332,6 +332,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !lend {
                 return;
             }
+            let writable_source = binding.mode == Mode::Borrow;
             let parameter = binding.name.clone();
             let ir_name = binding.ir_name.clone();
             let ty = if projections.is_empty() {
@@ -346,6 +347,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 function: self.decl.name.clone(),
                 parameter,
                 ty,
+                writable_source,
                 stores_into_slot,
                 span,
             });

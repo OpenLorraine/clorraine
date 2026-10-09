@@ -138,12 +138,14 @@ fn check_not_lend_requirements(
             let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
             // A nullable substitution is the `borrow T?` out-slot carve-out,
             // so a move stays legal where the concrete spelling is — but only
-            // for a move whose destination is a slot that may be that
-            // out-slot. A move into an owned position keeps the strict
-            // judgment, because a nullable lend moved there would leave the
+            // for a writable lend moved into a slot that may be that out-slot.
+            // Both conditions are needed: a read-only source may never be
+            // emptied, and a move into an owned position would leave the
             // source and the destination aliasing one allocation.
             if sema.table.duplicable(&substituted)
-                || (substituted.nullable && requirement.stores_into_slot)
+                || (substituted.nullable
+                    && requirement.writable_source
+                    && requirement.stores_into_slot)
             {
                 continue;
             }

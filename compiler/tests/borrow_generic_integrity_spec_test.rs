@@ -366,16 +366,16 @@ func main(): i32 {
     assert_rejected_once("fresh-store", source, "E10034", &["'slot'"]);
 }
 
-/// A store whose right side mixes a local and a lend reports one diagnostic
-/// per site.
+/// A store whose right side names a judged lend reports one diagnostic per
+/// site.
 ///
 /// The right side already reports the illegal move out of a lend arm; the
 /// target side must not add a second report for the same assignment. The
-/// concrete and the parameter-typed spells behave the same way, each with
+/// concrete and the parameter-typed spellings behave the same way, each with
 /// exactly one `E10034`, and so does a conditional that mixes an owned local
 /// arm with a lend arm.
 #[test]
-fn should_report_one_borrow_store_error_when_both_sides_are_lends() {
+fn should_report_one_borrow_store_error_per_site() {
     let concrete = r#"module spec.bgi.bothconcrete;
 
 import { String, stringOf } from std.text;
@@ -646,7 +646,9 @@ func main(): i32 {
 /// judged the same way once its instance substitutes a nullable type: the move
 /// destination is not a slot, so the strict rule applies and the program is
 /// rejected with exactly one `E10034` naming the parameter. Only a store into
-/// the callee's own out-parameter slot is exempt.
+/// the callee's own out-parameter slot is exempt, so the writable-lend source
+/// form is rejected too — the concrete spelling of that form is accepted only
+/// because its release is a separate, unfixed defect.
 #[test]
 fn should_reject_a_generic_nullable_lend_moved_into_an_owned_local() {
     let source = r#"module spec.bgi.owneddestination;
@@ -664,6 +666,22 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("owned-destination", source, "E10034", &["'a'"]);
+
+    let borrow_source = r#"module spec.bgi.owneddestinationborrow;
+
+import { String, stringOf } from std.text;
+
+func moveout<T>(borrow a: T): i32 {
+    let b: T = a;
+    return 0;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    return moveout<String?>(borrow s);
+}
+"#;
+    assert_rejected_once("owned-destination-borrow", borrow_source, "E10034", &["'a'"]);
 }
 
 /// A generic nullable lend cannot be returned from a borrow parameter.
@@ -694,4 +712,32 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("returned-lend", source, "E10034", &["'v'"]);
+}
+
+/// A read-only lend source cannot feed a generic nullable slot.
+///
+/// The concrete `func put(borrow slot: String?, v: String?)` rejects the
+/// store, because a by-value parameter is a read-only lend the callee may not
+/// empty. The generic body is judged the same way once its instance
+/// substitutes a nullable type: the exemption needs both a writable lend
+/// source and a slot destination, so this store stays rejected with exactly
+/// one `E10034` naming the source parameter.
+#[test]
+fn should_reject_a_read_only_lend_source_stored_into_a_generic_nullable_slot() {
+    let source = r#"module spec.bgi.readonlysource;
+
+import { String, stringOf } from std.text;
+
+func put<T>(borrow slot: T, v: T): void {
+    slot = v;
+}
+
+func main(): i32 {
+    let d: String? = null;
+    let s: String? = stringOf("ab");
+    put<String?>(borrow d, s);
+    return 0;
+}
+"#;
+    assert_rejected_once("read-only-source", source, "E10034", &["'v'"]);
 }

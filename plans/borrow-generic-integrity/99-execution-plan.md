@@ -120,9 +120,12 @@ critical issue and one phase-introduced major issue, both fixed within the phase
 audit's nullable exemption was narrowed to nullable out-slot destinations (a generic `return` of
 a nullable lend had been newly accepted and double-freed), and the one-report skip now applies
 when any right-side move source is already judged (a mixed conditional had produced two
-`E10034`). Pre-existing defects and the runtime-indexed residual are filed as
-DEF-100/DEF-101/DEF-102; the remaining minor notes are accepted with rationale. Rulings and
-evidence: [05-findings.md](05-findings.md).
+`E10034`). A scoped re-review of the fix diff confirmed both resolutions and found one follow-on
+critical — a read-only source into a nullable slot was still exempted and aliased — fixed with
+the source-mode gate and pinned by ST-23 (no third review pass, per the phase-review budget cap).
+Pre-existing defects and the runtime-indexed residual are filed as DEF-100/DEF-101/DEF-102; the
+remaining minor notes are accepted with rationale. Rulings and evidence:
+[05-findings.md](05-findings.md).
 
 ---
 

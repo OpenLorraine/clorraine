@@ -137,6 +137,13 @@ pub struct RequiresNotLend {
     pub parameter: String,
     /// The moved value's declared type, substituted per instance by the audit.
     pub ty: Ty,
+    /// True when the moved source is a writable lend (`borrow`) parameter.
+    ///
+    /// Only a writable lend can be the `borrow T?` out-parameter slot that
+    /// the concrete rules let a nullable value move out of; a read-only
+    /// (by-value or `const`) lend may never be emptied, so its duty stays
+    /// strict at every substitution.
+    pub writable_source: bool,
     /// True when the move's destination is a writable parameter slot.
     ///
     /// Such a store is the `borrow T?` out-slot carve-out when the instance's

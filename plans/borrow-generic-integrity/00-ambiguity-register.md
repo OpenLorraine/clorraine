@@ -141,9 +141,9 @@ Reopen triggers: the pinned container's sanitizer runtime starts on PIE images a
 Authority: AI — delegated by --auto-design
 Eligibility: mechanism within the confirmed PF-006 intent (the both-borrow store into a nullable out-slot)
 Objective: keep the intended nullable acceptance while never newly admitting an aliasing move
-Decision: the not-lend audit exempts a nullable substitution only when the duty's move destination is a writable parameter slot (`RequiresNotLend.stores_into_slot`)
-Evidence: phase-1 review probes — the blanket exemption accepted generic `let`, `return`, and `take` moves at `T = String?`; the `return` shape double-frees (MS-001), and the concrete spellings of those forms either alias (`return`, filed DEF-101) or are safe only incidentally
-Rejected alternatives: gate on the source mode alone (still admits a returning borrow move, whose concrete form double-frees); fix the concrete return release now (outside this batch's scope; filed DEF-101)
+Decision: the not-lend audit exempts a nullable substitution only when the duty's move destination is a writable parameter slot (`RequiresNotLend.stores_into_slot`) and the source is a writable lend (`RequiresNotLend.writable_source`)
+Evidence: phase-1 review probes — the blanket exemption accepted generic `let`, `return`, and `take` moves at `T = String?`; the `return` shape double-frees (MS-001); the scoped re-review then showed a read-only source into a nullable slot still aliasing (MS-003), matching the concrete rejection
+Rejected alternatives: gate on the source mode alone (still admits a returning borrow move, whose concrete form double-frees — DEF-101); gate on the destination alone (admits the read-only-source double-free — MS-003); fix the concrete return release now (outside this batch's scope; filed DEF-101)
 Strongest counterargument: generics become stricter than the concrete spellings for borrow-mode `let`; that is the safe direction and preserves base behavior for the generic forms
 Confidence: High — two new specification cases and the lattice probes pin both directions
 Hardening: not required — bounded mechanism, covered by the phase re-review
