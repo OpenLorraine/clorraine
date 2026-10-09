@@ -1473,16 +1473,10 @@ impl<'a> Emitter<'a> {
             {
                 return true;
             }
-            // A consumed projection carries its fill and move-out deferred, so
-            // the field must store through statements to emit them at its turn.
-            if matches!(field.kind, ValueKind::Materialize { .. }) {
-                return true;
-            }
-            // An element read whose base fill is deferred (`make()[i]`) must
-            // emit that fill at this field's turn too, for a duplicable element
-            // as much as an owning one; a C initializer would hoist the fill
-            // ahead of the earlier fields' evaluation.
-            if matches!(field.kind, ValueKind::Index { .. }) && has_deferred_fill(field) {
+            // A consumed projection or a nested literal that carries one has
+            // its fill and move-out deferred, so the field must store through
+            // statements to emit them at its turn.
+            if has_deferred_fill(field) {
                 return true;
             }
             if let ValueKind::StructLit { fields, .. } = &field.kind {
@@ -2278,13 +2272,18 @@ pub(super) fn arm_has_storage_root(value: &Value) -> bool {
 /// A [`ValueKind::Materialize`] is filled by a statement before the construct
 /// that reads it, so a C aggregate initializer would hoist the fill ahead of
 /// the fields it is written between; the per-field store form keeps the
-/// source order.
+/// source order. The walk descends projections and nested literals, because a
+/// field that projects through a literal (`(Box { v: mk().a }).v`) carries
+/// the inner field's deferred fill.
 fn has_deferred_fill(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Materialize { .. } => true,
         ValueKind::Member { base, .. } => has_deferred_fill(base),
         ValueKind::Index { base, index } => {
             has_deferred_fill(base) || has_deferred_fill(index)
+        }
+        ValueKind::StructLit { fields, .. } => {
+            fields.iter().any(|(_, field)| has_deferred_fill(field))
         }
         _ => false,
     }

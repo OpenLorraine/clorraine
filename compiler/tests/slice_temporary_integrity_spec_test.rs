@@ -794,3 +794,52 @@ func main(): i32 {
     assert_exit("sti-st14", &output, 0);
     assert_no_asan("sti-st14", &output);
 }
+
+/// A nested-literal projection field keeps source order.
+///
+/// `Outer { w: f(), v: (Box { v: mk().a }).v }` must evaluate `f()` before
+/// the inner literal's `mk()`: the outer field's deferred fill runs at its
+/// own turn because the projection carries it. The trace is twelve.
+#[test]
+fn should_keep_source_order_when_a_nested_literal_projection_feeds_a_field() {
+    let source = r#"module spec.sti.st15;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+struct Box {
+    v: String;
+}
+
+struct Outer {
+    w: i32;
+    v: String;
+}
+
+let trace: i32 = 0;
+
+func f(): i32 {
+    trace = trace * 10 + 1;
+    return 1;
+}
+
+func mk(): Pair {
+    trace = trace * 10 + 2;
+    return Pair { a: stringOf("ab"), b: stringOf("cde") };
+}
+
+func main(): i32 {
+    let o: Outer = Outer { w: f(), v: (Box { v: mk().a }).v };
+    if (i32(len(o.v)) != 2) {
+        return 91;
+    }
+    return trace;
+}
+"#;
+    let output = run_host("sti-st15", source);
+    assert_exit("sti-st15", &output, 12);
+}

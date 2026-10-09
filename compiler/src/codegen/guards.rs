@@ -210,11 +210,17 @@ impl<'a> Emitter<'a> {
                         _ => self.push(&format!("    {destination} = {};", self.value(inner))),
                     }
                 }
-                // The call's `take` arguments are emptied only now, on the
-                // evaluated path, so a skipped guard leaves them owned.
+                // The call's `take` arguments and a consume carrier's source
+                // slot are emptied only now, on the evaluated path, so a
+                // skipped guard leaves them owned. A duplicable instance
+                // copies, so its source keeps its value and is not zeroed;
+                // only a type that owns storage moves.
                 for place in move_outs {
-                    let source = self.place(place);
                     let ty = self.substitute(&place.ty);
+                    if !self.needs_drop(&ty) {
+                        continue;
+                    }
+                    let source = self.place(place);
                     self.emit_move_zero_place(place, &source, &ty);
                 }
             }
@@ -256,6 +262,11 @@ impl<'a> Emitter<'a> {
                 if self.needs_drop(&inner_ty)
                     && self.drop_expr_text(&destination, &inner_ty).is_none()
                 {
+                    // A consume carrier never reaches a conditionally
+                    // evaluated operand (its preparation is skipped while an
+                    // operand may be short-circuited), so the adopting flag is
+                    // not consulted here; this hoist covers guard temporaries,
+                    // whose previous value a re-fill must release.
                     self.emit_reassigned_temp_drop(*temp, &inner.ty);
                 }
                 self.emit_conditional_drop_hoists(inner);

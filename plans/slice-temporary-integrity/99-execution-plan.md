@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 16:35
-> **Progress**: 18/34 tasks (53%)
+> **Last Updated**: 2026-10-09 12:00
+> **Progress**: 19/34 tasks (56%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -191,7 +191,7 @@ targeted re-verify above is the final check.
 
 - [x] 2.3.1 Write implementation tests for the literal-field and indexed-assignment fill/move-out shapes, the consumer-side emptying at the indexed store, the store-form selection for a deferred consume and a deferred base fill, the pinned index on the move-out place, and byte-identical re-emission — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-08 16:35)
 - [x] 2.3.2 Run the host-ASan probes and edge cases (row element, nested index chain, guarded operand, indexed-assignment RHS, the loop-form indexed assignment, the duplicable-element order variant) ✅ (completed: 2026-10-08 16:35)
-- [~] 2.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer with the `spec/04-expressions.md` §3 evaluation-order lens; blast-radius (every `consume_place` call site, every fill-emitter arm) and test-integrity steps; resolve findings; one bounded re-review ⏳ (implemented: 2026-10-08 16:40)
+- [x] 2.3.3 Dispatch the phase review — correctness plus the memory-safety and emission-integrity auditors, and the semantics reviewer with the `spec/04-expressions.md` §3 evaluation-order lens; blast-radius (every `consume_place` call site, every fill-emitter arm) and test-integrity steps; resolve findings; one bounded re-review ✅ (completed: 2026-10-09 12:00)
 
 **Phase 2 review findings (2026-10-08 16:40)** — four reviewers dispatched in parallel on the
 phase diff (baseline `c425d3e1`): correctness, memory-safety, emission-integrity, and semantics
@@ -219,10 +219,28 @@ critical findings, resolved by user ruling (apply both fixes):
 
 One bounded re-review is dispatched on the fix diff.
 
+**Re-review outcome (2026-10-09 12:00)** — the single permitted re-review (correctness, memory-safety,
+emission-integrity, semantics) confirmed both fixes clean with independent red-on-pre-fix evidence;
+the emission auditor found no fix-attributable `PE-*` finding and the corpus emission stayed
+byte-identical. Its extended probing surfaced two further phase-introduced defects and one
+pre-existing gap, resolved by user ruling (fix F1/F2, file F3):
+
+| ID | Severity | Finding | Status |
+| -- | -------- | ------- | ------ |
+| F1 | 🔴 CRITICAL | For a duplicable generic instance, the carrier's move-out zeroed the source unconditionally, so a second legal copy read zero (`pack<i32>(5)` with two `Box<T>{v: x}` literals answered 1; the phase-start code answered 0). The old `Statement::Move` path gated the zeroing on the substituted type's drop need; the new carrier's move-out loop did not. | ✅ fixed — the move-out loop skips a type that does not own storage (matching the `Call` path), and the duplicable-element pin migrated to the corrected copy semantics |
+| F2 | 🟠 MAJOR | A nested-literal projection field (`Outer { w: f(), v: (Box { v: mk().a }).v }`) used the C-initializer form, hoisting the inner fill (trace 21 vs base 12). | ✅ fixed — the deferred-fill walk descends nested literals and every field kind, so the store form is selected |
+| F3 | 🟠 MAJOR | A view-bound projection (`let s: str = (Box { v: mk().a }).v;` in a loop) leaks per iteration: the projected owned value has no owner when bound to a non-owning view (base leaks two allocations per iteration). | 📋 filed as DEF-95 (pre-existing missing-owner gap; the expression-temporaries workstream, excluded by AR-5) |
+
+**Residual fix evidence (2026-10-09 12:00)** — F1/F2 landed with regression coverage:
+impl `should_keep_a_duplicable_source_when_a_generic_literal_copies_it` (no source zeroing, exit 0)
+and spec `should_keep_source_order_when_a_nested_literal_projection_feeds_a_field` (exit 12).
+The re-review budget is spent; the targeted re-verify (the F1/F2 reproducers, the full suites,
+the host-ASan matrix, and `make check`) is the final check.
+
 **Deliverables**:
-- [ ] Implementation suite
-- [ ] Clean probe matrix
-- [ ] Phase review with no open critical/major finding
+- [x] Implementation suite
+- [x] Clean probe matrix
+- [x] Phase review with no open critical/major finding
 
 **Verify**: `make check`
 

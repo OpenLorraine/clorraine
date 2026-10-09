@@ -572,11 +572,9 @@ func main(): i32 {
     let emitted = emit_host("sti-impl8", source);
     assert_contains("sti-impl8", &emitted, "__cl_return_1.w = first();");
     assert_before("sti-impl8", &emitted, "__cl_return_1.w = first();", "make(__cl_tmp0);");
-    assert_contains(
-        "sti-impl8",
-        &emitted,
-        "__cl_tmp2 = __cl_tmp0[__cl_tmp1];\n    cl_zero(&__cl_tmp0[__cl_tmp1]);",
-    );
+    assert_contains("sti-impl8", &emitted, "__cl_tmp2 = __cl_tmp0[__cl_tmp1];");
+    // A duplicable element copies: the source slot keeps its value.
+    assert_absent("sti-impl8", &emitted, "cl_zero(&__cl_tmp0[__cl_tmp1]);");
     let output = run_host("sti-impl8-run", source);
     assert_exit("sti-impl8-run", &output, 42);
 }
@@ -702,4 +700,36 @@ func main(): i32 {
     );
     let output = run_host("sti-impl11-run", source);
     assert_exit("sti-impl11-run", &output, 12);
+}
+
+/// A duplicable generic instance keeps its consumed source after a copy.
+///
+/// `pack<i32>(5)` stores `x` into two literals; an `i32` copies, so both
+/// fields hold the same value and the source is never zeroed. The emitted C
+/// must not clear the source, and `main` answers zero.
+#[test]
+fn should_keep_a_duplicable_source_when_a_generic_literal_copies_it() {
+    let source = r#"module spec.sti.impl12;
+
+struct Box<T> {
+    v: T;
+}
+
+func pack<T>(take x: T): i32 {
+    let b: Box<T> = Box<T> { v: x };
+    let c: Box<T> = Box<T> { v: x };
+    if (b.v != c.v) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return pack<i32>(5);
+}
+"#;
+    let emitted = emit_host("sti-impl12", source);
+    assert_absent("sti-impl12", &emitted, "cl_zero(&x);");
+    let output = run_host("sti-impl12-run", source);
+    assert_exit("sti-impl12-run", &output, 0);
 }
