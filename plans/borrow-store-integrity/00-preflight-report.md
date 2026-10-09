@@ -299,6 +299,11 @@ language surface, diagnostics, dependencies, or support machinery; `spec/` stays
 Applied and verified (bounded re-scan of the unchanged audit target; the artifact changed only
 inside `plans/borrow-store-integrity/`, plus the roadmap rows and the new ledger).
 
+**Verified revision:** HEAD `9043219` — plan tree `4f593f8202bd3f47805b78673dd6ffcdd27b1488`
+(the applied fixes are the only artifact change). If the artifact's git blob changes from this
+revision, consume only a targeted re-check of the changed sections (the staleness rule), not a
+set-wide audit.
+
 | Finding | Resolution applied | Where |
 |---------|--------------------|-------|
 | PF-001 | P2 red expectation corrected; ST-9 annotated red; ST-9 probe added to the phase verify | 99 (2.1.2, 2.2.2), 07 ST-9 |
