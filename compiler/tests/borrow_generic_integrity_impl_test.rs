@@ -1,9 +1,11 @@
 //! Implementation tests for the borrow/generic integrity batch.
 //!
 //! These cases pin the observable internals of the fixes: the emitted C shape
-//! of an accepted nullable out-slot store and the diagnostic counts of a
-//! store site that the checker visits on more than one pass. They complement
-//! the specification suite, which pins the accepted and rejected behavior.
+//! of an accepted nullable out-slot store, the diagnostic counts of a store
+//! site that the checker visits on more than one pass, and the C typedef and
+//! symbol spellings of instances that differ only by nullability. They
+//! complement the specification suite, which pins the accepted and rejected
+//! behavior.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -200,5 +202,204 @@ func main(): i32 {
     assert!(
         !c_path.exists(),
         "loop-store: a rejected program must not produce a translation unit"
+    );
+}
+
+/// Emits the same program twice into one directory and returns both units.
+///
+/// Both emissions share the source path, so their `#line` directives match and
+/// a difference between the two strings is a difference in the translation
+/// itself, not in the scratch directory name.
+fn emit_twice(tag: &str, source: &str) -> (String, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let mut emitted = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emitted.push(std::fs::read_to_string(&c_path).unwrap_or_default());
+    }
+    (emitted[0].clone(), emitted[1].clone())
+}
+
+/// Struct instances that differ only by nullability get their own C typedefs.
+///
+/// The marker is part of the key, so the two instances never share a
+/// definition; the strict host build sees one complete type per instance. The
+/// field spelling itself is unchanged: a nullable handle is still the same C
+/// pointer type.
+#[test]
+fn should_name_distinct_type_definitions_when_struct_instances_differ_only_by_nullability() {
+    let source = r#"module spec.bgi.impl.keysstructs;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func main(): i32 {
+    let a: Wrap<String> = Wrap<String> { v: stringOf("ab") };
+    let b: Wrap<String?> = Wrap<String?> { v: stringOf("cde") };
+    if (b.v == null) {
+        return 9;
+    }
+    return i32(len(a.v)) + i32(len(b.v));
+}
+"#;
+    let emitted = emit_host("keys-structs-shape", source);
+    assert_contains(
+        "keys-structs-shape",
+        &emitted,
+        "typedef struct ClWrap__String ClWrap__String;",
+    );
+    assert_contains(
+        "keys-structs-shape",
+        &emitted,
+        "typedef struct ClWrap__StringQ ClWrap__StringQ;",
+    );
+    assert_eq!(
+        count_occurrences(&emitted, "struct ClWrap__String {"),
+        1,
+        "keys-structs-shape: expected one non-nullable definition"
+    );
+    assert_eq!(
+        count_occurrences(&emitted, "struct ClWrap__StringQ {"),
+        1,
+        "keys-structs-shape: expected one nullable definition"
+    );
+}
+
+/// Top-level function-instance symbols keep their exact spellings.
+///
+/// A nullable top-level type argument already keyed the marker before the key
+/// change, so the symbol spelling must stay byte-identical. The pinned
+/// prototypes catch any drift in the key rendering.
+#[test]
+fn should_keep_top_level_function_instance_symbols_unchanged_when_nullability_differs() {
+    let source = r#"module spec.bgi.impl.keyspicktop;
+
+import { String, stringOf } from std.text;
+
+func pick<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let one: i32 = pick<String>(stringOf("ab"), stringOf("cd"));
+    let two: i32 = pick<String?>(stringOf("ef"), null);
+    return one + two + 4;
+}
+"#;
+    let emitted = emit_host("keys-pick-top-shape", source);
+    assert_contains(
+        "keys-pick-top-shape",
+        &emitted,
+        "static i32 cl_pick__String(ClString a, ClString b)",
+    );
+    assert_contains(
+        "keys-pick-top-shape",
+        &emitted,
+        "static i32 cl_pick__StringQ(ClString a, ClString b)",
+    );
+}
+
+/// A nested nullable argument carries its marker inside the instance symbol.
+///
+/// The marker applies where the nullable type sits, so the nested pair keys
+/// `cl_pick__Wrap__String` and `cl_pick__Wrap__StringQ` while the top-level
+/// pair keys `cl_pick__String` and `cl_pick__StringQ` — the three-argument
+/// form would collide if the marker were only checked at the top level.
+///
+/// Limitation: the marker is not distinguishable from a user identifier that
+/// ends in `Q`, so a type named `StringQ` would key the same spelling as
+/// `String?`. That ambiguity is a known property of the marker spelling,
+/// shared with the function-instance symbols, and is recorded rather than
+/// fixed here.
+#[test]
+fn should_name_the_nested_instance_with_its_own_nullable_marker() {
+    let source = r#"module spec.bgi.impl.keysnested;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func pick<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let a1: Wrap<String> = Wrap<String> { v: stringOf("ab") };
+    let a2: Wrap<String> = Wrap<String> { v: stringOf("cd") };
+    let one: i32 = pick<Wrap<String>>(a1, a2);
+    let b1: Wrap<String?> = Wrap<String?> { v: stringOf("ef") };
+    let b2: Wrap<String?> = Wrap<String?> { v: null };
+    let two: i32 = pick<Wrap<String?>>(b1, b2);
+    let s1: i32 = pick<String>(stringOf("gh"), stringOf("ij"));
+    let s2: i32 = pick<String?>(stringOf("kl"), null);
+    return one + two + s1 + s2 + 4;
+}
+"#;
+    let emitted = emit_host("keys-nested-shape", source);
+    assert_contains(
+        "keys-nested-shape",
+        &emitted,
+        "static i32 cl_pick__Wrap__String(ClWrap__String a, ClWrap__String b)",
+    );
+    assert_contains(
+        "keys-nested-shape",
+        &emitted,
+        "static i32 cl_pick__Wrap__StringQ(ClWrap__StringQ a, ClWrap__StringQ b)",
+    );
+    assert_contains(
+        "keys-nested-shape",
+        &emitted,
+        "static i32 cl_pick__StringQ(ClString a, ClString b)",
+    );
+}
+
+/// A nested nullable-instance program re-emits byte-identically.
+///
+/// The marker must not depend on emission order or map iteration, so two
+/// emissions over the same source path produce the same translation unit.
+#[test]
+fn should_re_emit_identically_when_a_nested_nullable_instance_is_emitted_twice() {
+    let source = r#"module spec.bgi.impl.keysdeterminism;
+
+import { String, stringOf } from std.text;
+
+struct Wrap<T> {
+    v: T;
+}
+
+func main(): i32 {
+    let a1: Wrap<String> = Wrap<String> { v: stringOf("ab") };
+    let b1: Wrap<String?> = Wrap<String?> { v: stringOf("cd") };
+    if (b1.v == null) {
+        return 9;
+    }
+    return i32(len(a1.v)) + i32(len(b1.v));
+}
+"#;
+    let (first, second) = emit_twice("keys-reemit", source);
+    assert_eq!(
+        first, second,
+        "keys-reemit: two emissions of one program must be byte-identical"
     );
 }

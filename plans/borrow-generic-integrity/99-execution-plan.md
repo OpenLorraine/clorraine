@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 22:25
-> **Progress**: 14/30 tasks (47%)
+> **Last Updated**: 2026-10-09 22:26
+> **Progress**: 16/30 tasks (53%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -181,8 +181,8 @@ determinism.
 **Objective**: Pin the symbol spellings and byte stability; hand the emission sweep to the phase
 review.
 
-- [ ] 2.3.1 Write implementation tests (typedef and symbol names, top-level function-instance byte pins, the nested `Q` key, the `Q`-limitation note, re-emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs`
-- [ ] 2.3.2 Full phase verification — `make check`
+- [x] 2.3.1 Write implementation tests (typedef and symbol names, top-level function-instance byte pins, the nested `Q` key, the `Q`-limitation note, re-emission) — `compiler/tests/borrow_generic_integrity_impl_test.rs` ✅ (completed: 2026-10-09 22:26)
+- [x] 2.3.2 Full phase verification — `make check` ✅ (completed: 2026-10-09 22:26)
 
 **Deliverables**:
 - Implementation suite for P2
