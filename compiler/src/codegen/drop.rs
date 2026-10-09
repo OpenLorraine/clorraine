@@ -314,3 +314,20 @@ fn suffix_base(c_name: &str) -> String {
         c_name.to_owned()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::suffix_base;
+
+    #[test]
+    fn suffix_bases_are_grouped_only_when_they_are_not_primary() {
+        // A dereferenced store target needs grouping before a suffix append.
+        assert_eq!(suffix_base("*(&(out[i]))"), "(*(&(out[i])))");
+        assert_eq!(suffix_base("&(p.a)"), "(&(p.a))");
+        // Identifier, member, index, and parenthesized bases are unchanged.
+        assert_eq!(suffix_base("s"), "s");
+        assert_eq!(suffix_base("p.a"), "p.a");
+        assert_eq!(suffix_base("rows[0]"), "rows[0]");
+        assert_eq!(suffix_base("(*__cl_tmp0)"), "(*__cl_tmp0)");
+    }
+}

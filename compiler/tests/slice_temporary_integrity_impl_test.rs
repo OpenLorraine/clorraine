@@ -860,3 +860,169 @@ func main(): i32 {
     let output = run_host("sti-impl16-run", source);
     assert_exit("sti-impl16-run", &output, 2);
 }
+
+/// A dereferenced drop base gets grouping before a field suffix is appended.
+///
+/// The replaced element's drop target is the dereferenced store pointer, so
+/// the struct walk must spell `(*(&(out[i]))).a`; without the grouping C reads
+/// `*((&(out[i])).a)` and the strict build rejects the unit. `main` answers the
+/// stored element's three-byte `a`.
+#[test]
+fn should_group_a_dereferenced_drop_base_when_a_field_suffix_is_appended() {
+    let source = r#"module spec.sti.impl17;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+let picks: i32 = 0;
+
+func target(): usize {
+    picks = picks + 1;
+    return 2;
+}
+
+func mkvArray(): Pair[2] {
+    return [Pair { a: stringOf("x"), b: stringOf("b0") }, Pair { a: stringOf("yyy"), b: stringOf("b1") }];
+}
+
+func main(): i32 {
+    let out: Pair[4] = [
+        Pair { a: stringOf("a"), b: stringOf("p") },
+        Pair { a: stringOf("bb"), b: stringOf("q") },
+        Pair { a: stringOf("ccc"), b: stringOf("r") },
+        Pair { a: stringOf("dddd"), b: stringOf("s") }
+    ];
+    out[target()] = mkvArray()[1];
+    if (picks != 1) {
+        return 90;
+    }
+    return i32(len(out[2].a));
+}
+"#;
+    let emitted = emit_host("sti-impl17", source);
+    assert_contains(
+        "sti-impl17",
+        &emitted,
+        "if ((*(&(out[__cl_tmp0]))).a) { FreeString((*(&(out[__cl_tmp0]))).a); }",
+    );
+    assert_contains("sti-impl17", &emitted, "(*(&(out[__cl_tmp0]))).a = NULL;");
+    assert_absent("sti-impl17", &emitted, "*(&(out[__cl_tmp0])).a");
+    let output = run_host("sti-impl17-run", source);
+    assert_exit("sti-impl17-run", &output, 3);
+}
+
+/// A handle element keeps its ungrouped drop spelling.
+///
+/// A replaced `String` element drops through the dereferenced base with no
+/// suffix, so the spelling stays `*(&(out[i]))` byte-for-byte (the existing
+/// specification pin); only a suffix append needs grouping. `main` answers the
+/// stored three-byte element.
+#[test]
+fn should_keep_the_handle_drop_spelling_when_no_suffix_is_appended() {
+    let source = r#"module spec.sti.impl18;
+
+import { String, stringOf } from std.text;
+
+let picks: i32 = 0;
+
+func target(): usize {
+    picks = picks + 1;
+    return 1;
+}
+
+func mkArray(): String[2] {
+    return [stringOf("ab"), stringOf("cde")];
+}
+
+func main(): i32 {
+    let out: String[4] = [stringOf("1"), stringOf("2"), stringOf("3"), stringOf("4")];
+    out[target()] = mkArray()[1];
+    return i32(len(out[1]));
+}
+"#;
+    let emitted = emit_host("sti-impl18", source);
+    assert_contains(
+        "sti-impl18",
+        &emitted,
+        "if (*(&(out[__cl_tmp0]))) { FreeString(*(&(out[__cl_tmp0]))); }",
+    );
+    assert_absent("sti-impl18", &emitted, "(*(&(out[__cl_tmp0]))).");
+    let output = run_host("sti-impl18-run", source);
+    assert_exit("sti-impl18-run", &output, 3);
+}
+
+/// Identifier, member, and index drop bases keep their existing spelling.
+///
+/// Only a base that is not a primary/postfix expression is grouped, so an
+/// identifier (`s`), a member (`p.a`), and an index (`rows[1]`) drop by their
+/// own names; `main` answers 5 (2 + 1 + 2).
+#[test]
+fn should_keep_identifier_member_and_index_drop_spellings() {
+    let source = r#"module spec.sti.impl19;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let p: Pair = Pair { a: stringOf("c"), b: stringOf("de") };
+    let rows: String[2] = [stringOf("f"), stringOf("gh")];
+    return i32(len(s)) + i32(len(p.a)) + i32(len(rows[1]));
+}
+"#;
+    let emitted = emit_host("sti-impl19", source);
+    assert_contains("sti-impl19", &emitted, "if (s) { FreeString(s); }");
+    assert_contains("sti-impl19", &emitted, "if (p.a) { FreeString(p.a); }");
+    assert_contains("sti-impl19", &emitted, "if (rows[0]) { FreeString(rows[0]); }");
+    let output = run_host("sti-impl19-run", source);
+    assert_exit("sti-impl19-run", &output, 5);
+}
+
+/// Two emissions of one element-store program must be byte-identical.
+#[test]
+fn should_emit_identical_translations_when_an_element_store_program_is_emitted_twice() {
+    let source = r#"module spec.sti.impl20;
+
+import { String, stringOf } from std.text;
+
+struct Pair {
+    a: String;
+    b: String;
+}
+
+func target(): usize {
+    return 1;
+}
+
+func mkvArray(): Pair[2] {
+    return [Pair { a: stringOf("x"), b: stringOf("b0") }, Pair { a: stringOf("yyy"), b: stringOf("b1") }];
+}
+
+func main(): i32 {
+    let out: Pair[4] = [
+        Pair { a: stringOf("a"), b: stringOf("p") },
+        Pair { a: stringOf("bb"), b: stringOf("q") },
+        Pair { a: stringOf("ccc"), b: stringOf("r") },
+        Pair { a: stringOf("dddd"), b: stringOf("s") }
+    ];
+    out[target()] = mkvArray()[0];
+    return i32(len(out[1].a));
+}
+"#;
+    let scratch = ScratchDir::new("sti-impl20");
+    std::fs::write(scratch.path().join("main.clo"), source).expect("write the program");
+    let first = emit_relative(&scratch, "sti-impl20", "first.c");
+    let second = emit_relative(&scratch, "sti-impl20", "second.c");
+    assert_eq!(
+        first, second,
+        "sti-impl20: two emissions of one program must be byte-identical"
+    );
+}

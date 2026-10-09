@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-09 14:21
+> **Last Updated**: 2026-10-09 14:26
 > **Progress**: 33/34 tasks (97%)
 > **CodeOps Artifact Schema**: 1
 
@@ -357,8 +357,8 @@ reproducer (`return mk().b.c;`) and the lambda-in-condition reproducer are host-
 **Reference**: [01 §Acceptance Criteria](01-requirements.md)
 **Objective**: Pin the spelling and run the plan-wide acceptance.
 
-- [ ] 4.3.1 Write implementation tests for the `(*(&(out[i]))).a` shape, the untouched handle spelling, the byte-identical existing spellings for identifier/member/index bases, the expression-form grouping, and byte-identical re-emission for programs without the shape — `compiler/tests/slice_temporary_integrity_impl_test.rs`
-- [ ] 4.3.2 Plan-wide hardening: the base-vs-head emission sweep over the corpus in every profile with the strict unit builds (corpus emission byte-identical; retyped multi-extent test-suite pins expected, every diff traced to its requirement), the memory-safety sweep across all changed shapes, and the full `make verify`
+- [x] 4.3.1 Write implementation tests for the `(*(&(out[i]))).a` shape, the untouched handle spelling, the byte-identical existing spellings for identifier/member/index bases, the expression-form grouping, and byte-identical re-emission for programs without the shape — `compiler/tests/slice_temporary_integrity_impl_test.rs` ✅ (completed: 2026-10-09 14:26)
+- [x] 4.3.2 Plan-wide hardening: the base-vs-head emission sweep over the corpus in every profile with the strict unit builds (corpus emission byte-identical; retyped multi-extent test-suite pins expected, every diff traced to its requirement), the memory-safety sweep across all changed shapes, and the full `make verify` ✅ (completed: 2026-10-09 14:26)
 - [ ] 4.3.3 Final plan review and close-out: correctness plus the memory-safety and emission-integrity auditors (and the semantics reviewer over the plan diff's evaluation-order surfaces) over the plan diff; update the AGENTS.md test-naming map and sync the roadmap (per the roadmap skill); record the final evidence
 
 **Deliverables**:
