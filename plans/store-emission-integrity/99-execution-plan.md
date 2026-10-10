@@ -395,9 +395,9 @@ auto-design allowance for one eligible correction was used to store those operan
 their guards, verified against the reviewer's ASan repros and pinned in the implementation suite —
 without a third review, since the phase's budget is one re-review. Pre-existing findings were
 filed on the roadmap: DEF-121 (a module initializer evaluates a guarded sub-expression twice),
-DEF-122 (a slice-typed binding from an array literal), DEF-123 (freestanding `bool` has no
-declaration); the struct-array-field compound literal joins the tracked DEF-80 class. Close-out:
-`make check` green, and the full `make verify` legs passed (`corpus-amiga`, `corpus-fs-uae`, and
+DEF-122 (a slice-typed binding from an array literal), and the freestanding `bool` gap (merged
+into the existing DEF-90); the struct-array-field compound literal joins the tracked DEF-80
+class. Close-out: `make check` green, and the full `make verify` legs passed (`corpus-amiga`, `corpus-fs-uae`, and
 `run-fault-amiga`). Rulings are recorded in [05-findings.md](05-findings.md).
 
 **Deliverables**:
