@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 17:39
-> **Progress**: 39/49 tasks (80%)
+> **Last Updated**: 2026-10-10 18:56
+> **Progress**: 49/49 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -537,7 +537,21 @@ block-take pin (E10034 -> E10401 per the ruling).
 **Objective**: Pin the internals, record the phase review evidence, and close the plan.
 
 - [x] 5.3.1 Write the Phase 5 implementation pins (the owner binding and release counts, the preemption-edge drop shape, the argument materialization shape, the duty/report counts, byte-identity where pinned) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 18:01)
-- [ ] 5.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; run `make check` and the `make verify` legs; record the DEF-103 closure (marker site, recursion, top-level analogue, fail-closed proof) and sync the roadmap to Done
+- [x] 5.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; run `make check` and the `make verify` legs; record the DEF-103 closure (marker site, recursion, top-level analogue, fail-closed proof) and sync the roadmap to Done ✅ (completed: 2026-10-10 18:56)
+
+**Close-out evidence (2026-10-10)** — the full Phase 5 review (four dispatches), the three-fix
+round, the scoped four-reviewer re-review, and the follow-up fix are recorded in
+[05-findings.md](05-findings.md) with the twelve filed rows (DEF-155 – DEF-166). `make check` green
+(**1570 tests** at the final pin count; 45 specification cases under `RDC_ASAN=1`, 45
+implementation pins); **`make verify` green** including every hosted-amiga cross-toolchain leg and
+the FS-UAE corpus legs; the scoped memory verification at `874e094` reported no findings (the four
+composite-projection repros rejected once with no TU where the base double-frees; the back-edge
+preemption shape ASan-clean where the base leaks 11 bytes). DEF-103 closed with its evidence: the
+marker site (`types/keys.rs:70-74`, recursion `:47-54`), the nested `StringQ` collision, the
+pre-existing top-level analogue, and the reproduced fail-closed proof (two `struct ClWrap__StringQ`
+definitions → `redefinition` under the strict build). The roadmap rows DEF-95, DEF-96, DEF-103,
+DEF-125, DEF-126, and DEF-127 are synced to Done; the batch's fix rows are all closed (24 fixes +
+the documented DEF-103 limitation).
 
 **Deliverables**:
 - Implementation pins for Phase 5

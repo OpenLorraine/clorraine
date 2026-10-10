@@ -2253,4 +2253,51 @@ func main(): i32 {
         1,
         "pin-composite-member: expected one report; stderr:\n{stderr}"
     );
+
+    let generic_indexed = r#"module spec.eeiimpl.compositeindexgeneric;
+
+import { String, stringOf } from std.text;
+
+func outer<T>(x: T): T {
+    return ([x] () => [x][0])();
+}
+
+func main(): i32 {
+    let r: String = outer<String>(stringOf("ab"));
+    return i32(len(r));
+}
+"#;
+    let stderr = compile_stderr("pin-composite-index-generic", generic_indexed);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-composite-index-generic: expected one report; stderr:\n{stderr}"
+    );
+
+    let take_argument = r#"module spec.eeiimpl.compositetake;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> {
+    v: T;
+}
+
+func sink<T>(take h: Holder<T>): i32 {
+    return 0;
+}
+
+func outer<T>(x: T): i32 {
+    return ([x] () => sink(take Holder<T> { v: x }))();
+}
+
+func main(): i32 {
+    return outer<String>(stringOf("ab"));
+}
+"#;
+    let stderr = compile_stderr("pin-composite-take", take_argument);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-composite-take: expected one report; stderr:\n{stderr}"
+    );
 }
