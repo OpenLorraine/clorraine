@@ -23,6 +23,12 @@
 //! through a writable (borrow-derived) slice stay accepted. The registered
 //! golden is compiled directly, so the frozen fixture itself is asserted.
 //!
+//! The typedef-order group pins the emission order contract: a slice of a user
+//! struct, a slice of a user enum, and a struct with an enum field each build
+//! under the strict flags and run, so every emitted typedef precedes its uses;
+//! a closure capturing a slice keeps building as the order's regression
+//! control.
+//!
 //! The memory helper runs a case as an ordinary strict host build and adds
 //! leak and use-after-free detection when `RDC_ASAN` is set.
 
@@ -792,4 +798,105 @@ fn should_reject_the_immutable_view_golden_directly() {
     let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../spec/tests/compile-fail/E10042_write_immutable_view.clo");
     assert_rejected_once_at("immutable-view-golden", &golden, "E10042", &["'s'"]);
+}
+
+/// A slice of a user struct builds under the strict flags and runs.
+///
+/// The slice typedef embeds the element struct by name, so the struct must be
+/// declared before the slice typedef. The run writes through the slice and
+/// reads both elements back, proving the emitted order preserves the element
+/// type and the write.
+#[test]
+fn should_build_and_run_a_slice_of_a_user_struct() {
+    let source = r#"module spec.sei.p3.structslice;
+
+import { slice } from std.mem;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func main(): i32 {
+    let arr: P[2] = [P { x: 1, y: 2 }, P { x: 3, y: 4 }];
+    let ps: P[] = slice(arr, 0, 2);
+    ps[0].x = 5;
+    return ps[0].x + ps[1].y;
+}
+"#;
+    let output = run_host("slice-of-struct", source);
+    assert_exit("slice-of-struct", &output, 9);
+}
+
+/// A slice of a user enum builds under the strict flags and runs.
+///
+/// The enum typedef must precede the slice typedef that names it; the run
+/// reads an element through the slice.
+#[test]
+fn should_build_and_run_a_slice_of_a_user_enum() {
+    let source = r#"module spec.sei.p3.enumslice;
+
+import { slice } from std.mem;
+
+enum E : u8 {
+    A = 1,
+    B = 2,
+}
+
+func main(): i32 {
+    let arr: E[2] = [E.A, E.B];
+    let es: E[] = slice(arr, 0, 2);
+    return i32(es[1]);
+}
+"#;
+    let output = run_host("slice-of-enum", source);
+    assert_exit("slice-of-enum", &output, 2);
+}
+
+/// A struct with an enum field builds under the strict flags and runs.
+///
+/// The struct definition uses the enum typedef, so the enum typedef must
+/// precede the definition; the run reads both fields back.
+#[test]
+fn should_build_and_run_a_struct_with_an_enum_field() {
+    let source = r#"module spec.sei.p3.structenum;
+
+enum E : u8 {
+    A = 1,
+    B = 2,
+}
+
+struct S {
+    e: E;
+    n: i32;
+}
+
+func main(): i32 {
+    let v: S = S { e: E.B, n: 4 };
+    return i32(v.e) + v.n;
+}
+"#;
+    let output = run_host("struct-with-enum-field", source);
+    assert_exit("struct-with-enum-field", &output, 6);
+}
+
+/// A closure capturing a slice builds under the strict flags and runs.
+///
+/// The closure environment embeds the slice, so the slice typedef must
+/// precede the closure declarations; this case is the regression control for
+/// the reordered phases.
+#[test]
+fn should_build_and_run_a_closure_capturing_a_slice() {
+    let source = r#"module spec.sei.p3.closurecapture;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: i32[4] = [1, 2, 3, 4];
+    let s0: i32[] = slice(a, 0, 2);
+    return ([s0] () => i32(s0[1]))();
+}
+"#;
+    let output = run_host("closure-capturing-slice", source);
+    assert_exit("closure-capturing-slice", &output, 2);
 }

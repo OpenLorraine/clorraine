@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 09:16
-> **Progress**: 13/26 tasks (50%)
+> **Last Updated**: 2026-10-10 09:18
+> **Progress**: 15/26 tasks (58%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -239,7 +239,7 @@ byte-identically; suites 19/19 + 5/5; the workspace runs 52 suites green). Rulin
 
 ## Phase 3: Typedef emission order (DEF-115)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 2e484dc9da88a79ed4b4ec471707fcacf6ee57ff
 > **Lenses**: correctness reviewer + memory-safety auditor + emission-integrity auditor
 > (codegen/emission change; AR-14)
 > **Reasoning**: medium — a deterministic ordering change verified by strict builds
@@ -250,8 +250,13 @@ byte-identically; suites 19/19 + 5/5; the workspace runs 52 suites green). Rulin
 **Objective**: Pin the three ordering instances and the closure-capture regression before any
 implementation.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-19 – ST-22 — `compiler/tests/store_emission_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: ST-19 – ST-21 fail at the strict build; ST-22 passes as a regression control)
+- [x] 3.1.1 [spec-author] Write specification tests from ST-19 – ST-22 — `compiler/tests/store_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 09:18)
+- [x] 3.1.2 Run the spec suite and record the red phase (expected: ST-19 – ST-21 fail at the strict build; ST-22 passes as a regression control) ✅ (completed: 2026-10-10 09:18)
+
+**Red-phase evidence (2026-10-10 09:18)** — the extended suite (23 tests) fails exactly as
+designed against the phase baseline: 20 passed, 3 failed. ST-19, ST-20, and ST-21 fail at the
+strict build (`unknown type name 'ClP'` and `'ClE'` diagnostics from the host C compiler), while
+ST-22 passes as the emission-order regression control and every earlier case stays green.
 
 **Deliverables**:
 - Specification suite with ST-19 – ST-22
