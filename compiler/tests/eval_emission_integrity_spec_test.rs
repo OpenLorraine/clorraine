@@ -474,6 +474,15 @@ func main(): i32 {
 "#;
     assert_rejected_once("literal-slice", rejected, "E10200", &[], &[]);
 
+    let rejected_in_body = r#"module spec.eei.literalslicebody;
+
+func main(): i32 {
+    let x: i32[] = [1, 2];
+    return i32(len(x));
+}
+"#;
+    assert_rejected_once("literal-slice-body", rejected_in_body, "E10200", &[], &[]);
+
     let accepted = r#"module spec.eei.slicedform;
 
 import { slice } from std.mem;

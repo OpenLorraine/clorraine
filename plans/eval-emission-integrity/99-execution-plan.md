@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 12:13
-> **Progress**: 2/49 tasks (4%)
+> **Last Updated**: 2026-10-10 12:41
+> **Progress**: 6/49 tasks (12%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -98,8 +98,8 @@ materialize impure guard operands once, and reject the backing-less slice litera
 
 - [x] 1.2.1 Add the module-init materialization pass for fixed-array calls across the six positions — `compiler/src/codegen/program.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-10 12:31)
 - [x] 1.2.2 Apply the guarded-sub-operand materialization in the scalar single-assignment path — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-10 12:34)
-- [ ] 1.2.3 Stop adopting `None`-bearing expected extents in `check_array_literal`, so the fix reaches `E10200` for module and body spellings — `compiler/src/sema/expr.rs`
-- [ ] 1.2.4 Run the spec suite and `./spec/check.sh` to green (ST-1 – ST-7); on any failure STOP and fix the implementation, never the test
+- [x] 1.2.3 Stop adopting `None`-bearing expected extents in `check_array_literal`, so the fix reaches `E10200` for module and body spellings — `compiler/src/sema/expr.rs` ✅ (completed: 2026-10-10 12:40)
+- [x] 1.2.4 Run the spec suite and `./spec/check.sh` to green (ST-1 – ST-7); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 12:40)
 
 **Deliverables**:
 - The init materialization and evaluation fixes and the checker rejection
