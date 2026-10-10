@@ -30,9 +30,9 @@ root — no lowering change is needed: the accepted spellings already lift corre
 ### Proposed Changes
 
 1. **Capture-entry validity (DEF-92, DEF-93).** In the entry validation:
-   - an entry that names a module-level binding — `let`, `const`, or an imported name — reports
-     the new `E10406` (`module-level '{name}' needs no capture`, help `use the name directly`)
-     (AR-2, AR-8);
+   - an entry that names a module-level name — a `let`, a `const`, an imported name, a function,
+     a type, or any other module declaration — reports the new `E10406` (`module-level '{name}'
+     needs no capture`, help `use the name directly`) (AR-2, AR-8);
    - an entry inside a nested lambda whose name lies below the enclosing lambda's scope floor and
      is not carried by that lambda's environment reports `E10405` (`lambda reads '{name}' without
      listing it`, help `add '{name}' to the capture list`) at the entry, because the name travels

@@ -396,20 +396,15 @@ impl<'a, 'd> Checker<'a, 'd> {
 
     /// True when a capture entry names a module-level binding.
     ///
-    /// A module-level binding — a `let`, a `const`, or an imported name — is
-    /// visible inside a lambda without capture, so listing it is meaningless.
-    /// A lexical binding of the same spelling wins, exactly as it does for a
-    /// name read.
+    /// A module-level name — a `let`, a `const`, a function, a type, an
+    /// imported name, or any other module declaration — is visible inside a
+    /// lambda without capture, so listing it is meaningless. A lexical
+    /// binding of the same spelling wins, exactly as it does for a name read.
     fn name_is_module_binding(&self, name: &str) -> bool {
         if self.name_scope_depth(name).is_some() {
             return false;
         }
-        if let Some(decl) = self.module.decl(name) {
-            if matches!(decl.kind, DeclKind::Global | DeclKind::Const) {
-                return true;
-            }
-        }
-        self.module.import(name).is_some()
+        self.module.decl(name).is_some() || self.module.import(name).is_some()
     }
 
     /// Reports a capture entry the enclosing scope cannot carry.

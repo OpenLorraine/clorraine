@@ -139,10 +139,12 @@ impl Checker<'_, '_> {
 
         let mut infos: Vec<CaptureInfo> = Vec::new();
         for capture in captures {
-            // A module-level binding needs no capture, and a nested lambda's
+            // A module-level name needs no capture, and a nested lambda's
             // entry must travel through the enclosing lambda's environment;
-            // both are reported before the entry is classified, so a rejected
-            // entry changes nothing.
+            // both are reported before the entry is classified. The rejected
+            // entry stays in the raw list, so the body read it would
+            // otherwise satisfy stays covered by the listing rule and the
+            // site keeps one report.
             if self.check_capture_entry(&capture.name, capture.span) {
                 continue;
             }

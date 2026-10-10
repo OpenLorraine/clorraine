@@ -383,6 +383,61 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("module-const-entry", source, "E10406", &["'base'"], &[]);
+
+    let imported = r#"module spec.ci.importentry;
+
+import { stringOf } from std.text;
+
+func main(): i32 {
+    return ([stringOf] () => 0)();
+}
+"#;
+    assert_rejected_once("import-entry", imported, "E10406", &["'stringOf'"], &[]);
+}
+
+/// Module-level function and type names are rejected as capture entries too.
+///
+/// The rule covers every module-level name: a function or type name is
+/// visible without capture, so listing it is meaningless. The documented fix
+/// — drop the list and use the name directly — keeps the program working.
+#[test]
+fn should_reject_module_function_and_type_capture_entries() {
+    let function_entry = r#"module spec.ci.modulefunc;
+
+func helper(): i32 {
+    return 4;
+}
+
+func main(): i32 {
+    return ([helper] () => helper())();
+}
+"#;
+    assert_rejected_once("module-func-entry", function_entry, "E10406", &["'helper'"], &[]);
+
+    let type_entry = r#"module spec.ci.moduletype;
+
+struct Point {
+    x: i32;
+}
+
+func main(): i32 {
+    return ([Point] () => 1)();
+}
+"#;
+    assert_rejected_once("module-type-entry", type_entry, "E10406", &["'Point'"], &[]);
+
+    let fixed = r#"module spec.ci.moduleread;
+
+func helper(): i32 {
+    return 4;
+}
+
+func main(): i32 {
+    return (() => helper())();
+}
+"#;
+    let output = run_host("module-func-read", fixed);
+    assert_exit("module-func-read", &output, 4);
 }
 
 /// Reading a module-level name without a capture list stays accepted.
