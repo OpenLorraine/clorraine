@@ -25,6 +25,7 @@
 | 14 | Behavioral | Reproductions: do the filed shapes still fail at HEAD? | Re-derive each reproduction in the red phase / trust the filed evidence | **Convention:** each row's reproduction is re-derived at HEAD in the red phase; the findings ledger carries the base evidence | ✅ Resolved |
 | 15 | Technical | Complexity: does any fix add a layer, dependency, harness, or refactor? | None — fixes reuse the existing owner, mode, key, and cleanup machinery / a larger support surface | **AI — delegated by --auto-design:** None; no complexity escalation, no challenger packet required | ✅ Resolved |
 | 16 | Technical (runtime) | The drafted func-key rule excluded parameter modes, but the type model defines mode-differing signatures as different types (a `borrow` parameter reaches the callee as a pointer), so two mode-different instances would share one C struct and collide | Include each parameter's mode in its key / exclude modes as drafted | **AI — delegated by --auto-design (runtime; PD-2 amended)** — modes included | ✅ Resolved |
+| 17 | Technical (runtime) | DEF-166's drafted expectation (the filed double-free shape is accepted and releases once) contradicted the frozen rules: unmarked parameters are read-only lends (`spec/03-ownership.md` §2), the module twin of the same body is rejected `E10034`, and a block-bodied lambda reports it too. The double-free exists only because an expression-bodied lambda skips the return-move judgement, and a closure call never materializes its lend arguments | Accept-and-release (as drafted) / the frozen `E10034` parity for the body plus caller-side release of owned temporary arguments on the call path | **AI — delegated by --auto-design (runtime; AR-6 amended)** — the spec is the oracle: the filed shape reports exactly one `E10034` (its own instance), and the call path releases owned temporary arguments | ✅ Resolved |
 
 ### Resolution Notes
 
@@ -135,6 +136,20 @@ Root invocation ID: callable-release-integrity-2026-10-10
 Reopen triggers: any callee kind still leaking/double-freeing under ASan; any false report
   against a shadowing binding
 ```
+
+**Runtime amendment (AR-17).** The DEF-166 expectation drafted here assumed a lambda's
+parameter takes ownership, so the filed shape would be accepted and release once. The frozen
+rules say otherwise: an unmarked parameter is a read-only lend (`spec/03-ownership.md` §2 — the
+mode table), a module function storing the lend reports `E10034` (verified: the twin
+`func make(p: String): Holder<String> { return Holder<String> { v: p }; }` is rejected), and the
+block-bodied lambda spelling reports the same `E10034` — even per instance through the existing
+lend-storage duty. The filed double-free is the expression-bodied spelling only, because an
+expression body skips the return-move judgement its block-bodied sibling runs, and the call path
+never materializes the lend arguments. Resolution: judge an expression body exactly like a
+`return` (eval, then the move/lend judgement) and materialize owned temporary arguments on a
+closure call. Rejected alternative: accept-and-release as drafted (would contradict the mode
+table and diverge from the twin). Confidence: High — the spec text, the twin probe, and the
+block-bodied probe agree.
 
 #### PD-4 — DEF-139/158/159/163/164 release completeness
 

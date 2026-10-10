@@ -50,10 +50,14 @@ same-named module function's take places when the callee is really a shadowing b
    verifies agreement and may refine within the frozen rules. The take move-out places derive
    from the resolved callee identity, so a parameter shadowing a same-named `take` module
    function reports no `E10020` (and the real module call still reports it).
-4. **Lambda parameters (DEF-166).** A closure call derives its modes from the lambda's
-   instantiated signature — the closure instance key machinery (`types/keys.rs:16-21`) already
-   distinguishes specializations, so the argument materializes or moves exactly as the module
-   twin would, and the parameter is released once at an owning instance.
+4. **Lambda parameters (DEF-166).** A lambda's parameters are unmarked read-only lends, exactly
+   like a module function's unmarked parameters (`spec/03-ownership.md` §2), so a closure call
+   materializes its owned temporary arguments for release on the caller's side. An expression
+   body is the lifted function's return: it owes the same move and lend-storage judgement a
+   `return` statement does, so the filed shape (`((p: T) => Holder<T> { v: p })(x)` reached at
+   `T = String`) reports the same single `E10034` its block-bodied spelling and its
+   module twin already report — through the existing per-instance duty, which names the enclosing
+   function's instance (AR-17).
 
 ## Implementation Details
 

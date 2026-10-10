@@ -44,8 +44,10 @@ No specification text changes and no new diagnostic codes (AR-11); one user-deci
 - [ ] R11 (DEF-164) — A discarded owned call statement releases its result (ASan-clean) (AR-7).
 - [ ] R12 (DEF-165) — An inline capturing lambda emits one environment struct definition per
   unique (site, instance) and builds (AR-5).
-- [ ] R13 (DEF-166) — A capture-less generic lambda called with a by-value owning argument at an
-  owning instance builds and runs ASan-clean; the argument is released exactly once (AR-6).
+- [ ] R13 (DEF-166) — A lambda's parameters are unmarked lends: the filed expression-bodied shape
+  reports the same single `E10034` its block-bodied spelling and its module twin report (at the
+  owning instance through the per-instance duty), and a closure call's owned temporary argument
+  releases on the caller's side (ASan-clean) (AR-6, AR-17).
 
 ### Should Have
 

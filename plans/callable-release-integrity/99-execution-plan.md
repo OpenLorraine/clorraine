@@ -128,7 +128,7 @@ counts; record the phase review evidence.
 before any implementation.
 
 - [x] 2.1.1 [spec-author] Write specification tests from ST-4 – ST-7 — `compiler/tests/callable_release_integrity_spec_test.rs` ✅ (completed: 2026-10-10 22:03; delegated to spec-test-author)
-- [x] 2.1.2 Run the spec suite and record the red phase ✅ (completed: 2026-10-10 22:03; red: 5/8 plain — take-field, borrow-field, take-global, shadowing parameter, owning lambda parameter; 8/8 under RDC_ASAN=1; the pre-existing six cases stay green)
+- [x] 2.1.2 Run the spec suite and record the red phase ✅ (completed: 2026-10-10 22:03; red: 4 rejection-parity cases plain — take-field, borrow-field, take-global, shadowing parameter — plus the lambda expression-body store after the AR-17 correction, and the call-path release case under RDC_ASAN=1; the pre-existing six cases and the two new E10034 controls stay green)
 
 ### Step 2.2: Implementation
 

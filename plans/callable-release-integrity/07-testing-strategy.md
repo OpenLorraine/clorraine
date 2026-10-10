@@ -39,7 +39,7 @@ never from imagined implementation behavior.
 | ST-4 | Func-typed field calls vs their module twins: `take` (move + `E10020` on reuse), `borrow` (the twin's `E10032` in the conflicting shape), plain with an owned temporary argument | Twin parity per pair; accepted runs ASan-clean | R5, AR-6 |
 | ST-5 | A module-level `func(take String): i32` global call (move + reuse `E10020`) and an owned temporary argument | Twin parity; ASan-clean | R6, AR-6 |
 | ST-6 | A `Param`-typed callee at an owning instance (owned temporary released) and a parameter shadowing a same-named `take` module function | ASan-clean; no false `E10020`; the module twin still reports its `E10020` | R7, AR-6 |
-| ST-7 | `((p: T) => Holder<T> { v: p })(x)` reached at a `T = String` instance | Accepted; ASan-clean; the argument releases exactly once (red at HEAD: double-free) | R13, AR-6 |
+| ST-7 | `((p: T) => Holder<T> { v: p })(x)` reached at a `T = String` instance, its block-bodied control, and a lend-bodied lambda with an owned temporary argument | The filed shape and its controls report exactly one `E10034` (module-twin parity; red at HEAD: the expression-bodied shape is accepted and double-frees); the owned temporary argument to a lend-bodied lambda is accepted, runs, and is ASan-clean (red at HEAD: 10 B leaked) | R13, AR-6, AR-17 |
 
 ### Owner releases
 

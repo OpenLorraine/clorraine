@@ -15,7 +15,10 @@
 //! signature's parameter modes: a `take` or borrow call through a func-typed
 //! field, a module-level func-typed global, a callable-bound type parameter,
 //! or a lambda parameter reports exactly what the module spelling reports,
-//! and an owned temporary argument is released exactly once.
+//! and an owned temporary argument is released exactly once — including the
+//! temporary passed to a lend-bodied lambda. The lambda cases also pin that an
+//! expression body is judged like a `return`, so it reports the same single
+//! rejection its block-bodied and module spellings report.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -778,14 +781,17 @@ func main(): i32 {
     assert_exit("paramshadow", &output, 0);
 }
 
-/// A lambda parameter at an owning instance releases its argument once.
+/// A lambda's expression body stores a borrowed parameter like its other
+/// spellings.
 ///
-/// The inline lambda is judged at its `String` instance, so the wrapper's
-/// argument moves through the parameter once and the resulting field releases
-/// once; the run exits 0 under the sanitizer (red at the pre-fix head: the
-/// program is accepted and the run double-frees the string).
+/// A lambda parameter is unmarked, so it is a read-only lend exactly as an
+/// unmarked module parameter is, and storing a lend reports one `E10034`; the
+/// block-bodied spelling and the module twin already report it. An expression
+/// body is the lifted function's return, so it owes the same judgement (red
+/// at the pre-fix head: the expression-bodied shape is accepted and the
+/// owning instance double-frees the caller's string).
 #[test]
-fn should_release_a_lambda_parameter_at_an_owning_instance() {
+fn should_report_a_lambda_expression_body_store() {
     let source = r#"module spec.cri.lamparam;
 
 import { String, stringOf } from std.text;
@@ -803,7 +809,99 @@ func main(): i32 {
     return i32(len(h.v)) - 2;
 }
 "#;
-    let output = run_memory("lamparam", source);
-    assert_no_asan("lamparam", &output);
-    assert_exit("lamparam", &output, 0);
+    assert_rejected_once(
+        "lamparam",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &[],
+    );
+}
+
+/// A block-bodied lambda's borrowed store reports once per instance.
+///
+/// The block-bodied spelling runs the return-move judgement, so storing the
+/// borrowed parameter reports exactly one `E10034`; this control pins the
+/// report the expression-bodied spelling must match.
+#[test]
+fn should_report_a_block_bodied_lambdas_borrowed_store() {
+    let source = r#"module spec.cri.lamblock;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> {
+    v: T;
+}
+
+func wrap<T>(x: T): Holder<T> {
+    return ((p: T) => { return Holder<T> { v: p }; })(x);
+}
+
+func main(): i32 {
+    let h = wrap(stringOf("ab"));
+    return i32(len(h.v)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "lamblock",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &[],
+    );
+}
+
+/// A module function's borrowed store reports once, like the lambda spellings.
+///
+/// An unmarked module parameter is a read-only lend, so storing it in a holder
+/// reports exactly one `E10034`; this module twin is the other control the
+/// lambda spellings must match.
+#[test]
+fn should_report_a_module_functions_borrowed_store() {
+    let source = r#"module spec.cri.lamstore;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> {
+    v: T;
+}
+
+func make(p: String): Holder<String> {
+    return Holder<String> { v: p };
+}
+
+func main(): i32 {
+    let h: Holder<String> = make(stringOf("ab"));
+    return i32(len(h.v)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "lamstore",
+        source,
+        "E10034",
+        &["cannot release or store borrowed parameter 'p'"],
+        &[],
+    );
+}
+
+/// A lend-bodied lambda call releases an owned temporary argument once.
+///
+/// A lambda's parameter is unmarked, so the closure takes a read-only lend and
+/// the caller must materialize and release the owned temporary it passes,
+/// exactly as a module call does; the run exits 0 (red at the pre-fix head:
+/// the call path never materializes the lend argument, so the temporary leaks
+/// under the sanitizer).
+#[test]
+fn should_release_an_owned_temporary_passed_to_a_lend_bodied_lambda() {
+    let source = r#"module spec.cri.lamcall;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    return ((p: String) => i32(len(p)))(stringOf("x")) - 1;
+}
+"#;
+    let output = run_memory("lamcall", source);
+    assert_no_asan("lamcall", &output);
+    assert_exit("lamcall", &output, 0);
 }
