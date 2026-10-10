@@ -1992,21 +1992,104 @@ func main(): i32 {
     assert_exit("nonnullwiden", &output, 0);
 }
 
-/// The `unsafe` carve-out matches the direct-use rule.
+/// A nullable widening reports inside `unsafe` like any other use.
+///
+/// The frozen narrowing rule lists no exemption for the view widening, so the
+/// report matches the conversion and member-read sites.
 #[test]
-fn should_accept_a_nullable_string_widened_into_len_inside_unsafe() {
+fn should_reject_a_nullable_string_widened_into_len_inside_unsafe() {
     let source = r#"module spec.cri.unsafewiden;
 
 import { String, stringOf } from std.text;
 
 func main(): i32 {
-    let s: String? = stringOf("ab");
+    let s: String? = null;
     unsafe {
-        return i32(len(s)) - 2;
+        return i32(len(s));
     }
 }
 "#;
-    let output = run_memory("unsafewiden", source);
-    assert_no_asan("unsafewiden", &output);
-    assert_exit("unsafewiden", &output, 0);
+    assert_rejected_once(
+        "unsafewiden",
+        source,
+        "E10010",
+        &["value 's' may be null here"],
+        &[],
+    );
+}
+
+/// A nullable view builder source reports at the `slice` call.
+///
+/// `slice` is a declared view builder, so its source argument widens like any
+/// argument whose expected type is a view (red at the fix base: accepted, the
+/// slice reading a null view).
+#[test]
+fn should_reject_a_nullable_view_widened_into_slice() {
+    let source = r#"module spec.cri.slicenull;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let v: u8[]? = null;
+    let w: u8[] = slice(v, 0, 0);
+    return i32(len(w));
+}
+"#;
+    assert_rejected_once(
+        "slicenull",
+        source,
+        "E10010",
+        &["value 'v' may be null here"],
+        &[],
+    );
+}
+
+/// A nullable field read through a dot call reports like the free spelling.
+///
+/// The receiver path's type decides: `h.f` is nullable even though `h` is
+/// not, and the parenthesized spelling reports the same use (red at the fix
+/// base: accepted, reading a null handle).
+#[test]
+fn should_reject_a_nullable_field_reached_through_a_dot_call() {
+    let source = r#"module spec.cri.fielddotnull;
+
+import { String, stringOf } from std.text;
+
+struct Holder { f: String?; }
+
+func main(): i32 {
+    let h: Holder = Holder { f: null };
+    return i32(h.f.len());
+}
+"#;
+    assert_rejected_once(
+        "fielddotnull",
+        source,
+        "E10010",
+        &["value 'h' may be null here"],
+        &[],
+    );
+}
+
+/// A non-nullable receiver under a nullable head stays accepted.
+///
+/// The gate tests the receiver path's type, so narrowing the head and reading
+/// a non-nullable member of it reports nothing.
+#[test]
+fn should_accept_a_non_nullable_receiver_under_a_narrowed_head() {
+    let source = r#"module spec.cri.receivernarrow;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let s: u8[]? = null;
+    if (s != null) {
+        return i32(s.count.len());
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("receivernarrow", source);
+    assert_no_asan("receivernarrow", &output);
+    assert_exit("receivernarrow", &output, 0);
 }

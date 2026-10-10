@@ -244,7 +244,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // covers the view-consuming intrinsics reached as dot calls
                 // (`s.len()`), whose receiver otherwise bypasses the member
                 // read path.
-                if self.unsafe_depth == 0 && self.ty(base).nullable {
+                if self.ty(base).nullable {
                     self.check_nonnull_expr(base, callee.span);
                 }
             }
@@ -258,27 +258,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // The receiver is read for the call, so a possibly-null
                 // receiver reports like any other member read — the check
                 // covers the view-consuming intrinsics reached as dot calls
-                // (`s.len()`), whose receiver otherwise bypasses the member
-                // read path.
-                if self.unsafe_depth == 0 {
-                    if let Some(first) = name.segments.first() {
-                        if let Some(id) = self.lookup(first) {
-                            if self.bindings[id].ty.nullable {
-                                let receiver = if path.segments.len() == 1 {
-                                    Expr {
-                                        kind: ExprKind::Name(path.segments[0].clone()),
-                                        span: name.span,
-                                    }
-                                } else {
-                                    Expr {
-                                        kind: ExprKind::Qualified(path),
-                                        span: name.span,
-                                    }
-                                };
-                                self.check_nonnull_expr(&receiver, name.span);
-                            }
+                // (`s.len()`, `h.s.len()`), whose receiver otherwise bypasses
+                // the member read path. The gate tests the receiver path's
+                // type: a nullable owner under a non-nullable receiver, or a
+                // non-nullable field under a nullable-typed head, is judged
+                // by what the call actually reads.
+                if self.dot_receiver_type(callee).nullable {
+                    let receiver = if path.segments.len() == 1 {
+                        Expr {
+                            kind: ExprKind::Name(path.segments[0].clone()),
+                            span: name.span,
                         }
-                    }
+                    } else {
+                        Expr {
+                            kind: ExprKind::Qualified(path),
+                            span: name.span,
+                        }
+                    };
+                    self.check_nonnull_expr(&receiver, name.span);
                 }
             }
             _ => {}
@@ -779,6 +776,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 written.span,
                             );
                         }
+                    }
+                    // A view builder reads its source through the view, so a
+                    // possibly-null source widens its handle before that read;
+                    // the widening is a use and reports like a direct use.
+                    if self.ty(&written.value).nullable {
+                        self.check_nonnull_expr(&written.value, written.span);
                     }
                 }
             }

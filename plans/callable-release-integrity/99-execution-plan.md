@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 00:24
-> **Progress**: 32/36 tasks (89%)
+> **Last Updated**: 2026-10-11 00:37
+> **Progress**: 33/36 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -228,7 +228,7 @@ evidence.
 **Reference**: [03-04](03-04-possibly-null-widening.md) §Proposed Changes
 **Objective**: Check the widening operand with the existing narrowing predicate.
 
-- [x] 4.2.1 Implement the possibly-null widening check at every conversion site — `compiler/src/own/expr.rs`, `compiler/src/own/lower.rs` ✅ (the intrinsic arm covers `len`/`slice`; the dot-call receiver check lives in `own/call_check.rs`; the message/help reuse the frozen E10010 row)
+- [x] 4.2.1 Implement the possibly-null widening check at every conversion site — `compiler/src/own/expr.rs`, `compiler/src/own/lower.rs` ✅ (the intrinsic arm covers `len`; the declared view builders such as `slice` and the dot-call receivers are checked in `own/call_check.rs`; no `unsafe` exemption — the frozen rule lists none)
 - [x] 4.2.2 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (spec 49/49; `make check` 58 suites)
 
 **Verify**: `make -C docker exec CMD="cargo test --test callable_release_integrity_spec_test"`; `make check`
@@ -240,7 +240,7 @@ evidence.
 record the phase review evidence.
 
 - [x] 4.3.1 Write the Phase 4 implementation tests (one report per site, message/help, controls' byte-identity, module-initializer spelling) — `compiler/tests/callable_release_integrity_impl_test.rs` ✅ (the report-per-site case is in the spec suite; the impl pin keeps the accepted widening's accessor shape; the module-initializer spelling is filed as DEF-190 — a nameless source has no frozen message shape)
-- [~] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 00:24; implementation committed; the two-lens review is in flight)
+- [x] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-11 00:37; two-lens review + fix round; ledger §Phase 4 records the merge and verification)
 
 **Deliverables**:
 - The widening use reports `E10010`; no silent zero

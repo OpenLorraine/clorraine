@@ -233,3 +233,24 @@ Spec suite 43/43 plain and under `RDC_ASAN=1`; impl 18/18; `make check` 58 suite
 Direct probes: `return [mk().v]` and `return (c ? a : mkBox()).v` each report one `E10030`;
 `use((c ? a : mkBox()).v)` runs exit 0 on both arms; every Phase 3 fix shape and the DEF-175
 lend spelling stay ASan-clean.
+
+## Phase 4: Possibly-null widening (DEF-141)
+
+**Reviewers**: correctness reviewer and semantics reviewer over the diff `d4f633c..125f357`.
+
+### Merge table
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| SR-001 = RV-002 | 🟠 major | The `slice` coverage was dead code: `slice` is not a reserved builtin, so the intrinsic arm never fired and the declared view builder only evaluated its arguments; a nullable source was accepted (a silent empty view, or an `E11211` trap at run). | Fixed: the stdlib `ViewOf` call path checks its source argument. |
+| SR-002 = RV-001 | 🟠 major | The dot-receiver check keyed on the head binding's nullability instead of the receiver path's: `h.f.len()` (a nullable field under a non-nullable owner) was accepted and segfaulted, while a non-nullable receiver under a narrowed head over-reported. | Fixed: both receiver arms gate on `dot_receiver_type`. |
+| SR-003 = RV-003 | 🟡 minor | The `unsafe` exemption on the new sites did not match the conversion and member-read sites, and the frozen rule lists no such exemption. | Fixed: the exemption is dropped at the new sites, so the report conforms to the frozen rule; the pre-existing index carve-out stays filed as DEF-191. |
+| Correctness test note | 🟡 minor | The narrowed run control never entered its guarded branch. | Fixed: the new receiver-narrowing control runs the guarded path. |
+| Semantics notes | — | N-1 qualified nullable value reads; N-2 the narrowing scope in `&&`/`||` chains and loop heads; N-4 the constant `slice` guard. | Filed as DEF-192, DEF-193, DEF-194. |
+
+### Fix-round verification
+
+Spec suite 52/52; impl 19/19; `make check` 58 suites green. Probes: `slice(v, 0, 0)`,
+`h.f.len()`, and `unsafe { len(s) }` report one `E10010` each; the narrowed slice and the
+narrowed non-nullable receiver stay accepted; the `len(s)`/`s.len()` twins keep the frozen
+message and the base-discriminating red set.
