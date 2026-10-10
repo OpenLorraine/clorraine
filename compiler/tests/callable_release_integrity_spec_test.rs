@@ -1071,11 +1071,12 @@ func main(): i32 {
     );
 }
 
-/// A call through a returned `take` value releases its fresh operand.
+/// A call through a returned `take` value accepts a fresh operand.
 ///
 /// The fresh temporary transfers to the callee, so no owner is bound and the
-/// program runs and exits correctly (red at the pre-fix head: the accepted
-/// program leaked the operand).
+/// program runs and exits correctly; the companion rejection cases pin the
+/// checker's move marking, and this case guards the accepted spelling (the
+/// base compiler emits the same clean program).
 #[test]
 fn should_run_a_call_result_callees_fresh_take_operand() {
     let source = r#"module spec.cri.callresultfresh;
@@ -1188,4 +1189,143 @@ func main(): i32 {
         &["'s' was moved"],
         &[],
     );
+}
+
+/// A marker mismatch on a call-result callee reports like its twins.
+///
+/// The returned function value's signature declares the parameter modes, so a
+/// written marker that contradicts it reports `E10039`, exactly as the
+/// binding and module twins do (red at the fix base: the branch ran the
+/// argument checks but not the marker check).
+#[test]
+fn should_report_a_marker_mismatch_at_a_call_result_callee() {
+    let source = r#"module spec.cri.callresultmarker;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func pick(): func(String): i32 {
+    return lenOf;
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    return pick()(take s) - 2;
+}
+"#;
+    assert_rejected_once(
+        "callresultmarker",
+        source,
+        "E10039",
+        &["marker does not match the declaration of 'pick'"],
+        &[],
+    );
+}
+
+/// A mixed conditional lend argument over an aggregate keeps its place arm.
+///
+/// The conditional mixes a fresh struct literal with a named place; the
+/// argument crosses as the address of the selected storage, so each arm takes
+/// its own address and the place arm is never emptied. Both arms run clean
+/// (red at the fix base: the address of the whole select was not spellable
+/// and the strict build failed on the accepted program).
+#[test]
+fn should_keep_a_mixed_conditional_aggregate_lend_buildable() {
+    let source = r#"module spec.cri.condagg;
+
+import { String, stringOf } from std.text;
+
+struct Box { s: String; }
+
+func weigh(borrow x: Box): i32 {
+    return i32(len(x.s));
+}
+
+func main(): i32 {
+    let box: Box = Box { s: stringOf("bb") };
+    let pick: bool = false;
+    let n: i32 = weigh(pick ? Box { s: stringOf("aa") } : box) - 2;
+    let pick2: bool = true;
+    let m: i32 = weigh(pick2 ? Box { s: stringOf("aa") } : box) - 2;
+    return n + m;
+}
+"#;
+    let output = run_memory("condagg", source);
+    assert_no_asan("condagg", &output);
+    assert_exit("condagg", &output, 0);
+}
+
+/// A mixed conditional lend argument with an array literal arm builds.
+///
+/// The literal arm fills a destination temporary on its own branch, so the
+/// argument select yields array places that decay to the parameter's pointer;
+/// both arms run the expected answer (red at the fix base: the literal
+/// rendered as an initializer list inside the select and the strict build
+/// failed).
+#[test]
+fn should_release_a_mixed_conditional_array_literal_arm() {
+    let source = r#"module spec.cri.condarr;
+
+func sum(borrow xs: i32[3]): i32 {
+    return xs[0] + xs[1] + xs[2];
+}
+
+func main(): i32 {
+    let arr: i32[3] = [1, 2, 3];
+    let pick: bool = false;
+    let n: i32 = sum(pick ? arr : [4, 5, 6]) - 15;
+    let pick2: bool = true;
+    let m: i32 = sum(pick2 ? arr : [4, 5, 6]) - 6;
+    return n + m;
+}
+"#;
+    let output = run_memory("condarr", source);
+    assert_no_asan("condarr", &output);
+    assert_exit("condarr", &output, 0);
+}
+
+/// A mixed conditional lend argument keeps the left-to-right order.
+///
+/// The condition runs once, the fresh arm fills under its own branch at the
+/// argument's position, and the later argument's evaluation follows it; the
+/// side-effect ledger proves the order 1-2 (red at the fix base: the later
+/// argument's binding overtook the fresh arm, giving 2-1).
+#[test]
+fn should_keep_the_left_to_right_argument_order_with_a_mixed_conditional_argument() {
+    let source = r#"module spec.cri.condorder;
+
+import { String, stringOf } from std.text;
+
+let order: i32 = 0;
+
+func fresh(): String {
+    order = order * 10 + 1;
+    return stringOf("aa");
+}
+
+func mark(tag: i32): String {
+    order = order * 10 + tag;
+    return stringOf("zz");
+}
+
+func combine(a: String, b: String): i32 {
+    return i32(len(a)) + i32(len(b));
+}
+
+func main(): i32 {
+    let b: String = stringOf("bbbb");
+    let pick: bool = true;
+    let n: i32 = combine(pick ? fresh() : b, mark(2));
+    if (n != 4) {
+        return 99;
+    }
+    return order - 12;
+}
+"#;
+    let output = run_memory("condorder", source);
+    assert_no_asan("condorder", &output);
+    assert_exit("condorder", &output, 0);
 }

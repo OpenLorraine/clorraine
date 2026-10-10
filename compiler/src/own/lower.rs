@@ -1653,14 +1653,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A conditional with an arm that roots in a place must not be bound as
         // a whole: the owned-conditional store adopts the chosen arm, which
         // would empty storage the borrow argument only reads. Each ownerless
-        // arm binds through the deferred fill instead, so the place stays
-        // readable and the fresh arm's storage releases on its own path.
+        // arm is evaluated under a branch instead — at this statement position
+        // when there is one — so the place stays readable, the fresh arm's
+        // storage releases on its own path, and the argument keeps its
+        // position in the evaluation order.
         if matches!(value.kind, ValueKind::Conditional { .. })
             && self.conditional_borrows_place(&value)
+            && self.conditional_needs_arm_fill(&value)
             && self.report_diagnostics
             && self.materialize_owned_temporaries
         {
-            return self.own_ownerless_conditional_arms(value);
+            return if self.defer_move_outs == 0 {
+                self.hoist_ownerless_conditional_arms(value)
+            } else {
+                self.own_ownerless_conditional_arms(value)
+            };
         }
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
@@ -1785,6 +1792,118 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.materialize_guard_operand(value)
     }
 
+    /// True when any reachable arm of a conditional owns storage to fill.
+    ///
+    /// A place-rooted arm stays an inline read; every other arm — a fresh call
+    /// result, a literal, or a nested conditional of either — needs its own
+    /// evaluated temporary.
+    fn conditional_needs_arm_fill(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => self.arm_needs_fill(then_value) || self.arm_needs_fill(else_value),
+            _ => false,
+        }
+    }
+
+    /// True when one conditional arm needs an evaluated temporary.
+    fn arm_needs_fill(&self, value: &Value) -> bool {
+        if self.projects_from_place(value) {
+            return false;
+        }
+        if matches!(value.kind, ValueKind::Conditional { .. }) {
+            return self.conditional_needs_arm_fill(value);
+        }
+        true
+    }
+
+    /// Evaluates a conditional lend argument's ownerless arms at its position.
+    ///
+    /// The condition is evaluated once into a temporary; each ownerless arm
+    /// runs inside a branch only its own path reaches, filling a registered
+    /// temporary the statement's release frees. Place-rooted arms stay inline
+    /// reads, and the argument expression selects between the filled
+    /// temporaries and the places — so the argument keeps its position in the
+    /// left-to-right evaluation order and every argument ABI sees plain places
+    /// and a select of places.
+    fn hoist_ownerless_conditional_arms(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let cond_ty = condition.ty.clone();
+                let cond_id = self.new_temp(cond_ty.clone());
+                let cond_place = Place {
+                    base: ir::PlaceBase::Temp(cond_id),
+                    projections: Vec::new(),
+                    ty: cond_ty.clone(),
+                };
+                self.emit(Statement::Assign {
+                    target: cond_place.clone(),
+                    value: *condition,
+                });
+                let cond_value =
+                    || Value::new(cond_ty.clone(), ValueKind::Place(cond_place.clone()));
+                let then_block = self.new_block();
+                let else_block = self.new_block();
+                let join = self.new_block();
+                self.terminate(Terminator::Branch {
+                    condition: cond_value(),
+                    on_true: then_block,
+                    on_false: else_block,
+                    shape: BranchShape::If { join },
+                });
+                self.switch_to(then_block);
+                let then_value = self.hoist_ownerless_arm(*then_value);
+                self.terminate(Terminator::Goto(join));
+                self.switch_to(else_block);
+                let else_value = self.hoist_ownerless_arm(*else_value);
+                self.terminate(Terminator::Goto(join));
+                self.switch_to(join);
+                Value::new(
+                    value.ty,
+                    ValueKind::Conditional {
+                        condition: Box::new(cond_value()),
+                        then_value: Box::new(then_value),
+                        else_value: Box::new(else_value),
+                    },
+                )
+            }
+            other => Value::new(value.ty, other),
+        }
+    }
+
+    /// Evaluates one conditional arm at its own branch position.
+    ///
+    /// A place-rooted arm stays an inline read; a nested conditional recurses
+    /// into its own branch; a fresh or literal arm fills a registered
+    /// temporary whose release the statement's cleanup runs.
+    fn hoist_ownerless_arm(&mut self, value: Value) -> Value {
+        if self.projects_from_place(&value) {
+            return value;
+        }
+        if matches!(value.kind, ValueKind::Conditional { .. }) {
+            return self.hoist_ownerless_conditional_arms(value);
+        }
+        if let ValueKind::Temp(id) = value.kind {
+            if !self.has_pending_release(id, &value.ty) {
+                self.register_pending_release(id, &value.ty);
+            }
+            return value;
+        }
+        let ty = self.materialized_ty(&value);
+        let filled = self.materialize_value(value);
+        if let ValueKind::Temp(id) = filled.kind {
+            self.mark_destination_temp(id);
+            self.register_pending_release(id, &ty);
+        }
+        filled
+    }
+
     /// True when a value may hand back storage one of its arguments owns.
     ///
     /// A receiver-less call reborrows an owned argument when the callee can
@@ -1902,17 +2021,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // ownerless one. Binding the whole conditional would adopt the chosen
         // arm — the store empties a place the callee only borrows — while
         // leaving it entirely inline leaks the ownerless arm's storage. Each
-        // ownerless arm binds through the deferred fill instead: the fill runs
+        // ownerless arm is evaluated under a branch instead: the fill runs
         // only on the path that evaluates that arm, and the statement's
         // registered release frees it there, so the place stays readable and
-        // the fresh value releases.
+        // the fresh value releases. A normal argument position evaluates the
+        // fills in branches at this statement position, so a later argument's
+        // evaluation still follows this one; a genuinely conditionally
+        // evaluated operand keeps the expression form, because it has no
+        // statement position of its own.
         if matches!(value.kind, ValueKind::Conditional { .. })
             && self.conditional_borrows_place(&value)
+            && self.conditional_needs_arm_fill(&value)
             && self.report_diagnostics
             && self.materialize_owned_temporaries
             && !value.ty.is_unknown()
         {
-            return self.own_ownerless_conditional_arms(value);
+            return if self.defer_move_outs == 0 {
+                self.hoist_ownerless_conditional_arms(value)
+            } else {
+                self.own_ownerless_conditional_arms(value)
+            };
         }
         if value.ty.is_closure()
             || (self.sema.table.duplicable(&value.ty)

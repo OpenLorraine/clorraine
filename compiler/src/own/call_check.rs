@@ -49,6 +49,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let result_ty = self.ty(callee);
             if let Some(params) = self.callable_signature(&result_ty) {
                 self.eval(callee);
+                // The returned signature declares the parameter modes, so a
+                // written marker must match it exactly like any other
+                // value callee's; the inner callee names the declaration.
+                if let ExprKind::Call { callee: inner, .. } = &callee.kind {
+                    if let Some(name) = self.callee_name(inner) {
+                        self.check_marker_matches(&name, args, &params);
+                    }
+                }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
                 self.check_arguments(args, &params, &effective, span, &mut lent);

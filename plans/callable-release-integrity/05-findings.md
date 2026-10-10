@@ -104,7 +104,7 @@ memory-safety auditor, emission-integrity auditor, over the diff `c137429..94ba1
 | Finding | Severity | Area | Ruling |
 | ------- | -------- | ---- | ------ |
 | MS-001 (= memory P-1's module twin) | 🔴 critical | A mixed conditional lend argument (`pick ? stringOf("aa") : b`) was adopted by the new argument materialization: the store emptied the place arm, the checker had recorded a lend, and the accepted program segfaulted on all four callee kinds. The pre-existing module spelling crashed identically. | Fixed: a place-rooted arm stays an inline read and each ownerless arm binds through the deferred fill; the intrinsic spelling's fresh-arm leak closed too. |
-| RV-001 = SR-001 = memory P-2 | 🟠 major | A call-result callee (`pick()(s)`) had its modes applied by the lowering but checked nowhere; reuse was accepted and read the emptied place, and a borrow conflict was unchecked. | Fixed: the checker resolves the returned signature (same resolution the lowering uses) and runs the marker and argument checks. |
+| RV-001 = SR-001 = memory P-2 | 🟠 major | A call-result callee (`pick()(s)`) had its modes applied by the lowering but checked nowhere; reuse was accepted and read the emptied place, and a borrow conflict was unchecked. | Fixed: the checker resolves the returned signature (same resolution the lowering uses) and runs the argument checks (the call-result marker check was found missing by the re-review and is fixed in the second fix round). |
 | SR-002 (check half) | 🟠 major | A qualified callable global (`mod.g(s)`) applied the take move without the check. | Fixed: `value_callee_global_type` resolves the value path in the checker and the lowering; the marker check applies. |
 | EIA-001 = RV-002 = SR-003 | 🟡 minor | The new global branch skipped the `E10039` call-site marker check. | Fixed. |
 | RV-003 | 🟡 minor | Three doc comments still claimed field calls carry no modes. | Fixed. |
@@ -134,9 +134,39 @@ parameters are read-only lends; the module twin and the block-bodied lambda alre
 ### Fix-round verification
 
 Spec suite 24/24 plain and under `RDC_ASAN=1`; impl suite 11/11; `make check` 58 suites green.
-Host probes of every fixed shape (both conditional arms across the callee kinds, call-result
-take/borrow, imported and qualified globals, the global marker) run clean under the sanitizer.
+Host probes of the fixed String-shaped conditionals (both arms across the five callee kinds),
+call-result take/borrow, imported and qualified globals, and the global marker run clean under
+the sanitizer. The re-review then found the aggregate and fixed-array spellings and the argument
+ordering unpinned — they are covered by the second fix round below.
 
-### Scoped re-review (fix diff)
+### Scoped re-review (`94ba12b..488efdd`)
 
-_Pending — one scoped round after the fix commit._
+One scoped round, all four reviewers. The memory re-audit found **no findings** — every MS-001
+repro, the call-result kinds, and the deferred fills in loops and on early exits are ASan-clean.
+The semantics, correctness, and emission reviewers verified the merged fixes and found a new
+defect family in the fix round itself:
+
+| Finding | Sev | Area | Ruling |
+| ------- | --- | ---- | ------ |
+| SR-005 | 🟠 major | A mixed conditional lend argument's fresh-arm fill was embedded in the C argument expression, so a later argument's hoisted evaluation overtook it (spec/04 §3 left-to-right order; counterexample order 21 instead of 12). | Fixed: the fills run in branches at the argument's statement position; the expression form is reserved for genuinely conditionally evaluated operands. |
+| RV-001 = EIA-201 | 🔴 critical | The per-arm spelling was not valid for address-passed aggregates (`&(cond ? fill : box)` — `lvalue required`); base built. | Fixed: each arm takes its own address in the emitter's pointer argument path; the all-place spelling (pre-existing invalid C) is fixed by the same change. |
+| EIA-202 | 🟠 major | A fixed-array literal arm rendered `{…}` inside the select; base built. | Fixed: the arm fills a destination temporary on its branch, and the select yields array places that decay to the pointer. |
+| SR-006 = RV-003 | 🟡 minor | The new call-result branch skipped the `E10039` marker check (the ledger's first claim said otherwise). | Fixed: the marker check runs, named by the inner callee. |
+| RV-002 | 🟡 minor | `callresultfresh` is not red at either base; its doc claimed a leak. | Fixed: the doc describes it as the accepted-spelling control; the rejection cases pin the checker fix. |
+| RV-004 | 🟡 minor | A closeout fixture doc still claimed the call arm must not be bound. | Fixed. |
+| Ledger scope | 🟡 minor | The "both conditional arms across the callee kinds" claim overstated the probed scope (String by-value only). | Fixed: the scope is restated per shape above. |
+
+### Second fix round (direct verification)
+
+The fixes were verified directly — no third review round, per the review budget — by re-running
+every reviewer's counterexample: the ordering counterexample exits 0 (order 1-2), the aggregate
+and array-literal spellings build and run clean under ASan on both arms, the call-result marker
+reports `E10039`, and every earlier shape (both conditional arms across the five callee kinds)
+stays clean. Spec suite 28/28 plain and under `RDC_ASAN=1`; impl suite 11/11; `make check` 58
+suites green.
+
+### Filed (pre-existing; from the re-review)
+
+| # | Sev | Finding | Filed as |
+| - | --- | ------- | -------- |
+| correctness pre-existing | 🟡 minor | A call-rooted projection arm (`cond ? mk().name : s`) leaks the projection root's other fields at base and head; the established guarded-projection binder covers the root. | DEF-175 |

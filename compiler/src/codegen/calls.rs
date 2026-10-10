@@ -183,13 +183,42 @@ impl Emitter<'_> {
                     }
                 };
                 if pointer {
-                    format!("&({text})")
+                    // The address of a conditional is not an lvalue in C, so
+                    // each arm takes its own address: the select then yields
+                    // the chosen arm's pointer, and a nested conditional
+                    // recurses per arm.
+                    if matches!(arg.kind, ValueKind::Conditional { .. }) {
+                        self.conditional_address_text(arg)
+                    } else {
+                        format!("&({text})")
+                    }
                 } else {
                     text
                 }
             })
             .collect();
         rendered.join(", ")
+    }
+
+    /// Renders the address of a conditional argument, one address per arm.
+    ///
+    /// A conditional is not an lvalue in C, so the address of the whole select
+    /// cannot be spelled; each arm takes its own address instead, and a nested
+    /// conditional recurses. The condition is evaluated once, exactly as the
+    /// select itself would evaluate it.
+    fn conditional_address_text(&self, value: &Value) -> String {
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        {
+            let condition = self.value(condition);
+            let then_text = self.conditional_address_text(then_value);
+            let else_text = self.conditional_address_text(else_value);
+            return format!("({condition} ? {then_text} : {else_text})");
+        }
+        format!("&({})", self.value(value))
     }
 
     /// True when an uncontracted extern receives the argument as a view.

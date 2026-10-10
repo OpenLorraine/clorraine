@@ -734,9 +734,9 @@ func main(): i32 {
 /// A conditional argument with a place-rooted arm stays an inline read.
 ///
 /// Binding such a conditional would adopt and empty the place arm, and the
-/// borrow argument needs only a read. The case pins the absence of the binding
-/// and the pinned answer on the taken path, where the other arm is a call whose
-/// result must not be bound either.
+/// borrow argument needs only a read. The case pins the absence of an owner
+/// binding and the pinned answer on the taken path; the other arm is a call
+/// whose fresh result evaluates on its own branch and never gains an owner.
 ///
 /// The fixture's original closure returned its lend parameter; at an owning
 /// instance that returns a borrow, so the shape now reports `E10034`
