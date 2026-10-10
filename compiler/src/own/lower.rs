@@ -677,6 +677,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 registration,
                 provenance: Provenance::None,
                 base: Some(base),
+                generated: false,
             });
             if let Some(scope) = self.scopes.last_mut() {
                 scope.names.insert(info.name.clone(), id);
@@ -1264,6 +1265,78 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The compiler-generated owner bindings a lowered view reads through.
+    ///
+    /// A generated owner (`__cl_ownedN`) lives in the checker's scope, so a
+    /// view returned through it dies with the function exactly like a view of
+    /// a named local: the caller's use lies after the owner's release. The
+    /// walk mirrors [`Self::collect_lowered_temp_owners`] and reports the
+    /// bindings so the return can record their loans and the liveness rule
+    /// reports the escape once.
+    pub(super) fn lowered_owner_bindings(&self, value: &Value) -> BTreeSet<usize> {
+        let mut owners = BTreeSet::new();
+        self.collect_lowered_owner_bindings(value, &mut owners);
+        owners
+    }
+
+    /// The binding id whose IR spelling names a generated owner.
+    ///
+    /// A place names its base by IR spelling, so the generated-owner check
+    /// maps the spelling back to the binding table entry.
+    fn generated_owner_id(&self, name: &str) -> Option<usize> {
+        self.bindings
+            .iter()
+            .position(|binding| binding.generated && binding.ir_name == name)
+    }
+
+    /// Collects the generated owner bindings a value reads through.
+    fn collect_lowered_owner_bindings(&self, value: &Value, owners: &mut BTreeSet<usize>) {
+        match &value.kind {
+            ValueKind::Place(place) => {
+                if let ir::PlaceBase::Local(name) = &place.base {
+                    if let Some(id) = self.generated_owner_id(name) {
+                        if self.bindings[id].needs_drop {
+                            owners.insert(id);
+                        }
+                    }
+                }
+            }
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.collect_lowered_owner_bindings(base, owners);
+            }
+            ValueKind::Cast { value: inner, .. } => {
+                self.collect_lowered_owner_bindings(inner, owners);
+            }
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_lowered_owner_bindings(then_value, owners);
+                self.collect_lowered_owner_bindings(else_value, owners);
+            }
+            ValueKind::Call {
+                callee,
+                args,
+                receiver: None,
+                ..
+            } => {
+                if let Some(source) = self
+                    .lowered_lend_source(callee)
+                    .and_then(|index| args.get(index))
+                {
+                    self.collect_lowered_owner_bindings(source, owners);
+                }
+            }
+            ValueKind::Intrinsic { name, args, .. } if name == "slice" => {
+                if let Some(source) = args.first() {
+                    self.collect_lowered_owner_bindings(source, owners);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// The argument a view-returning call reborrows, when it elides one.
     ///
     /// Mirrors the source-level provenance rule on the lowered call: a user
@@ -1483,32 +1556,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             // A conditional whose arms own their values is bound as one value:
             // the owned-conditional store adopts the chosen arm, so every
-            // arm's result is released exactly once. An arm that projects out
-            // of an ownerless root, a place-rooted arm, and a view-typed
-            // result all keep the conditional inline and own each ownerless
-            // arm's root on its own path instead: the projected root's other
-            // fields must release, the place stays a borrow, and the fresh
-            // arm's storage releases with the statement.
+            // arm's result is released exactly once. A conditional with a
+            // place-rooted arm keeps its inline read, because adopting it would
+            // empty storage the caller still owns. Binding each arm's root
+            // instead would release the selected member a consuming store
+            // copies, so the per-arm ownership stays with the view binder,
+            // whose binding only reads.
             ValueKind::Conditional { .. } => {
-                let whole_owned = (!self.sema.table.duplicable(&value.ty)
-                    || self.maybe_owns(&value.ty))
-                    && !is_view(&value.ty)
-                    && !value.ty.is_unknown();
-                let arm_fill = self.conditional_needs_arm_fill(&value)
-                    && !self.speculative_lowering
-                    && self.materialize_owned_temporaries;
-                if self.conditional_has_ownerless_projection_arm(&value) {
-                    if arm_fill {
-                        self.hoist_ownerless_conditional_arms(value)
+                if self.conditional_borrows_place(&value) {
+                    value
+                } else {
+                    let owning =
+                        !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                    if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                        self.materialize_owned_argument(value, false)
                     } else {
                         value
                     }
-                } else if whole_owned && !self.conditional_borrows_place(&value) {
-                    self.materialize_owned_argument(value, false)
-                } else if arm_fill {
-                    self.hoist_ownerless_conditional_arms(value)
-                } else {
-                    value
                 }
             }
             _ => value,
@@ -2083,20 +2147,45 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Evaluates one conditional arm at its own branch position.
     ///
     /// A place-rooted arm stays an inline read; a nested conditional recurses
-    /// into its own branch; a fresh or literal arm fills a registered
-    /// temporary whose release the statement's cleanup runs.
+    /// into its own branch; a projection arm binds its own root, so a selected
+    /// member read does not release alone while the root's other fields keep
+    /// their storage; every other arm fills a registered temporary whose
+    /// release the statement's cleanup runs.
     fn hoist_ownerless_arm(&mut self, value: Value) -> Value {
         if self.projects_from_place(&value) {
             return value;
         }
-        if matches!(value.kind, ValueKind::Conditional { .. }) {
-            return self.hoist_ownerless_conditional_arms(value);
-        }
-        if let ValueKind::Temp(id) = value.kind {
-            if !self.has_pending_release(id, &value.ty) {
-                self.register_pending_release(id, &value.ty);
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.hoist_ownerless_arm(*base);
+                return Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                );
             }
-            return value;
+            ValueKind::Index { base, index } => {
+                let base = self.hoist_ownerless_arm(*base);
+                return Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                );
+            }
+            ValueKind::Conditional { .. } => {
+                return self.hoist_ownerless_conditional_arms(value);
+            }
+            ValueKind::Temp(id) => {
+                if !self.has_pending_release(id, &value.ty) {
+                    self.register_pending_release(id, &value.ty);
+                }
+                return value;
+            }
+            _ => {}
         }
         let ty = self.materialized_ty(&value);
         let filled = self.materialize_value(value);

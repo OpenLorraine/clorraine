@@ -785,6 +785,7 @@ func main(): i32 {
 }
 "#;
     let (first, second) = emit_twice("condviewtwice", source);
+    assert_contains("condviewtwice", &first, "ClBox __cl_owned0 = {0};");
     assert_eq!(
         first, second,
         "condviewtwice: the same program emitted two different translations"

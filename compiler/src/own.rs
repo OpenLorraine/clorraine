@@ -23,7 +23,7 @@ use crate::ast::{
 };
 use crate::borrow::{
     is_elided_view, is_handle_or_aggregate, is_lend_candidate, is_nullable_capable, is_view,
-    LoanKind, Provenance,
+    is_view_like, LoanKind, Provenance,
 };
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ffi::{self, UnsafeOp};
@@ -836,7 +836,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// binding goes through its binding id.
     fn declare_generated_local(&mut self, name: &str, ty: Ty, span: Span) -> usize {
         let needs_drop = self.owns_drop(&ty) || self.maybe_owns(&ty);
-        self.declare(
+        let id = self.declare(
             name,
             span,
             ty,
@@ -845,7 +845,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             false,
             needs_drop,
             false,
-        )
+        );
+        self.bindings[id].generated = true;
+        id
     }
 
     /// Declares a function parameter.
@@ -917,6 +919,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             registration,
             provenance,
             base: None,
+            generated: false,
         });
         if let Some(scope) = self.scopes.last_mut() {
             if register_name {

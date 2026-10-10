@@ -592,6 +592,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     Provenance::None
                 }
             }
+            // An array literal's storage is its elements' storage, so the
+            // result is a view of the elements' common source; a mixed or
+            // ownerless element list has no single source. The fill form's
+            // value is every remaining element's storage.
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let mut provenance: Option<Provenance> = None;
+                let values = elements.iter().chain(fill.iter().map(|fill| fill.as_ref()));
+                for element in values {
+                    let current = self.view_provenance(element);
+                    match &provenance {
+                        None => provenance = Some(current),
+                        Some(known) if *known == current => {}
+                        Some(_) => return Provenance::None,
+                    }
+                }
+                provenance.unwrap_or(Provenance::None)
+            }
             _ => Provenance::None,
         }
     }

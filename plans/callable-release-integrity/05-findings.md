@@ -170,3 +170,49 @@ suites green.
 | # | Sev | Finding | Filed as |
 | - | --- | ------- | -------- |
 | correctness pre-existing | 🟡 minor | A call-rooted projection arm (`cond ? mk().name : s`) leaks the projection root's other fields at base and head; the established guarded-projection binder covers the root. | DEF-175 |
+
+## Phase 3: Owner release completeness (DEF-139, DEF-158, DEF-159, DEF-163, DEF-164)
+
+**Reviewers**: memory-safety auditor, semantics reviewer, correctness reviewer, emission-integrity auditor, over the diff `056f978..d7568cf`.
+
+### Merge table
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| RV-001 | 🔴 critical | The consumed-projection path bound a mixed conditional's fresh arm to a statement temporary while the consuming store copied the selected member; the release then freed storage the destination still owned (use-after-free/double-free). The base leaked but was memory-safe: the change had expanded beyond DEF-159's view-binding scope. | Fixed: the consumed binder keeps its conditional inline, so per-arm ownership stays with the view and guarded binders; the base-identical family is filed as DEF-176. |
+| SR-001 | 🔴 critical | A deferred `return mk().v` escaped a view whose backing is a generated owner: the return's escape loans only saw statement temporaries, so the accepted program read freed storage (the base leaked). | Fixed: the return also collects compiler-generated owner bindings (`Binding` loans) and reports one `E10030`; the same change closes the non-defer twin's pre-existing use-after-free. |
+| RV-002 = SR-002 | 🟠 major | Array-elision parity: a static-literal `str[N]` return was newly rejected (`E10036`) where the single spelling is accepted, and a local-derived array reported `E10036` instead of `E10035`. | Fixed: `is_view_like` extends the return's provenance and loan gates and `view_provenance` gained the array-literal arm. |
+| RV-003 = memory P1 | 🟡 minor | The plan note overclaimed DEF-175: the eager arm processor materialized the selected member, not the root. | Fixed: the arm processor descends Member/Index to the root; DEF-175's lend-argument and intrinsic spellings close, the consuming spellings stay filed (DEF-176). |
+| RV-004 | 🟡 minor | The byte-identity pin could not discriminate the fix. | Fixed: it also pins the owner shape. |
+| RV-005 / RV-006 | 🟡 minor | Progress count and a truncated task note. | Fixed. |
+| RV-007 = semantics P-2 | 🟡 minor | The `borrow.rs` comment claimed the view-call loan rules cover arrays while the binding-side gate still tests `is_view`. | Fixed: the claim narrowed; the binding-side gap filed as DEF-177. |
+| Memory audit | — | No in-scope findings: every head leak is base-reproducible, and the five fixes plus the guarded DEF-175 spellings are ASan-clean. | Recorded; its pre-existing classes filed (DEF-176, DEF-177, DEF-185, DEF-186). |
+| Emission audit | — | No findings: 1423/1423 units diffed, 17 intended diffs, strict builds and determinism clean. | Recorded; its pre-existing double-free classes filed (DEF-178, DEF-179). |
+
+### Filed (pre-existing classes; new roadmap rows)
+
+| # | Sev | Finding |
+| - | --- | ------- |
+| DEF-176 | 🟠 major | A projection of a mixed conditional in a consuming position (store, return, `take`, defer body) leaks the fresh arm's root or reads freed storage (base-identical). |
+| DEF-177 | 🟠 major | A `str[N]` lend-derived array records no loan, so a dropped backing leaves a dangling element; a mixed-derivation array return is accepted while leaking. |
+| DEF-178 | 🔴 critical | A guarded intrinsic argument of an owned conditional projection whose place arm is taken double-frees (base-identical). |
+| DEF-179 | 🔴 critical | A nested conditional arm's owned store double-frees (base-identical). |
+| DEF-180 | 🟡 minor | A conditional place arm registers no shared loan, so mutating the place while the conditional view is live is accepted. |
+| DEF-181 | 🟡 minor | A guarded struct-literal receiver still leaks (`&&`/`\|\|`/`?:` taken paths). |
+| DEF-182 | 🟡 minor | A dot-`len` receiver of a conditional view projection leaks. |
+| DEF-183 | 🟡 minor | A projection of a conditional in a return position emits type-mismatched C. |
+| DEF-184 | 🟡 minor | `i++ + i` emits a sequence-point violating C expression. |
+| DEF-185 | 🟡 minor | A discarded closure call with a maybe-owning result leaks at an owning instance. |
+| DEF-186 | 🟡 minor | A discarded call inside a conditional expression statement leaks. |
+
+### Fix-round verification
+
+Spec suite 39/39 plain and under `RDC_ASAN=1`; impl 18/18 (the byte-identity pin now shape-discriminating);
+`make check` 58 suites green. Every reviewer counterexample re-run: the deferred and the direct
+temporary-view returns report one `E10030`; the consumed mixed conditional returns to the base leak
+(no use-after-free); the static array return is accepted and runs; the local array return reports
+`E10035`; every Phase 3 fix shape and the DEF-175 lend spelling stay ASan-clean.
+
+### Scoped re-review (fix diff)
+
+_Pending — one scoped round on the fix diff._

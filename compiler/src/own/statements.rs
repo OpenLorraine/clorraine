@@ -1041,7 +1041,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.check_value_into(value, &returns, span);
             self.judge_return_moves(value, span);
             let maybe_owning = self.maybe_owns(&returns);
-            if is_view(&returns) {
+            if is_view_like(&returns) {
                 let provenance = self.view_provenance(value);
                 match provenance {
                     Provenance::Local(id) => {
@@ -1092,17 +1092,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 lowered
             };
-            // A view derived from a statement temporary cannot leave the
-            // function: the caller's use lies after the temporary's release.
-            // The loans are created at the return, the releases follow, and
-            // the use is recorded last, so the liveness rule reports `E10030`.
-            let temp_loans: Vec<LoanId> = if is_view(&returns) {
-                self.lowered_temp_owners(&lowered)
+            // A view derived from a statement temporary or a compiler-
+            // generated owner binding cannot leave the function: the caller's
+            // use lies after the release of either. The loans are created at
+            // the return, the releases follow, and the use is recorded last,
+            // so the liveness rule reports `E10030`.
+            let temp_loans: Vec<LoanId> = if is_view_like(&returns) {
+                let mut loans: Vec<LoanId> = self
+                    .lowered_temp_owners(&lowered)
                     .into_iter()
                     .filter_map(|temp| {
                         self.record_view_loan(LoanOwner::Temp(temp), LoanKind::Shared, span)
                     })
-                    .collect()
+                    .collect();
+                loans.extend(self.lowered_owner_bindings(&lowered).into_iter().filter_map(
+                    |id| self.record_view_loan(LoanOwner::Binding(id), LoanKind::Shared, span),
+                ));
+                loans
             } else {
                 Vec::new()
             };

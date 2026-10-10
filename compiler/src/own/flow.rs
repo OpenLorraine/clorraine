@@ -71,6 +71,13 @@ pub(super) struct Binding {
     /// rooted at the temporary that holds the element's address. Every other
     /// binding leaves this `None`.
     pub(super) base: Option<ir::PlaceBase>,
+    /// True for a compiler-generated owner binding (`__cl_ownedN`).
+    ///
+    /// A generated owner belongs to the compiler, not to a source name: a view
+    /// returned through one dies with the function and reports like a local
+    /// view, so the escape checks recognize it without matching on the
+    /// generated spelling.
+    pub(super) generated: bool,
 }
 
 /// One lexical scope and the bindings declared in it.

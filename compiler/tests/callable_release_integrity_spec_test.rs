@@ -1599,3 +1599,131 @@ func main(): i32 {
     assert_no_asan("discard", &output);
     assert_exit("discard", &output, 0);
 }
+
+/// A deferred return of a temporary-derived view is rejected.
+///
+/// The defer body's view binding takes its backing from a call temporary, so
+/// the view dies before the caller reads it; the escape reports once like a
+/// view of a named local (red at the phase head: the accepted program read
+/// freed storage).
+#[test]
+fn should_reject_a_deferred_return_of_a_temporary_derived_view() {
+    let source = r#"module spec.cri.deferret;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func f(a: str): str {
+    defer {
+        return mk().v;
+    }
+    return a;
+}
+
+func main(): i32 {
+    let r: str = f("zz");
+    let copy: String = stringOf(r);
+    return i32(len(copy)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "deferret",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// A direct return of a temporary-derived view is rejected.
+///
+/// The returned view reads through the receiver's generated owner, which the
+/// return cleanup releases before the caller's use; the escape reports once
+/// (red at the phase head: the accepted program use-after-freed).
+#[test]
+fn should_reject_a_return_of_a_temporary_derived_view() {
+    let source = r#"module spec.cri.tempviewret;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func f(a: str): str {
+    return mk().v;
+}
+
+func main(): i32 {
+    let r: str = f("zz");
+    let copy: String = stringOf(r);
+    return i32(len(copy)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "tempviewret",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// A static-derived view array is accepted like the single-view spelling.
+///
+/// A `str[1]` literal of static strings carries no input borrow, so the
+/// static return needs no elision candidate (EL-4) and the program runs
+/// (parity control: the single-view spelling of the same derivation is
+/// accepted).
+#[test]
+fn should_accept_a_static_view_array_return_like_the_single_spelling() {
+    let source = r#"module spec.cri.staticarr;
+
+func litArr(): str[1] {
+    return ["ab"];
+}
+
+func main(): i32 {
+    return i32(len(litArr()[0])) - 2;
+}
+"#;
+    let output = run_memory("staticarr", source);
+    assert_no_asan("staticarr", &output);
+    assert_exit("staticarr", &output, 0);
+}
+
+/// A local-derived view array reports like the single-view spelling.
+///
+/// The array's element names a local binding, so the return reports `E10035`
+/// exactly as returning the single view does (red at the phase head:
+/// accepted).
+#[test]
+fn should_report_a_local_view_array_return_like_the_single_spelling() {
+    let source = r#"module spec.cri.localarr;
+
+import { String, stringOf } from std.text;
+
+func locArr(): str[1] {
+    let k: String = stringOf("ab");
+    return [k];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "localarr",
+        source,
+        "E10035",
+        &["cannot return a view of local 'k'"],
+        &[],
+    );
+}

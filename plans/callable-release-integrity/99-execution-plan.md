@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 23:31
-> **Progress**: 25/36 tasks (69%)
+> **Last Updated**: 2026-10-10 23:52
+> **Progress**: 26/36 tasks (72%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -184,8 +184,8 @@ before any implementation.
 
 - [x] 3.2.1 Root temporary func-field receivers (DEF-139) — `compiler/src/own/call.rs`, `compiler/src/own/lower.rs` ✅
 - [x] 3.2.2 Enable defer-body materialization (DEF-158) — `compiler/src/own/statements.rs` ✅ (plus the `defer_body` scope rule and the speculative-pass gate split)
-- [x] 3.2.3 Own conditional view arms (DEF-159) — `compiler/src/own/lower.rs` ✅ (per-arm branch roots in the three binders; the projection-arm predicate also closes DEF-175's conditional spelling)
-- [x] 3.2.4 Cover view-element arrays in the elision/escape checks (DEF-163) — `compiler/src/own/place.rs`, `compiler/src/borrow.rs` ✅ (the predicate extension drives the existing chec (the `is_elided_view` recursion covers the loan/provenance and E10036 paths)
+- [x] 3.2.3 Own conditional view arms (DEF-159) — `compiler/src/own/lower.rs` ✅ (per-arm branch roots in the view and guarded binders; the consumed binder keeps its conditional inline so a consuming store never releases a copied member, and the arm-root descent closes DEF-175's lend-argument and intrinsic spellings)
+- [x] 3.2.4 Cover view-element arrays in the elision/escape checks (DEF-163) — `compiler/src/own/place.rs`, `compiler/src/borrow.rs` ✅ (the `is_elided_view` recursion drives the loan/provenance and E10036 paths; the review fix round added the `is_view_like` return gates and the array-literal `view_provenance` arm)
 - [x] 3.2.5 Release discarded owned call statements (DEF-164) — `compiler/src/own/statements.rs` ✅
 - [x] 3.2.6 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (spec 35/35 plain and ASan; `make check` 58 suites)
 
