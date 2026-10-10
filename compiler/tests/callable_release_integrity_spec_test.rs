@@ -1875,3 +1875,138 @@ func main(): i32 {
     assert_no_asan("condprojlend", &output);
     assert_exit("condprojlend", &output, 0);
 }
+
+/// A possibly-null `String` widened into `len` reports `E10010`.
+///
+/// The implicit `String`-to-`str` widening reads the handle, so the operand
+/// must be narrowed first; the report is the frozen narrowing diagnostic at
+/// the use (red at the phase head: accepted, then a null dereference at run).
+#[test]
+fn should_reject_a_nullable_string_widened_into_len() {
+    let source = r#"module spec.cri.nullwidening;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String? = null;
+    let n: i32 = i32(len(s));
+    return n;
+}
+"#;
+    assert_rejected_once(
+        "nullwidening",
+        source,
+        "E10010",
+        &[
+            "value 's' may be null here",
+            "check `!= null` before the use",
+        ],
+        &[],
+    );
+}
+
+/// The dot spelling of the widened `len` reports identically.
+#[test]
+fn should_reject_a_nullable_string_widened_into_dot_len() {
+    let source = r#"module spec.cri.nulldotlen;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String? = null;
+    return i32(s.len());
+}
+"#;
+    assert_rejected_once(
+        "nulldotlen",
+        source,
+        "E10010",
+        &["value 's' may be null here"],
+        &[],
+    );
+}
+
+/// Both widened `len` spellings report once each.
+#[test]
+fn should_report_once_per_widening_site() {
+    let source = r#"module spec.cri.nulltwice;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: String? = null;
+    let b: String? = null;
+    let n: i32 = i32(len(a));
+    let m: i32 = i32(b.len());
+    return n + m;
+}
+"#;
+    let (_scratch, output, _c_path) = compile_only("nulltwice", source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "nulltwice: expected a rejection; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("error E10010:").count(),
+        2,
+        "nulltwice: one report per site; stderr:\n{stderr}"
+    );
+}
+
+/// A narrowed nullable `String` widens and runs.
+#[test]
+fn should_accept_a_narrowed_nullable_string_widened_into_len() {
+    let source = r#"module spec.cri.narrownull;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String? = null;
+    if (s != null) {
+        return i32(len(s));
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("narrownull", source);
+    assert_no_asan("narrownull", &output);
+    assert_exit("narrownull", &output, 0);
+}
+
+/// A non-nullable `String` widens unchanged.
+#[test]
+fn should_accept_a_non_nullable_string_widened_into_len() {
+    let source = r#"module spec.cri.nonnullwiden;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("nonnullwiden", source);
+    assert_no_asan("nonnullwiden", &output);
+    assert_exit("nonnullwiden", &output, 0);
+}
+
+/// The `unsafe` carve-out matches the direct-use rule.
+#[test]
+fn should_accept_a_nullable_string_widened_into_len_inside_unsafe() {
+    let source = r#"module spec.cri.unsafewiden;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    unsafe {
+        return i32(len(s)) - 2;
+    }
+}
+"#;
+    let output = run_memory("unsafewiden", source);
+    assert_no_asan("unsafewiden", &output);
+    assert_exit("unsafewiden", &output, 0);
+}

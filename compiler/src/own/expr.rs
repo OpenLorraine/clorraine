@@ -400,6 +400,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for arg in args {
                     if let crate::ast::IntrinsicArg::Expr(inner) = arg {
                         self.eval(inner);
+                        // `len` and `slice` read their operand through a
+                        // view, so a possibly-null operand widens its handle
+                        // before that read; the widening is a use and reports
+                        // like a direct use.
+                        if matches!(name.as_str(), "len" | "slice")
+                            && self.unsafe_depth == 0
+                            && self.ty(inner).nullable
+                        {
+                            self.check_nonnull_expr(inner, expr.span);
+                        }
                     }
                 }
             }

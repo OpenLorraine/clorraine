@@ -791,3 +791,25 @@ func main(): i32 {
         "condviewtwice: the same program emitted two different translations"
     );
 }
+
+/// The narrowed widening renders like any accepted operand.
+///
+/// The new check only reports; an accepted operand widens exactly as before,
+/// so the string view of the narrowed handle is the ordinary accessor call.
+#[test]
+fn should_emit_the_narrowed_widening_unchanged() {
+    let source = r#"module spec.cri.impl.narrowwiden;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String? = null;
+    if (s != null) {
+        return i32(len(s));
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("narrowwiden", source);
+    assert_contains("narrowwiden", &emitted, "cl_string_view(s)");
+}

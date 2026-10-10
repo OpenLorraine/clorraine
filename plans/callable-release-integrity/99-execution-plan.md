@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 00:21
-> **Progress**: 27/36 tasks (75%)
+> **Last Updated**: 2026-10-11 00:24
+> **Progress**: 32/36 tasks (89%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -211,7 +211,7 @@ evidence.
 
 ## Phase 4: Possibly-null widening
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `ab12771c820d67cd7e9314497457c52484c15153` (the `d4f633c` tree)
 > **Lenses**: correctness reviewer + semantics reviewer (the narrowing rule is frozen)
 > **Reasoning**: medium — one rejection site with carve-out fidelity
 
@@ -220,16 +220,16 @@ evidence.
 **Reference**: [03-04](03-04-possibly-null-widening.md) §Proposed Changes · [AR-9](00-ambiguity-register.md)
 **Objective**: Pin the `E10010` report and the two accepted controls before implementation.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from ST-13 — `compiler/tests/callable_release_integrity_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and record the red phase (expected: the first case is accepted and segfaults)
+- [x] 4.1.1 [spec-author] Write specification tests from ST-13 — `compiler/tests/callable_release_integrity_spec_test.rs` ✅ (6 cases: both `len` spellings, one report per site, narrowed, non-nullable, unsafe carve-out)
+- [x] 4.1.2 Run the spec suite and record the red phase (expected: the first case is accepted and segfaults) ✅ (pn1 accepted, run exit 139; the dot spelling accepted too)
 
 ### Step 4.2: Implementation
 
 **Reference**: [03-04](03-04-possibly-null-widening.md) §Proposed Changes
 **Objective**: Check the widening operand with the existing narrowing predicate.
 
-- [ ] 4.2.1 Implement the possibly-null widening check at every conversion site — `compiler/src/own/expr.rs`, `compiler/src/own/lower.rs`
-- [ ] 4.2.2 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 4.2.1 Implement the possibly-null widening check at every conversion site — `compiler/src/own/expr.rs`, `compiler/src/own/lower.rs` ✅ (the intrinsic arm covers `len`/`slice`; the dot-call receiver check lives in `own/call_check.rs`; the message/help reuse the frozen E10010 row)
+- [x] 4.2.2 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (spec 49/49; `make check` 58 suites)
 
 **Verify**: `make -C docker exec CMD="cargo test --test callable_release_integrity_spec_test"`; `make check`
 
@@ -239,8 +239,8 @@ evidence.
 **Objective**: Pin the report count, the message/help, and the accepted spellings' byte-identity;
 record the phase review evidence.
 
-- [ ] 4.3.1 Write the Phase 4 implementation tests (one report per site, message/help, controls' byte-identity, module-initializer spelling) — `compiler/tests/callable_release_integrity_impl_test.rs`
-- [ ] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 4.3.1 Write the Phase 4 implementation tests (one report per site, message/help, controls' byte-identity, module-initializer spelling) — `compiler/tests/callable_release_integrity_impl_test.rs` ✅ (the report-per-site case is in the spec suite; the impl pin keeps the accepted widening's accessor shape; the module-initializer spelling is filed as DEF-190 — a nameless source has no frozen message shape)
+- [~] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 00:24; implementation committed; the two-lens review is in flight)
 
 **Deliverables**:
 - The widening use reports `E10010`; no silent zero
