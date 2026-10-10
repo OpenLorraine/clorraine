@@ -1650,14 +1650,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_view(&value.ty) || value.ty.is_unknown() || self.projects_from_place(&value) {
             return value;
         }
-        // A conditional with an arm that roots in a place must stay an inline
-        // read: the owned-conditional store adopts the chosen arm, which would
-        // empty storage the borrow argument only reads. The check follows
-        // nested conditionals because the chosen leaf may be the place.
+        // A conditional with an arm that roots in a place must not be bound as
+        // a whole: the owned-conditional store adopts the chosen arm, which
+        // would empty storage the borrow argument only reads. Each ownerless
+        // arm binds through the deferred fill instead, so the place stays
+        // readable and the fresh arm's storage releases on its own path.
         if matches!(value.kind, ValueKind::Conditional { .. })
             && self.conditional_borrows_place(&value)
+            && self.report_diagnostics
+            && self.materialize_owned_temporaries
         {
-            return value;
+            return self.own_ownerless_conditional_arms(value);
         }
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return value;
@@ -1729,6 +1732,57 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => self.projects_from_place(value),
         }
+    }
+
+    /// Binds the ownerless arms of a conditional lend argument.
+    ///
+    /// A place-rooted arm stays a borrow; every other arm — a fresh call
+    /// result, a struct literal, or a nested conditional of either — binds
+    /// through the deferred fill, so its storage is released by the
+    /// statement's registered release only on the path that evaluates it. A
+    /// conditional whose arms all stand on existing storage is returned
+    /// unchanged: every leaf already lends the caller's storage.
+    fn own_ownerless_conditional_arms(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let then_value = self.own_ownerless_arm(*then_value);
+                let else_value = self.own_ownerless_arm(*else_value);
+                Value::new(
+                    value.ty,
+                    ValueKind::Conditional {
+                        condition,
+                        then_value: Box::new(then_value),
+                        else_value: Box::new(else_value),
+                    },
+                )
+            }
+            other => Value::new(value.ty, other),
+        }
+    }
+
+    /// Binds one arm of a conditional lend argument when it owns storage.
+    ///
+    /// A place-rooted arm, or a conditional of place-rooted arms, stays
+    /// inline. A temporary that already carries a registered release keeps
+    /// that single owner. Every other arm binds through the deferred fill.
+    fn own_ownerless_arm(&mut self, value: Value) -> Value {
+        if self.projects_from_place(&value) {
+            return value;
+        }
+        if matches!(value.kind, ValueKind::Conditional { .. }) {
+            return self.own_ownerless_conditional_arms(value);
+        }
+        if let ValueKind::Temp(id) = value.kind {
+            if !self.has_pending_release(id, &value.ty) {
+                self.register_pending_release(id, &value.ty);
+            }
+            return value;
+        }
+        self.materialize_guard_operand(value)
     }
 
     /// True when a value may hand back storage one of its arguments owns.
@@ -1843,6 +1897,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return self.materialize_take_place(value);
             }
             return value;
+        }
+        // A conditional lend argument may mix a place-rooted arm with an
+        // ownerless one. Binding the whole conditional would adopt the chosen
+        // arm — the store empties a place the callee only borrows — while
+        // leaving it entirely inline leaks the ownerless arm's storage. Each
+        // ownerless arm binds through the deferred fill instead: the fill runs
+        // only on the path that evaluates that arm, and the statement's
+        // registered release frees it there, so the place stays readable and
+        // the fresh value releases.
+        if matches!(value.kind, ValueKind::Conditional { .. })
+            && self.conditional_borrows_place(&value)
+            && self.report_diagnostics
+            && self.materialize_owned_temporaries
+            && !value.ty.is_unknown()
+        {
+            return self.own_ownerless_conditional_arms(value);
         }
         if value.ty.is_closure()
             || (self.sema.table.duplicable(&value.ty)

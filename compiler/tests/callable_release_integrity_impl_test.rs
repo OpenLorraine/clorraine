@@ -94,6 +94,27 @@ fn count(emitted: &str, needle: &str) -> usize {
     emitted.matches(needle).count()
 }
 
+/// Asserts the first `s = NULL;` after `call_at` follows the call directly.
+///
+/// The emitted C may carry `#line` markers between the call and the next
+/// statement, so the lines after the call's own line may consist of those
+/// markers and blank lines; any other text means a statement intervenes before
+/// the move-out.
+fn assert_move_out_follows(tag: &str, emitted: &str, call_at: usize) {
+    let after = &emitted[call_at..];
+    let line_end = after.find('\n').map_or(after.len(), |index| index + 1);
+    let rest = &after[line_end..];
+    let null_at = rest
+        .find("s = NULL;")
+        .unwrap_or_else(|| panic!("{tag}: no move-out follows the call; emitted C:\n{emitted}"));
+    assert!(
+        rest[..null_at]
+            .lines()
+            .all(|line| line.trim().is_empty() || line.trim_start().starts_with("#line")),
+        "{tag}: a statement intervenes before the move-out; emitted C:\n{emitted}"
+    );
+}
+
 /// Emits one program twice from the same source path, returning both texts.
 fn emit_twice(tag: &str, source: &str) -> (String, String) {
     let scratch = ScratchDir::new(tag);
@@ -336,10 +357,7 @@ func main(): i32 {
     let call = emitted
         .find("__cl_tmp0 = (h.call)(s);")
         .expect("fieldtake: the call must go through the field's own value");
-    assert!(
-        emitted[call..].contains("s = NULL;"),
-        "fieldtake: the take argument must be emptied after the call; emitted C:\n{emitted}"
-    );
+    assert_move_out_follows("fieldtake", &emitted, call);
 }
 
 /// A plain field call binds its owned temporary argument for release.
@@ -391,10 +409,7 @@ func main(): i32 {
     let call = emitted
         .find("__cl_tmp0 = cl_spec_cri_impl_globaltake_g(s);")
         .expect("globaltake: the call must go through the global's own value");
-    assert!(
-        emitted[call..].contains("s = NULL;"),
-        "globaltake: the take argument must be emptied after the call; emitted C:\n{emitted}"
-    );
+    assert_move_out_follows("globaltake", &emitted, call);
 }
 
 /// A plain global call binds its owned temporary argument for release.

@@ -691,13 +691,15 @@ func main(): i32 {
     );
 }
 
-/// A may-lend call result is not bound as a second owner.
+/// A may-lend call result binds once.
 ///
 /// A generic callee's result type is a parameter, so the checker cannot tell
-/// whether the result owns; binding it as a second owned local could release
-/// storage twice. The result stays read through a statement temporary that
-/// releases once, and `len` reads a view of it. The exit code proves the
-/// transfer emptied the argument's owner and the answer is intact.
+/// whether the result owns; a `take` parameter's transfer is never a may-lend
+/// candidate, so the result binds through a statement temporary that releases
+/// once and `len` reads a view of it. Binding it a second time would create a
+/// second owner, and skipping the binding would leak the transfer; the exit
+/// code proves the transfer emptied the argument's owner and the answer is
+/// intact.
 ///
 /// The fixture's original argument passed an owned temporary to a lend
 /// parameter and returned it; at an owning instance that returns a borrow, so

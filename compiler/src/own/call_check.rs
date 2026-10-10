@@ -13,7 +13,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A `func`-typed field call is not a method taking the receiver: the
     /// field's own signature (already checked by the type stage) types it, so
-    /// the ownership walk only reads the field and its arguments.
+    /// the ownership walk reads the field and applies the signature's
+    /// parameter modes to the arguments — a `take` marks its move, a `borrow`
+    /// records its lend, and a plain lend only reads.
     pub(super) fn check_call_expr(
         &mut self,
         callee: &'a Expr,
@@ -33,6 +35,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if let Some(name) = self.callee_name(callee) {
                     self.check_marker_matches(&name, args, &params);
                 }
+                let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+                let mut lent: BTreeSet<usize> = BTreeSet::new();
+                self.check_arguments(args, &params, &effective, span, &mut lent);
+                return;
+            }
+        }
+        // A callee that is itself a call is called through the function value
+        // it returns; the recorded result type carries the signature, so the
+        // arguments are checked exactly like a func-typed binding's. The
+        // inner call is evaluated first, exactly as the lowering lowers it.
+        if matches!(callee.kind, ExprKind::Call { .. }) {
+            let result_ty = self.ty(callee);
+            if let Some(params) = self.callable_signature(&result_ty) {
+                self.eval(callee);
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
                 self.check_arguments(args, &params, &effective, span, &mut lent);
@@ -68,16 +84,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A bare name may resolve to a module-level func-typed global:
             // the global's value is the callable, so its signature types the
             // call exactly as any other callable's does.
-            if let ExprKind::Name(written) = &callee.kind {
-                if let Some(params) = self
-                    .global_type(written)
-                    .and_then(|ty| self.callable_signature(&ty))
-                {
-                    let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
-                    let mut lent: BTreeSet<usize> = BTreeSet::new();
-                    self.check_arguments(args, &params, &effective, span, &mut lent);
-                    return;
+            if let Some(params) = self
+                .value_callee_global_type(callee)
+                .and_then(|ty| self.callable_signature(&ty))
+            {
+                if let Some(name) = self.callee_name(callee) {
+                    self.check_marker_matches(&name, args, &params);
                 }
+                let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+                let mut lent: BTreeSet<usize> = BTreeSet::new();
+                self.check_arguments(args, &params, &effective, span, &mut lent);
+                return;
             }
             // The callee may be an intrinsic reached as a dot-call, such as
             // `xs.len()`; its receiver is still read, so a local used only

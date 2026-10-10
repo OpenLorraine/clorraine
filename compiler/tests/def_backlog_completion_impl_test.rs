@@ -713,7 +713,6 @@ fn should_emit_identical_translations_when_a_do_while_body_returns_early() {
     );
 }
 
-/// One closure site passed from two enclosing instances, `i32` then `String`.
 /// Two enclosing instances of one capturing closure site.
 ///
 /// The closure returns its lend parameter, which copies at a duplicable

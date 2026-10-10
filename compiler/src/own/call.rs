@@ -222,9 +222,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         } else {
             match local_callee_id {
                 Some(id) => self.callable_modes(&self.bindings[id].ty),
-                None => self
-                    .callee_modes(&name)
-                    .or_else(|| self.global_type(&name).and_then(|ty| self.callable_modes(&ty))),
+                None => self.callee_modes(&name).or_else(|| {
+                    self.value_callee_global_type(callee)
+                        .and_then(|ty| self.callable_modes(&ty))
+                }),
             }
         };
         if let Some(modes) = &modes {
@@ -421,8 +422,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The places a call moves out of through non-duplicable `take` arguments.
     ///
     /// The modes are the callee's declared parameter modes: a module or `ffi`
-    /// callee's from its declaration, a `func`-typed binding's from its own
-    /// signature. A call through a field has none. A duplicable `take`
+    /// callee's from its declaration, and a value callee's — a `func`-typed
+    /// binding, field, call result, or module global — from its own signature.
+    /// A duplicable `take`
     /// argument is copied, so the caller keeps its value; a handle or
     /// aggregate is moved and its place must be emptied after the call. A
     /// plain place is the caller's binding; a conditional argument (or any
@@ -485,10 +487,11 @@ pub(super) struct LoweredCall {
     pub args: Vec<Value>,
     /// The callee's declared parameter modes, when this call has any.
     ///
-    /// A module or `ffi` callee's modes come from its declaration, a
-    /// `func`-typed binding's from its own signature; a field call has none.
-    /// The modes drive the argument materialization and the post-call
-    /// move-outs, so a `func`-typed binding's call treats its owned temporary
-    /// arguments and `take` arguments exactly like a module call's.
+    /// A module or `ffi` callee's modes come from its declaration; a value
+    /// callee's — a `func`-typed binding, field, call result, or module
+    /// global — from its own signature. The modes drive the argument
+    /// materialization and the post-call move-outs, so a value call treats
+    /// its owned temporary arguments and `take` arguments exactly like a
+    /// module call's.
     pub modes: Option<Vec<Mode>>,
 }

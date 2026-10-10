@@ -1045,6 +1045,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.program.globals.get(&id).map(|global| global.ty.clone())
     }
 
+    /// The declared type of the whole module binding a value callee resolves
+    /// to.
+    ///
+    /// A bare name resolves like any simple name — the same module first, then
+    /// an import. A qualified name resolves its value path: a same-module or
+    /// imported head with field projections, or a full module path whose last
+    /// segment names the binding. The declared signature types the call in
+    /// every spelling; a path into a field is not a whole binding and yields
+    /// `None`.
+    pub(super) fn value_callee_global_type(&self, callee: &Expr) -> Option<Ty> {
+        let id = match &callee.kind {
+            ExprKind::Name(written) => self.resolve_global_id(written)?,
+            ExprKind::Qualified(name) => {
+                let global = crate::init_graph::resolve_global(self.loaded, self.module, name)?;
+                if !global.fields.is_empty() {
+                    return None;
+                }
+                global_id(global)
+            }
+            _ => return None,
+        };
+        self.program.globals.get(&id).map(|global| global.ty.clone())
+    }
+
     /// Detects an `== null` / `!= null` test that narrows a place path.
     ///
     /// The narrowed path may be a projected place, so a nullable field can be

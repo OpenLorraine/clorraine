@@ -93,3 +93,50 @@ masked that leak while breaking the capture-less shape — an accidental state, 
 the RV-004 reproduction builds and runs with the narrowed guard; the loop-lambda probe is
 ASan-clean; the defer-lambda probe is ASan-identical to base (DEF-158). Scoped review budget: one
 round; the second fix is verified directly (no third review round).
+
+## Phase 2: Callable effect modes (DEF-155, DEF-156, DEF-157, DEF-166)
+
+**Reviewers**: correctness reviewer (fallback packet), semantics reviewer (fallback packet),
+memory-safety auditor, emission-integrity auditor, over the diff `c137429..94ba12b`.
+
+### Merge table
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| MS-001 (= memory P-1's module twin) | 🔴 critical | A mixed conditional lend argument (`pick ? stringOf("aa") : b`) was adopted by the new argument materialization: the store emptied the place arm, the checker had recorded a lend, and the accepted program segfaulted on all four callee kinds. The pre-existing module spelling crashed identically. | Fixed: a place-rooted arm stays an inline read and each ownerless arm binds through the deferred fill; the intrinsic spelling's fresh-arm leak closed too. |
+| RV-001 = SR-001 = memory P-2 | 🟠 major | A call-result callee (`pick()(s)`) had its modes applied by the lowering but checked nowhere; reuse was accepted and read the emptied place, and a borrow conflict was unchecked. | Fixed: the checker resolves the returned signature (same resolution the lowering uses) and runs the marker and argument checks. |
+| SR-002 (check half) | 🟠 major | A qualified callable global (`mod.g(s)`) applied the take move without the check. | Fixed: `value_callee_global_type` resolves the value path in the checker and the lowering; the marker check applies. |
+| EIA-001 = RV-002 = SR-003 | 🟡 minor | The new global branch skipped the `E10039` call-site marker check. | Fixed. |
+| RV-003 | 🟡 minor | Three doc comments still claimed field calls carry no modes. | Fixed. |
+| RV-004 | 🟡 minor | The two take move-out pins also matched the function-exit cleanup. | Fixed: the pin bounds the gap after the call to `#line` markers. |
+| RV-005 | 🟡 minor | The re-pinned may-lend test's doc described the old double-release failure mode. | Fixed. |
+| SR-004 | 🟡 minor | A stale "i32 then String" doc line survived the re-pin. | Fixed. |
+| memory coverage note | 🟡 minor | The suites never *ran* an accepted take (rejection and emitted-text pins only). | Fixed: two runtime spec cases (place arm; the fresh arm across five callee kinds). |
+
+### Governance ratification (user, 2026-10-10)
+
+The DEF-166 runtime correction (AR-17) and the two re-pinned `*_spec_test.rs` fixtures were
+submitted for the user's ruling, as the project review contract requires for a specification-test
+assertion change. **Ratified**: the correction conforms to the frozen chapters (unmarked
+parameters are read-only lends; the module twin and the block-bodied lambda already report
+`E10034` on the base compiler), and the frozen `spec/` files were never touched.
+
+### Filed (pre-existing classes; new roadmap rows)
+
+| # | Sev | Finding | Filed as |
+| - | --- | ------- | -------- |
+| EIA PE-2 + PE-3 (= memory P-4) | 🟠 | A call through an imported or qualified module global (a `func` value or a struct value's field) emits the bare written name; the strict build fails. | DEF-170 |
+| EIA PE-1 | 🟠 | `spec/tests/compile-fail/E10213_embed_outside_const.clo` is accepted and emits invalid C. | DEF-171 |
+| EIA PE-4 | 🟠 | A module `func`-typed global initialized with a lambda is emitted as NULL. | DEF-172 |
+| EIA PE-5 | 🟡 | A same-named function in another loaded module supplies modes to a current-module `func`-typed global. | DEF-173 |
+| SR/RV P-2 = EIA M04 | 🟡 | A call-site marker on a closure-call argument is accepted. | DEF-174 |
+
+### Fix-round verification
+
+Spec suite 24/24 plain and under `RDC_ASAN=1`; impl suite 11/11; `make check` 58 suites green.
+Host probes of every fixed shape (both conditional arms across the callee kinds, call-result
+take/borrow, imported and qualified globals, the global marker) run clean under the sanitizer.
+
+### Scoped re-review (fix diff)
+
+_Pending — one scoped round after the fix commit._

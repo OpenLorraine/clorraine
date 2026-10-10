@@ -132,6 +132,31 @@ fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str],
     assert_rejected_output(tag, &output, &c_path, code, fragments, absent);
 }
 
+/// Compiles a two-file module program and returns the compiler output.
+///
+/// The holder file declares the module the program imports; both paths reach
+/// the compiler, so an imported or qualified name resolves and the ordinary
+/// checks run on it.
+fn compile_pair(tag: &str, holder: &str, main: &str) -> (ScratchDir, Output, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        holder_path.display().to_string(),
+    ]);
+    (scratch, output, c_path)
+}
+
 /// Emits one host-profile program and asserts the front end accepted it.
 fn emit_host(tag: &str, source: &str) -> String {
     let (_scratch, output, c_path) = compile_only(tag, source);
@@ -904,4 +929,263 @@ func main(): i32 {
     let output = run_memory("lamcall", source);
     assert_no_asan("lamcall", &output);
     assert_exit("lamcall", &output, 0);
+}
+
+/// A mixed conditional lend argument keeps its place arm readable.
+///
+/// The conditional mixes a fresh call result with a named place; the argument
+/// is a lend, so the place must stay an inline read and the later use must see
+/// the live value. Binding the conditional as a whole would adopt the chosen
+/// arm and empty the place (red at the pre-fix head: the accepted program
+/// dereferences the emptied storage and segfaults).
+#[test]
+fn should_keep_a_mixed_conditional_lend_arguments_place_arm_readable() {
+    let source = r#"module spec.cri.condplace;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let b: String = stringOf("bb");
+    let pick: bool = false;
+    let n: i32 = lenOf(pick ? stringOf("aa") : b);
+    let m: i32 = i32(len(b));
+    return n + m - 4;
+}
+"#;
+    let output = run_memory("condplace", source);
+    assert_no_asan("condplace", &output);
+    assert_exit("condplace", &output, 0);
+}
+
+/// A mixed conditional lend argument releases its fresh arm.
+///
+/// The fresh arm owns its storage and the callee only borrows, so the caller
+/// releases it on the path that evaluates it. Every callee kind is covered
+/// with the fresh arm taken: the module call, the func-typed field, the
+/// callable-bound parameter, the closure call, and the intrinsic argument
+/// (red at the pre-fix head: the unbound fresh arms leak under the sanitizer,
+/// and the fully bound spellings adopt the place arm instead).
+#[test]
+fn should_release_a_mixed_conditional_lend_arguments_fresh_arm() {
+    let source = r#"module spec.cri.condfresh;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+struct Holder { call: func(String): i32; }
+
+func wrap<F: func(String): i32>(f: F, pick: bool, b: String): i32 {
+    return f(pick ? stringOf("aa") : b);
+}
+
+func main(): i32 {
+    let b: String = stringOf("bb");
+    let h: Holder = Holder { call: lenOf };
+    let pick: bool = true;
+    let n: i32 = lenOf(pick ? stringOf("aa") : b);
+    let o: i32 = h.call(pick ? stringOf("aa") : b);
+    let r: i32 = wrap<func(String): i32>(lenOf, pick, b);
+    let s: i32 = ((p: String) => i32(len(p)))(pick ? stringOf("aa") : b);
+    let t: i32 = i32(len(pick ? stringOf("aa") : b));
+    return n + o + r + s + t - 10;
+}
+"#;
+    let output = run_memory("condfresh", source);
+    assert_no_asan("condfresh", &output);
+    assert_exit("condfresh", &output, 0);
+}
+
+/// A `take` call-result callee marks its move like a value twin.
+///
+/// A call whose callee is itself a call reaches the returned function value,
+/// so its signature's `take` argument moves and a later use reports `E10020`
+/// exactly as a func-typed binding's call does (red at the pre-fix head: the
+/// move was lowered without the check, and the accepted program read the
+/// emptied storage).
+#[test]
+fn should_report_a_take_call_result_callees_move_like_its_value_twin() {
+    let source = r#"module spec.cri.callresulttake;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func pick(): func(take String): i32 {
+    return sink;
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let n: i32 = pick()(s);
+    return n + i32(len(s));
+}
+"#;
+    assert_rejected_once(
+        "callresulttake",
+        source,
+        "E10020",
+        &["'s' was moved"],
+        &[],
+    );
+}
+
+/// A borrow call-result callee records its argument conflict.
+///
+/// The returned function value's signature marks both parameters `borrow`, so
+/// lending the same place twice in one call reports `E10032` like the module
+/// twin (red at the pre-fix head: accepted).
+#[test]
+fn should_report_a_borrow_call_result_callees_conflict_like_its_value_twin() {
+    let source = r#"module spec.cri.callresultborrow;
+
+import { String, stringOf } from std.text;
+
+func two(borrow a: String, borrow b: String): i32 {
+    return i32(len(a)) + i32(len(b));
+}
+
+func pick(): func(borrow String, borrow String): i32 {
+    return two;
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    return pick()(s, s) - 2;
+}
+"#;
+    assert_rejected_once(
+        "callresultborrow",
+        source,
+        "E10032",
+        &["'s' is already borrowed"],
+        &[],
+    );
+}
+
+/// A call through a returned `take` value releases its fresh operand.
+///
+/// The fresh temporary transfers to the callee, so no owner is bound and the
+/// program runs and exits correctly (red at the pre-fix head: the accepted
+/// program leaked the operand).
+#[test]
+fn should_run_a_call_result_callees_fresh_take_operand() {
+    let source = r#"module spec.cri.callresultfresh;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func pick(): func(take String): i32 {
+    return sink;
+}
+
+func main(): i32 {
+    return pick()(stringOf("x")) - 1;
+}
+"#;
+    let output = run_memory("callresultfresh", source);
+    assert_no_asan("callresultfresh", &output);
+    assert_exit("callresultfresh", &output, 0);
+}
+
+/// A module global's call-site marker must match its declaration.
+///
+/// The declared signature is authoritative, so a written `take` on a plain
+/// parameter reports `E10039` like the module-function twin (red at the
+/// pre-fix head: accepted).
+#[test]
+fn should_report_a_marker_mismatch_at_a_func_global_call() {
+    let source = r#"module spec.cri.globalmarker;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+let g: func(String): i32 = lenOf;
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    return g(take s) - 2;
+}
+"#;
+    assert_rejected_once(
+        "globalmarker",
+        source,
+        "E10039",
+        &["marker does not match the declaration of 'g'"],
+        &[],
+    );
+}
+
+/// An imported or qualified callable global is checked like the local spelling.
+///
+/// Both spellings reach the same global value, so the signature's `take`
+/// argument moves and the later use reports `E10020` in either spelling (red
+/// at the pre-fix head: accepted, with the move applied but never marked).
+#[test]
+fn should_report_a_take_imported_globals_move_like_the_local_spelling() {
+    let holder = r#"module spec.cri.gpair;
+
+import { String } from std.text;
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+export let g: func(take String): i32 = sink;
+"#;
+    let imported = r#"module spec.cri.gpairmain;
+
+import { String, stringOf } from std.text;
+import { g } from spec.cri.gpair;
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let n: i32 = g(s);
+    return n + i32(len(s));
+}
+"#;
+    let (_scratch, output, c_path) = compile_pair("gpair-import", holder, imported);
+    assert_rejected_output(
+        "gpair-import",
+        &output,
+        &c_path,
+        "E10020",
+        &["'s' was moved"],
+        &[],
+    );
+
+    let qualified = r#"module spec.cri.gpairqual;
+
+import { String, stringOf } from std.text;
+import { g } from spec.cri.gpair;
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let n: i32 = spec.cri.gpair.g(s);
+    return n + i32(len(s));
+}
+"#;
+    let (_scratch, output, c_path) = compile_pair("gpair-qual", holder, qualified);
+    assert_rejected_output(
+        "gpair-qual",
+        &output,
+        &c_path,
+        "E10020",
+        &["'s' was moved"],
+        &[],
+    );
 }
