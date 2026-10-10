@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-10 18:56
+> **Last Updated**: 2026-10-10 19:40
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -19,7 +19,7 @@
 | PLAN-02 | Clorraine build/run driver | — | [clorraine-driver](clorraine-driver/00-index.md) | Done | ✅ | 2026-09-23 | PLAN-01 |
 | PLAN-03 | Freestanding (LorraineOS) profile | — | [clorraine-freestanding-profile](clorraine-freestanding-profile/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
 | PLAN-04 | Clorraine v1 language completion | — | [clorraine-v1-language-completion](clorraine-v1-language-completion/00-index.md) | Done | ✅ | 2026-09-25 | depends on PLAN-01 |
-| PLAN-05 | Developer experience and delivery | — | — | Backlog | ⬜ | 2026-09-26 | after the language completion program; see Scope decisions |
+| PLAN-05 | Developer experience and delivery | — | [clorraine-dx](clorraine-dx/00-index.md) | Plan Created | 📋 | 2026-10-10 19:40 | DX tooling slice planned (`--explain`, machine-readable diagnostics, canonical TextMate grammar); the fetch/detect SDK installer, LSP, and VSCode extension packaging remain backlog; see Scope decisions |
 | PLAN-06 | LorraineOS bring-up (downstream) | — | — | Deferred | ⏸️ | 2026-09-26 | external repository; the OS does not exist; Clorraine's freestanding ABI (PLAN-03) is done |
 | PLAN-07 | ARM64 target port | — | — | Deferred | ⏸️ | 2026-09-26 | not planned; the v1 target is m68k/AmigaOS-compatible; aarch64 host builds stay supported |
 | PLAN-08 | Amiga graphics (screen + drawing) | — | [clorraine-graphics](clorraine-graphics/00-index.md) | Done | ✅ | 2026-09-24 | depends on PLAN-01 |
