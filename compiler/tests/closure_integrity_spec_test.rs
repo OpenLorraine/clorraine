@@ -629,3 +629,57 @@ func main(): i32 {
     assert_exit("lender-capture", &output, 1);
     assert_no_asan("lender-capture", &output);
 }
+
+/// A call of an unbounded type-parameter value is rejected once.
+///
+/// Callability comes only from a callable bound: a bare `T` may substitute
+/// to any type, including one with no call operator, so the call reports
+/// `E10307` at the declaration and names the type parameter. No translation
+/// unit is written.
+#[test]
+fn should_reject_a_call_of_an_unbounded_type_parameter_value() {
+    let source = r#"module spec.ci.unboundedcall;
+
+struct S {
+    x: i32;
+}
+
+func g<T>(x: T): i32 {
+    return x(5);
+}
+
+func main(): i32 {
+    return g<S>(S { x: 1 });
+}
+"#;
+    assert_rejected_once("unbounded-call", source, "E10307", &["'T'"], &[]);
+}
+
+/// A callable-bound parameter stays callable and the program runs.
+#[test]
+fn should_accept_and_run_a_call_of_a_callable_bound_parameter() {
+    let source = r#"module spec.ci.callbound;
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func apply<T, F: func(T): T>(x: T, f: F): T {
+    return f(x);
+}
+
+func main(): i32 {
+    return apply<i32, func(i32): i32>(5, addOne);
+}
+"#;
+    let output = run_host("callable-bound-call", source);
+    assert_exit("callable-bound-call", &output, 6);
+}
+
+/// The unbounded-call golden is rejected exactly as the frozen suite expects.
+#[test]
+fn should_reject_the_unbounded_call_golden_directly() {
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../spec/tests/compile-fail/E10307_unbounded_call.clo");
+    assert_rejected_once_at("unbounded-call-golden", &golden, "E10307", &["'T'"], &[]);
+}

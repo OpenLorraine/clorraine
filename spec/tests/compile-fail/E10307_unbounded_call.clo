@@ -1,0 +1,15 @@
+// expect-error E10307
+// trigger: call of a type-parameter value without a callable bound
+module tests.compile_fail.E10307;
+
+struct S {
+    x: i32;
+}
+
+func g<T>(x: T): i32 {
+    return x(5);
+}
+
+func main(): i32 {
+    return g<S>(S { x: 1 });
+}
