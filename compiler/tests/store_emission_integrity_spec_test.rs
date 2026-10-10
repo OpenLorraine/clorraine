@@ -698,6 +698,27 @@ func main(): i32 {
     assert_rejected_once("str-update-write", source, "E10042", &["'s'"]);
 }
 
+/// An update in value position through a `str` view is rejected once.
+///
+/// `i32(s[0]++)` yields the old value while storing the incremented one, so
+/// the expression contains the same element write the statement form does and
+/// keeps the same single report.
+#[test]
+fn should_reject_a_value_position_update_through_a_str_view() {
+    let source = r#"module spec.sei.p2.valueupdate;
+
+func f(borrow s: str): i32 {
+    return i32(s[0]++);
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#;
+    assert_rejected_once("str-value-update", source, "E10042", &["'s'"]);
+}
+
 /// An element write through a module-level `str` view is rejected once.
 ///
 /// A module binding is writable storage by default, but the view type still

@@ -54,6 +54,7 @@
 | ST-12 | `struct S { tag: static str; n: i32; }` with `s.tag[0] = 65;` | rejected: exactly one `E10042`; the message names the field path | AR-6 |
 | ST-13 | `s[0] += 1;` on a `borrow s: str` parameter | rejected: exactly one `E10042` | AR-6 |
 | ST-14 | `s[0]++;` on a `borrow s: str` parameter | rejected: exactly one `E10042` | AR-6 |
+| ST-14b | `i32(s[0]++)` in value position on a `borrow s: str` parameter (the update form's value position; added in the Phase 2 review remediation) | rejected: exactly one `E10042` | AR-6 |
 | ST-15 | a module-level `let g: str = "abc";` with `g[0] = 65;` in `main` | rejected: exactly one `E10042` naming `g` | AR-6 |
 | ST-16b | a local `let t: str = "abc";` with `t[0] = 65;` in the same function (the same local-write program as ST-11; both rows are pinned by one case, AR-20) | rejected: exactly one `E10042` naming `t` | AR-6 |
 | ST-16 | `let t: str = "abc"; t = "xyz"; return i32(len(t));` | accepted; strict build; runs (exit 3) | AR-6 |
@@ -90,7 +91,7 @@
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/store_emission_integrity_spec_test.rs` | ST-1 – ST-9 (P1), ST-10 – ST-18 (P2, including ST-16b), ST-19 – ST-22 (P3), ST-23 – ST-30 (P4) | all four component specs |
+| `compiler/tests/store_emission_integrity_spec_test.rs` | ST-1 – ST-9 (P1), ST-10 – ST-18 (P2, including ST-14b and ST-16b), ST-19 – ST-22 (P3), ST-23 – ST-30 (P4) | all four component specs |
 
 ### Implementation Tests (edge cases, internals)
 

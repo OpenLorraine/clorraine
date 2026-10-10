@@ -289,6 +289,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ExprKind::Unary { op, operand } => {
                 let operand_ty = self.eval(operand);
+                if op.is_update() {
+                    self.check_update_value_write(operand);
+                }
                 if matches!(op, UnaryOp::AddressOf) && self.unsafe_depth == 0 {
                     self.report_unsafe(UnsafeOp::AddressOf, expr.span);
                 }
@@ -889,6 +892,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             None => {
                 self.eval(operand);
             }
+        }
+    }
+
+    /// Reports the immutable-view rule for an update used as a value.
+    ///
+    /// A value-position `x++` reads the place and stores the result back, so
+    /// it contains the same element write the statement form judges through
+    /// the write path. The statement path evaluates its operand directly and
+    /// judges the write in `check_update`, so routing the value form through
+    /// this helper keeps exactly one report per update site.
+    fn check_update_value_write(&mut self, operand: &'a Expr) {
+        match self.place_target(operand) {
+            Some(PlaceTarget::Local(id, projections)) => {
+                self.check_immutable_view_write(id, &projections, operand.span);
+            }
+            Some(PlaceTarget::Global(id, projections)) => {
+                self.check_global_immutable_view_write(&id, &projections, operand.span);
+            }
+            None => {}
         }
     }
 

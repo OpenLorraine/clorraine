@@ -283,20 +283,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// The type a projection path selects when applied to `ty`.
     ///
-    /// Field steps substitute the instance's type arguments; an element step
-    /// descends one extent exactly as an element access types it (a `str`
-    /// byte is `u8`, and a raw pointer reaches its pointee). A step the type
-    /// cannot resolve stays unknown, so no immutable-view judgment rides on
-    /// an unresolved type.
+    /// Field steps substitute the instance's type arguments and reach through
+    /// a raw pointer to the struct it points at; an element step descends one
+    /// extent exactly as an element access types it (a `str` byte is `u8`,
+    /// and a raw pointer reaches its pointee). A step the type cannot resolve
+    /// stays unknown, so no immutable-view judgment rides on an unresolved
+    /// type.
     fn projection_ty(&self, ty: &Ty, projections: &[ir::Projection]) -> Ty {
         let mut current = ty.clone();
         for projection in projections {
             let next = match projection {
-                ir::Projection::Field(field) => self
-                    .sema
-                    .table
-                    .instance_field(&current, field)
-                    .unwrap_or_else(Ty::unknown),
+                ir::Projection::Field(field) => {
+                    let mut base = &current;
+                    while let TyKind::Raw(inner) = &base.kind {
+                        base = inner;
+                    }
+                    self.sema
+                        .table
+                        .instance_field(base, field)
+                        .unwrap_or_else(Ty::unknown)
+                }
                 ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
                     match &current.kind {
                         TyKind::Array { .. } => current.iterated_element(),

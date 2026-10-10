@@ -6,6 +6,12 @@
 //! whatever the instantiation order, and the byte-identical re-emission of the
 //! accepted shapes. They complement the specification suite, which pins the
 //! accepted and rejected program behavior.
+//!
+//! The immutable-view group pins the write rule's observable internals: the
+//! exact single diagnostic and its message name per write form (parameter,
+//! local, field path, compound, update, module-level), and the accepted
+//! controls' emission — the whole-view rebind stores the new view, and the
+//! writable slice stores through its pointer — byte-identical across runs.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -399,5 +405,211 @@ func main(): i32 {
     assert_eq!(
         first, second,
         "reemission-nullable-generic: the two emissions differ"
+    );
+}
+
+/// Every rejected immutable-view write form reports exactly one named code.
+///
+/// The plain parameter, local, compound, and update forms name the binding;
+/// the field form names the field path; the module-level form names the
+/// global. A second code anywhere would mean the write is double-reported —
+/// for example by both the immutable-view rule and the read-only rule — and a
+/// wrong name would mean the wrong part of the place is judged. No rejected
+/// form may produce a translation unit.
+#[test]
+fn should_report_one_named_error_per_immutable_view_write_form() {
+    assert_rejected(
+        "immutable-param",
+        r#"module spec.sei.impl.ivparam;
+
+func f(borrow s: str): i32 {
+    s[0] = 65;
+    return 0;
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 's'"],
+    );
+    assert_rejected(
+        "immutable-local",
+        r#"module spec.sei.impl.ivlocal;
+
+func main(): i32 {
+    let t: str = "abc";
+    t[0] = 65;
+    return 0;
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 't'"],
+    );
+    assert_rejected(
+        "immutable-field",
+        r#"module spec.sei.impl.ivfield;
+
+struct S {
+    tag: static str;
+    n: i32;
+}
+
+func f(borrow s: S): void {
+    s.tag[0] = 65;
+}
+
+func main(): i32 {
+    let v: S = S { tag: "abc", n: 1 };
+    f(borrow v);
+    return 0;
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 's.tag'"],
+    );
+    assert_rejected(
+        "immutable-compound",
+        r#"module spec.sei.impl.ivcompound;
+
+func f(borrow s: str): i32 {
+    s[0] += 1;
+    return 0;
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 's'"],
+    );
+    assert_rejected(
+        "immutable-update",
+        r#"module spec.sei.impl.ivupdate;
+
+func f(borrow s: str): i32 {
+    s[0]++;
+    return 0;
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 's'"],
+    );
+    assert_rejected(
+        "immutable-global",
+        r#"module spec.sei.impl.ivglobal;
+
+let g: str = "abc";
+
+func main(): i32 {
+    g[0] = 65;
+    return 0;
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 'g'"],
+    );
+    assert_rejected(
+        "immutable-value-update",
+        r#"module spec.sei.impl.ivvalueupdate;
+
+func f(borrow s: str): i32 {
+    return i32(s[0]++);
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 's'"],
+    );
+    assert_rejected(
+        "immutable-raw-field",
+        r#"module spec.sei.impl.ivrawfield;
+
+struct S {
+    tag: static str;
+    n: i32;
+}
+
+func f(borrow p: raw S): void {
+    unsafe {
+        p.tag[0] = 65;
+    }
+}
+
+func main(): i32 {
+    let v: S = S { tag: "abc", n: 1 };
+    unsafe {
+        f(borrow &v);
+    }
+    return 0;
+}
+"#,
+        &["E10042"],
+        &["cannot write through immutable view 'p.tag'"],
+    );
+}
+
+/// The accepted immutable-view controls keep their emission, byte-identical
+/// across runs.
+///
+/// The whole-view rebind compiles to a direct assignment of the new view, and
+/// the writable slice write compiles to a store through the view's pointer.
+/// Re-emitting each program proves the reject rule did not disturb the
+/// accepted translations.
+#[test]
+fn should_keep_the_accepted_immutable_view_controls_emission_byte_identical() {
+    let rebind = r#"module spec.sei.impl.ivrebind;
+
+func main(): i32 {
+    let t: str = "abc";
+    t = "xyz";
+    return i32(len(t));
+}
+"#;
+    let (first, second) = emit_twice("reemission-str-rebind", rebind);
+    assert_eq!(
+        first, second,
+        "reemission-str-rebind: the two emissions differ"
+    );
+    assert!(
+        first.contains("t = cl_str(\"xyz\");"),
+        "reemission-str-rebind: the rebind is not emitted as a view assignment"
+    );
+
+    let writable_slice = r#"module spec.sei.impl.ivwritable;
+
+import { slice } from std.mem;
+
+func f(borrow xs: u8[]): i32 {
+    xs[0] = 65;
+    return 0;
+}
+
+func main(): i32 {
+    let a: u8[2] = [0, 0];
+    return f(borrow slice(a, 0, 2));
+}
+"#;
+    let (first, second) = emit_twice("reemission-writable-slice", writable_slice);
+    assert_eq!(
+        first, second,
+        "reemission-writable-slice: the two emissions differ"
+    );
+    assert!(
+        first.contains("(xs).ptr[0] = 65u;"),
+        "reemission-writable-slice: the element store is not emitted through the view pointer"
     );
 }

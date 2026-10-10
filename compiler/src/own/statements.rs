@@ -154,16 +154,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// This is the statement path, so a `j++` here increments `j` even though
     /// the same expression in value position yields the old value.
     pub(super) fn check_expr_statement(&mut self, expr: &'a Expr) {
-        self.eval(expr);
-        match &expr.kind {
-            ExprKind::Assign { .. } => {}
-            ExprKind::Unary { op, operand } if op.is_update() => {
+        // An update used as a statement performs its write through the
+        // statement write path; the value-position walk owns the same
+        // expression when it yields a value, so evaluating the operand
+        // directly here keeps the site judged exactly once.
+        if let ExprKind::Unary { op, operand } = &expr.kind {
+            if op.is_update() {
+                self.eval(operand);
                 let op = match op {
                     UnaryOp::PreIncrement | UnaryOp::PostIncrement => AssignOp::Add,
                     _ => AssignOp::Sub,
                 };
                 self.check_update(op, operand);
+                return;
             }
+        }
+        self.eval(expr);
+        match &expr.kind {
+            ExprKind::Assign { .. } => {}
             _ => self.emit_expr_statement(expr),
         }
     }
