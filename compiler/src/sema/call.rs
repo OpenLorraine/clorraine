@@ -121,6 +121,17 @@ impl Checker<'_, '_> {
                     return (*bound.returns).clone();
                 }
             }
+            // A bare type parameter carries no call operator: its
+            // substitution may be any type, so the call is reported and the
+            // fix is to declare a callable bound on the parameter.
+            TyKind::Param(name) => {
+                self.error(
+                    "E10307",
+                    format!("type parameter '{name}' is not callable"),
+                    "declare a callable bound: `T: func(...)`",
+                    callee.span,
+                );
+            }
             _ => {}
         }
         for arg in args {

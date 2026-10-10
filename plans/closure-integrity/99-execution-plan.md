@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 11:15
-> **Progress**: 15/22 tasks (68%)
+> **Last Updated**: 2026-10-10 11:20
+> **Progress**: 20/22 tasks (91%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -245,9 +245,16 @@ DEF-126, DEF-127). Rulings are recorded in [05-findings.md](05-findings.md).
 **Objective**: Land the authorized `E10307` row and golden, then pin the rejection before any
 implementation.
 
-- [ ] 3.1.1 [spec] Add the `E10307` registry row (`spec/14-diagnostics.md`) and the golden `spec/tests/compile-fail/E10307_unbounded_call.clo`, registering the code in the compile-fail driver (`compiler/tests/compile_fail_spec_test.rs`) — the authorized modification set (AR-3, AR-12)
-- [ ] 3.1.2 [spec-author] Write specification tests from ST-14 – ST-16 — `compiler/tests/closure_integrity_spec_test.rs`
-- [ ] 3.1.3 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-14 and ST-16 fail; ST-15 passes as the accepted control)
+- [x] 3.1.1 [spec] Add the `E10307` registry row (`spec/14-diagnostics.md`) and the golden `spec/tests/compile-fail/E10307_unbounded_call.clo`, registering the code in the compile-fail driver (`compiler/tests/compile_fail_spec_test.rs`) — the authorized modification set (AR-3, AR-12) ✅ (completed: 2026-10-10 11:18)
+- [x] 3.1.2 [spec-author] Write specification tests from ST-14 – ST-16 — `compiler/tests/closure_integrity_spec_test.rs` ✅ (completed: 2026-10-10 11:18)
+- [x] 3.1.3 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-14 and ST-16 fail; ST-15 passes as the accepted control) ✅ (completed: 2026-10-10 11:19)
+
+**Red-phase evidence (2026-10-10 11:19)** — the extended suite (17 tests) fails exactly as designed: 2
+failed, 15 passed. ST-14 (the unbounded call is accepted and emits C that the host compiler
+rejects) and ST-16 (the golden is accepted) fail against the baseline; ST-15 (the callable-bound
+control builds and runs, exit 6) passes. `./spec/check.sh` is OK (27 files, 108 compile-fail
+tests) and the compile-fail driver reports the designed red state
+(`E10307_unbounded_call.clo: no 'error E10307: ...' diagnostic line (exit Some(0))`).
 
 **Deliverables**:
 - The registry row and golden
@@ -263,8 +270,12 @@ implementation.
 **Reference**: [03-03](03-03-callable-bounds.md) §Proposed Changes
 **Objective**: Reject a call of an unbounded type-parameter value with one `E10307`.
 
-- [ ] 3.2.1 Add the unbounded-parameter rejection to the callee typing — `compiler/src/sema/call.rs`
-- [ ] 3.2.2 Run the spec suite and `./spec/check.sh` to green (ST-14 – ST-16 and the golden); on any failure STOP and fix the implementation, never the test
+- [x] 3.2.1 Add the unbounded-parameter rejection to the callee typing — `compiler/src/sema/call.rs` ✅ (completed: 2026-10-10 11:20)
+- [x] 3.2.2 Run the spec suite and `./spec/check.sh` to green (ST-14 – ST-16 and the golden); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 11:20)
+
+**Green-phase evidence (2026-10-10 11:20)** — the suite passes 17/17 in the pinned container; the
+callable-bound control still builds and runs; `./spec/check.sh` is OK (27 files, 108 compile-fail
+tests) and the compile-fail driver is green (the golden reports `E10307`).
 
 **Deliverables**:
 - The checker change
