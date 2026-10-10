@@ -10,6 +10,12 @@
 //! spelled like a generated owner stays an ordinary local, two `func`
 //! signatures of one generic struct are two instances, and an inline
 //! capturing lambda builds with one environment definition.
+//!
+//! The callable effect-mode group pins that each callee kind applies its own
+//! signature's parameter modes: a `take` or borrow call through a func-typed
+//! field, a module-level func-typed global, a callable-bound type parameter,
+//! or a lambda parameter reports exactly what the module spelling reports,
+//! and an owned temporary argument is released exactly once.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -74,6 +80,53 @@ fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
         source_path.display().to_string(),
     ]);
     (scratch, output, c_path)
+}
+
+/// Asserts one compiler run rejected the program with exactly one `code`
+/// diagnostic, that the message contains every fragment and none of the
+/// absent markers, and that no translation unit is written.
+fn assert_rejected_output(
+    tag: &str,
+    output: &Output,
+    c_path: &Path,
+    code: &str,
+    fragments: &[&str],
+    absent: &[&str],
+) {
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let marker = format!("error {code}:");
+    assert_eq!(
+        stderr.matches(&marker).count(),
+        1,
+        "{tag}: expected exactly one {code}; stderr:\n{stderr}"
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    for absent_marker in absent {
+        assert!(
+            !stderr.contains(absent_marker),
+            "{tag}: the report {absent_marker:?} must be absent; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// Compiles `source` and asserts the rejection contract on the output.
+fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str], absent: &[&str]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_rejected_output(tag, &output, &c_path, code, fragments, absent);
 }
 
 /// Emits one host-profile program and asserts the front end accepted it.
@@ -407,4 +460,350 @@ func main(): i32 {
 "#;
     let output = run_host("envdedupe", source);
     assert_exit("envdedupe", &output, 0);
+}
+
+/// A `take` call through a func-typed field moves the argument.
+///
+/// A func field's signature carries its parameter modes, so passing an owned
+/// local to a `take` field call transfers ownership exactly as the module
+/// function does: the later reuse of the local reports one `E10020`. The
+/// module spelling is the control (red at the pre-fix head: the field call
+/// records no move, so the field program is accepted and its reuse
+/// double-frees at run time).
+#[test]
+fn should_report_a_take_field_calls_move_like_its_module_twin() {
+    let twin = r#"module spec.cri.takefieldtwin;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let n: i32 = sink(s);
+    return n + i32(len(s));
+}
+"#;
+    assert_rejected_once(
+        "takefield-twin",
+        twin,
+        "E10020",
+        &["'s' was moved and cannot be used"],
+        &[],
+    );
+
+    let field = r#"module spec.cri.fieldtake;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    call: func(take String): i32;
+}
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { call: sink };
+    let s: String = stringOf("x");
+    let n: i32 = h.call(s);
+    return n + i32(len(s));
+}
+"#;
+    assert_rejected_once(
+        "takefield",
+        field,
+        "E10020",
+        &["'s' was moved and cannot be used"],
+        &[],
+    );
+}
+
+/// Passing the same owned local twice to a `borrow` field call conflicts.
+///
+/// Each `borrow` parameter of the field's signature takes a loan of the
+/// argument, so the overlapping loans report one `E10032`, exactly as the
+/// module function's twin does. The module spelling is the control (red at
+/// the pre-fix head: the field call records no lend and the field program is
+/// accepted).
+#[test]
+fn should_report_a_borrow_field_calls_conflict_like_its_module_twin() {
+    let twin = r#"module spec.cri.borrowfieldtwin;
+
+import { String, stringOf } from std.text;
+
+func two(borrow a: String, borrow b: String): i32 {
+    return i32(len(a)) + i32(len(b));
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    return two(s, s) - 2;
+}
+"#;
+    assert_rejected_once(
+        "borrowfield-twin",
+        twin,
+        "E10032",
+        &["'s' is already borrowed"],
+        &[],
+    );
+
+    let field = r#"module spec.cri.fieldconflict;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    call: func(borrow String, borrow String): i32;
+}
+
+func two(borrow a: String, borrow b: String): i32 {
+    return i32(len(a)) + i32(len(b));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { call: two };
+    let s: String = stringOf("x");
+    return h.call(s, s) - 2;
+}
+"#;
+    assert_rejected_once(
+        "borrowfield",
+        field,
+        "E10032",
+        &["'s' is already borrowed"],
+        &[],
+    );
+}
+
+/// A func-typed field call releases an owned temporary argument once.
+///
+/// The temporary `String` passed to a plain field call is owned by no local,
+/// so the call must bind and release it at the statement end, exactly as the
+/// module twin's signature decides (red at the pre-fix head: the field call
+/// leaks the temporary under the sanitizer).
+#[test]
+fn should_release_an_owned_temporary_passed_to_a_func_field_call() {
+    let source = r#"module spec.cri.fieldborrow;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    call: func(String): i32;
+}
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { call: lenOf };
+    return h.call(stringOf("x")) - 1;
+}
+"#;
+    let output = run_memory("fieldborrow", source);
+    assert_no_asan("fieldborrow", &output);
+    assert_exit("fieldborrow", &output, 0);
+}
+
+/// A `take` call through a module-level func global moves the argument.
+///
+/// The global's declared signature carries the modes, so the call transfers
+/// ownership exactly as the module function does and the later reuse reports
+/// one `E10020`; the module spelling is the control (red at the pre-fix head:
+/// the global call records no move, so the program is accepted and its reuse
+/// double-frees at run time).
+#[test]
+fn should_report_a_take_global_calls_move_like_its_module_twin() {
+    let twin = r#"module spec.cri.takeglobaltwin;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let n: i32 = sink(s);
+    return n + i32(len(s));
+}
+"#;
+    assert_rejected_once(
+        "takeglobal-twin",
+        twin,
+        "E10020",
+        &["'s' was moved and cannot be used"],
+        &[],
+    );
+
+    let global = r#"module spec.cri.globaltake;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+let g: func(take String): i32 = sink;
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let n: i32 = g(s);
+    return n + i32(len(s));
+}
+"#;
+    assert_rejected_once(
+        "takeglobal",
+        global,
+        "E10020",
+        &["'s' was moved and cannot be used"],
+        &[],
+    );
+}
+
+/// A module-level func global call releases an owned temporary argument once.
+///
+/// The temporary `String` passed to the global's plain signature must be
+/// released at the statement end, exactly as the module twin's signature
+/// decides (red at the pre-fix head: the global call leaks the temporary
+/// under the sanitizer).
+#[test]
+fn should_release_an_owned_temporary_passed_to_a_func_global_call() {
+    let source = r#"module spec.cri.globalborrow;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+let g: func(String): i32 = lenOf;
+
+func main(): i32 {
+    return g(stringOf("x")) - 1;
+}
+"#;
+    let output = run_memory("globalborrow", source);
+    assert_no_asan("globalborrow", &output);
+    assert_exit("globalborrow", &output, 0);
+}
+
+/// A call through a callable-bound type parameter releases an owned temporary.
+///
+/// The bound's signature governs the call, so the temporary `String` passed
+/// to the callable is bound and released at the statement end (red at the
+/// pre-fix head under the sanitizer: the call leaks the temporary).
+#[test]
+fn should_release_an_owned_temporary_passed_to_a_callable_bound_parameter() {
+    let source = r#"module spec.cri.paramleak;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func wrap<F: func(String): i32>(f: F): i32 {
+    return f(stringOf("x"));
+}
+
+func main(): i32 {
+    return wrap<func(String): i32>(lenOf) - 1;
+}
+"#;
+    let output = run_memory("paramleak", source);
+    assert_no_asan("paramleak", &output);
+    assert_exit("paramleak", &output, 0);
+}
+
+/// A parameter shadowing a same-named `take` function keeps its own modes.
+///
+/// The callee is the parameter, whose callable bound takes the argument by a
+/// plain read-only lend, so the owned local stays usable afterwards and the
+/// program runs to exit 0. The direct module call is the control and still
+/// reports its one `E10020` (red at the pre-fix head: resolution falls back
+/// to the same-named module function's take places and reports a false
+/// `E10020` at the later use).
+#[test]
+fn should_keep_a_parameter_that_shadows_a_take_function_distinct_from_it() {
+    let twin = r#"module spec.cri.paramshadowtwin;
+
+import { String, stringOf } from std.text;
+
+func sink(take v: String): i32 {
+    return i32(len(v));
+}
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    let r: i32 = sink(s);
+    return r + i32(len(s));
+}
+"#;
+    assert_rejected_once(
+        "paramshadow-twin",
+        twin,
+        "E10020",
+        &["'s' was moved and cannot be used"],
+        &[],
+    );
+
+    let shadow = r#"module spec.cri.paramshadow;
+
+import { String, stringOf } from std.text;
+
+func sink(take v: String): i32 {
+    return i32(len(v));
+}
+
+func relay<sink: func(String): i32>(sink: sink): i32 {
+    let s: String = stringOf("x");
+    let r: i32 = sink(s);
+    return r + i32(len(s));
+}
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return relay<func(String): i32>(lenOf) - 2;
+}
+"#;
+    let output = run_host("paramshadow", shadow);
+    assert_exit("paramshadow", &output, 0);
+}
+
+/// A lambda parameter at an owning instance releases its argument once.
+///
+/// The inline lambda is judged at its `String` instance, so the wrapper's
+/// argument moves through the parameter once and the resulting field releases
+/// once; the run exits 0 under the sanitizer (red at the pre-fix head: the
+/// program is accepted and the run double-frees the string).
+#[test]
+fn should_release_a_lambda_parameter_at_an_owning_instance() {
+    let source = r#"module spec.cri.lamparam;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> {
+    v: T;
+}
+
+func wrap<T>(x: T): Holder<T> {
+    return ((p: T) => Holder<T> { v: p })(x);
+}
+
+func main(): i32 {
+    let h = wrap(stringOf("ab"));
+    return i32(len(h.v)) - 2;
+}
+"#;
+    let output = run_memory("lamparam", source);
+    assert_no_asan("lamparam", &output);
+    assert_exit("lamparam", &output, 0);
 }

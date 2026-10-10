@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 20:27
-> **Progress**: 8/36 tasks (22%)
+> **Last Updated**: 2026-10-10 22:03
+> **Progress**: 10/36 tasks (28%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -60,7 +60,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 1: Generated identities and instance keys
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 6289af4bb724c394a842b3ea0e36cbe7acef8a66
 > **Lenses**: correctness reviewer + memory-safety auditor (DEF-138 double-free) +
 > emission-integrity auditor (type keys, env names, C rename)
 > **Reasoning**: high — a critical memory defect and two symbol-identity changes
@@ -108,7 +108,14 @@ counts; record the phase review evidence.
 
 ## Phase 2: Callable effect modes
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 37a1248794d536b7dcac2cd6f19ba93c8c20f455
+> **Scope mode**: strict
+> **Expected modification set**: `compiler/src/own/call.rs`, `compiler/src/own/call_check.rs`,
+> `compiler/src/own/instance_check.rs`, `compiler/src/own/lower.rs` (only where instance judging
+> needs it), `compiler/tests/callable_release_integrity_spec_test.rs`,
+> `compiler/tests/callable_release_integrity_impl_test.rs`, `plans/callable-release-integrity/**`.
+> The untracked `.opencode/` catalog install (2026-10-10 21:54) is unrelated pre-phase work:
+> excluded from the phase review and from commits.
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (lend/move
 > rules); the phase reviewer reads the emission diff for argument-shape changes
 > **Reasoning**: high — double-frees and leaks across four callee kinds with rule-conformance
@@ -120,8 +127,8 @@ counts; record the phase review evidence.
 **Objective**: Pin the twin-pair cases — field, global, param, and lambda-parameter callees —
 before any implementation.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-4 – ST-7 — `compiler/tests/callable_release_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: double-frees/leaks/false reports on the current head)
+- [x] 2.1.1 [spec-author] Write specification tests from ST-4 – ST-7 — `compiler/tests/callable_release_integrity_spec_test.rs` ✅ (completed: 2026-10-10 22:03; delegated to spec-test-author)
+- [x] 2.1.2 Run the spec suite and record the red phase ✅ (completed: 2026-10-10 22:03; red: 5/8 plain — take-field, borrow-field, take-global, shadowing parameter, owning lambda parameter; 8/8 under RDC_ASAN=1; the pre-existing six cases stay green)
 
 ### Step 2.2: Implementation
 
