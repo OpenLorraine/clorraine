@@ -206,6 +206,18 @@ in `CMD`).
   diagnostic counts, the instance typedef and symbol spellings, the lowered
   `.ptr` null tests, the masked parameter spellings, and byte-identical
   re-emission).
+- `compiler/tests/borrow_store_integrity_spec_test.rs` holds the
+  **specification tests** for the borrow-store batch (a whole-slot or element
+  self-assignment through a lend is judged per instance — the owning and
+  nullable spellings are rejected while the duplicable, view, and non-nullable
+  element spellings stay accepted; a whole out-slot return transfers the value
+  and empties the caller's slot; a possibly-null view gates element stores,
+  reads, and updates with the bounds traps), and
+  `compiler/tests/borrow_store_integrity_impl_test.rs` holds their
+  **implementation tests** (one report per site naming the first offending
+  instance, the duplicable self-copy emission, the caller-slot emptying on a
+  direct return, the bounds-trap emission for constant, compound, and update
+  stores, the static fixed-array emission, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo
@@ -233,7 +245,7 @@ in `CMD`).
   `plans/<feature>/99-execution-plan.md`; the roadmap is `plans/00-roadmap.md`.
   There is no nested `codeops/features/` tree; `codeops/` holds only the
   project-level specialist check state (`codeops/specialist-check.json`).
-- Specialist coverage: up to date (2026-10-09) — see
+- Specialist coverage: up to date (2026-10-10) — see
   `codeops/specialist-check.json`; re-run `analyze-agents` after new plans land.
 - Never run the CodeOps installer from inside this repository: its scope
   auto-detection installs project-scope copies into `.opencode/` and would
