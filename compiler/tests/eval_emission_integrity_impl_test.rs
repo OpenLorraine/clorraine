@@ -457,3 +457,276 @@ func main(): i32 {
         "pin-shortcircuit-run-taken: the decided operand runs its bind once"
     );
 }
+
+/// Emits, builds, and runs a program, asserting its exit code.
+fn assert_run_exit(tag: &str, source: &str, expected: i32) {
+    let output = run_host(tag, source);
+    assert_eq!(
+        output.status.code(),
+        Some(expected),
+        "{tag}: expected exit code {expected}; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A short-circuit result keeps the left-decided value when the left decides.
+#[test]
+fn should_keep_the_short_circuit_result_when_the_left_decides() {
+    let source = r#"module spec.eei.orresult;
+
+func f(): bool {
+    return true;
+}
+
+func mk(): i32[2] {
+    return [1, 0];
+}
+
+let x: bool = f() || (mk()[0] == 1);
+
+func main(): i32 {
+    if (x) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("pin-or-result", source);
+    assert!(
+        emitted.contains("bool __cl_itmp0 = 1;"),
+        "pin-or-result: a true left operand needs the left-decided `true` result"
+    );
+    assert_run_exit("pin-or-result-run", source, 1);
+}
+
+/// A lazily evaluated position never runs its operand on the untaken path.
+#[test]
+fn should_keep_lazy_positions_lazy() {
+    let arm = r#"module spec.eei.lazyarm;
+
+let calls: i32 = 0;
+
+func t(): bool {
+    return false;
+}
+
+func idx(): i32 {
+    calls = calls + 1;
+    return 0;
+}
+
+let s: u8[2] = [1, 2];
+let x: i32 = t() ? i32(s[idx()]) : 0;
+
+func main(): i32 {
+    return calls;
+}
+"#;
+    assert_run_exit("pin-lazy-arm-skip", arm, 0);
+    let arm_taken = arm.replace("return false;", "return true;");
+    assert_run_exit("pin-lazy-arm-taken", &arm_taken, 1);
+
+    let right = r#"module spec.eei.lazyright;
+
+let calls: i32 = 0;
+
+func t(): bool {
+    return false;
+}
+
+func idx(): i32 {
+    calls = calls + 1;
+    return 0;
+}
+
+let s: u8[2] = [1, 2];
+let x: bool = t() && (i32(s[idx()]) > 0);
+
+func main(): i32 {
+    return calls;
+}
+"#;
+    assert_run_exit("pin-lazy-right-skip", right, 0);
+    let right_taken = right.replace("return false;", "return true;");
+    assert_run_exit("pin-lazy-right-taken", &right_taken, 1);
+}
+
+/// A binding on the right side of an operator evaluates after an earlier
+/// operand's stored value, in source order.
+#[test]
+fn should_evaluate_initializer_operands_left_to_right() {
+    let source = r#"module spec.eei.order;
+
+let log: i32 = 0;
+
+func idx(): i32 {
+    log = log * 10 + 1;
+    return 1;
+}
+
+func mk(): i32[2] {
+    log = log * 10 + 2;
+    return [3, 0];
+}
+
+let s: u8[2] = [1, 2];
+let x: i32 = i32(s[idx()]) + mk()[0];
+
+func main(): i32 {
+    return log;
+}
+"#;
+    assert_run_exit("pin-order", source, 12);
+}
+
+/// A short-circuit operator inside a conditional arm keeps the enclosing
+/// choice: the arm's left operand does not run on the skipped path.
+#[test]
+fn should_guard_a_short_circuit_bind_by_the_enclosing_choice() {
+    let source = r#"module spec.eei.armguard;
+
+let fcalls: i32 = 0;
+
+func pick(): bool {
+    return false;
+}
+
+func f(): bool {
+    fcalls = fcalls + 1;
+    return true;
+}
+
+func mk(): i32[2] {
+    return [1, 0];
+}
+
+let x: bool = pick() ? (f() && (mk()[0] == 1)) : false;
+
+func main(): i32 {
+    return fcalls;
+}
+"#;
+    assert_run_exit("pin-arm-guard-skip", source, 0);
+}
+
+/// The left operand of a short-circuit operator evaluates once, and its
+/// result decides the right side.
+#[test]
+fn should_single_evaluate_a_short_circuit_left_operand() {
+    let source = r#"module spec.eei.leftonce;
+
+let calls: i32 = 0;
+
+func idx(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+func mk(): i32[2] {
+    return [2, 0];
+}
+
+let s: u8[2] = [1, 2];
+let x: bool = (i32(s[idx()]) == 2) && (mk()[0] == 2);
+
+func main(): i32 {
+    if (x) {
+        return calls + 10;
+    }
+    return calls;
+}
+"#;
+    assert_run_exit("pin-left-once", source, 11);
+}
+
+/// Calls inside literal elements, a template placeholder, and a fill
+/// condition bind and build.
+#[test]
+fn should_bind_calls_inside_literals_and_fill_conditions() {
+    let element = r#"module spec.eei.litelement;
+
+func mk(): i32[2] {
+    return [3, 9];
+}
+
+let a: i32[2] = [mk()[0], 2];
+
+func main(): i32 {
+    return a[0];
+}
+"#;
+    assert_run_exit("pin-literal-element", element, 3);
+
+    let row = r#"module spec.eei.rowliteral;
+
+func mk(): i32[2] {
+    return [3, 9];
+}
+
+let m: i32[2][2] = [[1, 2], mk()];
+
+func main(): i32 {
+    return m[1][0];
+}
+"#;
+    assert_run_exit("pin-row-literal", row, 3);
+
+    let condition = r#"module spec.eei.fillcond;
+
+func mk(): i32[2] {
+    return [3, 9];
+}
+
+let a: i32[2] = (mk()[0] == 3) ? [4, 5] : [0, 0];
+
+func main(): i32 {
+    return a[0];
+}
+"#;
+    assert_run_exit("pin-fill-condition", condition, 4);
+
+    let template = r#"module spec.eei.templatearg;
+
+func mk(): i32[2] {
+    return [3, 9];
+}
+
+func use(s: str): i32 {
+    return i32(len(s));
+}
+
+let n: i32 = use($"{i32(mk()[0])}");
+
+func main(): i32 {
+    return n;
+}
+"#;
+    assert_run_exit("pin-template-arg", template, 1);
+}
+
+/// An impure operand under a call argument stores once; the guard and the
+/// read share the stored value.
+#[test]
+fn should_single_evaluate_operands_under_call_arguments() {
+    let source = r#"module spec.eei.argoperand;
+
+let calls: i32 = 0;
+
+func idx(): i32 {
+    calls = calls + 1;
+    return 0;
+}
+
+func g(v: i32): i32 {
+    return v;
+}
+
+let s: u8[2] = [7, 2];
+let x: i32 = g(i32(s[idx()]));
+
+func main(): i32 {
+    return calls * 10 + x;
+}
+"#;
+    assert_run_exit("pin-arg-operand", source, 17);
+}

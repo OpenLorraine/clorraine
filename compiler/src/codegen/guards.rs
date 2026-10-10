@@ -876,7 +876,7 @@ impl<'a> Emitter<'a> {
     ///
     /// Float division is IEEE-defined and never faults, so only an integer
     /// operation gets a guard.
-    fn emit_division_guard(&mut self, left: &Value, right: &Value) {
+    pub(super) fn emit_division_guard(&mut self, left: &Value, right: &Value) {
         if let Some(condition) = self.division_guard_condition(left, right) {
             self.push(&format!(
                 "    if ({condition}) cl_trap(\"E11210\", \"integer division by zero\");"
@@ -908,7 +908,7 @@ impl<'a> Emitter<'a> {
     /// unsigned `usize` so a signed index does not trigger
     /// `-Werror=sign-compare`; the negative check runs first, so the cast
     /// never sees a value that wrapped.
-    fn emit_bounds_guard(&mut self, base: &Value, index: &Value) {
+    pub(super) fn emit_bounds_guard(&mut self, base: &Value, index: &Value) {
         if let Some(condition) = self.bounds_guard_condition(base, index) {
             self.push(&format!(
                 "    if ({condition}) cl_trap(\"E11211\", \"index out of range\");"
@@ -954,7 +954,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// Emits the float-to-integer range guard.
-    fn emit_float_guard(&mut self, value: &Value, target: &Ty) {
+    pub(super) fn emit_float_guard(&mut self, value: &Value, target: &Ty) {
         if let Some(condition) = self.float_guard_condition(value, target) {
             self.push(&format!(
                 "    if ({condition}) cl_trap(\"E11212\", \"float-to-integer conversion out of range\");"

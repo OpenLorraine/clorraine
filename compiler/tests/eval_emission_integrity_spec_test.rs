@@ -332,7 +332,7 @@ func main(): i32 {
     return a[1];
 }
 "#;
-    let output = run_host("init-whole", source);
+    let output = run_memory("init-whole", source);
     assert_exit("init-whole", &output, 2);
 }
 
@@ -351,7 +351,7 @@ func main(): i32 {
     return b;
 }
 "#;
-    let output = run_host("init-element", source);
+    let output = run_memory("init-element", source);
     assert_exit("init-element", &output, 2);
 }
 
@@ -374,7 +374,7 @@ func main(): i32 {
     return c[1];
 }
 "#;
-    let output = run_host("init-member", source);
+    let output = run_memory("init-member", source);
     assert_exit("init-member", &output, 2);
 }
 
@@ -400,7 +400,7 @@ func main(): i32 {
     return d + e;
 }
 "#;
-    let output = run_host("init-args", source);
+    let output = run_memory("init-args", source);
     assert_exit("init-args", &output, 14);
 }
 
@@ -425,7 +425,7 @@ func main(): i32 {
     return g[0];
 }
 "#;
-    let output = run_host("init-cond", source);
+    let output = run_memory("init-cond", source);
     assert_exit("init-cond", &output, 6);
 }
 
@@ -456,7 +456,7 @@ func main(): i32 {
     return calls;
 }
 "#;
-    let output = run_host("guard-once", source);
+    let output = run_memory("guard-once", source);
     assert_exit("guard-once", &output, 1);
 }
 

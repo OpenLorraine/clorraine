@@ -755,17 +755,12 @@ impl<'a> Emitter<'a> {
                 return;
             }
         }
-        let lowered = self.materialize_fixed_array_calls(&lowered, None);
-        // The guards and the store must read one evaluation of every impure
-        // operand, so a divisor, index, or cast operand is stored into an init
-        // local before the guards that check it are emitted.
-        let lowered = self.materialize_guarded_sub_operands(&lowered, None);
+        // One left-to-right walk binds every fixed-array call, stores every
+        // impure operand at its position, and emits each guard where the
+        // operand it checks is evaluated, so evaluation order and per-branch
+        // laziness match the function path.
+        let lowered = self.materialize_init_value(&lowered, None);
         let rendered = self.value(&lowered);
-        // A module initializer runs at startup, so it carries the same
-        // arithmetic guards a function statement would: a division by zero,
-        // an out-of-range index, or a bad float conversion must fault with its
-        // diagnostic instead of trapping on undefined behavior.
-        self.emit_guards(&lowered);
         self.push(&format!("    {target} = {rendered};"));
     }
 
@@ -816,19 +811,30 @@ impl<'a> Emitter<'a> {
 
     /// Prepares a fill value so no sub-expression runs more than once.
     ///
-    /// A conditional's condition runs exactly once, before the element
-    /// stores, and a nested condition or run-time index runs only when its
-    /// enclosing arm is chosen, so the prepared value reads an init local per
-    /// stored operand and each local's assignment carries its enclosing
-    /// guard. Every other form is safe to render per element.
+    /// The materializing walk runs first, in source order: a call that needs a
+    /// place is bound, an impure operand stores, and a lazily evaluated
+    /// position keeps its stores under its own guard. Then a conditional's
+    /// condition runs exactly once, before the element stores, and a nested
+    /// condition or run-time index runs only when its enclosing arm is chosen,
+    /// so the prepared value reads an init local per stored operand and each
+    /// local's assignment carries its enclosing guard. Every other form is
+    /// safe to render per element.
     fn prepare_fill_value(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        let value = self.materialize_init_value(value, guard);
         match &value.kind {
             ValueKind::Conditional {
                 condition,
                 then_value,
                 else_value,
             } => {
-                let (local_name, local) = self.materialize_init_local(condition, guard, "false");
+                // The walk left the condition alone unless an arm needed it;
+                // when it did store the condition, that read is the branch
+                // guard, so the element stores and the arms share one
+                // evaluation.
+                let (local_name, local) = match stored_init_read_name(condition) {
+                    Some(name) => (name, (**condition).clone()),
+                    None => self.materialize_init_local(condition, guard, "false"),
+                };
                 let then_guard = match guard {
                     Some(enclosing) => format!("{enclosing} && {local_name}"),
                     None => local_name.clone(),
@@ -878,7 +884,7 @@ impl<'a> Emitter<'a> {
             // operands and conditions run once, on the path that reaches the
             // call.
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
-                let value = self.prepare_call_arguments(value, guard);
+                let value = self.prepare_call_arguments(&value, guard);
                 let zero = self.empty_state(&value.ty);
                 let (_, local) = self.materialize_init_local(&value, guard, &zero);
                 local
@@ -887,26 +893,23 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Stores a value into a fresh init local and returns the local's name and
-    /// its read value.
+    /// Stores a walked value into a fresh init local and returns the local's
+    /// name and its read value.
     ///
-    /// With a guard, the store runs only when the guard holds — a nested
-    /// condition or a run-time index is evaluated only on the path that
-    /// reaches it — and the local starts at `zero` so reads on the untaken
-    /// path stay defined. A fixed-array call result has no C expression form,
-    /// so the local is the call's hidden destination: it starts at the empty
-    /// state and the call writes into it, with the call's own argument guards
-    /// on the same path.
+    /// The caller walks the value first, so every bind and operand store is
+    /// already in source order. With a guard, the store runs only when the
+    /// guard holds — a nested condition or a run-time index is evaluated only
+    /// on the path that reaches it — and the local starts at `zero` so reads
+    /// on the untaken path stay defined. A fixed-array call result has no C
+    /// expression form, so the local is the call's hidden destination: it
+    /// starts at the empty state and the call writes into it, with the call's
+    /// own argument guards inside the same guard.
     fn materialize_init_local(
         &mut self,
         value: &Value,
         guard: Option<&str>,
         zero: &str,
     ) -> (String, Value) {
-        // The operand's impure guarded sub-expressions are stored first, in
-        // source evaluation order, so the guards emitted below and the stored
-        // value read one evaluation.
-        let value = self.materialize_guarded_sub_operands(value, guard);
         let name = self.next_init_local();
         if self.substitute(&value.ty).is_fixed_array()
             && matches!(
@@ -919,16 +922,17 @@ impl<'a> Emitter<'a> {
                 "    {} = {empty};",
                 declarator(&value.ty, &name, &self.sema.table)
             ));
-            let call = self.destination_call(&value, &name);
+            let call = self.destination_call(value, &name);
             match guard {
                 Some(enclosing) => {
+                    // The walk left the guarded argument guards to this store,
+                    // so they run only on the path that reaches the call.
                     self.push(&format!("    if ({enclosing}) {{"));
-                    self.emit_guards(&value);
+                    self.emit_guards(value);
                     self.push(&format!("        {call};"));
                     self.push("    }");
                 }
                 None => {
-                    self.emit_guards(&value);
                     self.push(&format!("    {call};"));
                 }
             }
@@ -942,14 +946,13 @@ impl<'a> Emitter<'a> {
                     // The operand's own guards ride the guarded assignment, so a
                     // bounds or division check runs only on the path that reaches
                     // the operand.
-                    let rendered = self.guarded_value(&value);
+                    let rendered = self.guarded_value(value);
                     self.push(&format!("    if ({enclosing}) {{ {name} = {rendered}; }}"));
                 }
                 None => {
-                    // The operand's guards are statements before its store,
-                    // exactly as the single-assignment path emits them.
-                    self.emit_guards(&value);
-                    let rendered = self.value(&value);
+                    // The walk emitted the value's guards where its operands
+                    // are evaluated, so the store only reads them.
+                    let rendered = self.value(value);
                     self.push(&format!(
                         "    {} = {rendered};",
                         declarator(&value.ty, &name, &self.sema.table)
@@ -995,22 +998,102 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Rewrites a materialized operand so a guard and the value it guards
-    /// read one evaluation.
+    /// Materializes one module-initializer value for emission.
     ///
-    /// The function path stores an impure index, divisor, or cast operand
-    /// while it lowers the expression, so its guard pass reads the stored
-    /// value. The module initializer re-lowers from the syntax, so this
-    /// rewrite stores those operands into init locals in source evaluation
-    /// order; with a guard, a store runs only on the path that reaches the
-    /// operand. A conditional nested in the operand rewrites under the same
-    /// guard, so its parts keep one store per operand.
-    fn materialize_guarded_sub_operands(&mut self, value: &Value, guard: Option<&str>) -> Value {
+    /// The walk visits each sub-expression in source evaluation order and
+    /// prepares it where it stands:
+    ///
+    /// - a fixed-array-returning call has no C expression form — the callee
+    ///   writes through a hidden destination — so it binds into a fresh init
+    ///   local and the local reads where the call stood;
+    /// - an impure index, divisor, or cast operand stores once into an init
+    ///   local, and the guard that checks it is emitted right there, so the
+    ///   guard and the read share one evaluation and a later operand's effects
+    ///   cannot run before an earlier operand's trap;
+    /// - a conditional whose part binds or stores keeps the lazily evaluated
+    ///   position lazy: the condition stores once and each part runs under its
+    ///   branch guard;
+    /// - a short-circuit operand whose right side binds or stores restructures
+    ///   so the right side runs under the left operand's decision, with the
+    ///   operator's left-decided result (`false` for `&&`, `true` for `||`)
+    ///   when the left side already decides;
+    /// - array-literal elements, struct-literal fields, template placeholders,
+    ///   call arguments, and intrinsic arguments are walked too, because a
+    ///   destination-less call or a double-evaluated operand can hide in any
+    ///   of them.
+    ///
+    /// A part that needs nothing keeps its spelling, so a program the batch
+    /// does not affect re-emits byte-identically.
+    fn materialize_init_value(&mut self, value: &Value, guard: Option<&str>) -> Value {
         match &value.kind {
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } => {
+                let receiver = receiver
+                    .as_deref()
+                    .map(|inner| Box::new(self.materialize_init_value(inner, guard)));
+                let args = args
+                    .iter()
+                    .map(|arg| self.materialize_init_value(arg, guard))
+                    .collect();
+                let rewritten = Value::new(
+                    value.ty.clone(),
+                    ValueKind::Call {
+                        callee: callee.clone(),
+                        type_args: type_args.clone(),
+                        args,
+                        receiver,
+                    },
+                );
+                if self.substitute(&value.ty).is_fixed_array() {
+                    let zero = self.empty_state(&value.ty);
+                    let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
+                    return local;
+                }
+                rewritten
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                let callable = Box::new(self.materialize_init_value(callable, guard));
+                let args = args
+                    .iter()
+                    .map(|arg| self.materialize_init_value(arg, guard))
+                    .collect();
+                let rewritten = Value::new(
+                    value.ty.clone(),
+                    ValueKind::ClosureCall { callable, args },
+                );
+                if self.substitute(&value.ty).is_fixed_array() {
+                    let zero = self.empty_state(&value.ty);
+                    let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
+                    return local;
+                }
+                rewritten
+            }
+            ValueKind::Intrinsic {
+                name,
+                args,
+                type_arg,
+            } => Value::new(
+                value.ty.clone(),
+                ValueKind::Intrinsic {
+                    name: name.clone(),
+                    args: args
+                        .iter()
+                        .map(|arg| self.materialize_init_value(arg, guard))
+                        .collect(),
+                    type_arg: type_arg.clone(),
+                },
+            ),
             ValueKind::Index { base, index } => {
-                let base = self.materialize_guarded_sub_operands(base, guard);
-                let index = self.materialize_guarded_sub_operands(index, guard);
+                let base = self.materialize_init_value(base, guard);
+                let index = self.materialize_init_value(index, guard);
                 let index = self.store_impure_init_operand(&index, guard);
+                if guard.is_none() {
+                    self.emit_bounds_guard(&base, &index);
+                }
                 Value::new(
                     value.ty.clone(),
                     ValueKind::Index {
@@ -1022,7 +1105,7 @@ impl<'a> Emitter<'a> {
             ValueKind::Member { base, name } => Value::new(
                 value.ty.clone(),
                 ValueKind::Member {
-                    base: Box::new(self.materialize_guarded_sub_operands(base, guard)),
+                    base: Box::new(self.materialize_init_value(base, guard)),
                     name: name.clone(),
                 },
             ),
@@ -1030,18 +1113,65 @@ impl<'a> Emitter<'a> {
                 value.ty.clone(),
                 ValueKind::Unary {
                     op: *op,
-                    operand: Box::new(self.materialize_guarded_sub_operands(operand, guard)),
+                    operand: Box::new(self.materialize_init_value(operand, guard)),
                 },
             ),
             ValueKind::Binary { op, left, right } => {
-                let left = self.materialize_guarded_sub_operands(left, guard);
-                let rewritten = self.materialize_guarded_sub_operands(right, guard);
-                // The divisor carries the division guard, so an impure one is
-                // stored once.
-                let right = if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
-                    self.store_impure_init_operand(&rewritten, guard)
+                if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr)
+                    && self.init_value_needs_materialization(right)
+                {
+                    // The right operand runs only when the left side decides,
+                    // so its binds and stores live inside that decision and the
+                    // operator's result reads a local. The left side always
+                    // evaluates — under the enclosing guard when there is one
+                    // — and the left-decided value stands when the right side
+                    // is skipped.
+                    let left = self.materialize_init_value(left, guard);
+                    let left_c = match guard {
+                        Some(enclosing) => {
+                            format!("{enclosing} && {}", self.guarded_value(&left))
+                        }
+                        None => self.guarded_value(&left),
+                    };
+                    let (zero, decision) = match op {
+                        BinaryOp::LogicalAnd => ("0", left_c),
+                        _ => ("1", format!("!({left_c})")),
+                    };
+                    let name = self.next_init_local();
+                    self.push(&format!(
+                        "    {} = {zero};",
+                        declarator(&value.ty, &name, &self.sema.table)
+                    ));
+                    self.push(&format!("    if ({decision}) {{"));
+                    let right = self.materialize_init_value(right, None);
+                    let rendered = self.value(&right);
+                    self.push(&format!("        {name} = {rendered};"));
+                    self.push("    }");
+                    return Value::new(
+                        value.ty.clone(),
+                        ValueKind::Place(Place {
+                            base: PlaceBase::Local(name),
+                            projections: Vec::new(),
+                            ty: value.ty.clone(),
+                        }),
+                    );
+                }
+                let left = self.materialize_init_value(left, guard);
+                let right = if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
+                    // Nothing in the right side needs preparing, so the lazy
+                    // form keeps its spelling and its guards stay embedded.
+                    (**right).clone()
                 } else {
-                    rewritten
+                    let right = self.materialize_init_value(right, guard);
+                    let right = if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                        self.store_impure_init_operand(&right, guard)
+                    } else {
+                        right
+                    };
+                    if guard.is_none() && matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                        self.emit_division_guard(&left, &right);
+                    }
+                    right
                 };
                 Value::new(
                     value.ty.clone(),
@@ -1053,8 +1183,15 @@ impl<'a> Emitter<'a> {
                 )
             }
             ValueKind::Cast { to, value: inner } => {
-                let inner = self.materialize_guarded_sub_operands(inner, guard);
+                let inner = self.materialize_init_value(inner, guard);
                 let inner = self.store_impure_init_operand(&inner, guard);
+                if guard.is_none() {
+                    let target = self.substitute(&value.ty);
+                    let source = self.substitute(&inner.ty);
+                    if target.is_integer() && source.is_numeric() && !source.is_integer() {
+                        self.emit_float_guard(&inner, &target);
+                    }
+                }
                 Value::new(
                     value.ty.clone(),
                     ValueKind::Cast {
@@ -1067,13 +1204,82 @@ impl<'a> Emitter<'a> {
                 condition,
                 then_value,
                 else_value,
-            } => Value::new(
+            } => {
+                let condition = self.materialize_init_value(condition, guard);
+                let arms_need = self.init_value_needs_materialization(then_value)
+                    || self.init_value_needs_materialization(else_value);
+                if !arms_need {
+                    return Value::new(
+                        value.ty.clone(),
+                        ValueKind::Conditional {
+                            condition: Box::new(condition),
+                            then_value: then_value.clone(),
+                            else_value: else_value.clone(),
+                        },
+                    );
+                }
+                // A part binds or stores, so the condition stores once and
+                // each part runs under its branch guard: the binds and stores
+                // reach the parts only on the chosen path.
+                let (local_name, local) = self.materialize_init_local(&condition, guard, "false");
+                let (then_guard, else_guard) = match guard {
+                    Some(enclosing) => (
+                        format!("{enclosing} && {local_name}"),
+                        format!("{enclosing} && !{local_name}"),
+                    ),
+                    None => (local_name.clone(), format!("!{local_name}")),
+                };
+                let then_value = self.materialize_init_value(then_value, Some(&then_guard));
+                let else_value = self.materialize_init_value(else_value, Some(&else_guard));
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Conditional {
+                        condition: Box::new(local),
+                        then_value: Box::new(then_value),
+                        else_value: Box::new(else_value),
+                    },
+                )
+            }
+            ValueKind::ArrayLit { elements, fill } => Value::new(
                 value.ty.clone(),
-                ValueKind::Conditional {
-                    condition: Box::new(self.materialize_guarded_sub_operands(condition, guard)),
-                    then_value: Box::new(self.materialize_guarded_sub_operands(then_value, guard)),
-                    else_value: Box::new(self.materialize_guarded_sub_operands(else_value, guard)),
+                ValueKind::ArrayLit {
+                    elements: elements
+                        .iter()
+                        .map(|element| self.materialize_init_value(element, guard))
+                        .collect(),
+                    fill: fill
+                        .as_deref()
+                        .map(|fill| Box::new(self.materialize_init_value(fill, guard))),
                 },
+            ),
+            ValueKind::StructLit { name, fields } => Value::new(
+                value.ty.clone(),
+                ValueKind::StructLit {
+                    name: name.clone(),
+                    fields: fields
+                        .iter()
+                        .map(|(field_name, field_value)| {
+                            (
+                                field_name.clone(),
+                                self.materialize_init_value(field_value, guard),
+                            )
+                        })
+                        .collect(),
+                },
+            ),
+            ValueKind::Template(pieces) => Value::new(
+                value.ty.clone(),
+                ValueKind::Template(
+                    pieces
+                        .iter()
+                        .map(|piece| match piece {
+                            ValuePiece::Literal(text) => ValuePiece::Literal(text.clone()),
+                            ValuePiece::Placeholder(inner) => {
+                                ValuePiece::Placeholder(self.materialize_init_value(inner, guard))
+                            }
+                        })
+                        .collect(),
+                ),
             ),
             _ => value.clone(),
         }
@@ -1131,237 +1337,71 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Binds every fixed-array call result in a module initializer into an
-    /// init local.
+    /// True when the materializing walk would bind or store inside a value.
     ///
-    /// A fixed-array-returning call has no C expression form: the callee
-    /// writes through a hidden destination the emitter must name. The rewrite
-    /// binds each such call into a fresh init local and reads the local where
-    /// the call stood, so the surrounding value keeps its ordinary form. A
-    /// conditional whose part binds stores its condition first and binds the
-    /// part under the choice, so the guards and the read share one evaluation;
-    /// a value with no fixed-array call keeps its spelling.
-    fn materialize_fixed_array_calls(&mut self, value: &Value, guard: Option<&str>) -> Value {
-        let rewritten = match &value.kind {
-            ValueKind::Call {
-                callee,
-                type_args,
-                args,
-                receiver,
-            } => {
-                let receiver = receiver
-                    .as_deref()
-                    .map(|inner| Box::new(self.materialize_fixed_array_calls(inner, guard)));
-                let args = args
-                    .iter()
-                    .map(|arg| self.materialize_fixed_array_calls(arg, guard))
-                    .collect();
-                Value::new(
-                    value.ty.clone(),
-                    ValueKind::Call {
-                        callee: callee.clone(),
-                        type_args: type_args.clone(),
-                        args,
-                        receiver,
-                    },
-                )
-            }
-            ValueKind::ClosureCall { callable, args } => {
-                let callable = Box::new(self.materialize_fixed_array_calls(callable, guard));
-                let args = args
-                    .iter()
-                    .map(|arg| self.materialize_fixed_array_calls(arg, guard))
-                    .collect();
-                Value::new(value.ty.clone(), ValueKind::ClosureCall { callable, args })
-            }
-            ValueKind::Intrinsic {
-                name,
-                args,
-                type_arg,
-            } => Value::new(
-                value.ty.clone(),
-                ValueKind::Intrinsic {
-                    name: name.clone(),
-                    args: args
-                        .iter()
-                        .map(|arg| self.materialize_fixed_array_calls(arg, guard))
-                        .collect(),
-                    type_arg: type_arg.clone(),
-                },
-            ),
-            ValueKind::Index { base, index } => Value::new(
-                value.ty.clone(),
-                ValueKind::Index {
-                    base: Box::new(self.materialize_fixed_array_calls(base, guard)),
-                    index: Box::new(self.materialize_fixed_array_calls(index, guard)),
-                },
-            ),
-            ValueKind::Member { base, name } => Value::new(
-                value.ty.clone(),
-                ValueKind::Member {
-                    base: Box::new(self.materialize_fixed_array_calls(base, guard)),
-                    name: name.clone(),
-                },
-            ),
-            ValueKind::Unary { op, operand } => Value::new(
-                value.ty.clone(),
-                ValueKind::Unary {
-                    op: *op,
-                    operand: Box::new(self.materialize_fixed_array_calls(operand, guard)),
-                },
-            ),
-            ValueKind::Binary { op, left, right } => {
-                // A short-circuit operand runs only when the left side
-                // decides, so its binds are statements under that decision and
-                // the operator's result is read from a local; the left side
-                // always evaluates, so it keeps its ordinary spelling.
-                if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr)
-                    && self.value_contains_fixed_array_call(right)
-                {
-                    let left = self.materialize_fixed_array_calls(left, guard);
-                    self.emit_guards(&left);
-                    let left_c = self.value(&left);
-                    let name = self.next_init_local();
-                    let empty = self.empty_state(&value.ty);
-                    self.push(&format!(
-                        "    {} = {empty};",
-                        declarator(&value.ty, &name, &self.sema.table)
-                    ));
-                    let decision = match op {
-                        BinaryOp::LogicalAnd => left_c,
-                        _ => format!("!({left_c})"),
-                    };
-                    self.push(&format!("    if ({decision}) {{"));
-                    let right = self.materialize_fixed_array_calls(right, None);
-                    self.emit_guards(&right);
-                    let rendered = self.value(&right);
-                    self.push(&format!("        {name} = {rendered};"));
-                    self.push("    }");
-                    return Value::new(
-                        value.ty.clone(),
-                        ValueKind::Place(Place {
-                            base: PlaceBase::Local(name),
-                            projections: Vec::new(),
-                            ty: value.ty.clone(),
-                        }),
-                    );
-                }
-                Value::new(
-                    value.ty.clone(),
-                    ValueKind::Binary {
-                        op: *op,
-                        left: Box::new(self.materialize_fixed_array_calls(left, guard)),
-                        right: Box::new(self.materialize_fixed_array_calls(right, guard)),
-                    },
-                )
-            }
-            ValueKind::Cast { to, value: inner } => Value::new(
-                value.ty.clone(),
-                ValueKind::Cast {
-                    to: to.clone(),
-                    value: Box::new(self.materialize_fixed_array_calls(inner, guard)),
-                },
-            ),
-            ValueKind::Conditional {
-                condition,
-                then_value,
-                else_value,
-            } => {
-                let arm_binds = self.value_contains_fixed_array_call(then_value)
-                    || self.value_contains_fixed_array_call(else_value);
-                if arm_binds {
-                    // An arm's call binds under the choice, so the condition is
-                    // stored once and both the binding guards and the read
-                    // share it, exactly as the fill preparation does.
-                    let condition = self.materialize_fixed_array_calls(condition, guard);
-                    let (local_name, local) =
-                        self.materialize_init_local(&condition, guard, "false");
-                    let (then_guard, else_guard) = match guard {
-                        Some(enclosing) => (
-                            format!("{enclosing} && {local_name}"),
-                            format!("{enclosing} && !{local_name}"),
-                        ),
-                        None => (local_name.clone(), format!("!{local_name}")),
-                    };
-                    let then_value =
-                        self.materialize_fixed_array_calls(then_value, Some(&then_guard));
-                    let else_value =
-                        self.materialize_fixed_array_calls(else_value, Some(&else_guard));
-                    return Value::new(
-                        value.ty.clone(),
-                        ValueKind::Conditional {
-                            condition: Box::new(local),
-                            then_value: Box::new(then_value),
-                            else_value: Box::new(else_value),
-                        },
-                    );
-                }
-                Value::new(
-                    value.ty.clone(),
-                    ValueKind::Conditional {
-                        condition: Box::new(self.materialize_fixed_array_calls(condition, guard)),
-                        then_value: then_value.clone(),
-                        else_value: else_value.clone(),
-                    },
-                )
-            }
-            _ => return value.clone(),
-        };
-        if self.substitute(&value.ty).is_fixed_array()
-            && matches!(
-                value.kind,
-                ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
-            )
-        {
-            let zero = self.empty_state(&value.ty);
-            let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
-            return local;
-        }
-        rewritten
-    }
-
-    /// True when a value contains a fixed-array call result.
-    ///
-    /// The binding walk uses the answer to decide whether a conditional's arms
-    /// bind — and so whether its condition needs one stored evaluation —
-    /// without emitting anything.
-    fn value_contains_fixed_array_call(&self, value: &Value) -> bool {
+    /// The walk uses the answer to decide whether a lazily evaluated position
+    /// — a conditional's arms or a short-circuit right operand — needs its
+    /// guard structured, without emitting anything. The predicate mirrors the
+    /// walk's own triggers: a fixed-array call result, an impure index,
+    /// divisor, or cast operand, and the same recursively. A part the walk
+    /// would leave alone answers `false`, so its lazy form keeps its spelling.
+    fn init_value_needs_materialization(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Call { args, receiver, .. } => {
                 self.substitute(&value.ty).is_fixed_array()
-                    || receiver.as_deref().is_some_and(|receiver| {
-                        self.value_contains_fixed_array_call(receiver)
-                    })
-                    || args.iter().any(|arg| self.value_contains_fixed_array_call(arg))
+                    || receiver
+                        .as_deref()
+                        .is_some_and(|receiver| self.init_value_needs_materialization(receiver))
+                    || args.iter().any(|arg| self.init_value_needs_materialization(arg))
             }
             ValueKind::ClosureCall { callable, args } => {
                 self.substitute(&value.ty).is_fixed_array()
-                    || self.value_contains_fixed_array_call(callable)
-                    || args.iter().any(|arg| self.value_contains_fixed_array_call(arg))
+                    || self.init_value_needs_materialization(callable)
+                    || args.iter().any(|arg| self.init_value_needs_materialization(arg))
             }
             ValueKind::Intrinsic { args, .. } => {
-                args.iter().any(|arg| self.value_contains_fixed_array_call(arg))
+                args.iter().any(|arg| self.init_value_needs_materialization(arg))
             }
             ValueKind::Index { base, index } => {
-                self.value_contains_fixed_array_call(base)
-                    || self.value_contains_fixed_array_call(index)
+                self.init_value_needs_materialization(base)
+                    || self.init_value_needs_materialization(index)
+                    || !init_operand_is_pure(index)
             }
-            ValueKind::Member { base, .. } => self.value_contains_fixed_array_call(base),
-            ValueKind::Unary { operand, .. } => self.value_contains_fixed_array_call(operand),
-            ValueKind::Binary { left, right, .. } => {
-                self.value_contains_fixed_array_call(left)
-                    || self.value_contains_fixed_array_call(right)
+            ValueKind::Member { base, .. } => self.init_value_needs_materialization(base),
+            ValueKind::Unary { operand, .. } => self.init_value_needs_materialization(operand),
+            ValueKind::Binary { op, left, right } => {
+                self.init_value_needs_materialization(left)
+                    || self.init_value_needs_materialization(right)
+                    || (matches!(op, BinaryOp::Div | BinaryOp::Rem)
+                        && !init_operand_is_pure(right))
             }
-            ValueKind::Cast { value: inner, .. } => self.value_contains_fixed_array_call(inner),
+            ValueKind::Cast { value: inner, .. } => {
+                self.init_value_needs_materialization(inner) || !init_operand_is_pure(inner)
+            }
             ValueKind::Conditional {
                 condition,
                 then_value,
                 else_value,
             } => {
-                self.value_contains_fixed_array_call(condition)
-                    || self.value_contains_fixed_array_call(then_value)
-                    || self.value_contains_fixed_array_call(else_value)
+                self.init_value_needs_materialization(condition)
+                    || self.init_value_needs_materialization(then_value)
+                    || self.init_value_needs_materialization(else_value)
             }
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .any(|(_, field)| self.init_value_needs_materialization(field)),
+            ValueKind::ArrayLit { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| self.init_value_needs_materialization(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.init_value_needs_materialization(fill))
+            }
+            ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+                ValuePiece::Literal(_) => false,
+                ValuePiece::Placeholder(inner) => self.init_value_needs_materialization(inner),
+            }),
             _ => false,
         }
     }
@@ -1666,15 +1706,8 @@ impl<'a> Emitter<'a> {
     /// a temporary, and the renderer uses the operand through the
     /// array-to-pointer decay.
     fn init_intrinsic_arg(&mut self, value: Value) -> Value {
-        if init_operand_is_pure(&value) {
-            return value;
-        }
-        if value.ty.is_fixed_array()
-            && !matches!(
-                value.kind,
-                ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
-            )
-        {
+        let value = self.materialize_init_value(&value, None);
+        if init_operand_is_pure(&value) || value.ty.is_fixed_array() {
             return value;
         }
         let (_, local) = self.materialize_init_local(&value, None, "0");
@@ -1994,6 +2027,26 @@ fn fill_element_value(value: &Value, index: usize, element_ty: &Ty) -> Option<Va
                 index: Box::new(Value::new(Ty::usize_ty(), ValueKind::Int(index as i128))),
             },
         )),
+    }
+}
+
+/// The local name a stored init read names, when the value is one.
+///
+/// The materializing walk spells the read of an init local it stored as a
+/// bare place. Only the walk and the fill preparation create those locals — a
+/// module initializer has no source locals — so a place over an `__cl_itmp`
+/// name is exactly a value some step already stored, and a caller can reuse
+/// the stored read instead of storing a second copy.
+fn stored_init_read_name(value: &Value) -> Option<String> {
+    let ValueKind::Place(place) = &value.kind else {
+        return None;
+    };
+    if !place.projections.is_empty() {
+        return None;
+    }
+    match &place.base {
+        PlaceBase::Local(name) if name.starts_with("__cl_itmp") => Some(name.clone()),
+        _ => None,
     }
 }
 
