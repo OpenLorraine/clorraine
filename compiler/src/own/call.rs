@@ -129,12 +129,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // The field itself is the callable value. It is built directly rather
         // than through `lower_value`, which would look the field expression's
         // recorded type up and find none: the type stage records the base's
-        // type and the call's result, not an internal callee.
+        // type and the call's result, not an internal callee. The receiver
+        // aggregate is only read for that field, so its other owning fields
+        // need an owner: a fresh literal or call result routes through the
+        // ownerless-root binder, whose cleanup releases the siblings. A named
+        // place stays untouched, and a conditionally evaluated receiver keeps
+        // its deferred form.
         let kind = match &callee.kind {
-            ExprKind::Member { base, name } => ValueKind::Member {
-                base: Box::new(self.lower_value(base)),
-                name: name.clone(),
-            },
+            ExprKind::Member { base, name } => {
+                let base = self.lower_value(base);
+                let base = if self.defer_move_outs == 0 {
+                    self.bind_ownerless_projection_root(base)
+                } else {
+                    self.bind_guarded_projection_root(base)
+                };
+                ValueKind::Member {
+                    base: Box::new(base),
+                    name: name.clone(),
+                }
+            }
             ExprKind::Qualified(name) => ValueKind::Path(name.segments.clone()),
             _ => return None,
         };

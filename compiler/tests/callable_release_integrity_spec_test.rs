@@ -1329,3 +1329,273 @@ func main(): i32 {
     assert_no_asan("condorder", &output);
     assert_exit("condorder", &output, 0);
 }
+
+/// A field call through a temporary receiver releases the receiver's siblings.
+///
+/// The receiver aggregate is a fresh struct literal or a call result, so its
+/// other owning fields have no owner unless the call path binds the receiver
+/// root for cleanup; each call releases them exactly once (red at the phase
+/// head: 20 bytes leak across the two calls).
+#[test]
+fn should_release_a_temporary_func_field_receivers_siblings() {
+    let source = r#"module spec.cri.temprec;
+
+import { String, stringOf } from std.text;
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+struct Holder { call: func(i32): i32; s: String; }
+
+func makeH(): Holder {
+    return Holder { call: addOne, s: stringOf("x") };
+}
+
+func main(): i32 {
+    let a: i32 = Holder { call: addOne, s: stringOf("x") }.call(5);
+    let b: i32 = makeH().call(5);
+    return a + b - 12;
+}
+"#;
+    let output = run_memory("temprec", source);
+    assert_no_asan("temprec", &output);
+    assert_exit("temprec", &output, 0);
+}
+
+/// An owned projection backing inside a `defer` body releases per execution.
+///
+/// The defer body's view binding takes its backing from a call temporary, so
+/// a block-scope owner must be created and released once per execution of the
+/// body (red at the phase head: 11 bytes leak for the single execution).
+#[test]
+fn should_release_an_owned_projection_backing_inside_a_defer() {
+    let source = r#"module spec.cri.deferview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+let total: i32 = 0;
+
+func main(): i32 {
+    defer {
+        let v: str = mk().v;
+        total = total + i32(len(v));
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("deferview", source);
+    assert_no_asan("deferview", &output);
+    assert_exit("deferview", &output, 0);
+}
+
+/// An owned temporary at a func-value call inside a `defer` body releases.
+///
+/// The deferred call passes a fresh owned temporary to a lend parameter, so
+/// the caller binds and releases it; the block's cleanup runs the release
+/// once per execution (red at the phase head: 10 bytes leak).
+#[test]
+fn should_release_an_owned_temporary_at_a_func_call_inside_a_defer() {
+    let source = r#"module spec.cri.defercall;
+
+import { String, stringOf } from std.text;
+
+let total: i32 = 0;
+
+func use(s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let f: func(String): i32 = use;
+    defer {
+        total = total + f(stringOf("x"));
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("defercall", source);
+    assert_no_asan("defercall", &output);
+    assert_exit("defercall", &output, 0);
+}
+
+/// A mixed conditional view's taken arm is owned on its own path.
+///
+/// The first loop takes the call arm, which must be owned by the view
+/// binding's scope; the second takes the place arm, which stays the caller's
+/// borrow (red at the phase head: 33 bytes leak across the first loop's three
+/// iterations).
+#[test]
+fn should_release_a_mixed_conditional_views_taken_call_arm() {
+    let source = r#"module spec.cri.condview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func makeBox(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("cd") };
+    let c: bool = false;
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let v: str = (c ? b : makeBox()).v;
+        n = n + i32(len(v));
+        i = i + 1;
+    }
+    let d: bool = true;
+    let m: i32 = 0;
+    let j: i32 = 0;
+    while (j < 3) {
+        let v: str = (d ? b : makeBox()).v;
+        m = m + i32(len(v));
+        j = j + 1;
+    }
+    return n + m - 12;
+}
+"#;
+    let output = run_memory("condview", source);
+    assert_no_asan("condview", &output);
+    assert_exit("condview", &output, 0);
+}
+
+/// Both owning conditional view arms release their siblings.
+///
+/// Both arms project a fresh struct literal, so the taken arm's backing and
+/// every sibling field must release on that path (red at the phase head:
+/// 33 bytes leak across three iterations).
+#[test]
+fn should_release_both_owning_conditional_view_arms_siblings() {
+    let source = r#"module spec.cri.condviewstruct;
+
+import { String, stringOf } from std.text;
+
+struct P { a: String; b: String; }
+struct Q { a: String; b: String; }
+
+func main(): i32 {
+    let c: bool = true;
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let v: str = c ? (P { a: stringOf("ab"), b: stringOf("cd") }).a : (Q { a: stringOf("ef"), b: stringOf("gh") }).a;
+        n = n + i32(len(v));
+        i = i + 1;
+    }
+    return n - 6;
+}
+"#;
+    let output = run_memory("condviewstruct", source);
+    assert_no_asan("condviewstruct", &output);
+    assert_exit("condviewstruct", &output, 0);
+}
+
+/// A view-array return reports like the single-view spelling of its derivation.
+///
+/// A function returning `str` from a temporary projection reports `E10036`
+/// ("derive from exactly one parameter"); the fixed array of the same
+/// derivation reports the same code once per site (red at the phase head: the
+/// array spelling is accepted and its backing leaks when called). An array
+/// derived from exactly one view lend parameter stays accepted by both
+/// spellings.
+#[test]
+fn should_report_a_view_array_return_like_the_single_view_spelling() {
+    let single = r#"module spec.cri.viewretsingle;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func make(): str {
+    return (Box { v: stringOf("ab") }).v;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "viewretsingle",
+        single,
+        "E10036",
+        &["view return does not derive from exactly one parameter"],
+        &[],
+    );
+
+    let array = r#"module spec.cri.viewretarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func make(): str[1] {
+    return [(Box { v: stringOf("ab") }).v];
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "viewretarray",
+        array,
+        "E10036",
+        &["view return does not derive from exactly one parameter"],
+        &[],
+    );
+
+    let control = r#"module spec.cri.viewretcontrol;
+
+func wrap(v: str): str[1] {
+    return [v];
+}
+
+func main(): i32 {
+    let s: str = "ab";
+    let a: str[1] = wrap(s);
+    return i32(len(a[0])) - 2;
+}
+"#;
+    let output = run_memory("viewretcontrol", control);
+    assert_no_asan("viewretcontrol", &output);
+    assert_exit("viewretcontrol", &output, 0);
+}
+
+/// A discarded owned call result releases at the statement's end.
+///
+/// The bare expression statement's result has no binding, so a statement
+/// temporary must own and release it once per execution (red at the phase
+/// head: 33 bytes leak across three iterations).
+#[test]
+fn should_release_a_discarded_owned_call_result() {
+    let source = r#"module spec.cri.discard;
+
+import { String, stringOf } from std.text;
+
+func make(): String {
+    return stringOf("ab");
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 3) {
+        make();
+        i = i + 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("discard", source);
+    assert_no_asan("discard", &output);
+    assert_exit("discard", &output, 0);
+}

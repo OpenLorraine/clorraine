@@ -489,3 +489,304 @@ func main(): i32 {
     assert_contains("lambdaarg", &emitted, "ClString __cl_owned0 = NULL;");
     assert_contains("lambdaarg", &emitted, "cl_lambda_0(__cl_owned0)");
 }
+
+/// A temporary func-field receiver binds its root for sibling release.
+///
+/// The receiver aggregate is only read for its `call` field, so a fresh
+/// literal or call result binds to an owned local; the call reads the field
+/// through that local and the local's cleanup releases the other owning
+/// fields. Each call site gets its own owner.
+#[test]
+fn should_bind_a_temporary_func_field_receivers_root() {
+    let source = r#"module spec.cri.impl.temprec;
+
+import { String, stringOf } from std.text;
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+struct Holder { call: func(i32): i32; s: String; }
+
+func makeH(): Holder {
+    return Holder { call: addOne, s: stringOf("x") };
+}
+
+func main(): i32 {
+    let a: i32 = Holder { call: addOne, s: stringOf("x") }.call(5);
+    let b: i32 = makeH().call(5);
+    return a + b - 12;
+}
+"#;
+    let emitted = emit_host("temprec", source);
+    assert_contains("temprec", &emitted, "ClHolder __cl_owned0 = {0};");
+    assert_contains("temprec", &emitted, "ClHolder __cl_owned1 = {0};");
+    assert_contains(
+        "temprec",
+        &emitted,
+        "__cl_owned0 = (ClHolder){ cl_spec_cri_impl_temprec_addOne",
+    );
+    assert_contains(
+        "temprec",
+        &emitted,
+        "__cl_owned1 = cl_spec_cri_impl_temprec_makeH();",
+    );
+    assert_contains("temprec", &emitted, "(__cl_owned0.call)(5)");
+    assert_contains("temprec", &emitted, "(__cl_owned1.call)(5)");
+    assert_contains(
+        "temprec",
+        &emitted,
+        "if (__cl_owned1.s) { FreeString(__cl_owned1.s); }",
+    );
+}
+
+/// A defer body's view owner stays in the block's own scope.
+///
+/// The body's view binding takes its backing from a call temporary inside the
+/// deferred copy, so the owner binds and releases there — once per execution
+/// of the body rather than once for the program.
+#[test]
+fn should_keep_a_defer_bodys_view_owner_in_the_block() {
+    let source = r#"module spec.cri.impl.deferview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+let total: i32 = 0;
+
+func main(): i32 {
+    defer {
+        let v: str = mk().v;
+        total = total + i32(len(v));
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("deferview", source);
+    assert_contains("deferview", &emitted, "ClBox __cl_owned0 = {0};");
+    assert_contains(
+        "deferview",
+        &emitted,
+        "__cl_owned0 = cl_spec_cri_impl_deferview_mk();",
+    );
+    assert_contains("deferview", &emitted, "v = cl_string_view(__cl_owned0.v);");
+    assert_contains(
+        "deferview",
+        &emitted,
+        "if (__cl_owned0.v) { FreeString(__cl_owned0.v); }",
+    );
+}
+
+/// A defer body's owned call temporary binds for caller-side release.
+///
+/// The deferred call passes a fresh owned temporary to a lend parameter, so
+/// the argument binds to an owner the deferred copy releases once per
+/// execution.
+#[test]
+fn should_bind_a_defer_bodys_owned_call_temporary() {
+    let source = r#"module spec.cri.impl.defercall;
+
+import { String, stringOf } from std.text;
+
+let total: i32 = 0;
+
+func use(s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let f: func(String): i32 = use;
+    defer {
+        total = total + f(stringOf("x"));
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("defercall", source);
+    assert_contains("defercall", &emitted, "ClString __cl_owned0 = NULL;");
+    assert_contains(
+        "defercall",
+        &emitted,
+        "__cl_owned0 = cl_std_text_stringOf(cl_str(\"x\"));",
+    );
+    assert_contains(
+        "defercall",
+        &emitted,
+        "cl_spec_cri_impl_defercall_total = (i32)((u32)cl_spec_cri_impl_defercall_total + (u32)f(__cl_owned0));",
+    );
+    assert_contains(
+        "defercall",
+        &emitted,
+        "if (__cl_owned0) { FreeString(__cl_owned0); }",
+    );
+}
+
+/// A mixed conditional view's owning arm roots in its own branch.
+///
+/// The place arm stays the caller's borrow; the taken call arm binds to a
+/// scope owner in the branch that evaluates it, and the view reads the select
+/// between the place and the owner.
+#[test]
+fn should_own_a_conditional_views_owning_arm_in_its_branch() {
+    let source = r#"module spec.cri.impl.condview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func makeBox(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("cd") };
+    let c: bool = false;
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let v: str = (c ? b : makeBox()).v;
+        n = n + i32(len(v));
+        i = i + 1;
+    }
+    return n - 6;
+}
+"#;
+    let emitted = emit_host("condview", source);
+    assert_contains("condview", &emitted, "ClBox __cl_owned0 = {0};");
+    assert_contains(
+        "condview",
+        &emitted,
+        "__cl_owned0 = cl_spec_cri_impl_condview_makeBox();",
+    );
+    assert_contains(
+        "condview",
+        &emitted,
+        "cl_string_view((__cl_tmp0 ? b : __cl_owned0).v)",
+    );
+    assert_contains(
+        "condview",
+        &emitted,
+        "if (__cl_owned0.v) { FreeString(__cl_owned0.v); }",
+    );
+}
+
+/// Both owning conditional view arms bind their own roots.
+///
+/// Each arm projects a fresh struct literal, so the taken arm's root gets its
+/// own owner in its own branch and both roots' siblings release with the view
+/// binding's scope.
+#[test]
+fn should_own_both_conditional_view_arms_roots() {
+    let source = r#"module spec.cri.impl.condviewstruct;
+
+import { String, stringOf } from std.text;
+
+struct P { a: String; b: String; }
+struct Q { a: String; b: String; }
+
+func main(): i32 {
+    let c: bool = true;
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let v: str = c ? (P { a: stringOf("ab"), b: stringOf("cd") }).a : (Q { a: stringOf("ef"), b: stringOf("gh") }).a;
+        n = n + i32(len(v));
+        i = i + 1;
+    }
+    return n - 6;
+}
+"#;
+    let emitted = emit_host("condviewstruct", source);
+    assert_contains("condviewstruct", &emitted, "ClP __cl_owned0 = {0};");
+    assert_contains("condviewstruct", &emitted, "ClQ __cl_owned1 = {0};");
+    assert_contains(
+        "condviewstruct",
+        &emitted,
+        "__cl_owned0 = (ClP){ cl_std_text_stringOf(cl_str(\"ab\")), cl_std_text_stringOf(cl_str(\"cd\")) };",
+    );
+    assert_contains(
+        "condviewstruct",
+        &emitted,
+        "__cl_owned1 = (ClQ){ cl_std_text_stringOf(cl_str(\"ef\")), cl_std_text_stringOf(cl_str(\"gh\")) };",
+    );
+    assert_contains(
+        "condviewstruct",
+        &emitted,
+        "if (__cl_owned0.b) { FreeString(__cl_owned0.b); }",
+    );
+}
+
+/// A discarded owned call result releases at the statement's end.
+///
+/// The bare expression statement stores its result in a statement temporary
+/// and the statement's release frees it; a duplicable result stays a plain
+/// call.
+#[test]
+fn should_release_a_discarded_owned_call_result_at_statement_end() {
+    let source = r#"module spec.cri.impl.discard;
+
+import { String, stringOf } from std.text;
+
+func make(): String {
+    return stringOf("ab");
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 3) {
+        make();
+        i = i + 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("discard", source);
+    assert_contains(
+        "discard",
+        &emitted,
+        "__cl_tmp0 = cl_spec_cri_impl_discard_make();",
+    );
+    assert_contains(
+        "discard",
+        &emitted,
+        "if (__cl_tmp0) { FreeString(__cl_tmp0); }",
+    );
+}
+
+/// The branch-owned conditional shapes re-emit byte-identically.
+#[test]
+fn should_emit_the_conditional_view_owner_byte_identically() {
+    let source = r#"module spec.cri.impl.condviewtwice;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func makeBox(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("cd") };
+    let c: bool = false;
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let v: str = (c ? b : makeBox()).v;
+        n = n + i32(len(v));
+        i = i + 1;
+    }
+    return n - 6;
+}
+"#;
+    let (first, second) = emit_twice("condviewtwice", source);
+    assert_eq!(
+        first, second,
+        "condviewtwice: the same program emitted two different translations"
+    );
+}

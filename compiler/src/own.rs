@@ -295,6 +295,13 @@ struct FunctionChecker<'a, 'd> {
     /// is emitted, so its records must survive.
     speculative_lowering: bool,
     report_diagnostics: bool,
+    /// True while lowering a `defer` body.
+    ///
+    /// The body's owners stay in the block's own scope instead of moving to
+    /// the function body: the deferred copy runs from every cleanup edge, so a
+    /// body-scope release would run once for the whole program rather than
+    /// once per execution.
+    defer_body: bool,
     /// The later-use duplicability duties this body owes its instances.
     ///
     /// The checker records each maybe-owning store whose source is used again;
@@ -405,6 +412,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             materialize_owned_temporaries: true,
             speculative_lowering: false,
             report_diagnostics: true,
+            defer_body: false,
             duplicable_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
             out_slot_duties: Vec::new(),

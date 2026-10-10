@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 23:12
-> **Progress**: 17/36 tasks (47%)
+> **Last Updated**: 2026-10-10 23:31
+> **Progress**: 25/36 tasks (69%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -164,7 +164,7 @@ phase review evidence.
 
 ## Phase 3: Owner release completeness
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `a9b42d7b83e7baa00a61a2097d8aabf481511f04` (the `056f978` tree)
 > **Lenses**: correctness + memory-safety + emission-integrity + semantics (view lifetimes)
 > **Reasoning**: high — five release holes; one release per created owner is the invariant
 
@@ -174,20 +174,20 @@ phase review evidence.
 **Objective**: Pin the five release cases (ASan runs plus the view-array diagnostic parity)
 before any implementation.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-8 – ST-12 — `compiler/tests/callable_release_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: leaks under ASan; the view-array case accepted-and-leaking)
+- [x] 3.1.1 [spec-author] Write specification tests from ST-8 – ST-12 — `compiler/tests/callable_release_integrity_spec_test.rs` ✅ (7 cases: temporary receiver, defer view, defer call, mixed conditional view, both owning arms, view-array parity, discarded result)
+- [x] 3.1.2 Run the spec suite and record the red phase (expected: leaks under ASan; the view-array case accepted-and-leaking) ✅ (plain: 1 red — view-array accepted; ASan: 6 red with the filed byte counts; ST-9a's 11 B proven on the host where the container's LSan misses it)
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-owner-release-completeness.md) §Proposed Changes
 **Objective**: Extend the owner/release machinery to each hole.
 
-- [ ] 3.2.1 Root temporary func-field receivers (DEF-139) — `compiler/src/own/call.rs`, `compiler/src/own/lower.rs`
-- [ ] 3.2.2 Enable defer-body materialization (DEF-158) — `compiler/src/own/statements.rs`
-- [ ] 3.2.3 Own conditional view arms (DEF-159) — `compiler/src/own/lower.rs`
-- [ ] 3.2.4 Cover view-element arrays in the elision/escape checks (DEF-163) — `compiler/src/own/place.rs`, `compiler/src/borrow.rs`
-- [ ] 3.2.5 Release discarded owned call statements (DEF-164) — `compiler/src/own/statements.rs`
-- [ ] 3.2.6 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 3.2.1 Root temporary func-field receivers (DEF-139) — `compiler/src/own/call.rs`, `compiler/src/own/lower.rs` ✅
+- [x] 3.2.2 Enable defer-body materialization (DEF-158) — `compiler/src/own/statements.rs` ✅ (plus the `defer_body` scope rule and the speculative-pass gate split)
+- [x] 3.2.3 Own conditional view arms (DEF-159) — `compiler/src/own/lower.rs` ✅ (per-arm branch roots in the three binders; the projection-arm predicate also closes DEF-175's conditional spelling)
+- [x] 3.2.4 Cover view-element arrays in the elision/escape checks (DEF-163) — `compiler/src/own/place.rs`, `compiler/src/borrow.rs` ✅ (the predicate extension drives the existing chec (the `is_elided_view` recursion covers the loan/provenance and E10036 paths)
+- [x] 3.2.5 Release discarded owned call statements (DEF-164) — `compiler/src/own/statements.rs` ✅
+- [x] 3.2.6 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (spec 35/35 plain and ASan; `make check` 58 suites)
 
 **Verify**: `make -C docker exec CMD="cargo test --test callable_release_integrity_spec_test"`; `make check`
 
@@ -197,8 +197,8 @@ before any implementation.
 **Objective**: Pin the owner shapes, release counts, and placement; record the phase review
 evidence.
 
-- [ ] 3.3.1 Write the Phase 3 implementation tests (owner binding shapes, release counts, registered-release placement, byte-identity) — `compiler/tests/callable_release_integrity_impl_test.rs`
-- [ ] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 3.3.1 Write the Phase 3 implementation tests (owner binding shapes, release counts, registered-release placement, byte-identity) — `compiler/tests/callable_release_integrity_impl_test.rs` ✅ (7 pins; impl 18/18)
+- [~] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-10 23:31; implementation committed; four-lens review in flight)
 
 **Deliverables**:
 - Five release holes closed with exactly-one-release semantics

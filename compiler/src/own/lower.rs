@@ -1483,20 +1483,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             // A conditional whose arms own their values is bound as one value:
             // the owned-conditional store adopts the chosen arm, so every
-            // arm's result is released exactly once. A conditional with a
-            // place-rooted arm keeps its inline read, because adopting it would
-            // empty storage the caller still owns.
+            // arm's result is released exactly once. An arm that projects out
+            // of an ownerless root, a place-rooted arm, and a view-typed
+            // result all keep the conditional inline and own each ownerless
+            // arm's root on its own path instead: the projected root's other
+            // fields must release, the place stays a borrow, and the fresh
+            // arm's storage releases with the statement.
             ValueKind::Conditional { .. } => {
-                if self.conditional_borrows_place(&value) {
-                    value
-                } else {
-                    let owning =
-                        !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
-                    if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
-                        self.materialize_owned_argument(value, false)
+                let whole_owned = (!self.sema.table.duplicable(&value.ty)
+                    || self.maybe_owns(&value.ty))
+                    && !is_view(&value.ty)
+                    && !value.ty.is_unknown();
+                let arm_fill = self.conditional_needs_arm_fill(&value)
+                    && !self.speculative_lowering
+                    && self.materialize_owned_temporaries;
+                if self.conditional_has_ownerless_projection_arm(&value) {
+                    if arm_fill {
+                        self.hoist_ownerless_conditional_arms(value)
                     } else {
                         value
                     }
+                } else if whole_owned && !self.conditional_borrows_place(&value) {
+                    self.materialize_owned_argument(value, false)
+                } else if arm_fill {
+                    self.hoist_ownerless_conditional_arms(value)
+                } else {
+                    value
                 }
             }
             _ => value,
@@ -1550,17 +1562,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     value
                 }
             }
+            // A conditional whose arms own their values is bound as one scoped
+            // owner: the owned-conditional store adopts the chosen arm once. An
+            // arm that projects out of an ownerless root, a place-rooted arm,
+            // and a view-typed result all keep the conditional inline and own
+            // each ownerless arm's root in its own branch instead: the
+            // projected root's other fields release, the place stays a borrow,
+            // and the backing lives in the view binding's scope.
             ValueKind::Conditional { .. } => {
-                if self.conditional_borrows_place(&value) {
-                    value
-                } else {
-                    let owning =
-                        !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
-                    if owning && !is_view(&value.ty) {
-                        self.materialize_scoped_owner(value)
+                let whole_owned = (!self.sema.table.duplicable(&value.ty)
+                    || self.maybe_owns(&value.ty))
+                    && !is_view(&value.ty)
+                    && !value.ty.is_unknown();
+                let arm_fill = self.conditional_needs_arm_fill(&value)
+                    && self.materialize_owned_temporaries;
+                if self.conditional_has_ownerless_projection_arm(&value) {
+                    if arm_fill {
+                        self.hoist_view_conditional_arms(value)
                     } else {
                         value
                     }
+                } else if whole_owned && !self.conditional_borrows_place(&value) {
+                    self.materialize_scoped_owner(value)
+                } else if arm_fill {
+                    self.hoist_view_conditional_arms(value)
+                } else {
+                    value
                 }
             }
             _ => value,
@@ -1579,7 +1606,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// recursion and the ownership rules match
     /// [`Self::bind_ownerless_projection_root`]; a chain that already roots in
     /// storage, or a root that owns nothing, is returned unchanged.
-    fn bind_guarded_projection_root(&mut self, value: Value) -> Value {
+    pub(super) fn bind_guarded_projection_root(&mut self, value: Value) -> Value {
         match value.kind {
             ValueKind::Member { base, name } => {
                 let base = self.bind_guarded_projection_root(*base);
@@ -1616,19 +1643,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A conditional whose arms own their values is bound as one value
             // through the deferred materialization: the guard emitter fills it
             // with the chosen arm on the evaluated path only, and its release
-            // drops that arm's storage. A conditional with a place-rooted arm
-            // keeps its inline read.
+            // drops that arm's storage. An arm that projects out of an
+            // ownerless root, a place-rooted arm, and a view-typed result all
+            // keep the conditional inline and bind each ownerless arm's root
+            // through the deferred fill instead: the projected root's other
+            // fields release, the place stays a borrow, and the fresh root
+            // releases on its own path.
             ValueKind::Conditional { .. } => {
-                if self.conditional_borrows_place(&value) {
-                    value
-                } else {
-                    let owning =
-                        !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
-                    if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
-                        self.materialize_guard_operand(value)
+                let whole_owned = (!self.sema.table.duplicable(&value.ty)
+                    || self.maybe_owns(&value.ty))
+                    && !is_view(&value.ty)
+                    && !value.ty.is_unknown();
+                let arm_fill = self.conditional_needs_arm_fill(&value)
+                    && !self.speculative_lowering
+                    && self.materialize_owned_temporaries;
+                if self.conditional_has_ownerless_projection_arm(&value) {
+                    if arm_fill {
+                        self.own_ownerless_conditional_arms(value)
                     } else {
                         value
                     }
+                } else if whole_owned && !self.conditional_borrows_place(&value) {
+                    self.materialize_guard_operand(value)
+                } else if arm_fill {
+                    self.own_ownerless_conditional_arms(value)
+                } else {
+                    value
                 }
             }
             _ => value,
@@ -1660,7 +1700,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if matches!(value.kind, ValueKind::Conditional { .. })
             && self.conditional_borrows_place(&value)
             && self.conditional_needs_arm_fill(&value)
-            && self.report_diagnostics
+            && !self.speculative_lowering
             && self.materialize_owned_temporaries
         {
             return if self.defer_move_outs == 0 {
@@ -1775,21 +1815,144 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A place-rooted arm, or a conditional of place-rooted arms, stays
     /// inline. A temporary that already carries a registered release keeps
-    /// that single owner. Every other arm binds through the deferred fill.
+    /// that single owner. A projection arm binds its own root, so a selected
+    /// member read does not release alone while the root's other fields keep
+    /// their storage. Every other arm binds through the deferred fill.
     fn own_ownerless_arm(&mut self, value: Value) -> Value {
         if self.projects_from_place(&value) {
             return value;
         }
-        if matches!(value.kind, ValueKind::Conditional { .. }) {
-            return self.own_ownerless_conditional_arms(value);
-        }
-        if let ValueKind::Temp(id) = value.kind {
-            if !self.has_pending_release(id, &value.ty) {
-                self.register_pending_release(id, &value.ty);
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.own_ownerless_arm(*base);
+                return Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                );
             }
-            return value;
+            ValueKind::Index { base, index } => {
+                let base = self.own_ownerless_arm(*base);
+                return Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                );
+            }
+            ValueKind::Conditional { .. } => {
+                return self.own_ownerless_conditional_arms(value);
+            }
+            ValueKind::Temp(id) => {
+                if !self.has_pending_release(id, &value.ty) {
+                    self.register_pending_release(id, &value.ty);
+                }
+                return value;
+            }
+            _ => {}
         }
         self.materialize_guard_operand(value)
+    }
+
+    /// Evaluates a view conditional's ownerless arm roots on their own paths.
+    ///
+    /// A view binding of a conditional projection (`(c ? b : mk()).v`) must
+    /// keep a place arm a borrow while every ownerless arm's root is owned for
+    /// the view's scope: each root binds inside a branch only its own path
+    /// reaches, the scope's cleanup releases it after the binding's last use,
+    /// and the binding's view reads through the selected root. The condition
+    /// is evaluated once, and a nested conditional recurses into its own
+    /// branch.
+    fn hoist_view_conditional_arms(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let cond_ty = condition.ty.clone();
+                let cond_id = self.new_temp(cond_ty.clone());
+                let cond_place = Place {
+                    base: ir::PlaceBase::Temp(cond_id),
+                    projections: Vec::new(),
+                    ty: cond_ty.clone(),
+                };
+                self.emit(Statement::Assign {
+                    target: cond_place.clone(),
+                    value: *condition,
+                });
+                let cond_value =
+                    || Value::new(cond_ty.clone(), ValueKind::Place(cond_place.clone()));
+                let then_block = self.new_block();
+                let else_block = self.new_block();
+                let join = self.new_block();
+                self.terminate(Terminator::Branch {
+                    condition: cond_value(),
+                    on_true: then_block,
+                    on_false: else_block,
+                    shape: BranchShape::If { join },
+                });
+                self.switch_to(then_block);
+                let then_value = self.own_view_arm(*then_value);
+                self.terminate(Terminator::Goto(join));
+                self.switch_to(else_block);
+                let else_value = self.own_view_arm(*else_value);
+                self.terminate(Terminator::Goto(join));
+                self.switch_to(join);
+                Value::new(
+                    value.ty,
+                    ValueKind::Conditional {
+                        condition: Box::new(cond_value()),
+                        then_value: Box::new(then_value),
+                        else_value: Box::new(else_value),
+                    },
+                )
+            }
+            other => Value::new(value.ty, other),
+        }
+    }
+
+    /// Binds one view conditional arm's owning root in its own branch.
+    ///
+    /// Mirrors [`Self::bind_view_projection_root`] for one arm: a place-rooted
+    /// arm stays a borrow, a nested conditional recurses, and a fresh call or
+    /// literal root binds to a scope owner the view's scope releases.
+    fn own_view_arm(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.own_view_arm(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.own_view_arm(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } | ValueKind::StructLit { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) {
+                    self.materialize_scoped_owner(value)
+                } else {
+                    value
+                }
+            }
+            ValueKind::Conditional { .. } => self.hoist_view_conditional_arms(value),
+            _ => value,
+        }
     }
 
     /// True when any reachable arm of a conditional owns storage to fill.
@@ -1809,14 +1972,54 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// True when one conditional arm needs an evaluated temporary.
+    ///
+    /// The chain walks to the arm's root: a place-rooted arm stays inline, a
+    /// temporary or an already-filled value needs no second owner, and any
+    /// other root needs a fill exactly when it owns storage to release — a
+    /// duplicable root (such as a struct of scalars) owns nothing.
     fn arm_needs_fill(&self, value: &Value) -> bool {
         if self.projects_from_place(value) {
             return false;
         }
-        if matches!(value.kind, ValueKind::Conditional { .. }) {
-            return self.conditional_needs_arm_fill(value);
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.arm_needs_fill(base)
+            }
+            ValueKind::Conditional { .. } => self.conditional_needs_arm_fill(value),
+            ValueKind::Temp(_) | ValueKind::Materialize { .. } => false,
+            _ => !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty),
         }
-        true
+    }
+
+    /// True when a conditional has an arm that projects out of an ownerless
+    /// root.
+    ///
+    /// The arm's value is a selected member or element, so binding the arm
+    /// value alone would copy the selected part and leave the root's other
+    /// owning fields unowned. Such an arm binds its root instead.
+    fn conditional_has_ownerless_projection_arm(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.arm_has_ownerless_projection(then_value)
+                    || self.arm_has_ownerless_projection(else_value)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when one conditional arm projects out of an ownerless root.
+    fn arm_has_ownerless_projection(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                !self.projects_from_place(value)
+            }
+            ValueKind::Conditional { .. } => self.conditional_has_ownerless_projection_arm(value),
+            _ => false,
+        }
     }
 
     /// Evaluates a conditional lend argument's ownerless arms at its position.
@@ -2032,7 +2235,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if matches!(value.kind, ValueKind::Conditional { .. })
             && self.conditional_borrows_place(&value)
             && self.conditional_needs_arm_fill(&value)
-            && self.report_diagnostics
+            && !self.speculative_lowering
             && self.materialize_owned_temporaries
             && !value.ty.is_unknown()
         {
@@ -2048,7 +2251,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !self.value_needs_place(&value))
             || is_view(&value.ty)
             || self.projects_from_place(&value)
-            || !self.report_diagnostics
+            || self.speculative_lowering
             || !self.materialize_owned_temporaries
             || value.ty.is_unknown()
         {
@@ -2125,7 +2328,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// declared there is left alone. The generated binding has no name-map
     /// entry to move: it is referenced by id only.
     fn move_binding_to_body_scope(&mut self, id: usize) {
-        if self.scopes.len() <= 1 {
+        // A defer body's owner keeps the block's own cleanup: the deferred
+        // copy runs from every cleanup edge, so a body-scope release would run
+        // once for the whole program instead of once per execution.
+        if self.scopes.len() <= 1 || self.defer_body {
             return;
         }
         let innermost = self.scopes.len() - 1;

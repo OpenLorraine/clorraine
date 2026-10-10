@@ -193,20 +193,54 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } => {
                 // A directly invoked lambda is an ephemeral closure call, not a
                 // named function call. The whole expression lowers to the
-                // two-word call, whose result is discarded.
+                // two-word call; an owned result binds to a statement
+                // temporary the statement's release frees, while a
+                // fixed-array result already releases through the discard
+                // path's own destination and a duplicable or empty result
+                // owns nothing.
                 if self.is_closure_callee(callee) {
                     let value = self.lower_value(expr);
-                    self.emit(Statement::Discard { value });
+                    let ty = value.ty.clone();
+                    if !ty.is_fixed_array() && self.owns_drop(&ty) {
+                        let temp = self.new_temp(ty.clone());
+                        self.register_pending_release(temp, &ty);
+                        let target = Place {
+                            base: ir::PlaceBase::Temp(temp),
+                            projections: Vec::new(),
+                            ty,
+                        };
+                        self.emit(Statement::Assign { target, value });
+                    } else {
+                        self.emit(Statement::Discard { value });
+                    }
                     return;
                 }
                 let call = self.lower_call(callee, type_args, args);
                 let move_outs = self.take_move_out_places(call.modes.as_deref(), &call.args);
+                // The result of a discarded call is bound to a statement
+                // temporary when it owns storage, so the statement's release
+                // frees it; a duplicable or empty result is a plain call. A
+                // maybe-owning result registers the same release, which is a
+                // no-op for a duplicable instance.
+                let result_ty = self.ty(expr);
+                let owning = self.owns_drop(&result_ty) || self.maybe_owns(&result_ty);
+                let result = if owning {
+                    let temp = self.new_temp(result_ty.clone());
+                    self.register_pending_release(temp, &result_ty);
+                    Some(Place {
+                        base: ir::PlaceBase::Temp(temp),
+                        projections: Vec::new(),
+                        ty: result_ty,
+                    })
+                } else {
+                    None
+                };
                 self.emit(Statement::Call {
                     callee: call.name,
                     type_args: call.type_args,
                     args: call.args,
                     receiver: call.receiver.map(Box::new),
-                    result: None,
+                    result,
                 });
                 for place in move_outs {
                     self.emit(Statement::MoveOut { place });
@@ -842,9 +876,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_scopes = self.scopes.len();
         let saved_defers = self.defer_entries.len();
         let saved_report = self.report_diagnostics;
-        let saved_owned = self.materialize_owned_temporaries;
+        let saved_defer_body = self.defer_body;
         self.report_diagnostics = false;
-        self.materialize_owned_temporaries = false;
+        // Materialization stays on: an owner declared in the body lands in the
+        // block's own scope, whose cleanup the deferred copy runs once per
+        // execution, so the body's owned temporaries release like any other
+        // statement's.
+        self.defer_body = true;
         self.switch_to(defer_block);
         self.check_block(block);
         // The body's blocks occupy the contiguous arena range from the defer
@@ -852,7 +890,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // bounded copy.
         let region_end = self.builder.function().blocks.len();
         self.report_diagnostics = saved_report;
-        self.materialize_owned_temporaries = saved_owned;
+        self.defer_body = saved_defer_body;
         self.state = saved_state;
         // The deferred block's own locals are kept: the IR lowered here refers
         // to them, so they must stay in the function's local list for the

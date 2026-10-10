@@ -62,11 +62,14 @@ pub fn is_view(ty: &Ty) -> bool {
 /// True for a view type whose lifetime participates in return elision.
 ///
 /// `static str` is excluded: it points at static storage and needs no input
-/// parameter (EL-4). A slice participates; a fixed array does not.
+/// parameter (EL-4). A slice participates; a fixed array does not — except
+/// when its element is itself an elided view: a `str[N]` carries exactly the
+/// borrows the single `str` it repeats carries, so it participates in elision
+/// and in the view-call loan and provenance rules.
 pub fn is_elided_view(ty: &Ty) -> bool {
-    match ty.kind {
+    match &ty.kind {
         TyKind::Str | TyKind::CString => true,
-        TyKind::Array { .. } => ty.is_slice(),
+        TyKind::Array { element, .. } => ty.is_slice() || is_elided_view(element),
         _ => false,
     }
 }
