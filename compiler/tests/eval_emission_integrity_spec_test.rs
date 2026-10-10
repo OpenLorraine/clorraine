@@ -1091,14 +1091,22 @@ func sumSlice(xs: i32[]): i32 {
     return total;
 }
 
+func countEach<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
 func main(): i32 {
     let m: i32[3] = [1, 2, 3];
     let s: i32[] = slice(m, 0, 3);
-    return sumArray(m) + sumSlice(s);
+    return sumArray(m) + sumSlice(s) + countEach<i32[3]>(m) + countEach<i32[]>(s);
 }
 "#;
     let output = run_host("loop-control", control);
-    assert_exit("loop-control", &output, 12);
+    assert_exit("loop-control", &output, 18);
 }
 
 /// A write through a `str` loop element reports the same non-iterable rule,

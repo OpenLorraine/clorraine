@@ -477,9 +477,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so the exit joins the pre-loop state.
     pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
         let iterable_ty = self.eval(&decl.iterable);
-        // The element form walks a fixed array or a slice; every other type
-        // has no element sequence to bind.
-        if !matches!(iterable_ty.kind, TyKind::Array { .. }) {
+        // The element form walks a fixed array or a slice; a concrete type of
+        // any other kind has no element sequence to bind. An opaque type
+        // parameter (or an unresolved type) may be either once its instance is
+        // known, so it keeps its accepted path and is judged at the instance.
+        if !matches!(
+            iterable_ty.kind,
+            TyKind::Array { .. } | TyKind::Param(_) | TyKind::Unknown
+        ) {
             self.error(
                 "E10043",
                 format!("type '{}' cannot be iterated", iterable_ty.display()),

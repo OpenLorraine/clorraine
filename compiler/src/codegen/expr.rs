@@ -275,8 +275,8 @@ impl<'a> Emitter<'a> {
     /// A projection recorded in a generic body carries the opaque type: the
     /// field cannot be resolved until the instance's type arguments are known.
     /// The substituted base makes it concrete, so the projection resolves
-    /// through the same field lookup the place renderer walks, and a later
-    /// consumer (the `len` fold, a cast) sees the real type.
+    /// through the same field lookup the place renderer walks and the `len`
+    /// fold sees the real type.
     pub(super) fn resolved_value_ty(&self, value: &Value) -> Ty {
         let ty = self.substitute(&value.ty);
         if !ty.is_unknown() {

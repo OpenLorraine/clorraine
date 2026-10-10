@@ -150,3 +150,58 @@ recorded here with base-identical evidence for a future triage.
 
 **Final Phase 2 verification**: 18 specification cases, 31 implementation pins, `./spec/check.sh`
 OK, full `make check` green (1528 tests).
+
+## Phase 3: Value typing and checker conformance (DEF-99, 111, 108, 107, 118, 129)
+
+**Reviewers**: correctness reviewer (RV) and semantics reviewer (SR), per the phase's lens.
+Diff reviewed: `9d7dc60..5364d2f`. Both ran the base-tree red checks (every ST-17 – ST-25 case is
+red on `9d7dc60`; the new pins fail there) and confirmed the `E10043`/`E10212` spec edits match the
+approved rows.
+
+### Fixed in-batch (the review's blocking finding)
+
+| # | Sev | Finding | Ruling |
+| - | --- | ------- | ------ |
+| RV-001 / SR-F1 | 🟠 | The new `E10043` guard rejected ANY non-array iterable, including a bare type parameter: `func each<T>(xs: T) { for (v in xs) { … } }` instantiated at an `i32[3]` or `i32[]` builds and runs on the base and was rejected at the declaration on head. AR-B8's rationale ("nothing working regresses") covers only the concrete non-iterable shapes (the `str` loop). | **Fixed** per the reviewer's recommended option (a): the guard rejects concrete non-iterable kinds and lets `Param`/`Unknown` iterables keep their accepted path (the instance decides). Reproduced: the generic loops run (exit 18) and the `str` loop still reports `E10043`. The control case now pins the generic instantiation. |
+
+### Verdicts (no further findings)
+
+- **DEF-107 (SR-1, confirmed)**: the frozen operator table covers scalars/enums/`raw`/handles; `str` and
+  `static str` pairs report one `E10222` at the left operand, `!=` included; the null pair stays exempt
+  in both orders; `cstring` keeps its pointer comparison per the AR-B7 user ruling (the reviewer's
+  wording note on the table is recorded, no change).
+- **DEF-108 (SR-4, confirmed)**: `void * x = NULL` (freestanding: `0`), the pairing reads the local
+  against the view's pointer, and every listed spelling builds and runs.
+- **DEF-129 (SR-3, confirmed)**: `E10212` for a bare-`Param` receiver, one report per callee site;
+  bounded fields, free-function dot-calls, and `len` are unaffected; the `base.span` -> `callee.span`
+  change is unobservable (no test asserts span ends).
+- **DEF-99/111 (SR-5, confirmed)**: real per-instance lengths (7 vs base 3; count 2 vs base 0),
+  nested and call-rooted projections resolve, concrete emissions stay byte-identical; the
+  conditional-arm residual is filed (DEF-150).
+
+### Deliberate test update
+
+- `sema/tests.rs`: the unit test that asserted view equality now asserts the `E10222` rejection and
+  keeps the null pairing (`views_have_no_equality_but_pair_with_null`). It cannot pass on the base.
+
+### Filed (pre-existing classes; new rows on the roadmap)
+
+| # | Sev | Finding | Filed as |
+| - | --- | ------- | -------- |
+| RV (P2) | 🟡 | A value-form member read on a bare param is accepted (`let y = x.foo;`). | DEF-146 |
+| RV (P3) | 🟡 | A free-function dot-call arity mismatch is unchecked. | DEF-147 |
+| SR (F3) | 🟡 | An unknown member callee on a `raw`/plain-struct receiver is accepted. | DEF-148 |
+| SR (F4) | 🟡 | Assigning a view through the null-valued local is accepted. | DEF-149 |
+| SR (F5) | 🟡 | A conditional-wrapped projection folds `len` to zero. | DEF-150 |
+| RV (P1) | 🟡 | Uses of a null-inferred local as a typed value emit invalid C. | DEF-151 |
+| SR (F1 residual) | 🟠 | A generic `T` iterable instantiated at a struct-element array emits invalid C. | DEF-145 |
+
+### Verification evidence (Phase 3)
+
+`./spec/check.sh` OK (27 files, 109 compile-fail tests, the `E10043` golden green in the
+compile-fail suite); ST-17 - ST-25 green (27 cases); 34 implementation pins green; full
+`make check` green (1541 tests) after the fix round. The reviewers' reproductions re-run: the
+generic array/slice loops build and run, the `str` loop reports `E10043`.
+
+**Review budget**: two review dispatches for Phase 3 (correctness, semantics) plus the scoped
+re-verification of this fix round; every blocking finding fixed in-batch with a regression pin.
