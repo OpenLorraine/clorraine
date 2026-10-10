@@ -40,7 +40,7 @@ impl Checker<'_, '_> {
         }
         if let ExprKind::Member { base, name } = &callee.kind {
             let base_ty = self.check_value(base, None);
-            return self.check_dot_call(Some(base), base_ty, name, args, base.span);
+            return self.check_dot_call(Some(base), base_ty, name, args, callee.span);
         }
         if let ExprKind::Qualified(name) = &callee.kind {
             // A dotted callee whose head is a value in scope is a dot-call,
@@ -457,6 +457,18 @@ impl Checker<'_, '_> {
                             );
                         }
                     }
+                }
+                // A bare type parameter has no members of its own: the
+                // substitution may be any type, and only a declared struct
+                // surface resolves a member, so the callee is an unknown
+                // member rather than a callability question.
+                if matches!(receiver.kind, TyKind::Param(_)) {
+                    self.error(
+                        "E10212",
+                        format!("'{name}' is not a member of '{}'", receiver.display()),
+                        "check the declaration or the spelling",
+                        span,
+                    );
                 }
                 for arg in args {
                     self.check_value(&arg.value, None);

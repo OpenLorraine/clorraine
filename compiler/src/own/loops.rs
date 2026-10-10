@@ -477,6 +477,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so the exit joins the pre-loop state.
     pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
         let iterable_ty = self.eval(&decl.iterable);
+        // The element form walks a fixed array or a slice; every other type
+        // has no element sequence to bind.
+        if !matches!(iterable_ty.kind, TyKind::Array { .. }) {
+            self.error(
+                "E10043",
+                format!("type '{}' cannot be iterated", iterable_ty.display()),
+                "iterate a fixed array or a slice",
+                decl.span,
+            );
+        }
         let element = iterable_ty.iterated_element();
         if !decl.borrow && !self.sema.table.duplicable(&element) {
             self.error(

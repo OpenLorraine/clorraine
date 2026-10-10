@@ -53,13 +53,39 @@ pub(super) fn assert_codes(source: &str, expected: &[&str]) {
 }
 
 #[test]
-fn equality_is_defined_for_scalars_enums_raw_views_and_handles() {
+fn equality_is_defined_for_scalars_enums_raw_handles_and_cstrings() {
     assert_accepts(
         r#"module test;
 enum E : u8 { A, B }
 handle File freedBy Close;
-func demo(e: E, a: raw u8, s: str, c: cstring, f: File, b: bool): bool {
-    return e == E.B && a == a && s == s && c == c && f == f && b == b;
+func demo(e: E, a: raw u8, c: cstring, f: File, b: bool): bool {
+    return e == E.B && a == a && c == c && f == f && b == b;
+}
+func main(): i32 { return 0; }
+"#,
+    );
+}
+
+/// Two `str` or `static str` views have no defined equality.
+///
+/// The frozen operator table covers scalars, enums, `raw`, handles, and
+/// `cstring`; a view is outside it, so the pair reports `E10222`. The null
+/// pairing is the view's emptiness test and stays accepted.
+#[test]
+fn views_have_no_equality_but_pair_with_null() {
+    assert_codes(
+        r#"module test;
+func demo(a: str, b: static str): bool {
+    return a == b;
+}
+func main(): i32 { return 0; }
+"#,
+        &["E10222"],
+    );
+    assert_accepts(
+        r#"module test;
+func demo(a: str): bool {
+    return a == null && null != a;
 }
 func main(): i32 { return 0; }
 "#,

@@ -105,6 +105,10 @@ pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
         TyKind::Func(signature) => func_pointer_type(signature, table),
         TyKind::Closure(closure) => closure_type(closure),
         TyKind::Param(name) => format!("Cl{name}"),
+        // The null literal's shape carries no C type of its own; it lowers to
+        // the generic pointer its null value can inhabit. A non-nullable
+        // unknown keeps the integer default.
+        TyKind::Unknown if ty.nullable => "void *".to_owned(),
         TyKind::Unknown => "i32".to_owned(),
     }
 }
@@ -309,6 +313,9 @@ pub(super) fn declarator(ty: &Ty, name: &str, table: &TypeTable) -> String {
 pub(super) fn empty_state(ty: &Ty) -> String {
     match &ty.kind {
         TyKind::Handle(_) | TyKind::Raw(_) | TyKind::CString | TyKind::Func(_) => "NULL".to_owned(),
+        // The null literal's shape spells its empty state the way its
+        // declaration type does, so the two agree.
+        TyKind::Unknown if ty.nullable => "NULL".to_owned(),
         TyKind::Str | TyKind::StaticStr | TyKind::Struct(..) | TyKind::Enum(_) => "{0}".to_owned(),
         TyKind::Array { .. } => "{0}".to_owned(),
         _ => "0".to_owned(),

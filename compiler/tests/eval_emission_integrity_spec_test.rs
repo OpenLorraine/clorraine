@@ -1064,6 +1064,10 @@ func sumStr(s: str): i32 {
     }
     return total;
 }
+
+func main(): i32 {
+    return sumStr("ab");
+}
 "#;
     assert_rejected_once("str-loop", source, "E10043", &["cannot be iterated"], &[]);
 
@@ -1108,6 +1112,11 @@ func fill(s: str): void {
         c = 65;
     }
 }
+
+func main(): i32 {
+    fill("ab");
+    return 0;
+}
 "#;
     assert_rejected_once("str-loop-write", source, "E10043", &[], &[]);
 }
@@ -1124,6 +1133,10 @@ struct S {
 
 func g<T>(x: T): i32 {
     return x.foo(5);
+}
+
+func main(): i32 {
+    return g<i32>(5);
 }
 "#;
     assert_rejected_once(

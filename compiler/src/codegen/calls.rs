@@ -247,7 +247,7 @@ impl Emitter<'_> {
         match name {
             "len" => {
                 if let Some(inner) = args.first() {
-                    let ty = self.substitute(&inner.ty);
+                    let ty = self.resolved_value_ty(inner);
                     let inner_c = self.value(inner);
                     return match &ty.kind {
                         TyKind::Str | TyKind::StaticStr => format!("({inner_c}).len"),

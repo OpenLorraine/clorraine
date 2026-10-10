@@ -278,13 +278,28 @@ callable-bound member program exits 19.
 **Objective**: Resolve the substituted projection, keep the nullable inference building, and land
 the three rejections.
 
-- [ ] 3.2.1 Reproduce DEF-99 and fix the `len` fold (with DEF-111 when they share the root) — `compiler/src/codegen/calls.rs`, `compiler/src/codegen/expr.rs`, `compiler/src/own/lower.rs`
-- [ ] 3.2.2 Resolve the generic field projection through the substituted base — the value path per the chosen lever
-- [ ] 3.2.3 Keep the nullable inference and make the declaration and `null` spelling agree — `compiler/src/sema/stmt.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 3.2.4 Reject `str`/`static str` pair equality with `E10222` (null-pair exemption and `cstring` stay) — `compiler/src/sema/ops.rs`
-- [ ] 3.2.5 Reject a `str` element loop with `E10043` — `compiler/src/sema/stmt.rs` or `compiler/src/own/loops.rs`
-- [ ] 3.2.6 Reject a member call on a bare-parameter receiver with `E10212` — `compiler/src/sema/call.rs`
-- [ ] 3.2.7 Run the spec suite and `./spec/check.sh` to green (ST-17 – ST-25 and the golden); on any failure STOP and fix the implementation, never the test
+- [x] 3.2.1 Reproduce DEF-99 and fix the `len` fold (with DEF-111 when they share the root) — `compiler/src/codegen/calls.rs`, `compiler/src/codegen/expr.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-10-10 16:42)
+- [x] 3.2.2 Resolve the generic field projection through the substituted base — the value path per the chosen lever ✅ (completed: 2026-10-10 16:42)
+- [x] 3.2.3 Keep the nullable inference and make the declaration and `null` spelling agree — `compiler/src/sema/stmt.rs`, `compiler/src/codegen/types.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-10 16:50)
+- [x] 3.2.4 Reject `str`/`static str` pair equality with `E10222` (null-pair exemption and `cstring` stay) — `compiler/src/sema/ops.rs` ✅ (completed: 2026-10-10 16:52)
+- [x] 3.2.5 Reject a `str` element loop with `E10043` — `compiler/src/sema/stmt.rs` or `compiler/src/own/loops.rs` ✅ (completed: 2026-10-10 16:53)
+- [x] 3.2.6 Reject a member call on a bare-parameter receiver with `E10212` — `compiler/src/sema/call.rs` ✅ (completed: 2026-10-10 16:54)
+- [x] 3.2.7 Run the spec suite and `./spec/check.sh` to green (ST-17 – ST-25 and the golden); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 17:02)
+
+**Implementation evidence (2026-10-10)** — DEF-99 and DEF-111 are one root: the projected read
+carries the opaque type and the emitter's `len` arm fell to the zero fallback. The fix resolves a
+value's type after substitution (`resolved_value_ty`) by walking member, index, and projected-place
+chains through the same field lookup the place renderer uses, so `(*b).s` resolves to the instance
+field (`(cl_string_view((*b).s)).len`) and the growable `Array` field reads `.count`. DEF-108 keeps
+the nullable inference and makes `c_type`/`empty_state` agree for the null literal's shape (`void *`
+with `NULL`), and the null-shaped operand in a view pairing reads the local against the view's
+pointer. DEF-107 removes `str`/`static str` from `comparable` (the frozen operator table; the
+null-pair exemption and `cstring` stay). DEF-118 reports `E10043` for any non-array iterable in the
+element-loop check (fixed arrays and slices are untouched). DEF-129 reports `E10212` for a member
+callee on a bare `Param` receiver, at the callee's span. One deliberate unit-test update: the sema
+test that asserted view equality now asserts the rejection and keeps the null pairing. Full
+`make check` green (1538 tests); the `E10043` golden green in the compile-fail suite; ST-17 – ST-25
+green.
 
 **Deliverables**:
 - The typing/projection fixes and the three checker rejections

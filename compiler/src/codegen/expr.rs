@@ -270,6 +270,66 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// The type of a value after instance substitution, following projections.
+    ///
+    /// A projection recorded in a generic body carries the opaque type: the
+    /// field cannot be resolved until the instance's type arguments are known.
+    /// The substituted base makes it concrete, so the projection resolves
+    /// through the same field lookup the place renderer walks, and a later
+    /// consumer (the `len` fold, a cast) sees the real type.
+    pub(super) fn resolved_value_ty(&self, value: &Value) -> Ty {
+        let ty = self.substitute(&value.ty);
+        if !ty.is_unknown() {
+            return ty;
+        }
+        match &value.kind {
+            ValueKind::Member { base, name } => {
+                let base_ty = self.resolved_value_ty(base);
+                let field = self.field_type(&base_ty, name);
+                if field.is_unknown() {
+                    ty
+                } else {
+                    field
+                }
+            }
+            ValueKind::Index { base, .. } => {
+                let base_ty = self.resolved_value_ty(base);
+                let element = element_type(&base_ty);
+                if element.is_unknown() {
+                    ty
+                } else {
+                    element
+                }
+            }
+            // A projected read carries the same opacity: the place's root
+            // type is substituted and its projections walk like the place
+            // renderer's, so `(*b).s` resolves through the instance.
+            ValueKind::Place(place) => {
+                let mut resolved = self.substitute(&self.place_base_type(&place.base));
+                for projection in &place.projections {
+                    resolved = match projection {
+                        Projection::Field(field) => self.field_type(&resolved, field),
+                        Projection::Element(_) | Projection::ElementTemp(_) => {
+                            element_type(&resolved)
+                        }
+                    };
+                }
+                if resolved.is_unknown() {
+                    ty
+                } else {
+                    resolved
+                }
+            }
+            _ => ty,
+        }
+    }
+
+    /// True when a value carries the null literal's nullable-unknown shape.
+    fn is_null_shaped(&self, value: &Value) -> bool {
+        let ty = self.substitute(&value.ty);
+        ty.is_unknown() && ty.nullable
+    }
+
     /// Renders an integer literal with a suffix when it does not fit `int`.
     fn int_literal(&self, value: u64, ty: &Ty) -> String {
         let unsigned = matches!(
@@ -416,7 +476,25 @@ impl<'a> Emitter<'a> {
             }
             (_, ValueKind::Null) => left,
             (ValueKind::Null, _) => right,
-            _ => return None,
+            // A local holding the null literal's shape (a nullable unknown) is
+            // a null operand too: its value is the null pointer, so the pair
+            // reads it against the view's pointer, exactly as the checker's
+            // null-pair rule reads the view's emptiness.
+            _ => {
+                let (null_side, view) =
+                    match (self.is_null_shaped(left), self.is_null_shaped(right)) {
+                        (true, false) => (left, right),
+                        (false, true) => (right, left),
+                        _ => return None,
+                    };
+                let view_ty = self.substitute(&view.ty);
+                if !is_struct_view(&view_ty) {
+                    return None;
+                }
+                let null_text = self.value(null_side);
+                let view_text = self.value(view);
+                return Some(format!("({null_text} {token} ({view_text}).ptr)"));
+            }
         };
         let ty = self.substitute(&view.ty);
         if !is_struct_view(&ty) {
