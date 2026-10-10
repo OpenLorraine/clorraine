@@ -326,6 +326,30 @@ func main(): i32 {
     assert_exit("modekey", &output, 0);
 }
 
+/// A capture-less lambda inside a `defer` block builds and runs.
+///
+/// The defer registration lowering emits its own IR, so its lifted record —
+/// the one the emitted call site references — must survive; only the
+/// discarded speculative loop pass's records are dropped (red at the pre-fix
+/// head: the emitted defer body calls an undefined lifted function and the
+/// strict build fails).
+#[test]
+fn should_build_a_capture_less_lambda_inside_a_defer() {
+    let source = r#"module spec.cri.deferlambda;
+
+func main(): i32 {
+    let seen: i32 = 0;
+    defer {
+        seen = (() => i32(7))();
+        assert(seen == 7, "the deferred lambda ran");
+    }
+    return 0;
+}
+"#;
+    let output = run_host("deferlambda", source);
+    assert_exit("deferlambda", &output, 0);
+}
+
 /// A capturing lambda in a loop releases a temporary its body borrows.
 ///
 /// The speculative loop pass suppresses owned-temporary materialization, so

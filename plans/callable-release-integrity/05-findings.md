@@ -59,6 +59,37 @@ auditor, over the diff `c5d03e5..26b6bd5`.
 the red evidence for the new regression case is the base tree's strict-build failure plus the
 reviewer's head probe (`LeakSanitizer: 20 byte(s) leaked in 2 allocation(s)` before the fix).
 
-### Scoped re-review (`26b6bd5..fix`)
+### Scoped re-review (`26b6bd5..57d46cc`)
 
-_Pending — the once-only scoped re-review of the fix diff is recorded here when it completes._
+One scoped round, both lenses:
+
+- **Memory-safety: no findings.** All seven MS-001 probes (while / for-in / do-while / nested /
+  generic / generic-nested / two-site loops with owned temporaries in the lambda body) run
+  ASan-clean on the fix; the base reproduces each leak. The DEF-138 collision family stays clean,
+  the controls stay clean, and `RDC_ASAN=1` spec suite stays green.
+- **Correctness: RV-004 (🔴 CRITICAL) — the guard dropped the defer registration record.**
+  `check_defer` lowers the emitted defer body with `report_diagnostics = false`, and a
+  capture-less lambda's site is pass-ordered, so the reporting re-walk allocated a different site
+  and the emitted body called an undefined `cl_lambda_N` (strict build failure; not present at
+  `26b6bd5`). RV-001 and RV-003 confirmed closed; RV-002 confirmed closed against `c5d03e5` (the
+  earlier packet's stated base was corrected).
+
+### Fix round 2 (this commit)
+
+| Finding | Fix |
+| ------- | --- |
+| RV-004 (critical) | The guard keys on a new `speculative_lowering` flag set only by the discarded loop fixpoint pass (`own.rs::loop_entry_state`), so the defer registration's retained records — the ones the emitted body's call sites reference — are kept. Regression spec case `should_build_a_capture_less_lambda_inside_a_defer` (strict build + run). |
+
+**Trade-off recorded:** the defer registration lowering suppresses owned-temporary materialization
+(DEF-158), so a capturing lambda in a `defer` that borrows an owned temporary leaks 10 B —
+byte-identical to the base `26b6bd5` measurement and the filed DEF-158 (this batch's Phase 3).
+Keeping the registration records makes the emitted IR's site resolvable; DEF-158's fix (enabling
+defer materialization) upgrades the same record in Phase 3. The interim reporting-only guard had
+masked that leak while breaking the capture-less shape — an accidental state, not a deliverable.
+
+### Verification evidence (fix round 2)
+
+`RDC_ASAN=1` spec suite 6/6 and impl suite 5/5 green; `make check` green (workspace, container);
+the RV-004 reproduction builds and runs with the narrowed guard; the loop-lambda probe is
+ASan-clean; the defer-lambda probe is ASan-identical to base (DEF-158). Scoped review budget: one
+round; the second fix is verified directly (no third review round).

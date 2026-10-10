@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 20:04
-> **Progress**: 7/36 tasks (19%)
+> **Last Updated**: 2026-10-10 20:27
+> **Progress**: 8/36 tasks (22%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -95,7 +95,7 @@ env-struct dedupe.
 counts; record the phase review evidence.
 
 - [x] 1.3.1 Write the Phase 1 implementation tests (name-map absence, C rename, exact keys, one env definition, byte-identity) — `compiler/tests/callable_release_integrity_impl_test.rs` ✅ (completed: 2026-10-10 20:04)
-- [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 20:27)
 
 **Deliverables**:
 - Identity-keyed generated bindings with collision-safe C spelling

@@ -570,12 +570,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         function.lambda_site = Some(site);
         function.enclosing = Some(self.decl.name.clone());
         liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
-        // Only the reporting pass's record is emitted. A speculative loop pass
-        // lowers the body with owned-temporary materialization suppressed, so
-        // its record omits the owners and their releases; the real pass always
-        // follows and covers every consumer (emission, instance collection,
-        // specialization discovery).
-        if self.report_diagnostics {
+        // Only a discarded speculative pass skips the record: that pass lowers
+        // the body with owned-temporary materialization suppressed, and its IR
+        // is re-lowered by the real pass. A `defer` registration lowering also
+        // reports no diagnostics but emits its own IR, so its record — the one
+        // the emitted body's call sites reference — must be kept.
+        if !self.speculative_lowering {
             self.lifted.push(function);
         }
 

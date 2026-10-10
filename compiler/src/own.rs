@@ -289,6 +289,11 @@ struct FunctionChecker<'a, 'd> {
     /// there.
     materialize_owned_temporaries: bool,
     /// False during a speculative pass, which computes state without reporting.
+    /// True while lowering the speculative loop pass, whose IR — and whose
+    /// lifted-function records — is discarded and re-lowered by the real pass.
+    /// A `defer` registration lowering also reports no diagnostics, but its IR
+    /// is emitted, so its records must survive.
+    speculative_lowering: bool,
     report_diagnostics: bool,
     /// The later-use duplicability duties this body owes its instances.
     ///
@@ -398,6 +403,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             in_loop_condition: false,
             destination_temps: Vec::new(),
             materialize_owned_temporaries: true,
+            speculative_lowering: false,
             report_diagnostics: true,
             duplicable_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
@@ -743,7 +749,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_releases = self.pending_releases.clone();
         let saved_owned_temp = self.next_owned_temp;
         let saved_report = self.report_diagnostics;
+        let saved_speculative = self.speculative_lowering;
         self.report_diagnostics = false;
+        self.speculative_lowering = true;
         let (entry, stable_post) = 'fixpoint: {
             let mut entry = pre.clone();
             loop {
@@ -790,6 +798,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // again, so the numbering restarts and the emitted names stay stable.
         self.next_owned_temp = saved_owned_temp;
         self.report_diagnostics = saved_report;
+        self.speculative_lowering = saved_speculative;
         let mut entry = entry;
         entry.drop_bindings_from(saved_bindings);
         (entry, stable_post)
