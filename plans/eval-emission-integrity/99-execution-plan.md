@@ -442,8 +442,20 @@ statement form). Final: 33 specification cases, 37 implementation pins, `./spec/
 [AR-B2, AR-B12, AR-B13](00-ambiguity-register.md)
 **Objective**: Pin the leak-free runs and the ruled rejections before any implementation.
 
-- [ ] 5.1.1 [spec-author] Write specification tests from ST-32 – ST-41 — `compiler/tests/eval_emission_integrity_spec_test.rs`
-- [ ] 5.1.2 Run the spec suite and record the red phase (expected: ST-32, ST-34, ST-36 and the block/conditional rejections fail; the controls pass as deliberate pins — the leak oracles are the ASan probes in the green step for the plain-run cases)
+- [x] 5.1.1 [spec-author] Write specification tests from ST-32 – ST-41 — `compiler/tests/eval_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 20:05)
+- [x] 5.1.2 Run the spec suite and record the red phase (expected: ST-32, ST-34, ST-36 and the block/conditional rejections fail; the controls pass as deliberate pins — the leak oracles are the ASan probes in the green step for the plain-run cases) ✅ (completed: 2026-10-10 20:12)
+
+**Red-phase evidence (2026-10-10)** — with the leak oracles armed (`RDC_ASAN=1`): **7 failed, 36
+passed**. ST-32 leaks 33 bytes in 3 allocations (one per iteration), ST-34 leaks the abandoned
+`"ab"` (11 bytes) on the deferred-break preemption edge, and ST-36 leaks the owned temporary
+argument (11 bytes); ST-37/ST-38 report `E10034` where the ruling fixes `E10401`; ST-39, ST-40a,
+and ST-40b are accepted and double-free at run time (`attempting double-free`). Without ASan:
+4 failed (the rejection cases), 39 passed. The controls are green as deliberate pins: ST-33
+(owned-`String` destination loop, exit 6), ST-35 (ordinary return, exit 2), and ST-41
+(duplicable `outer<i32>`, exit 42). One probe finding: the first DEF-96 spelling (a deferred
+`break` inside the loop body) fired at the loop's continue edge before the return, so the case
+uses the switch shape from the defer batch (an unconditional deferred `break` preempting a stored
+ordinary return). One syntax finding: `len` is a reserved built-in and cannot be imported.
 
 **Deliverables**:
 - Specification suite with ST-32 – ST-41

@@ -1335,3 +1335,328 @@ func main(): i32 {
     let output = run_host("write-control", source);
     assert_exit("write-control", &output, 14);
 }
+
+/// The view bound from an owned projection temporary releases its backing per
+/// iteration.
+///
+/// `(Box { v: stringOf("ab") }).v` produces an owned `String` whose field the
+/// `str` binding views. The binding must own the backing the view reads, so
+/// each loop iteration releases the previous allocation; without an owner the
+/// loop leaks one allocation per iteration (the base behavior).
+#[test]
+fn should_release_the_view_bound_projection_temporary_per_iteration() {
+    let source = r#"module spec.eei.viewtemp;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    v: String;
+}
+
+func measure(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 3) {
+        let s: str = (Box { v: stringOf("ab") }).v;
+        total = total + measure(s);
+        i = i + 1;
+    }
+    return total;
+}
+"#;
+    let output = run_memory("view-temp", source);
+    assert_exit("view-temp", &output, 6);
+    assert_no_asan("view-temp", &output);
+}
+
+/// The owned `String` destination control keeps its existing release.
+#[test]
+fn should_keep_the_string_destination_projection_clean() {
+    let source = r#"module spec.eei.stringdest;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    v: String;
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 3) {
+        let s: String = (Box { v: stringOf("ab") }).v;
+        total = total + i32(len(s));
+        i = i + 1;
+    }
+    return total;
+}
+"#;
+    let output = run_memory("string-dest", source);
+    assert_exit("string-dest", &output, 6);
+    assert_no_asan("string-dest", &output);
+}
+
+/// A deferred `break` preempting an ordinary owned return releases the
+/// abandoned value on the preemption edge.
+///
+/// The case body stores `stringOf("ab")` into the result, then the older
+/// deferred scope breaks out of the switch, so the stored value is abandoned;
+/// the preemption edge must release it (the base leaks it).
+#[test]
+fn should_release_the_preempted_ordinary_return() {
+    let source = r#"module spec.eei.preempt;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    switch (1) {
+        case 1: {
+            defer { break; }
+            return stringOf("ab");
+        }
+        default: {
+        }
+    }
+    return stringOf("cd");
+}
+
+func main(): i32 {
+    let r: String = f();
+    return i32(len(r));
+}
+"#;
+    let output = run_memory("preempt-return", source);
+    assert_exit("preempt-return", &output, 2);
+    assert_no_asan("preempt-return", &output);
+}
+
+/// An ordinary return with no reachable preemption keeps its behavior.
+#[test]
+fn should_keep_the_ordinary_return_clean() {
+    let source = r#"module spec.eei.plainreturn;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    let i: i32 = 0;
+    while (i < 5) {
+        if (i == 1) { return stringOf("ab"); }
+        i = i + 1;
+    }
+    return stringOf("cd");
+}
+
+func main(): i32 {
+    let r: String = f();
+    return i32(len(r));
+}
+"#;
+    let output = run_memory("plain-return", source);
+    assert_exit("plain-return", &output, 2);
+    assert_no_asan("plain-return", &output);
+}
+
+/// The owned temporary argument of a call through a func-typed value binds
+/// and releases like the module-call path.
+#[test]
+fn should_release_the_func_value_temporary_argument() {
+    let source = r#"module spec.eei.funcvalue;
+
+import { String, stringOf } from std.text;
+
+func copier(borrow v: String): String {
+    return stringOf("y");
+}
+
+func wrap(f: func(borrow String): String): i32 {
+    return i32(len(f(stringOf("x"))));
+}
+
+func main(): i32 {
+    return wrap(copier);
+}
+"#;
+    let output = run_memory("func-value-arg", source);
+    assert_exit("func-value-arg", &output, 1);
+    assert_no_asan("func-value-arg", &output);
+}
+
+/// A block-bodied return of a by-value generic capture reports the ruled
+/// capture-move diagnostic, once, at the capture.
+#[test]
+fn should_reject_the_block_bodied_capture_return() {
+    let source = r#"module spec.eei.blockreturn;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => { return x; })();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    let r: Wrap = outer<Wrap>(w);
+    return i32(len(r.v));
+}
+"#;
+    assert_rejected_once(
+        "block-return",
+        source,
+        "E10401",
+        &["cannot move captured 'x'"],
+        &[],
+    );
+}
+
+/// A block-bodied take of a by-value generic capture reports the ruled
+/// capture-move diagnostic, once, at the call.
+#[test]
+fn should_reject_the_block_bodied_capture_take() {
+    let source = r#"module spec.eei.blocktake;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func sink(take w: Wrap): i32 {
+    return 0;
+}
+
+func outer<T>(x: T): i32 {
+    return ([x] () => { sink(take x); return 0; })();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    return outer<Wrap>(w);
+}
+"#;
+    assert_rejected_once(
+        "block-take",
+        source,
+        "E10401",
+        &["cannot move captured 'x'"],
+        &[],
+    );
+}
+
+/// A conditional capture return reports the capture-move diagnostic instead of
+/// double-freeing at run time.
+#[test]
+fn should_reject_the_conditional_capture_return() {
+    let source = r#"module spec.eei.conditional;
+
+import { String, stringOf } from std.text;
+
+const C: bool = true;
+
+struct Wrap {
+    v: String;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => C ? x : x)();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    let r: Wrap = outer<Wrap>(w);
+    return i32(len(r.v));
+}
+"#;
+    assert_rejected_once(
+        "conditional-return",
+        source,
+        "E10401",
+        &["cannot move captured 'x'"],
+        &[],
+    );
+}
+
+/// The concrete and take-argument conditional variants report the same
+/// capture-move diagnostic, once each.
+#[test]
+fn should_reject_the_concrete_and_take_argument_conditional_captures() {
+    let concrete = r#"module spec.eei.conditionalconcrete;
+
+import { String, stringOf } from std.text;
+
+const C: bool = true;
+
+func outer(x: String): String {
+    return ([x] () => C ? x : x)();
+}
+
+func main(): i32 {
+    let r: String = outer(stringOf("ab"));
+    return i32(len(r));
+}
+"#;
+    assert_rejected_once(
+        "conditional-concrete",
+        concrete,
+        "E10401",
+        &["cannot move captured 'x'"],
+        &[],
+    );
+
+    let take_argument = r#"module spec.eei.conditionaltake;
+
+import { String, stringOf } from std.text;
+
+const C: bool = true;
+
+struct Wrap {
+    v: String;
+}
+
+func sink(take w: Wrap): i32 {
+    return 0;
+}
+
+func outer<T>(x: T): i32 {
+    return ([x] () => sink(take (C ? x : x)))();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    return outer<Wrap>(w);
+}
+"#;
+    assert_rejected_once(
+        "conditional-take",
+        take_argument,
+        "E10401",
+        &["cannot move captured 'x'"],
+        &[],
+    );
+}
+
+/// The duplicable conditional instance stays accepted and runs.
+#[test]
+fn should_accept_the_conditional_capture_when_the_instance_copies() {
+    let source = r#"module spec.eei.copycontrol;
+
+const C: bool = true;
+
+func outer<T>(x: T): T {
+    return ([x] () => C ? x : x)();
+}
+
+func main(): i32 {
+    return outer<i32>(42);
+}
+"#;
+    let output = run_host("conditional-copy", source);
+    assert_exit("conditional-copy", &output, 42);
+}
