@@ -1028,3 +1028,215 @@ func main(): i32 {
     );
     assert_run_exit("pin-fill-element-run", source, 17);
 }
+
+/// A structural `len` binds nothing and evaluates nothing: the extent is the
+/// folded constant and the base's instance is not emitted.
+#[test]
+fn should_not_bind_a_structural_len_argument() {
+    let source = r#"module spec.eeiimpl.lenbinding;
+
+func mkArr<T>(x: T): T[2] {
+    return [x, x];
+}
+
+func g<T>(x: T): i32 {
+    return i32(mkArr(x).len);
+}
+
+func main(): i32 {
+    return g<i32>(5) * 10 + 2;
+}
+"#;
+    let emitted = emit_host("pin-len-binding", source);
+    assert!(
+        !emitted.contains("__cl_owned"),
+        "pin-len-binding: a structural length needs no owned temporary"
+    );
+    assert!(
+        !emitted.contains("lenbinding_mkArr"),
+        "pin-len-binding: the folded length does not run the base"
+    );
+    assert_contains_all(
+        "pin-len-binding",
+        &emitted,
+        &["return (i32)(2u);"],
+    );
+    assert_run_exit("pin-len-binding-run", source, 22);
+}
+
+/// An owned struct's empty return takes the emitted zero helper, never a
+/// compound literal.
+#[test]
+fn should_emit_the_struct_zero_helper() {
+    let source = r#"module spec.eeiimpl.emptyret;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func maybe(flag: bool): P {
+    if (flag) {
+        return P { x: 1, y: 2 };
+    }
+}
+
+func main(): i32 {
+    let p: P = maybe(false);
+    return p.x + p.y + maybe(true).x;
+}
+"#;
+    let emitted = emit_host("pin-zero-helper", source);
+    assert_contains_all(
+        "pin-zero-helper",
+        &emitted,
+        &[
+            "static inline ClP cl_zero_ClP(void)",
+            "return cl_zero_ClP();",
+        ],
+    );
+    assert!(
+        !emitted.contains("(ClP){0}"),
+        "pin-zero-helper: the compound literal is gone"
+    );
+    assert_run_exit("pin-zero-helper-run", source, 1);
+}
+
+/// Source bindings named like the generated spellings re-emit
+/// byte-identically with the de-duplicated names.
+#[test]
+fn should_reserve_the_generated_spellings() {
+    let source = r#"module spec.eeiimpl.gennames;
+
+import { String, stringOf } from std.text;
+
+func demo(__cl_ret: i32): i32 {
+    let s: String = stringOf("x");
+    if (__cl_ret > 0) {
+        return __cl_ret + i32(len(s));
+    }
+    return 0;
+}
+
+func outer(x: i32): i32 {
+    let base: i32 = x;
+    return ([base] () => {
+        let __env: i32 = base + 1;
+        return __env + 1;
+    })();
+}
+
+func main(): i32 {
+    return demo(4) + outer(3);
+}
+"#;
+    let (first, second) = emit_twice("pin-generated-names", source);
+    assert_eq!(
+        first, second,
+        "pin-generated-names: the emission must be deterministic"
+    );
+    assert_contains_all(
+        "pin-generated-names",
+        &first,
+        &[
+            "cl_spec_eeiimpl_gennames_demo(i32 __cl_ret_1)",
+            "i32 __cl_ret = 0;",
+            "i32 __env_1 = 0;",
+        ],
+    );
+    assert!(
+        !first.contains("(i32 __cl_ret)"),
+        "pin-generated-names: the parameter must not keep the reserved spelling"
+    );
+    assert_run_exit("pin-generated-names-run", source, 10);
+}
+
+/// A row-element slice typedef follows the struct definition it needs, while
+/// the pointer-element control keeps its place before it.
+#[test]
+fn should_emit_row_slice_typedefs_after_the_struct_definitions() {
+    let row_slice = r#"module spec.eeiimpl.rowsplit;
+
+import { slice } from std.mem;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func total(rows: P[][2]): i32 {
+    return rows[0][0].x + rows[1][1].y;
+}
+
+func main(): i32 {
+    let back: P[3][2] = [[P { x: 1, y: 2 }, P { x: 3, y: 4 }], [P { x: 5, y: 6 }, P { x: 7, y: 8 }], [P { x: 9, y: 10 }, P { x: 11, y: 12 }]];
+    let rows: P[][2] = slice(back, 0, 3);
+    return total(rows);
+}
+"#;
+    let emitted = emit_host("pin-row-split", row_slice);
+    let definition = emitted
+        .find("struct ClP {")
+        .expect("pin-row-split: the struct definition is emitted");
+    let row_typedef = emitted
+        .find("} ClSlice_arr2_P;")
+        .expect("pin-row-split: the row typedef is emitted");
+    assert!(
+        definition < row_typedef,
+        "pin-row-split: the row typedef needs the complete struct"
+    );
+
+    let pointer_slice = r#"module spec.eeiimpl.ptrplace;
+
+import { slice } from std.mem;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func main(): i32 {
+    let ps: P[3] = [P { x: 1, y: 2 }, P { x: 3, y: 4 }, P { x: 5, y: 6 }];
+    let s: P[] = slice(ps, 0, 3);
+    return s[2].x + s[0].y;
+}
+"#;
+    let emitted = emit_host("pin-ptr-place", pointer_slice);
+    let definition = emitted
+        .find("struct ClP {")
+        .expect("pin-ptr-place: the struct definition is emitted");
+    let pointer_typedef = emitted
+        .find("} ClSlice_P;")
+        .expect("pin-ptr-place: the pointer typedef is emitted");
+    assert!(
+        pointer_typedef < definition,
+        "pin-ptr-place: a pointer-element typedef keeps its place"
+    );
+    assert_run_exit("pin-row-split-run", row_slice, 9);
+}
+
+/// A callable-bound parameter's field call goes through the field value.
+#[test]
+fn should_emit_the_bound_field_call_through_the_field() {
+    let source = r#"module spec.eeiimpl.boundfield;
+
+struct Holder<T> {
+    call: T;
+}
+
+func use<T: func(i32): i32>(h: Holder<T>): i32 {
+    return h.call(5);
+}
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    return use<func(i32): i32>(Holder<func(i32): i32> { call: addOne });
+}
+"#;
+    let emitted = emit_host("pin-bound-field", source);
+    assert_contains_all("pin-bound-field", &emitted, &["(h.call)(5)"]);
+    assert_run_exit("pin-bound-field-run", source, 6);
+}

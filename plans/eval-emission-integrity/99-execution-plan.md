@@ -206,7 +206,7 @@ compile-fail tests); `codegen_run_spec_test` 54/54 and `freestanding_spec_test` 
 **Reference**: [03-02](03-02-strict-build-emission.md) §Testing Requirements
 **Objective**: Pin the internals and record the phase review evidence.
 
-- [ ] 2.3.1 Write the Phase 2 implementation pins (the absent `__cl_owned` binding, the `cl_zero_*` spellings, the seeded de-dup spelling, the typedef order, the bound-field call shape, byte-identity where unaffected) — `compiler/tests/eval_emission_integrity_impl_test.rs`
+- [x] 2.3.1 Write the Phase 2 implementation pins (the absent `__cl_owned` binding, the `cl_zero_*` spellings, the seeded de-dup spelling, the typedef order, the bound-field call shape, byte-identity where unaffected) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 15:32)
 - [ ] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
 
 **Deliverables**:
