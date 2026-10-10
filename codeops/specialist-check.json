@@ -1,8 +1,9 @@
 {
-  "checkedAt": "2026-10-09T21:09:53+02:00",
+  "checkedAt": "2026-10-10T08:02:58+02:00",
   "plans": [
     "array-value-integrity",
     "borrow-generic-integrity",
+    "borrow-store-integrity",
     "borrow-view-and-shadowing",
     "call-value-integrity",
     "clorraine-compiler-mvp",
@@ -24,6 +25,7 @@
     "residual-defect-completion",
     "residual-defect-hardening",
     "runtime-value-integrity",
-    "slice-temporary-integrity"
+    "slice-temporary-integrity",
+    "store-emission-integrity"
   ]
 }
