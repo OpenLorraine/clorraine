@@ -139,6 +139,13 @@ impl Checker<'_, '_> {
 
         let mut infos: Vec<CaptureInfo> = Vec::new();
         for capture in captures {
+            // A module-level binding needs no capture, and a nested lambda's
+            // entry must travel through the enclosing lambda's environment;
+            // both are reported before the entry is classified, so a rejected
+            // entry changes nothing.
+            if self.check_capture_entry(&capture.name, capture.span) {
+                continue;
+            }
             let ty = self.name_type(&capture.name);
             match capture.mode {
                 crate::ast::Mode::Take => {

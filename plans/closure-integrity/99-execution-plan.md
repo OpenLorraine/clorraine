@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 10:30
-> **Progress**: 3/22 tasks (14%)
+> **Last Updated**: 2026-10-10 10:32
+> **Progress**: 6/22 tasks (27%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -94,9 +94,15 @@ deliberate pins. The compile-fail driver reports the same designed red state for
 **Objective**: Report module-level entries (`E10406`) and unreachable relayed entries (`E10405`),
 and recognize the dotted capture root for the write rule.
 
-- [ ] 1.2.1 Add the capture-entry validity check (module-level bindings and the enclosing-lambda reachability rule) — `compiler/src/sema/expr.rs`, `compiler/src/sema/mod.rs`
-- [ ] 1.2.2 Return the first segment of any `Qualified` from `place_root_name`, so dotted targets reach the write and move rules — `compiler/src/sema/mod.rs`
-- [ ] 1.2.3 Run the spec suite and `./spec/check.sh` to green (ST-1 – ST-9 and the golden); on any failure STOP and fix the implementation, never the test
+- [x] 1.2.1 Add the capture-entry validity check (module-level bindings and the enclosing-lambda reachability rule) — `compiler/src/sema/expr.rs`, `compiler/src/sema/mod.rs` ✅ (completed: 2026-10-10 10:32)
+- [x] 1.2.2 Return the first segment of any `Qualified` from `place_root_name`, so dotted targets reach the write and move rules — `compiler/src/sema/mod.rs` ✅ (completed: 2026-10-10 10:32)
+- [x] 1.2.3 Run the spec suite and `./spec/check.sh` to green (ST-1 – ST-9 and the golden); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 10:32)
+
+**Green-phase evidence (2026-10-10 10:32)** — the suite passes 9/9 in the pinned container; the
+compile-fail driver asserts the new golden green; `./spec/check.sh` is OK (27 files, 107
+compile-fail tests); and `make check` is fully green (53 suites, zero failures), so no existing
+capture case regresses — the relay rejection fires only for entries the enclosing environment
+cannot carry, and the dotted root only reaches the two capture rules.
 
 **Deliverables**:
 - The capture-entry validity check and the dotted root

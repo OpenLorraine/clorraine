@@ -394,6 +394,57 @@ impl<'a, 'd> Checker<'a, 'd> {
         None
     }
 
+    /// True when a capture entry names a module-level binding.
+    ///
+    /// A module-level binding — a `let`, a `const`, or an imported name — is
+    /// visible inside a lambda without capture, so listing it is meaningless.
+    /// A lexical binding of the same spelling wins, exactly as it does for a
+    /// name read.
+    fn name_is_module_binding(&self, name: &str) -> bool {
+        if self.name_scope_depth(name).is_some() {
+            return false;
+        }
+        if let Some(decl) = self.module.decl(name) {
+            if matches!(decl.kind, DeclKind::Global | DeclKind::Const) {
+                return true;
+            }
+        }
+        self.module.import(name).is_some()
+    }
+
+    /// Reports a capture entry the enclosing scope cannot carry.
+    ///
+    /// A module-level binding needs no capture, so the entry reports
+    /// `E10406` and the fix is to use the name directly. Inside a nested
+    /// lambda, an entry for a name below the enclosing lambda's floor travels
+    /// through that lambda's environment, so the enclosing capture list must
+    /// carry the name; the report reuses `E10405` and the fix is to add it
+    /// there. Returns `true` when the entry was reported, so the caller skips
+    /// it.
+    fn check_capture_entry(&mut self, name: &str, span: Span) -> bool {
+        if self.name_is_module_binding(name) {
+            self.error(
+                "E10406",
+                format!("module-level '{name}' needs no capture"),
+                "use the name directly",
+                span,
+            );
+            return true;
+        }
+        if let Some(&floor) = self.lambda_floors.last() {
+            if self.name_scope_depth(name).is_some_and(|depth| depth < floor) {
+                self.error(
+                    "E10405",
+                    format!("lambda reads '{name}' without listing it"),
+                    &format!("add '{name}' to the capture list"),
+                    span,
+                );
+                return true;
+            }
+        }
+        false
+    }
+
     /// Reports `E10402` when a lambda body writes a capture that is not a
     /// `[borrow x]` capture.
     fn reject_capture_write(&mut self, target: &Expr) {
@@ -603,11 +654,15 @@ fn mentions_heap_string(ty: &Ty) -> bool {
 /// The root name of a place expression, if it is a plain name.
 ///
 /// `counter`, `obj.field`, and `xs[0]` all root at a name, so a capture check
-/// can tell that a write or move targets a captured binding.
+/// can tell that a write or move targets a captured binding. A dotted place
+/// such as `p.x` parses as a multi-segment qualified name, so its root is the
+/// first segment; a module path roots at its module segment too, and no
+/// capture can carry that spelling (an entry naming a module-level binding is
+/// rejected), so the comparison stays safe.
 pub(super) fn place_root_name(expr: &Expr) -> Option<&str> {
     match &expr.kind {
         ExprKind::Name(name) => Some(name),
-        ExprKind::Qualified(name) if name.segments.len() == 1 => Some(&name.segments[0]),
+        ExprKind::Qualified(name) => name.segments.first().map(String::as_str),
         ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => place_root_name(base),
         _ => None,
     }
