@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     Arg, AssignOp, BinaryOp, Block, ConstStmt, ElseBranch, Expr, ExprKind, ForCStmt, ForInStmt,
-    ForInit, IfStmt, IntrinsicArg, Item, LambdaBody, LambdaParam, LetStmt, Mode, Param, Stmt,
-    SwitchLabel, SwitchStmt, TemplatePiece, UnaryOp,
+    ForInit, IfStmt, IntrinsicArg, Item, LambdaBody, LambdaParam, LetStmt, Mode, Param, ScalarType,
+    Stmt, SwitchLabel, SwitchStmt, TemplatePiece, UnaryOp,
 };
 use crate::borrow::{
     is_elided_view, is_handle_or_aggregate, is_lend_candidate, is_nullable_capable, is_view,

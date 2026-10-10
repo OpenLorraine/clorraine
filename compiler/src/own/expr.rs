@@ -626,6 +626,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         target.span,
                     );
                 }
+                // The element-write rule runs after the `const` report above,
+                // so a rejected write keeps exactly one diagnostic; a reported
+                // write skips the emission below.
+                let immutable_view_write = (!is_const || through_pointer)
+                    && self.check_global_immutable_view_write(&id, &projections, target.span);
                 self.eval(value);
                 if !projections.is_empty() && self.place_target(value).is_some() {
                     self.consume_owned_place(value, value.span);
@@ -638,7 +643,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         target.span,
                     );
                 }
-                if !is_const || through_pointer {
+                if (!is_const || through_pointer) && !immutable_view_write {
                     if has_runtime_element(&projections) {
                         self.emit_indexed_store(target, value, compound);
                     } else {
@@ -863,6 +868,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         "declare it with `let` (mutable)",
                         operand.span,
                     );
+                    return;
+                }
+                // The element-write rule runs after the `const` report above,
+                // so a rejected write keeps exactly one diagnostic; a reported
+                // write skips the emission below.
+                if self.check_global_immutable_view_write(&id, &projections, operand.span) {
                     return;
                 }
                 if has_runtime_element(&projections) {

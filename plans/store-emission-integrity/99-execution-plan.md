@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 08:57
-> **Progress**: 9/26 tasks (35%)
+> **Last Updated**: 2026-10-10 09:00
+> **Progress**: 11/26 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -189,8 +189,14 @@ same local-write program; one case pins both rows (AR-20).
 **Reference**: [03-02](03-02-immutable-view-writes.md) §Proposed Changes
 **Objective**: Reject every write through an element of a `str`/`static str` view.
 
-- [ ] 2.2.1 Add the immutable-view write check and call it from the local write path (`write_place`) and the global write branches (`check_assign`/`check_update`) — `compiler/src/own/place.rs`, `compiler/src/own/expr.rs`
-- [ ] 2.2.2 Run the spec suite and `./spec/check.sh` to green (ST-10 – ST-18 and the golden); on any failure STOP and fix the implementation, never the test
+- [x] 2.2.1 Add the immutable-view write check and call it from the local write path (`write_place`) and the global write branches (`check_assign`/`check_update`) — `compiler/src/own/place.rs`, `compiler/src/own/expr.rs` ✅ (completed: 2026-10-10 09:00)
+- [x] 2.2.2 Run the spec suite and `./spec/check.sh` to green (ST-10 – ST-18 and the golden); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 09:00)
+
+**Green-phase evidence (2026-10-10 09:00)** — the suite passes 18/18 in the pinned container (the
+seven immutable-view rejections report exactly one `E10042` naming the written path; the rebind
+and writable-slice controls build and run). The compile-fail driver asserts the new golden green,
+and `make check` passes end to end: `spec check: OK (27 files, 106 compile-fail tests)` with every
+workspace suite reporting zero failures.
 
 **Deliverables**:
 - The checker change

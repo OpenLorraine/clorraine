@@ -119,6 +119,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
+        // An element write through a view of immutable bytes (`str`,
+        // `static str`) is rejected here, after the `const` and read-only-mode
+        // reports above, so each rejected write keeps exactly one diagnostic.
+        if self.check_immutable_view_write(id, projections, span) {
+            return;
+        }
         // A write through a view is a use of every loan the view carries; a
         // whole write of the view binding is a rebind, so `bind_value` updates
         // its loans instead. A write to a value that is not a view is an owner
@@ -193,6 +199,118 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn is_readonly_param(&self, id: usize) -> bool {
         let binding = &self.bindings[id];
         binding.kind == BindingKind::Param && matches!(binding.mode, Mode::None | Mode::Const)
+    }
+
+    /// Reports `E10042` when a local write ends in an element of an immutable
+    /// view.
+    ///
+    /// A `str` or `static str` view names storage the language never lets a
+    /// write reach: the bytes may be a literal's static storage or another
+    /// owner's memory under a shared loan. The check looks at the type the
+    /// final element selection is applied to, so a parameter, local, field,
+    /// or module-level view base is caught alike. A whole-view rebind and a
+    /// write through a writable (borrow-derived) slice are not element writes
+    /// and stay accepted. Returns `true` when the write was reported, so the
+    /// caller can stop before any state changes.
+    pub(super) fn check_immutable_view_write(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        span: Span,
+    ) -> bool {
+        let ty = self.bindings[id].ty.clone();
+        let name = self.bindings[id].name.clone();
+        self.report_immutable_view_write(&ty, &name, projections, span)
+    }
+
+    /// Reports `E10042` for a module-level write with the same predicate.
+    ///
+    /// A module binding is writable storage by default, but its declared type
+    /// still decides whether an element write can reach the bytes.
+    pub(super) fn check_global_immutable_view_write(
+        &mut self,
+        id: &ir::GlobalId,
+        projections: &[ir::Projection],
+        span: Span,
+    ) -> bool {
+        let Some(global) = self.program.globals.get(id) else {
+            return false;
+        };
+        let ty = global.ty.clone();
+        let name = id.name.clone();
+        self.report_immutable_view_write(&ty, &name, projections, span)
+    }
+
+    /// The shared immutable-view predicate and its report.
+    ///
+    /// The rule fires only when the final projection selects an element and
+    /// the type that selection is applied to is `str` or `static str` — the
+    /// two view types whose byte storage is immutable. The message names the
+    /// binding, or `binding.field` when the selection's base ends in a field
+    /// projection.
+    fn report_immutable_view_write(
+        &mut self,
+        ty: &Ty,
+        name: &str,
+        projections: &[ir::Projection],
+        span: Span,
+    ) -> bool {
+        let Some((last, prefix)) = projections.split_last() else {
+            return false;
+        };
+        if !matches!(
+            last,
+            ir::Projection::Element(_) | ir::Projection::ElementTemp(_)
+        ) {
+            return false;
+        }
+        let prefix_ty = self.projection_ty(ty, prefix);
+        if !matches!(prefix_ty.kind, TyKind::Str | TyKind::StaticStr) {
+            return false;
+        }
+        let view = match prefix.last() {
+            Some(ir::Projection::Field(field)) => format!("{name}.{field}"),
+            _ => name.to_owned(),
+        };
+        self.error(
+            "E10042",
+            format!("cannot write through immutable view '{view}'"),
+            "copy the bytes into an owned `String` or a `borrow`-derived `u8[]` view",
+            span,
+        );
+        true
+    }
+
+    /// The type a projection path selects when applied to `ty`.
+    ///
+    /// Field steps substitute the instance's type arguments; an element step
+    /// descends one extent exactly as an element access types it (a `str`
+    /// byte is `u8`, and a raw pointer reaches its pointee). A step the type
+    /// cannot resolve stays unknown, so no immutable-view judgment rides on
+    /// an unresolved type.
+    fn projection_ty(&self, ty: &Ty, projections: &[ir::Projection]) -> Ty {
+        let mut current = ty.clone();
+        for projection in projections {
+            let next = match projection {
+                ir::Projection::Field(field) => self
+                    .sema
+                    .table
+                    .instance_field(&current, field)
+                    .unwrap_or_else(Ty::unknown),
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                    match &current.kind {
+                        TyKind::Array { .. } => current.iterated_element(),
+                        TyKind::Str | TyKind::CString | TyKind::StaticStr => {
+                            Ty::scalar(ScalarType::U8)
+                        }
+                        TyKind::Raw(inner) => (**inner).clone(),
+                        _ => Ty::unknown(),
+                    }
+                }
+            };
+            current = next;
+        }
+        current
     }
 
     /// Moves out of a place, applying partial-move and loan rules.
