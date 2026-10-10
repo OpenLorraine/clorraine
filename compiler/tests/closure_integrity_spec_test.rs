@@ -527,3 +527,100 @@ fn should_reject_the_module_capture_golden_directly() {
         .join("../spec/tests/compile-fail/E10406_module_capture.clo");
     assert_rejected_once_at("module-capture-golden", &golden, "E10406", &["'base'"], &[]);
 }
+
+/// The generic captured-owner return is rejected once when the instance owns.
+///
+/// A bare `T` capture copies at the declaration, but an owning substitution
+/// makes the copy alias the enclosing binding, so the return would release
+/// the same storage twice. The per-instance judgment reports the same
+/// diagnostic the concrete spelling does: exactly one `E10401` naming `x`.
+#[test]
+fn should_reject_the_generic_captured_owner_return_when_the_instance_owns() {
+    let source = r#"module spec.ci.genericowner;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("abcd") };
+    let r: Wrap = outer<Wrap>(w);
+    return i32(len(r.v));
+}
+"#;
+    assert_rejected_once("generic-owner-return", source, "E10401", &["'x'"], &[]);
+}
+
+/// The concrete captured-owner return keeps its single report.
+#[test]
+fn should_reject_the_concrete_captured_owner_return() {
+    let source = r#"module spec.ci.concreteowner;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func outer(x: Wrap): Wrap {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("abcd") };
+    let r: Wrap = outer(w);
+    return i32(len(r.v));
+}
+"#;
+    assert_rejected_once("concrete-owner-return", source, "E10401", &["'x'"], &[]);
+}
+
+/// The same generic return with a duplicable instance is accepted and runs.
+#[test]
+fn should_accept_and_run_the_captured_owner_return_when_the_instance_copies() {
+    let source = r#"module spec.ci.genericcopy;
+
+func outer<T>(x: T): T {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    return outer<i32>(42);
+}
+"#;
+    let output = run_host("generic-copy-return", source);
+    assert_exit("generic-copy-return", &output, 42);
+}
+
+/// A called func-typed capture named like a module lender releases once.
+///
+/// The local `run` shares its name with the module function, but the call
+/// goes through the captured value; the owned result must be bound and
+/// released like any other temporary, so the run reads the result's length
+/// and the sanitizer stays quiet.
+#[test]
+fn should_accept_and_run_a_called_func_typed_capture_named_like_a_lender() {
+    let source = r#"module spec.ci.lendercapture;
+
+import { String, stringOf } from std.text;
+
+func run(borrow s: String): String {
+    return stringOf("mod");
+}
+
+func main(): i32 {
+    let run: func(borrow String): String = run;
+    let r: String = ([run] () => run(stringOf("ab")))();
+    return i32(len(r));
+}
+"#;
+    let output = run_memory("lender-capture", source);
+    assert_exit("lender-capture", &output, 3);
+    assert_no_asan("lender-capture", &output);
+}

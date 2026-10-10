@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 10:41
-> **Progress**: 8/22 tasks (36%)
+> **Last Updated**: 2026-10-10 10:48
+> **Progress**: 10/22 tasks (45%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -152,8 +152,15 @@ re-review. Rulings are recorded in [05-findings.md](05-findings.md).
 **Objective**: Pin the corrected return judgment and the release-once capture call before any
 implementation.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-10 – ST-13 — `compiler/tests/closure_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-10 and ST-11 fail; ST-12 and ST-13 pass as deliberate pins — ST-13's leak is asserted by the separate ASan probe task, not the plain run)
+- [x] 2.1.1 [spec-author] Write specification tests from ST-10 – ST-13 — `compiler/tests/closure_integrity_spec_test.rs` ✅ (completed: 2026-10-10 10:48)
+- [x] 2.1.2 Run the spec suite and record the red phase (expected: ST-10 and ST-11 fail; ST-12 and ST-13 pass as deliberate pins — ST-13's leak is asserted by the separate ASan probe task, not the plain run) ✅ (completed: 2026-10-10 10:48)
+
+**Red-phase evidence (2026-10-10 10:48)** — the extended suite (14 tests) fails exactly as
+designed: 13 passed, 1 failed. ST-10 (the generic owning instance) fails — the declaration accepts
+the returning copy and the instance double-frees; ST-11 (the concrete spelling) passes because the
+existing E10401 rule already judges it (the plan's red list was conservative); ST-12 (the
+duplicable instance — exit 42) and ST-13 (the called func-typed capture — exit 3 under the plain
+build; its leak is asserted by the separate ASan probe) pass as deliberate pins.
 
 **Deliverables**:
 - Specification suite with ST-10 – ST-13
