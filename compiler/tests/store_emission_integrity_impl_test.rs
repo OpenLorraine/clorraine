@@ -1046,4 +1046,42 @@ func main(): i32 {
         !unit.contains("__cl_itmp0[2]"),
         "init-slice-conditional: the array operand is materialized as an array temporary"
     );
+
+    let impure = r#"module spec.sei.impl.impureindex;
+
+let backing: i32[3] = [1, 2, 3];
+let x: i32[2] = [10, 11];
+let y: i32[2] = [20, 21];
+let calls: i32 = 0;
+
+func idx(): usize {
+    calls = calls + 1;
+    if (calls == 1) {
+        return 0;
+    }
+    return 5;
+}
+
+let a: i32[2] = backing[idx()] > 0 ? x : y;
+
+func main(): i32 {
+    return a[0] + calls;
+}
+"#;
+    let (unit, _) = emit_twice("init-impure-index", impure);
+    assert_eq!(
+        count_of(&unit, "cl_spec_sei_impl_impureindex_idx()"),
+        1,
+        "init-impure-index: the index does not run exactly once"
+    );
+    let store = position_of(
+        &unit,
+        "usize __cl_itmp0 = cl_spec_sei_impl_impureindex_idx();",
+    );
+    let guard = position_of(&unit, "(usize)(__cl_itmp0) >= (usize)(3)");
+    let read = position_of(&unit, "cl_spec_sei_impl_impureindex_backing[__cl_itmp0]");
+    assert!(
+        store < guard && guard < read,
+        "init-impure-index: the guard and the read do not share the stored index"
+    );
 }

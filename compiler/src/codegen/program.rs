@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
+use crate::ast::{BinaryOp, EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
@@ -802,6 +802,10 @@ impl<'a> Emitter<'a> {
         guard: Option<&str>,
         zero: &str,
     ) -> (String, Value) {
+        // The operand's impure guarded sub-expressions are stored first, in
+        // source evaluation order, so the guards emitted below and the stored
+        // value read one evaluation.
+        let value = self.materialize_guarded_sub_operands(value, guard);
         let name = self.next_init_local();
         match guard {
             Some(enclosing) => {
@@ -812,14 +816,14 @@ impl<'a> Emitter<'a> {
                 // The operand's own guards ride the guarded assignment, so a
                 // bounds or division check runs only on the path that reaches
                 // the operand.
-                let rendered = self.guarded_value(value);
+                let rendered = self.guarded_value(&value);
                 self.push(&format!("    if ({enclosing}) {{ {name} = {rendered}; }}"));
             }
             None => {
                 // The operand's guards are statements before its store,
                 // exactly as the single-assignment path emits them.
-                self.emit_guards(value);
-                let rendered = self.value(value);
+                self.emit_guards(&value);
+                let rendered = self.value(&value);
                 self.push(&format!(
                     "    {} = {rendered};",
                     declarator(&value.ty, &name, &self.sema.table)
@@ -835,6 +839,99 @@ impl<'a> Emitter<'a> {
             }),
         );
         (name, read)
+    }
+
+    /// Rewrites a materialized operand so a guard and the value it guards
+    /// read one evaluation.
+    ///
+    /// The function path stores an impure index, divisor, or cast operand
+    /// while it lowers the expression, so its guard pass reads the stored
+    /// value. The module initializer re-lowers from the syntax, so this
+    /// rewrite stores those operands into init locals in source evaluation
+    /// order; with a guard, a store runs only on the path that reaches the
+    /// operand. A conditional nested in the operand rewrites under the same
+    /// guard, so its parts keep one store per operand.
+    fn materialize_guarded_sub_operands(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        match &value.kind {
+            ValueKind::Index { base, index } => {
+                let base = self.materialize_guarded_sub_operands(base, guard);
+                let index = self.materialize_guarded_sub_operands(index, guard);
+                let index = self.store_impure_init_operand(&index, guard);
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index: Box::new(index),
+                    },
+                )
+            }
+            ValueKind::Member { base, name } => Value::new(
+                value.ty.clone(),
+                ValueKind::Member {
+                    base: Box::new(self.materialize_guarded_sub_operands(base, guard)),
+                    name: name.clone(),
+                },
+            ),
+            ValueKind::Unary { op, operand } => Value::new(
+                value.ty.clone(),
+                ValueKind::Unary {
+                    op: *op,
+                    operand: Box::new(self.materialize_guarded_sub_operands(operand, guard)),
+                },
+            ),
+            ValueKind::Binary { op, left, right } => {
+                let left = self.materialize_guarded_sub_operands(left, guard);
+                let rewritten = self.materialize_guarded_sub_operands(right, guard);
+                // The divisor carries the division guard, so an impure one is
+                // stored once.
+                let right = if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                    self.store_impure_init_operand(&rewritten, guard)
+                } else {
+                    rewritten
+                };
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Binary {
+                        op: *op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                )
+            }
+            ValueKind::Cast { to, value: inner } => {
+                let inner = self.materialize_guarded_sub_operands(inner, guard);
+                let inner = self.store_impure_init_operand(&inner, guard);
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Cast {
+                        to: to.clone(),
+                        value: Box::new(inner),
+                    },
+                )
+            }
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => Value::new(
+                value.ty.clone(),
+                ValueKind::Conditional {
+                    condition: Box::new(self.materialize_guarded_sub_operands(condition, guard)),
+                    then_value: Box::new(self.materialize_guarded_sub_operands(then_value, guard)),
+                    else_value: Box::new(self.materialize_guarded_sub_operands(else_value, guard)),
+                },
+            ),
+            _ => value.clone(),
+        }
+    }
+
+    /// Stores an impure operand once into an init local.
+    fn store_impure_init_operand(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        if init_operand_is_pure(value) {
+            return value.clone();
+        }
+        let (_, local) = self.materialize_init_local(value, guard, "0");
+        local
     }
 
     /// The C name of the next init-function local.
