@@ -332,8 +332,14 @@ impl<'a> Emitter<'a> {
             ExprKind::Unsafe(inner) => self.collect_init_slice_types(inner, found),
             ExprKind::IntrinsicCall { args, .. } => {
                 for arg in args {
-                    if let IntrinsicArg::Expr(inner) = arg {
-                        self.collect_init_slice_types(inner, found);
+                    match arg {
+                        IntrinsicArg::Expr(inner) => self.collect_init_slice_types(inner, found),
+                        IntrinsicArg::Type(written) => {
+                            // A written type argument such as `i32[]` needs its
+                            // slice typedef exactly like a value position does.
+                            let ty = self.resolve_written(written);
+                            collect_slice_types(&ty, found);
+                        }
                     }
                 }
             }
@@ -889,6 +895,21 @@ impl<'a> Emitter<'a> {
                 let (_, local) = self.materialize_init_local(&value, guard, &zero);
                 local
             }
+            // An element of a literal is read once per element store, so a
+            // condition or run-time index inside it is prepared under the same
+            // guard the stores carry; a nested row recurses.
+            ValueKind::ArrayLit { elements, fill } => Value::new(
+                value.ty.clone(),
+                ValueKind::ArrayLit {
+                    elements: elements
+                        .iter()
+                        .map(|element| self.prepare_fill_value(element, guard))
+                        .collect(),
+                    fill: fill
+                        .as_deref()
+                        .map(|fill| Box::new(self.prepare_fill_value(fill, guard))),
+                },
+            ),
             _ => value.clone(),
         }
     }
@@ -1076,17 +1097,26 @@ impl<'a> Emitter<'a> {
                 name,
                 args,
                 type_arg,
-            } => Value::new(
-                value.ty.clone(),
-                ValueKind::Intrinsic {
-                    name: name.clone(),
-                    args: args
-                        .iter()
-                        .map(|arg| self.materialize_init_value(arg, guard))
-                        .collect(),
-                    type_arg: type_arg.clone(),
-                },
-            ),
+            } => {
+                let args: Vec<Value> = args
+                    .iter()
+                    .map(|arg| self.materialize_init_value(arg, guard))
+                    .collect();
+                // The view builder's slice guard checks the offsets against
+                // the source extent; it runs where the construction is
+                // evaluated, exactly as the function path emits it.
+                if guard.is_none() && name == "slice" {
+                    self.emit_slice_guard(&args);
+                }
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Intrinsic {
+                        name: name.clone(),
+                        args,
+                        type_arg: type_arg.clone(),
+                    },
+                )
+            }
             ValueKind::Index { base, index } => {
                 let base = self.materialize_init_value(base, guard);
                 let index = self.materialize_init_value(index, guard);
@@ -1127,15 +1157,25 @@ impl<'a> Emitter<'a> {
                     // — and the left-decided value stands when the right side
                     // is skipped.
                     let left = self.materialize_init_value(left, guard);
-                    let left_c = match guard {
-                        Some(enclosing) => {
-                            format!("{enclosing} && {}", self.guarded_value(&left))
-                        }
-                        None => self.guarded_value(&left),
-                    };
+                    let left_c = self.guarded_value(&left);
+                    // The enclosing guard stays a real conjunct, so a skipped
+                    // enclosing choice never reaches the right side: `&&`
+                    // decides on the left operand, `||` on its negation.
                     let (zero, decision) = match op {
-                        BinaryOp::LogicalAnd => ("0", left_c),
-                        _ => ("1", format!("!({left_c})")),
+                        BinaryOp::LogicalAnd => {
+                            let decision = match guard {
+                                Some(enclosing) => format!("{enclosing} && {left_c}"),
+                                None => left_c,
+                            };
+                            ("0", decision)
+                        }
+                        _ => {
+                            let decision = match guard {
+                                Some(enclosing) => format!("{enclosing} && !({left_c})"),
+                                None => format!("!({left_c})"),
+                            };
+                            ("1", decision)
+                        }
                     };
                     let name = self.next_init_local();
                     self.push(&format!(

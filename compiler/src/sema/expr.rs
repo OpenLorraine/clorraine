@@ -848,16 +848,17 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        // An expected slice extent cannot type a literal: a literal's shape is
-        // fixed, so a ``None`` outer extent takes the literal's own element
-        // count and the conversion to the view target reports. The expected
-        // fixed extents still carry into the literal's type.
+        // An expected slice extent cannot type a fill-free literal: a literal's
+        // shape is fixed, so a ``None`` outer extent takes the literal's own
+        // element count and the conversion to the view target reports. A fill
+        // keeps its own fixed-extent diagnostic instead, and the expected fixed
+        // extents still carry into the literal's type.
         let mut extents = match expected_extents {
             Some(extents) if !extents.is_empty() => extents,
             _ if elements.is_empty() && fill.is_some() => vec![None],
             _ => vec![Some(elements.len())],
         };
-        if extents.first() == Some(&None) {
+        if fill.is_none() && extents.first() == Some(&None) {
             extents[0] = Some(elements.len());
         }
         Ty::array(

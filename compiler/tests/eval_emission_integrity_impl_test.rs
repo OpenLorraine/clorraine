@@ -730,3 +730,129 @@ func main(): i32 {
 "#;
     assert_run_exit("pin-arg-operand", source, 17);
 }
+
+/// A slice view checks its offsets where the view is built, so an eager
+/// out-of-range slice faults; a slice in a skipped arm does not.
+#[test]
+fn should_guard_an_eager_slice_view() {
+    let out_of_range = r#"module spec.eei.sliceguard;
+
+import { slice } from std.mem;
+
+let arr: i32[4] = [1, 2, 3, 4];
+let n: i32 = 5;
+let v: i32[] = slice(arr, 0, n);
+
+func main(): i32 {
+    return i32(v[0]);
+}
+"#;
+    let output = run_host("pin-slice-guard", out_of_range);
+    assert!(
+        !output.status.success(),
+        "pin-slice-guard: an out-of-range view must fault"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("E11211"),
+        "pin-slice-guard: expected the bounds diagnostic; stderr:\n{stderr}"
+    );
+
+    let skipped_arm = r#"module spec.eei.slicearmskip;
+
+import { slice } from std.mem;
+
+func pick(): bool {
+    return false;
+}
+
+let arr: i32[4] = [1, 2, 3, 4];
+let n: i32 = 5;
+let w: i32[] = pick() ? slice(arr, 0, n) : slice(arr, 0, 1);
+
+func main(): i32 {
+    return i32(w[0]);
+}
+"#;
+    assert_run_exit("pin-slice-arm-skip", skipped_arm, 1);
+}
+
+/// A `||` under an enclosing choice keeps the guard: a skipped guard never
+/// reaches the right side, and the taken path runs it once.
+#[test]
+fn should_keep_or_lazy_under_an_enclosing_choice() {
+    let source = r#"module spec.eei.orguard;
+
+let calls: i32 = 0;
+
+func p(): bool {
+    return false;
+}
+
+func f(): bool {
+    calls = calls + 10;
+    return false;
+}
+
+func idx(): i32 {
+    calls = calls + 1;
+    return 0;
+}
+
+let s: u8[2] = [1, 2];
+let b: bool = p() ? (f() || (s[idx()] == 1)) : true;
+
+func main(): i32 {
+    return calls;
+}
+"#;
+    assert_run_exit("pin-or-guard-skip", source, 0);
+    let taken = source.replace(
+        "func p(): bool {\n    return false;",
+        "func p(): bool {\n    return true;",
+    );
+    assert_run_exit("pin-or-guard-taken", &taken, 11);
+}
+
+/// A written slice type argument in an initializer needs its typedef.
+#[test]
+fn should_emit_the_typedef_for_a_written_slice_type_argument() {
+    let source = r#"module spec.eei.sizetypedef;
+
+let n: usize = sizeof(i32[]);
+
+func main(): i32 {
+    if (n > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("pin-size-typedef", source);
+    assert!(
+        emitted.contains("ClSlice_i32"),
+        "pin-size-typedef: the written slice type needs its emitted typedef"
+    );
+    assert_run_exit("pin-size-typedef-run", source, 1);
+}
+
+/// A condition inside a row element runs once, not once per element store.
+#[test]
+fn should_evaluate_a_row_element_condition_once() {
+    let source = r#"module spec.eei.rowcond;
+
+let calls: i32 = 0;
+
+func pick(): bool {
+    calls = calls + 1;
+    return true;
+}
+
+let a: i32[2][2] = [pick() ? [1, 2] : [3, 4], [5, 6]];
+
+func main(): i32 {
+    return calls * 10 + a[0][0];
+}
+"#;
+    assert_run_exit("pin-row-condition", source, 11);
+}
