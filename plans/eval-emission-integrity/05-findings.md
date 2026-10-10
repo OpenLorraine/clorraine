@@ -83,3 +83,47 @@ The verification of the slice-guard fix raised RV-001 (a view-typed lazy part wi
 
 **Review budget**: one scoped re-review after the fix round (correctness + emission lenses on the
 redesigned walk).
+
+## Phase 2: Strict-build emission shapes (DEF-76, 97, 80, 90, 98, 112, 120, 128)
+
+**Reviewers**: correctness reviewer (RV), emission-integrity auditor (EIA), memory-safety
+auditor (MS). Diff reviewed: `259cda6..4dfbf22`. All three ran the base-tree red checks;
+the memory audit found no in-scope defect (43 host ASan probes clean).
+
+### Fixed in-batch (the review's blocking findings)
+
+| # | Sev | Finding | Ruling |
+| - | --- | ------- | ------ |
+| RV-001 / EIA (F1) | 🟠 | The DEF-98 coercion wrapped an argument that `argument_text` already converted to a C pointer, so a `cstring` literal regressed to `C(("x").ptr)` — invalid C, a working program broken. | **Fixed**: the coercion now applies to `APTR` targets only and only when the argument actually crosses as a view (a slice/`str` value, or an owned `String` widening to `str`), conjoining the pointer with the ABI cast (`(APTR)(text).ptr`). The `cstring` literal control re-runs (`n = C("x")`), and the `str`, `String`-widening, and slice spellings are pinned. |
+| RV-002 | 🟠 | A store to a structural `.len` (`xs.len = 4`, `+=`, `++`) passed the checker and was silently dropped by the emission (base failed loudly with invalid C) — a wrong program that ran. | **Fixed**: the store and update paths report `E10221` ("left side of an assignment must be a place") for a structural `.len` target; the three spellings are specification cases. |
+| RV-003 | 🟡 | The `__cl_tmpN` reservation arm had no committed pin. | **Fixed**: a `__cl_tmp0` parameter plus a guard temporary pins the rename (`__cl_tmp0_1`) and the temporary's own spelling. |
+| RV-P1 / EIA (P3) | 🟠 | `len(xs)` and `xs.len()` on a never-otherwise-read fixed-array local still failed the strict build (`-Wunused-but-set-variable`), and `len(mkBox().arr)` still evaluated its receiver root — the residual halves of the structural-`len` fold. | **Fixed**: the fold now covers every `len` spelling at the own layer (the intrinsic argument and the dot-call receiver fold to the compile-time extent before any lowering), so the base instance disappears and the local reads nothing. Pinned by the extended member-spelling case (`xs.len`, `len(xs)`, `xs.len()`) and the module-init projection probe. |
+
+### Deliberate test update
+
+- `array_value_integrity_impl_test.rs` (`ai6`): the pinned spelling of the structural extent moved
+  from `(i32)(2)` to `(i32)(2u)`, the folded `usize` literal's suffix. The assertion's intent (the
+  outermost extent is the constant 2) is preserved; the whitespace and suffix change is the fold's.
+
+### Filed (pre-existing classes; new rows on the roadmap)
+
+| # | Sev | Finding | Filed as |
+| - | --- | ------- | -------- |
+| MS (PRE-1) | 🔴 | A source local named `__cl_owned0` collides with the ownership layer's generated temporary of the same name in the name-keyed binding lookup; the accepted program double-frees (host ASan confirms; base identical). | DEF-138 |
+| MS (PRE-2) | 🟠 | A field call through a temporary receiver (`H{…}.call(5)`, `makeH().call(5)`) leaks the receiver's owned sibling fields. | DEF-139 |
+| MS (PRE-3) | 🟠 | Two instances of one generic struct with different `func` signatures share the type key `fn`, so `ClHolder__fn` is redefined and the accepted program does not build. | DEF-140 |
+| EIA (P8) | 🟠 | `len` of a null `String` segfaults at run time (a null pointer read through the view widening). | DEF-141 |
+| EIA (P5) | 🟡 | A slice of a handle-element array built only as an inline argument (`len(slice(mkS(), 0, 2))`) misses its `ClSlice_<T>` typedef. | DEF-142 |
+
+### Verification evidence (Phase 2)
+
+The base tree reproduces every ST-8 – ST-16 failure and the phase's pins fail there; the head runs
+all 17 specification cases and 30 implementation pins green. The emission auditor's sweep (3543
+emission pairs over 1181 programs × profiles) shows every corpus diff attributable to the eight
+fixes and no build regression; the memory audit's 43 ASan probes are clean for every in-scope
+shape. After the fix round: `make check` green (1526 tests), `./spec/check.sh` OK, the reviewers'
+reproductions re-run (the `cstring` literal builds, the `str`/`String`/slice coercions build and
+run, the three `.len` writes reject with one `E10221`).
+
+**Review budget**: three review dispatches for Phase 2 (correctness, emission-integrity, memory)
+plus the scoped re-review of this fix round; every blocking finding fixed in-batch with pins.

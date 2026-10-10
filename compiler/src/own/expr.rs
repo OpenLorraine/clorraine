@@ -659,11 +659,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             None => {
+                // A fixed array's structural `.len` reads no storage, so it is
+                // not an assignment target: the length is a compile-time extent
+                // and cannot be written. Rejecting it keeps the diagnostic
+                // loud instead of emitting a store that has no target.
+                if self.structural_len_target(target) {
+                    self.error(
+                        "E10221",
+                        "left side of an assignment must be a place",
+                        "assign to a variable, field, or element",
+                        target.span,
+                    );
+                }
                 self.eval(target);
                 self.eval(value);
             }
         }
         self.check_value_into(value, &target_ty, value.span);
+    }
+
+    /// True when a store target is a fixed array's structural `.len`.
+    ///
+    /// The parser spells `value.len` as a dotted name, and a `Member` shape
+    /// also reaches the store path; both name the array's compile-time extent,
+    /// which has no storage to write.
+    fn structural_len_target(&self, target: &Expr) -> bool {
+        match &target.kind {
+            ExprKind::Qualified(name) => self.qualified_structural_len(name).is_some(),
+            ExprKind::Member { base, name } => name == "len" && self.ty(base).is_fixed_array(),
+            _ => false,
+        }
     }
 
     /// True when the store's value is the target place itself.
@@ -890,6 +915,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             None => {
+                // A fixed array's structural `.len` is not an update target:
+                // the length is a compile-time extent and cannot be written.
+                if self.structural_len_target(operand) {
+                    self.error(
+                        "E10221",
+                        "left side of an assignment must be a place",
+                        "assign to a variable, field, or element",
+                        operand.span,
+                    );
+                    return;
+                }
                 self.eval(operand);
             }
         }

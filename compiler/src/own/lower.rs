@@ -290,6 +290,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             },
             ExprKind::Unsafe(inner) => return self.lower_value(inner),
             ExprKind::IntrinsicCall { name, args } => {
+                // A fixed array's `len` is its structural extent: the length is
+                // a compile-time constant, so nothing is bound and the
+                // argument reads no storage.
+                if name == "len" {
+                    if let Some(IntrinsicArg::Expr(inner)) = args.first() {
+                        if let Some(extent) = fixed_array_extent(&self.ty(inner)) {
+                            return Value {
+                                ty: Ty::usize_ty(),
+                                kind: ValueKind::Int(extent as i128),
+                            };
+                        }
+                    }
+                }
                 let mut values = Vec::new();
                 let mut type_arg = None;
                 for arg in args {
@@ -1849,5 +1862,18 @@ fn is_pure_value(value: &Value) -> bool {
             elements.iter().all(is_pure_value) && fill.as_deref().map_or(true, is_pure_value)
         }
         _ => true,
+    }
+}
+
+/// The outermost extent of a fixed array, when the type is one.
+///
+/// A fixed array's length is a compile-time constant, so `len` of one needs no
+/// value: nothing is bound and the base reads no storage.
+pub(super) fn fixed_array_extent(ty: &Ty) -> Option<usize> {
+    match &ty.kind {
+        TyKind::Array { extents, .. } if extents.iter().all(Option::is_some) => {
+            extents.first().and_then(|size| *size)
+        }
+        _ => None,
     }
 }

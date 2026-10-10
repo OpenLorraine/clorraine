@@ -626,7 +626,7 @@ func main(): i32 {
 }
 
 /// The `.len` member of a fixed array is the structural extent for a named
-/// local and for a call result alike.
+/// local and for a call result alike, in all three spellings.
 #[test]
 fn should_build_the_structural_len_member_spellings() {
     let source = r#"module spec.eei.lenmember;
@@ -638,11 +638,29 @@ func mkArr(): i32[2] {
 func main(): i32 {
     let xs: u8[3] = [1, 2, 3];
     let n: usize = xs.len;
-    return i32(n) * 10 + i32(mkArr().len);
+    let m: i32 = i32(len(xs));
+    let k: i32 = i32(xs.len());
+    return i32(n) * 10 + m + k + i32(mkArr().len);
 }
 "#;
     let output = run_host("len-member", source);
-    assert_exit("len-member", &output, 32);
+    assert_exit("len-member", &output, 38);
+}
+
+/// A structural `.len` is not a write target: a store, a compound store, and
+/// an update each report `E10221` instead of emitting nothing.
+#[test]
+fn should_reject_a_structural_len_write_target() {
+    for (tag, statement) in [
+        ("len-store", "xs.len = 4;"),
+        ("len-compound", "xs.len += 1;"),
+        ("len-update", "xs.len++;"),
+    ] {
+        let source = format!(
+            "module spec.eei.lentarget;\n\nfunc main(): i32 {{\n    let xs: i32[3] = [1, 2, 3];\n    {statement}\n    return i32(xs.len);\n}}\n"
+        );
+        assert_rejected_once(tag, &source, "E10221", &[], &[]);
+    }
 }
 
 /// A struct-returning function that falls off its end returns the zero value
@@ -724,6 +742,33 @@ func main(): i32 {
     let stub = "typedef void *APTR;\ntypedef int LONG;\nLONG RawSecond(APTR data) { return ((unsigned char *)data)[1]; }\n";
     let output = run_host_with_stub("view-extern", source, stub);
     assert_exit("view-extern", &output, 2);
+
+    let coercions = r#"module spec.eei.viewexterncoerce;
+
+import { slice } from std.mem;
+import { String, stringOf } from std.text;
+
+ffi lib {
+    func CText(s: cstring): i32;
+    func RStr(s: str): i32;
+    func RSlice(data: u8[]): i32;
+}
+
+func main(): i32 {
+    let xs: u8[4] = [7, 2, 3, 4];
+    let s: u8[] = slice(xs, 0, 4);
+    let t: str = "hi";
+    let owned: String = stringOf("z");
+    let n: i32 = 0;
+    unsafe {
+        n = CText("x") + RStr(t) + RStr(owned) + RSlice(s);
+    }
+    return n;
+}
+"#;
+    let stub = "typedef void *APTR;\ntypedef char *STRPTR;\ntypedef int LONG;\nLONG CText(STRPTR s) { return s != 0; }\nLONG RStr(APTR s) { return s != 0; }\nLONG RSlice(APTR s) { return s != 0; }\n";
+    let output = run_host_with_stub("view-extern-coerce", coercions, stub);
+    assert_exit("view-extern-coerce", &output, 4);
 }
 
 /// Source bindings named like the compiler-generated locals de-duplicate

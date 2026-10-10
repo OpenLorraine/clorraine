@@ -9,6 +9,7 @@
 //! directly.
 
 use super::*;
+use super::lower::fixed_array_extent;
 
 impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// True when a call's callee is a dot-call with a value receiver.
@@ -257,6 +258,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Some(result)
     }
 
+    /// The structural extent a dot-`len` receiver names, when it names one.
+    ///
+    /// The receiver of `xs.len()` is a fixed array exactly when its own type
+    /// says so; the length is then a compile-time constant and nothing is
+    /// bound or evaluated.
+    fn structural_len_extent(&self, callee: &Expr) -> Option<usize> {
+        match &callee.kind {
+            ExprKind::Member { base, .. } => fixed_array_extent(&self.ty(base)),
+            ExprKind::Qualified(name) => self.qualified_structural_len(name),
+            _ => None,
+        }
+    }
+
     /// Lowers a compiler-known intrinsic call, when the callee names one.
     ///
     /// The view builders `rawSlice`, `rawStr`, and `slice` become an intrinsic
@@ -281,18 +295,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return None;
         }
         if name == "len" && type_args.is_empty() {
+            // A fixed array's `len` is its structural extent: the length is a
+            // compile-time constant, so nothing is bound and the receiver
+            // reads no storage.
+            if let Some(extent) = self.structural_len_extent(callee) {
+                return Some((Ty::usize_ty(), ValueKind::Int(extent as i128)));
+            }
             // `xs.len()` is the dot-call spelling of `len(xs)`; the receiver
             // becomes the intrinsic's argument. The intrinsic borrows the
             // receiver, so an ownerless owned result needs the caller-side
             // binding its cleanup uses.
             let receiver = self.lower_dot_receiver(callee)?;
-            // A fixed array's `len` is structural: the length needs no
-            // storage, so the receiver keeps its form and nothing runs for it.
-            let receiver = if receiver.ty.is_fixed_array() {
-                receiver
-            } else {
-                self.bind_intrinsic_argument(receiver)
-            };
+            let receiver = self.bind_intrinsic_argument(receiver);
             return Some((
                 Ty::usize_ty(),
                 ValueKind::Intrinsic {

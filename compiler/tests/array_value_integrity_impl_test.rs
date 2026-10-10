@@ -383,7 +383,7 @@ func main(): i32 {
 "#;
     let (output, emitted) = emit_build_run("ai6", source);
     assert!(
-        emitted.contains("return (i32)(2);"),
+        emitted.contains("return (i32)(2u);"),
         "ai6: len of a two-row array should render the constant 2"
     );
     assert_exit("ai6", &output, 2);

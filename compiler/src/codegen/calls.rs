@@ -138,18 +138,19 @@ impl Emitter<'_> {
                     self.argument_text(arg, expected)
                 };
                 // An uncontracted `ffi` parameter takes its ABI type from the
-                // FFI table, so a struct-view argument whose ABI type is a
-                // pointer crosses as the view's pointer member rather than as
-                // the view struct. The prototype and the tables are unchanged.
+                // FFI table, so a view argument whose ABI type is a pointer
+                // crosses as the view's pointer member rather than as the view
+                // struct, cast to the pointer the prototype declares. A
+                // `cstring` parameter is already a C pointer (its literals and
+                // values render as pointers), so it never wraps. The prototype
+                // and the tables are unchanged.
                 let text = if func_ty.is_none() && !user_call {
                     match expected {
                         Some(expected)
-                            if matches!(
-                                crate::abi::ffi_type_with(expected, None).as_str(),
-                                "APTR" | "char *"
-                            ) && is_struct_view(&self.substitute(&arg.ty)) =>
+                            if crate::abi::ffi_type_with(expected, None) == "APTR"
+                                && self.argument_crosses_as_view(arg, expected) =>
                         {
-                            format!("({text}).ptr")
+                            format!("(APTR)({text}).ptr")
                         }
                         _ => text,
                     }
@@ -189,6 +190,23 @@ impl Emitter<'_> {
             })
             .collect();
         rendered.join(", ")
+    }
+
+    /// True when an uncontracted extern receives the argument as a view.
+    ///
+    /// A slice or `str` value crosses as its pointer member; an owned `String`
+    /// widens to the `str` view first, so the widened value crosses the same
+    /// way. A `cstring` argument is already a C pointer and never wraps.
+    fn argument_crosses_as_view(&self, arg: &Value, expected: &Ty) -> bool {
+        let arg_ty = self.substitute(&arg.ty);
+        if is_struct_view(&arg_ty) {
+            return true;
+        }
+        matches!(&arg_ty.kind, TyKind::Handle(name) if name == "String")
+            && matches!(
+                self.substitute(expected).kind,
+                TyKind::Str | TyKind::StaticStr
+            )
     }
 
     /// Renders one argument, widening an owned `String` to the `str` view a

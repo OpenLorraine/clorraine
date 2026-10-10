@@ -1149,6 +1149,32 @@ func main(): i32 {
         "pin-generated-names: the parameter must not keep the reserved spelling"
     );
     assert_run_exit("pin-generated-names-run", source, 10);
+
+    let temp = r#"module spec.eeiimpl.tmpparam;
+
+func rem(): i32 {
+    return 0;
+}
+
+func guarded(__cl_tmp0: i32): i32 {
+    let arr: u8[2] = [1, 2];
+    return __cl_tmp0 + i32(arr[rem()]);
+}
+
+func main(): i32 {
+    return guarded(5) + 1;
+}
+"#;
+    let emitted = emit_host("pin-temp-param", temp);
+    assert_contains_all(
+        "pin-temp-param",
+        &emitted,
+        &[
+            "cl_spec_eeiimpl_tmpparam_guarded(i32 __cl_tmp0_1)",
+            "i32 __cl_tmp0 = 0;",
+        ],
+    );
+    assert_run_exit("pin-temp-param-run", temp, 7);
 }
 
 /// A row-element slice typedef follows the struct definition it needs, while
@@ -1239,4 +1265,47 @@ func main(): i32 {
     let emitted = emit_host("pin-bound-field", source);
     assert_contains_all("pin-bound-field", &emitted, &["(h.call)(5)"]);
     assert_run_exit("pin-bound-field-run", source, 6);
+}
+
+/// An uncontracted extern receives a view's pointer with the ABI cast, while
+/// an argument that is already a pointer (a `cstring` literal) never wraps.
+#[test]
+fn should_emit_the_view_pointer_coercions() {
+    let source = r#"module spec.eeiimpl.coerce;
+
+import { slice } from std.mem;
+import { String, stringOf } from std.text;
+
+ffi lib {
+    func CText(s: cstring): i32;
+    func RStr(s: str): i32;
+    func RSlice(data: u8[]): i32;
+}
+
+func main(): i32 {
+    let xs: u8[4] = [7, 2, 3, 4];
+    let s: u8[] = slice(xs, 0, 4);
+    let t: str = "hi";
+    let owned: String = stringOf("z");
+    let n: i32 = 0;
+    unsafe {
+        n = CText("x") + RStr(t) + RStr(owned) + RSlice(s);
+    }
+    return n;
+}
+"#;
+    let emitted = emit_host("pin-coerce", source);
+    assert_contains_all(
+        "pin-coerce",
+        &emitted,
+        &[
+            "CText(\"x\")",
+            "RStr((APTR)(t).ptr)",
+            "RSlice((APTR)(s).ptr)",
+        ],
+    );
+    assert!(
+        !emitted.contains("(\"x\").ptr"),
+        "pin-coerce: a cstring literal is already a pointer"
+    );
 }
