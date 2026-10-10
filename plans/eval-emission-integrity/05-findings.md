@@ -203,5 +203,12 @@ compile-fail suite); ST-17 - ST-25 green (27 cases); 34 implementation pins gree
 `make check` green (1541 tests) after the fix round. The reviewers' reproductions re-run: the
 generic array/slice loops build and run, the `str` loop reports `E10043`.
 
+**Scoped re-verification (no findings)**: the guard fix was verified independently — the generic
+loops build and run, every concrete-kind rejection from the reviewed head is preserved, the
+DEF-145 residual is byte-identical to the pre-phase base (now also covering a scalar instance, an
+enum instance, and an unknown-local iterable), nested and generic-body positions report once per
+site, and the extended control fails without the fix (red on `5364d2f`; also red on the base for
+the rejection assertion).
+
 **Review budget**: two review dispatches for Phase 3 (correctness, semantics) plus the scoped
 re-verification of this fix round; every blocking finding fixed in-batch with a regression pin.

@@ -315,7 +315,19 @@ green.
 **Objective**: Pin the internals and record the phase review evidence.
 
 - [x] 3.3.1 Write the Phase 3 implementation pins (the per-instance projection spelling, unchanged concrete emissions, the one-report counts and spans for E10222/E10043/E10212, the null-local declaration, byte-identity of the controls) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 17:20)
-- [ ] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 18:05)
+
+**Phase 3 review evidence (2026-10-10)** — two dispatches per the phase's lens (correctness +
+semantics) plus one scoped re-verification. Both reviews confirmed four of the five judgments and
+found one blocking scope defect: the new `E10043` guard rejected `Param`/`Unknown` iterables at the
+declaration, regressing generic element loops instantiated at arrays and slices (accepted and
+running on the base). The fix keeps those iterables on their accepted path and rejects only
+concrete non-iterable kinds; the scoped re-verification found no findings and confirmed the
+concrete-kind parity, the once-per-site counts, and the base-identical residual (DEF-145). The
+deliberate unit-test update (the sema view-equality test) is the only test change that
+accommodates the new behavior. Seven pre-existing classes are filed (DEF-145 – DEF-151). Final:
+27 specification cases, 34 implementation pins, `./spec/check.sh` OK, full `make check` green
+(1541 tests).
 
 **Deliverables**:
 - Implementation pins for Phase 3
