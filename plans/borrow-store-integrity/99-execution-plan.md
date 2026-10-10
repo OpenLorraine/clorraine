@@ -252,3 +252,30 @@ review closes before the next opens).
 6. ✅ Documentation updated (the conservative comparison note; plan close-out notes)
 7. ✅ Code reviewed (per-phase dispatch, AR-13)
 8. ✅ Post-completion project re-analysis (handled by the exec-plan skill)
+
+---
+
+## Plan Summary
+
+All three phases executed and verified on 2026-10-10, in order:
+
+- **Phase 1 (self-assign rules, tasks 1.1.1 – 1.3.2)** — the per-instance `RequiresSelfAssign`
+  duty, the audit (nullable first, owning, duplicable/view skipped), the conservative-comparison
+  documentation, and the boundary pins. Review: correctness/memory/semantics clean.
+- **Phase 2 (out-slot return, tasks 2.1.1 – 2.3.2)** — the direct-return block-local form that
+  empties caller storage, with the view/by-value paths unchanged. Review: memory/emission clean;
+  two minor findings fixed (a test comment and a header count).
+- **Phase 3 (view-store guards, tasks 3.1.1 – 3.3.3)** — the write-target null walk and the
+  `Guards` statement (dynamic-bound levels only; plain/compound/update/row forms). Review:
+  correctness/memory/emission clean; one minor finding fixed (determinism-case naming).
+
+Verification at close-out: `borrow_store_integrity_spec_test` 30/30, `borrow_store_integrity_impl_test`
+11/11, container ASan convenience runs clean for the memory phases, `make check` green (50 suites
+plus the specification check), and `make verify` green on every leg (hosted-amiga toolchain, FS-UAE
+builds, the six runtime faults).
+
+Residuals filed out of this plan: `DEF-113` (the conditional-arm store through a lend root,
+documented in 03-01) and, from the Phase 3 reviews, `DEF-114` (a `str` element store writes
+read-only storage), `DEF-115` (the slice-of-struct typedef order), and `DEF-116` (a module-level
+array initializer with a global slice). The pre-existing `DEF-97`/`DEF-98` emission defects were
+re-confirmed base-identical.
