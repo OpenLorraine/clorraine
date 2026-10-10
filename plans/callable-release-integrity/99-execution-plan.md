@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 19:53
-> **Progress**: 0/36 tasks (0%)
+> **Last Updated**: 2026-10-10 19:59
+> **Progress**: 2/36 tasks (6%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -72,8 +72,8 @@ AR-5](00-ambiguity-register.md)
 **Objective**: Pin the three generated-identity cases — the collision program, the two func
 instances, the inline capturing lambda — before any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-3 — `compiler/tests/callable_release_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 ASan double-free; ST-2/ST-3 strict-build failures)
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-3 — `compiler/tests/callable_release_integrity_spec_test.rs` ✅ (completed: 2026-10-10 19:59)
+- [x] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 ASan double-free; ST-2/ST-3 strict-build failures) ✅ (completed: 2026-10-10 19:59)
 
 ### Step 1.2: Implementation
 
