@@ -55,6 +55,7 @@
 | ST-13 | `s[0] += 1;` on a `borrow s: str` parameter | rejected: exactly one `E10042` | AR-6 |
 | ST-14 | `s[0]++;` on a `borrow s: str` parameter | rejected: exactly one `E10042` | AR-6 |
 | ST-15 | a module-level `let g: str = "abc";` with `g[0] = 65;` in `main` | rejected: exactly one `E10042` naming `g` | AR-6 |
+| ST-16b | a local `let t: str = "abc";` with `t[0] = 65;` in the same function | rejected: exactly one `E10042` naming `t` | AR-6 |
 | ST-16 | `let t: str = "abc"; t = "xyz"; return i32(len(t));` | accepted; strict build; runs (exit 3) | AR-6 |
 | ST-17 | `func f(borrow xs: u8[]): i32 { xs[0] = 65; return 0; }` called with `borrow slice(a, 0, 2)` on a `u8[2]` | accepted; strict build; runs (exit 0) | AR-6 |
 | ST-18 | the golden program `E10042_write_immutable_view.clo` compiled directly | rejected: exactly one `E10042` (mirrors `./spec/check.sh`) | AR-2, AR-12 |
@@ -79,6 +80,7 @@
 | ST-27 | `let view: i32[] = slice(backing, 1, 3);` on a `i32[3]` with a runtime length and element check | accepted; strict build; runs (len 2; `view[0]` is `backing[1]`) | AR-10 |
 | ST-28 | `let v: i32[] = slice(backing, bump(), 3);` with `bump()` counting its calls | accepted; strict build; runs; `bump` ran exactly once and the view starts at the returned offset | AR-11 |
 | ST-29 | `let a: i32[2] = pick() ? x : y;` with `x`, `y` module arrays and `pick()` counting its calls | accepted; strict build; runs; `pick` ran exactly once; the element comes from the chosen arm | AR-18 |
+| ST-30 | a module-level `let n: usize = backing.len();` on an `i32[3]` backing | accepted; strict build; runs (exit 3) | AR-10 |
 
 ## Test Categories
 
@@ -88,7 +90,7 @@
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/store_emission_integrity_spec_test.rs` | ST-1 – ST-9 (P1), ST-10 – ST-18 (P2), ST-19 – ST-22 (P3), ST-23 – ST-29 (P4) | all four component specs |
+| `compiler/tests/store_emission_integrity_spec_test.rs` | ST-1 – ST-9 (P1), ST-10 – ST-18 (P2, including ST-16b), ST-19 – ST-22 (P3), ST-23 – ST-30 (P4) | all four component specs |
 
 ### Implementation Tests (edge cases, internals)
 

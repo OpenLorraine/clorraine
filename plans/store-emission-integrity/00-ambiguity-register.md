@@ -112,8 +112,8 @@ Reopen triggers: a unit where a slice typedef must precede a struct forward type
 Authority: AI — delegated by --auto-design
 Eligibility: emission mechanism; mirrors the function-body element-store semantics exactly; no new syntax
 Objective: a module-level fixed-array initializer compiles
-Decision: an array-typed global initializer fills element-wise in declaration order (`target[i] = …`), recursing one extent per level for nested arrays; `ArrayLit` elements render in order and the fill renders per remaining element exactly as the function-body element stores already do; a non-literal array value copies element-wise from its rendered base
-Evidence: baseline accepted and cc-failing — flat literal (probe d116), nested extents (p4a), prefix+fill (p4b), a place copy (p4d), and a slice-of-array (p4e), all with `expected expression before '{'`; the function-body reference shape emits per-element stores (`a[0] = 1; a[1] = 2; a[2] = 7;` for `[1, 2; 7]`, probe fill1)
+Decision: an array-typed global initializer fills element-wise in declaration order (`target[i] = …`), recursing one extent per level for nested arrays; `ArrayLit` elements render in order and the fill renders per remaining element exactly as the function-body element stores already do; a non-literal array value whose base is a place copies element-wise from its rendered base; call-result array values stay out of this batch (see the preflight correction note below)
+Evidence: baseline accepted and cc-failing — flat literal (probe d116), nested extents (p4a), prefix+fill (p4b), a place copy (p4d), and a slice-of-array (p4e), all with `expected expression before '{'`; the function-body reference shape emits per-element stores (`a[0] = 1; a[1] = 2; a[2] = 7;` for `[1, 2; 7]`, probe fill1); the call-result form is not pinned by any probe and emits a destination-less call (preflight finding PF-001, verified live)
 Rejected alternatives: (a) a compound-literal assignment — forbidden by the C99-subset contract (Ch 17 §1) and an existing tracked violation class; (b) a `memcpy` from a temporary — needs a temp registry the init emitter does not have
 Strongest counterargument: per-element stores re-evaluate a side-effecting fill per element — matching the existing function-body semantics is the only consistent behavior; the ST cases pin constants and mirror the function path
 Confidence: High
@@ -121,13 +121,19 @@ Hardening: in-context layers only
 Reopen triggers: an initializer form the element walk cannot express; a change to the function-body array-literal semantics
 ```
 
+> **Preflight correction (2026-10-10, PF-001):** the original decision sentence named "a call
+> result" among the copied non-literal array values. Fixed-array call results are not covered:
+> they lower without their hidden destination, so the batch keeps their current single-assignment
+> path. The decision and evidence rows above carry the corrected boundary; the verified class is
+> recorded in the preflight report for a separate decision.
+
 **AR-10 (delegated):**
 
 ```text
 Authority: AI — delegated by --auto-design
 Eligibility: compiler mechanism; mirrors the established function-path detection; no reserved consequence
 Objective: a module-level call to a compiler intrinsic lowers to the intrinsic value instead of a bare name
-Decision: `lower_global`'s call branch checks whether the callee is a compiler intrinsic with the same rule as `own/call.rs::lower_intrinsic_call` (a user or `ffi` declaration of the name keeps its own symbol) and builds `ValueKind::Intrinsic { name, args, type_arg }`; `emit_guards` already emits the slice bounds trap for intrinsic values in the init function
+Decision: `lower_global`'s call branch checks whether the callee is a compiler intrinsic with the same rule as `own/call.rs::lower_intrinsic_call` (a user or `ffi` declaration of the name keeps its own symbol) and builds `ValueKind::Intrinsic { name, args, type_arg }`; detection resolves the callee by simple name against the program's callee map plus `is_compiler_intrinsic`, so the helper takes only the callee expression (no module parameter); `emit_guards` already emits the slice bounds trap for intrinsic values in the init function
 Evidence: baseline emits the bare `slice(...)` in `cl_init_<module>` (probe d116, implicit-declaration errors); a user-function initializer resolves and mangles correctly (`cl_repros_g1_make()`, probe g1), so only the intrinsic path is missing; the renderer (`codegen/calls.rs::intrinsic`) and the guard arm (`codegen/guards.rs:98`) already exist
 Rejected alternatives: (a) resolving to a library symbol — compiler intrinsics have no symbol by design; (b) special-casing `slice` in `lower_global` — diverges from the function path's shared rule and would leave `rawSlice`/`rawStr` inconsistent
 Confidence: High

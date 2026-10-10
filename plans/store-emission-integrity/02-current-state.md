@@ -69,6 +69,28 @@ memory matters). The program shapes are the durable record; scratch files are no
 | p4c | `const c: i32[2] = [5, 6];` | rejected `E10224` (a rejection gap; out of scope) |
 | g1 | `let g: i32 = make();` with a user function | accepted; the call is resolved and mangled (`cl_repros_g1_make()`), builds clean — only intrinsic calls are unlowered |
 
+### Recorded Boundary: Fixed-Array Call Results (out of this batch)
+
+A fixed-array-returning call used as a module initializer value is accepted and emits a
+destination-less call (the callee's hidden fixed-array destination is never passed), so the
+strict build fails. Six positions were reproduced during preflight with `target/debug/clc` at
+`b47de60`, all accepted and all rejected by `cc -std=c99 -Wall -Wextra -Werror`:
+
+| Position | Source shape | Emitted |
+| -------- | ------------ | ------- |
+| whole value | `let a: i32[2] = mk();` (also multi-extent) | `a = mk();` |
+| element projection | `let g: i32 = mk()[1];` | `g = mk()[1];` |
+| member projection | `let a: i32[2] = mkBox().arr;` | `a = mkBox().arr;` |
+| user-fn argument | `let g: i32 = eat(mk());` | `g = eat(mk());` |
+| intrinsic argument | `let v: i32[] = slice(mk(), 0, 2);` | `view = slice(mk(), 0, 2);` |
+| conditional arm | `pick() ? mk() : y` | `(pick() ? mk() : y)` |
+
+The function-body path handles every one of these through the ownership materialization layer
+(`own/lower.rs:1009` `value_needs_place`; `codegen/expr.rs:508` `call_with_destination`), which
+module initialization deliberately does not run. The class is **not covered by this batch** (the
+ratified forms are literal, fill, place-copy, conditional, and the `slice` intrinsic view); it
+is filed as **DEF-117** on `plans/00-roadmap.md` with these repros.
+
 ## Gaps Identified
 
 ### Gap 1: the conditional store evades the lend-store rule (DEF-113)

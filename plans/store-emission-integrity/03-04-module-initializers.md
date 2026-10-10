@@ -44,12 +44,16 @@ and the lowering of a `slice(...)` call (AR-9, AR-10, AR-11).
          emit_guards(element); push "    {target}[{i}] = {render(element)};"
    ```
 
-   A non-literal array value (a place, a call result) is copied element-wise from its rendered
+   A non-literal array value (a place) is copied element-wise from its rendered
    base: each element renders as an index over the lowered value
    (`ValueKind::Index { base, index }` with a constant index value), mirroring the shapes
    `lower_global` already builds for written index expressions. Element order follows the literal
    and the declared extents; the fill renders per remaining element exactly as the function-body
    element stores already do.
+   A call-result array value is **not covered by this batch**: a fixed-array-returning call lowers
+   without its hidden destination today, so it keeps the current single-assignment path; the
+   verified incorrect emission is recorded as a preflight finding for a separate decision (see the
+   preflight report and the roadmap backlog).
    A conditional array value (`pick() ? x : y`, AR-18) evaluates its condition once into an init
    local, then each element renders as `(cond ? left[i] : right[i])` — the arms are indexed per
    element (or read from their literal elements) so no arm array decays to a pointer.
@@ -78,7 +82,7 @@ fn emit_global_array_fill(&mut self, target: &str, ty: &Ty, value: &Value)
 
 /// True when the call names a compiler intrinsic (and not a user or `ffi`
 /// declaration of the same name), mirroring the function-body lowering.
-fn global_intrinsic_call(&self, module: &Module, callee: &Expr/*name*/) -> Option<String>
+fn global_intrinsic_call(&self, callee: &Expr) -> Option<String>
 
 /// Renders one intrinsic argument, materializing an impure operand into an
 /// `__cl_itmp<N>` init local first so it runs exactly once.

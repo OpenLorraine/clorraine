@@ -93,7 +93,7 @@ before the place-state mutation, so a rejected write changes no state.
 
 ## Testing Requirements
 
-- Specification cases ST-10 – ST-18 ([07-testing-strategy.md](07-testing-strategy.md)).
+- Specification cases ST-10 – ST-15, ST-16b, ST-17, and ST-18 ([07-testing-strategy.md](07-testing-strategy.md)).
 - The golden runs through `./spec/check.sh` (part of `make check`).
 - Implementation pins: one report per form, no translation unit for a rejected write, the
   accepted controls' emission unchanged, byte-identical re-emission.

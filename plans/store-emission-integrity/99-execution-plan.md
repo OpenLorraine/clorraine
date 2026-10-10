@@ -127,7 +127,7 @@ judges the conditional like the direct store.
 implementation.
 
 - [ ] 2.1.1 [spec] Add the `E10042` registry row (`spec/14-diagnostics.md`) and the golden `spec/tests/compile-fail/E10042_write_immutable_view.clo` — exactly the authorized modification set (AR-12)
-- [ ] 2.1.2 [spec-author] Write specification tests from ST-10 – ST-18 — `compiler/tests/store_emission_integrity_spec_test.rs`
+- [ ] 2.1.2 [spec-author] Write specification tests from ST-10 – ST-18 (including the local-write case ST-16b) — `compiler/tests/store_emission_integrity_spec_test.rs`
 - [ ] 2.1.3 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-10 – ST-15 and ST-18 fail; ST-16 and ST-17 pass as accepted controls; the new golden fails until the compiler reports `E10042`)
 
 **Deliverables**:
@@ -239,7 +239,7 @@ implementation.
 **Reference**: [03-04](03-04-module-initializers.md) §Proposed Changes · [AR-9, AR-10, AR-11, AR-18](00-ambiguity-register.md)
 **Objective**: Pin the fill, intrinsic, and operand-once behaviors before any implementation.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from ST-23 – ST-29 — `compiler/tests/store_emission_integrity_spec_test.rs`
+- [ ] 4.1.1 [spec-author] Write specification tests from ST-23 – ST-30 — `compiler/tests/store_emission_integrity_spec_test.rs`
 - [ ] 4.1.2 Run the spec suite and record the red phase (expected: ST-23 – ST-29 all fail at the strict build or the run)
 
 **Deliverables**:
