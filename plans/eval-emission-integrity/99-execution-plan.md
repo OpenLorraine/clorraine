@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 13:30
-> **Progress**: 8/49 tasks (16%)
+> **Last Updated**: 2026-10-10 14:41
+> **Progress**: 12/49 tasks (24%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -207,7 +207,24 @@ compile-fail tests); `codegen_run_spec_test` 54/54 and `freestanding_spec_test` 
 **Objective**: Pin the internals and record the phase review evidence.
 
 - [x] 2.3.1 Write the Phase 2 implementation pins (the absent `__cl_owned` binding, the `cl_zero_*` spellings, the seeded de-dup spelling, the typedef order, the bound-field call shape, byte-identity where unaffected) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 15:32)
-- [ ] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 14:40)
+
+**Phase 2 review evidence (2026-10-10)** — three dispatches per the AR-B16 matrix (correctness,
+emission-integrity, memory-safety) plus one scoped re-review. The full review found two
+regressions (the DEF-98 coercion wrapped an already-converted cstring literal; a structural-`.len`
+store was silently dropped) and a residual fold gap (the `len(xs)`/`xs.len()`/projection
+spellings); the scoped re-review confirmed the fixes and found two adjacent shapes (value-position
+`.len` updates and address-of emitted invalid C; a func-typed `len` field was misrouted). Every
+blocking finding is fixed in-batch with pins, one deliberate spelling pin moved with its fix, and
+the pre-existing classes are filed (DEF-138 – DEF-144). The emission auditor's 3543-pair sweep
+shows every corpus diff attributable and the strict builds failure-free for every accepted unit;
+the memory audit's 43 ASan probes are clean. Final: 18 specification cases, 31 implementation
+pins, `./spec/check.sh` OK, full `make check` green (1528 tests).
+
+**Deliberate pin updates (recorded)**: the spec suite's ST-9 extension (the three `.len`
+spellings; exit 32 → 38 — the pre-fix program still exits 32 on head and the extension is
+base-red) and `array_value_integrity_impl_test.rs`'s `ai6` spelling (the folded `usize` literal's
+`u` suffix).
 
 **Deliverables**:
 - Implementation pins for Phase 2
