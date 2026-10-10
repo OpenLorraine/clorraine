@@ -326,6 +326,38 @@ func main(): i32 {
     assert_exit("modekey", &output, 0);
 }
 
+/// A capturing lambda in a loop releases a temporary its body borrows.
+///
+/// The speculative loop pass suppresses owned-temporary materialization, so
+/// its lifted record must never be the emitted one: the reporting pass's
+/// record binds the argument's owner and releases it once per call (red at
+/// the pre-fix head: the emitted speculative body leaks under the sanitizer).
+#[test]
+fn should_release_a_temporary_inside_a_loop_lambda() {
+    let source = r#"module spec.cri.loopowned;
+
+import { String, stringOf } from std.text;
+
+func use(borrow s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 2) {
+        total = total + ([s] () => i32(use(stringOf("w"))))();
+        i = i + 1;
+    }
+    return total - 2;
+}
+"#;
+    let output = run_memory("loopowned", source);
+    assert_no_asan("loopowned", &output);
+    assert_exit("loopowned", &output, 0);
+}
+
 /// A capturing lambda in a loop body builds with one definition set.
 ///
 /// The ownership layer's speculative loop pass must not emit a second lifted

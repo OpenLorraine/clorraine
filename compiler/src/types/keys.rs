@@ -32,7 +32,12 @@ pub(crate) fn closure_key(closure: &ClosureTy) -> String {
 /// A function type renders its whole signature — every parameter's type key
 /// (with its mode, because a `borrow` parameter reaches the callee as a
 /// pointer and mode-differing signatures are different types) and the return
-/// key, as `fn_<params>__<return>` — so two signatures never share a key.
+/// key, as `fn_<params>__<return>` — so two signatures never share a key. The
+/// `_` separators and the `borrow_`/`take_`/`const_` prefixes are fixed
+/// spellings, so a crafted user identifier can textually collide with a
+/// signature (`struct borrow_i32` against `func(borrow i32)`); like the `Q`
+/// marker this is fail-closed — a collision produces a redefinition the strict
+/// build rejects, never a runnable wrong program.
 ///
 /// A nullable type carries a `Q` suffix. Nullability changes the C
 /// representation of a borrow parameter and the identity of an instance, so

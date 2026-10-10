@@ -94,6 +94,33 @@ fn count(emitted: &str, needle: &str) -> usize {
     emitted.matches(needle).count()
 }
 
+/// Emits one program twice from the same source path, returning both texts.
+fn emit_twice(tag: &str, source: &str) -> (String, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let mut emitted = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emitted.push(std::fs::read_to_string(&c_path).unwrap_or_default());
+    }
+    (emitted[0].clone(), emitted[1].clone())
+}
+
 /// A colliding source local and the generated owner get distinct spellings.
 ///
 /// The user's local keeps its written spelling; the generated owner declared
@@ -117,6 +144,12 @@ func main(): i32 {
     let emitted = emit_host("idspell", source);
     assert_contains("idspell", &emitted, "ClString __cl_owned0 = NULL;");
     assert_contains("idspell", &emitted, "ClString __cl_owned0_1 = NULL;");
+    // The pre-fix emission bound a spurious third owner (a copy of the user's
+    // local) whose release double-freed at cleanup; the fix removes it.
+    assert!(
+        !emitted.contains("__cl_owned1"),
+        "no spurious copy owner may be emitted"
+    );
     // Each owner releases on its own paths — the release-before-store and the
     // scope cleanup — and never under the other's spelling.
     assert_eq!(
@@ -233,4 +266,43 @@ func main(): i32 {
         3,
         "one prototype, one call, one definition"
     );
+}
+
+/// Two emissions of one program are byte-identical.
+#[test]
+fn should_re_emit_the_identity_programs_byte_identically() {
+    let identity = r#"module spec.cri.impl.reemit;
+
+import { String, stringOf } from std.text;
+
+func use(borrow s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let __cl_owned0: String = stringOf("q");
+    let n: i32 = use(stringOf("w"));
+    return n + i32(len(__cl_owned0)) - 2;
+}
+"#;
+    let (first, second) = emit_twice("reemit", identity);
+    assert_eq!(first, second, "re-emission must be byte-identical");
+
+    let looped = r#"module spec.cri.impl.reemitloop;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let total: i32 = 0;
+    let i: i32 = 0;
+    while (i < 2) {
+        total = total + ([s] () => i32(len(s)))();
+        i = i + 1;
+    }
+    return total - 4;
+}
+"#;
+    let (first, second) = emit_twice("reemit-loop", looped);
+    assert_eq!(first, second, "re-emission must be byte-identical");
 }

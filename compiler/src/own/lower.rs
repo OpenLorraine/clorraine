@@ -570,7 +570,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         function.lambda_site = Some(site);
         function.enclosing = Some(self.decl.name.clone());
         liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
-        self.lifted.push(function);
+        // Only the reporting pass's record is emitted. A speculative loop pass
+        // lowers the body with owned-temporary materialization suppressed, so
+        // its record omits the owners and their releases; the real pass always
+        // follows and covers every consumer (emission, instance collection,
+        // specialization discovery).
+        if self.report_diagnostics {
+            self.lifted.push(function);
+        }
 
         self.builder = saved_builder;
         self.scopes = saved_scopes;
