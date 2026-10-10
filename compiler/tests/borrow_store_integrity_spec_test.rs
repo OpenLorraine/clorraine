@@ -1238,14 +1238,14 @@ func main(): i32 {
     assert_no_asan("in-bounds-compound", &output);
 }
 
-/// The accepted programs of the three phases re-emit byte-identically.
+/// Three accepted programs re-emit byte-identically.
 ///
-/// Determinism needs no state carried between emissions: the phase-1
-/// self-assign program, the phase-2 out-slot return program, and the phase-3
-/// in-bounds store program must each emit the same translation unit twice.
+/// Determinism needs no state carried between emissions: the duplicable
+/// self-assign program, the out-slot return program, and the in-bounds element
+/// store program must each emit the same translation unit twice.
 #[test]
-fn should_emit_byte_identical_units_when_the_accepted_phase_programs_are_emitted_twice() {
-    let phase_1 = r#"module spec.bsi.p3.determinismphase1;
+fn should_emit_byte_identical_units_when_the_accepted_store_programs_are_emitted_twice() {
+    let self_assign = r#"module spec.bsi.p3.determinismselfassign;
 
 func same<T>(borrow p: T): void {
     p = p;
@@ -1257,7 +1257,7 @@ func main(): i32 {
     return n;
 }
 "#;
-    let phase_2 = r#"module spec.bsi.p3.determinismphase2;
+    let out_slot = r#"module spec.bsi.p3.determinismoutslot;
 
 import { String, stringOf } from std.text;
 
@@ -1277,7 +1277,7 @@ func main(): i32 {
     return i32(len(r));
 }
 "#;
-    let phase_3 = r#"module spec.bsi.p3.determinismphase3;
+    let in_bounds = r#"module spec.bsi.p3.determinisminbounds;
 
 import { slice } from std.mem;
 
@@ -1296,9 +1296,9 @@ func main(): i32 {
 }
 "#;
     for (tag, source) in [
-        ("p3-determinism-phase-1", phase_1),
-        ("p3-determinism-phase-2", phase_2),
-        ("p3-determinism-phase-3", phase_3),
+        ("determinism-self-assign", self_assign),
+        ("determinism-out-slot", out_slot),
+        ("determinism-in-bounds", in_bounds),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert_eq!(
