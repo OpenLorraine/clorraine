@@ -100,6 +100,36 @@ fn emit_twice(tag: &str, source: &str) -> (String, String) {
     (emitted[0].clone(), emitted[1].clone())
 }
 
+/// Emits, builds, and runs one host program, returning its output.
+fn run_host(tag: &str, source: &str) -> std::process::Output {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, source);
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, &emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    Command::new(&program)
+        .output()
+        .unwrap_or_else(|err| panic!("{tag}: cannot run the program: {err}"))
+}
+
 /// Counts the occurrences of `needle` in `haystack`.
 fn count_occurrences(haystack: &str, needle: &str) -> usize {
     haystack.matches(needle).count()
@@ -375,4 +405,55 @@ func main(): i32 {
 "#;
     let (first, second) = emit_twice("pin-ident", source);
     assert_eq!(first, second, "pin-ident: the emission must be deterministic");
+}
+
+/// A short-circuit operand's bind is guarded by the left operand, and it runs
+/// only on the decided path.
+#[test]
+fn should_guard_a_short_circuit_bind_by_the_left_operand() {
+    let skipped = r#"module spec.eei.shortcircuit;
+
+let calls: i32 = 0;
+
+func f(): bool {
+    return false;
+}
+
+func mk(): i32[2] {
+    calls = calls + 1;
+    return [1, 0];
+}
+
+let x: bool = f() && (mk()[0] == 1);
+
+func main(): i32 {
+    return calls;
+}
+"#;
+    let emitted = emit_host("pin-shortcircuit", skipped);
+    assert_contains_all(
+        "pin-shortcircuit",
+        &emitted,
+        &[
+            "bool __cl_itmp0 = 0;",
+            "if (cl_spec_eei_shortcircuit_f()) {",
+            "cl_spec_eei_shortcircuit_mk(__cl_itmp1);",
+            "__cl_itmp0 = (__cl_itmp1[0] == 1);",
+            "cl_spec_eei_shortcircuit_x = __cl_itmp0;",
+        ],
+    );
+    let output = run_host("pin-shortcircuit-run", skipped);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "pin-shortcircuit-run: a skipped operand must not run its bind"
+    );
+
+    let taken = skipped.replace("return false;", "return true;");
+    let output = run_host("pin-shortcircuit-run-taken", &taken);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "pin-shortcircuit-run-taken: the decided operand runs its bind once"
+    );
 }

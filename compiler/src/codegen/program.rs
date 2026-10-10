@@ -1210,14 +1210,51 @@ impl<'a> Emitter<'a> {
                     operand: Box::new(self.materialize_fixed_array_calls(operand, guard)),
                 },
             ),
-            ValueKind::Binary { op, left, right } => Value::new(
-                value.ty.clone(),
-                ValueKind::Binary {
-                    op: *op,
-                    left: Box::new(self.materialize_fixed_array_calls(left, guard)),
-                    right: Box::new(self.materialize_fixed_array_calls(right, guard)),
-                },
-            ),
+            ValueKind::Binary { op, left, right } => {
+                // A short-circuit operand runs only when the left side
+                // decides, so its binds are statements under that decision and
+                // the operator's result is read from a local; the left side
+                // always evaluates, so it keeps its ordinary spelling.
+                if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr)
+                    && self.value_contains_fixed_array_call(right)
+                {
+                    let left = self.materialize_fixed_array_calls(left, guard);
+                    self.emit_guards(&left);
+                    let left_c = self.value(&left);
+                    let name = self.next_init_local();
+                    let empty = self.empty_state(&value.ty);
+                    self.push(&format!(
+                        "    {} = {empty};",
+                        declarator(&value.ty, &name, &self.sema.table)
+                    ));
+                    let decision = match op {
+                        BinaryOp::LogicalAnd => left_c,
+                        _ => format!("!({left_c})"),
+                    };
+                    self.push(&format!("    if ({decision}) {{"));
+                    let right = self.materialize_fixed_array_calls(right, None);
+                    self.emit_guards(&right);
+                    let rendered = self.value(&right);
+                    self.push(&format!("        {name} = {rendered};"));
+                    self.push("    }");
+                    return Value::new(
+                        value.ty.clone(),
+                        ValueKind::Place(Place {
+                            base: PlaceBase::Local(name),
+                            projections: Vec::new(),
+                            ty: value.ty.clone(),
+                        }),
+                    );
+                }
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Binary {
+                        op: *op,
+                        left: Box::new(self.materialize_fixed_array_calls(left, guard)),
+                        right: Box::new(self.materialize_fixed_array_calls(right, guard)),
+                    },
+                )
+            }
             ValueKind::Cast { to, value: inner } => Value::new(
                 value.ty.clone(),
                 ValueKind::Cast {
