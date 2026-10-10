@@ -41,13 +41,15 @@ the defective shapes (R1, R3, R12; AR-2, AR-3, AR-4, AR-5).
    identity and cleanup are unaffected.
 3. **The func key carries the signature (DEF-140).** `TyKind::Func(_)` renders as
    `fn_<param keys>__<ret key>`, with each component rendered by `type_key` recursively and the
-   return separated by a double underscore (`func(i32): i32` → `fn_i32__i32`, `func(Wrap<String>):
-   u32` → `fn_Wrap__String__u32`). Parameter **modes are excluded** because the C representation
-   is mode-agnostic: two mode-different signatures of the same types are one C type and must share
-   one struct instance. Any further signature-bearing component the type carries joins the key.
-   Residual crafted-name collisions remain under the documented, fail-closed limitation shared
-   with the `Q` marker (DEF-103 evidence): a collision can only produce a strict-build failure,
-   never a runnable wrong program.
+   return separated by a double underscore. Each parameter's key carries its mode
+   (`borrow_`/`take_`/`const_` prefix) because a `borrow` parameter reaches the callee as a
+   pointer and the type model treats mode-differing signatures as different types
+   (`types/mod.rs:82-91`): `func(i32): i32` → `fn_i32__i32`, `func(borrow String): i32` →
+   `fn_borrow_String__i32`, `func(Wrap<String>): u32` → `fn_Wrap__String__u32`. Any further
+   signature-bearing component the type carries joins the key. Residual crafted-name collisions
+   remain under the documented, fail-closed limitation shared with the `Q` marker (DEF-103
+   evidence): a collision can only produce a strict-build failure, never a runnable wrong
+   program.
 4. **One env definition per unique (site, instance) (DEF-165).** The program emitter tracks
    emitted env struct names and emits each definition exactly once; every use site only
    references the type. The existing site/instance naming is kept, so accepted units' symbol

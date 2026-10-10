@@ -1942,8 +1942,13 @@ impl<'a> Emitter<'a> {
     /// lifted function that mentions a parameter is emitted once per recorded
     /// enclosing specialization; with no recorded instance it is not emitted at
     /// all, because its body cannot be spelled with an unresolved parameter.
+    /// The list is keyed by (site, instance): a loop's speculative pass lowers
+    /// its body twice, so the ownership stage can hold two records for one
+    /// site, and a second emission would redefine the environment struct, the
+    /// closure typedef, and the lifted function.
     fn lifted_emissions(&self) -> Vec<LiftedEmission<'a>> {
         let mut emissions = Vec::new();
+        let mut seen: BTreeSet<(usize, Option<String>)> = BTreeSet::new();
         for function in &self.ownership.functions {
             let Some(site) = function.lambda_site else {
                 continue;
@@ -1962,6 +1967,9 @@ impl<'a> Emitter<'a> {
                 crate::own::lifted_needs_specialization(function, decl, &self.sema.closures)
             });
             if !specialized {
+                if !seen.insert((site, None)) {
+                    continue;
+                }
                 emissions.push(LiftedEmission {
                     function,
                     site,
@@ -1978,12 +1986,16 @@ impl<'a> Emitter<'a> {
                 if specialization.site != site {
                     continue;
                 }
+                let key = self.instance_typekey(&specialization.args);
+                if !seen.insert((site, Some(key.clone()))) {
+                    continue;
+                }
                 emissions.push(LiftedEmission {
                     function,
                     site,
                     capturing,
                     subst: self.instance_subst(decl, &specialization.args),
-                    key: Some(self.instance_typekey(&specialization.args)),
+                    key: Some(key),
                 });
             }
         }

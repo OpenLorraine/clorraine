@@ -7,6 +7,7 @@
 //! and the emitter builds the matching callable and symbol names from it.
 
 use super::{ClosureTy, Ty, TyKind};
+use crate::ast::Mode;
 
 /// The stable key of a closure type.
 ///
@@ -27,6 +28,11 @@ pub(crate) fn closure_key(closure: &ClosureTy) -> String {
 /// marker over its element: a scalar view keys as `slice_i32`, and a view of
 /// rows keys by the whole row, so `i32[][3]` keys as `slice_arr3_i32`. The two
 /// forms cannot collide with each other.
+///
+/// A function type renders its whole signature — every parameter's type key
+/// (with its mode, because a `borrow` parameter reaches the callee as a
+/// pointer and mode-differing signatures are different types) and the return
+/// key, as `fn_<params>__<return>` — so two signatures never share a key.
 ///
 /// A nullable type carries a `Q` suffix. Nullability changes the C
 /// representation of a borrow parameter and the identity of an instance, so
@@ -63,7 +69,22 @@ pub(crate) fn type_key(ty: &Ty) -> String {
                 format!("slice_{}", type_key(&view_element(ty)))
             }
         }
-        TyKind::Func(_) => "fn".to_owned(),
+        TyKind::Func(signature) => {
+            let params: Vec<String> = signature
+                .params
+                .iter()
+                .map(|param| {
+                    let key = type_key(&param.ty);
+                    match param.mode {
+                        Mode::None => key,
+                        Mode::Const => format!("const_{key}"),
+                        Mode::Borrow => format!("borrow_{key}"),
+                        Mode::Take => format!("take_{key}"),
+                    }
+                })
+                .collect();
+            format!("fn_{}__{}", params.join("_"), type_key(&signature.returns))
+        }
         TyKind::Closure(closure) => closure_key(closure),
         TyKind::Unknown => "unknown".to_owned(),
     };

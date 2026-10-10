@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 19:59
-> **Progress**: 2/36 tasks (6%)
+> **Last Updated**: 2026-10-10 20:04
+> **Progress**: 7/36 tasks (19%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -81,10 +81,10 @@ instances, the inline capturing lambda — before any implementation.
 **Objective**: Land identity-keyed generated bindings, the signature-bearing func key, and the
 env-struct dedupe.
 
-- [ ] 1.2.1 Implement identity-keyed generated bindings and the collision-safe C spelling — `compiler/src/own.rs`, `compiler/src/own/lower.rs`, `compiler/src/codegen/*`
-- [ ] 1.2.2 Implement the signature-bearing func type key — `compiler/src/types/keys.rs`
-- [ ] 1.2.3 Implement the env-struct definition dedupe — `compiler/src/codegen/program.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 1.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 1.2.1 Implement identity-keyed generated bindings and the collision-safe C spelling — `compiler/src/own.rs`, `compiler/src/own/lower.rs`, `compiler/src/codegen/*` ✅ (completed: 2026-10-10 20:04)
+- [x] 1.2.2 Implement the signature-bearing func type key — `compiler/src/types/keys.rs` ✅ (completed: 2026-10-10 20:04)
+- [x] 1.2.3 Implement the env-struct definition dedupe — `compiler/src/codegen/program.rs`, `compiler/src/codegen/function.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-10 20:04)
+- [x] 1.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 20:04)
 
 **Verify**: `make -C docker exec CMD="cargo test --test callable_release_integrity_spec_test"`; `make check`
 
@@ -94,7 +94,7 @@ env-struct dedupe.
 **Objective**: Pin the binding identity, the rename spelling, the keys, and the definition
 counts; record the phase review evidence.
 
-- [ ] 1.3.1 Write the Phase 1 implementation tests (name-map absence, C rename, exact keys, one env definition, byte-identity) — `compiler/tests/callable_release_integrity_impl_test.rs`
+- [x] 1.3.1 Write the Phase 1 implementation tests (name-map absence, C rename, exact keys, one env definition, byte-identity) — `compiler/tests/callable_release_integrity_impl_test.rs` ✅ (completed: 2026-10-10 20:04)
 - [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
 
 **Deliverables**:

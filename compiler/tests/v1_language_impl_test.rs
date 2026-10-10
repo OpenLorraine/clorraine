@@ -199,8 +199,10 @@ func main(): i32 {
 }
 "#;
     let emitted = emit("field-bound", source);
+    // The `F` instance argument is a `func` type, whose key carries its whole
+    // signature, so the monomorphized symbol names `fn_i32__i32`.
     assert!(
-        emitted.contains("cl_apply__i32_fn(p.first,"),
+        emitted.contains("cl_apply__i32_fn_i32__i32(p.first,"),
         "the substituted field must flow into the monomorphized generic call"
     );
 }

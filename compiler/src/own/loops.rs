@@ -415,6 +415,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if decl.borrow { Mode::Borrow } else { Mode::None },
             false,
             false,
+            true,
         );
         self.set_place(
             id,

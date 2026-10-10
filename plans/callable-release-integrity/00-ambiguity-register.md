@@ -24,6 +24,7 @@
 | 13 | Process | Execution commit mode | auto-commit + auto-design / ask-commit / no-commit | **User:** `--auto-commit --auto-design`; repeat batches until no defects remain | ✅ Resolved |
 | 14 | Behavioral | Reproductions: do the filed shapes still fail at HEAD? | Re-derive each reproduction in the red phase / trust the filed evidence | **Convention:** each row's reproduction is re-derived at HEAD in the red phase; the findings ledger carries the base evidence | ✅ Resolved |
 | 15 | Technical | Complexity: does any fix add a layer, dependency, harness, or refactor? | None — fixes reuse the existing owner, mode, key, and cleanup machinery / a larger support surface | **AI — delegated by --auto-design:** None; no complexity escalation, no challenger packet required | ✅ Resolved |
+| 16 | Technical (runtime) | The drafted func-key rule excluded parameter modes, but the type model defines mode-differing signatures as different types (a `borrow` parameter reaches the callee as a pointer), so two mode-different instances would share one C struct and collide | Include each parameter's mode in its key / exclude modes as drafted | **AI — delegated by --auto-design (runtime; PD-2 amended)** — modes included | ✅ Resolved |
 
 ### Resolution Notes
 
@@ -97,6 +98,14 @@ Root invocation ID: callable-release-integrity-2026-10-10
 Reopen triggers: any accepted unit with a duplicate C definition; any ownership/emitter key
   disagreement visible in the corpus diff
 ```
+
+**Runtime amendment (AR-16).** The drafted rule excluded parameter modes from the func key; the
+implementation evidence (`types/mod.rs:82-91`: "two signatures that differ only in a parameter
+mode are different types") shows a `borrow` parameter changes the C representation, so modes are
+part of each parameter's key. Rejected alternative: excluding modes as drafted (would share one
+struct between two genuinely different C types). Confidence: High — the type model states the
+identity and the mode pair builds and runs (`should_build_two_mode_differing_func_instances_of_one_generic_struct`).
+Hardening: the emission-integrity auditor's corpus diff covers the key change.
 
 #### PD-3 — DEF-155/156/157/166 callable effect modes for every callee kind
 

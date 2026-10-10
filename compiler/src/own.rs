@@ -806,6 +806,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Mode::None,
             is_const,
             needs_drop,
+            true,
+        )
+    }
+
+    /// Declares a compiler-generated local and returns its index.
+    ///
+    /// The binding joins its scope's cleanup order like any local, but it
+    /// never enters the scope's name map: a source binding can never resolve
+    /// to generated storage, so a source local spelled like a generated owner
+    /// (`__cl_owned<N>`) keeps its own identity. Every use of the generated
+    /// binding goes through its binding id.
+    fn declare_generated_local(&mut self, name: &str, ty: Ty, span: Span) -> usize {
+        let needs_drop = self.owns_drop(&ty) || self.maybe_owns(&ty);
+        self.declare(
+            name,
+            span,
+            ty,
+            BindingKind::Local,
+            Mode::None,
+            false,
+            needs_drop,
+            false,
         )
     }
 
@@ -829,6 +851,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             param.mode,
             false,
             needs_drop,
+            true,
         );
         self.set_place(id, PlaceState {
             initialized: true,
@@ -837,6 +860,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Inserts a binding into the innermost scope.
+    ///
+    /// `register_name` controls the scope's name map: source bindings register
+    /// so `lookup` can resolve them, while a compiler-generated binding skips
+    /// registration so no source name can ever resolve to generated storage.
+    /// The binding joins the scope's cleanup order either way.
     fn declare(
         &mut self,
         name: &str,
@@ -846,6 +874,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         mode: Mode,
         is_const: bool,
         needs_drop: bool,
+        register_name: bool,
     ) -> usize {
         let id = self.bindings.len();
         self.binding_names.insert(id, name.to_owned());
@@ -873,7 +902,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             base: None,
         });
         if let Some(scope) = self.scopes.last_mut() {
-            scope.names.insert(name.to_owned(), id);
+            if register_name {
+                scope.names.insert(name.to_owned(), id);
+            }
             scope.order.push(id);
         }
         id

@@ -605,6 +605,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Mode::None,
             false,
             false,
+            true,
         );
         self.set_place(
             id,
@@ -1839,8 +1840,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let name = format!("__cl_owned{}", self.next_owned_temp);
         self.next_owned_temp += 1;
         let decl_ty = self.materialized_ty(&value);
-        let id = self.declare_local(&name, decl_ty, false, self.current_span);
-        self.move_binding_to_body_scope(id, &name);
+        let id = self.declare_generated_local(&name, decl_ty, self.current_span);
+        self.move_binding_to_body_scope(id);
         self.set_place(
             id,
             PlaceState {
@@ -1881,7 +1882,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let name = format!("__cl_owned{}", self.next_owned_temp);
         self.next_owned_temp += 1;
         let decl_ty = self.materialized_ty(&value);
-        let id = self.declare_local(&name, decl_ty, false, self.current_span);
+        let id = self.declare_generated_local(&name, decl_ty, self.current_span);
         self.set_place(
             id,
             PlaceState {
@@ -1898,21 +1899,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(place.ty.clone(), ValueKind::Place(place))
     }
 
-    /// Moves a just-declared local into the function body scope.
+    /// Moves a just-declared generated local into the function body scope.
     ///
-    /// The binding is removed from the innermost scope's name map and drop
-    /// order and recorded in the body scope instead, so its cleanup runs at the
-    /// end of the function rather than at the end of the block that declared
-    /// it. The body scope is the first scope and has depth one; a binding
-    /// already declared there is left alone.
-    fn move_binding_to_body_scope(&mut self, id: usize, name: &str) {
+    /// The binding is removed from the innermost scope's drop order and
+    /// recorded in the body scope instead, so its cleanup runs at the end of
+    /// the function rather than at the end of the block that declared it. The
+    /// body scope is the first scope and has depth one; a binding already
+    /// declared there is left alone. The generated binding has no name-map
+    /// entry to move: it is referenced by id only.
+    fn move_binding_to_body_scope(&mut self, id: usize) {
         if self.scopes.len() <= 1 {
             return;
         }
         let innermost = self.scopes.len() - 1;
         if let Some(scope) = self.scopes.get_mut(innermost) {
             scope.order.retain(|entry| *entry != id);
-            scope.names.remove(name);
         }
         self.bindings[id].scope = 1;
         if let Some(scope) = self.scopes.get_mut(0) {

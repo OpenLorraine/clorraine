@@ -293,6 +293,39 @@ func main(): i32 {
     assert_exit("funckey", &output, 0);
 }
 
+/// Two mode-differing func signatures of one generic struct are two instances.
+///
+/// A `borrow` parameter reaches the callee as a pointer, so `func(String):
+/// i32` and `func(borrow String): i32` are different types with different C
+/// representations: each instance builds and resolves its own callable.
+#[test]
+fn should_build_two_mode_differing_func_instances_of_one_generic_struct() {
+    let source = r#"module spec.cri.modekey;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> {
+    call: T;
+}
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func lendOf(borrow s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: Holder<func(String): i32> = Holder<func(String): i32> { call: lenOf };
+    let b: Holder<func(borrow String): i32> = Holder<func(borrow String): i32> { call: lendOf };
+    return a.call(stringOf("ab")) + b.call(stringOf("cde")) - 5;
+}
+"#;
+    let output = run_host("modekey", source);
+    assert_exit("modekey", &output, 0);
+}
+
 /// A capturing lambda in a loop body builds with one definition set.
 ///
 /// The ownership layer's speculative loop pass must not emit a second lifted
