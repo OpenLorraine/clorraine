@@ -816,10 +816,13 @@ func main(): i32 {
 /// A generic read-only lend returned as a value stays rejected at a nullable
 /// instance.
 ///
-/// The body `gid<T>(borrow v: T): T { return v; }` at `T = String?` returns the
-/// borrowed parameter as an owned value, so the instance is rejected exactly as
-/// its concrete `borrow String?` spelling is. The instantiation is judged after
-/// substitution, so exactly one `E10034` names `v`.
+/// The body `gid<T>(borrow v: T): T { return v; }` returns a read-only lend
+/// as an owned value — the declaration's mode is read-only whichever type
+/// argument is substituted — so the instance is rejected exactly as the
+/// concrete non-nullable read-only lend (`borrow v: String`) is. The declared
+/// nullable out-slot spelling (`borrow v: String?`) is a different, accepted
+/// rule whose transfer is pinned by its own case. The instantiation is judged
+/// after substitution, so exactly one `E10034` names `v`.
 #[test]
 fn should_reject_a_generic_read_only_lend_return_when_the_instance_is_nullable() {
     let source = r#"module spec.bsi.genericreadonlylendreturn;
