@@ -73,6 +73,14 @@ in `CMD`).
   the v1 language completion surfaces (generic structs, lambdas, volatile), and
   `compiler/tests/v1_language_impl_test.rs` holds their **implementation
   tests**.
+- `compiler/tests/callable_release_integrity_spec_test.rs` holds the
+  **specification tests** for callable release integrity (the generated
+  callable identities, the per-callee-kind effect modes, the owner-release
+  completeness cases, the view-return and array-elision parity, and the
+  possibly-null view widening), and
+  `compiler/tests/callable_release_integrity_impl_test.rs` holds its
+  **implementation tests** (emitted callable and owner shapes, the mode
+  vectors per callee kind, the report counts, and the byte-identity pins).
 - `compiler/tests/clorraine_driver_spec_test.rs` holds the **specification
   tests** for the `clorraine` build/run driver.
 - `compiler/tests/non_lexical_lifetimes_spec_test.rs` holds the specification

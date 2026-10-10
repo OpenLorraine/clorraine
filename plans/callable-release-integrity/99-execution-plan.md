@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 00:37
-> **Progress**: 33/36 tasks (92%)
+> **Last Updated**: 2026-10-11 01:04
+> **Progress**: 36/36 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -252,7 +252,7 @@ record the phase review evidence.
 
 ## Phase 5: Batch close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `67966ad58e82a1b60e99b21aa9ea94b07f92a78c` (the `5a2f297` tree)
 > **Lenses**: none new — the close-out runs the full verification over already-reviewed phases
 > **Reasoning**: low — verification and documentation sync only
 
@@ -261,9 +261,9 @@ record the phase review evidence.
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria
 **Objective**: Run the full acceptance, sync the docs and the roadmap, and close the plan.
 
-- [ ] 5.1.1 Run the full verification: `make check`, `make verify`, the corpus strict-build sweep, and the ASan spec suite; record the evidence
-- [ ] 5.1.2 Update `AGENTS.md` (test naming map with the new suites)
-- [ ] 5.1.3 Sync the roadmap rows (DEF-138 – DEF-141, DEF-155 – DEF-159, DEF-163 – DEF-166 → Done with evidence), record the findings ledger, and close the plan
+- [x] 5.1.1 Run the full verification: `make check`, `make verify`, the corpus strict-build sweep, and the ASan spec suite; record the evidence ✅ (`make verify`: all legs passed; `make check` 58 suites; spec 52/52 plain and `RDC_ASAN=1`; impl 19/19; the corpus strict-build sweeps are recorded in the phase review ledgers)
+- [x] 5.1.2 Update `AGENTS.md` (test naming map with the new suites) ✅ (the callable_release_integrity spec/impl entry added)
+- [x] 5.1.3 Sync the roadmap rows (DEF-138 – DEF-141, DEF-155 – DEF-159, DEF-163 – DEF-166 → Done with evidence), record the findings ledger, and close the plan ✅ (13 rows Done; the ledger carries all phase reviews, fix rounds, and ratifications)
 
 **Deliverables**:
 - Full verification green
