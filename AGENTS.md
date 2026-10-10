@@ -273,11 +273,16 @@ in `CMD`).
   project-level specialist check state (`codeops/specialist-check.json`).
 - Specialist coverage: up to date (2026-10-10) — see
   `codeops/specialist-check.json`; re-run `analyze-agents` after new plans land.
-- Never run the CodeOps installer from inside this repository: its scope
-  auto-detection installs project-scope copies into `.opencode/` and would
-  replace the project reviewer briefs (`correctness-reviewer`,
+- Do not run the CodeOps installer from inside this repository: it replaces
+  the two customized reviewer briefs (`correctness-reviewer`,
   `semantics-reviewer`) with catalog defaults. Run installs/upgrades from
-  outside the repo (for example, `cd ~`).
+  outside the repo (for example, `cd ~`), and after any in-repo install
+  restore the two briefs (`git checkout --
+  .opencode/agents/correctness-reviewer.md
+  .opencode/agents/semantics-reviewer.md`). The catalog's other project-scope
+  files (agents, skills, references, `_shared/`) are environment tooling and
+  stay untracked; only the four project agents under `.opencode/agents/` are
+  committed.
 - Keep `plans/*/99-...`/roadmap state in sync through the CodeOps skills, and
   follow the repository's quality profile (strict: independent review, stop on
   critical/major findings).
