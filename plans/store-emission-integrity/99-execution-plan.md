@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 08:41
-> **Progress**: 2/26 tasks (8%)
+> **Last Updated**: 2026-10-10 08:45
+> **Progress**: 4/26 tasks (15%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -104,8 +104,16 @@ Run: `make -C docker exec CMD="cargo test --test store_emission_integrity_spec_t
 **Objective**: Exclude the exact-target arm from the conditional suppression so the store rule
 judges the conditional like the direct store.
 
-- [ ] 1.2.1 Make `lend_moves_judged` target-aware and filter the conditional walks' self leaves (`own/expr.rs`), updating its doc comment in plain language
-- [ ] 1.2.2 Run the spec suite to green (ST-1 – ST-9); on any failure STOP and fix the implementation, never the test; run the host ASan probes for the ST-1/ST-2 shapes and the accepted ST-3/ST-7/ST-8/ST-9 alternatives
+- [x] 1.2.1 Make `lend_moves_judged` target-aware and filter the conditional walks' self leaves (`own/expr.rs`), updating its doc comment in plain language ✅ (completed: 2026-10-10 08:45)
+- [x] 1.2.2 Run the spec suite to green (ST-1 – ST-9); on any failure STOP and fix the implementation, never the test; run the host ASan probes for the ST-1/ST-2 shapes and the accepted ST-3/ST-7/ST-8/ST-9 alternatives ✅ (completed: 2026-10-10 08:45)
+
+**Green-phase evidence (2026-10-10 08:45)** — the suite passes 9/9 in the pinned container. The
+host AddressSanitizer probes are clean for the accepted memory shapes: the duplicable generic
+instance (exit 7), the nullable out-slot conditional (exit 4), and the nullable generic instance
+(exit 4) each build with `-fsanitize=address -no-pie` and run with leak detection on, reporting
+nothing. The two amended shapes are rejected before emission (no translation unit), so no runtime
+probe applies to them. `make check` is fully green: `spec check: OK (27 files, 105 compile-fail
+tests)` and every workspace test binary reports zero failures.
 
 **Deliverables**:
 - The checker change

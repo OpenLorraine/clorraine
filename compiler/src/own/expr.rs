@@ -741,7 +741,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return;
         }
-        if self.lend_moves_judged(&ty, value) {
+        if self.lend_moves_judged(&PlaceTarget::Local(id, projections.to_vec()), &ty, value) {
             return;
         }
         let parameter = binding.name.clone();
@@ -777,13 +777,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The source set mirrors the binding effect the assignment applies: a
     /// maybe-owning target consumes a place root or the arms of a conditional
-    /// as maybe-moves, while an owning target consumes them as moves. When any
-    /// source is a lend parameter with a read-only mode, the existing path
-    /// already reports this site — directly for a concrete type and through
-    /// the per-instance duty while the type is still a parameter — so the
-    /// target-side judgment stays silent and the site keeps one diagnostic.
-    fn lend_moves_judged(&self, target_ty: &Ty, value: &Expr) -> bool {
-        let sources = if self.maybe_owns(target_ty) {
+    /// as maybe-moves, while an owning target consumes them as moves. An arm
+    /// that names the exact target path is exempt before the lend test, again
+    /// mirroring the marking rule: storing the target into itself moves
+    /// nothing out of it, so the target-side store rule must judge the site.
+    /// Every other source keeps the existing suppression — a direct place
+    /// reports through the place-move path, and a read-only lend arm reports
+    /// through the source side, directly for a concrete type and through the
+    /// per-instance duty while the type is still a parameter — so the site
+    /// keeps exactly one diagnostic.
+    fn lend_moves_judged(&self, target: &PlaceTarget, target_ty: &Ty, value: &Expr) -> bool {
+        let direct_place = self.place_target(value).is_some();
+        let mut sources = if self.maybe_owns(target_ty) {
             match self.place_target(value) {
                 Some(source) => vec![source],
                 None => self.maybe_owning_move_sources(value),
@@ -796,6 +801,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 None => self.conditional_move_sources(value),
             }
         };
+        if !direct_place {
+            if let PlaceTarget::Local(target_id, target_projections) = target {
+                sources.retain(|source| match source {
+                    PlaceTarget::Local(source_id, source_projections) => {
+                        source_id != target_id || source_projections != target_projections
+                    }
+                    PlaceTarget::Global(_, _) => true,
+                });
+            }
+        }
         !sources.is_empty()
             && sources.iter().any(|source| match source {
                 PlaceTarget::Local(source_id, _) => {
