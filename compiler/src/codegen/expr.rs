@@ -38,6 +38,17 @@ impl<'a> Emitter<'a> {
             ValueKind::Str(text) => format!("cl_str({})", escape_c_string(text.as_bytes())),
             ValueKind::Path(segments) => self.path(segments),
             ValueKind::Member { base, name } => {
+                // A fixed array's `.len` is its structural extent, exactly as
+                // the `len` intrinsic folds it: there is no member to read and
+                // the base evaluates nothing.
+                if name == "len" {
+                    if let TyKind::Array { extents, .. } = &self.substitute(&base.ty).kind {
+                        if extents.iter().all(Option::is_some) {
+                            let extent = extents.first().and_then(|size| *size).unwrap_or(0);
+                            return format!("{extent}");
+                        }
+                    }
+                }
                 let base_c = self.value(base);
                 if matches!(self.substitute(&base.ty).kind, TyKind::Raw(_)) {
                     format!("{base_c}->{name}")
@@ -120,6 +131,20 @@ impl<'a> Emitter<'a> {
         for projection in &place.projections {
             match projection {
                 Projection::Field(field) => {
+                    // A fixed array has no members: `.len` is its structural
+                    // extent, exactly as the `len` intrinsic and the member
+                    // value fold it. The base evaluates nothing, so the
+                    // spelling is the constant.
+                    if field == "len" {
+                        if let TyKind::Array { extents, .. } = &ty.kind {
+                            if extents.iter().all(Option::is_some) {
+                                let extent = extents.first().and_then(|size| *size).unwrap_or(0);
+                                text = format!("{extent}");
+                                ty = Ty::usize_ty();
+                                continue;
+                            }
+                        }
+                    }
                     let through_raw = matches!(ty.kind, TyKind::Raw(_));
                     text = if through_raw {
                         format!("{text}->{field}")

@@ -27,14 +27,41 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(target) => ValueKind::Place(self.target_place(&target)),
                 None => ValueKind::Path(vec![name.clone()]),
             },
-            ExprKind::Qualified(name) => match self.place_target(expr) {
-                Some(target) => ValueKind::Place(self.target_place(&target)),
-                None => ValueKind::Path(name.segments.clone()),
-            },
-            ExprKind::Member { base, name } => ValueKind::Member {
-                base: Box::new(self.lower_value(base)),
-                name: name.clone(),
-            },
+            ExprKind::Qualified(name) => {
+                // A fixed array's `.len` is its structural extent: the length
+                // is a compile-time constant and the base reads no storage,
+                // exactly as the `len` intrinsic folds it.
+                if let Some(extent) = self.qualified_structural_len(name) {
+                    return Value {
+                        ty: Ty::usize_ty(),
+                        kind: ValueKind::Int(extent as i128),
+                    };
+                }
+                match self.place_target(expr) {
+                    Some(target) => ValueKind::Place(self.target_place(&target)),
+                    None => ValueKind::Path(name.segments.clone()),
+                }
+            }
+            ExprKind::Member { base, name } => {
+                // A fixed array's `.len` is its structural extent: the length
+                // is a compile-time constant and the base reads no storage,
+                // exactly as the `len` intrinsic folds it.
+                if name == "len" {
+                    if let TyKind::Array { extents, .. } = &self.ty(base).kind {
+                        if extents.iter().all(Option::is_some) {
+                            let extent = extents.first().and_then(|size| *size).unwrap_or(0);
+                            return Value {
+                                ty: Ty::usize_ty(),
+                                kind: ValueKind::Int(extent as i128),
+                            };
+                        }
+                    }
+                }
+                ValueKind::Member {
+                    base: Box::new(self.lower_value(base)),
+                    name: name.clone(),
+                }
+            }
             ExprKind::Index { base, index } => {
                 // The guard and the access both read these operands. A
                 // side-effecting operand (a call such as `a[next()]`) is
@@ -271,9 +298,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             // An intrinsic only borrows its expression
                             // arguments, so an unnamed owned result passed here
                             // needs the caller-side binding its cleanup uses.
+                            // A fixed array's `len` is structural: the length
+                            // needs no storage, so the argument keeps its form
+                            // and nothing runs for it.
                             let value = self.lower_value(inner);
                             let value = self.bind_member_receiver(value);
-                            values.push(self.bind_intrinsic_argument(value));
+                            let value = if name == "len" && value.ty.is_fixed_array() {
+                                value
+                            } else {
+                                self.bind_intrinsic_argument(value)
+                            };
+                            values.push(value);
                         }
                         IntrinsicArg::Type(written) => type_arg = Some(self.resolve(written)),
                     }
@@ -971,6 +1006,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ty: value.ty.clone(),
             }),
             ValueKind::Member { base, name } => {
+                // A fixed array's `.len` is its structural extent: it names no
+                // storage, so it never becomes a place projection and its
+                // base does not evaluate.
+                if name == "len" && base.ty.is_fixed_array() {
+                    return None;
+                }
                 let mut place = self.value_place(base)?;
                 place.projections.push(ir::Projection::Field(name.clone()));
                 place.ty = value.ty.clone();
@@ -1356,6 +1397,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// or a root that owns nothing, is returned unchanged.
     pub(super) fn bind_ownerless_projection_root(&mut self, value: Value) -> Value {
         match value.kind {
+            // A fixed array's `.len` is its structural extent: the member
+            // reads no storage, so the chain needs no owner and its root does
+            // not evaluate.
+            ValueKind::Member { ref base, ref name }
+                if name == "len" && base.ty.is_fixed_array() =>
+            {
+                value
+            }
             ValueKind::Member { base, name } => {
                 let base = self.bind_ownerless_projection_root(*base);
                 Value::new(

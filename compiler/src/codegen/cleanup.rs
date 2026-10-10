@@ -919,10 +919,13 @@ impl<'a> Emitter<'a> {
                 "{}()",
                 super::types::zero_view_helper(&ret).unwrap_or_else(|| "0".to_owned())
             ),
-            // An owned struct keeps its brace-empty spelling.
-            TyKind::Struct(..) => {
-                format!("({}){{0}}", super::types::c_type(&ret, &self.sema.table))
-            }
+            // An owned struct returns its zero value through the helper
+            // emitted with its definition; the C99-subset contract forbids a
+            // compound literal.
+            TyKind::Struct(..) => format!(
+                "cl_zero_{}()",
+                super::types::c_type(&ret, &self.sema.table)
+            ),
             _ => "0".to_owned(),
         }
     }

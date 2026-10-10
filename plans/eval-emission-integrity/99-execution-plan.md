@@ -149,8 +149,18 @@ defect; pre-existing classes outside the phase's rows are filed (DEF-130 – DEF
 [AR-B13](00-ambiguity-register.md)
 **Objective**: Pin each strict-build shape and the bounded-field run before any implementation.
 
-- [ ] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-16 — `compiler/tests/eval_emission_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: ST-8, ST-10 – ST-16 fail against the strict build or run behavior; ST-9 reproduces the recorded shape first)
+- [x] 2.1.1 [spec-author] Write specification tests from ST-8 – ST-16 — `compiler/tests/eval_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 14:05)
+- [x] 2.1.2 Run the spec suite and record the red phase (expected: ST-8, ST-10 – ST-16 fail against the strict build or run behavior; ST-9 reproduces the recorded shape first) ✅ (completed: 2026-10-10 14:08)
+
+**Red-phase evidence (2026-10-10)** — 8 of the 9 new cases failed, the pointer-element control passed:
+ST-8 `request for member 'len' in something not a structure or union`; ST-9 the same member
+error on the named local and the call result; ST-10 the compound-literal assertion (the program
+built, but `(ClP){0}` violates the contract); ST-11 `unknown type name 'bool'`; ST-12
+`incompatible type for argument 1 of 'RawSecond'`; ST-13 `'__cl_ret' redeclared as different kind
+of symbol`; ST-14 `array type has incomplete element type 'ClP'`; ST-16 `implicit declaration of
+function 'call'`. ST-9's recorded `codegen_run_spec_test__036` ordinal does not map; the class was
+reproduced as the `.len` member on a fixed array (the named local and the call result), which is
+the same structural-length root as DEF-76.
 
 **Deliverables**:
 - Specification suite with ST-8 – ST-16
@@ -166,14 +176,22 @@ defect; pre-existing classes outside the phase's rows are filed (DEF-130 – DEF
 **Objective**: Fix each emission shape; reproduce DEF-97 first and fix it with DEF-76 when the
 root matches.
 
-- [ ] 2.2.1 Reproduce the DEF-97 shape from `codegen_run_spec_test`, then skip the owned `len` binding for a fixed-array argument — `compiler/src/own/lower.rs`
-- [ ] 2.2.2 Emit the struct zero-helper family after the struct definitions and return it from `empty_return_value` — `compiler/src/codegen/program.rs`, `compiler/src/codegen/cleanup.rs`
-- [ ] 2.2.3 Provide the boolean type in the freestanding preamble — `compiler/src/codegen/program.rs`
-- [ ] 2.2.4 Coerce a view argument to its pointer for an uncontracted extern parameter — `compiler/src/codegen/calls.rs`
-- [ ] 2.2.5 Seed the generated spellings into the name de-dup pass — `compiler/src/codegen/function.rs`
-- [ ] 2.2.6 Split the slice-typedef emission (pointer-element before the struct definitions, complete-row-element after) and revise the order record — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs`
-- [ ] 2.2.7 Resolve the bounded field call through the instance field/closure call path — `compiler/src/own/call.rs` or `compiler/src/codegen/expr.rs` (chosen by probe)
-- [ ] 2.2.8 Run the spec suite, `./spec/check.sh`, and the independently affected recorded suites to green; on any failure STOP and fix the implementation, never the test
+- [x] 2.2.1 Reproduce the DEF-97 shape from `codegen_run_spec_test`, then skip the owned `len` binding for a fixed-array argument — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-10 14:52)
+- [x] 2.2.2 Emit the struct zero-helper family after the struct definitions and return it from `empty_return_value` — `compiler/src/codegen/program.rs`, `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-10-10 14:55)
+- [x] 2.2.3 Provide the boolean type in the freestanding preamble — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-10 14:57)
+- [x] 2.2.4 Coerce a view argument to its pointer for an uncontracted extern parameter — `compiler/src/codegen/calls.rs` ✅ (completed: 2026-10-10 14:59)
+- [x] 2.2.5 Seed the generated spellings into the name de-dup pass — `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-10 15:06)
+- [x] 2.2.6 Split the slice-typedef emission (pointer-element before the struct definitions, complete-row-element after) and revise the order record — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs` ✅ (completed: 2026-10-10 15:10)
+- [x] 2.2.7 Resolve the bounded field call through the instance field/closure call path — `compiler/src/own/call.rs` or `compiler/src/codegen/expr.rs` (chosen by probe) ✅ (completed: 2026-10-10 15:13)
+- [x] 2.2.8 Run the spec suite, `./spec/check.sh`, and the independently affected recorded suites to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 15:22)
+
+**Implementation evidence (2026-10-10)** — the structural `len` fix landed as a small family: the
+own layer lowers a fixed-array `.len` (member, qualified name, and both `len` argument paths) to
+its compile-time extent, so nothing binds and nothing evaluates; the emitter folds the same extent
+for any residual member or place spelling. DEF-120's split defers only the row-element typedefs
+that name a struct by value (pointer-element typedefs keep their place), and the generic instances
+follow the same rule. Full `make check` green (1519 tests); `./spec/check.sh` OK (27 files, 108
+compile-fail tests); `codegen_run_spec_test` 54/54 and `freestanding_spec_test` 16/16 green.
 
 **Deliverables**:
 - The seven emission fixes

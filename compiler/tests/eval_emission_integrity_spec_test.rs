@@ -513,3 +513,322 @@ func main(): i32 {
     let output = run_host("slice-form", accepted);
     assert_exit("slice-form", &output, 2);
 }
+
+/// Emits one freestanding-profile program and asserts the front end accepted
+/// it.
+fn emit_freestanding(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "freestanding".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::read_to_string(&c_path).unwrap_or_default()
+}
+
+/// Emits a freestanding program, builds it on the host with the no-libc
+/// stance, and runs it.
+fn run_freestanding_host(tag: &str, source: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_freestanding(tag, source);
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, &emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-nostdlib",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    run_with_timeout(tag, &program, &[])
+}
+
+/// Emits a host program, links it with a C stub, and runs it.
+fn run_host_with_stub(tag: &str, source: &str, stub: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, source);
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, &emitted).expect("write the emitted C");
+    let stub_path = scratch.path().join("stub.c");
+    std::fs::write(&stub_path, stub).expect("write the stub");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+            stub_path.to_str().expect("stub path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the linked unit; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    run_with_timeout(tag, &program, &[])
+}
+
+/// A generic `.len` member of a fixed-array call result builds and runs: the
+/// extent is structural, so the length does not need the value.
+#[test]
+fn should_build_a_generic_structural_len_member() {
+    let source = r#"module spec.eei.lengeneric;
+
+func mkArr<T>(x: T): T[2] {
+    return [x, x];
+}
+
+func g<T>(x: T): i32 {
+    return i32(mkArr(x).len);
+}
+
+func main(): i32 {
+    return g<i32>(5) * 10 + 2;
+}
+"#;
+    let output = run_host("len-generic", source);
+    assert_exit("len-generic", &output, 22);
+}
+
+/// The `.len` member of a fixed array is the structural extent for a named
+/// local and for a call result alike.
+#[test]
+fn should_build_the_structural_len_member_spellings() {
+    let source = r#"module spec.eei.lenmember;
+
+func mkArr(): i32[2] {
+    return [3, 9];
+}
+
+func main(): i32 {
+    let xs: u8[3] = [1, 2, 3];
+    let n: usize = xs.len;
+    return i32(n) * 10 + i32(mkArr().len);
+}
+"#;
+    let output = run_host("len-member", source);
+    assert_exit("len-member", &output, 32);
+}
+
+/// A struct-returning function that falls off its end returns the zero value
+/// without a compound literal, and the fields read as zero.
+#[test]
+fn should_build_and_run_a_struct_empty_return_without_a_compound_literal() {
+    let source = r#"module spec.eei.emptyret;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func maybe(flag: bool): P {
+    if (flag) {
+        return P { x: 1, y: 2 };
+    }
+}
+
+func main(): i32 {
+    let p: P = maybe(false);
+    return p.x + p.y + maybe(true).x;
+}
+"#;
+    let emitted = emit_host("empty-return", source);
+    assert!(
+        !emitted.contains("(ClP){0}"),
+        "empty-return: the C99-subset contract forbids the struct compound literal"
+    );
+    let output = run_host("empty-return", source);
+    assert_exit("empty-return", &output, 1);
+}
+
+/// A freestanding program that uses `bool` builds on the host no-libc leg and
+/// runs.
+#[test]
+fn should_build_and_run_a_freestanding_bool_program() {
+    let source = r#"module spec.eei.fsboot;
+
+func flag(): bool {
+    return true;
+}
+
+let g: bool = flag();
+
+func main(): i32 {
+    if (g) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_freestanding_host("freestanding-bool", source);
+    assert_exit("freestanding-bool", &output, 1);
+}
+
+/// A slice passed to an uncontracted extern coerces to its pointer, so the
+/// linked stub reads the backing bytes.
+#[test]
+fn should_build_and_run_a_slice_passed_to_an_uncontracted_extern() {
+    let source = r#"module spec.eei.viewextern;
+
+import { slice } from std.mem;
+
+ffi lib {
+    func RawSecond(data: u8[]): i32;
+}
+
+func main(): i32 {
+    let xs: u8[4] = [7, 2, 3, 4];
+    let s: u8[] = slice(xs, 0, 4);
+    let n: i32 = 0;
+    unsafe {
+        n = RawSecond(s);
+    }
+    return n;
+}
+"#;
+    let stub = "typedef void *APTR;\ntypedef int LONG;\nLONG RawSecond(APTR data) { return ((unsigned char *)data)[1]; }\n";
+    let output = run_host_with_stub("view-extern", source, stub);
+    assert_exit("view-extern", &output, 2);
+}
+
+/// Source bindings named like the compiler-generated locals de-duplicate
+/// instead of colliding: a `__cl_ret` parameter in a function with cleanup, a
+/// `__env` local inside a capturing lambda, and a `__cl_tmp0` binding.
+#[test]
+fn should_de_duplicate_source_bindings_named_like_generated_locals() {
+    let source = r#"module spec.eei.gennames;
+
+import { String, stringOf } from std.text;
+
+func demo(__cl_ret: i32): i32 {
+    let s: String = stringOf("x");
+    if (__cl_ret > 0) {
+        return __cl_ret + i32(len(s));
+    }
+    return 0;
+}
+
+func outer(x: i32): i32 {
+    let base: i32 = x;
+    return ([base] () => {
+        let __env: i32 = base + 1;
+        return __env + 1;
+    })();
+}
+
+func main(): i32 {
+    return demo(4) + outer(3);
+}
+"#;
+    let output = run_host("generated-names", source);
+    assert_exit("generated-names", &output, 10);
+}
+
+/// A multi-extent row slice of a struct builds after the row typedef follows
+/// the struct definition, and the rows read correctly.
+#[test]
+fn should_build_and_run_a_multi_extent_row_slice_of_a_struct() {
+    let source = r#"module spec.eei.rowslice;
+
+import { slice } from std.mem;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func total(rows: P[][2]): i32 {
+    return rows[0][0].x + rows[1][1].y;
+}
+
+func main(): i32 {
+    let back: P[3][2] = [[P { x: 1, y: 2 }, P { x: 3, y: 4 }], [P { x: 5, y: 6 }, P { x: 7, y: 8 }], [P { x: 9, y: 10 }, P { x: 11, y: 12 }]];
+    let rows: P[][2] = slice(back, 0, 3);
+    return total(rows);
+}
+"#;
+    let output = run_host("row-slice", source);
+    assert_exit("row-slice", &output, 9);
+}
+
+/// The single-extent pointer-element slice control still builds and runs.
+#[test]
+fn should_build_and_run_a_pointer_element_slice_control() {
+    let source = r#"module spec.eei.ptrslice;
+
+import { slice } from std.mem;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func main(): i32 {
+    let ps: P[3] = [P { x: 1, y: 2 }, P { x: 3, y: 4 }, P { x: 5, y: 6 }];
+    let s: P[] = slice(ps, 0, 3);
+    return s[2].x + s[0].y;
+}
+"#;
+    let output = run_host("ptr-slice", source);
+    assert_exit("ptr-slice", &output, 7);
+}
+
+/// A call of a callable-bound parameter's field builds and runs.
+#[test]
+fn should_build_and_run_a_callable_bound_field_call() {
+    let source = r#"module spec.eei.boundfield;
+
+struct Holder<T> {
+    call: T;
+}
+
+func use<T: func(i32): i32>(h: Holder<T>): i32 {
+    return h.call(5);
+}
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    return use<func(i32): i32>(Holder<func(i32): i32> { call: addOne });
+}
+"#;
+    let output = run_host("bound-field", source);
+    assert_exit("bound-field", &output, 6);
+}

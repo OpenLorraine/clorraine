@@ -61,6 +61,20 @@ pub(super) fn zero_view_helper(ty: &Ty) -> Option<String> {
     }
 }
 
+/// True when a type's innermost array element is a struct.
+///
+/// A row-element type such as `P[2]` names the struct by value in the array
+/// form of a slice's pointer declarator, so the struct must be complete when
+/// the typedef is written; a plain pointer element only needs the forward
+/// declaration.
+pub(super) fn innermost_is_struct(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Array { element, .. } => innermost_is_struct(element),
+        TyKind::Struct(..) => true,
+        _ => false,
+    }
+}
+
 /// The C spelling of a type in a value position.
 pub(super) fn c_type(ty: &Ty, table: &TypeTable) -> String {
     match &ty.kind {

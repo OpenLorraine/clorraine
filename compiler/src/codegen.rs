@@ -367,6 +367,7 @@ impl<'a> Emitter<'a> {
         self.emit_struct_forward_typedefs();
         self.emit_slice_typedefs();
         self.emit_struct_definitions();
+        self.emit_row_slice_typedefs();
         self.emit_closure_declarations();
         self.emit_prototypes();
         self.emit_globals();
@@ -535,6 +536,20 @@ impl<'a> Emitter<'a> {
         candidate
     }
 
+    /// Reserves the C names the emitter generates for a function body.
+    ///
+    /// The generated spellings are fixed strings in the emitted C — the
+    /// closure environment, the hoisted result, and the temporaries — so a
+    /// source binding that shares one de-duplicates instead of colliding with
+    /// it.
+    pub(super) fn seed_generated_names(&mut self, temps: usize) {
+        self.used_names.insert("__env".to_owned());
+        self.used_names.insert("__cl_ret".to_owned());
+        for index in 0..temps {
+            self.used_names.insert(format!("__cl_tmp{index}"));
+        }
+    }
+
     /// The signature of a non-generic function.
     fn function_signature(&self, module: &str, decl: &FuncDecl) -> String {
         let symbol = self.function_symbol(module, &decl.name);
@@ -579,21 +594,19 @@ impl<'a> Emitter<'a> {
     /// order, and masking never changes the count. A declaration without an
     /// emitted body keeps its written names.
     fn param_c_names(&self, module: &str, decl: &FuncDecl) -> Vec<String> {
-        let ir_names: Option<Vec<String>> = self
+        let ir_function = self
             .ownership
             .functions
             .iter()
-            .find(|function| function.module == module && function.name == decl.name)
-            .map(|function| {
-                function
-                    .params
-                    .iter()
-                    .map(|param| param.name.clone())
-                    .collect()
-            });
-        match &ir_names {
-            Some(names) => self.unique_param_names(names.iter().map(String::as_str)),
-            None => self.unique_param_names(decl.params.iter().map(|param| param.name.as_str())),
+            .find(|function| function.module == module && function.name == decl.name);
+        match ir_function {
+            Some(function) => {
+                let names = function.params.iter().map(|param| param.name.as_str());
+                self.unique_param_names(function.temps.len(), names)
+            }
+            None => {
+                self.unique_param_names(0, decl.params.iter().map(|param| param.name.as_str()))
+            }
         }
     }
 
@@ -606,9 +619,20 @@ impl<'a> Emitter<'a> {
     /// through this one pass, so they agree by construction.
     pub(super) fn unique_param_names<'n>(
         &self,
+        temps: usize,
         names: impl Iterator<Item = &'n str>,
     ) -> Vec<String> {
         let mut used: BTreeSet<String> = BTreeSet::new();
+        // The generated spellings are fixed strings in the emitted C — the
+        // closure environment, the hoisted result, and the temporaries — so
+        // they are reserved first: a parameter that shares one de-duplicates
+        // instead of colliding with it. The reservation is part of this one
+        // pure pass, so the signature and the body agree by construction.
+        used.insert("__env".to_owned());
+        used.insert("__cl_ret".to_owned());
+        for index in 0..temps {
+            used.insert(format!("__cl_tmp{index}"));
+        }
         let mut resolved: Vec<String> = Vec::new();
         for name in names {
             let base = sanitize_identifier(name);

@@ -70,6 +70,7 @@ impl<'a> Emitter<'a> {
             // nothing to emit.
             return;
         };
+        self.seed_generated_names(function.temps.len());
         self.function = Some(function);
         self.current_module = info.module.clone();
         self.return_ty = self.substitute(&function.ret);
@@ -80,8 +81,10 @@ impl<'a> Emitter<'a> {
             self.result_var = Some("__cl_ret".to_owned());
         }
 
-        let param_names = self
-            .unique_param_names(function.params.iter().map(|param| param.name.as_str()));
+        let param_names = self.unique_param_names(
+            function.temps.len(),
+            function.params.iter().map(|param| param.name.as_str()),
+        );
         for (param, c_name) in function.params.iter().zip(param_names) {
             self.used_names.insert(c_name.clone());
             self.local_names.insert(param.name.clone(), c_name);
@@ -153,6 +156,7 @@ impl<'a> Emitter<'a> {
             .unwrap_or_default();
         self.instance_key = instance.map(|(_, key)| key.to_owned());
         self.used_names.clear();
+        self.seed_generated_names(function.temps.len());
         self.local_names.clear();
         self.pointer_params.clear();
         self.scope_actions.clear();
@@ -182,8 +186,10 @@ impl<'a> Emitter<'a> {
             self.result_var = Some("__cl_ret".to_owned());
         }
 
-        let param_names = self
-            .unique_param_names(function.params.iter().map(|param| param.name.as_str()));
+        let param_names = self.unique_param_names(
+            function.temps.len(),
+            function.params.iter().map(|param| param.name.as_str()),
+        );
         for (param, c_name) in function.params.iter().zip(param_names) {
             self.used_names.insert(c_name.clone());
             self.local_names.insert(param.name.clone(), c_name);
@@ -241,8 +247,10 @@ impl<'a> Emitter<'a> {
         capturing: bool,
         symbol: &str,
     ) -> String {
-        let param_names = self
-            .unique_param_names(function.params.iter().map(|param| param.name.as_str()));
+        let param_names = self.unique_param_names(
+            function.temps.len(),
+            function.params.iter().map(|param| param.name.as_str()),
+        );
         let params: Vec<String> = function
             .params
             .iter()

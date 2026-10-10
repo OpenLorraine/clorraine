@@ -863,6 +863,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::Qualified(name) => {
+                // A fixed array's `.len` is its structural extent, not a
+                // place: the length is a compile-time constant and the base
+                // reads no storage.
+                if self.qualified_structural_len(name).is_some() {
+                    return None;
+                }
                 let first = name.segments.first()?;
                 // A local base keeps its own binding; every later segment is a
                 // field projection.
@@ -885,6 +891,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(PlaceTarget::Global(global_id(global), projections))
             }
             ExprKind::Member { base, name } => {
+                // A fixed array's `.len` is its structural extent, not a
+                // place: it names no storage and its base reads nothing.
+                if name == "len" && self.ty(base).is_fixed_array() {
+                    return None;
+                }
                 let (target, mut projections) = self.place_target_parts(base)?;
                 projections.push(ir::Projection::Field(name.clone()));
                 Some(target.with_projections(projections))
@@ -895,6 +906,41 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(target.with_projections(projections))
             }
             ExprKind::Unsafe(inner) => self.place_target(inner),
+            _ => None,
+        }
+    }
+
+    /// The structural extent a qualified `.len` path names, when it names one.
+    ///
+    /// A dotted name whose last segment is `len` and whose base resolves to a
+    /// fixed array is the array's compile-time length: the path names no
+    /// storage and its base reads nothing, exactly as the `len` intrinsic
+    /// folds the same extent.
+    pub(super) fn qualified_structural_len(
+        &self,
+        name: &crate::ast::QualifiedName,
+    ) -> Option<usize> {
+        let (first, tail) = name.segments.split_first()?;
+        let (last, middle) = tail.split_last()?;
+        if last != "len" {
+            return None;
+        }
+        let mut ty = if let Some(id) = self.lookup(first) {
+            self.bindings[id].ty.clone()
+        } else {
+            let global = crate::init_graph::resolve_name_global(self.loaded, self.module, first)?;
+            self.program
+                .globals
+                .get(&global_id(global))
+                .map(|global| global.ty.clone())?
+        };
+        for segment in middle {
+            ty = self.member_type(&ty, segment);
+        }
+        match &ty.kind {
+            TyKind::Array { extents, .. } if extents.iter().all(Option::is_some) => {
+                extents.first().and_then(|size| *size)
+            }
             _ => None,
         }
     }

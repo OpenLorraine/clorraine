@@ -10,7 +10,7 @@ use crate::ir::{Value, ValueKind};
 use crate::types::{contains_param, Ty, TyKind};
 
 use super::render::escape_c_string;
-use super::types::{c_type, is_pointer_param, type_key};
+use super::types::{c_type, is_pointer_param, is_struct_view, type_key};
 use super::Emitter;
 
 impl Emitter<'_> {
@@ -136,6 +136,25 @@ impl Emitter<'_> {
                     }
                 } else {
                     self.argument_text(arg, expected)
+                };
+                // An uncontracted `ffi` parameter takes its ABI type from the
+                // FFI table, so a struct-view argument whose ABI type is a
+                // pointer crosses as the view's pointer member rather than as
+                // the view struct. The prototype and the tables are unchanged.
+                let text = if func_ty.is_none() && !user_call {
+                    match expected {
+                        Some(expected)
+                            if matches!(
+                                crate::abi::ffi_type_with(expected, None).as_str(),
+                                "APTR" | "char *"
+                            ) && is_struct_view(&self.substitute(&arg.ty)) =>
+                        {
+                            format!("({text}).ptr")
+                        }
+                        _ => text,
+                    }
+                } else {
+                    text
                 };
                 // The declared parameter type decides whether the argument is
                 // the address of a writable out-slot, not the written argument

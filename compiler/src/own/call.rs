@@ -118,7 +118,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return None;
         }
         let field_ty = self.callee_field_type(callee)?;
-        if !matches!(field_ty.kind, TyKind::Func(_)) {
+        // A field whose type is a bare type parameter is callable exactly when
+        // its bound is `func(...)`: the checker rejects the unbound call, so an
+        // accepted program reaches this lowering through the field's own
+        // value.
+        if !matches!(field_ty.kind, TyKind::Func(_) | TyKind::Param(_)) {
             return None;
         }
         // The field itself is the callable value. It is built directly rather
@@ -282,7 +286,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // receiver, so an ownerless owned result needs the caller-side
             // binding its cleanup uses.
             let receiver = self.lower_dot_receiver(callee)?;
-            let receiver = self.bind_intrinsic_argument(receiver);
+            // A fixed array's `len` is structural: the length needs no
+            // storage, so the receiver keeps its form and nothing runs for it.
+            let receiver = if receiver.ty.is_fixed_array() {
+                receiver
+            } else {
+                self.bind_intrinsic_argument(receiver)
+            };
             return Some((
                 Ty::usize_ty(),
                 ValueKind::Intrinsic {

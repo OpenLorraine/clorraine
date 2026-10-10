@@ -14,8 +14,8 @@ use crate::profile::Profile;
 use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, view_type, CaptureMode, Ty, TyKind, TypeTable};
 
 use super::types::{
-    c_type, collect_slice_types, declarator, function_declarator, mangle_module,
-    pointer_to_array_declarator, scalar_of, type_key,
+    c_type, collect_slice_types, declarator, function_declarator, innermost_is_struct,
+    mangle_module, pointer_to_array_declarator, scalar_of, type_key,
 };
 use super::{Emitter, FuncInfo};
 
@@ -85,6 +85,13 @@ impl<'a> Emitter<'a> {
         self.push("typedef unsigned int usize;");
         self.push("typedef int isize;");
         self.push("");
+        if matches!(self.profile, Profile::Freestanding) {
+            // The no-libc stance includes no header, so the boolean type the
+            // emitted signatures spell is defined here: one byte, matching
+            // the compiler's `bool`.
+            self.push("typedef unsigned char bool;");
+            self.push("");
+        }
         if matches!(self.profile, Profile::Host | Profile::Freestanding) {
             self.push("typedef void *BPTR;");
             self.push("typedef void *APTR;");
@@ -144,17 +151,41 @@ impl<'a> Emitter<'a> {
     /// (`T (*ptr)[M]`), so an indexed access yields a whole row.
     pub(super) fn emit_slice_typedefs(&mut self) {
         let keys = self.slice_element_types();
+        let early: Vec<(String, Ty)> = keys
+            .into_iter()
+            .filter(|(_, element)| !self.slice_row_needs_definition(element))
+            .collect();
+        self.emit_slice_typedef_group(&early);
+    }
+
+    /// Writes the slice typedefs whose row element needs a complete struct.
+    ///
+    /// A row-element slice spells `ClP (*ptr)[2]`, an array of the element, so
+    /// the element type must be complete when the typedef is written. These
+    /// typedefs are emitted after the struct definitions; the pointer-element
+    /// ones only point at their element and keep their place before them.
+    pub(super) fn emit_row_slice_typedefs(&mut self) {
+        let keys = self.slice_element_types();
+        let late: Vec<(String, Ty)> = keys
+            .into_iter()
+            .filter(|(_, element)| self.slice_row_needs_definition(element))
+            .collect();
+        self.emit_slice_typedef_group(&late);
+    }
+
+    /// Writes one slice-typedef group: the typedefs, then their zero helpers.
+    fn emit_slice_typedef_group(&mut self, keys: &[(String, Ty)]) {
         if keys.is_empty() {
             return;
         }
-        for (key, element) in &keys {
+        for (key, element) in keys {
             let pointer = pointer_to_array_declarator(element, "ptr", &self.sema.table)
                 .unwrap_or_else(|| format!("{} *ptr", c_type(element, &self.sema.table)));
             self.push(&format!(
                 "typedef struct {{ {pointer}; usize len; }} ClSlice_{key};"
             ));
         }
-        for (key, _) in &keys {
+        for (key, _) in keys {
             self.push(&format!(
                 "static inline ClSlice_{key} cl_zero_ClSlice_{key}(void)"
             ));
@@ -164,6 +195,16 @@ impl<'a> Emitter<'a> {
             self.push("}");
         }
         self.push("");
+    }
+
+    /// True when a slice's row-element pointer needs the struct definition.
+    ///
+    /// The array form of the pointer declarator names the element by value, so
+    /// the element must be complete; a plain pointer element is fine with the
+    /// forward declaration.
+    fn slice_row_needs_definition(&self, element: &Ty) -> bool {
+        pointer_to_array_declarator(element, "ptr", &self.sema.table).is_some()
+            && innermost_is_struct(element)
     }
 
     /// The distinct slice element types the program uses, ordered by key.
@@ -496,6 +537,18 @@ impl<'a> Emitter<'a> {
                 self.push(&format!("    {qualifier}{};", declarator(ty, name, &self.sema.table)));
             }
             self.push("};");
+            // The empty value of a struct is a zeroed temporary returned
+            // through a helper, exactly like the view helpers: the
+            // C99-subset contract forbids the compound literal an empty
+            // return would otherwise spell.
+            self.push(&format!(
+                "static inline {} cl_zero_{}(void)",
+                unit.symbol, unit.symbol
+            ));
+            self.push("{");
+            self.push(&format!("    {} value = {{0}};", unit.symbol));
+            self.push("    return value;");
+            self.push("}");
             self.push("");
         }
     }
