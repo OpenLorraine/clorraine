@@ -203,6 +203,7 @@ impl<'a> Emitter<'a> {
                             self.loaded,
                         );
                         collect_slice_types(&ty, &mut found);
+                        self.collect_init_slice_types(&decl.value, &mut found);
                     }
                     Item::GlobalConst(decl) => {
                         let ty = resolve_ty_folded(
@@ -213,6 +214,7 @@ impl<'a> Emitter<'a> {
                             self.loaded,
                         );
                         collect_slice_types(&ty, &mut found);
+                        self.collect_init_slice_types(&decl.value, &mut found);
                     }
                     _ => {}
                 }
@@ -268,6 +270,82 @@ impl<'a> Emitter<'a> {
             }
         }
         found.into_iter().collect()
+    }
+
+    /// Records the slice element types a module initializer spells.
+    ///
+    /// An initializer's own expression types appear in no signature, so an
+    /// initializer that builds a view is the only evidence of its element
+    /// type; the typedef must exist before the init function that uses it.
+    /// A lambda body is lowered as its own function, so its slice types come
+    /// from the body collection instead.
+    fn collect_init_slice_types(&self, expr: &Expr, found: &mut BTreeMap<String, Ty>) {
+        if let Some(ty) = self.expr_type(expr) {
+            collect_slice_types(&ty, found);
+        }
+        match &expr.kind {
+            ExprKind::Call { callee, args, .. } => {
+                self.collect_init_slice_types(callee, found);
+                for arg in args {
+                    self.collect_init_slice_types(&arg.value, found);
+                }
+            }
+            ExprKind::Index { base, index } => {
+                self.collect_init_slice_types(base, found);
+                self.collect_init_slice_types(index, found);
+            }
+            ExprKind::Member { base, .. } => self.collect_init_slice_types(base, found),
+            ExprKind::Unary { operand, .. } => self.collect_init_slice_types(operand, found),
+            ExprKind::Binary { left, right, .. } => {
+                self.collect_init_slice_types(left, found);
+                self.collect_init_slice_types(right, found);
+            }
+            ExprKind::Assign { target, value, .. } => {
+                self.collect_init_slice_types(target, found);
+                self.collect_init_slice_types(value, found);
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.collect_init_slice_types(condition, found);
+                self.collect_init_slice_types(then_value, found);
+                self.collect_init_slice_types(else_value, found);
+            }
+            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+                self.collect_init_slice_types(value, found);
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.collect_init_slice_types(&field.value, found);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.collect_init_slice_types(element, found);
+                }
+                if let Some(fill) = fill {
+                    self.collect_init_slice_types(fill, found);
+                }
+            }
+            ExprKind::Unsafe(inner) => self.collect_init_slice_types(inner, found),
+            ExprKind::IntrinsicCall { args, .. } => {
+                for arg in args {
+                    if let IntrinsicArg::Expr(inner) = arg {
+                        self.collect_init_slice_types(inner, found);
+                    }
+                }
+            }
+            ExprKind::Template(pieces) => {
+                for piece in pieces {
+                    if let TemplatePiece::Placeholder(inner) = piece {
+                        self.collect_init_slice_types(inner, found);
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Writes the environment and two-word callable structs of every capturing
@@ -636,7 +714,9 @@ impl<'a> Emitter<'a> {
     ///
     /// A fixed array has no C assignment form, so its covered initializer
     /// forms fill the target element-wise; every other value takes one
-    /// assignment after its guards.
+    /// assignment after its guards. A fixed-array call result has no
+    /// expression form either, so the initializer binds each one into an init
+    /// local before either path uses it.
     pub(super) fn emit_global_init(&mut self, module_name: &str, name: &str, value: &'a Expr) {
         self.emit_line_directive(value.span);
         let target = self.global_symbol(module_name, name);
@@ -666,14 +746,16 @@ impl<'a> Emitter<'a> {
             }
         }
         // A call result and the other un-covered array forms keep the single
-        // assignment (a fixed-array call result lowers without its hidden
-        // destination, a separately tracked gap).
+        // assignment; a value outside the fill forms still cannot spell a
+        // fixed-array call result, so each one is bound into an init local
+        // before the render.
         if let Some(declared) = &declared_ty {
             if declared.is_fixed_array() && fills_element_wise(&lowered) {
                 self.emit_global_array_fill(&target, declared, &lowered);
                 return;
             }
         }
+        let lowered = self.materialize_fixed_array_calls(&lowered, None);
         let rendered = self.value(&lowered);
         // A module initializer runs at startup, so it carries the same
         // arithmetic guards a function statement would: a division by zero,
@@ -785,6 +867,18 @@ impl<'a> Emitter<'a> {
                     name: name.clone(),
                 },
             ),
+            // A call has no place form, so the fill binds it into an init
+            // local first: a fixed-array result writes through the local as its
+            // hidden destination, and any other result assigns into it. The
+            // arguments are prepared under the same guard, so their own
+            // operands and conditions run once, on the path that reaches the
+            // call.
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
+                let value = self.prepare_call_arguments(value, guard);
+                let zero = self.empty_state(&value.ty);
+                let (_, local) = self.materialize_init_local(&value, guard, &zero);
+                local
+            }
             _ => value.clone(),
         }
     }
@@ -795,7 +889,10 @@ impl<'a> Emitter<'a> {
     /// With a guard, the store runs only when the guard holds — a nested
     /// condition or a run-time index is evaluated only on the path that
     /// reaches it — and the local starts at `zero` so reads on the untaken
-    /// path stay defined.
+    /// path stay defined. A fixed-array call result has no C expression form,
+    /// so the local is the call's hidden destination: it starts at the empty
+    /// state and the call writes into it, with the call's own argument guards
+    /// on the same path.
     fn materialize_init_local(
         &mut self,
         value: &Value,
@@ -807,27 +904,53 @@ impl<'a> Emitter<'a> {
         // value read one evaluation.
         let value = self.materialize_guarded_sub_operands(value, guard);
         let name = self.next_init_local();
-        match guard {
-            Some(enclosing) => {
-                self.push(&format!(
-                    "    {} = {zero};",
-                    declarator(&value.ty, &name, &self.sema.table)
-                ));
-                // The operand's own guards ride the guarded assignment, so a
-                // bounds or division check runs only on the path that reaches
-                // the operand.
-                let rendered = self.guarded_value(&value);
-                self.push(&format!("    if ({enclosing}) {{ {name} = {rendered}; }}"));
+        if self.substitute(&value.ty).is_fixed_array()
+            && matches!(
+                value.kind,
+                ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+            )
+        {
+            let empty = self.empty_state(&value.ty);
+            self.push(&format!(
+                "    {} = {empty};",
+                declarator(&value.ty, &name, &self.sema.table)
+            ));
+            let call = self.destination_call(&value, &name);
+            match guard {
+                Some(enclosing) => {
+                    self.push(&format!("    if ({enclosing}) {{"));
+                    self.emit_guards(&value);
+                    self.push(&format!("        {call};"));
+                    self.push("    }");
+                }
+                None => {
+                    self.emit_guards(&value);
+                    self.push(&format!("    {call};"));
+                }
             }
-            None => {
-                // The operand's guards are statements before its store,
-                // exactly as the single-assignment path emits them.
-                self.emit_guards(&value);
-                let rendered = self.value(&value);
-                self.push(&format!(
-                    "    {} = {rendered};",
-                    declarator(&value.ty, &name, &self.sema.table)
-                ));
+        } else {
+            match guard {
+                Some(enclosing) => {
+                    self.push(&format!(
+                        "    {} = {zero};",
+                        declarator(&value.ty, &name, &self.sema.table)
+                    ));
+                    // The operand's own guards ride the guarded assignment, so a
+                    // bounds or division check runs only on the path that reaches
+                    // the operand.
+                    let rendered = self.guarded_value(&value);
+                    self.push(&format!("    if ({enclosing}) {{ {name} = {rendered}; }}"));
+                }
+                None => {
+                    // The operand's guards are statements before its store,
+                    // exactly as the single-assignment path emits them.
+                    self.emit_guards(&value);
+                    let rendered = self.value(&value);
+                    self.push(&format!(
+                        "    {} = {rendered};",
+                        declarator(&value.ty, &name, &self.sema.table)
+                    ));
+                }
             }
         }
         let read = Value::new(
@@ -839,6 +962,33 @@ impl<'a> Emitter<'a> {
             }),
         );
         (name, read)
+    }
+
+    /// Renders a call whose result lands in `destination`.
+    ///
+    /// A fixed-array result passes the destination as the callee's trailing
+    /// hidden argument; the lifted-closure spelling passes it after the
+    /// environment and the lambda's own arguments. Any other value renders as
+    /// the destination itself, so the renderer stays total.
+    fn destination_call(&self, value: &Value, destination: &str) -> String {
+        match &value.kind {
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } => self.call_with_destination(
+                callee,
+                type_args,
+                args,
+                receiver.as_deref(),
+                destination,
+            ),
+            ValueKind::ClosureCall { callable, args } => {
+                self.closure_call_with_destination(callable, args, Some(destination))
+            }
+            _ => destination.to_owned(),
+        }
     }
 
     /// Rewrites a materialized operand so a guard and the value it guards
@@ -932,6 +1082,247 @@ impl<'a> Emitter<'a> {
         }
         let (_, local) = self.materialize_init_local(value, guard, "0");
         local
+    }
+
+    /// Prepares a call's arguments so each evaluates once.
+    ///
+    /// A call's argument is evaluated outside the element loop the fill walks,
+    /// so the same preparation the fill applies to a value applies to each
+    /// argument: an impure index or a condition is stored once, and a nested
+    /// fixed-array call is bound into an init local.
+    fn prepare_call_arguments(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        match &value.kind {
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } => {
+                let receiver = receiver
+                    .as_deref()
+                    .map(|inner| Box::new(self.prepare_fill_value(inner, guard)));
+                let args = args
+                    .iter()
+                    .map(|arg| self.prepare_fill_value(arg, guard))
+                    .collect();
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Call {
+                        callee: callee.clone(),
+                        type_args: type_args.clone(),
+                        args,
+                        receiver,
+                    },
+                )
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                let callable = Box::new(self.prepare_fill_value(callable, guard));
+                let args = args
+                    .iter()
+                    .map(|arg| self.prepare_fill_value(arg, guard))
+                    .collect();
+                Value::new(value.ty.clone(), ValueKind::ClosureCall { callable, args })
+            }
+            _ => value.clone(),
+        }
+    }
+
+    /// Binds every fixed-array call result in a module initializer into an
+    /// init local.
+    ///
+    /// A fixed-array-returning call has no C expression form: the callee
+    /// writes through a hidden destination the emitter must name. The rewrite
+    /// binds each such call into a fresh init local and reads the local where
+    /// the call stood, so the surrounding value keeps its ordinary form. A
+    /// conditional whose part binds stores its condition first and binds the
+    /// part under the choice, so the guards and the read share one evaluation;
+    /// a value with no fixed-array call keeps its spelling.
+    fn materialize_fixed_array_calls(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        let rewritten = match &value.kind {
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } => {
+                let receiver = receiver
+                    .as_deref()
+                    .map(|inner| Box::new(self.materialize_fixed_array_calls(inner, guard)));
+                let args = args
+                    .iter()
+                    .map(|arg| self.materialize_fixed_array_calls(arg, guard))
+                    .collect();
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Call {
+                        callee: callee.clone(),
+                        type_args: type_args.clone(),
+                        args,
+                        receiver,
+                    },
+                )
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                let callable = Box::new(self.materialize_fixed_array_calls(callable, guard));
+                let args = args
+                    .iter()
+                    .map(|arg| self.materialize_fixed_array_calls(arg, guard))
+                    .collect();
+                Value::new(value.ty.clone(), ValueKind::ClosureCall { callable, args })
+            }
+            ValueKind::Intrinsic {
+                name,
+                args,
+                type_arg,
+            } => Value::new(
+                value.ty.clone(),
+                ValueKind::Intrinsic {
+                    name: name.clone(),
+                    args: args
+                        .iter()
+                        .map(|arg| self.materialize_fixed_array_calls(arg, guard))
+                        .collect(),
+                    type_arg: type_arg.clone(),
+                },
+            ),
+            ValueKind::Index { base, index } => Value::new(
+                value.ty.clone(),
+                ValueKind::Index {
+                    base: Box::new(self.materialize_fixed_array_calls(base, guard)),
+                    index: Box::new(self.materialize_fixed_array_calls(index, guard)),
+                },
+            ),
+            ValueKind::Member { base, name } => Value::new(
+                value.ty.clone(),
+                ValueKind::Member {
+                    base: Box::new(self.materialize_fixed_array_calls(base, guard)),
+                    name: name.clone(),
+                },
+            ),
+            ValueKind::Unary { op, operand } => Value::new(
+                value.ty.clone(),
+                ValueKind::Unary {
+                    op: *op,
+                    operand: Box::new(self.materialize_fixed_array_calls(operand, guard)),
+                },
+            ),
+            ValueKind::Binary { op, left, right } => Value::new(
+                value.ty.clone(),
+                ValueKind::Binary {
+                    op: *op,
+                    left: Box::new(self.materialize_fixed_array_calls(left, guard)),
+                    right: Box::new(self.materialize_fixed_array_calls(right, guard)),
+                },
+            ),
+            ValueKind::Cast { to, value: inner } => Value::new(
+                value.ty.clone(),
+                ValueKind::Cast {
+                    to: to.clone(),
+                    value: Box::new(self.materialize_fixed_array_calls(inner, guard)),
+                },
+            ),
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let arm_binds = self.value_contains_fixed_array_call(then_value)
+                    || self.value_contains_fixed_array_call(else_value);
+                if arm_binds {
+                    // An arm's call binds under the choice, so the condition is
+                    // stored once and both the binding guards and the read
+                    // share it, exactly as the fill preparation does.
+                    let condition = self.materialize_fixed_array_calls(condition, guard);
+                    let (local_name, local) =
+                        self.materialize_init_local(&condition, guard, "false");
+                    let (then_guard, else_guard) = match guard {
+                        Some(enclosing) => (
+                            format!("{enclosing} && {local_name}"),
+                            format!("{enclosing} && !{local_name}"),
+                        ),
+                        None => (local_name.clone(), format!("!{local_name}")),
+                    };
+                    let then_value =
+                        self.materialize_fixed_array_calls(then_value, Some(&then_guard));
+                    let else_value =
+                        self.materialize_fixed_array_calls(else_value, Some(&else_guard));
+                    return Value::new(
+                        value.ty.clone(),
+                        ValueKind::Conditional {
+                            condition: Box::new(local),
+                            then_value: Box::new(then_value),
+                            else_value: Box::new(else_value),
+                        },
+                    );
+                }
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Conditional {
+                        condition: Box::new(self.materialize_fixed_array_calls(condition, guard)),
+                        then_value: then_value.clone(),
+                        else_value: else_value.clone(),
+                    },
+                )
+            }
+            _ => return value.clone(),
+        };
+        if self.substitute(&value.ty).is_fixed_array()
+            && matches!(
+                value.kind,
+                ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+            )
+        {
+            let zero = self.empty_state(&value.ty);
+            let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
+            return local;
+        }
+        rewritten
+    }
+
+    /// True when a value contains a fixed-array call result.
+    ///
+    /// The binding walk uses the answer to decide whether a conditional's arms
+    /// bind — and so whether its condition needs one stored evaluation —
+    /// without emitting anything.
+    fn value_contains_fixed_array_call(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Call { args, receiver, .. } => {
+                self.substitute(&value.ty).is_fixed_array()
+                    || receiver.as_deref().is_some_and(|receiver| {
+                        self.value_contains_fixed_array_call(receiver)
+                    })
+                    || args.iter().any(|arg| self.value_contains_fixed_array_call(arg))
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.substitute(&value.ty).is_fixed_array()
+                    || self.value_contains_fixed_array_call(callable)
+                    || args.iter().any(|arg| self.value_contains_fixed_array_call(arg))
+            }
+            ValueKind::Intrinsic { args, .. } => {
+                args.iter().any(|arg| self.value_contains_fixed_array_call(arg))
+            }
+            ValueKind::Index { base, index } => {
+                self.value_contains_fixed_array_call(base)
+                    || self.value_contains_fixed_array_call(index)
+            }
+            ValueKind::Member { base, .. } => self.value_contains_fixed_array_call(base),
+            ValueKind::Unary { operand, .. } => self.value_contains_fixed_array_call(operand),
+            ValueKind::Binary { left, right, .. } => {
+                self.value_contains_fixed_array_call(left)
+                    || self.value_contains_fixed_array_call(right)
+            }
+            ValueKind::Cast { value: inner, .. } => self.value_contains_fixed_array_call(inner),
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.value_contains_fixed_array_call(condition)
+                    || self.value_contains_fixed_array_call(then_value)
+                    || self.value_contains_fixed_array_call(else_value)
+            }
+            _ => false,
+        }
     }
 
     /// The C name of the next init-function local.
@@ -1514,11 +1905,14 @@ fn callee_name(callee: &Expr) -> Option<String> {
 ///
 /// A literal, a place (or a member or index projection over one), and a
 /// conditional whose arms are fillable all have an element-wise form. A call
-/// result does not: a fixed-array-returning call lowers without its hidden
-/// destination, so it keeps the tracked single-assignment path.
+/// result has one too, because the fill binds it into an init local first:
+/// a fixed-array-returning call writes through a hidden destination, and a
+/// call that a projection reads through is bound for the same reason, so no
+/// element store re-evaluates it.
 fn fills_element_wise(value: &Value) -> bool {
     match &value.kind {
         ValueKind::ArrayLit { .. } | ValueKind::Place(_) => true,
+        ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => true,
         ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => fills_element_wise(base),
         ValueKind::Conditional {
             then_value,

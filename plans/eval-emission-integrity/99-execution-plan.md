@@ -96,7 +96,7 @@ before recording.
 **Objective**: Bind every fixed-array call through its destination in module initializers,
 materialize impure guard operands once, and reject the backing-less slice literal.
 
-- [ ] 1.2.1 Add the module-init materialization pass for fixed-array calls across the six positions — `compiler/src/codegen/program.rs`, `compiler/src/codegen/expr.rs`
+- [x] 1.2.1 Add the module-init materialization pass for fixed-array calls across the six positions — `compiler/src/codegen/program.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-10 12:31)
 - [ ] 1.2.2 Apply the guarded-sub-operand materialization in the scalar single-assignment path — `compiler/src/codegen/program.rs`
 - [ ] 1.2.3 Stop adopting `None`-bearing expected extents in `check_array_literal`, so the fix reaches `E10200` for module and body spellings — `compiler/src/sema/expr.rs`
 - [ ] 1.2.4 Run the spec suite and `./spec/check.sh` to green (ST-1 – ST-7); on any failure STOP and fix the implementation, never the test
