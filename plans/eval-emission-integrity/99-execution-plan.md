@@ -115,7 +115,7 @@ materialize impure guard operands once, and reject the backing-less slice litera
 **Objective**: Pin the emitted destinations, the shared operand, and record the phase review
 evidence.
 
-- [ ] 1.3.1 Write the Phase 1 implementation pins (destination-carrying emission per position, the shared init local for the guard operand, byte-identical re-emission of unaffected initializers) — `compiler/tests/eval_emission_integrity_impl_test.rs`
+- [x] 1.3.1 Write the Phase 1 implementation pins (destination-carrying emission per position, the shared init local for the guard operand, byte-identical re-emission of unaffected initializers) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 12:46)
 - [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
 
 **Deliverables**:
