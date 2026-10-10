@@ -389,3 +389,186 @@ func main(): i32 {
         "reemission-listed-relay: the two emissions differ"
     );
 }
+
+/// One capture-return site reports once whatever the instance order.
+///
+/// The site records one duty and the per-instance audit reports at most the
+/// first owning instance; the duplicable instance stays accepted. Both
+/// instantiation orders keep one `E10401` naming the capture, a second report
+/// would mean the duty repeats, and a missing one would mean the duplicable
+/// instance suppressed the owning one.
+#[test]
+fn should_report_the_first_offending_instance_when_a_capture_return_has_two() {
+    assert_rejected(
+        "returns-i32-first",
+        r#"module spec.ci.impl.tworeturns;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    let n: i32 = outer<i32>(3);
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    let r: Wrap = outer<Wrap>(w);
+    return n + i32(len(r.v));
+}
+"#,
+        &["E10401"],
+        &["cannot move captured 'x'"],
+    );
+    assert_rejected(
+        "returns-wrap-first",
+        r#"module spec.ci.impl.tworeturnsreversed;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    let r: Wrap = outer<Wrap>(w);
+    let n: i32 = outer<i32>(3);
+    return n + i32(len(r.v));
+}
+"#,
+        &["E10401"],
+        &["cannot move captured 'x'"],
+    );
+}
+
+/// The lender-named capture call resolves through the environment and binds
+/// its owned result.
+///
+/// The call spells the environment field, not the module lender, and the
+/// result is bound to a temporary the cleanup releases once, so the emitted
+/// shape proves the release the ASan probe observes.
+#[test]
+fn should_bind_the_result_of_a_lender_named_capture_call() {
+    let source = r#"module spec.ci.impl.lendercaptureimpl;
+
+import { String, stringOf } from std.text;
+
+func lend(borrow v: str): str {
+    return v;
+}
+
+func copier(borrow v: String): String {
+    return stringOf("y");
+}
+
+func main(): i32 {
+    let lend: func(borrow String): String = copier;
+    let s: String = stringOf("x");
+    return ([lend, s] () => i32(len(lend(s))))();
+}
+"#;
+    let (first, second) = emit_twice("lender-named-capture", source);
+    assert_eq!(
+        first, second,
+        "lender-named-capture: the two emissions differ"
+    );
+    assert!(
+        first.contains("(__env->lend)("),
+        "lender-named-capture: the call does not resolve through the environment"
+    );
+    assert!(
+        first.contains("FreeString(__cl_owned0)"),
+        "lender-named-capture: the owned result is not bound and released"
+    );
+}
+
+/// A block-bodied capture move keeps its single declaration-site report.
+///
+/// The ownership stage already rejects a block body that consumes its
+/// by-value capture at the declaration, so the per-instance duty stays
+/// silent there: the shapes report exactly one `E10034`, never the duty's
+/// `E10401` on top, while the expression-bodied form reports the duty's
+/// `E10401` alone.
+#[test]
+fn should_keep_one_report_when_a_block_body_consumes_a_capture() {
+    assert_rejected(
+        "block-take-report",
+        r#"module spec.ci.impl.blocktake;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func sink(take s: Wrap): i32 {
+    return 0;
+}
+
+func outer<T>(x: T): i32 {
+    return ([x] () => { sink(take x); return 0; })();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    return outer<Wrap>(w);
+}
+"#,
+        &["E10034"],
+        &["'x'"],
+    );
+    assert_rejected(
+        "expr-take-report",
+        r#"module spec.ci.impl.exprtake;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func sink(take w: Wrap): i32 {
+    return 0;
+}
+
+func outer<T>(x: T): i32 {
+    return ([x] () => sink(take x))();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    return outer<Wrap>(w);
+}
+"#,
+        &["E10401"],
+        &["cannot move captured 'x'"],
+    );
+}
+
+/// The accepted copy-return shape re-emits byte-identically.
+#[test]
+fn should_reemit_the_captured_copy_return_byte_identically() {
+    let source = r#"module spec.ci.impl.copyreturn;
+
+func outer<T>(x: T): T {
+    return ([x] () => x)();
+}
+
+func main(): i32 {
+    return outer<i32>(42);
+}
+"#;
+    let (first, second) = emit_twice("reemission-copy-return", source);
+    assert_eq!(
+        first, second,
+        "reemission-copy-return: the two emissions differ"
+    );
+}

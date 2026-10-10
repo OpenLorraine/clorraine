@@ -1168,7 +1168,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.collect_lowered_temp_owners(then_value, owners);
                 self.collect_lowered_temp_owners(else_value, owners);
             }
-            ValueKind::Call { callee, args, .. } => {
+            ValueKind::Call {
+                callee,
+                args,
+                receiver: None,
+                ..
+            } => {
                 if let Some(source) = self
                     .lowered_lend_source(callee)
                     .and_then(|index| args.get(index))

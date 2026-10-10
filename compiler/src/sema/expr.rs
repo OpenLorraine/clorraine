@@ -204,6 +204,8 @@ impl Checker<'_, '_> {
         self.lambda_captures.push(infos.clone());
         self.lambda_floors.push(floor);
         self.lambda_listed.push(listed);
+        self.lambda_expr_bodies
+            .push(matches!(body, LambdaBody::Expr(_)));
         let returns = match body {
             LambdaBody::Expr(value) => {
                 // An expression body may be `void` (for example a lambda that
@@ -227,6 +229,7 @@ impl Checker<'_, '_> {
                 inferred.unwrap_or_else(Ty::void)
             }
         };
+        self.lambda_expr_bodies.pop();
         self.lambda_listed.pop();
         self.lambda_floors.pop();
         self.lambda_captures.pop();
@@ -293,7 +296,15 @@ impl Checker<'_, '_> {
     /// substitute to an owning type, and the copy would then alias the
     /// enclosing binding. The site is recorded and the per-instance audit
     /// applies the concrete judgment after substitution.
+    ///
+    /// Only an expression-bodied lambda records the duty: a block body's
+    /// capture move is already rejected at the declaration by the ownership
+    /// stage's lent-storage rule, so recording it would report the same site
+    /// twice.
     pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
+        if !self.lambda_expr_bodies.last().copied().unwrap_or(false) {
+            return;
+        }
         let Some(root) = super::place_root_name(value) else {
             return;
         };
