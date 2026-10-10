@@ -1678,61 +1678,66 @@ impl<'a> Emitter<'a> {
                 // A lambda-literal callee resolves to the lifted function the
                 // ownership stage recorded for the node (a module initializer
                 // has no enclosing body to lift it).
-                let lambda_site = if let ExprKind::Lambda { .. } = &callee.kind {
-                    self.ownership
+                if let ExprKind::Lambda { .. } = &callee.kind {
+                    if let Some(&site) = self
+                        .ownership
                         .init_lambdas
                         .get(&(callee.as_ref() as *const Expr as usize))
-                        .copied()
-                } else {
-                    None
-                };
-                if let Some(site) = lambda_site {
-                    let lambda_ty = self.expr_type(callee).unwrap_or_else(Ty::unknown);
+                    {
+                        let lambda_ty = self.expr_type(callee).unwrap_or_else(Ty::unknown);
+                        return Value::new(
+                            ty,
+                            ValueKind::ClosureCall {
+                                callable: Box::new(Value::new(
+                                    lambda_ty,
+                                    ValueKind::Closure {
+                                        site,
+                                        captures: Vec::new(),
+                                    },
+                                )),
+                                args: args
+                                    .iter()
+                                    .map(|arg| self.lower_global(module, &arg.value))
+                                    .collect(),
+                            },
+                        );
+                    }
+                }
+                // A func-typed global or field names the callable itself; the
+                // callable carries its own signature, so the argument
+                // conversions run exactly as a body call's.
+                if let Some(callable) = self.init_callable_value(module, callee) {
                     return Value::new(
                         ty,
-                        ValueKind::ClosureCall {
-                            callable: Box::new(Value::new(
-                                lambda_ty,
-                                ValueKind::Closure {
-                                    site,
-                                    captures: Vec::new(),
-                                },
-                            )),
+                        ValueKind::Call {
+                            callee: callee_name(callee).unwrap_or_default(),
+                            type_args: type_args
+                                .iter()
+                                .map(|ty| self.resolve_written(ty))
+                                .collect(),
                             args: args
                                 .iter()
                                 .map(|arg| self.lower_global(module, &arg.value))
                                 .collect(),
+                            receiver: Some(Box::new(callable)),
                         },
                     );
                 }
-                // A callee naming a func-typed module global is a call through
-                // the global's own C symbol, like the body spelling; a callee
-                // naming a func-typed field passes the field read as the
-                // callable, like the body's field-call path. The field's type
-                // resolves through the global's declared type even when the
-                // callee expression records none.
-                let global_symbol = self.init_func_global_symbol(module, callee);
-                let field_receiver = if global_symbol.is_none()
-                    && matches!(&callee.kind, ExprKind::Member { .. } | ExprKind::Qualified(_))
-                {
-                    let read = self.lower_global(module, callee);
-                    if matches!(self.resolved_value_ty(&read).kind, TyKind::Func(_)) {
-                        Some(Box::new(read))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                // Any other dot call passes its receiver as the first
+                // argument, like the body's dot-call path; a path that names a
+                // module or a declared function has no receiver.
+                let mut written_args: Vec<Value> = Vec::new();
+                if let Some(receiver) = self.init_dot_receiver(module, callee) {
+                    written_args.push(receiver);
+                }
+                for arg in args {
+                    written_args.push(self.lower_global(module, &arg.value));
+                }
                 ValueKind::Call {
-                    callee: global_symbol
-                        .unwrap_or_else(|| callee_name(callee).unwrap_or_default()),
+                    callee: callee_name(callee).unwrap_or_default(),
                     type_args: type_args.iter().map(|ty| self.resolve_written(ty)).collect(),
-                    args: args
-                        .iter()
-                        .map(|arg| self.lower_global(module, &arg.value))
-                        .collect(),
-                    receiver: field_receiver,
+                    args: written_args,
+                    receiver: None,
                 }
             }
             ExprKind::Lambda { .. } => {
@@ -1755,12 +1760,15 @@ impl<'a> Emitter<'a> {
         Value { ty, kind }
     }
 
-    /// The C symbol of a func-typed module global the callee names.
+    /// The callable value a func-typed callee names, carrying its signature.
     ///
-    /// A call through a module-level func-typed global goes through the
-    /// global's own storage, exactly as the body spelling does; the written
-    /// name alone has no C declaration.
-    fn init_func_global_symbol(&self, module: &Module, callee: &Expr) -> Option<String> {
+    /// Mirrors the body's call resolution: a bare or qualified name resolving
+    /// to a func-typed module global, or a value projection resolving to a
+    /// func-typed field, is the callable; the value's type is the resolved
+    /// func signature, so the call renders through the callable and the
+    /// argument conversions apply. A declared function path and a module path
+    /// are not callables — they keep the named-call lowering.
+    fn init_callable_value(&mut self, module: &Module, callee: &Expr) -> Option<Value> {
         let global = match &callee.kind {
             ExprKind::Name(name) => {
                 crate::init_graph::resolve_name_global(self.loaded, module, name)
@@ -1768,14 +1776,75 @@ impl<'a> Emitter<'a> {
             ExprKind::Qualified(name) => {
                 crate::init_graph::resolve_global(self.loaded, module, name)
             }
-            _ => return None,
-        }?;
-        let identity = GlobalId::new(global.module, global.name);
-        let info = self.globals.get(&identity)?;
-        if matches!(info.ty.kind, TyKind::Func(_)) {
-            Some(self.global_symbol(&identity.module, &identity.name))
+            _ => None,
+        };
+        if let Some(global) = global {
+            let identity = GlobalId::new(global.module, global.name);
+            if let Some(info) = self.globals.get(&identity) {
+                let func_ty = self.substitute(&info.ty);
+                if matches!(func_ty.kind, TyKind::Func(_)) {
+                    return Some(Value::new(
+                        func_ty.clone(),
+                        ValueKind::Place(Place::global(identity).with_type(func_ty)),
+                    ));
+                }
+            }
+        }
+        // A projection (a member or element read) resolving to a func-typed
+        // field is the callable; a path or literal is not.
+        let read = self.lower_global(module, callee);
+        if !matches!(
+            read.kind,
+            ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
+        ) {
+            return None;
+        }
+        let resolved = self.resolved_value_ty(&read);
+        if matches!(resolved.kind, TyKind::Func(_)) {
+            let mut callable = read;
+            callable.ty = resolved;
+            Some(callable)
         } else {
             None
+        }
+    }
+
+    /// The receiver value a module-level dot call passes as its first argument.
+    ///
+    /// Mirrors the body's dot-receiver semantics: a member spelling reads its
+    /// base, and a qualified spelling resolves the head as a global and keeps
+    /// the middle segments as field projections. A path whose head names no
+    /// global (a module qualifier or a declared function) has no receiver.
+    fn init_dot_receiver(&mut self, module: &Module, callee: &Expr) -> Option<Value> {
+        match &callee.kind {
+            ExprKind::Member { base, .. } => Some(self.lower_global(module, base)),
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                let receiver = crate::ast::QualifiedName {
+                    segments: name.segments[..name.segments.len() - 1].to_vec(),
+                    span: name.span,
+                };
+                let global = crate::init_graph::resolve_global(self.loaded, module, &receiver)?;
+                let identity = GlobalId::new(global.module, global.name);
+                let base_ty = self
+                    .globals
+                    .get(&identity)
+                    .map(|info| info.ty.clone())
+                    .unwrap_or_else(Ty::unknown);
+                let projections = global.fields.into_iter().map(Projection::Field).collect();
+                let value = Value::new(
+                    base_ty.clone(),
+                    ValueKind::Place(Place {
+                        base: PlaceBase::Global(identity),
+                        projections,
+                        ty: base_ty,
+                    }),
+                );
+                let resolved = self.resolved_value_ty(&value);
+                let mut receiver = value;
+                receiver.ty = resolved;
+                Some(receiver)
+            }
+            _ => None,
         }
     }
 
@@ -1793,7 +1862,7 @@ impl<'a> Emitter<'a> {
         type_args: &[crate::ast::Type],
         args: &[crate::ast::Arg],
     ) -> Option<Value> {
-        let name = self.global_intrinsic_call(callee)?;
+        let name = self.global_intrinsic_call(module, callee)?;
         if name == "len" {
             let receiver = self.global_len_receiver(module, callee)?;
             return Some(Value::new(
@@ -1868,7 +1937,7 @@ impl<'a> Emitter<'a> {
     /// as the function path resolves the call; the view builders and the
     /// receiver-taking `len` are the intrinsics a module initializer can
     /// spell.
-    fn global_intrinsic_call(&self, callee: &Expr) -> Option<String> {
+    fn global_intrinsic_call(&mut self, module: &Module, callee: &Expr) -> Option<String> {
         let name = callee_name(callee)?;
         if !matches!(name.as_str(), "len" | "rawSlice" | "rawStr" | "slice") {
             return None;
@@ -1876,6 +1945,11 @@ impl<'a> Emitter<'a> {
         if self.ffi_functions.contains_key(&name)
             || self.functions.keys().any(|(_, simple)| *simple == name)
         {
+            return None;
+        }
+        // A callable field or func-typed global shadows the built-in name too:
+        // `b.len()` calls the field, not the length intrinsic.
+        if self.init_callable_value(module, callee).is_some() {
             return None;
         }
         Some(name)

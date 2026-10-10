@@ -194,7 +194,7 @@ func main(): i32 {
     assert_contains(
         "funcglobal",
         &emitted,
-        "cl_spec_mii_impl_funcglobal_g = cl_spec_mii_impl_funcglobal_f();",
+        "cl_spec_mii_impl_funcglobal_g = (cl_spec_mii_impl_funcglobal_f)();",
     );
 }
 
@@ -253,5 +253,36 @@ func main(): i32 {
         "fieldreceiver",
         &emitted,
         "cl_spec_mii_impl_fieldreceiver_g = (cl_spec_mii_impl_fieldreceiver_b.get)();",
+    );
+}
+
+/// A lambda-valued func-typed global binds the lifted identity.
+///
+/// The global's initializer is a lambda value, so the lifted function is its
+/// C value exactly as a body lambda's would be, and the later call reaches it
+/// through the global.
+#[test]
+fn should_bind_a_lambda_valued_global_to_the_lifted_identity() {
+    let source = r#"module spec.mii.impl.lambdavalue;
+
+import { String, stringOf } from std.text;
+
+let f: func(String): i32 = (s: String) => i32(len(s));
+let g: i32 = f(stringOf("abc"));
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let emitted = emit_host("lambdavalue", source);
+    assert_contains(
+        "lambdavalue",
+        &emitted,
+        "cl_spec_mii_impl_lambdavalue_f = cl_lambda_0;",
+    );
+    assert_contains(
+        "lambdavalue",
+        &emitted,
+        "cl_spec_mii_impl_lambdavalue_g = (cl_spec_mii_impl_lambdavalue_f)(cl_std_text_stringOf(cl_str(\"abc\")));",
     );
 }

@@ -1,4 +1,4 @@
-//! Runnable specification tests for callable release integrity.
+//! Runnable specification tests for module initializer integrity.
 //!
 //! Each case compiles a small Clorraine program with the built `clc` binary,
 //! builds the emitted C with the host C compiler under the fixed warning
@@ -6,19 +6,16 @@
 //! runs a case as an ordinary strict host build and adds leak and
 //! use-after-free detection when `RDC_ASAN` is set.
 //!
-//! The identity group pins the three generated-identity cases: a source local
-//! spelled like a generated owner stays an ordinary local, two `func`
-//! signatures of one generic struct are two instances, and an inline
-//! capturing lambda builds with one environment definition.
+//! The call-resolution group pins that an initializer reaches the same
+//! callables a body does: a lifted lambda callee and value, a func-typed
+//! global or field carrying its own signature (including the widenings its
+//! parameters drive), a generic instance, a qualified function path, a
+//! module-function dot receiver, and a field that shadows an intrinsic name.
 //!
-//! The callable effect-mode group pins that each callee kind applies its own
-//! signature's parameter modes: a `take` or borrow call through a func-typed
-//! field, a module-level func-typed global, a callable-bound type parameter,
-//! or a lambda parameter reports exactly what the module spelling reports,
-//! and an owned temporary argument is released exactly once — including the
-//! temporary passed to a lend-bodied lambda. The lambda cases also pin that an
-//! expression body is judged like a `return`, so it reports the same single
-//! rejection its block-bodied and module spellings report.
+//! The aggregate group pins the store, wrap, and fold forms an initializer
+//! emits; the release group pins that owning temporaries release at the
+//! init function's end; the checks group pins that const and immutable-view
+//! writes report exactly as the body spellings report.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -411,4 +408,161 @@ func main(): i32 {
     let output = run_memory("fieldreceiver", source);
     assert_no_asan("fieldreceiver", &output);
     assert_exit("fieldreceiver", &output, 0);
+}
+
+/// A qualified function path in an initializer resolves like a body call.
+///
+/// The path names a declared function, not a value projection, so the call
+/// keeps the named-call lowering and the module path never reaches the C file
+/// (red at the phase head: the qualified path was rendered as a C member
+/// access; the batch base built the shape).
+#[test]
+fn should_call_a_qualified_function_from_a_module_initializer() {
+    let source = r#"module spec.mii.qualifiedcall;
+
+func helper(): i32 {
+    return 7;
+}
+
+let g: i32 = spec.mii.qualifiedcall.helper();
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let output = run_memory("qualifiedcall", source);
+    assert_no_asan("qualifiedcall", &output);
+    assert_exit("qualifiedcall", &output, 0);
+}
+
+/// A module-function dot call in an initializer passes its receiver.
+///
+/// The callee is not a func-typed field, so the receiver is the first
+/// argument, exactly as the body spelling passes it (red at the phase head:
+/// the receiver was dropped and the strict build failed).
+#[test]
+fn should_pass_the_receiver_of_a_module_function_call_from_a_module_initializer() {
+    let source = r#"module spec.mii.dotmethod;
+
+func add1(a: i32): i32 {
+    return a + 1;
+}
+
+let a: i32 = 5;
+let g: i32 = a.add1();
+
+func main(): i32 {
+    return g - 6;
+}
+"#;
+    let output = run_memory("dotmethod", source);
+    assert_no_asan("dotmethod", &output);
+    assert_exit("dotmethod", &output, 0);
+}
+
+/// An argument widens through a func-typed global's own signature.
+///
+/// The callable carries the signature the global was declared with, so the
+/// `String` argument reaches the `str` parameter widened (red at the phase
+/// head: the raw handle was passed and the strict build failed).
+#[test]
+fn should_widen_an_argument_through_a_func_typed_global() {
+    let source = r#"module spec.mii.globalwiden;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: str): i32 {
+    return i32(len(s));
+}
+
+let f: func(str): i32 = lenOf;
+let g: i32 = f(stringOf("hello"));
+
+func main(): i32 {
+    return g - 5;
+}
+"#;
+    let output = run_memory("globalwiden", source);
+    assert_no_asan("globalwiden", &output);
+    assert_exit("globalwiden", &output, 0);
+}
+
+/// An argument widens through a callable field's own signature.
+///
+/// The receiver carries the field's signature, so the conversions run exactly
+/// as a body field call's (red at the phase head: the raw handle was passed
+/// and the strict build failed).
+#[test]
+fn should_widen_an_argument_through_a_callable_field() {
+    let source = r#"module spec.mii.fieldwiden;
+
+import { String, stringOf } from std.text;
+
+struct Box { get: func(str): i32; }
+
+func lenOf(s: str): i32 {
+    return i32(len(s));
+}
+
+let b: Box = Box { get: lenOf };
+let g: i32 = b.get(stringOf("hello"));
+
+func main(): i32 {
+    return g - 5;
+}
+"#;
+    let output = run_memory("fieldwiden", source);
+    assert_no_asan("fieldwiden", &output);
+    assert_exit("fieldwiden", &output, 0);
+}
+
+/// A callable field named like an intrinsic is called through the field.
+///
+/// The field shadows the built-in name exactly as it does in a body, so the
+/// call returns the field's value instead of the length intrinsic's silent
+/// zero (red at the phase head: the field was intercepted and the run
+/// produced zero).
+#[test]
+fn should_call_a_field_named_like_an_intrinsic() {
+    let source = r#"module spec.mii.fieldlen;
+
+func ten(): i32 {
+    return 10;
+}
+
+struct Box { len: func(): i32; }
+
+let b: Box = Box { len: ten };
+let g: i32 = b.len();
+
+func main(): i32 {
+    return g - 10;
+}
+"#;
+    let output = run_memory("fieldlen", source);
+    assert_no_asan("fieldlen", &output);
+    assert_exit("fieldlen", &output, 0);
+}
+
+/// A lambda-valued func-typed global is callable from an initializer.
+///
+/// The initializer lambda lifts like any other, and the later call reaches
+/// the lifted function through the global (red at the batch base: the global
+/// held NULL and the run crashed).
+#[test]
+fn should_call_a_lambda_valued_global_from_a_module_initializer() {
+    let source = r#"module spec.mii.lambdavalue;
+
+import { String, stringOf } from std.text;
+
+let f: func(String): i32 = (s: String) => i32(len(s));
+let g: i32 = f(stringOf("abc"));
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let output = run_memory("lambdavalue", source);
+    assert_no_asan("lambdavalue", &output);
+    assert_exit("lambdavalue", &output, 0);
 }
