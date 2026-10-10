@@ -218,6 +218,18 @@ in `CMD`).
   instance, the duplicable self-copy emission, the caller-slot emptying on a
   direct return, the bounds-trap emission for constant, compound, and update
   stores, the static fixed-array emission, and byte-identical re-emission).
+- `compiler/tests/closure_integrity_spec_test.rs` holds the **specification
+  tests** for the closure/callable integrity batch (a nested lambda's relayed
+  capture is rejected at the entry unless the enclosing list carries the name;
+  a capture entry naming a module-level name reports `E10406`; a dotted
+  capture write reports `E10402`; a returned by-value owning capture reports
+  `E10401` per instance while a duplicable instance copies; a called
+  func-typed capture named like a module lender releases once; a call of an
+  unbounded type-parameter value or of its field reports `E10307`), and
+  `compiler/tests/closure_integrity_impl_test.rs` holds their
+  **implementation tests** (the report count, name, and span per shape, the
+  deep relay, one report per body form, the duty's instance order, the
+  lender-named capture emission, and byte-identical re-emission).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

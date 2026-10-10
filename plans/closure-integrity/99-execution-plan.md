@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 11:20
-> **Progress**: 20/22 tasks (91%)
+> **Last Updated**: 2026-10-10 11:29
+> **Progress**: 22/22 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -290,8 +290,20 @@ tests) and the compile-fail driver is green (the golden reports `E10307`).
 **Reference**: [03-03](03-03-callable-bounds.md) §Testing Requirements
 **Objective**: Pin the internals and close the plan.
 
-- [ ] 3.3.1 Write the Phase 3 implementation pins (one report per site, the span and the type-parameter name, the unchanged bounded path, no translation unit) — `compiler/tests/closure_integrity_impl_test.rs`
-- [ ] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; run `make check` and the `make verify` legs for the close-out
+- [x] 3.3.1 Write the Phase 3 implementation pins (one report per site, the span and the type-parameter name, the unchanged bounded path, no translation unit) — `compiler/tests/closure_integrity_impl_test.rs` ✅ (completed: 2026-10-10 11:22)
+- [x] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; run `make check` and the `make verify` legs for the close-out ✅ (completed: 2026-10-10 11:29)
+
+**Phase review evidence (2026-10-10 11:29)** — two independent reviews ran on the phase diff
+(correctness reviewer, semantics reviewer; AR-15). Both found the same major: a param-typed field
+call (`h.call(5)`) slipped past the dot-call path and emitted unqualified C, which the ruled
+trigger text covers — the fallthrough now applies the `E10307` judgment there (field spec case and
+impl pin added; the bounded field's broken emission filed as DEF-128 and the bare-parameter
+receiver gap as DEF-129). The minors — the control shape (a matching lambda per the testing
+strategy) and the ST-14 wording — were corrected. The one scoped re-review accepted the major
+remediation with no findings (no over-rejection, no cascade, discriminating tests; `make check`
+green). `make verify` legs: all passed (2026-10-10 11:29) — `verify: all legs passed`, including
+the hosted-amiga corpus and the runtime-fault runs (`run-fault-amiga: all six faults match on
+hosted-amiga`).
 
 **Deliverables**:
 - Implementation pins for Phase 3
