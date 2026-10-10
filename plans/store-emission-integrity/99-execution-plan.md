@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 09:20
-> **Progress**: 17/26 tasks (65%)
+> **Last Updated**: 2026-10-10 09:32
+> **Progress**: 18/26 tasks (69%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -294,8 +294,20 @@ Re-emitting a covered program is byte-identical, and `make check` is fully green
 **Reference**: [03-03](03-03-typedef-order.md) §Testing Requirements
 **Objective**: Pin the emitted order and record the phase review evidence.
 
-- [ ] 3.3.1 Write the Phase 3 implementation pins (typedef order positions in the emitted text, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs`
-- [ ] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 3.3.1 Write the Phase 3 implementation pins (typedef order positions in the emitted text, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 09:21)
+- [x] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 09:32)
+
+**Phase review evidence (2026-10-10 09:32)** — three independent reviews ran on the phase diff
+(correctness reviewer, memory-safety auditor, emission-integrity auditor; AR-14). No findings were
+introduced by the change: the correctness review enumerated every emitted dependency edge and
+proved the diff is declaration-order-only (identical line multisets); the memory audit found every
+reorder-touched shape strict-clean and ASan-clean with byte-identical bodies; the emission-integrity
+audit diffed 796 accepted programs plus the corpus (0 content diffs, 0 head-only build regressions,
+no duplicate typedefs) and confirmed the six previously failing shapes now build. Two pre-existing
+findings were filed on the roadmap (SR-008 → DEF-120: a multi-extent row slice of a user struct
+still emits an incomplete-element typedef on base and head; SR-009 → DEF-116, the batch's own
+Phase 4). A minor note (the doubled `struct_units()` computation) was dismissed as a pure, stable
+computation. Rulings are recorded in [05-findings.md](05-findings.md).
 
 **Deliverables**:
 - Implementation pins for Phase 3

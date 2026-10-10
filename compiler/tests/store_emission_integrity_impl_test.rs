@@ -12,10 +12,87 @@
 //! local, field path, compound, update, module-level), and the accepted
 //! controls' emission — the whole-view rebind stores the new view, and the
 //! writable slice stores through its pointer — byte-identical across runs.
+//!
+//! The typedef-order group pins the emitted declaration order itself: each
+//! typedef's byte position precedes every use of it in the same unit, and
+//! re-emitting the reordered programs is byte-identical.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// A slice-of-struct program whose emitted declaration order is pinned.
+const ORDER_STRUCT_SLICE: &str = r#"module spec.sei.impl.orderstructslice;
+
+import { slice } from std.mem;
+
+struct P {
+    x: i32;
+    y: i32;
+}
+
+func main(): i32 {
+    let arr: P[2] = [P { x: 1, y: 2 }, P { x: 3, y: 4 }];
+    let ps: P[] = slice(arr, 0, 2);
+    ps[0].x = 5;
+    return ps[0].x + ps[1].y;
+}
+"#;
+
+/// A slice-of-enum program whose emitted declaration order is pinned.
+const ORDER_ENUM_SLICE: &str = r#"module spec.sei.impl.orderenumslice;
+
+import { slice } from std.mem;
+
+enum E : u8 {
+    A = 1,
+    B = 2,
+}
+
+func main(): i32 {
+    let arr: E[2] = [E.A, E.B];
+    let es: E[] = slice(arr, 0, 2);
+    return i32(es[1]);
+}
+"#;
+
+/// A struct-with-enum-field program whose emitted declaration order is pinned.
+const ORDER_STRUCT_ENUM: &str = r#"module spec.sei.impl.orderstructenum;
+
+enum E : u8 {
+    A = 1,
+    B = 2,
+}
+
+struct S {
+    e: E;
+    n: i32;
+}
+
+func main(): i32 {
+    let v: S = S { e: E.B, n: 4 };
+    return i32(v.e) + v.n;
+}
+"#;
+
+/// A closure-capturing-a-slice program whose emitted declaration order is
+/// pinned.
+const ORDER_CLOSURE_CAPTURE: &str = r#"module spec.sei.impl.orderclosure;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: i32[4] = [1, 2, 3, 4];
+    let s0: i32[] = slice(a, 0, 2);
+    return ([s0] () => i32(s0[1]))();
+}
+"#;
+
+/// The byte offset of `needle` in `unit`, failing with the unit when absent.
+fn position_of(unit: &str, needle: &str) -> usize {
+    unit.find(needle)
+        .unwrap_or_else(|| panic!("the emitted unit has no {needle:?}:\n{unit}"))
+}
 
 /// Temporary directory that removes itself when the test finishes.
 struct ScratchDir {
@@ -612,4 +689,70 @@ func main(): i32 {
         first.contains("(xs).ptr[0] = 65u;"),
         "reemission-writable-slice: the element store is not emitted through the view pointer"
     );
+}
+
+/// Every emitted typedef precedes its uses in the translation unit.
+///
+/// A slice of a user struct needs the struct's forward typedef before the
+/// slice typedef and the definition after it; an enum typedef precedes the
+/// slice typedef and the struct definition that name it; and the closure
+/// environment that embeds a slice follows the slice typedef. Each assertion
+/// compares byte offsets in one emitted unit, so a reordered phase fails with
+/// the exact pair.
+#[test]
+fn should_emit_each_typedef_before_its_uses() {
+    let (unit, _) = emit_twice("order-slice-of-struct", ORDER_STRUCT_SLICE);
+    let forward = position_of(&unit, "typedef struct ClP ClP;");
+    let slice = position_of(&unit, "} ClSlice_P;");
+    let definition = position_of(&unit, "struct ClP {");
+    assert!(
+        forward < slice,
+        "order-slice-of-struct: the slice typedef precedes the struct forward typedef"
+    );
+    assert!(
+        slice < definition,
+        "order-slice-of-struct: the struct definition precedes the slice typedef"
+    );
+
+    let (unit, _) = emit_twice("order-slice-of-enum", ORDER_ENUM_SLICE);
+    let enum_typedef = position_of(&unit, "typedef u8 ClE;");
+    let slice = position_of(&unit, "} ClSlice_E;");
+    assert!(
+        enum_typedef < slice,
+        "order-slice-of-enum: the slice typedef precedes the enum typedef"
+    );
+
+    let (unit, _) = emit_twice("order-struct-with-enum", ORDER_STRUCT_ENUM);
+    let enum_typedef = position_of(&unit, "typedef u8 ClE;");
+    let definition = position_of(&unit, "struct ClS {");
+    assert!(
+        enum_typedef < definition,
+        "order-struct-with-enum: the struct definition precedes the enum typedef"
+    );
+
+    let (unit, _) = emit_twice("order-closure-capture", ORDER_CLOSURE_CAPTURE);
+    let slice = position_of(&unit, "} ClSlice_i32;");
+    let environment = position_of(&unit, "struct ClEnv_0 {");
+    assert!(
+        slice < environment,
+        "order-closure-capture: the closure environment precedes the slice typedef"
+    );
+}
+
+/// Re-emitting the reordered programs is byte-identical.
+///
+/// The ordering change must be a pure declaration-order change: two emissions
+/// of the same source, sharing the source path so their `#line` directives
+/// match, must produce the same unit.
+#[test]
+fn should_keep_the_reordered_emission_byte_identical() {
+    for (tag, source) in [
+        ("reemission-order-struct-slice", ORDER_STRUCT_SLICE),
+        ("reemission-order-enum-slice", ORDER_ENUM_SLICE),
+        ("reemission-order-struct-enum", ORDER_STRUCT_ENUM),
+        ("reemission-order-closure", ORDER_CLOSURE_CAPTURE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(first, second, "{tag}: the two emissions differ");
+    }
 }
