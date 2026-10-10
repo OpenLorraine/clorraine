@@ -827,6 +827,17 @@ impl<'a> Emitter<'a> {
     /// safe to render per element.
     fn prepare_fill_value(&mut self, value: &Value, guard: Option<&str>) -> Value {
         let value = self.materialize_init_value(value, guard);
+        self.prepare_walked_fill_value(&value, guard)
+    }
+
+    /// Applies the fill discipline to a value the walk already prepared.
+    ///
+    /// The walk owns the binds and the single-evaluation stores, so this pass
+    /// only adds what the element stores need from an already-walked value:
+    /// a conditional's condition stored once for all element reads, and a
+    /// call bound into a place so no element re-evaluates it. A traversal
+    /// that would re-run the walk would emit its guards a second time.
+    fn prepare_walked_fill_value(&mut self, value: &Value, guard: Option<&str>) -> Value {
         match &value.kind {
             ValueKind::Conditional {
                 condition,
@@ -849,8 +860,8 @@ impl<'a> Emitter<'a> {
                     Some(enclosing) => format!("{enclosing} && !{local_name}"),
                     None => format!("!{local_name}"),
                 };
-                let then_value = self.prepare_fill_value(then_value, Some(&then_guard));
-                let else_value = self.prepare_fill_value(else_value, Some(&else_guard));
+                let then_value = self.prepare_walked_fill_value(then_value, Some(&then_guard));
+                let else_value = self.prepare_walked_fill_value(else_value, Some(&else_guard));
                 Value::new(
                     value.ty.clone(),
                     ValueKind::Conditional {
@@ -861,7 +872,9 @@ impl<'a> Emitter<'a> {
                 )
             }
             ValueKind::Index { base, index } => {
-                let base = self.prepare_fill_value(base, guard);
+                let base = self.prepare_walked_fill_value(base, guard);
+                // The walk stored an impure index; a form it left in place is
+                // safe to read per element, so it keeps its spelling.
                 let index = if init_operand_is_pure(index) {
                     (**index).clone()
                 } else {
@@ -879,18 +892,15 @@ impl<'a> Emitter<'a> {
             ValueKind::Member { base, name } => Value::new(
                 value.ty.clone(),
                 ValueKind::Member {
-                    base: Box::new(self.prepare_fill_value(base, guard)),
+                    base: Box::new(self.prepare_walked_fill_value(base, guard)),
                     name: name.clone(),
                 },
             ),
             // A call has no place form, so the fill binds it into an init
-            // local first: a fixed-array result writes through the local as its
-            // hidden destination, and any other result assigns into it. The
-            // arguments are prepared under the same guard, so their own
-            // operands and conditions run once, on the path that reaches the
-            // call.
+            // local: a fixed-array result writes through the local as its
+            // hidden destination, and any other result assigns into it.
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
-                let value = self.prepare_call_arguments(&value, guard);
+                let value = self.prepare_call_arguments(value, guard);
                 let zero = self.empty_state(&value.ty);
                 let (_, local) = self.materialize_init_local(&value, guard, &zero);
                 local
@@ -903,11 +913,11 @@ impl<'a> Emitter<'a> {
                 ValueKind::ArrayLit {
                     elements: elements
                         .iter()
-                        .map(|element| self.prepare_fill_value(element, guard))
+                        .map(|element| self.prepare_walked_fill_value(element, guard))
                         .collect(),
                     fill: fill
                         .as_deref()
-                        .map(|fill| Box::new(self.prepare_fill_value(fill, guard))),
+                        .map(|fill| Box::new(self.prepare_walked_fill_value(fill, guard))),
                 },
             ),
             _ => value.clone(),
@@ -1098,15 +1108,26 @@ impl<'a> Emitter<'a> {
                 args,
                 type_arg,
             } => {
-                let args: Vec<Value> = args
+                let mut args: Vec<Value> = args
                     .iter()
                     .map(|arg| self.materialize_init_value(arg, guard))
                     .collect();
-                // The view builder's slice guard checks the offsets against
-                // the source extent; it runs where the construction is
-                // evaluated, exactly as the function path emits it.
-                if guard.is_none() && name == "slice" {
-                    self.emit_slice_guard(&args);
+                if name == "slice" {
+                    // The rendered view builder reads its offset operands
+                    // twice, so an operand with effects stores once, on the
+                    // path that reaches the construction; a fixed-array
+                    // operand keeps its form (the renderer uses its decay).
+                    for arg in args.iter_mut() {
+                        *arg = self.store_impure_intrinsic_arg(arg, guard);
+                    }
+                    // The view builder's slice guard checks the offsets
+                    // against the source extent; it runs where the
+                    // construction is evaluated, exactly as the function path
+                    // emits it, and a lazily evaluated construction embeds it
+                    // through the guarded renderer instead.
+                    if guard.is_none() {
+                        self.emit_slice_guard(&args);
+                    }
                 }
                 Value::new(
                     value.ty.clone(),
@@ -1334,12 +1355,25 @@ impl<'a> Emitter<'a> {
         local
     }
 
-    /// Prepares a call's arguments so each evaluates once.
+    /// Stores one impure intrinsic operand into an init local.
     ///
-    /// A call's argument is evaluated outside the element loop the fill walks,
-    /// so the same preparation the fill applies to a value applies to each
-    /// argument: an impure index or a condition is stored once, and a nested
-    /// fixed-array call is bound into an init local.
+    /// The view builder reads an offset operand twice, so an operand with
+    /// effects must run once before the construction; a pure operand and a
+    /// fixed-array operand keep their form, because C cannot assign an array
+    /// to a temporary and the renderer uses the array's pointer decay.
+    fn store_impure_intrinsic_arg(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        if init_operand_is_pure(value) || value.ty.is_fixed_array() {
+            return value.clone();
+        }
+        let (_, local) = self.materialize_init_local(value, guard, "0");
+        local
+    }
+
+    /// Rebuilds a call whose parts the walk already prepared.
+    ///
+    /// The walk visited the receiver and every argument in source order, so
+    /// this pass only re-applies the fill discipline the arguments need; it
+    /// never re-runs the walk, which would emit their guards a second time.
     fn prepare_call_arguments(&mut self, value: &Value, guard: Option<&str>) -> Value {
         match &value.kind {
             ValueKind::Call {
@@ -1350,10 +1384,10 @@ impl<'a> Emitter<'a> {
             } => {
                 let receiver = receiver
                     .as_deref()
-                    .map(|inner| Box::new(self.prepare_fill_value(inner, guard)));
+                    .map(|inner| Box::new(self.prepare_walked_fill_value(inner, guard)));
                 let args = args
                     .iter()
-                    .map(|arg| self.prepare_fill_value(arg, guard))
+                    .map(|arg| self.prepare_walked_fill_value(arg, guard))
                     .collect();
                 Value::new(
                     value.ty.clone(),
@@ -1366,10 +1400,10 @@ impl<'a> Emitter<'a> {
                 )
             }
             ValueKind::ClosureCall { callable, args } => {
-                let callable = Box::new(self.prepare_fill_value(callable, guard));
+                let callable = Box::new(self.prepare_walked_fill_value(callable, guard));
                 let args = args
                     .iter()
-                    .map(|arg| self.prepare_fill_value(arg, guard))
+                    .map(|arg| self.prepare_walked_fill_value(arg, guard))
                     .collect();
                 Value::new(value.ty.clone(), ValueKind::ClosureCall { callable, args })
             }
@@ -1598,9 +1632,9 @@ impl<'a> Emitter<'a> {
     ///
     /// Mirrors the function path's rule: a user or `ffi` declaration of the
     /// name keeps its own symbol, and only the receiver-taking `len` spelling
-    /// and the three view builders lower as intrinsics. An impure operand is
-    /// stored once into an init local first, because the rendered view builder
-    /// reads its offset argument twice.
+    /// and the three view builders lower as intrinsics. The emission walk
+    /// stores an impure operand once where the construction is evaluated, so
+    /// no operand binds here, where the enclosing choice is not yet known.
     fn lower_global_intrinsic(
         &mut self,
         module: &Module,
@@ -1611,7 +1645,6 @@ impl<'a> Emitter<'a> {
         let name = self.global_intrinsic_call(callee)?;
         if name == "len" {
             let receiver = self.global_len_receiver(module, callee)?;
-            let receiver = self.init_intrinsic_arg(receiver);
             return Some(Value::new(
                 Ty::usize_ty(),
                 ValueKind::Intrinsic {
@@ -1622,17 +1655,10 @@ impl<'a> Emitter<'a> {
             ));
         }
         let explicit: Vec<Ty> = type_args.iter().map(|ty| self.resolve_written(ty)).collect();
-        let mut lowered: Vec<Value> = args
+        let lowered: Vec<Value> = args
             .iter()
             .map(|arg| self.lower_global(module, &arg.value))
             .collect();
-        if name == "slice" {
-            for value in lowered.iter_mut() {
-                let pending =
-                    std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
-                *value = self.init_intrinsic_arg(pending);
-            }
-        }
         // The view's element is one step of iteration over the source: whole
         // rows for a multi-extent source, the scalar for a single-extent one.
         let source_element = lowered
@@ -1735,23 +1761,6 @@ impl<'a> Emitter<'a> {
             }
             _ => None,
         }
-    }
-
-    /// Materializes an impure intrinsic operand into an init local.
-    ///
-    /// The rendered view builder reads its offset argument twice, so an
-    /// operand with effects must run once, before the construction. A pure
-    /// operand (a constant or a place) renders in place, and a fixed-array
-    /// operand that is not a call keeps its form: C cannot assign an array to
-    /// a temporary, and the renderer uses the operand through the
-    /// array-to-pointer decay.
-    fn init_intrinsic_arg(&mut self, value: Value) -> Value {
-        let value = self.materialize_init_value(&value, None);
-        if init_operand_is_pure(&value) || value.ty.is_fixed_array() {
-            return value;
-        }
-        let (_, local) = self.materialize_init_local(&value, None, "0");
-        local
     }
 
     /// Writes every function body, user functions first in source order, then

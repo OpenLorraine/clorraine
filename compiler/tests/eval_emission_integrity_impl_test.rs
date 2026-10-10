@@ -856,3 +856,84 @@ func main(): i32 {
 "#;
     assert_run_exit("pin-row-condition", source, 11);
 }
+
+/// A slice built inside a skipped arm neither runs its guard nor faults.
+#[test]
+fn should_keep_a_slice_guard_lazy_under_an_enclosing_choice() {
+    let source = r#"module spec.eei.slicelenarm;
+
+import { slice } from std.mem;
+
+func pick(): bool {
+    return false;
+}
+
+let arr: i32[4] = [1, 2, 3, 4];
+let n: i32 = 5;
+let m: usize = pick() ? len(slice(arr, 0, n)) : usize(0);
+
+func main(): i32 {
+    return i32(m);
+}
+"#;
+    assert_run_exit("pin-slice-len-arm-skip", source, 0);
+    let taken = source.replace(
+        "func pick(): bool {\n    return false;",
+        "func pick(): bool {\n    return true;",
+    );
+    let output = run_host("pin-slice-len-arm-taken", &taken);
+    assert!(
+        !output.status.success(),
+        "pin-slice-len-arm-taken: the taken arm must fault on the out-of-range view"
+    );
+
+    let or_skip = r#"module spec.eei.slicelenor;
+
+import { slice } from std.mem;
+
+func yes(): bool {
+    return true;
+}
+
+let arr: i32[4] = [1, 2, 3, 4];
+let n: i32 = 5;
+let ok: bool = yes() || (i32(len(slice(arr, 0, n))) > 0);
+
+func main(): i32 {
+    if (ok) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_run_exit("pin-slice-len-or-skip", or_skip, 1);
+}
+
+/// A fill-literal element's impure operand stores once, and the element
+/// stores do not multiply its guard with the literal's depth.
+#[test]
+fn should_single_evaluate_a_fill_element_operand() {
+    let source = r#"module spec.eei.fillelem;
+
+let calls: i32 = 0;
+
+func idx(): i32 {
+    calls = calls + 1;
+    return 0;
+}
+
+let s: u8[2] = [7, 2];
+let a: i32[2] = [i32(s[idx()]), 9];
+
+func main(): i32 {
+    return calls * 10 + a[0];
+}
+"#;
+    let emitted = emit_host("pin-fill-element", source);
+    assert_eq!(
+        count_occurrences(&emitted, "if ((__cl_itmp0 < 0)"),
+        2,
+        "pin-fill-element: the walk's guard and the element store's guard are the only copies"
+    );
+    assert_run_exit("pin-fill-element-run", source, 17);
+}

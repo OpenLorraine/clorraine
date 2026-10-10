@@ -46,6 +46,23 @@
 
 All reviewer reproductions re-run after the redesign: `\|\|` left-true result (exit 1), arm and `&&`/`\|\|` skip laziness (side-effect counts 0), left-to-right order (log 12), enclosing-guard skip (`f` not called), left single evaluation (one call), literal element (3), row literal (3), fill condition (4), template argument (1), call-argument operand (one call, value 7), `\|\|` skip/take (10/20 pair), plus the full specification and implementation suites and `make check`.
 
+### Verification evidence (second fix round — slice guard and or-guard conjunct)
+
+The scoped re-review of the redesign raised RV-R4 (the restored eager slice guard escaped lazy positions through the lowering-time materialization: a slice inside a skipped `?:` arm or `\|\|` operand aborted) and RV-R5 (the fill recursion re-emitted operand guards per literal level — behavior-neutral noise). Both are fixed: the intrinsic slice operands now store and guard inside the walk, at the evaluation site, under the enclosing guard; the lowering no longer binds them; and the fill discipline runs over already-walked values without re-running the walk.
+
+| # | Sev | Ruling |
+| - | --- | ------ |
+| RV-R4 | 🔴 → fixed | The walk owns the slice-operand storage and the slice guard; the lowering-time `init_intrinsic_arg` binding is removed (it was context-blind). Reproductions: `pick() ? slice(arr,0,n).len() : 0` skipped → 0 (was abort), taken → `E11211`; `yes() \|\| (slice(...).len() > 0)` → 1; the nested spelling → 1; a skipped `slice(arr, f(), 2)` argument runs nothing. Pins: `should_guard_an_eager_slice_view`, `should_keep_a_slice_guard_lazy_under_an_enclosing_choice`. |
+| RV-R5 | 🟡 → fixed | `prepare_walked_fill_value` applies the per-element discipline to walked values only, so guards and binds no longer multiply with literal depth. Pin: `should_single_evaluate_a_fill_element_operand` (one `idx()` call; the walk's guard plus the element store's guard are the only copies). |
+
+### Filed (second fix round)
+
+| # | Sev | Finding | Filed as |
+| - | --- | ------- | -------- |
+| PA-2 / EIA (a18) | 🟠 | A `str`-valued template module initializer assigns the concatenation result to a `ClStr` without the view wrapper, so the strict build fails. | DEF-135 |
+| Re-review residual | 🟠 | An impure dividend or index base is re-read by its guard (`d() / 1` calls `d()` twice; `v(s)[1]` calls `v` twice), in module initializers and function bodies alike. | DEF-136 |
+| RV-R3 note | 🟡 | A written slice type argument in a function body (`sizeof(i32[])`) misses its slice typedef; the module-initializer spelling is fixed, the body spelling is not. | DEF-137 |
+
 ### Dismissed with evidence
 
 | # | Finding | Evidence |
