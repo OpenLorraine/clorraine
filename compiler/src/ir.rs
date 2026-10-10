@@ -316,6 +316,17 @@ pub enum Statement {
         /// The value stored.
         value: Value,
     },
+    /// Runtime guards for a store target that has no value form.
+    ///
+    /// A store target never evaluates as a value, so its element bounds checks
+    /// cannot ride on the stored value. The checker lowers the target's element
+    /// selection into index values here; the emitter runs the ordinary guard
+    /// pass over them and evaluates nothing.
+    Guards {
+        /// One value per outermost element selection; each carries the index
+        /// chain so the guard pass visits every level in evaluation order.
+        checks: Vec<Value>,
+    },
     /// Transfer an owned value: copy into `target`, then zero `source`.
     Move {
         /// The place written.

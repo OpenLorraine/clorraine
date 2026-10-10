@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 02:02
-> **Progress**: 16/22 tasks (73%)
+> **Last Updated**: 2026-10-10 02:09
+> **Progress**: 22/22 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -195,9 +195,9 @@ before any implementation.
 **Reference**: [03-03](03-03-view-store-guards.md) §Proposed Changes
 **Objective**: Add the store-target null requirement and the constant-index bounds trap.
 
-- [ ] 3.2.1 [DEF-105] Walk every assignment and compound-assignment write target for the read path's nullable-base check (the update form is already covered by the operand's read walk; ST-28 pins it) — `compiler/src/own/expr.rs`
-- [ ] 3.2.2 [DEF-106] Add the `Guards` statement (constructed only when a level's base has a dynamic bound), lower the store target's element selection into it for every constant-index store form (plain, compound, and update; row stores via the same assignment path), and emit the guard pass — `compiler/src/ir.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen/function.rs`
-- [ ] 3.2.3 Run the spec suite to green (ST-13 – ST-22 and ST-28 – ST-30) and the ASan probes for ST-15, ST-18, and ST-20; on any failure STOP and fix the implementation, never the test
+- [x] 3.2.1 [DEF-105] Walk every assignment and compound-assignment write target for the read path's nullable-base check (the update form is already covered by the operand's read walk; ST-28 pins it) — `compiler/src/own/expr.rs` ✅ (completed: 2026-10-10 02:06)
+- [x] 3.2.2 [DEF-106] Add the `Guards` statement (constructed only when a level's base has a dynamic bound), lower the store target's element selection into it for every constant-index store form (plain, compound, and update; row stores via the same assignment path), and emit the guard pass — `compiler/src/ir.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/generics.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-10 02:06)
+- [x] 3.2.3 Run the spec suite to green (ST-13 – ST-22 and ST-28 – ST-30) and the ASan probes for ST-15, ST-18, and ST-20; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 02:06)
 
 **Deliverables**:
 - The checker walk and the `Guards` statement
@@ -213,9 +213,9 @@ before any implementation.
 **Objective**: Pin the internal shapes, run the phase verification, and close the plan with the
 full acceptance run.
 
-- [ ] 3.3.1 Write implementation tests (the trap line spelled before a slice element store in the plain, compound, and update forms; no `Guards` statement for fixed-array-only targets; the unchanged fixed-array emission; the `E10010` store-site shape with one report for the update form; byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs`
-- [ ] 3.3.2 Full phase verification — `make check`
-- [ ] 3.3.3 Full acceptance — `make verify`
+- [x] 3.3.1 Write implementation tests (the trap line spelled before a slice element store in the plain, compound, and update forms; no `Guards` statement for fixed-array-only targets; the unchanged fixed-array emission; the `E10010` store-site shape with one report for the update form; byte-identical re-emission) — `compiler/tests/borrow_store_integrity_impl_test.rs` ✅ (completed: 2026-10-10 02:09)
+- [x] 3.3.2 Full phase verification — `make check` ✅ (completed: 2026-10-10 02:09)
+- [x] 3.3.3 Full acceptance — `make verify` ✅ (completed: 2026-10-10 02:09)
 
 **Deliverables**:
 - Implementation suite for P3

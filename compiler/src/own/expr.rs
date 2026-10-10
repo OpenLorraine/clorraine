@@ -479,6 +479,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Requires a write target's element base to be non-null.
+    ///
+    /// A store never evaluates its target as a value, so the read path's null
+    /// requirement would not otherwise reach it. Walking the target's base
+    /// chain applies the same rule: an index base that is nullable and not
+    /// narrowed reports `E10010` unless the store sits inside `unsafe`.
+    fn check_store_index_nonnull(&mut self, target: &'a Expr, span: Span) {
+        match &target.kind {
+            ExprKind::Index { base, .. } => {
+                let base_ty = self.ty(base);
+                if !matches!(base_ty.kind, TyKind::Raw(_))
+                    && base_ty.nullable
+                    && self.unsafe_depth == 0
+                {
+                    self.check_nonnull_expr(base, span);
+                }
+                self.check_store_index_nonnull(base, span);
+            }
+            ExprKind::Member { base, .. } => self.check_store_index_nonnull(base, span),
+            ExprKind::Unsafe(inner) => {
+                self.unsafe_depth += 1;
+                self.check_store_index_nonnull(inner, span);
+                self.unsafe_depth -= 1;
+            }
+            _ => {}
+        }
+    }
+
     /// Checks an expression against an expected type for nullability.
     pub(super) fn check_value_into(&mut self, expr: &Expr, expected: &Ty, span: Span) {
         if matches!(expr.kind, ExprKind::Null) {
@@ -518,6 +546,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.report_unsafe(UnsafeOp::PointerArithmetic, target.span);
         }
         self.check_place_raw(target);
+        self.check_store_index_nonnull(target, target.span);
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
                 self.eval(value);
@@ -570,6 +599,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.emit_indexed_store(target, value, compound);
                     None
                 } else {
+                    if let Some(guards) = self.guard_statement_for_store_target(target) {
+                        self.emit(guards);
+                    }
                     let place = self.target_place(&PlaceTarget::Local(id, projections.clone()));
                     self.emit_assigned(place, &target_ty, value, compound)
                 };
@@ -610,6 +642,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     if has_runtime_element(&projections) {
                         self.emit_indexed_store(target, value, compound);
                     } else {
+                        if let Some(guards) = self.guard_statement_for_store_target(target) {
+                            self.emit(guards);
+                        }
                         let place = self.target_place(&PlaceTarget::Global(id, projections));
                         let _ = self.emit_assigned(place, &target_ty, value, compound);
                     }
@@ -790,6 +825,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if has_runtime_element(&projections) {
                     self.emit_indexed_update(operand, binary, one);
                 } else {
+                    if let Some(guards) = self.guard_statement_for_store_target(operand) {
+                        self.emit(guards);
+                    }
                     let place = self.target_place(&PlaceTarget::Local(id, projections));
                     self.emit_compound_store(binary, place, &ty, one);
                 }
@@ -815,6 +853,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if has_runtime_element(&projections) {
                     self.emit_indexed_update(operand, binary, one);
                 } else {
+                    if let Some(guards) = self.guard_statement_for_store_target(operand) {
+                        self.emit(guards);
+                    }
                     let place = self.target_place(&PlaceTarget::Global(id, projections));
                     self.emit_compound_store(binary, place, &ty, one);
                 }
@@ -838,6 +879,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .globals
                 .get(id)
                 .is_some_and(|global| matches!(global.ty.kind, TyKind::Raw(_)))
+    }
+
+    /// The guard statement a constant-index element store target needs.
+    ///
+    /// A store target never evaluates as a value, so its element bounds checks
+    /// cannot ride on the stored value; the statement carries the target's
+    /// index chain and the ordinary guard pass visits every level in
+    /// evaluation order. A target whose element selections all sit on fixed
+    /// arrays needs no runtime check — the semantic layer validated the
+    /// constant indices — so it builds no statement and its emission stays
+    /// unchanged.
+    fn guard_statement_for_store_target(&mut self, target: &'a Expr) -> Option<Statement> {
+        if !self.store_target_has_dynamic_element(target) {
+            return None;
+        }
+        let check = self.lower_value(target);
+        Some(Statement::Guards {
+            checks: vec![check],
+        })
+    }
+
+    /// True when any element selection of a store target sits on a
+    /// dynamically bounded view.
+    ///
+    /// A fixed-array selection is range-checked when the program is validated,
+    /// so only a slice, growable array, or string view needs a runtime guard.
+    fn store_target_has_dynamic_element(&self, target: &Expr) -> bool {
+        match &target.kind {
+            ExprKind::Index { base, .. } => {
+                let base_ty = self.ty(base);
+                let dynamic = match &base_ty.kind {
+                    TyKind::Array { extents, .. } => extents.iter().any(Option::is_none),
+                    TyKind::Str | TyKind::StaticStr => true,
+                    _ => false,
+                };
+                dynamic || self.store_target_has_dynamic_element(base)
+            }
+            ExprKind::Member { base, .. } => self.store_target_has_dynamic_element(base),
+            ExprKind::Unsafe(inner) => self.store_target_has_dynamic_element(inner),
+            _ => false,
+        }
     }
 
     /// Emits the store for an assignment, plain or compound.

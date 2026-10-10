@@ -739,6 +739,11 @@ fn walk_function(
                 Statement::Discard { value } => {
                     walk_value(value, bindings, program, sema, mono, enclosing)
                 }
+                Statement::Guards { checks } => {
+                    for check in checks {
+                        walk_value(check, bindings, program, sema, mono, enclosing);
+                    }
+                }
                 Statement::Move { .. }
                 | Statement::MoveOut { .. }
                 | Statement::Borrow { .. }

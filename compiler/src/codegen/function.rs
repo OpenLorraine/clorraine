@@ -590,6 +590,12 @@ impl<'a> Emitter<'a> {
                 };
                 self.emit_drop(&place);
             }
+            Statement::Guards { checks } => {
+                self.emit_line_directive(span);
+                for check in checks {
+                    self.emit_guards(check);
+                }
+            }
             Statement::Borrow { .. }
             | Statement::Drop { .. }
             | Statement::Defer { .. }
@@ -2229,6 +2235,11 @@ fn unread_locals(
                     }
                 }
                 Statement::Discard { value } => note_value(value, &mut read),
+                Statement::Guards { checks } => {
+                    for check in checks {
+                        note_value(check, &mut read);
+                    }
+                }
                 Statement::Drop { place, .. } => {
                     if drop_reads(&place.ty) {
                         note_place(place, &mut read);

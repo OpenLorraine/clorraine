@@ -395,3 +395,154 @@ func main(): i32 {
     );
     assert_eq!(first, second, "the two emissions must be byte-identical");
 }
+
+/// A constant slice store emits the bounds trap before the store line.
+///
+/// The trap is the read path's spelling, driven by the store target's index
+/// chain: the guard statement runs before the target's old value is touched,
+/// and the store itself stays a direct element write.
+#[test]
+fn should_emit_the_bounds_trap_before_a_constant_slice_store() {
+    let unit = emit_host(
+        "guard-plain",
+        r#"module spec.bsi.impl.guardplain;
+
+import { slice } from std.mem;
+
+func plain(borrow xs: i32[]?): i32 {
+    if (xs != null) { xs[0] = 1; }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 0, 2);
+    return plain(borrow v);
+}
+"#,
+    );
+    let body = instance_body(
+        &unit,
+        "static i32 cl_spec_bsi_impl_guardplain_plain(ClSlice_i32 *xs)",
+    );
+    let trap = body
+        .find("cl_trap(\"E11211\", \"index out of range\")")
+        .unwrap_or_else(|| panic!("no bounds trap; body:\n{body}"));
+    let store = body
+        .find(".ptr[0] = 1")
+        .unwrap_or_else(|| panic!("no element store; body:\n{body}"));
+    assert!(
+        trap < store,
+        "the trap must precede the store; body:\n{body}"
+    );
+}
+
+/// Compound and update slice stores carry the same bounds trap.
+#[test]
+fn should_emit_the_bounds_trap_for_compound_and_update_slice_stores() {
+    let unit = emit_host(
+        "guard-compound",
+        r#"module spec.bsi.impl.guardcompound;
+
+import { slice } from std.mem;
+
+func comp(borrow xs: i32[]?): i32 {
+    if (xs != null) { xs[0] += 1; }
+    return 0;
+}
+
+func upd(borrow xs: i32[]?): i32 {
+    if (xs != null) { xs[0]++; }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 0, 2);
+    let a: i32 = comp(borrow v);
+    let b: i32 = upd(borrow v);
+    return a + b;
+}
+"#,
+    );
+    for (signature, tag) in [
+        (
+            "static i32 cl_spec_bsi_impl_guardcompound_comp(ClSlice_i32 *xs)",
+            "compound store",
+        ),
+        (
+            "static i32 cl_spec_bsi_impl_guardcompound_upd(ClSlice_i32 *xs)",
+            "update",
+        ),
+    ] {
+        let body = instance_body(&unit, signature);
+        let trap = body
+            .find("cl_trap(\"E11211\", \"index out of range\")")
+            .unwrap_or_else(|| panic!("{tag}: no bounds trap; body:\n{body}"));
+        let store = body
+            .find(".ptr[0] = ")
+            .unwrap_or_else(|| panic!("{tag}: no element store; body:\n{body}"));
+        assert!(
+            trap < store,
+            "{tag}: the trap must precede the store; body:\n{body}"
+        );
+    }
+}
+
+/// A fixed-array-only target builds no guard and keeps its emission.
+///
+/// The semantic layer validates the constant index, so no trap line appears,
+/// and the `for`-step store stays in the structured header.
+#[test]
+fn should_keep_the_fixed_array_emission_when_no_element_level_is_dynamic() {
+    let unit = emit_host(
+        "guard-fixed",
+        r#"module spec.bsi.impl.guardfixed;
+
+func fixed(): i32 {
+    let rows: i32[4] = [1, 2, 3, 4];
+    rows[0] = 9;
+    let i: i32 = 0;
+    for (; i < 2; rows[0] = i) { }
+    return rows[0];
+}
+
+func main(): i32 {
+    return fixed();
+}
+"#,
+    );
+    let body = instance_body(&unit, "static i32 cl_spec_bsi_impl_guardfixed_fixed(void)");
+    assert!(
+        !body.contains("cl_trap(\"E11211\""),
+        "a fixed-array-only target must not guard; body:\n{body}"
+    );
+    assert!(
+        body.contains("for (; (i < 2); rows[0] = i)"),
+        "the for-step store must stay structured; body:\n{body}"
+    );
+}
+
+/// The guard program re-emits byte-identically.
+#[test]
+fn should_re_emit_identically_when_the_guard_program_is_emitted_twice() {
+    let (first, second) = emit_twice(
+        "guard-reemission",
+        r#"module spec.bsi.impl.guardreemission;
+
+import { slice } from std.mem;
+
+func store(borrow xs: i32[]?): i32 {
+    if (xs != null) { xs[0] = 7; return i32(xs[0]); }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 0, 2);
+    return store(borrow v);
+}
+"#,
+    );
+    assert_eq!(first, second, "the two emissions must be byte-identical");
+}
