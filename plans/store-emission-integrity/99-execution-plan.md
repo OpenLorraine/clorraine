@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 08:45
-> **Progress**: 4/26 tasks (15%)
+> **Last Updated**: 2026-10-10 08:53
+> **Progress**: 6/26 tasks (23%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -128,8 +128,18 @@ tests)` and every workspace test binary reports zero failures.
 **Reference**: [03-01](03-01-conditional-store-judgment.md) §Testing Requirements
 **Objective**: Pin the internal shapes and record the phase review evidence.
 
-- [ ] 1.3.1 Write the Phase 1 implementation pins (report counts and names per shape, the duty naming, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs`
-- [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ([AR-16](00-ambiguity-register.md))
+- [x] 1.3.1 Write the Phase 1 implementation pins (report counts and names per shape, the duty naming, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 08:46)
+- [x] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ([AR-16](00-ambiguity-register.md)) ✅ (completed: 2026-10-10 08:53)
+
+**Phase review evidence (2026-10-10 08:53)** — three independent reviews ran on the phase diff
+(correctness reviewer, memory-safety auditor, semantics reviewer; AR-14): no critical or major
+findings. The correctness reviewer reproduced every report shape and confirmed the blast radius is
+confined to the single suppression test; the memory-safety auditor reproduced the base-compiler
+heap-use-after-free on the amended shapes, confirmed the head rejects them before emission, and
+verified every accepted shape builds and runs ASan-clean (23 related suites also pass); the
+semantics reviewer confirmed conformance to the lend-store rule and every pinned spelling, with no
+evaluation change. Minor rulings are recorded in [05-findings.md](05-findings.md) (one bookkeeping
+correction, applied).
 
 **Deliverables**:
 - Implementation pins for Phase 1
