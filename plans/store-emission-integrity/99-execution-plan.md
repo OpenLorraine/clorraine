@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 09:32
-> **Progress**: 19/26 tasks (73%)
+> **Last Updated**: 2026-10-10 09:34
+> **Progress**: 21/26 tasks (81%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -319,7 +319,7 @@ computation. Rulings are recorded in [05-findings.md](05-findings.md).
 
 ## Phase 4: Module initializers (DEF-116)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: 0bbe213f2125ad16f6801f2d54fa63506d1f4b25
 > **Lenses**: correctness reviewer + memory-safety auditor + emission-integrity auditor
 > (codegen/emission change; AR-14)
 > **Reasoning**: high — evaluation-order semantics (operand-once) plus emission shapes
@@ -329,8 +329,15 @@ computation. Rulings are recorded in [05-findings.md](05-findings.md).
 **Reference**: [03-04](03-04-module-initializers.md) §Proposed Changes · [AR-9, AR-10, AR-11, AR-18](00-ambiguity-register.md)
 **Objective**: Pin the fill, intrinsic, and operand-once behaviors before any implementation.
 
-- [ ] 4.1.1 [spec-author] Write specification tests from ST-23 – ST-30 — `compiler/tests/store_emission_integrity_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and record the red phase (expected: ST-23 – ST-29 all fail at the strict build or the run)
+- [x] 4.1.1 [spec-author] Write specification tests from ST-23 – ST-30 — `compiler/tests/store_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 09:34)
+- [x] 4.1.2 Run the spec suite and record the red phase (expected: ST-23 – ST-29 all fail at the strict build or the run) ✅ (completed: 2026-10-10 09:34)
+
+**Red-phase evidence (2026-10-10 09:34)** — the extended suite (31 tests) fails exactly as
+designed against the phase baseline: 23 passed, 8 failed. Every new case fails at the strict
+build: the array-typed initializers emit an invalid array assignment (`backing = { 1, 2 };` and
+the nested, fill, and place-copy variants), the module `slice` call renders an unlowered bare
+name, and the `len`-of-a-module-array case fails on its array-assignment line too — so the red
+set is all eight cases (the plan's ST-23 – ST-29 list extends by ST-30).
 
 **Deliverables**:
 - Specification suite with ST-23 – ST-29

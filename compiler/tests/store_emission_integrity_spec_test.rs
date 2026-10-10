@@ -29,6 +29,13 @@
 //! a closure capturing a slice keeps building as the order's regression
 //! control.
 //!
+//! The module-initializer group pins the init-function behavior: an
+//! array-typed module binding fills element-wise (literal, nested rows, fill
+//! tails, and a copy from another module array), a module-level `slice` call
+//! constructs the view with its bounds check, an impure offset and a
+//! conditional value each evaluate their impure operand exactly once, and
+//! `len` of a module array folds.
+//!
 //! The memory helper runs a case as an ordinary strict host build and adds
 //! leak and use-after-free detection when `RDC_ASAN` is set.
 
@@ -899,4 +906,187 @@ func main(): i32 {
 "#;
     let output = run_host("closure-capturing-slice", source);
     assert_exit("closure-capturing-slice", &output, 2);
+}
+
+/// A module array and its slice view initialize and run.
+///
+/// The init function fills the fixed array element-wise (an array literal has
+/// no C assignment form) and constructs the slice view from the array, with
+/// the view length readable at run time.
+#[test]
+fn should_initialize_a_module_array_and_slice_view() {
+    let source = r#"module spec.sei.p4.arrayandview;
+
+import { slice } from std.mem;
+
+let backing: i32[2] = [1, 2];
+let view: i32[] = slice(backing, 0, 2);
+
+func main(): i32 {
+    return i32(len(view));
+}
+"#;
+    let output = run_host("module-array-and-view", source);
+    assert_exit("module-array-and-view", &output, 2);
+}
+
+/// A nested module array literal fills every row.
+///
+/// The fill recurses one extent per level, so each row's elements are stored
+/// in declaration order and a row read selects the stored value.
+#[test]
+fn should_initialize_a_nested_module_array() {
+    let source = r#"module spec.sei.p4.nested;
+
+let m: i32[2][2] = [[1, 2], [3, 4]];
+
+func main(): i32 {
+    return m[1][0];
+}
+"#;
+    let output = run_host("module-nested-array", source);
+    assert_exit("module-nested-array", &output, 3);
+}
+
+/// A filled module array literal stores the fill value in the tail.
+///
+/// The elements after the list take the fill expression's value, exactly as
+/// the function-body element stores already do.
+#[test]
+fn should_initialize_a_filled_module_array() {
+    let source = r#"module spec.sei.p4.fill;
+
+let a: i32[3] = [1, 2; 7];
+
+func main(): i32 {
+    return a[2];
+}
+"#;
+    let output = run_host("module-filled-array", source);
+    assert_exit("module-filled-array", &output, 7);
+}
+
+/// A module array copied from another module array keeps the source values.
+///
+/// A non-literal array value is copied element-wise from its rendered base, so
+/// the destination holds the source's elements after the init runs.
+#[test]
+fn should_copy_a_module_array_from_another_global() {
+    let source = r#"module spec.sei.p4.placecopy;
+
+let backing: i32[2] = [1, 2];
+let b: i32[2] = backing;
+
+func main(): i32 {
+    return b[1];
+}
+"#;
+    let output = run_host("module-array-copy", source);
+    assert_exit("module-array-copy", &output, 2);
+}
+
+/// A module slice view with a constant offset starts at that element.
+///
+/// The view length is the requested element count and the first element is the
+/// source's element at the offset.
+#[test]
+fn should_initialize_a_slice_view_from_a_runtime_offset() {
+    let source = r#"module spec.sei.p4.runtimeoffset;
+
+import { slice } from std.mem;
+
+let backing: i32[3] = [1, 2, 3];
+let view: i32[] = slice(backing, 1, 3);
+
+func main(): i32 {
+    if (i32(len(view)) != 2) {
+        return 1;
+    }
+    return view[0];
+}
+"#;
+    let output = run_host("module-view-offset", source);
+    assert_exit("module-view-offset", &output, 2);
+}
+
+/// A module slice view with an impure offset evaluates the offset once.
+///
+/// The constructed view reads its offset expression more than once, so the
+/// init function must materialize the operand; the run observes a single call
+/// and the view starting at the returned offset.
+#[test]
+fn should_evaluate_an_impure_slice_offset_once() {
+    let source = r#"module spec.sei.p4.operandonce;
+
+import { slice } from std.mem;
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+let backing: i32[3] = [1, 2, 3];
+let v: i32[] = slice(backing, bump(), 3);
+
+func main(): i32 {
+    if (calls != 1) {
+        return 9;
+    }
+    return v[0];
+}
+"#;
+    let output = run_host("module-impure-offset", source);
+    assert_exit("module-impure-offset", &output, 2);
+}
+
+/// A conditional module array value evaluates its condition once.
+///
+/// The fill stores each element from the chosen arm — the arms are indexed per
+/// element, so no arm array decays to a pointer — and the condition runs a
+/// single time.
+#[test]
+fn should_evaluate_a_conditional_module_value_once() {
+    let source = r#"module spec.sei.p4.conditional;
+
+let x: i32[2] = [10, 11];
+let y: i32[2] = [20, 21];
+let calls: i32 = 0;
+
+func pick(): bool {
+    calls = calls + 1;
+    return true;
+}
+
+let a: i32[2] = pick() ? x : y;
+
+func main(): i32 {
+    if (calls != 1) {
+        return 9;
+    }
+    return a[1];
+}
+"#;
+    let output = run_host("module-conditional-value", source);
+    assert_exit("module-conditional-value", &output, 11);
+}
+
+/// `len` of a module array folds at module level and runs.
+///
+/// The module binding's initializer reads the array's element count, which is
+/// known statically, so the run observes the extent.
+#[test]
+fn should_fold_len_of_a_module_array() {
+    let source = r#"module spec.sei.p4.dotlen;
+
+let backing: i32[3] = [1, 2, 3];
+let n: usize = backing.len();
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+    let output = run_host("module-dot-len", source);
+    assert_exit("module-dot-len", &output, 3);
 }
