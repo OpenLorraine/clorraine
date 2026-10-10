@@ -132,7 +132,6 @@ impl<'a> Emitter<'a> {
         self.push("    return value;");
         self.push("}");
         self.push("");
-        self.emit_slice_typedefs();
         self.emit_handle_typedefs();
     }
 
@@ -370,22 +369,42 @@ impl<'a> Emitter<'a> {
         self.push("");
     }
 
-    /// Writes the user struct and enum declarations.
+    /// Writes the enum typedefs and member macros.
     ///
-    /// A non-generic struct is written once under its bare name. A generic
-    /// struct has no single C layout, so its bare template is skipped and one
-    /// concrete struct is written for each instantiation the program uses. The
-    /// definitions are ordered so a struct that embeds another by value is
-    /// written after it, and a forward typedef precedes every definition so a
-    /// pointer field can name a struct defined later.
-    pub(super) fn emit_aggregate_declarations(&mut self) {
-        let units = self.struct_units();
-        if !units.is_empty() {
-            for unit in &units {
-                self.push(&format!("typedef struct {s} {s};", s = unit.symbol));
-            }
-            self.push("");
+    /// An enum typedef precedes every struct definition (a field may name an
+    /// enum), every slice typedef (an element may be an enum), and every
+    /// function body that reads an enum value.
+    pub(super) fn emit_enum_typedefs(&mut self) {
+        let enums: Vec<&'a EnumDecl> = self.enums.values().map(|info| info.decl).collect();
+        for decl in enums {
+            self.emit_enum(decl);
         }
+    }
+
+    /// Writes the forward typedef of every emitted struct.
+    ///
+    /// A non-generic struct is emitted once under its bare name; a generic
+    /// struct is emitted once per instantiation the program uses. The forward
+    /// typedef declares the tag alone, so a pointer field can name a struct
+    /// whose definition follows, and the slice typedefs can name struct
+    /// elements whose definitions follow.
+    pub(super) fn emit_struct_forward_typedefs(&mut self) {
+        let units = self.struct_units();
+        if units.is_empty() {
+            return;
+        }
+        for unit in &units {
+            self.push(&format!("typedef struct {s} {s};", s = unit.symbol));
+        }
+        self.push("");
+    }
+
+    /// Writes one definition per emitted struct, dependencies first.
+    ///
+    /// A definition is ordered after every struct it embeds by value, and
+    /// after the enum typedefs and slice typedefs it names.
+    pub(super) fn emit_struct_definitions(&mut self) {
+        let units = self.struct_units();
         for unit in units {
             self.push(&format!("struct {} {{", unit.symbol));
             for (name, ty, volatile) in &unit.fields {
@@ -394,10 +413,6 @@ impl<'a> Emitter<'a> {
             }
             self.push("};");
             self.push("");
-        }
-        let enums: Vec<&'a EnumDecl> = self.enums.values().map(|info| info.decl).collect();
-        for decl in enums {
-            self.emit_enum(decl);
         }
     }
 

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 09:18
-> **Progress**: 15/26 tasks (58%)
+> **Last Updated**: 2026-10-10 09:20
+> **Progress**: 17/26 tasks (65%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -271,8 +271,15 @@ ST-22 passes as the emission-order regression control and every earlier case sta
 **Reference**: [03-03](03-03-typedef-order.md) §Proposed Changes
 **Objective**: Emit every typedef before its uses.
 
-- [ ] 3.2.1 Reorder the emission phases: handle typedefs, enum typedefs, struct forward typedefs, slice typedefs, struct definitions — `compiler/src/codegen.rs`, `compiler/src/codegen/program.rs`
-- [ ] 3.2.2 Run the spec suite to green (ST-19 – ST-22); confirm the strict build and byte-identical re-emission; on any failure STOP and fix the implementation, never the test
+- [x] 3.2.1 Reorder the emission phases: handle typedefs, enum typedefs, struct forward typedefs, slice typedefs, struct definitions — `compiler/src/codegen.rs`, `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-10 09:20)
+- [x] 3.2.2 Run the spec suite to green (ST-19 – ST-22); confirm the strict build and byte-identical re-emission; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 09:20)
+
+**Green-phase evidence (2026-10-10 09:20)** — the suite passes 23/23: the three ordering
+instances build under the strict flags and run, and the closure control stays green. The emitted
+order is the required one (`typedef struct ClP ClP;` precedes `ClSlice_P`, which precedes
+`struct ClP { ... }`; the enum typedef and its member macros precede the struct forward typedef).
+Re-emitting a covered program is byte-identical, and `make check` is fully green (52 suites;
+`spec check: OK (27 files, 106 compile-fail tests)`).
 
 **Deliverables**:
 - The emission reorder

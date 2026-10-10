@@ -345,12 +345,21 @@ impl<'a> Emitter<'a> {
     }
 
     /// Runs the emission phases in order.
+    ///
+    /// Every emitted typedef precedes its uses: the fixed-width and handle
+    /// typedefs come first, the enum typedefs and struct forward typedefs
+    /// follow, the slice typedefs name element typedefs declared above, and
+    /// the struct definitions, closure environments, prototypes, and bodies
+    /// come after every type they name.
     fn run(mut self) -> String {
         self.report_generic_collisions();
         self.emit_header();
         self.out.push_str(self.profile.shim());
         self.emit_typedefs();
-        self.emit_aggregate_declarations();
+        self.emit_enum_typedefs();
+        self.emit_struct_forward_typedefs();
+        self.emit_slice_typedefs();
+        self.emit_struct_definitions();
         self.emit_closure_declarations();
         self.emit_prototypes();
         self.emit_globals();
