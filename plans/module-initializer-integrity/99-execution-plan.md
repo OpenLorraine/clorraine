@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 02:10
-> **Progress**: 0/34 tasks (0%)
+> **Last Updated**: 2026-10-11 01:31
+> **Progress**: 8/34 tasks (24%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -47,7 +47,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 1: Initializer call resolution
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `58ba6e800b15ca59ba8c7bea82a36bcb4f3e9bd5` (the `a97725b` tree)
 > **Lenses**: correctness + emission-integrity + semantics (lambda lifting)
 > **Reasoning**: high — two lowerers to keep in sync, symbol resolution, byte-identity pins
 
@@ -56,24 +56,24 @@ task-size criteria in the make-plan quality checklist)
 **Reference**: [03-01](03-01-initializer-call-resolution.md) §Proposed Changes · [AR-2, AR-3](00-ambiguity-register.md)
 **Objective**: Pin the four call-resolution shapes (strict build plus run) before any change.
 
-- [ ] 1.1.1 [spec-author] Write specification tests ST-F1 – ST-F4 — `compiler/tests/module_initializer_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: strict-build failures / unresolved callables at the batch base)
+- [x] 1.1.1 [spec-author] Write specification tests ST-F1 – ST-F4 — `compiler/tests/module_initializer_integrity_spec_test.rs` ✅ (completed: 2026-10-11 01:31)
+- [x] 1.1.2 Run the spec suite and record the red phase (expected: strict-build failures / unresolved callables at the batch base) ✅ (completed: 2026-10-11 01:31; red errors: empty callee, implicit `f`, undeclared `cl_pick__i32`, implicit `get`)
 
 ### Step 1.2: Implementation
 
 **Reference**: [03-01](03-01-initializer-call-resolution.md) §Proposed Changes
 **Objective**: Record init instances and lambdas in the own stage; resolve callees and receivers in the init lowerer.
 
-- [ ] 1.2.1 Extend the initializer walk (instances + lambda collection) — `compiler/src/own/generics.rs`, `compiler/src/own.rs`
-- [ ] 1.2.2 Lift capture-less init lambdas through the synthetic minimal context — `compiler/src/own/lower.rs`
-- [ ] 1.2.3 Resolve init callees (lifted lambda, func-typed global, generic instance) and dot receivers — `compiler/src/codegen/program.rs`
-- [ ] 1.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
-- [ ] 1.2.5 Regression: the existing init pins stay green; the seeded unaffected initializers re-emit byte-identically
+- [x] 1.2.1 Extend the initializer walk (instances + lambda collection) — `compiler/src/own/generics.rs`, `compiler/src/own.rs` ✅ (completed: 2026-10-11 01:31)
+- [x] 1.2.2 Lift capture-less init lambdas through the synthetic minimal context — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-11 01:31)
+- [x] 1.2.3 Resolve init callees (lifted lambda, func-typed global, generic instance) and dot receivers — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-11 01:31)
+- [x] 1.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-11 01:31; spec 4/4)
+- [x] 1.2.5 Regression: the existing init pins stay green; the seeded unaffected initializers re-emit byte-identically ✅ (completed: 2026-10-11 01:31; make check 59 suites)
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the Phase 1 implementation pins (lifted identity, mangled symbol, instance symbol, receiver argument) — `compiler/tests/module_initializer_integrity_impl_test.rs`
-- [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 1.3.1 Write the Phase 1 implementation pins (lifted identity, mangled symbol, instance symbol, receiver argument) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 01:31; impl 4/4)
+- [~] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 01:31; review dispatched)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 

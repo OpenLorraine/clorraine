@@ -1675,19 +1675,108 @@ impl<'a> Emitter<'a> {
                 {
                     return intrinsic;
                 }
+                // A lambda-literal callee resolves to the lifted function the
+                // ownership stage recorded for the node (a module initializer
+                // has no enclosing body to lift it).
+                let lambda_site = if let ExprKind::Lambda { .. } = &callee.kind {
+                    self.ownership
+                        .init_lambdas
+                        .get(&(callee.as_ref() as *const Expr as usize))
+                        .copied()
+                } else {
+                    None
+                };
+                if let Some(site) = lambda_site {
+                    let lambda_ty = self.expr_type(callee).unwrap_or_else(Ty::unknown);
+                    return Value::new(
+                        ty,
+                        ValueKind::ClosureCall {
+                            callable: Box::new(Value::new(
+                                lambda_ty,
+                                ValueKind::Closure {
+                                    site,
+                                    captures: Vec::new(),
+                                },
+                            )),
+                            args: args
+                                .iter()
+                                .map(|arg| self.lower_global(module, &arg.value))
+                                .collect(),
+                        },
+                    );
+                }
+                // A callee naming a func-typed module global is a call through
+                // the global's own C symbol, like the body spelling; a callee
+                // naming a func-typed field passes the field read as the
+                // callable, like the body's field-call path. The field's type
+                // resolves through the global's declared type even when the
+                // callee expression records none.
+                let global_symbol = self.init_func_global_symbol(module, callee);
+                let field_receiver = if global_symbol.is_none()
+                    && matches!(&callee.kind, ExprKind::Member { .. } | ExprKind::Qualified(_))
+                {
+                    let read = self.lower_global(module, callee);
+                    if matches!(self.resolved_value_ty(&read).kind, TyKind::Func(_)) {
+                        Some(Box::new(read))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 ValueKind::Call {
-                    callee: callee_name(callee).unwrap_or_default(),
+                    callee: global_symbol
+                        .unwrap_or_else(|| callee_name(callee).unwrap_or_default()),
                     type_args: type_args.iter().map(|ty| self.resolve_written(ty)).collect(),
                     args: args
                         .iter()
                         .map(|arg| self.lower_global(module, &arg.value))
                         .collect(),
-                    receiver: None,
+                    receiver: field_receiver,
+                }
+            }
+            ExprKind::Lambda { .. } => {
+                // A lifted initializer lambda renders its function identity,
+                // exactly as a body lambda's capture-less value does.
+                match self
+                    .ownership
+                    .init_lambdas
+                    .get(&(expr as *const Expr as usize))
+                {
+                    Some(site) => ValueKind::Closure {
+                        site: *site,
+                        captures: Vec::new(),
+                    },
+                    None => ValueKind::Aggregate,
                 }
             }
             _ => ValueKind::Aggregate,
         };
         Value { ty, kind }
+    }
+
+    /// The C symbol of a func-typed module global the callee names.
+    ///
+    /// A call through a module-level func-typed global goes through the
+    /// global's own storage, exactly as the body spelling does; the written
+    /// name alone has no C declaration.
+    fn init_func_global_symbol(&self, module: &Module, callee: &Expr) -> Option<String> {
+        let global = match &callee.kind {
+            ExprKind::Name(name) => {
+                crate::init_graph::resolve_name_global(self.loaded, module, name)
+            }
+            ExprKind::Qualified(name) => {
+                crate::init_graph::resolve_global(self.loaded, module, name)
+            }
+            _ => return None,
+        }?;
+        let identity = GlobalId::new(global.module, global.name);
+        let info = self.globals.get(&identity)?;
+        if matches!(info.ty.kind, TyKind::Func(_)) {
+            Some(self.global_symbol(&identity.module, &identity.name))
+        } else {
+            None
+        }
     }
 
     /// Lowers a module-level call that names a compiler intrinsic.

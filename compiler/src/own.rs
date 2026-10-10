@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     Arg, AssignOp, BinaryOp, Block, ConstStmt, ElseBranch, Expr, ExprKind, ForCStmt, ForInStmt,
-    ForInit, IfStmt, IntrinsicArg, Item, LambdaBody, LambdaParam, LetStmt, Mode, Param, ScalarType,
-    Stmt, SwitchLabel, SwitchStmt, TemplatePiece, UnaryOp,
+    ForInit, FuncDecl, IfStmt, IntrinsicArg, Item, LambdaBody, LambdaParam, LetStmt, Mode, Param,
+    ScalarType, Stmt, SwitchLabel, SwitchStmt, TemplatePiece, Type, TypeKind, UnaryOp,
 };
 use crate::borrow::{
     is_elided_view, is_handle_or_aggregate, is_lend_candidate, is_nullable_capable, is_view,
@@ -72,6 +72,13 @@ pub struct OwnershipOutput {
     pub functions: Vec<ir::Function>,
     /// The generic instantiation set and copy obligations.
     pub monomorphization: ir::Monomorphization,
+    /// The lifted site of each module-initializer lambda, keyed by the lambda
+    /// node's address.
+    ///
+    /// A module initializer has no enclosing body, so its capture-less lambdas
+    /// are lifted by the synthetic context in [`check`]; the emitter resolves
+    /// the initializer's callable through this map.
+    pub init_lambdas: BTreeMap<usize, usize>,
 }
 
 /// Checks the ownership, borrow, and FFI rules of every function body and
@@ -136,6 +143,37 @@ pub fn check(
             }
         }
     }
+    // A module initializer has no enclosing body, so the capture-less lambdas
+    // it spells are lifted here through a synthetic function context; the
+    // emitter resolves each one by the lambda node's address.
+    let mut init_lambdas: BTreeMap<usize, usize> = BTreeMap::new();
+    for module in loaded.modules.values() {
+        let values: Vec<&Expr> = module
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::GlobalLet(decl) => Some(&decl.value),
+                Item::GlobalConst(decl) => Some(&decl.value),
+                _ => None,
+            })
+            .collect();
+        if values.is_empty() {
+            continue;
+        }
+        let decl = init_decl(module);
+        let mut checker = FunctionChecker::new(
+            &program,
+            loaded,
+            module,
+            sema,
+            &decl,
+            diagnostics,
+            &mut next_lifted,
+        );
+        let (sites, lifted) = checker.lift_initializer_lambdas(&values);
+        init_lambdas.extend(sites);
+        functions.extend(lifted);
+    }
     let mut monomorphization = generics::collect(loaded, &program, sema);
     for requirement in duplicable_requirements {
         monomorphization.require_duplicable(requirement);
@@ -157,6 +195,32 @@ pub fn check(
     OwnershipOutput {
         functions,
         monomorphization,
+        init_lambdas,
+    }
+}
+
+/// A synthetic declaration naming one module's initializer context.
+///
+/// The checker machinery names its generated artifacts after the enclosing
+/// declaration; a module initializer has none, so the initializer-lambda lift
+/// runs under this placeholder. Its body is never lowered.
+fn init_decl(module: &crate::load::Module) -> FuncDecl {
+    FuncDecl {
+        exported: false,
+        name: format!("__cl_init_{}", module.name),
+        name_span: Span::default(),
+        type_params: Vec::new(),
+        params: Vec::new(),
+        returns: Type {
+            kind: TypeKind::Void,
+            nullable: false,
+            span: Span::default(),
+        },
+        body: Block {
+            statements: Vec::new(),
+            span: Span::default(),
+        },
+        span: Span::default(),
     }
 }
 

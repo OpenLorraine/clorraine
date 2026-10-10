@@ -35,8 +35,14 @@ pub fn collect(
     let mut mono = Monomorphization::default();
     for module in loaded.modules.values() {
         for item in &module.items {
-            if let Item::Func(decl) = item {
-                walk_block(&decl.body, program, sema, &mut mono);
+            match item {
+                Item::Func(decl) => walk_block(&decl.body, program, sema, &mut mono),
+                // A module initializer's calls instantiate like a body's: the
+                // initializer runs before `main`, so its instances must exist
+                // in the emitted program.
+                Item::GlobalLet(decl) => walk_expr(&decl.value, program, sema, &mut mono),
+                Item::GlobalConst(decl) => walk_expr(&decl.value, program, sema, &mut mono),
+                _ => {}
             }
         }
     }

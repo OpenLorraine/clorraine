@@ -408,6 +408,112 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(ty.clone(), ValueKind::Closure { site, captures })
     }
 
+    /// Lifts every capture-less lambda a module initializer spells.
+    ///
+    /// A module initializer has no enclosing body, so a lambda used there has
+    /// no lift; this walk gives each one a site from the same counter the body
+    /// path uses and lowers it through [`Self::lift_lambda`]. The emitter
+    /// resolves the initializer's callable through the returned node-address
+    /// map. A capture entry can only name a local (none exist in an
+    /// initializer) or a module-level name (already `E10406`), so only
+    /// capture-less lambdas reach the lift.
+    pub(super) fn lift_initializer_lambdas(
+        &mut self,
+        values: &'a [&'a Expr],
+    ) -> (Vec<(usize, usize)>, Vec<ir::Function>) {
+        let mut sites = Vec::new();
+        for value in values {
+            self.collect_initializer_lambdas(value, &mut sites);
+        }
+        (sites, std::mem::take(&mut self.lifted))
+    }
+
+    /// Records and lifts the lambda literals one initializer expression spells.
+    ///
+    /// A lambda body is not walked: the lift lowers it with the same body
+    /// machinery, so its own lambdas lift in place.
+    fn collect_initializer_lambdas(&mut self, expr: &'a Expr, sites: &mut Vec<(usize, usize)>) {
+        if let ExprKind::Lambda { params, body, .. } = &expr.kind {
+            let ty = self.ty(expr);
+            if let TyKind::Func(signature) = &ty.kind {
+                let site = *self.next_lifted;
+                *self.next_lifted += 1;
+                let param_tys: Vec<Ty> = signature
+                    .params
+                    .iter()
+                    .map(|param| param.ty.clone())
+                    .collect();
+                let ret = (*signature.returns).clone();
+                sites.push((expr as *const Expr as usize, site));
+                self.lift_lambda(site, params, &param_tys, ret, body);
+            }
+            return;
+        }
+        match &expr.kind {
+            ExprKind::Call { callee, args, .. } => {
+                self.collect_initializer_lambdas(callee, sites);
+                for arg in args {
+                    self.collect_initializer_lambdas(&arg.value, sites);
+                }
+            }
+            ExprKind::Index { base, index } => {
+                self.collect_initializer_lambdas(base, sites);
+                self.collect_initializer_lambdas(index, sites);
+            }
+            ExprKind::Member { base, .. } => self.collect_initializer_lambdas(base, sites),
+            ExprKind::Unary { operand, .. } => self.collect_initializer_lambdas(operand, sites),
+            ExprKind::Binary { left, right, .. } => {
+                self.collect_initializer_lambdas(left, sites);
+                self.collect_initializer_lambdas(right, sites);
+            }
+            ExprKind::Assign { target, value, .. } => {
+                self.collect_initializer_lambdas(target, sites);
+                self.collect_initializer_lambdas(value, sites);
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.collect_initializer_lambdas(condition, sites);
+                self.collect_initializer_lambdas(then_value, sites);
+                self.collect_initializer_lambdas(else_value, sites);
+            }
+            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+                self.collect_initializer_lambdas(value, sites)
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.collect_initializer_lambdas(&field.value, sites);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.collect_initializer_lambdas(element, sites);
+                }
+                if let Some(fill) = fill {
+                    self.collect_initializer_lambdas(fill, sites);
+                }
+            }
+            ExprKind::Unsafe(inner) => self.collect_initializer_lambdas(inner, sites),
+            ExprKind::IntrinsicCall { args, .. } => {
+                for arg in args {
+                    if let crate::ast::IntrinsicArg::Expr(inner) = arg {
+                        self.collect_initializer_lambdas(inner, sites);
+                    }
+                }
+            }
+            ExprKind::Template(pieces) => {
+                for piece in pieces {
+                    if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
+                        self.collect_initializer_lambdas(inner, sites);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Lowers one capture expression per recorded capture, in field order.
     ///
     /// A `Copy` capture reads the enclosing binding's value, so the environment
