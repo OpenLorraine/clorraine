@@ -244,8 +244,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The shared immutable-view predicate and its report.
     ///
     /// The rule fires only when the final projection selects an element and
-    /// the type that selection is applied to is `str` or `static str` — the
-    /// two view types whose byte storage is immutable. The message names the
+    /// the type that selection is applied to is `str`, `static str`, or
+    /// `cstring` — the view types whose byte storage is immutable, or, for
+    /// `cstring`, may name a literal's read-only bytes. The message names the
     /// binding, or `binding.field` when the selection's base ends in a field
     /// projection.
     fn report_immutable_view_write(
@@ -265,7 +266,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return false;
         }
         let prefix_ty = self.projection_ty(ty, prefix);
-        if !matches!(prefix_ty.kind, TyKind::Str | TyKind::StaticStr) {
+        if !matches!(
+            prefix_ty.kind,
+            TyKind::Str | TyKind::StaticStr | TyKind::CString
+        ) {
             return false;
         }
         let view = match prefix.last() {

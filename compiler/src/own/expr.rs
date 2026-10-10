@@ -961,19 +961,43 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// Reports the immutable-view rule for an update used as a value.
+    /// Routes an update used as a value through the statement-form write
+    /// checks.
     ///
     /// A value-position `x++` reads the place and stores the result back, so
     /// it contains the same element write the statement form judges through
-    /// the write path. The statement path evaluates its operand directly and
-    /// judges the write in `check_update`, so routing the value form through
-    /// this helper keeps exactly one report per update site.
+    /// the write path. The value runs through the same taxonomy — locals
+    /// through the read and write place checks (immutable `const`, read-only
+    /// parameter, immutable view, place state), globals through the `const`
+    /// check with its through-`raw` carve-out and the immutable-view check —
+    /// so an update reports exactly what the statement form reports, once per
+    /// site. The statement path evaluates its operand directly and judges the
+    /// write in `check_update`, so this helper keeps exactly one report per
+    /// update site.
     fn check_update_value_write(&mut self, operand: &'a Expr) {
         match self.place_target(operand) {
             Some(PlaceTarget::Local(id, projections)) => {
-                self.check_immutable_view_write(id, &projections, operand.span);
+                self.read_place(id, &projections, operand.span);
+                self.write_place(id, &projections, operand.span);
             }
             Some(PlaceTarget::Global(id, projections)) => {
+                let is_const = self
+                    .program
+                    .globals
+                    .get(&id)
+                    .is_some_and(|global| global.is_const);
+                // A field update through a `raw` global reaches the pointee,
+                // not the constant pointer binding.
+                let through_pointer = self.writes_through_raw_global(&id, &projections);
+                if is_const && !through_pointer {
+                    self.error(
+                        "E10023",
+                        format!("cannot assign to immutable '{}'", id.name),
+                        "declare it with `let` (mutable)",
+                        operand.span,
+                    );
+                    return;
+                }
                 self.check_global_immutable_view_write(&id, &projections, operand.span);
             }
             None => {

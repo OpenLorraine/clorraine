@@ -376,9 +376,19 @@ names a `static str` literal's bytes, which is exactly the class the ruling reje
 **Objective**: Route the value-position updates through the statement checks and add `cstring`
 to the immutable-view predicate.
 
-- [ ] 4.2.1 Route `check_update_value_write` through `read_place`+`write_place` (locals) and the const/immutable checks (globals), one report per site — `compiler/src/own/expr.rs`
-- [ ] 4.2.2 Add `TyKind::CString` to `report_immutable_view_write` — `compiler/src/own/place.rs`
-- [ ] 4.2.3 Run the spec suite and `./spec/check.sh` to green (ST-26 – ST-31); on any failure STOP and fix the implementation, never the test
+- [x] 4.2.1 Route `check_update_value_write` through `read_place`+`write_place` (locals) and the const/immutable checks (globals), one report per site — `compiler/src/own/expr.rs` ✅ (completed: 2026-10-10 18:47)
+- [x] 4.2.2 Add `TyKind::CString` to `report_immutable_view_write` — `compiler/src/own/place.rs` ✅ (completed: 2026-10-10 18:48)
+- [x] 4.2.3 Run the spec suite and `./spec/check.sh` to green (ST-26 – ST-31); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 18:52)
+
+**Implementation evidence (2026-10-10)** — the value-position update now runs the statement
+taxonomy: locals through `read_place` then `write_place` (the immutable `const` report, the
+read-only-locals through `write_place` and the immutable-view report, plus the place-state reads),
+globals through the `const` check with its through-`raw` carve-out and the immutable-view check.
+`report_immutable_view_write` now matches `TyKind::CString`. The four rejection shapes re-run:
+`const a: u8[2]` value update `E10023`; `const s: u8[]` value update `E10023`; the unmarked
+parameter `E10024`; the `cstring` element write `E10042`; the writable slice value update stays
+accepted and runs (exit 3). One report per site; `./spec/check.sh` OK; 33 specification cases
+green; full `make check` green (1547 tests) with no other suite affected.
 
 **Deliverables**:
 - The write-check routing and the predicate extension
