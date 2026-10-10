@@ -294,6 +294,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         ) {
             return None;
         }
+        // A callable field shadows the built-in name too: `h.len(5)` is a call
+        // through the field, not the length intrinsic.
+        if let Some(field_ty) = self.callee_field_type(callee) {
+            if matches!(field_ty.kind, TyKind::Func(_) | TyKind::Param(_)) {
+                return None;
+            }
+        }
         if name == "len" && type_args.is_empty() {
             // A fixed array's `len` is its structural extent: the length is a
             // compile-time constant, so nothing is bound and the receiver

@@ -647,20 +647,40 @@ func main(): i32 {
     assert_exit("len-member", &output, 38);
 }
 
-/// A structural `.len` is not a write target: a store, a compound store, and
-/// an update each report `E10221` instead of emitting nothing.
+/// A structural `.len` is not a write target: a store, a compound store, an
+/// update, a value-position update, and an address-of each report `E10221`
+/// instead of emitting nothing; a read-only parameter keeps its own report.
 #[test]
 fn should_reject_a_structural_len_write_target() {
-    for (tag, statement) in [
-        ("len-store", "xs.len = 4;"),
-        ("len-compound", "xs.len += 1;"),
-        ("len-update", "xs.len++;"),
+    for (tag, body) in [
+        ("len-store", "    xs.len = 4;\n    return i32(xs.len);"),
+        ("len-compound", "    xs.len += 1;\n    return i32(xs.len);"),
+        ("len-update", "    xs.len++;\n    return i32(xs.len);"),
+        ("len-value-update", "    let y: usize = xs.len++;\n    return i32(y);"),
+        (
+            "len-address",
+            "    unsafe {\n        let p = &xs.len;\n        if (p == null) {\n            return 1;\n        }\n    }\n    return 0;",
+        ),
     ] {
         let source = format!(
-            "module spec.eei.lentarget;\n\nfunc main(): i32 {{\n    let xs: i32[3] = [1, 2, 3];\n    {statement}\n    return i32(xs.len);\n}}\n"
+            "module spec.eei.lentarget;\n\nfunc main(): i32 {{\n    let xs: i32[3] = [1, 2, 3];\n{body}\n}}\n"
         );
         assert_rejected_once(tag, &source, "E10221", &[], &[]);
     }
+
+    let read_only = r#"module spec.eei.lenreadonly;
+
+func f(xs: i32[3]): i32 {
+    xs.len = 4;
+    return i32(xs.len);
+}
+
+func main(): i32 {
+    let m: i32[3] = [1, 2, 3];
+    return f(m);
+}
+"#;
+    assert_rejected_once("len-readonly", read_only, "E10024", &[], &["E10221"]);
 }
 
 /// A struct-returning function that falls off its end returns the zero value
@@ -876,4 +896,28 @@ func main(): i32 {
 "#;
     let output = run_host("bound-field", source);
     assert_exit("bound-field", &output, 6);
+}
+
+/// A callable field named like the builtin `len` is called through the field,
+/// not lowered as the length intrinsic.
+#[test]
+fn should_call_a_func_field_named_len_through_the_field() {
+    let source = r#"module spec.eei.funcfieldlen;
+
+struct Holder {
+    len: func(i32): i32;
+    tag: i32;
+}
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { len: addOne, tag: 7 };
+    return h.len(5) + h.tag;
+}
+"#;
+    let output = run_host("func-field-len", source);
+    assert_exit("func-field-len", &output, 13);
 }

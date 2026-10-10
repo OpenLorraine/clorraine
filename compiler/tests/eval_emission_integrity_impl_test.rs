@@ -1309,3 +1309,28 @@ func main(): i32 {
         "pin-coerce: a cstring literal is already a pointer"
     );
 }
+
+/// A callable field named `len` is called through the field value, not the
+/// builtin length intrinsic.
+#[test]
+fn should_call_a_func_field_named_len_through_the_field() {
+    let source = r#"module spec.eeiimpl.funcfieldlen;
+
+struct Holder {
+    len: func(i32): i32;
+    tag: i32;
+}
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    let h: Holder = Holder { len: addOne, tag: 7 };
+    return h.len(5) + h.tag;
+}
+"#;
+    let emitted = emit_host("pin-func-field-len", source);
+    assert_contains_all("pin-func-field-len", &emitted, &["(h.len)(5)"]);
+    assert_run_exit("pin-func-field-len-run", source, 13);
+}

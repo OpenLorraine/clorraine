@@ -292,6 +292,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if op.is_update() {
                     self.check_update_value_write(operand);
                 }
+                // A fixed array's structural `.len` is a compile-time extent,
+                // not a place: its address does not exist.
+                if matches!(op, UnaryOp::AddressOf) && self.structural_len_target(operand) {
+                    self.reject_structural_len_target(operand);
+                }
                 if matches!(op, UnaryOp::AddressOf) && self.unsafe_depth == 0 {
                     self.report_unsafe(UnsafeOp::AddressOf, expr.span);
                 }
@@ -664,18 +669,48 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // and cannot be written. Rejecting it keeps the diagnostic
                 // loud instead of emitting a store that has no target.
                 if self.structural_len_target(target) {
-                    self.error(
-                        "E10221",
-                        "left side of an assignment must be a place",
-                        "assign to a variable, field, or element",
-                        target.span,
-                    );
+                    self.reject_structural_len_target(target);
                 }
                 self.eval(target);
                 self.eval(value);
             }
         }
         self.check_value_into(value, &target_ty, value.span);
+    }
+
+    /// The local binding a structural-`.len` target roots at, when it does.
+    fn structural_len_base_binding(&self, target: &Expr) -> Option<usize> {
+        let head = match &target.kind {
+            ExprKind::Qualified(name) => name.segments.first()?,
+            ExprKind::Member { base, .. } => match &base.kind {
+                ExprKind::Name(name) => name,
+                _ => return None,
+            },
+            _ => return None,
+        };
+        self.lookup(head)
+    }
+
+    /// Reports the diagnostic for a target that is a fixed array's structural
+    /// `.len`.
+    ///
+    /// The length is a compile-time extent, not a place. A const or read-only
+    /// parameter base keeps the mode's own report, exactly as for any other
+    /// write to the binding; every other structural-`.len` target is the
+    /// not-a-place error.
+    fn reject_structural_len_target(&mut self, target: &'a Expr) {
+        if let Some(id) = self.structural_len_base_binding(target) {
+            if self.bindings[id].is_const || self.is_readonly_param(id) {
+                self.write_place(id, &[], target.span);
+                return;
+            }
+        }
+        self.error(
+            "E10221",
+            "left side of an assignment must be a place",
+            "assign to a variable, field, or element",
+            target.span,
+        );
     }
 
     /// True when a store target is a fixed array's structural `.len`.
@@ -918,12 +953,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A fixed array's structural `.len` is not an update target:
                 // the length is a compile-time extent and cannot be written.
                 if self.structural_len_target(operand) {
-                    self.error(
-                        "E10221",
-                        "left side of an assignment must be a place",
-                        "assign to a variable, field, or element",
-                        operand.span,
-                    );
+                    self.reject_structural_len_target(operand);
                     return;
                 }
                 self.eval(operand);
@@ -946,7 +976,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(PlaceTarget::Global(id, projections)) => {
                 self.check_global_immutable_view_write(&id, &projections, operand.span);
             }
-            None => {}
+            None => {
+                // A fixed array's structural `.len` is not an update target in
+                // a value position either.
+                if self.structural_len_target(operand) {
+                    self.reject_structural_len_target(operand);
+                }
+            }
         }
     }
 

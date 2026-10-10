@@ -127,3 +127,26 @@ run, the three `.len` writes reject with one `E10221`).
 
 **Review budget**: three review dispatches for Phase 2 (correctness, emission-integrity, memory)
 plus the scoped re-review of this fix round; every blocking finding fixed in-batch with pins.
+
+### Verification evidence (scoped re-review of the fix round)
+
+Both lenses confirmed the round's items resolved (the cstring literal builds; the slice/`str`/`String`
+coercions build and run; the `.len` writes reject; the `len(xs)`/`xs.len()`/projection folds build;
+the corpus diff is exactly the intended set, and the strict builds are now failure-free for every
+accepted corpus unit — 0 per profile, down from 1). The re-review raised two adjacent
+silent-wrong-value/invalid-C shapes with base-identical evidence:
+
+| # | Sev | Ruling |
+| - | --- | ------ |
+| Value-position structural-`.len` update | 🟠 → fixed | `let y: usize = xs.len++;` emitted `y = (3u)++;`. The value-position update check now routes the structural-`.len` target to the same not-a-place report. |
+| Address-of a structural `.len` | 🟠 → fixed | `unsafe { let p = &xs.len; }` (inferred) emitted `p = &(3u);`; the address-of path now reports the same not-a-place error. |
+| Read-only-parameter precedence | 🟡 → fixed | A write to `.len` through a read-only parameter now keeps its `E10024` (the mode report owns it), exactly as for any other write. |
+| A func-typed field named `len` | 🟠 → fixed | `h.len(5)` was silently lowered as the builtin intrinsic (emitting `0`, dropping the call); the intrinsic dispatch now defers to a callable field of that name. Pinned with a sibling field proving the call value. |
+
+The remaining report-only classes (a module-init field dot-call yielding 0; a `str`/slice at a
+`cstring` parameter) are filed as DEF-143 – DEF-144; the rarer emission gaps (an extern func value,
+a module-global callable field, a lambda capture of a fixed array, a `ClEnv_0` redefinition) are
+recorded here with base-identical evidence for a future triage.
+
+**Final Phase 2 verification**: 18 specification cases, 31 implementation pins, `./spec/check.sh`
+OK, full `make check` green (1528 tests).
