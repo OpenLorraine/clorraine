@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 12:41
-> **Progress**: 6/49 tasks (12%)
+> **Last Updated**: 2026-10-10 13:29
+> **Progress**: 7/49 tasks (14%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -116,7 +116,17 @@ materialize impure guard operands once, and reject the backing-less slice litera
 evidence.
 
 - [x] 1.3.1 Write the Phase 1 implementation pins (destination-carrying emission per position, the shared init local for the guard operand, byte-identical re-emission of unaffected initializers) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 12:46)
-- [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 13:28)
+
+**Phase 1 review evidence (2026-10-10)** — three dispatches per the AR-B16 matrix (correctness +
+emission-integrity + memory-safety). The full review found four blocking walk defects (the `||`
+left-decided result, hoisted lazy-position stores, two-pass source-order violation, the dropped
+enclosing guard and the left's re-evaluation); the two scoped re-reviews found the lost eager
+slice guard (ASan-confirmed out-of-bounds read), the `||`-under-guard conjunct, the unlanded
+collector arm, and the predicate blind to the slice arm. Every blocking finding is fixed
+in-batch with reproductions re-run and pins added; the memory audit found no phase-introduced
+defect; pre-existing classes outside the phase's rows are filed (DEF-130 – DEF-137). Full
+`make check` green (1510 tests); the specification suite runs green under `RDC_ASAN=1`.
 
 **Deliverables**:
 - Implementation pins for Phase 1
