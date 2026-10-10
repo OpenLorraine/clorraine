@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 12:06
-> **Progress**: 0/49 tasks (0%)
+> **Last Updated**: 2026-10-10 12:13
+> **Progress**: 2/49 tasks (4%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -70,8 +70,17 @@ task-size criteria in the make-plan quality checklist)
 **Objective**: Pin the six init positions, the single-evaluation run, and the literal rejection
 before any implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/eval_emission_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 – ST-6 fail against the broken emission; ST-7's `E10200` assertion fails while the `slice()` control passes)
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-7 — `compiler/tests/eval_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 12:13)
+- [x] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 – ST-6 fail against the broken emission; ST-7's `E10200` assertion fails while the `slice()` control passes) ✅ (completed: 2026-10-10 12:13)
+
+**Red-phase evidence (2026-10-10 12:13)** — the suite (7 tests) fails exactly as designed: 0
+passed, 7 failed. ST-1, ST-2, ST-4, and ST-5 fail with the destination-less calls (`too few
+arguments to function 'cl_spec_eei_…_mk'`), ST-3 with the array assignment (`assignment to
+expression with array type`), ST-6 with the double-evaluated guard (the second `idx()` call
+reads out of range, so the run faults with `error E11211: index out of range` and never reaches
+the expected exit), and ST-7's rejection is absent (the literal slice is accepted; its `slice()`
+control passes). The first run also caught two missing `slice` imports in the test sources, fixed
+before recording.
 
 **Deliverables**:
 - Specification suite with ST-1 – ST-7
