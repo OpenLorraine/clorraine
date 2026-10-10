@@ -200,7 +200,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     return;
                 }
                 let call = self.lower_call(callee, type_args, args);
-                let move_outs = self.take_move_out_places(&call.name, &call.args);
+                let move_outs = self.take_move_out_places(call.modes.as_deref(), &call.args);
                 self.emit(Statement::Call {
                     callee: call.name,
                     type_args: call.type_args,
@@ -380,6 +380,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return PreparedStore::Assign { value: rebound };
             }
         }
+        // A view bound to a projection of fresh ownerless storage — a call
+        // result, a struct literal, or a conditional of either — binds the
+        // backing to a scope-owned local, so the view reads storage whose
+        // release the binding's scope owns. The bound local is re-assigned
+        // per evaluation, and each assignment releases the value the previous
+        // one stored. A chain that already roots at a place, or a value that
+        // owns nothing, is returned unchanged.
+        let lowered = if is_view(ty) && !self.projects_from_place(&lowered) {
+            self.bind_ownerless_projection_root(lowered)
+        } else {
+            lowered
+        };
         PreparedStore::Assign { value: lowered }
     }
 
@@ -939,7 +951,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if (!self.sema.table.duplicable(&returns) || maybe_owning) && !returns.is_unknown() {
                 if let Some(target) = self.place_target(value) {
                     if maybe_owning {
-                        self.mark_moved_if_owning(target, span);
+                        self.mark_escape_move_if_owning(target, span);
                     } else {
                         self.move_target(target, span);
                     }
@@ -965,7 +977,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // maybe-owning return records the duty instead.
                         for source in sources {
                             if maybe_owning {
-                                self.mark_moved_if_owning(source, span);
+                                self.mark_escape_move_if_owning(source, span);
                             } else {
                                 self.move_target(source, span);
                             }

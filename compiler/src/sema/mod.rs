@@ -167,12 +167,6 @@ struct Checker<'a, 'd> {
     /// non-`void` value type here, so a block body gets the same return type an
     /// expression body would.
     lambda_returns: Vec<Option<Ty>>,
-    /// Whether each lambda currently being checked has an expression body,
-    /// innermost last. The per-instance capture-move duty is recorded only
-    /// for expression bodies: a block body's capture move is already rejected
-    /// at the declaration by the ownership stage's lent-storage rule, so
-    /// recording it would report the same site twice.
-    lambda_expr_bodies: Vec<bool>,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
     /// The selected profile, so profile-surface rules can be reported here.
@@ -207,7 +201,6 @@ impl<'a, 'd> Checker<'a, 'd> {
             lambda_floors: Vec::new(),
             lambda_listed: Vec::new(),
             lambda_returns: Vec::new(),
-            lambda_expr_bodies: Vec::new(),
             diagnostics,
             profile,
         }
@@ -695,5 +688,28 @@ pub(super) fn place_root_name(expr: &Expr) -> Option<&str> {
         ExprKind::Qualified(name) => name.segments.first().map(String::as_str),
         ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => place_root_name(base),
         _ => None,
+    }
+}
+
+/// Collects every root name a conditional move site may consume.
+///
+/// A plain place roots at one name, but a conditional selects one of its arms
+/// at run time, so a move out of `c ? x : y` may consume either arm's root; a
+/// nested conditional recurses. This mirrors the ownership stage's
+/// conditional move sources, so the capture rules and the per-instance duty
+/// judge the same shapes.
+pub(super) fn place_root_names<'e>(expr: &'e Expr, roots: &mut Vec<&'e str>) {
+    if let ExprKind::Conditional {
+        then_value,
+        else_value,
+        ..
+    } = &expr.kind
+    {
+        place_root_names(then_value, roots);
+        place_root_names(else_value, roots);
+        return;
+    }
+    if let Some(root) = place_root_name(expr) {
+        roots.push(root);
     }
 }

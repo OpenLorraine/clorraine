@@ -160,6 +160,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // that keeps a shadowing or sanitized local distinct from any module
         // function of the same written name.
         let mut local_callee = false;
+        let mut local_callee_id: Option<usize> = None;
         let name = match &callee.kind {
             ExprKind::Name(written) => match self.lookup(written) {
                 Some(id)
@@ -169,6 +170,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     ) =>
                 {
                     local_callee = true;
+                    local_callee_id = Some(id);
                     // Calling the binding reads it, so an unused-local warning
                     // would be spurious.
                     self.bindings[id].used = true;
@@ -211,15 +213,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // the callee never does. A `take` argument is skipped: the callee owns
         // it, and the move-out empties the caller's binding. A call through a
         // `func`-typed field has no declared parameter modes, so the same-named
-        // global function's modes must not be applied to it; a func-typed
-        // local or parameter has none either.
-        if receiver.is_none() && !local_callee {
-            if let Some(modes) = self.callee_modes(&name) {
-                for (value, mode) in values.iter_mut().zip(modes) {
-                    let pending =
-                        std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
-                    *value = self.materialize_owned_argument(pending, mode == Mode::Take);
-                }
+        // global function's modes must not be applied to it; a `func`-typed
+        // local, parameter, or capture carries its own signature's modes, so
+        // its owned temporary arguments bind and release like a module call's.
+        let modes: Option<Vec<Mode>> = if receiver.is_none() {
+            match local_callee_id {
+                Some(id) => match &self.bindings[id].ty.kind {
+                    TyKind::Func(signature) => Some(
+                        signature
+                            .params
+                            .iter()
+                            .map(|param| param.mode)
+                            .collect::<Vec<Mode>>(),
+                    ),
+                    _ => None,
+                },
+                None => self.callee_modes(&name),
+            }
+        } else {
+            None
+        };
+        if let Some(modes) = &modes {
+            for (value, mode) in values.iter_mut().zip(modes) {
+                let pending =
+                    std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                *value = self.materialize_owned_argument(pending, *mode == Mode::Take);
             }
         }
         LoweredCall {
@@ -227,6 +245,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             name,
             type_args: resolved,
             args: values,
+            modes,
         }
     }
 
@@ -407,15 +426,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// The places a call moves out of through non-duplicable `take` arguments.
     ///
-    /// A duplicable `take` argument is copied, so the caller keeps its value;
-    /// a handle or aggregate is moved and its place must be emptied after the
-    /// call. A plain place is the caller's binding; a conditional argument (or
-    /// any materialized operand) travels through a compiler temporary, and the
+    /// The modes are the callee's declared parameter modes: a module or `ffi`
+    /// callee's from its declaration, a `func`-typed binding's from its own
+    /// signature. A call through a field has none. A duplicable `take`
+    /// argument is copied, so the caller keeps its value; a handle or
+    /// aggregate is moved and its place must be emptied after the call. A
+    /// plain place is the caller's binding; a conditional argument (or any
+    /// materialized operand) travels through a compiler temporary, and the
     /// caller's copy of the value in that temporary is emptied the same way
-    /// once the callee owns it. A fresh call result already transfers ownership
-    /// and has no caller storage to clear.
-    pub(super) fn take_move_out_places(&self, name: &str, args: &[Value]) -> Vec<Place> {
-        let Some(modes) = self.callee_modes(name) else {
+    /// once the callee owns it. A fresh call result already transfers
+    /// ownership and has no caller storage to clear.
+    pub(super) fn take_move_out_places(
+        &self,
+        modes: Option<&[Mode]>,
+        args: &[Value],
+    ) -> Vec<Place> {
+        let Some(modes) = modes else {
             return Vec::new();
         };
         let mut places = Vec::new();
@@ -423,7 +449,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A maybe-owning argument travels as a move for an owning instance
             // and as a copy for a duplicable one; the emitted move-out chooses
             // by the substituted type.
-            if mode != Mode::Take
+            if *mode != Mode::Take
                 || (self.sema.table.duplicable(&arg.ty) && !self.maybe_owns(&arg.ty))
             {
                 continue;
@@ -463,4 +489,12 @@ pub(super) struct LoweredCall {
     pub type_args: Vec<Ty>,
     /// Lowered arguments in source order.
     pub args: Vec<Value>,
+    /// The callee's declared parameter modes, when this call has any.
+    ///
+    /// A module or `ffi` callee's modes come from its declaration, a
+    /// `func`-typed binding's from its own signature; a field call has none.
+    /// The modes drive the argument materialization and the post-call
+    /// move-outs, so a `func`-typed binding's call treats its owned temporary
+    /// arguments and `take` arguments exactly like a module call's.
+    pub modes: Option<Vec<Mode>>,
 }

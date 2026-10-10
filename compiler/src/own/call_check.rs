@@ -44,6 +44,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return;
             }
         }
+        // A name that resolves to a `func`-typed local, parameter, or capture
+        // is called through its binding: the binding's own signature types the
+        // call and carries its parameter modes, and a same-named module
+        // function keeps its own identity. The arguments are walked like a
+        // module call's, so a `take` argument is marked moved and a `borrow`
+        // argument records its lend.
+        if let Some(id) = self.func_binding_callee(callee) {
+            self.bindings[id].used = true;
+            let params: Vec<(Mode, Ty)> = match &self.bindings[id].ty.kind {
+                TyKind::Func(signature) => signature
+                    .params
+                    .iter()
+                    .map(|param| (param.mode, param.ty.clone()))
+                    .collect(),
+                _ => return,
+            };
+            let name = self.callee_name(callee).unwrap_or_default();
+            self.check_marker_matches(&name, args, &params);
+            let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+            let mut lent: BTreeSet<usize> = BTreeSet::new();
+            self.check_arguments(args, &params, &effective, span, &mut lent);
+            return;
+        }
         let callee_name = self.callee_name(callee);
         let Some(name) = callee_name else {
             self.eval(callee);
@@ -209,6 +232,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Member { name, .. } => Some(name.clone()),
             _ => None,
         }
+    }
+
+    /// The binding a callee name resolves to when that binding is callable.
+    ///
+    /// A local, a parameter, or a lambda capture can hold a `func` value, and
+    /// such a call goes through the binding's own signature. A module function
+    /// of the same written name must keep its own identity, so this resolves
+    /// through the scope lookup rather than the module tables.
+    pub(super) fn func_binding_callee(&self, callee: &Expr) -> Option<usize> {
+        let ExprKind::Name(written) = &callee.kind else {
+            return None;
+        };
+        let id = self.lookup(written)?;
+        matches!(self.bindings[id].ty.kind, TyKind::Func(_)).then_some(id)
     }
 
     /// Reports `E10039` when a call-site marker contradicts a declaration.
@@ -393,7 +430,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !self.sema.table.duplicable(arg_ty) || maybe_owning {
                     if let Some(target) = target {
                         if maybe_owning {
-                            self.mark_moved_if_owning(target, span);
+                            self.mark_escape_move_if_owning(target, span);
                         } else {
                             self.move_target(target, span);
                         }
@@ -419,7 +456,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             // argument records the duplicability duty instead.
                             for source in sources {
                                 if maybe_owning {
-                                    self.mark_moved_if_owning(source, span);
+                                    self.mark_escape_move_if_owning(source, span);
                                 } else {
                                     self.move_target(source, span);
                                 }

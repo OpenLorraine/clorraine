@@ -126,7 +126,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // parameter modes, so it never moves an argument out even
                     // when a same-named global function would.
                     let move_outs = if call.receiver.is_none() {
-                        self.take_move_out_places(&call.name, &call.args)
+                        self.take_move_out_places(call.modes.as_deref(), &call.args)
                     } else {
                         Vec::new()
                     };
@@ -1442,6 +1442,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // until the statement ends, so it is bound to a scope local. A
             // result that owns nothing to release is left inline.
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                    self.materialize_owned_argument(value, false)
+                } else {
+                    value
+                }
+            }
+            // A struct literal with owning fields is a storage root of its
+            // own: its C compound literal has block lifetime and no cleanup,
+            // so a projection of it must read through a bound local the
+            // binding's scope releases.
+            ValueKind::StructLit { .. } => {
                 let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
                 if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
                     self.materialize_owned_argument(value, false)

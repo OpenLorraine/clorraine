@@ -57,6 +57,7 @@ impl Checker<'_, '_> {
                             self.reject_ephemeral_storage(&value_ty, value.span);
                         }
                         self.reject_capture_move(value);
+                        self.record_generic_capture_move(value);
                         self.record_lambda_return(&value_ty);
                     }
                     // A block-bodied lambda infers its return type from its

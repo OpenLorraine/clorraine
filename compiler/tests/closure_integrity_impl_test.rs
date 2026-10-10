@@ -490,13 +490,12 @@ func main(): i32 {
     );
 }
 
-/// A block-bodied capture move keeps its single declaration-site report.
+/// A block-bodied capture take reports the ruled capture-move diagnostic once.
 ///
-/// The ownership stage already rejects a block body that consumes its
-/// by-value capture at the declaration, so the per-instance duty stays
-/// silent there: the shapes report exactly one `E10034`, never the duty's
-/// `E10401` on top, while the expression-bodied form reports the duty's
-/// `E10401` alone.
+/// The capture-move duty covers a block body's take exactly as it covers the
+/// expression-bodied form, and the ownership stage's lend-storage rule is
+/// suppressed for an escaping by-value capture, so the shape reports exactly
+/// one `E10401` naming the capture — for both body forms.
 #[test]
 fn should_keep_one_report_when_a_block_body_consumes_a_capture() {
     assert_rejected(
@@ -522,8 +521,8 @@ func main(): i32 {
     return outer<Wrap>(w);
 }
 "#,
-        &["E10034"],
-        &["'x'"],
+        &["E10401"],
+        &["cannot move captured 'x'"],
     );
     assert_rejected(
         "expr-take-report",

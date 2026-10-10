@@ -700,7 +700,15 @@ impl<'a> Emitter<'a> {
     /// first), after the value has been stored and its statement temporaries
     /// released. A scope with no remaining cleanup emits nothing — skipping it
     /// keeps the emitted bytes free of a lone line directive.
+    ///
+    /// This cleanup can preempt the return it belongs to: a deferred `break`
+    /// or `continue` in one of these scopes jumps out of the enclosing loop or
+    /// switch, so the value just stored stays in the result variable while
+    /// control reaches a later ordinary store. The release gate is armed
+    /// before the scopes run, so that later store releases the abandoned
+    /// owner.
     fn emit_deferred_return_cleanup(&mut self, deferred: &[usize], ctx: FlowContext) {
+        self.arm_preempted_result_release(deferred);
         for scope in deferred {
             let remaining = match self.active_frame_position(*scope) {
                 Some(position) => position,
@@ -710,6 +718,41 @@ impl<'a> Emitter<'a> {
                 continue;
             }
             self.emit_scope_inline(*scope, ctx);
+        }
+    }
+
+    /// Arms the superseded-result release when a return's cleanup can preempt
+    /// the return itself.
+    ///
+    /// A scope whose deferred bodies carry a control-flow out-edge runs its
+    /// cleanup inline at each exit edge, so a return that leaves it stores its
+    /// value and then runs a deferred `break` or `continue` that jumps away
+    /// from the return. The pending value is abandoned in the result variable;
+    /// arming the gate makes the next ordinary store release it, exactly as a
+    /// deferred result store does. A return whose cleanup carries no such edge
+    /// leaves the gate untouched, so its emission stays byte-identical, and a
+    /// function whose return type needs no drop is never armed.
+    fn arm_preempted_result_release(&mut self, deferred: &[usize]) {
+        if self.deferred_result_store || deferred.is_empty() {
+            return;
+        }
+        if self.result_var.is_none() {
+            return;
+        }
+        let ret_ty = self.return_ty.clone();
+        if !self.needs_drop(&ret_ty) {
+            return;
+        }
+        let Some(function) = self.function else {
+            return;
+        };
+        let can_preempt = deferred.iter().any(|scope| {
+            self.scope_actions
+                .get(scope)
+                .is_some_and(|actions| defer_region_has_out_edge(function, actions))
+        });
+        if can_preempt {
+            self.deferred_result_store = true;
         }
     }
 

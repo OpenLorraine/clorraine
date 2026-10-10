@@ -470,12 +470,58 @@ ordinary return). One syntax finding: `len` is a reserved built-in and cannot be
 **Reference**: [03-05](03-05-ownership-lifetimes.md) §Proposed Changes
 **Objective**: Close each memory hole and the capture-duty gaps.
 
-- [ ] 5.2.1 Apply the func-value call's own modes and materialize owned temporary arguments — `compiler/src/own/call.rs`, `compiler/src/own/call_check.rs`
-- [ ] 5.2.2 Suppress the not-lend duty for capture bindings and record the capture-move duty at the block return and take sites; update the closure batch's block-body pin deliberately — `compiler/src/own/place.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/sema/call.rs`, `compiler/src/sema/expr.rs`
-- [ ] 5.2.3 Recurse conditional arms in the capture rejection and the recorder with per-site dedupe — `compiler/src/sema/expr.rs`
-- [ ] 5.2.4 Arm the superseded-result gate for an ordinary store whose deferred scopes can preempt (byte-identity where unreachable) — `compiler/src/codegen/cleanup.rs`
-- [ ] 5.2.5 Give a view bound from an owned projection temporary a binding-scoped owner, with `StructLit` descent in the temp-owner walk — `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
-- [ ] 5.2.6 Run the spec suite to green (ST-32 – ST-41) and the host ASan probes for the DEF-95, DEF-96, DEF-125, and DEF-127 shapes; on any failure STOP and fix the implementation, never the test
+- [x] 5.2.1 Apply the func-value call's own modes and materialize owned temporary arguments — `compiler/src/own/call.rs`, `compiler/src/own/call_check.rs` ✅ (completed: 2026-10-10 21:15)
+
+**Evidence** — `LoweredCall` carries the callee's declared modes (`modes: Option<Vec<Mode>>`): a module
+or `ffi` callee's from its declaration, a `func`-typed binding's from its own signature, a field call's
+none. `lower_call` applies the argument materialization loop from that vector, and
+`take_move_out_places` takes the modes instead of a name lookup, so a func-value call's owned temporary
+argument binds and releases and its `take` argument moves out like a module call's. The check walk
+gained `func_binding_callee` and walks a binding call's arguments through `check_arguments`, while the
+module-callee identity gate stays: a same-named module function never claims a binding call. Probe:
+`wrap(copier)` with `f(stringOf("x"))` exits 1 with no ASan report (base: 10-byte leak).
+- [x] 5.2.2 Suppress the not-lend duty for capture bindings and record the capture-move duty at the block return and take sites; update the closure batch's block-body pin deliberately — `compiler/src/own/place.rs`, `compiler/src/sema/stmt.rs`, `compiler/src/sema/call.rs`, `compiler/src/sema/expr.rs` ✅ (completed: 2026-10-10 21:20)
+
+**Evidence** — `mark_escape_move_if_owning` marks a return or `take` move; at those sites a by-value
+capture (`is_by_value_capture_base`) skips the lend-storage duty, whose report named the capture a
+borrowed parameter, and the capture-move recorder reports the ruled `E10401` after substitution. Every
+non-escape move keeps the lend-storage rejection: a capture moved into an owned local is still rejected
+(safely, with the incumbent wording — the capture-move recorder does not cover that site). The
+expression-body gate on the recorder is gone; the block `return` arm records. The closure batch's
+block-take pin was updated deliberately: one `E10401` naming `x`, never the duty's `E10034` on top.
+Probes: block return, block take, concrete return, and the expression-body take all report one
+`E10401`; the duplicable control still runs.
+- [x] 5.2.3 Recurse conditional arms in the capture rejection and the recorder with per-site dedupe — `compiler/src/sema/expr.rs` ✅ (completed: 2026-10-10 21:25)
+
+**Evidence** — `place_root_names` walks a conditional's arms like the ownership stage's conditional move
+sources; `reject_capture_move` reports once per site for the first borrowed capture found, and
+`record_generic_capture_move` dedupes the roots per capture, so `C ? x : x` records one requirement and
+the audit reports one `E10401`. Probes: the generic, concrete, and take-argument conditional captures
+previously double-freed at run time and now report one `E10401` each; `outer<i32>` still runs (exit 42).
+- [x] 5.2.4 Arm the superseded-result gate for an ordinary store whose deferred scopes can preempt (byte-identity where unreachable) — `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-10-10 21:35)
+
+**Evidence** — `arm_preempted_result_release` runs before a value return's inline cleanup: when one of
+its deferred scopes carries an out-edge defer, the existing supersede gate is armed, so the next
+ordinary result store releases the abandoned owner. The probe (a deferred `break` preempting a stored
+ordinary return) now emits `if (__cl_ret) { FreeString(__cl_ret); } __cl_ret = NULL;` before the
+superseding store and exits 2 with no ASan report (base: 11-byte leak). A return whose cleanup carries
+no out-edge and a function whose type needs no drop leave the gate untouched, so their emission is
+byte-identical; the plain-return control still emits its direct return.
+- [x] 5.2.5 Give a view bound from an owned projection temporary a binding-scoped owner, with `StructLit` descent in the temp-owner walk — `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-10-10 21:45)
+
+**Evidence** — `prepare_store` rebinds a view target's ownerless projection chain through
+`bind_ownerless_projection_root`, whose `StructLit` arm binds a literal with owning fields to a
+body-scope local through the existing owner machinery; the emitted owner is re-assigned per evaluation
+and each assignment releases the previous value (the O3 rule), with the final release on the function
+cleanup. The view carries a loan of the owner binding (`lowered_root_binding`). Probes: the struct
+literal, the call-result, and the nested literal spellings exit 6 with no ASan report (base: 33-byte
+leak each); the `String`-destination control is unchanged; `make check` green (1560 tests).
+- [x] 5.2.6 Run the spec suite to green (ST-32 – ST-41) and the host ASan probes for the DEF-95, DEF-96, DEF-125, and DEF-127 shapes; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 21:50)
+
+**Evidence** — `RDC_ASAN=1 cargo test --test eval_emission_integrity_spec_test`: **43 passed, 0
+failed** (the three leak oracles and all rejection cases are green under ASan). Full `make check`
+green (1560 tests), no suite regressed; the only deliberate assertion update is the closure batch's
+block-take pin (E10034 -> E10401 per the ruling).
 
 **Deliverables**:
 - The five ownership/release fixes

@@ -431,7 +431,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// legal only for a duplicable instance, and the `borrow T?` out-param slot
     /// stays exempt.
     pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_from(target, span, false);
+        self.mark_moved_if_owning_at(target, span, false, false);
+    }
+
+    /// Records a move whose value leaves the enclosing frame: a `return` or a
+    /// `take` argument.
+    ///
+    /// A by-value lambda capture that escapes is judged by the capture-move
+    /// rule after substitution (`E10401`), which the semantic stage records at
+    /// the same sites; the lend-storage duty would name the capture a borrowed
+    /// parameter (`E10034`) instead, so it is skipped for a by-value capture
+    /// here. Every other escape keeps the lend-storage duty.
+    pub(super) fn mark_escape_move_if_owning(&mut self, target: PlaceTarget, span: Span) {
+        self.mark_moved_if_owning_at(target, span, false, true);
     }
 
     /// Records a maybe-owning move whose destination is a writable parameter
@@ -442,16 +454,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// only for these moves; every other destination keeps the strict
     /// judgment.
     pub(super) fn mark_moved_into_slot_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_from(target, span, true);
+        self.mark_moved_if_owning_at(target, span, true, false);
     }
 
-    /// Records a value-consuming move of a maybe-owning place, flagging
-    /// whether the destination is a writable parameter slot.
-    fn mark_moved_if_owning_from(
+    /// Records a value-consuming move of a maybe-owning place.
+    ///
+    /// `stores_into_slot` flags a writable-parameter-slot destination for the
+    /// out-slot carve-out; `escape` flags a destination outside the enclosing
+    /// frame (a return or a `take` argument), where a by-value capture's move
+    /// is judged by the capture-move rule instead of the lend-storage duty.
+    fn mark_moved_if_owning_at(
         &mut self,
         target: PlaceTarget,
         span: Span,
         stores_into_slot: bool,
+        escape: bool,
     ) {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
@@ -464,6 +481,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let lend = binding.kind == BindingKind::Param
                 && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow);
             if !lend {
+                return;
+            }
+            // A by-value capture that escapes is judged by the capture-move
+            // rule after substitution; the capture-move recorder covers the
+            // return and take sites, so the lend duty would only add the
+            // wrong report. A move into an owned local stays with the lend
+            // duty, which the capture-move recorder does not cover.
+            if escape && is_by_value_capture_base(&binding.base) {
                 return;
             }
             let writable_source = binding.mode == Mode::Borrow;
@@ -648,8 +673,40 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             for temp in self.lowered_temp_owners(lowered) {
                 owners.insert(LoanOwner::Temp(temp));
             }
+            // A chain the store re-rooted at a bound owner reads through that
+            // local, so the view carries a loan of it exactly as it would for a
+            // chain that named the place in source.
+            if let Some(id) = self.lowered_root_binding(lowered) {
+                owners.insert(LoanOwner::Binding(id));
+            }
         }
         owners
+    }
+
+    /// The binding a lowered projection chain roots at, when its root is a
+    /// local place.
+    ///
+    /// A view derivation the store rebinding re-rooted reads through the owner
+    /// local that binding declared, so the view must carry a loan of it; the
+    /// liveness pass then treats the owner's cleanup as the release the view's
+    /// uses depend on, exactly as it does for a view of a named place. A chain
+    /// that roots at anything else — a temporary, a module global, or fresh
+    /// storage — names no binding here.
+    fn lowered_root_binding(&self, value: &Value) -> Option<usize> {
+        match &value.kind {
+            ValueKind::Place(place) => match &place.base {
+                ir::PlaceBase::Local(name) => self
+                    .bindings
+                    .iter()
+                    .position(|binding| binding.ir_name == *name),
+                _ => None,
+            },
+            ValueKind::Index { base, .. } | ValueKind::Member { base, .. } => {
+                self.lowered_root_binding(base)
+            }
+            ValueKind::Cast { value: inner, .. } => self.lowered_root_binding(inner),
+            _ => None,
+        }
     }
 
     /// Collects the owners the source expression derives from, arm by arm.
@@ -1105,6 +1162,22 @@ fn element_index(expr: &Expr) -> Option<usize> {
         ExprKind::Int(value) => usize::try_from(*value).ok(),
         _ => None,
     }
+}
+
+/// True when a place base overrides to a by-value lambda capture.
+///
+/// A lifted lambda binds its captures at environment fields: a by-value
+/// capture owns its field, while a `[borrow x]` capture points at the
+/// enclosing frame. Such a capture's storage is the environment, not a
+/// parameter, so the lend-storage rules must not name it a borrowed parameter.
+fn is_by_value_capture_base(base: &Option<ir::PlaceBase>) -> bool {
+    matches!(
+        base,
+        Some(ir::PlaceBase::EnvField {
+            by_pointer: false,
+            ..
+        })
+    )
 }
 
 /// The identity of a module-level binding the name resolver resolved.

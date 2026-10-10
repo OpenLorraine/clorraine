@@ -204,8 +204,6 @@ impl Checker<'_, '_> {
         self.lambda_captures.push(infos.clone());
         self.lambda_floors.push(floor);
         self.lambda_listed.push(listed);
-        self.lambda_expr_bodies
-            .push(matches!(body, LambdaBody::Expr(_)));
         let returns = match body {
             LambdaBody::Expr(value) => {
                 // An expression body may be `void` (for example a lambda that
@@ -229,7 +227,6 @@ impl Checker<'_, '_> {
                 inferred.unwrap_or_else(Ty::void)
             }
         };
-        self.lambda_expr_bodies.pop();
         self.lambda_listed.pop();
         self.lambda_floors.pop();
         self.lambda_captures.pop();
@@ -266,25 +263,30 @@ impl Checker<'_, '_> {
         }
     }
 
-    /// Reports `E10401` when a lambda returns a borrowed capture by value.
+    /// Reports `E10401` when a lambda moves a borrowed capture by value.
     ///
     /// A copy capture is a value the lambda owns, so returning it is fine. A
     /// read-only or writable borrow only lends the enclosing binding, so moving
-    /// it out of the lambda is not allowed.
+    /// it out of the lambda is not allowed. A conditional selects one arm at
+    /// run time, so its arms are walked like the ownership stage's conditional
+    /// move sources; one report names the first borrowed capture found, so a
+    /// site reports once.
     pub(super) fn reject_capture_move(&mut self, value: &Expr) {
-        let Some(root) = super::place_root_name(value) else {
-            return;
-        };
-        if matches!(
-            self.capture_mode(root),
-            Some(CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow)
-        ) {
-            self.error(
-                "E10401",
-                format!("cannot move captured '{root}' in a lambda"),
-                "copy the value at capture time",
-                value.span,
-            );
+        let mut roots = Vec::new();
+        super::place_root_names(value, &mut roots);
+        for root in roots {
+            if matches!(
+                self.capture_mode(root),
+                Some(CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow)
+            ) {
+                self.error(
+                    "E10401",
+                    format!("cannot move captured '{root}' in a lambda"),
+                    "copy the value at capture time",
+                    value.span,
+                );
+                return;
+            }
         }
     }
 
@@ -297,41 +299,47 @@ impl Checker<'_, '_> {
     /// enclosing binding. The site is recorded and the per-instance audit
     /// applies the concrete judgment after substitution.
     ///
-    /// Only an expression-bodied lambda records the duty: a block body's
-    /// capture move is already rejected at the declaration by the ownership
-    /// stage's lent-storage rule, so recording it would report the same site
-    /// twice.
+    /// Every body form records the duty: the expression body's value and a
+    /// block body's `return` both reach this walk, and a `take` argument is
+    /// recorded at its call site. A conditional selects one arm at run time,
+    /// so its arms are walked like the ownership stage's conditional move
+    /// sources; one record per capture keeps the site's report single.
     pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
-        if !self.lambda_expr_bodies.last().copied().unwrap_or(false) {
-            return;
-        }
-        let Some(root) = super::place_root_name(value) else {
-            return;
-        };
-        if !matches!(self.capture_mode(root), Some(CaptureMode::Copy)) {
+        let mut roots = Vec::new();
+        super::place_root_names(value, &mut roots);
+        if roots.is_empty() {
             return;
         }
         let Some(function) = self.function_name.clone() else {
             return;
         };
-        let ty = self.lambda_captures.iter().rev().find_map(|captures| {
-            captures
-                .iter()
-                .find(|info| info.name == root)
-                .map(|info| info.ty.clone())
-        });
-        let Some(ty) = ty else {
-            return;
-        };
-        if !crate::types::contains_param(&ty) {
-            return;
+        let mut seen: BTreeSet<&str> = BTreeSet::new();
+        for root in roots {
+            if !seen.insert(root) {
+                continue;
+            }
+            if !matches!(self.capture_mode(root), Some(CaptureMode::Copy)) {
+                continue;
+            }
+            let ty = self.lambda_captures.iter().rev().find_map(|captures| {
+                captures
+                    .iter()
+                    .find(|info| info.name == root)
+                    .map(|info| info.ty.clone())
+            });
+            let Some(ty) = ty else {
+                continue;
+            };
+            if !crate::types::contains_param(&ty) {
+                continue;
+            }
+            self.capture_moves.push(CaptureMoveRequirement {
+                function: function.clone(),
+                capture: root.to_owned(),
+                ty,
+                span: value.span,
+            });
         }
-        self.capture_moves.push(CaptureMoveRequirement {
-            function,
-            capture: root.to_owned(),
-            ty,
-            span: value.span,
-        });
     }
 
     /// Checks an expression in a value position, reporting a `void` result.
