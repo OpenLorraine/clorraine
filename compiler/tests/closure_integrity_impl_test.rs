@@ -572,3 +572,94 @@ func main(): i32 {
         "reemission-copy-return: the two emissions differ"
     );
 }
+
+/// An unbounded call reports once per site, at the callee.
+///
+/// One call site reports one `E10307` naming the type parameter at the
+/// callee's line; two sites report twice, once each; a field of the
+/// parameter's type reports on the same rule. A bounded parameter's call
+/// stays on its bound path, so only the bound's own diagnostic fires for a
+/// violated bound.
+#[test]
+fn should_report_once_per_unbounded_call_site() {
+    assert_rejected(
+        "unbounded-one-site",
+        r#"module spec.ci.impl.unboundedcall;
+
+struct S {
+    x: i32;
+}
+
+func g<T>(x: T): i32 {
+    return x(5);
+}
+
+func main(): i32 {
+    return g<S>(S { x: 1 });
+}
+"#,
+        &["E10307"],
+        &["type parameter 'T' is not callable", "main.clo:8"],
+    );
+    assert_rejected(
+        "unbounded-two-sites",
+        r#"module spec.ci.impl.unboundedtwosites;
+
+struct S {
+    x: i32;
+}
+
+func g<T>(x: T, y: T): i32 {
+    return x(1) + y(2);
+}
+
+func main(): i32 {
+    return g<S>(S { x: 1 }, S { x: 2 });
+}
+"#,
+        &["E10307", "E10307"],
+        &["type parameter 'T' is not callable"],
+    );
+    assert_rejected(
+        "unbounded-field-site",
+        r#"module spec.ci.impl.unboundedfield;
+
+struct S {
+    x: i32;
+}
+
+struct Holder<T> {
+    call: T;
+}
+
+func use<T>(h: Holder<T>): i32 {
+    return h.call(5);
+}
+
+func main(): i32 {
+    return use<S>(Holder<S> { call: S { x: 1 } });
+}
+"#,
+        &["E10307"],
+        &["type parameter 'T' is not callable"],
+    );
+    assert_rejected(
+        "bounded-violation",
+        r#"module spec.ci.impl.callboundviolation;
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func bad<T: func(i32): i32>(x: T): i32 {
+    return x(5);
+}
+
+func main(): i32 {
+    return bad<i32>(3);
+}
+"#,
+        &["E10303"],
+        &["does not satisfy 'T: func(...)'"],
+    );
+}

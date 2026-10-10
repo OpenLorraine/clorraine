@@ -634,8 +634,9 @@ func main(): i32 {
 ///
 /// Callability comes only from a callable bound: a bare `T` may substitute
 /// to any type, including one with no call operator, so the call reports
-/// `E10307` at the declaration and names the type parameter. No translation
-/// unit is written.
+/// `E10307` where the call is written and names the type parameter. The
+/// same judgment covers a call of a field whose type is the parameter. No
+/// translation unit is written.
 #[test]
 fn should_reject_a_call_of_an_unbounded_type_parameter_value() {
     let source = r#"module spec.ci.unboundedcall;
@@ -653,9 +654,35 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("unbounded-call", source, "E10307", &["'T'"], &[]);
+
+    let field = r#"module spec.ci.unboundedfieldcall;
+
+struct S {
+    x: i32;
 }
 
-/// A callable-bound parameter stays callable and the program runs.
+struct Holder<T> {
+    call: T;
+}
+
+func use<T>(h: Holder<T>): i32 {
+    return h.call(5);
+}
+
+func main(): i32 {
+    return use<S>(Holder<S> { call: S { x: 1 } });
+}
+"#;
+    assert_rejected_once("unbounded-field-call", field, "E10307", &["'T'"], &[]);
+}
+
+/// A callable-bound parameter stays callable and the programs run.
+///
+/// The bound makes the parameter callable through the bound's signature:
+/// the function-pointer call exits 6 and the matching lambda exits 5. A
+/// field of the parameter's type is judged on the same rule (it reports
+/// `E10307` without the bound), but its bounded emission is a separate,
+/// pre-existing defect filed in the backlog, so it is not exercised here.
 #[test]
 fn should_accept_and_run_a_call_of_a_callable_bound_parameter() {
     let source = r#"module spec.ci.callbound;
@@ -674,6 +701,19 @@ func main(): i32 {
 "#;
     let output = run_host("callable-bound-call", source);
     assert_exit("callable-bound-call", &output, 6);
+
+    let lambda = r#"module spec.ci.callboundlambda;
+
+func h<T: func(i32): i32>(x: T, n: i32): i32 {
+    return x(n);
+}
+
+func main(): i32 {
+    return h<func(i32): i32>((v: i32) => v + 2, 3);
+}
+"#;
+    let output = run_host("callable-bound-lambda", lambda);
+    assert_exit("callable-bound-lambda", &output, 5);
 }
 
 /// The unbounded-call golden is rejected exactly as the frozen suite expects.

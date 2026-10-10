@@ -442,6 +442,22 @@ impl Checker<'_, '_> {
                 signature.returns
             }
             None => {
+                // A field of a bare type parameter is not callable: its
+                // substitution may be any type, and the fix is to declare a
+                // callable bound on the parameter. A bound parameter's field
+                // keeps its call path above.
+                if let Some(field_ty) = self.field_type(&receiver, name) {
+                    if let TyKind::Param(param) = &field_ty.kind {
+                        if !self.callable_bound_params.iter().any(|p| p == param) {
+                            self.error(
+                                "E10307",
+                                format!("type parameter '{param}' is not callable"),
+                                "declare a callable bound: `T: func(...)`",
+                                span,
+                            );
+                        }
+                    }
+                }
                 for arg in args {
                     self.check_value(&arg.value, None);
                 }
