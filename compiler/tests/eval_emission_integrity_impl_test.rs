@@ -857,7 +857,8 @@ func main(): i32 {
     assert_run_exit("pin-row-condition", source, 11);
 }
 
-/// A slice built inside a skipped arm neither runs its guard nor faults.
+/// A slice built inside a skipped arm neither runs its guard nor faults; a
+/// taken arm faults on the out-of-range view, and the offset runs once.
 #[test]
 fn should_keep_a_slice_guard_lazy_under_an_enclosing_choice() {
     let source = r#"module spec.eei.slicelenarm;
@@ -870,7 +871,7 @@ func pick(): bool {
 
 let arr: i32[4] = [1, 2, 3, 4];
 let n: i32 = 5;
-let m: usize = pick() ? len(slice(arr, 0, n)) : usize(0);
+let m: usize = pick() ? slice(arr, 0, n).len() : usize(0);
 
 func main(): i32 {
     return i32(m);
@@ -896,8 +897,7 @@ func yes(): bool {
 }
 
 let arr: i32[4] = [1, 2, 3, 4];
-let n: i32 = 5;
-let ok: bool = yes() || (i32(len(slice(arr, 0, n))) > 0);
+let ok: bool = yes() || (i32(len(slice(slice(arr, 0, 5), 0, 1))) > 0);
 
 func main(): i32 {
     if (ok) {
@@ -907,6 +907,97 @@ func main(): i32 {
 }
 "#;
     assert_run_exit("pin-slice-len-or-skip", or_skip, 1);
+
+    let or_offset = r#"module spec.eei.slicelenoroffset;
+
+import { slice } from std.mem;
+
+let calls: i32 = 0;
+
+func yes(): bool {
+    return true;
+}
+
+func f(): i32 {
+    calls = calls + 1;
+    return 0;
+}
+
+let arr: i32[4] = [1, 2, 3, 4];
+let ok: bool = yes() || (i32(len(slice(arr, f(), 2))) > 0);
+
+func main(): i32 {
+    return calls;
+}
+"#;
+    assert_run_exit("pin-slice-len-or-offset", or_offset, 0);
+}
+
+/// A view-typed conditional arm with an impure offset stores the offset once,
+/// on the taken path, so the guard and the construction share it.
+#[test]
+fn should_store_a_lazy_slice_offset_once() {
+    let source = r#"module spec.eei.slicearmoffset;
+
+import { slice } from std.mem;
+
+let calls: i32 = 0;
+
+func pick(): bool {
+    return false;
+}
+
+func f(): i32 {
+    calls = calls + 1;
+    return 0;
+}
+
+let arr: i32[4] = [1, 2, 3, 4];
+let w: i32[] = pick() ? slice(arr, f(), 2) : slice(arr, 0, 1);
+
+func main(): i32 {
+    return calls * 10 + i32(w[0]);
+}
+"#;
+    assert_run_exit("pin-slice-arm-offset-skip", source, 0 * 10 + 1);
+
+    let taken = source.replace(
+        "func pick(): bool {\n    return false;",
+        "func pick(): bool {\n    return true;",
+    );
+    let emitted = emit_host("pin-slice-arm-offset-taken", &taken);
+    assert_eq!(
+        count_occurrences(&emitted, "spec_eei_slicearmoffset_f()"),
+        1,
+        "pin-slice-arm-offset-taken: the offset must run once"
+    );
+    assert_run_exit("pin-slice-arm-offset-taken-run", &taken, 1 * 10 + 1);
+}
+
+/// A guarded nested-slice operand stores through its empty state and builds.
+#[test]
+fn should_build_a_guarded_nested_slice_operand() {
+    let source = r#"module spec.eei.nestedslice;
+
+import { slice } from std.mem;
+
+func pick(): bool {
+    return true;
+}
+
+func idx(): i32 {
+    return 0;
+}
+
+let arr: i32[4] = [1, 2, 3, 4];
+let x: i32[2] = [5, 6];
+let v: i32 = pick() ? slice(slice(arr, 0, 2), 0, 1)[0] : x[idx()];
+
+func main(): i32 {
+    return v;
+}
+"#;
+    assert_run_exit("pin-nested-slice", source, 1);
 }
 
 /// A fill-literal element's impure operand stores once, and the element

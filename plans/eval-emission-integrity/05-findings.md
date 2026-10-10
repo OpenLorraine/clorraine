@@ -55,6 +55,18 @@ The scoped re-review of the redesign raised RV-R4 (the restored eager slice guar
 | RV-R4 | 🔴 → fixed | The walk owns the slice-operand storage and the slice guard; the lowering-time `init_intrinsic_arg` binding is removed (it was context-blind). Reproductions: `pick() ? slice(arr,0,n).len() : 0` skipped → 0 (was abort), taken → `E11211`; `yes() \|\| (slice(...).len() > 0)` → 1; the nested spelling → 1; a skipped `slice(arr, f(), 2)` argument runs nothing. Pins: `should_guard_an_eager_slice_view`, `should_keep_a_slice_guard_lazy_under_an_enclosing_choice`. |
 | RV-R5 | 🟡 → fixed | `prepare_walked_fill_value` applies the per-element discipline to walked values only, so guards and binds no longer multiply with literal depth. Pin: `should_single_evaluate_a_fill_element_operand` (one `idx()` call; the walk's guard plus the element store's guard are the only copies). |
 
+### Verification evidence (third fix round — lazy slice operands)
+
+The verification of the slice-guard fix raised RV-001 (a view-typed lazy part with an impure offset was cloned unwalked, so the offset ran three times — its embedded guard plus the construction twice — and a changing offset read out of bounds), RV-002 (a guarded non-scalar operand store initialized a struct with the scalar `0`), and a pin-spelling gap (the laziness pin used spellings the base already handled).
+
+| # | Sev | Ruling |
+| - | --- | ------ |
+| RV-001 | 🔴 → fixed | The materialization predicate now mirrors the slice arm: a lazily evaluated view with an impure operand needs its guard structured, so the offset stores once under the branch guard and the construction and the embedded guard share it. Repro: `no() \|\| (slice(arr, f(), 2).len() > 0)` with a changing offset → one call, ASan-clean (was three calls and an out-of-bounds read; the reviewer's exact shapes re-run). Pin: `should_store_a_lazy_slice_offset_once`. |
+| RV-002 | 🟠 → fixed | The guarded operand stores pass the value's empty state (`{0}`/`NULL`) instead of the scalar `0`, so a struct- or view-typed guarded operand builds. Pin: `should_build_a_guarded_nested_slice_operand` (covers the scalar and fill positions). |
+| Pin spelling | 🟡 → fixed | The laziness pin now uses the base-failing spellings (`slice(...).len` and the nested slice) alongside the offset-once shape. |
+
+**Review budget**: three review dispatches for Phase 1 (one full, two scoped) plus this fix round; all blocking findings fixed in-batch, pre-existing classes filed (DEF-130 – DEF-137).
+
 ### Filed (second fix round)
 
 | # | Sev | Finding | Filed as |

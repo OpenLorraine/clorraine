@@ -1351,7 +1351,8 @@ impl<'a> Emitter<'a> {
         if init_operand_is_pure(value) {
             return value.clone();
         }
-        let (_, local) = self.materialize_init_local(value, guard, "0");
+        let zero = self.empty_state(&value.ty);
+        let (_, local) = self.materialize_init_local(value, guard, &zero);
         local
     }
 
@@ -1365,7 +1366,8 @@ impl<'a> Emitter<'a> {
         if init_operand_is_pure(value) || value.ty.is_fixed_array() {
             return value.clone();
         }
-        let (_, local) = self.materialize_init_local(value, guard, "0");
+        let zero = self.empty_state(&value.ty);
+        let (_, local) = self.materialize_init_local(value, guard, &zero);
         local
     }
 
@@ -1433,8 +1435,15 @@ impl<'a> Emitter<'a> {
                     || self.init_value_needs_materialization(callable)
                     || args.iter().any(|arg| self.init_value_needs_materialization(arg))
             }
-            ValueKind::Intrinsic { args, .. } => {
+            ValueKind::Intrinsic { name, args, .. } => {
+                // The walk stores an impure slice operand at the construction
+                // site, so a lazily evaluated view whose offset is impure
+                // needs the same structured guard as any other store.
                 args.iter().any(|arg| self.init_value_needs_materialization(arg))
+                    || (name == "slice"
+                        && args
+                            .iter()
+                            .any(|arg| !init_operand_is_pure(arg) && !arg.ty.is_fixed_array()))
             }
             ValueKind::Index { base, index } => {
                 self.init_value_needs_materialization(base)
