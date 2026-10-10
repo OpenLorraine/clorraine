@@ -1060,6 +1060,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             let lowered = self.lower_value(value);
             let lowered = self.bind_member_receiver(lowered);
+            // A view read of a projection over a mixed conditional owns each
+            // ownerless arm's root in the return's scope, so the escape rule
+            // sees the fresh arm's release before the caller reads the view.
+            let lowered = if is_view_like(&returns) {
+                self.bind_view_projection_root(lowered)
+            } else {
+                lowered
+            };
             // A consumed projection of a fresh call result is bound and
             // re-rooted, so the return emission empties the selected field and
             // the temporary releases only the remaining fields. A whole call

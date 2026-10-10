@@ -1261,6 +1261,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.collect_lowered_temp_owners(source, owners);
                 }
             }
+            // An array literal's elements and fill value are the value's
+            // storage, so a view element of a temporary contributes the
+            // temporary like any other projection.
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.collect_lowered_temp_owners(element, owners);
+                }
+                if let Some(fill) = fill {
+                    self.collect_lowered_temp_owners(fill, owners);
+                }
+            }
             _ => {}
         }
     }
@@ -1331,6 +1342,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ValueKind::Intrinsic { name, args, .. } if name == "slice" => {
                 if let Some(source) = args.first() {
                     self.collect_lowered_owner_bindings(source, owners);
+                }
+            }
+            // An array literal's elements and fill value are the value's
+            // storage, so a view element read through a generated owner
+            // contributes that owner like any other projection.
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.collect_lowered_owner_bindings(element, owners);
+                }
+                if let Some(fill) = fill {
+                    self.collect_lowered_owner_bindings(fill, owners);
                 }
             }
             _ => {}
@@ -1845,6 +1867,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a value is a projection of a conditional with a place arm.
+    ///
+    /// The conditional stays an inline read (its place arm must not be
+    /// adopted), so adopting the projected member would copy storage the
+    /// place arm still owns and release it twice; the value passes through
+    /// instead, and the fresh arm's storage stays with the enclosing
+    /// statement. A bare conditional is not a projection: the conditional
+    /// paths handle it (the per-arm fill, the owned-conditional store, or the
+    /// array-decay spelling).
+    fn projects_from_conditional_borrow(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.conditional_borrows_place_root(base)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a chain roots at a conditional with a place arm.
+    fn conditional_borrows_place_root(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.conditional_borrows_place_root(base)
+            }
+            ValueKind::Conditional { .. } => self.conditional_borrows_place(value),
+            _ => false,
+        }
+    }
+
     /// Binds the ownerless arms of a conditional lend argument.
     ///
     /// A place-rooted arm stays a borrow; every other arm — a fresh call
@@ -2340,6 +2391,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !self.value_needs_place(&value))
             || is_view(&value.ty)
             || self.projects_from_place(&value)
+            || self.projects_from_conditional_borrow(&value)
             || self.speculative_lowering
             || !self.materialize_owned_temporaries
             || value.ty.is_unknown()

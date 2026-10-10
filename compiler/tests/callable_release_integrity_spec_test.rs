@@ -1727,3 +1727,151 @@ func main(): i32 {
         &[],
     );
 }
+
+/// A view array whose element derives from a temporary is rejected.
+///
+/// The element reads a call temporary, so the returned element view dies
+/// before the caller reads it; the array reports the single view's escape
+/// (red at the fix base: accepted, leaking the backing).
+#[test]
+fn should_reject_a_view_array_return_of_a_temporary_derived_element() {
+    let source = r#"module spec.cri.arrtempescape;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func f(a: str): str[1] {
+    return [mk().v];
+}
+
+func main(): i32 {
+    let r: str[1] = f("zz");
+    let copy: String = stringOf(r[0]);
+    return i32(len(copy)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "arrtempescape",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// A mixed conditional view return is rejected when the fresh arm escapes.
+///
+/// The returned view reads the chosen arm; the fresh arm's storage dies
+/// before the caller reads the view, so the escape reports once (red at the
+/// fix base: accepted, reading freed storage).
+#[test]
+fn should_reject_a_mixed_conditional_view_return() {
+    let source = r#"module spec.cri.condviewret;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func f(c: bool, p: str): str {
+    let a: Box = Box { v: stringOf("cd") };
+    return (c ? a : mkBox()).v;
+}
+
+func main(): i32 {
+    let r: str = f(true, "zz");
+    let copy: String = stringOf(r);
+    return i32(len(copy)) - 2;
+}
+"#;
+    assert_rejected_once(
+        "condviewret",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// A projection of a place-borrowing conditional passes through unadopted.
+///
+/// The conditional stays an inline read, so the projected member is read from
+/// the chosen arm rather than adopted: adopting the fresh arm's copy while
+/// the place arm keeps its own storage would release the same buffer twice.
+/// The case runs the plain build because the fresh arm's backing stays filed
+/// as a leak (DEF-176); red at the fix base: the place arm double-freed.
+#[test]
+fn should_not_adopt_a_projection_of_a_place_borrowing_conditional() {
+    let source = r#"module spec.cri.condprojarg;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func use(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("cd") };
+    let c: bool = true;
+    let n: i32 = use((c ? a : mkBox()).v) - 2;
+    let d: bool = false;
+    let m: i32 = use((d ? a : mkBox()).v) - 2;
+    return n + m;
+}
+"#;
+    let output = run_host("condprojarg", source);
+    assert_exit("condprojarg", &output, 0);
+}
+
+/// A conditional projection lend argument binds its root for release.
+///
+/// The element read names a member of a fresh call result, so the call path
+/// binds the result's root at the argument's branch and the statement's
+/// release frees the remaining fields after the callee's read (red at the fix
+/// base: the selected member alone was filled, leaving the sibling leaked).
+#[test]
+fn should_bind_the_root_of_a_conditional_projection_lend_argument() {
+    let source = r#"module spec.cri.condprojlend;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String; extra: String; }
+
+func mk(): Box {
+    return Box { name: stringOf("ab"), extra: stringOf("cdef") };
+}
+
+func use(s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("zz");
+    let c: bool = true;
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        n = n + use(c ? mk().name : s);
+        i = i + 1;
+    }
+    return n - 6;
+}
+"#;
+    let output = run_memory("condprojlend", source);
+    assert_no_asan("condprojlend", &output);
+    assert_exit("condprojlend", &output, 0);
+}

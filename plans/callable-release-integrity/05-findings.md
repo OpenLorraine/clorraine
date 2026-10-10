@@ -213,6 +213,23 @@ temporary-view returns report one `E10030`; the consumed mixed conditional retur
 (no use-after-free); the static array return is accepted and runs; the local array return reports
 `E10035`; every Phase 3 fix shape and the DEF-175 lend spelling stay ASan-clean.
 
-### Scoped re-review (fix diff)
+### Scoped re-review (`d7568cf..6f2667c`)
 
-_Pending — one scoped round on the fix diff._
+One scoped round, all four reviewers. The verdicts:
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| MS-001 = SR-004 | 🔴 critical | A view return of a mixed conditional (`(c ? a : mkBox()).v`) lost its owner when the consumed binder was reverted, so the accepted program read freed storage (the fix base rejected it). | Fixed: view-like returns route the lowered value through the view binder, restoring the per-arm scoped root → `E10030`. |
+| MS-002 | 🔴 critical | A call argument that projects a place-borrowing conditional (`use((c ? a : mkBox()).v)`) adopted the projected member's copy while the place arm kept its storage → double-free (the fix base was clean). | Fixed: a projection of a place-borrowing conditional passes through unadopted (`projects_from_conditional_borrow`). |
+| SR-003 | 🟠 major | `return [mk().v]` recorded no owner: both owner walks lacked the array-literal arm, so the array spelling leaked where the single twin reports `E10030` (pre-existing; same root as DEF-177). | Fixed: both walks recurse into the elements and the fill value. |
+| RV-008 | 🟡 minor | The DEF-186 roadmap row's severity glyph was a corrupted byte sequence. | Fixed. |
+| RV-009 | 🟡 minor | The arm-root descent had no discriminating test. | Fixed: a lend-spelling spec case (red at the fix base). |
+| Emission audit | — | No findings: 1499 units × 3 profiles diffed, 5 intended host deltas, strict builds and determinism clean (observations: the `E10030` subject names the generated binding; `viewretsingle` gains an `E10030` beside its `E10036`). | Recorded; its unfiled pre-existing classes filed (DEF-188, DEF-189). |
+| Memory audit | — | Beyond MS-001/MS-002: every intended fix verified, all batteries ASan-clean, the pre-phase reverts byte-identical. | Recorded; its unfiled pre-existing UAF filed (DEF-187). |
+
+### Micro fix round (verification)
+
+Spec suite 43/43 plain and under `RDC_ASAN=1`; impl 18/18; `make check` 58 suites green.
+Direct probes: `return [mk().v]` and `return (c ? a : mkBox()).v` each report one `E10030`;
+`use((c ? a : mkBox()).v)` runs exit 0 on both arms; every Phase 3 fix shape and the DEF-175
+lend spelling stay ASan-clean.

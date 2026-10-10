@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 23:52
-> **Progress**: 26/36 tasks (72%)
+> **Last Updated**: 2026-10-11 00:21
+> **Progress**: 27/36 tasks (75%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -198,7 +198,7 @@ before any implementation.
 evidence.
 
 - [x] 3.3.1 Write the Phase 3 implementation tests (owner binding shapes, release counts, registered-release placement, byte-identity) — `compiler/tests/callable_release_integrity_impl_test.rs` ✅ (7 pins; impl 18/18)
-- [~] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-10 23:31; implementation committed; four-lens review in flight)
+- [x] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-11 00:21; four-lens review + one scoped re-review + micro fix round; ledger §Phase 3 records the merge, both fix rounds, and the direct verification)
 
 **Deliverables**:
 - Five release holes closed with exactly-one-release semantics
