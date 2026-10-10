@@ -1566,3 +1566,210 @@ func main(): i32 {
         "pin-bare-param: the report lands on the callee; stderr:\n{stderr}"
     );
 }
+
+/// Each write-mutability rejection reports its exact code once at its site.
+#[test]
+fn should_report_the_write_mutability_codes_once_at_the_site() {
+    let const_update = r#"module spec.eeiimpl.constupdate;
+
+func main(): i32 {
+    const a: u8[2] = [1, 2];
+    let y: i32 = i32(a[0]++);
+    return y;
+}
+"#;
+    let stderr = compile_stderr("pin-const-update", const_update);
+    assert_eq!(
+        stderr.matches("error E10023:").count(),
+        1,
+        "pin-const-update: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:5:22"),
+        "pin-const-update: the report lands on the updated place; stderr:\n{stderr}"
+    );
+
+    let const_slice = r#"module spec.eeiimpl.constsliceupdate;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let base: u8[2] = [1, 2];
+    const s: u8[] = slice(base, 0, 2);
+    let y: i32 = i32(s[0]++);
+    return y;
+}
+"#;
+    let stderr = compile_stderr("pin-const-slice", const_slice);
+    assert_eq!(
+        stderr.matches("error E10023:").count(),
+        1,
+        "pin-const-slice: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:8:22"),
+        "pin-const-slice: the report lands on the updated place; stderr:\n{stderr}"
+    );
+
+    let readonly = r#"module spec.eeiimpl.paramupdate;
+
+import { slice } from std.mem;
+
+func bump(xs: u8[]): i32 {
+    let z: i32 = i32(xs[0]++);
+    return z;
+}
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    return bump(slice(a, 0, 2));
+}
+"#;
+    let stderr = compile_stderr("pin-readonly-update", readonly);
+    assert_eq!(
+        stderr.matches("error E10024:").count(),
+        1,
+        "pin-readonly-update: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:6:22"),
+        "pin-readonly-update: the report lands on the updated place; stderr:\n{stderr}"
+    );
+
+    let cstring_write = r#"module spec.eeiimpl.cstringwrite;
+
+func fill(borrow c: cstring): i32 {
+    c[0] = 65;
+    return 0;
+}
+
+func main(): i32 {
+    return fill("ab");
+}
+"#;
+    let stderr = compile_stderr("pin-cstring-write", cstring_write);
+    assert_eq!(
+        stderr.matches("error E10042:").count(),
+        1,
+        "pin-cstring-write: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:5"),
+        "pin-cstring-write: the report lands on the write; stderr:\n{stderr}"
+    );
+
+    let str_update = r#"module spec.eeiimpl.strvalueupdate;
+
+func bump(borrow s: str): i32 {
+    let w: i32 = i32(s[0]++);
+    return w;
+}
+
+func main(): i32 {
+    return bump("ab");
+}
+"#;
+    let stderr = compile_stderr("pin-str-value-update", str_update);
+    assert_eq!(
+        stderr.matches("error E10042:").count(),
+        1,
+        "pin-str-value-update: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:22"),
+        "pin-str-value-update: the report lands on the updated place; stderr:\n{stderr}"
+    );
+}
+
+/// The immutable-view registry row names all three view types, and the
+/// message and help stay unchanged.
+#[test]
+fn should_pin_the_immutable_view_registry_wording() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../spec/14-diagnostics.md");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("cannot read {}: {err}", path.display()));
+    let row = text
+        .lines()
+        .find(|line| line.starts_with("| E10042 |"))
+        .expect("the E10042 row exists");
+    assert_contains_all(
+        "registry-row",
+        row,
+        &[
+            "Write to an element of an immutable view (`str`, `static str`, or `cstring`)",
+            "`cannot write through immutable view '{name}'`",
+            "copy the bytes into an owned `String` or a `borrow`-derived `u8[]` view",
+        ],
+    );
+}
+
+/// The accepted write controls keep their emission and run: a writable slice
+/// statement write, the value-position update on writable storage, and the
+/// whole-view rebinds.
+#[test]
+fn should_keep_the_accepted_write_controls_byte_identical() {
+    let writable = r#"module spec.eeiimpl.slicewrite;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let s: u8[] = slice(a, 0, 2);
+    s[0] = 7;
+    return i32(s[0]) + i32(a[0]);
+}
+"#;
+    let (first, second) = emit_twice("pin-write-slice", writable);
+    assert_eq!(
+        first, second,
+        "pin-write-slice: the emission must be deterministic"
+    );
+    assert_run_exit("pin-write-slice-run", writable, 14);
+
+    let value_update = r#"module spec.eeiimpl.valueupdate;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let s: u8[] = slice(a, 0, 2);
+    let y: i32 = i32(s[0]++);
+    return y + i32(a[0]);
+}
+"#;
+    let (first, second) = emit_twice("pin-write-value-update", value_update);
+    assert_eq!(
+        first, second,
+        "pin-write-value-update: the emission must be deterministic"
+    );
+    assert_run_exit("pin-write-value-update-run", value_update, 3);
+
+    let control = r#"module spec.eeiimpl.writecontrol;
+
+import { slice } from std.mem;
+import { stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let s: u8[] = slice(a, 0, 2);
+    s[0] = 7;
+    let t: str = "ab";
+    t = "cd";
+    let c: cstring = toCString(stringOf("ef"));
+    c = toCString(stringOf("gh"));
+    if (i32(t[0]) != 99) {
+        return 1;
+    }
+    if (i32(c[0]) != 103) {
+        return 2;
+    }
+    return i32(s[0]) + i32(a[0]);
+}
+"#;
+    let (first, second) = emit_twice("pin-write-control", control);
+    assert_eq!(
+        first, second,
+        "pin-write-control: the emission must be deterministic"
+    );
+    assert_run_exit("pin-write-control-run", control, 14);
+}

@@ -403,7 +403,7 @@ green; full `make check` green (1547 tests) with no other suite affected.
 **Reference**: [03-04](03-04-write-mutability-rules.md) §Testing Requirements
 **Objective**: Pin the internals and record the phase review evidence.
 
-- [ ] 4.3.1 Write the Phase 4 implementation pins (the exact code per shape, one report per site, the registry wording, byte-identity of the accepted controls) — `compiler/tests/eval_emission_integrity_impl_test.rs`
+- [x] 4.3.1 Write the Phase 4 implementation pins (the exact code per shape, one report per site, the registry wording, byte-identity of the accepted controls) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 19:05)
 - [ ] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
 
 **Deliverables**:
