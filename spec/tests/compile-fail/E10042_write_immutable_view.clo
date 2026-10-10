@@ -1,0 +1,11 @@
+// expect-error E10042
+// trigger: element write through an immutable `str` view
+module tests.compile_fail.E10042;
+
+func bad(borrow s: str): void {
+    s[0] = 65;              // E10042: `str` views name immutable storage
+}
+
+func main(): i32 {
+    return 0;
+}

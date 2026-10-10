@@ -1,6 +1,6 @@
 # Ambiguity Register: Store-Emission Integrity
 
-> **Status**: ✅ GATE PASSED — all 18 items resolved
+> **Status**: ✅ GATE PASSED — all 20 items resolved (AR-19, AR-20 added during execution)
 > **Last Updated**: 2026-10-10 08:12
 
 | # | Category | Ambiguity / Gap | Options Presented | Decision | Status |
@@ -23,6 +23,8 @@
 | AR-16 | Process | Execution commit mode | `--auto-commit` (user instruction) / ask / none | **User instruction:** record `--auto-commit` for execution — commit and push each verified task via the git-commit skill (repo precedent: `defer-integrity`). | ✅ Resolved |
 | AR-17 | Naming | Plan folder, suites, and internal names | `store-emission-integrity`; `store_emission_integrity_{spec,impl}_test.rs`; behavior-naming for tests | **AI — delegated by --auto-design (eligible: internal naming, zero external surface).** Follows the repo's `-integrity` batch naming and suite conventions. | ✅ Resolved (delegated) |
 | AR-18 | Scope | DEF-116: whether a conditional array value at module level is covered | Include in DEF-116 (element-wise, condition evaluated once) / leave out and file a new defect | **User:** include — verified same emission site and same class (`let a: i32[2] = pick() ? x : y;` accepted, emits `a = (pick() ? x : y);`); the condition is materialized once and each element copies from the chosen arm. | ✅ Resolved |
+| AR-19 | Technical (runtime) | The `E10042` golden's assertion path: the compile-fail driver asserts only codes listed in its `ASSERTED_CODES`, and the plan's file list omitted the driver, whose red-phase expectation ("the golden fails until the compiler reports `E10042`") needs the assertion | Add `E10042` to `ASSERTED_CODES` in `compiler/tests/compile_fail_spec_test.rs` / leave the golden skipped-as-uncovered | **AI — delegated by --auto-design (eligible: test-driver bookkeeping; completes the plan's stated red-phase expectation; no design change, no reserved consequence).** See notes. | ✅ Resolved (delegated) |
+| AR-20 | Technical (runtime) | ST-11 and ST-16b describe the same local `str`-write program (the preflight added ST-16b believing the local form was unrepresented) | One suite case pins both rows / two identical cases | **AI — delegated by --auto-design (eligible: testing-strategy bookkeeping; same program, no coverage or behavior change).** See notes. | ✅ Resolved (delegated) |
 
 ## Resolution Notes
 
@@ -172,5 +174,39 @@ Reopen triggers: an operand kind that materialization cannot represent in the in
 **AR-17 (delegated):** plan folder `plans/store-emission-integrity/` (flat layout); suites `compiler/tests/store_emission_integrity_spec_test.rs` and `_impl_test.rs`; test names state behavior ("reports … once", "builds and runs …"); internal helpers follow existing naming (`check_*`, `emit_*`).
 
 **AR-18 (user ruling, 2026-10-10):** probe p4f — `let a: i32[2] = pick() ? x : y;` at module level is accepted and emits `a = (cl_..._pick() ? cl_..._x : cl_..._y);`, which fails the strict build (an array ternary decays to a pointer). The user chose to cover it in DEF-116: the fill walk evaluates the condition once into an init local and copies each element from the chosen arm (03-04).
+
+**AR-19 (delegated, runtime):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: test-driver bookkeeping; completes the plan's stated red-phase expectation ("the new golden fails until the compiler reports E10042") without changing any rule, emission, or spec content; no reserved consequence
+Objective: the new E10042 golden is asserted by the compile-fail driver, not skipped as uncovered
+Decision: add "E10042" to ASSERTED_CODES in compiler/tests/compile_fail_spec_test.rs
+Evidence: the driver asserts only listed codes and skips the rest with "not covered by the implemented front end yet" (compiler/tests/compile_fail_spec_test.rs:146-148); the repo convention lists every in-scope ownership code (E10040/E10041 present); check.sh validates registry metadata only, so the golden's behavioral assertion must come from the driver
+Rejected alternatives: leaving the golden skipped — its skip reason would be false after the implementation and the plan's 2.1.3 red-phase expectation ("the new golden fails") would be unobservable
+Strongest counterargument: the plan's file list omitted the driver, so the edit widens the recorded modification set — but the edit is required by the plan's own recorded expectation and changes no product behavior
+Confidence: High
+Hardening: in-context layers only (mechanical bookkeeping; no design choice remains)
+Policy version: 1
+Root invocation ID: plans-store-emission-integrity-20261010
+Reopen triggers: the driver gains a different registration mechanism for new goldens
+```
+
+**AR-20 (delegated, runtime):**
+
+```text
+Authority: AI — delegated by --auto-design
+Eligibility: testing-strategy bookkeeping; both rows demand the same rejected shape; no coverage is lost and no behavior is assumed
+Objective: the spec suite maps every Phase 2 ST row to a case without duplicating one program
+Decision: one case pins the local-write shape and the red-phase evidence maps ST-11 and ST-16b to it; the testing-strategy row carries a parenthetical noting the overlap
+Evidence: ST-11 ("a local `let t: str = "abc"; t[0] = 65;`") and ST-16b ("a local `let t: str = "abc";` with `t[0] = 65;` in the same function") describe the same program; the plan baseline already carried ST-11 as the local case
+Rejected alternatives: writing two identical cases — duplicates one assertion with no added discrimination
+Strongest counterargument: if the preflight intended ST-16b as a distinct local shape, the distinction is unrecoverable from the recorded text; the two rows' wording is the same
+Confidence: High
+Hardening: not required (test bookkeeping)
+Policy version: 1
+Root invocation ID: plans-store-emission-integrity-20261010
+Reopen triggers: a clarification that ST-16b means a different local shape
+```
 
 **Scan completeness (12 categories):** Feature gaps — covered by the per-defect requirements (01) and components (03-01 – 03-04). Behavioral — AR-4, AR-5, AR-6, AR-7. Scope — AR-1, AR-2, AR-3, AR-12, AR-15, AR-18. Technical — AR-4, AR-6, AR-8, AR-9, AR-10, AR-11, AR-13. Edge cases — AR-11 and the 03 documents (nested conditionals, duplicable/nullable/view substitutions, nested extents, fill literals, impure offsets, field/global view bases) pinned in 07. Integration points — the checker (`own/expr.rs`, `own/place.rs`), the duty audit (`own/instance_check.rs`), the emitter (`codegen.rs`, `codegen/program.rs`, `codegen/guards.rs`), the diagnostics registry (`spec/14-diagnostics.md`); owned by 03-01 – 03-04. Data & state — no new data model; the existing place/duty/temp machinery only. Security & compliance — memory safety is the security surface for a compiler; the ASan probes (AR-13) cover the DEF-113 family. Non-functional — determinism (byte-identical re-emission) follows the existing suite convention. UX & presentation — E10042 (AR-7) is the only new user-facing text; all other reports reuse existing codes. Stakeholder conflicts — none. Naming — AR-17.

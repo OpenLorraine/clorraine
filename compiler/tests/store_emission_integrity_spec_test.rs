@@ -16,6 +16,13 @@
 //! arm keeps its single report on that arm, the direct spellings keep theirs,
 //! and the nullable out-slot carve-out stays accepted and memory-clean.
 //!
+//! The immutable-view group pins the write rule for views of immutable bytes
+//! (`str` and `static str`): a plain, compound, or update element write over a
+//! parameter, a local, a field, or a module-level view is each rejected with
+//! one `E10042` naming the written path, while a whole-view rebind and a write
+//! through a writable (borrow-derived) slice stay accepted. The registered
+//! golden is compiled directly, so the frozen fixture itself is asserted.
+//!
 //! The memory helper runs a case as an ordinary strict host build and adds
 //! leak and use-after-free detection when `RDC_ASAN` is set.
 
@@ -84,14 +91,36 @@ fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
     (scratch, output, c_path)
 }
 
-/// Asserts the front end rejects the program with exactly one `code`
+/// Compiles an existing source file for the host profile.
+///
+/// Used by the golden-program case: the file under `spec/` is compiled where
+/// it lives, so the case asserts the frozen fixture itself rather than a copy.
+fn compile_path(tag: &str, source_path: &Path) -> (ScratchDir, Output, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    (scratch, output, c_path)
+}
+
+/// Asserts one compiler run rejected the program with exactly one `code`
 /// diagnostic, that the message contains every fragment, and that no
 /// translation unit is written.
 ///
 /// The count assertion pins the one-report rule: a site judged by two paths
 /// must still produce a single diagnostic.
-fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str]) {
-    let (_scratch, output, c_path) = compile_only(tag, source);
+fn assert_rejected_output(
+    tag: &str,
+    output: &Output,
+    c_path: &Path,
+    code: &str,
+    fragments: &[&str],
+) {
     assert_ne!(
         output.status.code(),
         Some(0),
@@ -114,6 +143,19 @@ fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str])
         !c_path.exists(),
         "{tag}: a rejected program must not produce a translation unit"
     );
+}
+
+/// Compiles `source` and asserts the rejection contract on the output.
+fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_rejected_output(tag, &output, &c_path, code, fragments);
+}
+
+/// Compiles an existing file and asserts the rejection contract on the
+/// output.
+fn assert_rejected_once_at(tag: &str, source_path: &Path, code: &str, fragments: &[&str]) {
+    let (_scratch, output, c_path) = compile_path(tag, source_path);
+    assert_rejected_output(tag, &output, &c_path, code, fragments);
 }
 
 /// Emits one host-profile program and asserts the front end accepted it.
@@ -543,4 +585,190 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("direct-self-store", source, "E10034", &["'slot'"]);
+}
+
+/// An element write through a `str` parameter view is rejected once.
+///
+/// A `str` view names immutable byte storage, so no conforming C compiler
+/// accepts the element store the emitter would produce. The parameter is a
+/// writable lend, so the write reaches the immutable-view rule instead of the
+/// read-only-mode rule; exactly one `E10042` names the binding and no
+/// translation unit is written.
+#[test]
+fn should_reject_an_element_write_through_a_str_parameter() {
+    let source = r#"module spec.sei.p2.paramwrite;
+
+func f(borrow s: str): i32 {
+    s[0] = 65;
+    return 0;
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#;
+    assert_rejected_once("str-parameter-write", source, "E10042", &["'s'"]);
+}
+
+/// An element write through a local `str` binding is rejected once.
+///
+/// The local names immutable bytes (a literal's static storage here), and a
+/// local declaration never admits a different mutability than the type
+/// declares, so the write is rejected exactly as the parameter spelling is.
+#[test]
+fn should_reject_an_element_write_through_a_str_local() {
+    let source = r#"module spec.sei.p2.localwrite;
+
+func main(): i32 {
+    let t: str = "abc";
+    t[0] = 65;
+    return 0;
+}
+"#;
+    assert_rejected_once("str-local-write", source, "E10042", &["'t'"]);
+}
+
+/// An element write through a `static str` struct field is rejected once.
+///
+/// The written place is a field projection followed by an element projection,
+/// so the report names the field path (`s.tag`) rather than the bare binding.
+#[test]
+fn should_reject_an_element_write_through_a_static_str_field() {
+    let source = r#"module spec.sei.p2.fieldwrite;
+
+struct S {
+    tag: static str;
+    n: i32;
+}
+
+func f(borrow s: S): void {
+    s.tag[0] = 65;
+}
+
+func main(): i32 {
+    let v: S = S { tag: "abc", n: 1 };
+    f(borrow v);
+    return 0;
+}
+"#;
+    assert_rejected_once("static-str-field-write", source, "E10042", &["'s.tag'"]);
+}
+
+/// A compound element write through a `str` view is rejected once.
+///
+/// `s[0] += 1` reads the element and stores the combined value back, so it
+/// contains the same element store as the plain form and is rejected by the
+/// same rule with the same single report.
+#[test]
+fn should_reject_a_compound_element_write_through_a_str_view() {
+    let source = r#"module spec.sei.p2.compoundwrite;
+
+func f(borrow s: str): i32 {
+    s[0] += 1;
+    return 0;
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#;
+    assert_rejected_once("str-compound-write", source, "E10042", &["'s'"]);
+}
+
+/// An update element write through a `str` view is rejected once.
+///
+/// `s[0]++` is the same read-modify-write as the compound form, so it is
+/// rejected by the same rule with the same single report.
+#[test]
+fn should_reject_an_update_element_write_through_a_str_view() {
+    let source = r#"module spec.sei.p2.updatewrite;
+
+func f(borrow s: str): i32 {
+    s[0]++;
+    return 0;
+}
+
+func main(): i32 {
+    let t: str = "abc";
+    return f(borrow t);
+}
+"#;
+    assert_rejected_once("str-update-write", source, "E10042", &["'s'"]);
+}
+
+/// An element write through a module-level `str` view is rejected once.
+///
+/// A module binding is writable storage by default, but the view type still
+/// names immutable bytes, so the element store is rejected exactly as the
+/// local and parameter spellings are.
+#[test]
+fn should_reject_an_element_write_through_a_module_str_view() {
+    let source = r#"module spec.sei.p2.globalwrite;
+
+let g: str = "abc";
+
+func main(): i32 {
+    g[0] = 65;
+    return 0;
+}
+"#;
+    assert_rejected_once("module-str-write", source, "E10042", &["'g'"]);
+}
+
+/// Rebinding a whole `str` view stays accepted and runs.
+///
+/// The rebind replaces the view value itself — pointer and length — rather
+/// than storing through the bytes it names, so it is not an element write. The
+/// run reads the new literal's length.
+#[test]
+fn should_accept_and_run_a_whole_str_rebind() {
+    let source = r#"module spec.sei.p2.rebind;
+
+func main(): i32 {
+    let t: str = "abc";
+    t = "xyz";
+    return i32(len(t));
+}
+"#;
+    let output = run_host("str-rebind", source);
+    assert_exit("str-rebind", &output, 3);
+}
+
+/// A write through a writable slice view stays accepted and runs.
+///
+/// The writable view derives from a mutable fixed array through `slice`, so
+/// the element store reaches owned storage the program may write, and the
+/// accepted path is unaffected by the immutable-view rule.
+#[test]
+fn should_accept_and_run_a_write_through_a_writable_slice_view() {
+    let source = r#"module spec.sei.p2.writableslice;
+
+import { slice } from std.mem;
+
+func f(borrow xs: u8[]): i32 {
+    xs[0] = 65;
+    return 0;
+}
+
+func main(): i32 {
+    let a: u8[2] = [0, 0];
+    return f(borrow slice(a, 0, 2));
+}
+"#;
+    let output = run_host("writable-slice-write", source);
+    assert_exit("writable-slice-write", &output, 0);
+}
+
+/// The immutable-view golden is rejected exactly as the frozen suite expects.
+///
+/// The case compiles `spec/tests/compile-fail/E10042_write_immutable_view.clo`
+/// directly, so the specification fixture itself — not a copy — must produce
+/// the one registered diagnostic.
+#[test]
+fn should_reject_the_immutable_view_golden_directly() {
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../spec/tests/compile-fail/E10042_write_immutable_view.clo");
+    assert_rejected_once_at("immutable-view-golden", &golden, "E10042", &["'s'"]);
 }

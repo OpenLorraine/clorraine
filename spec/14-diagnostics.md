@@ -66,6 +66,7 @@
 | E10039 | Call-site marker that contradicts the declaration | `call-site marker does not match the declaration of '{fn}'` | remove the marker or correct it |
 | E10040 | Element loop over non-duplicable elements without `borrow` | `element loop requires 'borrow' for non-duplicable '{type}'` | write `for (borrow e in xs)` |
 | E10041 | Writable view derived from a read-only borrow | `cannot write through a view of read-only borrow '{name}'` | take the owner by `borrow` |
+| E10042 | Write to an element of an immutable view (`str` or `static str`) | `cannot write through immutable view '{name}'` | copy the bytes into an owned `String` or a `borrow`-derived `u8[]` view |
 
 ## 4. FFI and the raw boundary (`E101xx`)
 

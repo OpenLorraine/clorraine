@@ -55,7 +55,7 @@
 | ST-13 | `s[0] += 1;` on a `borrow s: str` parameter | rejected: exactly one `E10042` | AR-6 |
 | ST-14 | `s[0]++;` on a `borrow s: str` parameter | rejected: exactly one `E10042` | AR-6 |
 | ST-15 | a module-level `let g: str = "abc";` with `g[0] = 65;` in `main` | rejected: exactly one `E10042` naming `g` | AR-6 |
-| ST-16b | a local `let t: str = "abc";` with `t[0] = 65;` in the same function | rejected: exactly one `E10042` naming `t` | AR-6 |
+| ST-16b | a local `let t: str = "abc";` with `t[0] = 65;` in the same function (the same local-write program as ST-11; both rows are pinned by one case, AR-20) | rejected: exactly one `E10042` naming `t` | AR-6 |
 | ST-16 | `let t: str = "abc"; t = "xyz"; return i32(len(t));` | accepted; strict build; runs (exit 3) | AR-6 |
 | ST-17 | `func f(borrow xs: u8[]): i32 { xs[0] = 65; return 0; }` called with `borrow slice(a, 0, 2)` on a `u8[2]` | accepted; strict build; runs (exit 0) | AR-6 |
 | ST-18 | the golden program `E10042_write_immutable_view.clo` compiled directly | rejected: exactly one `E10042` (mirrors `./spec/check.sh`) | AR-2, AR-12 |

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 08:53
-> **Progress**: 6/26 tasks (23%)
+> **Last Updated**: 2026-10-10 08:57
+> **Progress**: 9/26 tasks (35%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -151,7 +151,7 @@ correction, applied).
 
 ## Phase 2: Immutable-view writes (DEF-114)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: edbb6fbd788922c9b456006f1bd3ab9de987e6b2
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (a language-rule
 > change with an authorized spec addition; AR-14)
 > **Reasoning**: high — a new diagnostic and the only authorized frozen-spec change
@@ -162,9 +162,18 @@ correction, applied).
 **Objective**: Land the authorized registry row and golden, then pin the rule before any
 implementation.
 
-- [ ] 2.1.1 [spec] Add the `E10042` registry row (`spec/14-diagnostics.md`) and the golden `spec/tests/compile-fail/E10042_write_immutable_view.clo` — exactly the authorized modification set (AR-12)
-- [ ] 2.1.2 [spec-author] Write specification tests from ST-10 – ST-18 (including the local-write case ST-16b) — `compiler/tests/store_emission_integrity_spec_test.rs`
-- [ ] 2.1.3 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-10 – ST-15 and ST-18 fail; ST-16 and ST-17 pass as accepted controls; the new golden fails until the compiler reports `E10042`)
+- [x] 2.1.1 [spec] Add the `E10042` registry row (`spec/14-diagnostics.md`) and the golden `spec/tests/compile-fail/E10042_write_immutable_view.clo` — exactly the authorized modification set (AR-12), plus the driver's asserted-code registration (AR-19, runtime) ✅ (completed: 2026-10-10 08:57)
+- [x] 2.1.2 [spec-author] Write specification tests from ST-10 – ST-18 (including the local-write case ST-16b) — `compiler/tests/store_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 08:57)
+- [x] 2.1.3 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-10 – ST-15 and ST-18 fail; ST-16 and ST-17 pass as accepted controls; the new golden fails until the compiler reports `E10042`) ✅ (completed: 2026-10-10 08:57)
+
+**Red-phase evidence (2026-10-10 08:57)** — the extended suite (18 tests) fails exactly as
+designed against the phase baseline: 11 passed, 7 failed. ST-10 – ST-15 and ST-18 fail (the
+compiler still accepts every immutable-view element write; the run asserts the required
+`E10042`), while ST-16 and ST-17 pass as accepted controls and the Phase 1 cases stay green.
+The new golden fails in the compile-fail driver until the implementation lands
+(`E10042_write_immutable_view.clo: no 'error E10042: ...' diagnostic line (exit Some(0))`).
+`./spec/check.sh` is green (27 files, 106 compile-fail tests). ST-11 and ST-16b describe the
+same local-write program; one case pins both rows (AR-20).
 
 **Deliverables**:
 - The registry row and golden
