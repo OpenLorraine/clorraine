@@ -697,9 +697,10 @@ pub(super) fn place_root_name(expr: &Expr) -> Option<&str> {
 /// at run time, so a move out of `c ? x : y` may consume either arm's root; a
 /// nested conditional recurses. A struct or array literal consumes each field
 /// or element value, so a capture carried inside one is a move of that
-/// capture. This mirrors the ownership stage's conditional move sources and
-/// its aggregate consumption, so the capture rules and the per-instance duty
-/// judge the same shapes.
+/// capture, and a projection of such a literal reaches the same roots. This
+/// mirrors the ownership stage's conditional move sources and its aggregate
+/// consumption, so the capture rules and the per-instance duty judge the same
+/// shapes.
 pub(super) fn place_root_names<'e>(expr: &'e Expr, roots: &mut Vec<&'e str>) {
     match &expr.kind {
         ExprKind::Conditional {
@@ -722,6 +723,12 @@ pub(super) fn place_root_names<'e>(expr: &'e Expr, roots: &mut Vec<&'e str>) {
             if let Some(fill) = fill {
                 place_root_names(fill, roots);
             }
+        }
+        // A projection reaches into the storage its base names, so its roots
+        // are the base's roots: a place keeps its own root name, and a literal
+        // base reaches the captures its fields or elements consume.
+        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+            place_root_names(base, roots);
         }
         _ => {
             if let Some(root) = place_root_name(expr) {

@@ -2173,3 +2173,84 @@ func main(): i32 {
     );
     assert_run_exit("pin-conditional-copy-run", source, 42);
 }
+
+/// The back-edge store releases the abandoned result before its store, and the
+/// indexed and member projections of a composite capture report once.
+#[test]
+fn should_release_before_the_back_edge_store_and_reject_composite_projections() {
+    let source = r#"module spec.eeiimpl.backedge;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    let i: i32 = 0;
+    while (i < 4) {
+        i = i + 1;
+        if (i == 2) { return stringOf("aa"); }
+        if (i == 1) { defer { continue; } return stringOf("bb"); }
+    }
+    return stringOf("cc");
+}
+
+func main(): i32 {
+    let r: String = f();
+    return i32(len(r));
+}
+"#;
+    let (first, second) = emit_twice("pin-back-edge", source);
+    assert_eq!(
+        first, second,
+        "pin-back-edge: the emission must be deterministic"
+    );
+    assert!(
+        first.contains(
+            "if (__cl_ret) { FreeString(__cl_ret); }\n    __cl_ret = NULL;\n    __cl_ret = cl_std_text_stringOf(cl_str(\"aa\"));"
+        ),
+        "pin-back-edge: the back-edge store does not release the abandoned result"
+    );
+    assert_run_exit("pin-back-edge-run", source, 2);
+
+    let indexed = r#"module spec.eeiimpl.compositeindex;
+
+import { String, stringOf } from std.text;
+
+func outer(x: String): String {
+    return ([x] () => [x][0])();
+}
+
+func main(): i32 {
+    let r: String = outer(stringOf("ab"));
+    return i32(len(r));
+}
+"#;
+    let stderr = compile_stderr("pin-composite-index", indexed);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-composite-index: expected one report; stderr:\n{stderr}"
+    );
+
+    let member = r#"module spec.eeiimpl.compositemember;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> {
+    v: T;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => Holder<T> { v: x }.v)();
+}
+
+func main(): i32 {
+    let r: String = outer<String>(stringOf("ab"));
+    return i32(len(r));
+}
+"#;
+    let stderr = compile_stderr("pin-composite-member", member);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-composite-member: expected one report; stderr:\n{stderr}"
+    );
+}

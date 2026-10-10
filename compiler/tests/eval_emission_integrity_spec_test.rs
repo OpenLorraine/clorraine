@@ -1699,3 +1699,36 @@ func main(): i32 {
     let output = run_host("conditional-copy", source);
     assert_exit("conditional-copy", &output, 42);
 }
+
+/// A store reached again through a loop back edge releases the result a
+/// preemption abandoned.
+///
+/// The `defer { continue; }` preempts the second store; the loop reaches the
+/// first store again, which overwrites the abandoned value. The release must
+/// cover every ordinary store in the function, not only the stores emitted
+/// after the preempting return.
+#[test]
+fn should_release_the_preempted_result_before_a_back_edge_store() {
+    let source = r#"module spec.eei.backedge;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    let i: i32 = 0;
+    while (i < 4) {
+        i = i + 1;
+        if (i == 2) { return stringOf("aa"); }
+        if (i == 1) { defer { continue; } return stringOf("bb"); }
+    }
+    return stringOf("cc");
+}
+
+func main(): i32 {
+    let r: String = f();
+    return i32(len(r));
+}
+"#;
+    let output = run_memory("back-edge-preempt", source);
+    assert_exit("back-edge-preempt", &output, 2);
+    assert_no_asan("back-edge-preempt", &output);
+}
