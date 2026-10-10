@@ -756,6 +756,10 @@ impl<'a> Emitter<'a> {
             }
         }
         let lowered = self.materialize_fixed_array_calls(&lowered, None);
+        // The guards and the store must read one evaluation of every impure
+        // operand, so a divisor, index, or cast operand is stored into an init
+        // local before the guards that check it are emitted.
+        let lowered = self.materialize_guarded_sub_operands(&lowered, None);
         let rendered = self.value(&lowered);
         // A module initializer runs at startup, so it carries the same
         // arithmetic guards a function statement would: a division by zero,
