@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 08:12
-> **Progress**: 0/26 tasks (0%)
+> **Last Updated**: 2026-10-10 08:41
+> **Progress**: 2/26 tasks (8%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -56,8 +56,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 1: Conditional-store judgment (DEF-113)
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill from a temporary-index snapshot of
-> committed, staged, unstaged, and untracked phase-start state)_
+> **Phase baseline tree**: 41bf2544e13bd8d7260b8dd4728c071ed70ad58b
 > **Lenses**: correctness reviewer + memory-safety auditor + semantics reviewer (ownership and
 > lend-store language rules; `AGENTS.md` dispatch matrix, AR-14)
 > **Reasoning**: high — ownership semantics on the lend-store path with memory-safety
@@ -69,8 +68,27 @@ task-size criteria in the make-plan quality checklist)
 **Objective**: Pin the corrected and preserved conditional-store judgments before any
 implementation.
 
-- [ ] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-9 — `compiler/tests/store_emission_integrity_spec_test.rs`
-- [ ] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 and ST-2 fail; ST-3 – ST-9 pass as deliberate regression pins, each recorded with its justification)
+- [x] 1.1.1 [spec-author] Write specification tests from ST-1 – ST-9 — `compiler/tests/store_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 08:41)
+- [x] 1.1.2 Run the spec suite and record the red phase (expected: ST-1 and ST-2 fail; ST-3 – ST-9 pass as deliberate regression pins, each recorded with its justification) ✅ (completed: 2026-10-10 08:41)
+
+**Red-phase evidence (2026-10-10 08:41)** — the new suite (`store_emission_integrity_spec_test`,
+nine tests) runs against the phase baseline and fails exactly as designed: 7 passed, 2 failed.
+ST-1 and ST-2 fail (the concrete and generic conditional self-store are accepted today; the run
+asserts the required rejection). ST-3 – ST-9 pass as deliberate regression pins:
+- ST-3 (duplicable generic instance): the store is a copy; accepted, and the callee's own copy
+  reads the chosen arm's value — pinned because the fix must leave the accepted shape's emission
+  and behavior unchanged. (A scalar lend binds a copy, so the program observes the value through
+  the callee, not through the caller's binding.)
+- ST-4 (two taken arms): the conditional has no lend arm — the existing single report on the
+  target must survive the refinement.
+- ST-5 (direct store from a read-only lend): the source-side report must survive unchanged.
+- ST-6 (mixed conditional with a read-only arm): the arm's single report must stay the only one.
+- ST-7 (nullable out-slot conditional): the safe carve-out emission must stay accepted and
+  memory-clean.
+- ST-8 (nullable generic instance): the same carve-out, judged per instance.
+- ST-9 (direct self-store): the target-side single report must survive.
+Run: `make -C docker exec CMD="cargo test --test store_emission_integrity_spec_test"` → 7 passed,
+2 failed (the two red cases).
 
 **Deliverables**:
 - Specification suite with ST-1 – ST-9
