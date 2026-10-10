@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 09:41
-> **Progress**: 24/26 tasks (92%)
+> **Last Updated**: 2026-10-10 10:08
+> **Progress**: 26/26 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -378,8 +378,27 @@ extent. The strict builds and runs assert the exits, and `make check` is fully g
 **Reference**: [03-04](03-04-module-initializers.md) §Testing Requirements
 **Objective**: Pin the emitted shapes and record the phase review evidence.
 
-- [ ] 4.3.1 Write the Phase 4 implementation pins (fill statement order, init-local materialization shape, intrinsic rendering in an init function, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs`
-- [ ] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; run `make check` for the phase close-out
+- [x] 4.3.1 Write the Phase 4 implementation pins (fill statement order, init-local materialization shape, intrinsic rendering in an init function, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 09:43)
+- [x] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; run `make check` for the phase close-out ✅ (completed: 2026-10-10 10:08)
+
+**Phase review evidence (2026-10-10 10:08)** — three independent reviews ran on the phase diff
+(correctness reviewer, memory-safety auditor, emission-integrity auditor; AR-14) and found one
+critical and two major defects in the new emission, all remediated in two follow-up commits: a
+materialized module operand dropped its runtime guards (an ASan-confirmed out-of-bounds read and a
+SIGFPE; the fix emits the guards ahead of the store and inside a guarded store), the module
+`slice<T>` path accepted a type argument that disagrees with the source element (now reports
+`E10200` exactly as the function path does), a fixed-array operand was materialized as an invalid
+array temporary (now keeps its decayed form), and the fill prepares its value once so nested
+conditionals emit no redundant locals. The one scoped re-review accepted three remediations and
+reported one residual (an impure guarded sub-expression was re-evaluated by the new guard); the
+auto-design allowance for one eligible correction was used to store those operands once before
+their guards, verified against the reviewer's ASan repros and pinned in the implementation suite —
+without a third review, since the phase's budget is one re-review. Pre-existing findings were
+filed on the roadmap: DEF-121 (a module initializer evaluates a guarded sub-expression twice),
+DEF-122 (a slice-typed binding from an array literal), DEF-123 (freestanding `bool` has no
+declaration); the struct-array-field compound literal joins the tracked DEF-80 class. Close-out:
+`make check` green, and the full `make verify` legs passed (`corpus-amiga`, `corpus-fs-uae`, and
+`run-fault-amiga`). Rulings are recorded in [05-findings.md](05-findings.md).
 
 **Deliverables**:
 - Implementation pins for Phase 4
