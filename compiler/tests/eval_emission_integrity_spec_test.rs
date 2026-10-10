@@ -1182,3 +1182,156 @@ func main(): i32 {
     let output = run_host("dot-control", control);
     assert_exit("dot-control", &output, 19);
 }
+
+/// A value-position update on a `const` binding reports the immutable-assign
+/// rule, in both the fixed-array and slice spellings.
+#[test]
+fn should_reject_a_value_update_on_a_const_binding() {
+    let fixed = r#"module spec.eei.constupdate;
+
+func main(): i32 {
+    const a: u8[2] = [1, 2];
+    let y: i32 = i32(a[0]++);
+    return y;
+}
+"#;
+    assert_rejected_once("const-update", fixed, "E10023", &[], &[]);
+
+    let slice_source = r#"module spec.eei.constsliceupdate;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let base: u8[2] = [1, 2];
+    const s: u8[] = slice(base, 0, 2);
+    let y: i32 = i32(s[0]++);
+    return y;
+}
+"#;
+    assert_rejected_once("const-slice-update", slice_source, "E10023", &[], &[]);
+}
+
+/// A value-position update through an unmarked parameter reports the
+/// read-only rule.
+#[test]
+fn should_reject_a_value_update_through_a_readonly_parameter() {
+    let source = r#"module spec.eei.paramupdate;
+
+import { slice } from std.mem;
+
+func bump(xs: u8[]): i32 {
+    let z: i32 = i32(xs[0]++);
+    return z;
+}
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    return bump(slice(a, 0, 2));
+}
+"#;
+    assert_rejected_once("readonly-update", source, "E10024", &[], &[]);
+}
+
+/// The `str` value update keeps its immutable-view report.
+#[test]
+fn should_reject_a_value_update_through_a_str_view() {
+    let source = r#"module spec.eei.strvalueupdate;
+
+func bump(borrow s: str): i32 {
+    let w: i32 = i32(s[0]++);
+    return w;
+}
+
+func main(): i32 {
+    return bump("ab");
+}
+"#;
+    assert_rejected_once(
+        "str-value-update",
+        source,
+        "E10042",
+        &["immutable view 's'"],
+        &[],
+    );
+}
+
+/// A `cstring` element write reports the immutable-view rule.
+#[test]
+fn should_reject_a_cstring_element_write() {
+    let source = r#"module spec.eei.cstringwrite;
+
+func fill(borrow c: cstring): i32 {
+    c[0] = 65;
+    return 0;
+}
+
+func main(): i32 {
+    return fill("ab");
+}
+"#;
+    assert_rejected_once(
+        "cstring-write",
+        source,
+        "E10042",
+        &["immutable view 'c'"],
+        &[],
+    );
+}
+
+/// The statement forms keep their taxonomy: a const element assign reports
+/// the immutable-assign rule, and a writable slice write builds and runs.
+#[test]
+fn should_keep_the_statement_write_taxonomy() {
+    let const_assign = r#"module spec.eei.constassign;
+
+func main(): i32 {
+    const a: u8[2] = [1, 2];
+    a[0] = 5;
+    return 0;
+}
+"#;
+    assert_rejected_once("const-assign", const_assign, "E10023", &[], &[]);
+
+    let writable = r#"module spec.eei.slicewrite;
+
+import { slice } from std.mem;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let s: u8[] = slice(a, 0, 2);
+    s[0] = 7;
+    return i32(s[0]) + i32(a[0]);
+}
+"#;
+    let output = run_host("slice-write", writable);
+    assert_exit("slice-write", &output, 14);
+}
+
+/// Whole-view rebinds and writable slice writes stay accepted and run.
+#[test]
+fn should_accept_view_rebinds_and_writable_writes() {
+    let source = r#"module spec.eei.writecontrol;
+
+import { slice } from std.mem;
+import { stringOf, toCString } from std.text;
+
+func main(): i32 {
+    let a: u8[2] = [1, 2];
+    let s: u8[] = slice(a, 0, 2);
+    s[0] = 7;
+    let t: str = "ab";
+    t = "cd";
+    let c: cstring = toCString(stringOf("ef"));
+    c = toCString(stringOf("gh"));
+    if (i32(t[0]) != 99) {
+        return 1;
+    }
+    if (i32(c[0]) != 103) {
+        return 2;
+    }
+    return i32(s[0]) + i32(a[0]);
+}
+"#;
+    let output = run_host("write-control", source);
+    assert_exit("write-control", &output, 14);
+}

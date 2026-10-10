@@ -349,8 +349,17 @@ accommodates the new behavior. Seven pre-existing classes are filed (DEF-145 –
 [AR-B10, AR-B11](00-ambiguity-register.md)
 **Objective**: Land the approved `E10042` wording and pin the six cases before any implementation.
 
-- [ ] 4.1.1 [spec] Amend the `E10042` registry row wording (`spec/14-diagnostics.md`) and write specification tests from ST-26 – ST-31 — `compiler/tests/eval_emission_integrity_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-26, ST-27, ST-29 fail — accepted today; ST-28 and the controls pass as deliberate pins)
+- [x] 4.1.1 [spec] Amend the `E10042` registry row wording (`spec/14-diagnostics.md`) and write specification tests from ST-26 – ST-31 — `compiler/tests/eval_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 18:30)
+- [x] 4.1.2 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-26, ST-27, ST-29 fail — accepted today; ST-28 and the controls pass as deliberate pins) ✅ (completed: 2026-10-10 18:32)
+
+**Red-phase evidence (2026-10-10)** — `./spec/check.sh` OK with the amended `E10042` row. ST-26
+(both the fixed-array and slice const spellings), ST-27, and ST-29 are accepted at HEAD; ST-28
+already reports `E10042` (the value-update pin) and the ST-30/ST-31 controls pass. One spelling
+finding: a module-level `const xs: u8[2] = [1, 2];` is rejected at its initializer (`E10224`, the
+array literal is not a constant expression), so the const cases use a local `const` binding — the
+taxonomy is the same (the const check reads the binding, not its position). The `cstring` write
+case is worth noting: the accepted program builds and segfaults at run time when the `cstring`
+names a `static str` literal's bytes, which is exactly the class the ruling rejects.
 
 **Deliverables**:
 - The registry wording
