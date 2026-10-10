@@ -200,10 +200,11 @@ fn assert_rejected(tag: &str, source: &str, expected: &[&str], fragments: &[&str
 
 /// Every rejected capture-validity shape reports exactly one named code.
 ///
-/// The relayed entry reports `E10405` on the entry's line and names the
-/// missing outer capture; the module-level entries (a `let` and a `const`)
-/// report `E10406`; the dotted write reports `E10402` and the dotted move
-/// `E10401`, both naming the root. A second code anywhere would mean a site
+/// The relayed entry reports `E10405` at the entry (line and column) and
+/// names the missing outer capture; the module-level names (a `let`, a
+/// `const`, a function, a type, and an import) report `E10406`; the dotted
+/// write reports `E10402` and the dotted move `E10401`, both naming the
+/// root. A second code anywhere would mean a site
 /// is judged by two rules, and a wrong name would mean the wrong side.
 #[test]
 fn should_report_one_named_error_per_capture_validity_shape() {
@@ -219,7 +220,7 @@ func main(): i32 {
 }
 "#,
         &["E10405"],
-        &["lambda reads 'm' without listing it", "main.clo:7"],
+        &["lambda reads 'm' without listing it", "main.clo:7:11"],
     );
     assert_rejected(
         "module-let-entry",

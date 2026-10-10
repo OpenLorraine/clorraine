@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 10:32
-> **Progress**: 6/22 tasks (27%)
+> **Last Updated**: 2026-10-10 10:41
+> **Progress**: 8/22 tasks (36%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -117,8 +117,20 @@ cannot carry, and the dotted root only reaches the two capture rules.
 **Reference**: [03-01](03-01-capture-listing-and-validity.md) §Testing Requirements
 **Objective**: Pin the internal shapes and record the phase review evidence.
 
-- [ ] 1.3.1 Write the Phase 1 implementation pins (report count and span per shape, the three-level relay reporting once, the dotted-root resolution, byte-identical re-emission of the accepted relay) — `compiler/tests/closure_integrity_impl_test.rs`
-- [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 1.3.1 Write the Phase 1 implementation pins (report count and span per shape, the three-level relay reporting once, the dotted-root resolution, byte-identical re-emission of the accepted relay) — `compiler/tests/closure_integrity_impl_test.rs` ✅ (completed: 2026-10-10 10:35)
+- [x] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 10:41)
+
+**Phase review evidence (2026-10-10 10:41)** — two independent reviews ran on the phase diff
+(correctness reviewer, semantics reviewer; AR-15). The semantics review found the phase
+conformant (no critical or major findings); the correctness review found one major: the `E10406`
+predicate covered only `let`/`const`/imports, so function and type names in a capture list still
+emitted the same environment-less call. The predicate was broadened to every module-level name
+(the user-approved trigger text already reads "a module-level binding"; AR-8 amended with the
+reopen evidence), the import spelling gained coverage in both suites, and the relay span pin and
+the entry-loop comment were corrected. The one scoped re-review accepted the major remediation,
+the comment fix, and the import fix; it rejected only the span pin's precision (now pinned at the
+entry's column) and noted a stale doc sentence (fixed). No third review — the phase budget is one
+re-review. Rulings are recorded in [05-findings.md](05-findings.md).
 
 **Deliverables**:
 - Implementation pins for Phase 1
