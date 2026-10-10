@@ -3,7 +3,7 @@
 > **Feature-Set**: Clorraine
 > **Status**: In Progress
 > **Created**: 2026-09-17
-> **Last Updated**: 2026-10-11 00:37
+> **Last Updated**: 2026-10-11 01:03
 > **Progress**: n/a (plan-based; no RDs drafted yet)
 > **CodeOps Artifact Schema**: 1
 
@@ -210,6 +210,7 @@
 | ↳ DEF-192 | A qualified value read of a nullable binding is never scrutinized | — | Backlog | ⬜ | 2026-10-11 00:37 | 🟡 minor, pre-existing (base == head), surfaced by the Phase 4 semantics review (N-1): `v.ptr` / `v.len` with `v: u8[]?` and `f.name` with `f: File?` are accepted; `eval_qualified` does not run the member-read null check. Fix direction: scrutinize qualified value reads like member reads |
 | ↳ DEF-193 | Narrowing does not survive `&&`/`||` chains or loop heads | — | Backlog | ⬜ | 2026-10-11 00:37 | 🟡 minor, pre-existing (base == head), surfaced by the Phase 4 semantics review (N-2): `if (s != null && len(s) > 0)` reports on the chain and in the guarded body for direct and widened uses alike; the frozen narrowing scope (TY-6) may intend the short-circuit chain to narrow. Fix direction: extend the narrowing state through right-hand operands and loop-head conditions |
 | ↳ DEF-194 | A constant-bounds `slice` of a runtime view emits a guard that fails the strict build | — | Backlog | ⬜ | 2026-10-11 00:37 | 🟡 minor, pre-existing (base == head), surfaced by the Phase 4 reviews (N-4): `slice(v, 0, 0)` on a runtime view emits a constant `0 > v.len` guard that trips `-Werror=type-limits` at the driver's C build. Fix direction: fold the constant comparison or keep the guard in the runtime helper |
+| ↳ DEF-195 | `len` of a `cstring` or `usize` is emitted as the constant zero | — | Backlog | ⬜ | 2026-10-11 01:03 | 🟡 minor, pre-existing (base == head == `125f357`), surfaced by the Phase 4 review round: `len(c)` for a `cstring` and `len(u)` for a `usize` are accepted and lowered to the constant `0` (e.g. `len(c) - 2` emits `0 - 2`), outside the frozen SL-2 length surface (arrays, slices, `str`, `cstring`?). Fix direction: reject or lower the out-of-surface spellings |
 | PLAN-13 | Amiga library surface | — | — | Backlog | ⬜ | 2026-09-26 | may not add language features; files a dependency on PLAN-11 |
 | PLAN-14 | Generated-C optimization | — | — | Backlog | ⬜ | 2026-10-03 22:17 | Trigger: only after the open DEF backlog closes and the semantics freeze (no remaining plan changes the emitted ABI/semantics); optimize only against a measured need (a visibly slow or oversized Amiga program), never on feel. First build the benchmark harness — host timing, FS-UAE instruction/cycle counts, `.text`/struct sizes — then plan from those numbers. Guard every optimization with the emission-integrity auditor (behavior preservation, base-vs-head emission diff), the memory-safety auditor (copy/move elision), and a deterministic benchmark script; dispatch the global performance-auditor per phase for `spec/17-codegen` ABI and over-optimization judgment. Expected cost: the shape-pinning implementation suites migrate with every emission optimization. Separate axis: compiler compile-time speed, evaluated only if it becomes a workflow bottleneck |
 

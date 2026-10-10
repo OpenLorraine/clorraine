@@ -252,5 +252,14 @@ lend spelling stay ASan-clean.
 
 Spec suite 52/52; impl 19/19; `make check` 58 suites green. Probes: `slice(v, 0, 0)`,
 `h.f.len()`, and `unsafe { len(s) }` report one `E10010` each; the narrowed slice and the
-narrowed non-nullable receiver stay accepted; the `len(s)`/`s.len()` twins keep the frozen
-message and the base-discriminating red set.
+narrowed non-nullable receiver stay accepted with non-null sources, so the guarded reads
+execute at run time; the `len(s)`/`s.len()` twins keep the frozen message and the
+base-discriminating red set.
+
+### Governance ratification (user, 2026-10-11)
+
+The `unsafe` flip changed a specification-test assertion (the accept → reject case), so it was
+submitted for the user's ruling, as the project contract requires for a specification-test
+change. **Ratified**: reporting inside `unsafe` conforms to the frozen narrowing rule, which
+lists no exemption, and matches the conversion and member-read sites; the pre-existing index
+carve-out stays filed as DEF-191 for a later consistency ruling.

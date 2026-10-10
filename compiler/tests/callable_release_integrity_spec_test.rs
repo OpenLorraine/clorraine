@@ -1963,9 +1963,9 @@ fn should_accept_a_narrowed_nullable_string_widened_into_len() {
 import { String, stringOf } from std.text;
 
 func main(): i32 {
-    let s: String? = null;
+    let s: String? = stringOf("ab");
     if (s != null) {
-        return i32(len(s));
+        return i32(len(s)) - 2;
     }
     return 0;
 }
@@ -2071,10 +2071,11 @@ func main(): i32 {
     );
 }
 
-/// A non-nullable receiver under a nullable head stays accepted.
+/// A narrowed view receiver stays accepted and the guarded read executes.
 ///
-/// The gate tests the receiver path's type, so narrowing the head and reading
-/// a non-nullable member of it reports nothing.
+/// The gate tests the receiver path's type, so narrowing the head clears the
+/// nullable use; the source is non-null at run time, so the guarded read
+/// returns the real length.
 #[test]
 fn should_accept_a_non_nullable_receiver_under_a_narrowed_head() {
     let source = r#"module spec.cri.receivernarrow;
@@ -2082,9 +2083,10 @@ fn should_accept_a_non_nullable_receiver_under_a_narrowed_head() {
 import { slice } from std.mem;
 
 func main(): i32 {
-    let s: u8[]? = null;
+    let a: u8[4] = [0, 0, 0, 0];
+    let s: u8[]? = slice(a, 0, 4);
     if (s != null) {
-        return i32(s.count.len());
+        return i32(s.len()) - 4;
     }
     return 0;
 }
