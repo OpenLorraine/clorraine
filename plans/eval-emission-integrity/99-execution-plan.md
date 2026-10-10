@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 14:41
-> **Progress**: 20/49 tasks (41%)
+> **Last Updated**: 2026-10-10 17:39
+> **Progress**: 39/49 tasks (80%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -404,7 +404,22 @@ green; full `make check` green (1547 tests) with no other suite affected.
 **Objective**: Pin the internals and record the phase review evidence.
 
 - [x] 4.3.1 Write the Phase 4 implementation pins (the exact code per shape, one report per site, the registry wording, byte-identity of the accepted controls) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 19:05)
-- [ ] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 19:32)
+
+**Phase 4 review evidence (2026-10-10)** — two dispatches per the phase's lens (correctness +
+semantics). No critical or major findings. Both reviewers confirmed statement/value parity for
+every probed shape (E10023/E10024/E10042 with one report per site and the same precedence), the
+`cstring` extension (the frozen view-mutability table already declares `cstring` immutable), the
+ruling fidelity (exactly the ruled routing, no emission change — all accepted programs are
+byte-identical), and the test integrity (the new cases are red on the base). Three pre-existing
+classes are filed: DEF-152 (module-initializer value updates bypass the own-stage checks — the
+semantics reviewer's repro accepts a const mutation and emits invalid C for a `str` write),
+DEF-153 (a moved/uninitialized update reports its state error more than once — the statement form
+already did at base; the value form now matches), and DEF-154 (`toCString` accepts only `String`
+where the frozen appendix documents `String` or `str`). The helper's doc comment was aligned with
+the measured reality (one write-mutability report per update; the place-state reports follow the
+statement form). Final: 33 specification cases, 37 implementation pins, `./spec/check.sh` OK, full
+`make check` green (1550 tests).
 
 **Deliverables**:
 - Implementation pins for Phase 4

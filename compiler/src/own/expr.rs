@@ -970,10 +970,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// through the read and write place checks (immutable `const`, read-only
     /// parameter, immutable view, place state), globals through the `const`
     /// check with its through-`raw` carve-out and the immutable-view check —
-    /// so an update reports exactly what the statement form reports, once per
-    /// site. The statement path evaluates its operand directly and judges the
-    /// write in `check_update`, so this helper keeps exactly one report per
-    /// update site.
+    /// so an update reports exactly what the statement form reports at the
+    /// site: one write-mutability report per update, and the same place-state
+    /// reports the statement form produces. The statement path evaluates its
+    /// operand directly and judges the write in `check_update`, so the two
+    /// forms stay aligned by construction.
     fn check_update_value_write(&mut self, operand: &'a Expr) {
         match self.place_target(operand) {
             Some(PlaceTarget::Local(id, projections)) => {

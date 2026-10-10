@@ -212,3 +212,51 @@ the rejection assertion).
 
 **Review budget**: two review dispatches for Phase 3 (correctness, semantics) plus the scoped
 re-verification of this fix round; every blocking finding fixed in-batch with a regression pin.
+## Phase 4: Write-mutability rules (DEF-119, DEF-124)
+
+**Reviewers**: correctness reviewer (RV) and semantics reviewer (SR), per the phase's lens.
+Diff reviewed: `b1e3445..6b48d95`. Both ran the base-tree red checks (ST-26/27/29 and the new
+pins are red on `b1e3445`; ST-28 and the controls green) and confirmed the registry edit is the
+approved row.
+
+### Verdicts (no blocking findings)
+
+- **Statement/value parity (RV + SR-1, confirmed)**: every probed pair reports the same code once
+  per site with the same precedence (`const` -> read-only parameter -> immutable view): the const
+  fixed array and const slice (E10023, prefix and postfix), the unmarked and `const`-mode
+  parameters (E10024), the `str` view (E10042), the globals (const and views), the `raw`-global
+  carve-out, the `.len` target (E10221), and the loan conflict (E10031). All accepted programs are
+  byte-identical base vs head.
+- **`cstring` extension (RV + SR-2, confirmed)**: no frozen text contradicts; `spec/02-types.md`
+  already declares `cstring` immutable, the FFI chapter never lets a `cstring` carry output, and
+  the E10031 golden already protects its backing storage. Message and help match the approved
+  template; the registry row is the only rule text; the golden is unchanged and green.
+- **Borderline shapes (SR-3, confirmed)**: the cstring local, field, nested field, raw-field,
+  array-element, and `unsafe` spellings report `E10042` in both forms; element reads and whole
+  rebinds stay accepted; the literal-to-cstring call argument (the ruling's hazard) reports.
+- **Ruling fidelity (SR-4, confirmed)**: exactly the ruled routing and predicate; the statement
+  path and every emission are untouched. The value form's new E10031/E10021 consequences are
+  statement-identical (spec-required), not extra behavior.
+
+### Filed (pre-existing classes; new rows on the roadmap)
+
+| # | Sev | Finding | Filed as |
+| - | --- | ------- | -------- |
+| SR-F1 | 🟠 | Module-initializer value updates bypass the own-stage write checks (a const mutated at startup; a `str` write emitting invalid C). | DEF-152 |
+| RV-001 / SR-O1 | 🟡 | A moved or uninitialized update reports its state error 2–3 times at one site (the statement form did at base; the value form now matches). | DEF-153 |
+| SR-O2 | 🟡 | `toCString` takes only `String` where the frozen appendix documents `String` or `str`. | DEF-154 |
+
+### Deliberate adjustments
+
+- `check_update_value_write`'s doc comment: the "one report per site" claim now names the
+  write-mutability report as the once-per-update one, with the place-state reports following the
+  statement form (the reviewers measured the statement form's pre-existing duplication).
+
+### Verification evidence (Phase 4)
+
+`./spec/check.sh` OK (27 files, 109 compile-fail tests); ST-26 - ST-31 green (33 cases); 37
+implementation pins green; full `make check` green (1550 tests); the base-tree red checks confirm
+every new rejection case fails without its fix.
+
+**Review budget**: two review dispatches for Phase 4 (correctness, semantics); no blocking finding,
+so no fix round and no scoped re-verification was required.
