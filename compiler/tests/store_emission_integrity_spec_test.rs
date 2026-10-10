@@ -340,6 +340,24 @@ fn assert_exit(tag: &str, output: &Output, expected: i32) {
     );
 }
 
+/// Asserts the run failed and its first stderr line is exactly `expected`.
+///
+/// The `cl_trap` contract is `error CODE: message` on the first line followed
+/// by an abort, so a successful exit or a different first line is a failure.
+fn assert_trap_first_line(tag: &str, output: &Output, expected: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag}: expected a runtime trap; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let first = String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    assert_eq!(first, expected, "{tag}: unexpected first stderr line");
+}
+
 /// Asserts the run produced no AddressSanitizer report.
 ///
 /// The check is meaningful under `RDC_ASAN`; a plain strict build has no
@@ -1070,6 +1088,33 @@ func main(): i32 {
 "#;
     let output = run_host("module-conditional-value", source);
     assert_exit("module-conditional-value", &output, 11);
+}
+
+/// A module conditional whose condition is out of range traps.
+///
+/// The condition reads past the source array, and the module initializer
+/// carries the same bounds guard a function statement would: the run traps
+/// with the index diagnostic instead of reading past the array.
+#[test]
+fn should_trap_an_out_of_range_module_condition() {
+    let source = r#"module spec.sei.p4.guardedcondition;
+
+let backing: i32[3] = [1, 2, 3];
+let x: i32[2] = [10, 11];
+let y: i32[2] = [20, 21];
+let idx: usize = 5;
+let a: i32[2] = backing[idx] > 0 ? x : y;
+
+func main(): i32 {
+    return a[0];
+}
+"#;
+    let output = run_host("module-guarded-condition", source);
+    assert_trap_first_line(
+        "module-guarded-condition",
+        &output,
+        "error E11211: index out of range",
+    );
 }
 
 /// `len` of a module array folds at module level and runs.

@@ -81,6 +81,7 @@
 | ST-27 | `let view: i32[] = slice(backing, 1, 3);` on a `i32[3]` with a runtime length and element check | accepted; strict build; runs (len 2; `view[0]` is `backing[1]`) | AR-10 |
 | ST-28 | `let v: i32[] = slice(backing, bump(), 3);` with `bump()` counting its calls | accepted; strict build; runs; `bump` ran exactly once and the view starts at the returned offset | AR-11 |
 | ST-29 | `let a: i32[2] = pick() ? x : y;` with `x`, `y` module arrays and `pick()` counting its calls | accepted; strict build; runs; `pick` ran exactly once; the element comes from the chosen arm | AR-18 |
+| ST-29b | a module conditional whose condition reads out of range (`backing[idx] > 0 ? x : y` with `idx = 5`; added in the Phase 4 review remediation) | accepted by the front end; the run traps `error E11211: index out of range` — the materialized condition keeps its bounds guard | AR-9, AR-18 |
 | ST-30 | a module-level `let n: usize = backing.len();` on an `i32[3]` backing | accepted; strict build; runs (exit 3) | AR-10 |
 
 ## Test Categories
@@ -91,7 +92,7 @@
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/store_emission_integrity_spec_test.rs` | ST-1 – ST-9 (P1), ST-10 – ST-18 (P2, including ST-14b and ST-16b), ST-19 – ST-22 (P3), ST-23 – ST-30 (P4) | all four component specs |
+| `compiler/tests/store_emission_integrity_spec_test.rs` | ST-1 – ST-9 (P1), ST-10 – ST-18 (P2, including ST-14b and ST-16b), ST-19 – ST-22 (P3), ST-23 – ST-30 (P4, including ST-29b) | all four component specs |
 
 ### Implementation Tests (edge cases, internals)
 

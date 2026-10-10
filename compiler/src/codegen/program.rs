@@ -693,6 +693,15 @@ impl<'a> Emitter<'a> {
     /// from its rendered base, and a conditional value reads its chosen arm
     /// per element from a condition the preparation stored exactly once.
     fn emit_global_array_fill(&mut self, target: &str, ty: &Ty, value: &Value) {
+        // The value is prepared once, before any element store, so every
+        // condition and run-time index is evaluated exactly once even though
+        // the stores read the value once per element.
+        let prepared = self.prepare_fill_value(value, None);
+        self.emit_filled_array(target, ty, &prepared);
+    }
+
+    /// Writes the prepared element stores of a filled array.
+    fn emit_filled_array(&mut self, target: &str, ty: &Ty, value: &Value) {
         let TyKind::Array { element, extents } = &ty.kind else {
             return;
         };
@@ -704,14 +713,13 @@ impl<'a> Emitter<'a> {
         } else {
             (**element).clone()
         };
-        let prepared = self.prepare_fill_value(value, None);
         for index in 0..*extent {
             let sub_target = format!("{target}[{index}]");
-            let Some(element_value) = fill_element_value(&prepared, index, &row_ty) else {
+            let Some(element_value) = fill_element_value(value, index, &row_ty) else {
                 continue;
             };
             if row_ty.is_fixed_array() {
-                self.emit_global_array_fill(&sub_target, &row_ty, &element_value);
+                self.emit_filled_array(&sub_target, &row_ty, &element_value);
                 continue;
             }
             self.emit_guards(&element_value);
@@ -795,19 +803,28 @@ impl<'a> Emitter<'a> {
         zero: &str,
     ) -> (String, Value) {
         let name = self.next_init_local();
-        let rendered = self.value(value);
         match guard {
             Some(enclosing) => {
                 self.push(&format!(
                     "    {} = {zero};",
                     declarator(&value.ty, &name, &self.sema.table)
                 ));
+                // The operand's own guards ride the guarded assignment, so a
+                // bounds or division check runs only on the path that reaches
+                // the operand.
+                let rendered = self.guarded_value(value);
                 self.push(&format!("    if ({enclosing}) {{ {name} = {rendered}; }}"));
             }
-            None => self.push(&format!(
-                "    {} = {rendered};",
-                declarator(&value.ty, &name, &self.sema.table)
-            )),
+            None => {
+                // The operand's guards are statements before its store,
+                // exactly as the single-assignment path emits them.
+                self.emit_guards(value);
+                let rendered = self.value(value);
+                self.push(&format!(
+                    "    {} = {rendered};",
+                    declarator(&value.ty, &name, &self.sema.table)
+                ));
+            }
         }
         let read = Value::new(
             value.ty.clone(),
@@ -1012,6 +1029,30 @@ impl<'a> Emitter<'a> {
         let source_element = lowered
             .first()
             .map(|value| self.substitute(&value.ty).iterated_element());
+        // An explicit type argument fixes the view's element, so it must name
+        // the source's element exactly, exactly as the function path requires.
+        if name == "slice" {
+            if let (Some(explicit_ty), Some(source_element)) =
+                (explicit.first(), source_element.as_ref())
+            {
+                if !source_element.is_unknown() && explicit_ty != source_element {
+                    if let Some(source) = lowered.first() {
+                        self.diagnostics.push(
+                            crate::diag::Diagnostic::error(
+                                "E10200",
+                                format!(
+                                    "cannot convert '{}' to '{}' implicitly",
+                                    self.substitute(&source.ty).display(),
+                                    view_type(explicit_ty.clone()).display()
+                                ),
+                                type_args[0].span,
+                            )
+                            .with_help("use an explicit cast `T(expr)`"),
+                        );
+                    }
+                }
+            }
+        }
         let type_arg = explicit
             .first()
             .cloned()
@@ -1091,9 +1132,20 @@ impl<'a> Emitter<'a> {
     ///
     /// The rendered view builder reads its offset argument twice, so an
     /// operand with effects must run once, before the construction. A pure
-    /// operand (a constant or a place) renders in place.
+    /// operand (a constant or a place) renders in place, and a fixed-array
+    /// operand that is not a call keeps its form: C cannot assign an array to
+    /// a temporary, and the renderer uses the operand through the
+    /// array-to-pointer decay.
     fn init_intrinsic_arg(&mut self, value: Value) -> Value {
         if init_operand_is_pure(&value) {
+            return value;
+        }
+        if value.ty.is_fixed_array()
+            && !matches!(
+                value.kind,
+                ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+            )
+        {
             return value;
         }
         let (_, local) = self.materialize_init_local(&value, None, "0");

@@ -16,6 +16,12 @@
 //! The typedef-order group pins the emitted declaration order itself: each
 //! typedef's byte position precedes every use of it in the same unit, and
 //! re-emitting the reordered programs is byte-identical.
+//!
+//! The module-initializer group pins the init-function shapes: the array fill
+//! statement order, the single materialized store of an impure operand, the
+//! one-store condition of a module conditional, the constructed view in place
+//! of the bare intrinsic name, the folded dot-`len`, and byte-identical
+//! re-emission.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -88,10 +94,94 @@ func main(): i32 {
 }
 "#;
 
+/// A filled module array whose init statement order is pinned.
+const INIT_FILL: &str = r#"module spec.sei.impl.initfill;
+
+let a: i32[3] = [1, 2; 7];
+
+func main(): i32 {
+    return a[2];
+}
+"#;
+
+/// A module view whose impure offset must be stored exactly once.
+const INIT_OPERAND_ONCE: &str = r#"module spec.sei.impl.initonce;
+
+import { slice } from std.mem;
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+let backing: i32[3] = [1, 2, 3];
+let v: i32[] = slice(backing, bump(), 3);
+
+func main(): i32 {
+    if (calls != 1) {
+        return 9;
+    }
+    return v[0];
+}
+"#;
+
+/// A module conditional whose condition must be stored exactly once.
+const INIT_CONDITIONAL: &str = r#"module spec.sei.impl.initconditional;
+
+let x: i32[2] = [10, 11];
+let y: i32[2] = [20, 21];
+let calls: i32 = 0;
+
+func pick(): bool {
+    calls = calls + 1;
+    return true;
+}
+
+let a: i32[2] = pick() ? x : y;
+
+func main(): i32 {
+    if (calls != 1) {
+        return 9;
+    }
+    return a[1];
+}
+"#;
+
+/// A module array and its slice view, for the intrinsic-rendering pin.
+const INIT_VIEW: &str = r#"module spec.sei.impl.initview;
+
+import { slice } from std.mem;
+
+let backing: i32[2] = [1, 2];
+let view: i32[] = slice(backing, 0, 2);
+
+func main(): i32 {
+    return i32(len(view));
+}
+"#;
+
+/// A module `len` of a fixed array, for the folded-count pin.
+const INIT_LEN: &str = r#"module spec.sei.impl.initlen;
+
+let backing: i32[3] = [1, 2, 3];
+let n: usize = backing.len();
+
+func main(): i32 {
+    return i32(n);
+}
+"#;
+
 /// The byte offset of `needle` in `unit`, failing with the unit when absent.
 fn position_of(unit: &str, needle: &str) -> usize {
     unit.find(needle)
         .unwrap_or_else(|| panic!("the emitted unit has no {needle:?}:\n{unit}"))
+}
+
+/// How many times `needle` occurs in `unit`.
+fn count_of(unit: &str, needle: &str) -> usize {
+    unit.matches(needle).count()
 }
 
 /// Temporary directory that removes itself when the test finishes.
@@ -755,4 +845,205 @@ fn should_keep_the_reordered_emission_byte_identical() {
         let (first, second) = emit_twice(tag, source);
         assert_eq!(first, second, "{tag}: the two emissions differ");
     }
+}
+
+/// The module array fill stores elements in declaration order.
+///
+/// The literal's listed elements come first and the fill covers the tail; the
+/// target must never take the invalid array assignment the old emission
+/// produced.
+#[test]
+fn should_fill_module_arrays_in_declaration_order() {
+    let (unit, _) = emit_twice("init-fill-order", INIT_FILL);
+    let first = position_of(&unit, "cl_spec_sei_impl_initfill_a[0] = 1;");
+    let second = position_of(&unit, "cl_spec_sei_impl_initfill_a[1] = 2;");
+    let third = position_of(&unit, "cl_spec_sei_impl_initfill_a[2] = 7;");
+    assert!(
+        first < second,
+        "init-fill-order: element 1 precedes element 0"
+    );
+    assert!(
+        second < third,
+        "init-fill-order: element 2 precedes element 1"
+    );
+    assert!(
+        !unit.contains("cl_spec_sei_impl_initfill_a = {"),
+        "init-fill-order: the target still takes an array assignment"
+    );
+}
+
+/// An impure module intrinsic operand is stored once, before the view.
+#[test]
+fn should_materialize_an_impure_init_operand_once() {
+    let (unit, _) = emit_twice("init-operand-once", INIT_OPERAND_ONCE);
+    assert_eq!(
+        count_of(&unit, "cl_spec_sei_impl_initonce_bump()"),
+        1,
+        "init-operand-once: the offset call does not run exactly once"
+    );
+    let store = position_of(&unit, "i32 __cl_itmp0 = cl_spec_sei_impl_initonce_bump();");
+    let view = position_of(&unit, "cl_spec_sei_impl_initonce_v = ((ClSlice_i32)");
+    assert!(
+        store < view,
+        "init-operand-once: the view is constructed before the offset is stored"
+    );
+    assert!(
+        unit[view..].contains("__cl_itmp0"),
+        "init-operand-once: the construction does not read the stored offset"
+    );
+}
+
+/// A module conditional's condition is stored once, before the elements.
+#[test]
+fn should_store_a_module_condition_once() {
+    let (unit, _) = emit_twice("init-condition-once", INIT_CONDITIONAL);
+    assert_eq!(
+        count_of(&unit, "cl_spec_sei_impl_initconditional_pick()"),
+        1,
+        "init-condition-once: the condition does not run exactly once"
+    );
+    let store = position_of(
+        &unit,
+        "bool __cl_itmp0 = cl_spec_sei_impl_initconditional_pick();",
+    );
+    let first = position_of(&unit, "cl_spec_sei_impl_initconditional_a[0] = (__cl_itmp0 ? ");
+    let second = position_of(&unit, "cl_spec_sei_impl_initconditional_a[1] = (__cl_itmp0 ? ");
+    assert!(
+        store < first && first < second,
+        "init-condition-once: the element stores do not follow the stored condition in order"
+    );
+}
+
+/// Module intrinsics render as constructed values in the init function.
+///
+/// The bare intrinsic name never reaches the unit: the `slice` construction
+/// spells the view struct, and the dot-`len` of a fixed array folds to its
+/// extent.
+#[test]
+fn should_render_module_intrinsics_in_the_init_function() {
+    let (unit, _) = emit_twice("init-intrinsic-view", INIT_VIEW);
+    assert_eq!(
+        count_of(&unit, "slice("),
+        0,
+        "init-intrinsic-view: the bare intrinsic name is still emitted"
+    );
+    assert!(
+        unit.contains("((ClSlice_i32)"),
+        "init-intrinsic-view: the view is not constructed"
+    );
+    assert!(
+        unit.contains("cl_spec_sei_impl_initview_backing[0] = 1;")
+            && unit.contains("cl_spec_sei_impl_initview_backing[1] = 2;"),
+        "init-intrinsic-view: the source array is not filled"
+    );
+
+    let (unit, _) = emit_twice("init-intrinsic-len", INIT_LEN);
+    assert!(
+        unit.contains("cl_spec_sei_impl_initlen_n = 3;"),
+        "init-intrinsic-len: the fixed-array count did not fold"
+    );
+}
+
+/// Re-emitting the module-initializer programs is byte-identical.
+#[test]
+fn should_keep_the_module_initializer_emission_byte_identical() {
+    for (tag, source) in [
+        ("reemission-init-fill", INIT_FILL),
+        ("reemission-init-operand-once", INIT_OPERAND_ONCE),
+        ("reemission-init-conditional", INIT_CONDITIONAL),
+        ("reemission-init-view", INIT_VIEW),
+        ("reemission-init-len", INIT_LEN),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(first, second, "{tag}: the two emissions differ");
+    }
+}
+
+/// A module `slice<T>` whose type argument disagrees with the source element
+/// is rejected exactly as the function path rejects it.
+#[test]
+fn should_reject_a_slice_type_argument_mismatch_at_module_level() {
+    assert_rejected(
+        "slice-type-mismatch",
+        r#"module spec.sei.impl.slicemismatch;
+
+import { slice } from std.mem;
+
+let backing: u8[2] = [1, 2];
+let v: i32[] = slice<i32>(backing, 0, 2);
+
+func main(): i32 {
+    return v[0];
+}
+"#,
+        &["E10200"],
+        &["cannot convert 'u8[2]' to 'i32[]'"],
+    );
+}
+
+/// A materialized module operand keeps its guard, and a fixed-array slice
+/// operand keeps its decayed form.
+///
+/// The condition's bounds guard is a statement before the condition store, so
+/// the run traps instead of reading past the array; the fixed-array slice
+/// source keeps its ternary form, which the view construction uses through
+/// the array-to-pointer decay, and the condition still runs exactly once.
+#[test]
+fn should_keep_module_operand_guards_and_array_decay() {
+    let guarded = r#"module spec.sei.impl.guardedinit;
+
+let backing: i32[3] = [1, 2, 3];
+let x: i32[2] = [10, 11];
+let y: i32[2] = [20, 21];
+let idx: usize = 5;
+let a: i32[2] = backing[idx] > 0 ? x : y;
+
+func main(): i32 {
+    return a[0];
+}
+"#;
+    let (unit, _) = emit_twice("init-guarded-condition", guarded);
+    let guard = position_of(&unit, "cl_trap(\"E11211\", \"index out of range\")");
+    let store = position_of(
+        &unit,
+        "bool __cl_itmp0 = (cl_spec_sei_impl_guardedinit_backing",
+    );
+    assert!(
+        guard < store,
+        "init-guarded-condition: the condition store precedes its bounds guard"
+    );
+
+    let decay = r#"module spec.sei.impl.sliceconditional;
+
+import { slice } from std.mem;
+
+let a: i32[2] = [1, 2];
+let b: i32[2] = [3, 4];
+
+func pick(): bool {
+    return true;
+}
+
+let v: i32[] = slice(pick() ? a : b, 0, 2);
+
+func main(): i32 {
+    return v[0];
+}
+"#;
+    let (unit, _) = emit_twice("init-slice-conditional", decay);
+    assert_eq!(
+        count_of(&unit, "cl_spec_sei_impl_sliceconditional_pick()"),
+        1,
+        "init-slice-conditional: the condition does not run exactly once"
+    );
+    assert!(
+        unit.contains(
+            "(cl_spec_sei_impl_sliceconditional_pick() ? cl_spec_sei_impl_sliceconditional_a : cl_spec_sei_impl_sliceconditional_b)"
+        ),
+        "init-slice-conditional: the array operand does not keep its ternary form"
+    );
+    assert!(
+        !unit.contains("__cl_itmp0[2]"),
+        "init-slice-conditional: the array operand is materialized as an array temporary"
+    );
 }
