@@ -260,3 +260,112 @@ every new rejection case fails without its fix.
 
 **Review budget**: two review dispatches for Phase 4 (correctness, semantics); no blocking finding,
 so no fix round and no scoped re-verification was required.
+
+## Phase 5: Ownership lifetimes and releases (DEF-95, 96, 125, 126, 127)
+
+**Reviewers**: correctness, memory-safety, emission-integrity, and semantics reviewers over the
+whole-phase diff (`0b573ac..ab32635`), per AR-B16 (the phase touches ownership, codegen, and
+language-rule surfaces).
+
+### Full review verdicts
+
+- **Correctness: one CRITICAL, one MAJOR.** RV-001: the view owner's per-evaluation re-assignment
+  was invisible to the loan model, so a view copied out of its owner's evaluation was accepted and
+  read freed storage (base rejected the shape with E10030) — a regression introduced by the phase.
+  RV-002: the conditional spelling of the view rebinding owns the projected value, not each arm's
+  backing, so the sibling fields leak (pre-existing, improved but incomplete).
+- **Memory-safety: two CRITICAL/MAJOR classes.** Critical 1 = RV-001 (independent reproduction,
+  `heap-use-after-free`). Critical 2: captures consumed inside composite values (struct-literal
+  fields, array literals, conditionals of composites) were accepted and double-freed — base
+  identical, the same DEF-126/127 class left open. Major 3: the DEF-96 release was emission-order
+  dependent (a store reached again through a loop back edge still leaked; base leaked too). Clean:
+  the DEF-95/96/125 primary families, the baseline probes, and both ASan suites.
+- **Emission-integrity: no findings.** Corpus diff: 9 differing programs, every hunk classified by
+  the three intended causes; 932/932 host and hosted-amiga, 405/405 freestanding programs
+  byte-identical otherwise; no head-only build failure; runtime values identical.
+- **Semantics: all five judgments confirmed**, with three pre-existing/residual items (the field
+  call and `Param`-typed callable mode gaps, the defer-body materialization suppression, the
+  non-escape E10034 taxonomy) and two register notes (the AR-B2 wording says "the binding's scope
+  end" — the implementation realizes owner scope + O3 re-assignment; `C ? x : y` reports once per
+  moved capture, mirroring the ownership stage's two-arm judgment).
+
+### Fix round (commit `640ee67`)
+
+| Finding | Fix |
+| ------- | --- |
+| RV-001 / Critical 1 (regression) | The owner binds in the view's own scope (`materialize_scoped_owner`, `bind_view_projection_root`) instead of the function body, so the scope cleanup releases it after the view's last use and an escaped view reports E10030 exactly as a named local's does. The owner is declared even in a loop's speculative pass (the loan a loop entry state carries must name the same owner the real pass creates), and `next_owned_temp` is saved/restored with the speculative state so owner names stay stable. |
+| Major 3 / F2 (DEF-96 incompleteness) | The supersede release is armed function-wide when any scope's deferred bodies carry an out-edge (`out_edge_defer`, computed in `prepare_regions`), replacing the per-return arming: every ordinary result store in such a function releases a pending value first. Functions with no out-edge defer stay byte-identical. |
+| Critical 2 (composite captures) | `place_root_names` descends struct-literal fields, array-literal elements and fills, so a capture consumed by a composite at a return or take site reports the ruled E10401 once instead of accepting a double free. |
+| RV-002 / F3 / F4 (conditional backings) | Filed (DEF-159); the `prepare_store` comment corrected to state the unhandled spelling. |
+
+### Scoped re-review (`ab32635..640ee67`)
+
+- **Correctness: no blocking findings.** The three targeted findings closed and re-derived red; two
+  minor items: RV-001 (the DEF-96 fix had no base-failing pin — the back-edge shape is now pinned in
+  both suites) and RV-002 (a block-bodied composite return reports E10034 + E10401 — filed as
+  DEF-161).
+- **Memory-safety: none introduced.** The escaped-view repros (six routes), the composite
+  rejections (five spellings), the back-edge family (twelve variants), and the accepted view family
+  (30+ probes) all behave; the residual leaks are all base-identical. F1 (an indexed/member
+  projection of a composite capture still double-freed) was closed in-batch by the Member/Index
+  descent (commit `874e094`); F2–F7 filed (DEF-158/163/164, the field-call family in DEF-155/139).
+- **Emission-integrity: no findings.** Four fix-round TU deltas, each one changed function;
+  937/941 head-accepted programs byte-identical to `ab32635`; the out-edge class verified; no
+  head-only build failure; values identical.
+- **Semantics: the three fix behaviors confirmed**; SR-001 (the E10030 message names
+  `__cl_owned0` — filed as DEF-162), SR-002 (multi-capture composites report per capture for the
+  recorder and per site for the borrowed-capture rejection — the recorder matches the audit's
+  `(function, capture, span)` key; recorded as intended), SR-003 (the defer-body leak — DEF-158).
+
+### Follow-up fix (`874e094`)
+
+`place_root_names` gained Member/Index descent (closing the re-review's F1: `[x][0]`,
+`Holder<T> { v: x }.v`, and their generic/take spellings now report one E10401), and the back-edge
+preemption shape gained a specification case and an implementation pin.
+
+### Filed (pre-existing unless noted; new roadmap rows)
+
+| # | Sev | Finding | Filed as |
+| - | --- | ------- | -------- |
+| F-2/F3/F7 | 🟠 | `func`-typed field calls ignore the field's parameter modes (take double-free, missing E10032, temporary leak). | DEF-155 |
+| F-3 | 🟠 | Module-level `func`-typed globals take no modes (double-free without a marker check). | DEF-156 |
+| F-4/RV-004 | 🟠 | `Param`-typed callees keep no effects (temporary leak; false E10020 against a shadowed module function). | DEF-157 |
+| F1/F2/SR-003/RV-005 | 🟠 | Owned materialization suppressed inside `defer` bodies (view backing and func-value temporary leaks). | DEF-158 |
+| RV-002/F3/F4 | 🟠 | Conditional view backings without an owner leak the taken value or sibling fields. | DEF-159 |
+| F-1 | 🟡 | Non-escape capture moves report E10034 naming a capture a borrowed parameter. | DEF-160 |
+| RV-002 | 🟡 | Block-bodied composite capture returns report E10034 + E10401 together. | DEF-161 |
+| SR-001 | 🟡 | The E10030 message names a compiler-generated owner. | DEF-162 |
+| F5 | 🟡 | A fixed array of view elements returned leaks its backings. | DEF-163 |
+| F6 | 🟠 | A discarded owned call statement leaks its result. | DEF-164 |
+| — | 🟠 | An inline capturing lambda emits duplicate `ClEnv_0` definitions. | DEF-165 |
+| P1 | 🟠 | A capture-less generic lambda called with a by-value owning argument double-frees. | DEF-166 |
+
+### Verification evidence (Phase 5 final)
+
+`./spec/check.sh` OK; `make check` green (**1570 tests**); `RDC_ASAN=1` specification suite green
+(44 cases); 44 implementation pins green; the regression pins red on the fix-round bases; the
+scoped memory re-audit and the corpus emission diff both clean at `874e094` (independent
+verification dispatched after the follow-up fix).
+
+**Review budget**: one full 4-reviewer round + one scoped 4-reviewer re-review + two in-batch fix
+rounds, both driven by reviewer-provided remedies; no blocking finding remains open.
+
+### DEF-103 closure (documented limitation, no code change)
+
+User-ruled (AR-B3): the `Q` key marker collision stays as a documented, fail-closed limitation.
+
+- **Marker site**: `compiler/src/types/keys.rs:70-74` appends `Q` for a nullable type argument;
+  the recursion at `:47-54` folds nested arguments. The limitation is documented at `keys.rs:31-37`
+  and pinned by `borrow_generic_integrity_impl_test.rs:322-333`.
+- **Recursion (the newly reachable shape)**: a nested instance position renders both
+  `Wrap<String?>` and a user `struct StringQ` as `Wrap__StringQ`.
+- **Top-level analogue**: the function-instance path collided at base (PF-003 evidence).
+- **Fail-closed proof (reproduced at the phase close)**: the program
+  `struct StringQ { x: i32; } struct Wrap<T> { v: T; }` with both `Wrap<String?>` and
+  `Wrap<StringQ>` values is accepted by the front end, emits two `struct ClWrap__StringQ`
+  definitions, and the strict build fails with
+  `error: redefinition of 'struct ClWrap__StringQ'` (`cc -std=c99 -O0 -Wall -Wextra -Werror`,
+  two definition sites in one TU). The collision can therefore never produce a runnable wrong
+  program.
+- **Row state**: DEF-103 closes Done with this evidence; an escaping scheme remains an ABI
+  decision with its own trigger (AR-B3).

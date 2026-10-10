@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-10T08:02:58+02:00",
+  "checkedAt": "2026-10-10T18:51:36+02:00",
   "plans": [
     "array-value-integrity",
     "borrow-generic-integrity",
@@ -12,11 +12,13 @@
     "clorraine-freestanding-profile",
     "clorraine-graphics",
     "clorraine-v1-language-completion",
+    "closure-integrity",
     "codegen-ownership-safety",
     "def-backlog-closeout",
     "def-backlog-completion",
     "defer-integrity",
     "element-loop-integrity",
+    "eval-emission-integrity",
     "generic-field-integrity",
     "generic-substitution-guards",
     "non-lexical-lifetimes",

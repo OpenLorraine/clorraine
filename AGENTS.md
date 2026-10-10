@@ -230,6 +230,20 @@ in `CMD`).
   **implementation tests** (the report count, name, and span per shape, the
   deep relay, one report per body form, the duty's instance order, the
   lender-named capture emission, and byte-identical re-emission).
+- `compiler/tests/eval_emission_integrity_spec_test.rs` holds the
+  **specification tests** for the evaluation/emission integrity batch (the
+  module-initializer emission positions, the single-evaluated guarded operand,
+  the fixed-array and slice emission shapes, the substituted projection reads,
+  the null-inferred local, `str` pair equality, `str` element loops, the
+  write-mutability routing for value-position updates and `cstring` writes, and
+  the ownership-lifetime cases: the view-bound owner, the preempted ordinary
+  return, the func-value temporary argument, the block-bodied and conditional
+  capture moves, and the escaped-owner rejection), and
+  `compiler/tests/eval_emission_integrity_impl_test.rs` holds their
+  **implementation tests** (the emitted destination and guard shapes, the
+  `__cl_ownedN` owner binding and release counts, the preemption-edge drop, the
+  argument materialization, the duty/report counts and spans, and byte-identical
+  re-emission where pinned).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo
