@@ -67,6 +67,7 @@
 | E10040 | Element loop over non-duplicable elements without `borrow` | `element loop requires 'borrow' for non-duplicable '{type}'` | write `for (borrow e in xs)` |
 | E10041 | Writable view derived from a read-only borrow | `cannot write through a view of read-only borrow '{name}'` | take the owner by `borrow` |
 | E10042 | Write to an element of an immutable view (`str` or `static str`) | `cannot write through immutable view '{name}'` | copy the bytes into an owned `String` or a `borrow`-derived `u8[]` view |
+| E10043 | Element loop over a non-iterable type | `type '{type}' cannot be iterated` | iterate a fixed array or a slice |
 
 ## 4. FFI and the raw boundary (`E101xx`)
 
@@ -94,7 +95,7 @@
 | E10209 | Indexing a type that is not indexable | `type '{type}' cannot be indexed` | arrays, slices, and `str` are indexable |
 | E10210 | Function type mismatch (signature or capture) | `function type mismatch: expected '{expected}', found '{found}'` | match the exact signature; capture-less lambdas only |
 | E10211 | Enum backing type is not an integer type | `enum backing type must be an integer type` | use `i8`-`u32`, `usize`, or `isize` |
-| E10212 | Unknown member of a struct, enum, or module | `'{name}' is not a member of '{type}'` | check the declaration or the spelling |
+| E10212 | Unknown member of a struct, enum, module, or type parameter | `'{name}' is not a member of '{type}'` | check the declaration or the spelling |
 | E10213 | `embed` outside a constant context | `'embed' is only allowed in a constant context` | use it in `const` or a module-level initializer |
 | E10214 | Embedded file cannot be read at build time, or the path is absolute or escapes the project root | `cannot read embedded file '{path}'` | use a relative path inside the project root, and fix the build permissions |
 | E10215 | Array fill literal without a fixed extent in context, or a fill value whose element type is not duplicable | `array fill requires a fixed extent` | annotate the array type; construct each element for a move-only fill |

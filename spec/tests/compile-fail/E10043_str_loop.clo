@@ -1,0 +1,15 @@
+// expect-error E10043
+// trigger: element loop over a `str` value
+module tests.compile_fail.E10043;
+
+func bad(s: str): i32 {
+    let t: i32 = 0;
+    for (borrow c in s) {
+        t = t + i32(c);
+    }
+    return t;
+}
+
+func main(): i32 {
+    return bad("ab");
+}

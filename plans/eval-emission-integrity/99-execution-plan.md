@@ -247,9 +247,21 @@ base-red) and `array_value_integrity_impl_test.rs`'s `ai6` spelling (the folded 
 **Objective**: Land the approved `E10043` row and golden, then pin the corrections before any
 implementation.
 
-- [ ] 3.1.1 [spec] Add the `E10043` registry row (`spec/14-diagnostics.md`), the golden `spec/tests/compile-fail/E10043_str_loop.clo`, and the compile-fail driver registration (AR-B6)
-- [ ] 3.1.2 [spec-author] Write specification tests from ST-17 – ST-25 — `compiler/tests/eval_emission_integrity_spec_test.rs`
-- [ ] 3.1.3 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-17, ST-18, ST-21 – ST-25 fail or reject wrongly; ST-19/20 and the controls pass as deliberate pins)
+- [x] 3.1.1 [spec] Add the `E10043` registry row (`spec/14-diagnostics.md`), the golden `spec/tests/compile-fail/E10043_str_loop.clo`, and the compile-fail driver registration (AR-B6) ✅ (completed: 2026-10-10 15:55)
+- [x] 3.1.2 [spec-author] Write specification tests from ST-17 – ST-25 — `compiler/tests/eval_emission_integrity_spec_test.rs` ✅ (completed: 2026-10-10 16:10)
+- [x] 3.1.3 Run the spec suite and `./spec/check.sh`; record the red phase (expected: ST-17, ST-18, ST-21 – ST-25 fail or reject wrongly; ST-19/20 and the controls pass as deliberate pins) ✅ (completed: 2026-10-10 16:12)
+
+**Red-phase evidence (2026-10-10)** — `./spec/check.sh` OK with the new golden (109 compile-fail
+tests; the `E10043_str_loop` golden waits for the implementation). All nine ST-17 – ST-25 cases
+fail at HEAD, and the two controls pass in isolation:
+ST-17 returns the fallback 3 where 7 is expected (the projection folds to `(i32)(0)`); ST-18 returns
+0 where the element count 2 is expected (the same fold on a growable `Array` field); ST-19 and
+ST-20 fail the strict build on `int x = NULL` (`int-conversion`); ST-21/22 (view equality) and
+ST-23/24 (the `str` loop) and ST-25 (the bare-parameter member call) are accepted and emit C the
+compiler rejects (or nothing meaningful). The plan's note that ST-19/20 pass at HEAD was written
+before the declaration spelling was confirmed; both are red on the declaration, which is the
+phase's DEF-108 fix. Controls: the fixed-array/slice loop program exits 12 and the concrete +
+callable-bound member program exits 19.
 
 **Deliverables**:
 - The registry row and golden

@@ -921,3 +921,243 @@ func main(): i32 {
     let output = run_host("func-field-len", source);
     assert_exit("func-field-len", &output, 13);
 }
+
+/// A generic borrow's struct-field projection reads the instance field's real
+/// length, not the fallback.
+#[test]
+fn should_read_the_instance_field_length_through_a_generic_borrow() {
+    let source = r#"module spec.eei.fieldlen;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    s: String;
+}
+
+func takeBox<T>(borrow b: T, fallback: i32): i32 {
+    if (i32(len(b.s)) > 0) {
+        return i32(len(b.s));
+    }
+    return fallback;
+}
+
+func main(): i32 {
+    let b: Box = Box { s: stringOf("abcdefg") };
+    return takeBox<Box>(b, 3);
+}
+"#;
+    let output = run_host("field-len", source);
+    assert_exit("field-len", &output, 7);
+}
+
+/// A growable array's projected length through a generic borrow reads the
+/// element count, not the folded zero.
+#[test]
+fn should_read_the_growable_length_through_a_generic_borrow() {
+    let source = r#"module spec.eei.growlen;
+
+import { Array, arrayNew } from std.mem;
+
+struct Basket {
+    items: Array<i32>;
+}
+
+func countOf<T>(borrow b: T): i32 {
+    return i32(len(b.items));
+}
+
+func main(): i32 {
+    let b: Basket = Basket { items: arrayNew<i32>() };
+    b.items.push(5);
+    b.items.push(7);
+    return countOf<Basket>(b);
+}
+"#;
+    let output = run_host("growable-len", source);
+    assert_exit("growable-len", &output, 2);
+}
+
+/// A local inferred from `null` keeps the nullable type and builds under the
+/// strict flags.
+#[test]
+fn should_build_and_run_an_inferred_null_local() {
+    let source = r#"module spec.eei.nullinfer;
+
+func main(): i32 {
+    let x = null;
+    if (x == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("null-infer", source);
+    assert_exit("null-infer", &output, 1);
+}
+
+/// The inferred null local pairs with a view: the pairing is the view's
+/// emptiness test, so a non-empty view does not match.
+#[test]
+fn should_build_and_run_a_null_local_paired_with_a_view() {
+    let source = r#"module spec.eei.nullpair;
+
+func main(): i32 {
+    let x = null;
+    let s: str = "ab";
+    if (x == s) {
+        return 1;
+    }
+    return 2;
+}
+"#;
+    let output = run_host("null-pair", source);
+    assert_exit("null-pair", &output, 2);
+}
+
+/// Two `str` views have no defined equality: the pair reports `E10222` and no
+/// translation unit is written.
+#[test]
+fn should_reject_view_pair_equality() {
+    let source = r#"module spec.eei.vieweq;
+
+func main(): i32 {
+    let a: str = "ab";
+    let b: str = "ab";
+    if (a == b) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once("view-eq", source, "E10222", &["operator '=='"], &[]);
+}
+
+/// The untyped-operand spelling reports on the view side, exactly like the
+/// slice case.
+#[test]
+fn should_reject_an_untyped_operand_compared_with_a_str() {
+    let source = r#"module spec.eei.untypedeq;
+
+func main(): i32 {
+    let x;
+    x = 5;
+    let s: str = "ab";
+    if (x == s) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once("untyped-str-eq", source, "E10222", &["operator '=='"], &[]);
+}
+
+/// A `str` element loop reports the non-iterable rule; fixed-array and slice
+/// loops keep building and run.
+#[test]
+fn should_reject_a_str_element_loop() {
+    let source = r#"module spec.eei.strloop;
+
+func sumStr(s: str): i32 {
+    let total: i32 = 0;
+    for (borrow c in s) {
+        total = total + i32(c);
+    }
+    return total;
+}
+"#;
+    assert_rejected_once("str-loop", source, "E10043", &["cannot be iterated"], &[]);
+
+    let control = r#"module spec.eei.loopcontrol;
+
+import { slice } from std.mem;
+
+func sumArray(xs: i32[3]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        total = total + v;
+    }
+    return total;
+}
+
+func sumSlice(xs: i32[]): i32 {
+    let total: i32 = 0;
+    for (v in xs) {
+        total = total + v;
+    }
+    return total;
+}
+
+func main(): i32 {
+    let m: i32[3] = [1, 2, 3];
+    let s: i32[] = slice(m, 0, 3);
+    return sumArray(m) + sumSlice(s);
+}
+"#;
+    let output = run_host("loop-control", control);
+    assert_exit("loop-control", &output, 12);
+}
+
+/// A write through a `str` loop element reports the same non-iterable rule,
+/// once for the site.
+#[test]
+fn should_reject_a_write_through_a_str_element_loop() {
+    let source = r#"module spec.eei.strloopwrite;
+
+func fill(s: str): void {
+    for (borrow c in s) {
+        c = 65;
+    }
+}
+"#;
+    assert_rejected_once("str-loop-write", source, "E10043", &[], &[]);
+}
+
+/// A member call on a bare type parameter reports an unknown member; concrete
+/// receivers and callable-bound members keep their call paths.
+#[test]
+fn should_reject_a_member_call_on_a_bare_type_parameter() {
+    let source = r#"module spec.eei.bareparam;
+
+struct S {
+    x: i32;
+}
+
+func g<T>(x: T): i32 {
+    return x.foo(5);
+}
+"#;
+    assert_rejected_once(
+        "bare-param-member",
+        source,
+        "E10212",
+        &["'foo' is not a member of 'T'"],
+        &["E10307"],
+    );
+
+    let control = r#"module spec.eei.dotcontrol;
+
+struct Holder<T> {
+    call: T;
+}
+
+struct Plain {
+    call: func(i32): i32;
+    tag: i32;
+}
+
+func addOne(x: i32): i32 {
+    return x + 1;
+}
+
+func use<T: func(i32): i32>(h: Holder<T>): i32 {
+    return h.call(5);
+}
+
+func main(): i32 {
+    let p: Plain = Plain { call: addOne, tag: 7 };
+    return p.call(5) + p.tag + use<func(i32): i32>(Holder<func(i32): i32> { call: addOne });
+}
+"#;
+    let output = run_host("dot-control", control);
+    assert_exit("dot-control", &output, 19);
+}
