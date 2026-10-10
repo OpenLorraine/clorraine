@@ -1483,6 +1483,70 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Re-roots an ownerless projection chain at a local in the view's scope.
+    ///
+    /// Mirrors [`Self::bind_ownerless_projection_root`] for a view binding: the
+    /// same roots bind — a fresh call result, a struct literal with owning
+    /// fields, or a conditional of either — but the owner stays in the scope
+    /// that declares the view. A view must not outlive the storage it reads,
+    /// so the scope cleanup releases the backing after the binding's last use
+    /// and the liveness pass rejects a view that escapes the scope. A chain
+    /// that already roots in storage, or a root that owns nothing, is returned
+    /// unchanged.
+    pub(super) fn bind_view_projection_root(&mut self, value: Value) -> Value {
+        match value.kind {
+            // A fixed array's `.len` is its structural extent: the member
+            // reads no storage, so the chain needs no owner.
+            ValueKind::Member { ref base, ref name }
+                if name == "len" && base.ty.is_fixed_array() =>
+            {
+                value
+            }
+            ValueKind::Member { base, name } => {
+                let base = self.bind_view_projection_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.bind_view_projection_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } | ValueKind::StructLit { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) {
+                    self.materialize_scoped_owner(value)
+                } else {
+                    value
+                }
+            }
+            ValueKind::Conditional { .. } => {
+                if self.conditional_borrows_place(&value) {
+                    value
+                } else {
+                    let owning =
+                        !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                    if owning && !is_view(&value.ty) {
+                        self.materialize_scoped_owner(value)
+                    } else {
+                        value
+                    }
+                }
+            }
+            _ => value,
+        }
+    }
+
     /// Binds a consumed projection's call root for a conditionally evaluated
     /// operand.
     ///
@@ -1777,6 +1841,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let decl_ty = self.materialized_ty(&value);
         let id = self.declare_local(&name, decl_ty, false, self.current_span);
         self.move_binding_to_body_scope(id, &name);
+        self.set_place(
+            id,
+            PlaceState {
+                initialized: true,
+                ..PlaceState::default()
+            },
+        );
+        self.bindings[id].used = true;
+        let place = self.binding_place(id);
+        self.emit(Statement::Assign {
+            target: place.clone(),
+            value,
+        });
+        Value::new(place.ty.clone(), ValueKind::Place(place))
+    }
+
+    /// Binds an owned view backing to a local in the declaring scope.
+    ///
+    /// The storage must outlive the view binding that reads it and no longer:
+    /// the local stays in the current scope instead of moving to the function
+    /// body, so the scope's cleanup releases the backing after the binding's
+    /// last use and the liveness pass rejects a view that escapes the scope
+    /// (`E10030`), exactly as it rejects an escaped view of a named local.
+    ///
+    /// Unlike [`Self::materialize_owned_argument`], the binding is declared
+    /// even in a speculative pass that reports no diagnostics: the view's
+    /// owner and provenance must be the same in every pass over the body, or
+    /// the loan a loop's entry state carries would name a different owner than
+    /// the real pass creates. A body retained for a deferred registration and
+    /// an unknown type are returned unchanged.
+    pub(super) fn materialize_scoped_owner(&mut self, value: Value) -> Value {
+        if self.projects_from_place(&value)
+            || !self.materialize_owned_temporaries
+            || value.ty.is_unknown()
+        {
+            return value;
+        }
+        let name = format!("__cl_owned{}", self.next_owned_temp);
+        self.next_owned_temp += 1;
+        let decl_ty = self.materialized_ty(&value);
+        let id = self.declare_local(&name, decl_ty, false, self.current_span);
         self.set_place(
             id,
             PlaceState {

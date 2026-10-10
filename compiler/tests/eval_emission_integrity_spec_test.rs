@@ -1373,6 +1373,45 @@ func main(): i32 {
     assert_no_asan("view-temp", &output);
 }
 
+/// A view that escapes its owner's scope reports the outlives-its-owner rule.
+///
+/// The view bound from an owned projection temporary is backed by a local in
+/// the binding's scope; copying it into an outer binding and using it after
+/// the scope ends reports `E10030`, exactly as a view of a named local does.
+#[test]
+fn should_reject_a_view_that_escapes_its_owner_scope() {
+    let source = r#"module spec.eei.escapedowner;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    v: String;
+}
+
+func use(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: str = "zz";
+    let i: i32 = 0;
+    while (i < 2) {
+        let t: str = (Box { v: stringOf("ab") }).v;
+        if (i == 0) { s = t; }
+        i = i + 1;
+    }
+    return use(s);
+}
+"#;
+    assert_rejected_once(
+        "escaped-owner",
+        source,
+        "E10030",
+        &["does not live long enough"],
+        &[],
+    );
+}
+
 /// The owned `String` destination control keeps its existing release.
 #[test]
 fn should_keep_the_string_destination_projection_clean() {

@@ -149,6 +149,16 @@ pub(super) struct Emitter<'a> {
     /// functions where such a store exists, so ordinary returns keep their
     /// unchanged shape.
     pub(super) deferred_result_store: bool,
+    /// True when the open function has a deferred body that leaves its own
+    /// block range.
+    ///
+    /// Such a body runs inline at each exit edge, so its `break` or
+    /// `continue` can preempt a return anywhere in the function and abandon
+    /// the stored result. Every ordinary store in the function then releases
+    /// a pending value first; the release is null-safe, so a path that
+    /// preempted nothing stays a no-op. A function with no such defer keeps
+    /// the release to the deferred-store path alone.
+    pub(super) out_edge_defer: bool,
     /// Name of the result variable, set when the function has a ladder.
     pub(super) result_var: Option<String>,
     /// The open function's return type.
@@ -259,6 +269,7 @@ impl<'a> Emitter<'a> {
             labels: BTreeMap::new(),
             used_rung_labels: BTreeSet::new(),
             deferred_result_store: false,
+            out_edge_defer: false,
             result_var: None,
             return_ty: Ty::void(),
             reachable: BTreeSet::new(),

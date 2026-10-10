@@ -381,14 +381,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         // A view bound to a projection of fresh ownerless storage — a call
-        // result, a struct literal, or a conditional of either — binds the
-        // backing to a scope-owned local, so the view reads storage whose
-        // release the binding's scope owns. The bound local is re-assigned
-        // per evaluation, and each assignment releases the value the previous
-        // one stored. A chain that already roots at a place, or a value that
-        // owns nothing, is returned unchanged.
+        // result, a struct literal, or a conditional whose value is such an
+        // aggregate — binds the backing to a local in the view's scope, so the
+        // scope's cleanup releases it after the view's last use and an escaped
+        // view is rejected. A chain that already roots at a place, or a value
+        // that owns nothing, is returned unchanged.
+        //
+        // A conditional whose arms project an ownerless literal directly
+        // (`c ? (P { a, b }).a : (Q { a, b }).a`) is not bound here: its value
+        // is the projected view, and binding each arm's root eagerly would run
+        // both arms. Such a shape keeps its unreleased backing.
         let lowered = if is_view(ty) && !self.projects_from_place(&lowered) {
-            self.bind_ownerless_projection_root(lowered)
+            self.bind_view_projection_root(lowered)
         } else {
             lowered
         };

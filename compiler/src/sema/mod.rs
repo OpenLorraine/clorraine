@@ -691,25 +691,42 @@ pub(super) fn place_root_name(expr: &Expr) -> Option<&str> {
     }
 }
 
-/// Collects every root name a conditional move site may consume.
+/// Collects every root name a capture move site may consume.
 ///
 /// A plain place roots at one name, but a conditional selects one of its arms
 /// at run time, so a move out of `c ? x : y` may consume either arm's root; a
-/// nested conditional recurses. This mirrors the ownership stage's
-/// conditional move sources, so the capture rules and the per-instance duty
+/// nested conditional recurses. A struct or array literal consumes each field
+/// or element value, so a capture carried inside one is a move of that
+/// capture. This mirrors the ownership stage's conditional move sources and
+/// its aggregate consumption, so the capture rules and the per-instance duty
 /// judge the same shapes.
 pub(super) fn place_root_names<'e>(expr: &'e Expr, roots: &mut Vec<&'e str>) {
-    if let ExprKind::Conditional {
-        then_value,
-        else_value,
-        ..
-    } = &expr.kind
-    {
-        place_root_names(then_value, roots);
-        place_root_names(else_value, roots);
-        return;
-    }
-    if let Some(root) = place_root_name(expr) {
-        roots.push(root);
+    match &expr.kind {
+        ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } => {
+            place_root_names(then_value, roots);
+            place_root_names(else_value, roots);
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            for field in fields {
+                place_root_names(&field.value, roots);
+            }
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            for element in elements {
+                place_root_names(element, roots);
+            }
+            if let Some(fill) = fill {
+                place_root_names(fill, roots);
+            }
+        }
+        _ => {
+            if let Some(root) = place_root_name(expr) {
+                roots.push(root);
+            }
+        }
     }
 }

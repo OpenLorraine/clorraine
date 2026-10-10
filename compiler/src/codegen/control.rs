@@ -104,6 +104,14 @@ impl<'a> Emitter<'a> {
     /// Records the reachable blocks and the entry of every structured loop.
     fn prepare_regions(&mut self, function: &'a ir::Function) {
         self.reachable = super::cleanup::reachable_blocks(function);
+        // A deferred body that leaves its own block range can preempt a
+        // pending return at any exit edge, so every ordinary result store in
+        // the function releases first. A function with no such defer keeps
+        // its stores unchanged.
+        self.out_edge_defer = self
+            .scope_actions
+            .values()
+            .any(|actions| super::cleanup::defer_region_has_out_edge(function, actions));
         self.loop_entry.clear();
         for block in &function.blocks {
             if let Terminator::Branch {

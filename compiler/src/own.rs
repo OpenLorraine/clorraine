@@ -741,6 +741,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_exits = self.exits.len();
         let saved_temps = self.temps.len();
         let saved_releases = self.pending_releases.clone();
+        let saved_owned_temp = self.next_owned_temp;
         let saved_report = self.report_diagnostics;
         self.report_diagnostics = false;
         let (entry, stable_post) = 'fixpoint: {
@@ -785,6 +786,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.temps.truncate(saved_temps);
         self.destination_temps.truncate(saved_temps);
         self.pending_releases = saved_releases;
+        // A speculative body may bind view owners; the real pass declares them
+        // again, so the numbering restarts and the emitted names stay stable.
+        self.next_owned_temp = saved_owned_temp;
         self.report_diagnostics = saved_report;
         let mut entry = entry;
         entry.drop_bindings_from(saved_bindings);

@@ -1774,8 +1774,10 @@ func main(): i32 {
     assert_run_exit("pin-write-control-run", control, 14);
 }
 
-/// A view bound to an owned projection temporary emits a body-scope owner,
-/// reads through it, and releases it on the re-assignment and the cleanup.
+/// A view bound to an owned projection temporary emits an owner local in the
+/// binding's scope, reads through it, and releases it on the scope cleanup,
+/// with the re-assignment prologue releasing any value a previous evaluation
+/// left when the scope re-opens.
 #[test]
 fn should_bind_the_view_owner_and_release_it_once_per_evaluation() {
     let source = r#"module spec.eeiimpl.viewtemp;
@@ -1820,6 +1822,77 @@ func main(): i32 {
         "pin-view-owner: the owner releases on the re-assignment and the cleanup"
     );
     assert_run_exit("pin-view-owner-run", source, 6);
+}
+
+/// A view copied out of its owner's scope reports once against the owner.
+#[test]
+fn should_report_the_escaped_view_once() {
+    let source = r#"module spec.eeiimpl.escapedowner;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    v: String;
+}
+
+func use(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: str = "zz";
+    let i: i32 = 0;
+    while (i < 2) {
+        let t: str = (Box { v: stringOf("ab") }).v;
+        if (i == 0) { s = t; }
+        i = i + 1;
+    }
+    return use(s);
+}
+"#;
+    let stderr = compile_stderr("pin-escaped-owner", source);
+    assert_eq!(
+        stderr.matches("error E10030:").count(),
+        1,
+        "pin-escaped-owner: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("does not live long enough"),
+        "pin-escaped-owner: the report names the outlives rule; stderr:\n{stderr}"
+    );
+}
+
+/// A capture carried inside a composite value reports the capture-move rule
+/// once.
+#[test]
+fn should_reject_the_composite_capture_return_once() {
+    let source = r#"module spec.eeiimpl.composite;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> {
+    v: T;
+}
+
+func outer<T>(x: T): Holder<T> {
+    return ([x] () => Holder<T> { v: x })();
+}
+
+func main(): i32 {
+    let r: Holder<String> = outer<String>(stringOf("ab"));
+    return i32(len(r.v));
+}
+"#;
+    let stderr = compile_stderr("pin-composite-capture", source);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-composite-capture: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot move captured 'x'"),
+        "pin-composite-capture: the report names the capture; stderr:\n{stderr}"
+    );
 }
 
 /// The preempted ordinary return emits the release before the superseding
