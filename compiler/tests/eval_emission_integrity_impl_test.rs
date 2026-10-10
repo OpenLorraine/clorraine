@@ -1334,3 +1334,235 @@ func main(): i32 {
     assert_contains_all("pin-func-field-len", &emitted, &["(h.len)(5)"]);
     assert_run_exit("pin-func-field-len-run", source, 13);
 }
+
+/// Compiles one host-profile program that must be rejected and returns the
+/// compiler's stderr.
+fn compile_stderr(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = Command::new(env!("CARGO_BIN_EXE_clc"))
+        .args([
+            "--profile",
+            "host",
+            "-o",
+            c_path.to_str().expect("emitted C path"),
+            source_path.to_str().expect("source path"),
+        ])
+        .output()
+        .expect("failed to spawn the compiler binary");
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// A projected read resolves through the substituted base: the per-instance
+/// spelling reads the real field, a growable array reads its count, and the
+/// concrete projection re-emits byte-identically.
+#[test]
+fn should_resolve_the_substituted_projection() {
+    let borrowed = r#"module spec.eeiimpl.fieldlen;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    s: String;
+}
+
+func takeBox<T>(borrow b: T, fallback: i32): i32 {
+    if (i32(len(b.s)) > 0) {
+        return i32(len(b.s));
+    }
+    return fallback;
+}
+
+func main(): i32 {
+    let b: Box = Box { s: stringOf("abcdefg") };
+    return takeBox<Box>(b, 3);
+}
+"#;
+    let emitted = emit_host("pin-projection", borrowed);
+    assert_contains_all(
+        "pin-projection",
+        &emitted,
+        &["(cl_string_view((*b).s)).len"],
+    );
+    assert_run_exit("pin-projection-run", borrowed, 7);
+
+    let growable = r#"module spec.eeiimpl.growlen;
+
+import { Array, arrayNew } from std.mem;
+
+struct Basket {
+    items: Array<i32>;
+}
+
+func countOf<T>(borrow b: T): i32 {
+    return i32(len(b.items));
+}
+
+func main(): i32 {
+    let b: Basket = Basket { items: arrayNew<i32>() };
+    b.items.push(5);
+    b.items.push(7);
+    return countOf<Basket>(b);
+}
+"#;
+    let emitted = emit_host("pin-grow-projection", growable);
+    assert_contains_all("pin-grow-projection", &emitted, &["((*b).items).count"]);
+    assert_run_exit("pin-grow-projection-run", growable, 2);
+
+    let concrete = r#"module spec.eeiimpl.concretefield;
+
+import { String, stringOf } from std.text;
+
+struct Plain {
+    s: String;
+}
+
+func lenOf(b: Plain): i32 {
+    return i32(len(b.s));
+}
+
+func main(): i32 {
+    let b: Plain = Plain { s: stringOf("abc") };
+    return lenOf(b);
+}
+"#;
+    let (first, second) = emit_twice("pin-concrete-field", concrete);
+    assert_eq!(
+        first, second,
+        "pin-concrete-field: the emission must be deterministic"
+    );
+    assert_contains_all(
+        "pin-concrete-field",
+        &first,
+        &["(cl_string_view(b.s)).len"],
+    );
+    assert_run_exit("pin-concrete-field-run", concrete, 3);
+}
+
+/// The null literal's shape lowers to the generic pointer its value inhabits,
+/// and the null pairing reads the local against the view's pointer.
+#[test]
+fn should_emit_the_null_local_declaration_and_its_pairing() {
+    let inferred = r#"module spec.eeiimpl.nullinfer;
+
+func main(): i32 {
+    let x = null;
+    if (x == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("pin-null-infer", inferred);
+    assert_contains_all(
+        "pin-null-infer",
+        &emitted,
+        &["void * x = NULL;", "(x == NULL)"],
+    );
+    assert_run_exit("pin-null-infer-run", inferred, 1);
+
+    let paired = r#"module spec.eeiimpl.nullpair;
+
+func main(): i32 {
+    let x = null;
+    let s: str = "ab";
+    if (x == s) {
+        return 1;
+    }
+    return 2;
+}
+"#;
+    let emitted = emit_host("pin-null-pair", paired);
+    assert_contains_all(
+        "pin-null-pair",
+        &emitted,
+        &["void * x = NULL;", "(x == (s).ptr)"],
+    );
+    assert_run_exit("pin-null-pair-run", paired, 2);
+}
+
+/// Each phase diagnostic reports once at its site: the view pair at the left
+/// operand, the element loop at its header, the member callee at the callee.
+#[test]
+fn should_report_the_phase_diagnostics_once_at_the_site() {
+    let view_eq = r#"module spec.eeiimpl.vieweq;
+
+func main(): i32 {
+    let a: str = "ab";
+    let b: str = "ab";
+    if (a == b) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let stderr = compile_stderr("pin-view-eq", view_eq);
+    assert_eq!(
+        stderr.matches("error E10222:").count(),
+        1,
+        "pin-view-eq: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:6:9"),
+        "pin-view-eq: the report lands on the left operand; stderr:\n{stderr}"
+    );
+
+    let str_loop = r#"module spec.eeiimpl.strloop;
+
+func sumStr(s: str): i32 {
+    let total: i32 = 0;
+    for (borrow c in s) {
+        total = total + i32(c);
+    }
+    return total;
+}
+
+func main(): i32 {
+    return sumStr("ab");
+}
+"#;
+    let stderr = compile_stderr("pin-str-loop", str_loop);
+    assert_eq!(
+        stderr.matches("error E10043:").count(),
+        1,
+        "pin-str-loop: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:5:5"),
+        "pin-str-loop: the report lands on the loop header; stderr:\n{stderr}"
+    );
+
+    let bare = r#"module spec.eeiimpl.bareparam;
+
+struct S {
+    x: i32;
+}
+
+func g<T>(x: T): i32 {
+    return x.foo(5);
+}
+
+func main(): i32 {
+    return g<i32>(5);
+}
+"#;
+    let stderr = compile_stderr("pin-bare-param", bare);
+    assert_eq!(
+        stderr.matches("error E10212:").count(),
+        1,
+        "pin-bare-param: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:8:12"),
+        "pin-bare-param: the report lands on the callee; stderr:\n{stderr}"
+    );
+}

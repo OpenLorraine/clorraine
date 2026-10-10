@@ -314,7 +314,7 @@ green.
 **Reference**: [03-03](03-03-value-typing-conformance.md) §Testing Requirements
 **Objective**: Pin the internals and record the phase review evidence.
 
-- [ ] 3.3.1 Write the Phase 3 implementation pins (the per-instance projection spelling, unchanged concrete emissions, the one-report counts and spans for E10222/E10043/E10212, the null-local declaration, byte-identity of the controls) — `compiler/tests/eval_emission_integrity_impl_test.rs`
+- [x] 3.3.1 Write the Phase 3 implementation pins (the per-instance projection spelling, unchanged concrete emissions, the one-report counts and spans for E10222/E10043/E10212, the null-local declaration, byte-identity of the controls) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 17:20)
 - [ ] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
 
 **Deliverables**:
