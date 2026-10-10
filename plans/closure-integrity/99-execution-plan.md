@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 10:58
-> **Progress**: 13/22 tasks (59%)
+> **Last Updated**: 2026-10-10 11:15
+> **Progress**: 15/22 tasks (68%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -209,8 +209,20 @@ DEF-125.
 **Reference**: [03-02](03-02-captured-owner-integrity.md) §Testing Requirements
 **Objective**: Pin the internals and record the phase review evidence.
 
-- [ ] 2.3.1 Write the Phase 2 implementation pins (one report per shape with the substituted instance first, the duty naming, the masked capture IR name with the source name kept for diagnostics, the release counts on ST-13's shape, byte-identical re-emission) — `compiler/tests/closure_integrity_impl_test.rs`
-- [ ] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 2.3.1 Write the Phase 2 implementation pins (one report per shape with the substituted instance first, the duty naming, the masked capture IR name with the source name kept for diagnostics, the release counts on ST-13's shape, byte-identical re-emission) — `compiler/tests/closure_integrity_impl_test.rs` ✅ (completed: 2026-10-10 11:00)
+- [x] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 11:15)
+
+**Phase review evidence (2026-10-10 11:15)** — two independent reviews ran on the phase diff
+(correctness reviewer, memory-safety auditor; AR-15). Both closed without critical or major
+findings in the phase itself: the correctness review verified the duty's per-instance judgments
+against the concrete rule (both instance orders; duplicable, nullable, and view instances; take
+forms; mere reads), the gate guard's release behavior across lender, local, and value shapes, and
+the two corrected tests' legitimacy; the memory audit ran 45 host ASan probes and found no new
+leak, double-free, or use-after-free — every head/base difference is a fix or a no-op. The two
+phase-introduced minors were fixed and re-verified (the duty records only inside expression-bodied
+lambdas, so block bodies keep their single declaration-site report; the temp-owner collection
+skips receiver calls). Review-surfaced pre-existing defects were filed as backlog rows (DEF-125,
+DEF-126, DEF-127). Rulings are recorded in [05-findings.md](05-findings.md).
 
 **Deliverables**:
 - Implementation pins for Phase 2
