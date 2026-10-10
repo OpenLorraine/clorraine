@@ -938,6 +938,56 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Judges the moves a returned value owes.
+    ///
+    /// An owned value leaves its source through the return, and a lend
+    /// parameter stored or returned through the value records the per-instance
+    /// duty — or reports `E10034` at a concrete owning type. Shared by `return`
+    /// statements and expression-bodied lambdas, whose value is the lifted
+    /// function's result; the caller evaluates the value first and lowers it
+    /// after, so the markers and duties are in place before the lowering runs.
+    pub(super) fn judge_return_moves(&mut self, value: &'a Expr, span: Span) {
+        let returns = self.returns.clone();
+        let maybe_owning = self.maybe_owns(&returns);
+        if (!self.sema.table.duplicable(&returns) || maybe_owning) && !returns.is_unknown() {
+            if let Some(target) = self.place_target(value) {
+                if maybe_owning {
+                    self.mark_escape_move_if_owning(target, span);
+                } else {
+                    self.move_target(target, span);
+                }
+            } else {
+                let sources = if maybe_owning {
+                    self.maybe_owning_move_sources(value)
+                } else {
+                    self.conditional_move_sources(value)
+                };
+                if sources.is_empty() {
+                    if !maybe_owning
+                        && (self.is_ownerless_element_move(value)
+                            || self.conditional_ownerless_element_move(value))
+                    {
+                        // The return type owns the value it receives, and
+                        // an element of a call result has no owner that
+                        // outlives the statement.
+                        self.report_element_move_limit(span);
+                    }
+                } else {
+                    // A conditional return moves whichever owned arm the
+                    // condition selects, so either arm may be gone; a
+                    // maybe-owning return records the duty instead.
+                    for source in sources {
+                        if maybe_owning {
+                            self.mark_escape_move_if_owning(source, span);
+                        } else {
+                            self.move_target(source, span);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Checks a `return`.
     ///
     /// A non-duplicable return value is an ownership transfer, so it runs the
@@ -951,44 +1001,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.eval(value);
             let returns = self.returns.clone();
             self.check_value_into(value, &returns, span);
+            self.judge_return_moves(value, span);
             let maybe_owning = self.maybe_owns(&returns);
-            if (!self.sema.table.duplicable(&returns) || maybe_owning) && !returns.is_unknown() {
-                if let Some(target) = self.place_target(value) {
-                    if maybe_owning {
-                        self.mark_escape_move_if_owning(target, span);
-                    } else {
-                        self.move_target(target, span);
-                    }
-                } else {
-                    let sources = if maybe_owning {
-                        self.maybe_owning_move_sources(value)
-                    } else {
-                        self.conditional_move_sources(value)
-                    };
-                    if sources.is_empty() {
-                        if !maybe_owning
-                            && (self.is_ownerless_element_move(value)
-                                || self.conditional_ownerless_element_move(value))
-                        {
-                            // The return type owns the value it receives, and
-                            // an element of a call result has no owner that
-                            // outlives the statement.
-                            self.report_element_move_limit(span);
-                        }
-                    } else {
-                        // A conditional return moves whichever owned arm the
-                        // condition selects, so either arm may be gone; a
-                        // maybe-owning return records the duty instead.
-                        for source in sources {
-                            if maybe_owning {
-                                self.mark_escape_move_if_owning(source, span);
-                            } else {
-                                self.move_target(source, span);
-                            }
-                        }
-                    }
-                }
-            }
             if is_view(&returns) {
                 let provenance = self.view_provenance(value);
                 match provenance {

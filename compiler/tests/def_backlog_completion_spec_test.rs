@@ -1292,15 +1292,14 @@ func main(): i32 {
 
 /// Two enclosing instances of one closure site build and run.
 ///
-/// `outer<i32>` and `outer<String>` both create the identity closure at the
-/// same site, so the two enclosing specializations must emit distinct callable
-/// structs. The first call returns `41` and the second measures three bytes,
-/// so the program returns `44`.
+/// `outer<i32>` and `outer<u32>` both create the identity closure at the same
+/// site, so the two enclosing specializations must emit distinct callable
+/// structs. The closure returns its lend parameter, which copies at a
+/// duplicable instance; an owning instance reports `E10034`, so both instances
+/// are duplicable scalars. Both calls return `41`, so the program returns `82`.
 #[test]
 fn should_build_when_two_enclosing_instances_pass_capturing_closures() {
     let source = r#"module spec.dbc.st17;
-
-import { String, stringOf } from std.text;
 
 func apply<T, F: func(T): T>(x: T, f: F): T {
     return f(x);
@@ -1312,12 +1311,12 @@ func outer<T>(x: T): T {
 
 func main(): i32 {
     let a: i32 = outer<i32>(41);
-    let b: i32 = i32(len(outer<String>(stringOf("abc"))));
+    let b: i32 = i32(outer<u32>(u32(41)));
     return a + b;
 }
 "#;
     let output = run_host("dbc17", source);
-    assert_exit("dbc17", &output, 44);
+    assert_exit("dbc17", &output, 82);
 }
 
 /// A non-generic caller keeps the plain closure spelling.

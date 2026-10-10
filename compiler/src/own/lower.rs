@@ -106,9 +106,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // emitter handles that case instead.
                 if self.is_closure_callee(callee) {
                     let callable = self.lower_value(callee);
+                    // A closure's parameters are unmarked, so they are
+                    // read-only lends exactly like a module function's: an
+                    // owned temporary argument binds to a scope owner the
+                    // cleanup releases, since the lifted function never does.
                     let values: Vec<Value> = args
                         .iter()
-                        .map(|arg| self.lower_value(&arg.value))
+                        .map(|arg| {
+                            let value = self.lower_value(&arg.value);
+                            self.materialize_owned_argument(value, false)
+                        })
                         .collect();
                     ty = self.ty(expr);
                     ValueKind::ClosureCall {
@@ -122,14 +129,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     intrinsic_kind
                 } else {
                     let call = self.lower_call(callee, type_args, args);
-                    // A call through a `func`-typed field has no declared
-                    // parameter modes, so it never moves an argument out even
-                    // when a same-named global function would.
-                    let move_outs = if call.receiver.is_none() {
-                        self.take_move_out_places(call.modes.as_deref(), &call.args)
-                    } else {
-                        Vec::new()
-                    };
+                    // A call consumes the places its callee's own signature
+                    // marks `take`, whether the callee is a declared function,
+                    // a func-typed binding, field, or global, or a call result.
+                    let move_outs =
+                        self.take_move_out_places(call.modes.as_deref(), &call.args);
                     let kind = ValueKind::Call {
                         callee: call.name,
                         type_args: call.type_args,
@@ -514,6 +518,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.declare_captures(site);
         match body {
             LambdaBody::Expr(value) => {
+                // An expression body is the lifted function's return, so it
+                // owes the same move and lend-storage judgement a `return`
+                // statement runs before its lowering: without it an owned
+                // value would escape without a source move, and a lend
+                // parameter stored or returned through the body would slip
+                // past the rule that rejects its block-bodied spelling.
+                self.eval(value);
+                self.judge_return_moves(value, value.span);
                 let returned = self.lower_value(value);
                 if !self.is_terminated() {
                     // Mirror `Stmt::Return`: the scope cleanup becomes a

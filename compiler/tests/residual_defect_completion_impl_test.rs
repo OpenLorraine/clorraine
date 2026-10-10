@@ -523,11 +523,12 @@ func main(): i32 {
 /// Two emissions of a specialized-lambda program must be byte-identical.
 ///
 /// The specialization order and every instance name must be deterministic.
+/// Both instances are duplicable scalars: the lambda passes its lend parameter
+/// to a `take` position, which copies at a duplicable instance, while an
+/// owning instance reports `E10034`.
 #[test]
 fn should_emit_identical_translations_when_a_generic_lambda_is_specialized() {
     let source = r#"module impl.rdc.liftdeterminism;
-
-import { String, stringOf } from std.text;
 
 func apply<T>(take x: T): T {
     return x;
@@ -540,7 +541,7 @@ func outer<T>(x: T): T {
 
 func main(): i32 {
     let n: i32 = outer<i32>(3);
-    return i32(len(outer<String>(stringOf("abc")))) + (n - 3);
+    return i32(outer<u32>(u32(3))) + (n - 3);
 }
 "#;
     let scratch = ScratchDir::new("liftdeterminism");
@@ -548,7 +549,7 @@ func main(): i32 {
     let first = emit_relative(&scratch, "liftdeterminism", "first.c");
     let second = emit_relative(&scratch, "liftdeterminism", "second.c");
     assert_contains("liftdeterminism", &first, "cl_lambda_0__i32");
-    assert_contains("liftdeterminism", &first, "cl_lambda_0__String");
+    assert_contains("liftdeterminism", &first, "cl_lambda_0__u32");
     assert_eq!(
         first, second,
         "liftdeterminism: the same program emitted two different translations"

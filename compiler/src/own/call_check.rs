@@ -22,25 +22,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         span: Span,
     ) {
         if let Some(field_ty) = self.callee_field_type(callee) {
-            if let TyKind::Func(signature) = &field_ty.kind {
+            if let Some(params) = self.callable_signature(&field_ty) {
                 // The callee is a field, not a named function, so the
                 // receiver is only read and the field's own signature types
-                // the call. A call-site marker must still match the declared
-                // mode. The modes carry no ownership semantics here, so a
-                // `take` argument is not marked as moved: the lowering does
-                // not emit a move-out for a field call.
+                // the call: its `take` arguments are marked moved, its
+                // `borrow` arguments record their lend, and a same-named
+                // module function's modes are never applied to it. A
+                // call-site marker must still match the declared mode.
                 self.eval_dot_receiver(callee);
-                let params: Vec<(Mode, Ty)> = signature
-                    .params
-                    .iter()
-                    .map(|param| (param.mode, param.ty.clone()))
-                    .collect();
                 if let Some(name) = self.callee_name(callee) {
                     self.check_marker_matches(&name, args, &params);
                 }
-                for arg in args {
-                    self.eval(&arg.value);
-                }
+                let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+                let mut lent: BTreeSet<usize> = BTreeSet::new();
+                self.check_arguments(args, &params, &effective, span, &mut lent);
                 return;
             }
         }
@@ -52,20 +47,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // argument records its lend.
         if let Some(id) = self.func_binding_callee(callee) {
             self.bindings[id].used = true;
-            let params: Vec<(Mode, Ty)> = match &self.bindings[id].ty.kind {
-                TyKind::Func(signature) => signature
-                    .params
-                    .iter()
-                    .map(|param| (param.mode, param.ty.clone()))
-                    .collect(),
-                _ => return,
-            };
-            let name = self.callee_name(callee).unwrap_or_default();
-            self.check_marker_matches(&name, args, &params);
-            let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
-            let mut lent: BTreeSet<usize> = BTreeSet::new();
-            self.check_arguments(args, &params, &effective, span, &mut lent);
-            return;
+            if let Some(params) = self.callable_signature(&self.bindings[id].ty) {
+                let name = self.callee_name(callee).unwrap_or_default();
+                self.check_marker_matches(&name, args, &params);
+                let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+                let mut lent: BTreeSet<usize> = BTreeSet::new();
+                self.check_arguments(args, &params, &effective, span, &mut lent);
+                return;
+            }
         }
         let callee_name = self.callee_name(callee);
         let Some(name) = callee_name else {
@@ -76,6 +65,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         };
         let Some(resolved) = self.program.callee(&name) else {
+            // A bare name may resolve to a module-level func-typed global:
+            // the global's value is the callable, so its signature types the
+            // call exactly as any other callable's does.
+            if let ExprKind::Name(written) = &callee.kind {
+                if let Some(params) = self
+                    .global_type(written)
+                    .and_then(|ty| self.callable_signature(&ty))
+                {
+                    let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
+                    let mut lent: BTreeSet<usize> = BTreeSet::new();
+                    self.check_arguments(args, &params, &effective, span, &mut lent);
+                    return;
+                }
+            }
             // The callee may be an intrinsic reached as a dot-call, such as
             // `xs.len()`; its receiver is still read, so a local used only
             // there must not be reported unused. A `func`-typed local or a
@@ -236,16 +239,64 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// The binding a callee name resolves to when that binding is callable.
     ///
-    /// A local, a parameter, or a lambda capture can hold a `func` value, and
-    /// such a call goes through the binding's own signature. A module function
-    /// of the same written name must keep its own identity, so this resolves
-    /// through the scope lookup rather than the module tables.
+    /// A local, a parameter, or a lambda capture can hold a `func` value or a
+    /// callable-bound type parameter, and such a call goes through the
+    /// binding's own signature — a parameter-typed callee through its bound's.
+    /// A module function of the same written name must keep its own identity,
+    /// so this resolves through the scope lookup rather than the module tables.
     pub(super) fn func_binding_callee(&self, callee: &Expr) -> Option<usize> {
         let ExprKind::Name(written) = &callee.kind else {
             return None;
         };
         let id = self.lookup(written)?;
-        matches!(self.bindings[id].ty.kind, TyKind::Func(_)).then_some(id)
+        matches!(
+            self.bindings[id].ty.kind,
+            TyKind::Func(_) | TyKind::Param(_)
+        )
+        .then_some(id)
+    }
+
+    /// The parameters of the callable a type spells, when it is one.
+    ///
+    /// A `func` type carries its parameters and their modes directly. A bare
+    /// type parameter is callable exactly when its callable bound is a
+    /// `func(...)` signature: the bound's parameter types type the call its
+    /// value receives, and a bound declares no modes, so they are read-only
+    /// lends. Every other type — a closure, a scalar, a handle — spells no
+    /// `func` parameters and yields `None`.
+    pub(super) fn callable_signature(&self, ty: &Ty) -> Option<Vec<(Mode, Ty)>> {
+        match &ty.kind {
+            TyKind::Func(signature) => Some(
+                signature
+                    .params
+                    .iter()
+                    .map(|param| (param.mode, param.ty.clone()))
+                    .collect(),
+            ),
+            TyKind::Param(name) => {
+                let bound = self
+                    .decl
+                    .type_params
+                    .iter()
+                    .find(|param| &param.name == name)?
+                    .bound
+                    .as_ref()?;
+                Some(
+                    bound
+                        .params
+                        .iter()
+                        .map(|ty| (Mode::None, self.resolve_with(ty, &self.type_params)))
+                        .collect(),
+                )
+            }
+            _ => None,
+        }
+    }
+
+    /// The parameter modes of the callable a type spells, when it is one.
+    pub(super) fn callable_modes(&self, ty: &Ty) -> Option<Vec<Mode>> {
+        self.callable_signature(ty)
+            .map(|params| params.into_iter().map(|(mode, _)| mode).collect())
     }
 
     /// Reports `E10039` when a call-site marker contradicts a declaration.

@@ -714,8 +714,12 @@ fn should_emit_identical_translations_when_a_do_while_body_returns_early() {
 }
 
 /// One closure site passed from two enclosing instances, `i32` then `String`.
+/// Two enclosing instances of one capturing closure site.
+///
+/// The closure returns its lend parameter, which copies at a duplicable
+/// instance; an owning instance would report `E10034` (a borrowed parameter
+/// cannot be released or stored), so both instances are duplicable scalars.
 const CLOSURE_TWO_INSTANCES: &str = r#"module impl.dbc.cl2;
-import { String, stringOf } from std.text;
 
 func apply<T, F: func(T): T>(x: T, f: F): T {
     return f(x);
@@ -727,7 +731,7 @@ func outer<T>(x: T): T {
 
 func main(): i32 {
     let a: i32 = outer<i32>(41);
-    let b: i32 = i32(len(outer<String>(stringOf("abc"))));
+    let b: i32 = i32(outer<u32>(u32(41)));
     return a + b;
 }
 "#;
@@ -748,10 +752,10 @@ fn should_name_distinct_callables_when_two_enclosing_instances_share_a_closure_s
     assert_contains(
         "closure-two",
         &emitted,
-        "static ClString cl_apply__String_closure_0__String(ClString x, ClClosure_0__String f);",
+        "static u32 cl_apply__u32_closure_0__u32(u32 x, ClClosure_0__u32 f);",
     );
     let output = run_host("closure-two-run", CLOSURE_TWO_INSTANCES);
-    assert_exit("closure-two-run", &output, 44);
+    assert_exit("closure-two-run", &output, 82);
 }
 
 /// A non-generic caller keeps the plain callable struct name.

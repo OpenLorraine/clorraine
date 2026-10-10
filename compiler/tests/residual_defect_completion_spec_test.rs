@@ -436,16 +436,15 @@ func main(): i32 {
 
 /// Two enclosing instances must each specialize the same lifted lambda.
 ///
-/// One program instantiates `outer<i32>` and `outer<String>`. Both lifted
-/// copies must build with their own substitution; the exit code `3` is the
-/// `String` length plus the `i32` result minus three, so both calls ran. The
-/// String result is measured in place, because binding it to an owning local
-/// is a separate, pre-existing defect outside this behavior.
+/// One program instantiates `outer<i32>` and `outer<u32>`. Both lifted copies
+/// must build with their own substitution; the exit code `3` is the second
+/// result plus the `i32` result minus three, so both calls ran. Both instances
+/// are duplicable scalars: the lambda passes its lend parameter to a `take`
+/// position, which copies at a duplicable instance, while an owning instance
+/// reports `E10034`.
 #[test]
 fn should_build_when_two_enclosing_instances_specialize_the_same_lambda() {
     let source = r#"module spec.rdc.st8;
-
-import { String, stringOf } from std.text;
 
 func apply<T>(take x: T): T {
     return x;
@@ -458,7 +457,7 @@ func outer<T>(x: T): T {
 
 func main(): i32 {
     let n: i32 = outer<i32>(3);
-    return i32(len(outer<String>(stringOf("abc")))) + (n - 3);
+    return i32(outer<u32>(u32(3))) + (n - 3);
 }
 "#;
     let output = run_host("rdc08", source);

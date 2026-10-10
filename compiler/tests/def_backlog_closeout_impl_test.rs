@@ -691,38 +691,35 @@ func main(): i32 {
     );
 }
 
-/// A may-lend call result is not bound: its argument's owner releases it.
+/// A may-lend call result is not bound as a second owner.
 ///
-/// A generic callee that returns its lend parameter hands back storage the
-/// caller already owns through the argument. Binding that result into a second
-/// owned local would release the same storage twice, so the result stays an
-/// inline read of the argument's binding. The exit code proves the alias is
-/// intact and the storage is released once.
+/// A generic callee's result type is a parameter, so the checker cannot tell
+/// whether the result owns; binding it as a second owned local could release
+/// storage twice. The result stays read through a statement temporary that
+/// releases once, and `len` reads a view of it. The exit code proves the
+/// transfer emptied the argument's owner and the answer is intact.
+///
+/// The fixture's original argument passed an owned temporary to a lend
+/// parameter and returned it; at an owning instance that returns a borrow, so
+/// the shape now reports `E10034` (expression-bodied lambdas judge like their
+/// block-bodied spelling), and the accepted fixture takes the value instead.
 #[test]
-fn should_not_bind_a_may_lend_result_when_len_reads_a_reborrow_call() {
+fn should_not_bind_a_may_lend_result_when_len_reads_a_take_call() {
     let source = r#"module impl.closeout.exprlend;
 
 import { String, stringOf } from std.text;
 
-func apply<T, F: func(T): T>(x: T, f: F): T {
-    return f(x);
-}
-
-func outer<T>(x: T): T {
-    return apply(x, [x] (y: T) => y);
+func outer<T>(take x: T): T {
+    return x;
 }
 
 func main(): i32 {
-    return i32(len(outer<String>(stringOf("abc"))));
+    return i32(len(outer(stringOf("abc"))));
 }
 "#;
     let emitted = emit_host("expr-lend", source);
     assert_absent("expr-lend", &emitted, "__cl_owned1");
-    assert_contains(
-        "expr-lend",
-        &emitted,
-        "(cl_string_view(cl_outer__String(__cl_owned0))).len",
-    );
+    assert_contains("expr-lend", &emitted, "(cl_string_view(__cl_tmp0)).len");
     let output = run_host("expr-lend-run", source);
     assert_eq!(
         output.status.code(),
@@ -736,8 +733,13 @@ func main(): i32 {
 ///
 /// Binding such a conditional would adopt and empty the place arm, and the
 /// borrow argument needs only a read. The case pins the absence of the binding
-/// and the pinned answer on the taken path, where the other arm is a may-lend
-/// call that must not be bound either.
+/// and the pinned answer on the taken path, where the other arm is a call whose
+/// result must not be bound either.
+///
+/// The fixture's original closure returned its lend parameter; at an owning
+/// instance that returns a borrow, so the shape now reports `E10034`
+/// (expression-bodied lambdas judge like their block-bodied spelling), and the
+/// accepted fixture returns a fresh string instead.
 #[test]
 fn should_not_bind_a_conditional_argument_when_an_arm_roots_in_a_place() {
     let source = r#"module impl.closeout.exprcond;
@@ -748,13 +750,13 @@ func apply<T, F: func(T): T>(x: T, f: F): T {
     return f(x);
 }
 
-func outer<T>(x: T): T {
-    return apply(x, [x] (y: T) => y);
+func outer(x: String): String {
+    return apply(x, (y: String) => stringOf("abcd"));
 }
 
 func main(): i32 {
     let t: String = stringOf("abcd");
-    return i32(len(true ? t : outer<String>(t)));
+    return i32(len(true ? t : outer(t)));
 }
 "#;
     let emitted = emit_host("expr-cond", source);

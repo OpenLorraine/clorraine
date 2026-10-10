@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 22:03
-> **Progress**: 10/36 tasks (28%)
+> **Last Updated**: 2026-10-10 22:22
+> **Progress**: 15/36 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -136,11 +136,11 @@ before any implementation.
 **Objective**: Thread each callee kind's own signature into the call's modes; keep resolution
 identity-based.
 
-- [ ] 2.2.1 Implement func-typed field-call modes — `compiler/src/own/call.rs`
-- [ ] 2.2.2 Implement module func-typed global resolution and modes — `compiler/src/own/call.rs`
-- [ ] 2.2.3 Implement `Param` callee modes from the callable bound and identity-based take resolution — `compiler/src/own/call.rs`, `compiler/src/own/call_check.rs`
-- [ ] 2.2.4 Implement lambda-parameter modes at the instance — `compiler/src/own/call.rs`, `compiler/src/own/instance_check.rs`
-- [ ] 2.2.5 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 2.2.1 Implement func-typed field-call modes — `compiler/src/own/call.rs`, `compiler/src/own/call_check.rs` ✅ (completed: 2026-10-10 22:22)
+- [x] 2.2.2 Implement module func-typed global resolution and modes — `compiler/src/own/call.rs`, `compiler/src/own/call_check.rs` ✅ (completed: 2026-10-10 22:22)
+- [x] 2.2.3 Implement `Param` callee modes from the callable bound and identity-based take resolution — `compiler/src/own/call_check.rs` (`func_binding_callee`, `callable_signature`) ✅ (completed: 2026-10-10 22:22)
+- [x] 2.2.4 Judge expression-bodied lambdas like returns and materialize closure-call lend arguments — `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs` (per AR-17) ✅ (completed: 2026-10-10 22:22)
+- [x] 2.2.5 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 22:22; spec 17/17 plain and under RDC_ASAN=1; `make check` 58 suites green after four deliberate fixture re-pins)
 
 **Verify**: `make -C docker exec CMD="cargo test --test callable_release_integrity_spec_test"`; `make check`
 

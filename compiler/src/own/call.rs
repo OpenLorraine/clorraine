@@ -211,27 +211,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A call result the callee only borrows stays owned by the caller; an
         // unnamed one is bound to a scope local so the cleanup drops it, since
         // the callee never does. A `take` argument is skipped: the callee owns
-        // it, and the move-out empties the caller's binding. A call through a
-        // `func`-typed field has no declared parameter modes, so the same-named
-        // global function's modes must not be applied to it; a `func`-typed
-        // local, parameter, or capture carries its own signature's modes, so
-        // its owned temporary arguments bind and release like a module call's.
-        let modes: Option<Vec<Mode>> = if receiver.is_none() {
-            match local_callee_id {
-                Some(id) => match &self.bindings[id].ty.kind {
-                    TyKind::Func(signature) => Some(
-                        signature
-                            .params
-                            .iter()
-                            .map(|param| param.mode)
-                            .collect::<Vec<Mode>>(),
-                    ),
-                    _ => None,
-                },
-                None => self.callee_modes(&name),
-            }
+        // it, and the move-out empties the caller's binding. The modes come
+        // from the callable the call actually reaches: a `func`-typed field or
+        // call result, a `func`-typed or callable-bound local, parameter, or
+        // capture, a module-level func-typed global, or the declared function
+        // the name resolves to. A same-named module function's modes are never
+        // applied to a value callee.
+        let modes: Option<Vec<Mode>> = if let Some(callable) = &receiver {
+            self.callable_modes(&callable.ty)
         } else {
-            None
+            match local_callee_id {
+                Some(id) => self.callable_modes(&self.bindings[id].ty),
+                None => self
+                    .callee_modes(&name)
+                    .or_else(|| self.global_type(&name).and_then(|ty| self.callable_modes(&ty))),
+            }
         };
         if let Some(modes) = &modes {
             for (value, mode) in values.iter_mut().zip(modes) {
