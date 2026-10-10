@@ -1773,3 +1773,330 @@ func main(): i32 {
     );
     assert_run_exit("pin-write-control-run", control, 14);
 }
+
+/// A view bound to an owned projection temporary emits a body-scope owner,
+/// reads through it, and releases it on the re-assignment and the cleanup.
+#[test]
+fn should_bind_the_view_owner_and_release_it_once_per_evaluation() {
+    let source = r#"module spec.eeiimpl.viewtemp;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    v: String;
+}
+
+func measure(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let i: i32 = 0;
+    let total: i32 = 0;
+    while (i < 3) {
+        let s: str = (Box { v: stringOf("ab") }).v;
+        total = total + measure(s);
+        i = i + 1;
+    }
+    return total;
+}
+"#;
+    let (first, second) = emit_twice("pin-view-owner", source);
+    assert_eq!(
+        first, second,
+        "pin-view-owner: the emission must be deterministic"
+    );
+    assert_contains_all(
+        "pin-view-owner",
+        &first,
+        &[
+            "ClBox __cl_owned0 = {0};",
+            "cl_string_view(__cl_owned0.v)",
+        ],
+    );
+    assert_eq!(
+        count_occurrences(&first, "FreeString(__cl_owned0.v)"),
+        2,
+        "pin-view-owner: the owner releases on the re-assignment and the cleanup"
+    );
+    assert_run_exit("pin-view-owner-run", source, 6);
+}
+
+/// The preempted ordinary return emits the release before the superseding
+/// store, and the non-preempting control keeps its direct return.
+#[test]
+fn should_release_the_abandoned_result_before_the_superseding_store() {
+    let source = r#"module spec.eeiimpl.preempt;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    switch (1) {
+        case 1: {
+            defer { break; }
+            return stringOf("ab");
+        }
+        default: {
+        }
+    }
+    return stringOf("cd");
+}
+
+func main(): i32 {
+    let r: String = f();
+    return i32(len(r));
+}
+"#;
+    let (first, second) = emit_twice("pin-preempt", source);
+    assert_eq!(
+        first, second,
+        "pin-preempt: the emission must be deterministic"
+    );
+    assert_contains_all(
+        "pin-preempt",
+        &first,
+        &[
+            "if (__cl_ret) { FreeString(__cl_ret); }",
+            "__cl_ret = NULL;",
+            "__cl_ret = cl_std_text_stringOf(cl_str(\"cd\"));",
+        ],
+    );
+    assert_run_exit("pin-preempt-run", source, 2);
+
+    let control = r#"module spec.eeiimpl.plainreturn;
+
+import { String, stringOf } from std.text;
+
+func f(): String {
+    let i: i32 = 0;
+    while (i < 5) {
+        if (i == 1) { return stringOf("ab"); }
+        i = i + 1;
+    }
+    return stringOf("cd");
+}
+
+func main(): i32 {
+    let r: String = f();
+    return i32(len(r));
+}
+"#;
+    let (first, second) = emit_twice("pin-plain-return", control);
+    assert_eq!(
+        first, second,
+        "pin-plain-return: the emission must be deterministic"
+    );
+    assert!(
+        !first.contains("if (__cl_ret) { FreeString(__cl_ret); }"),
+        "pin-plain-return: a return with no reachable preemption keeps its direct shape"
+    );
+    assert_run_exit("pin-plain-return-run", control, 2);
+}
+
+/// The func-value call binds and releases its owned temporary argument.
+#[test]
+fn should_materialize_the_func_value_temporary_argument() {
+    let source = r#"module spec.eeiimpl.funcvalue;
+
+import { String, stringOf } from std.text;
+
+func copier(borrow v: String): String {
+    return stringOf("y");
+}
+
+func wrap(f: func(borrow String): String): i32 {
+    return i32(len(f(stringOf("x"))));
+}
+
+func main(): i32 {
+    return wrap(copier);
+}
+"#;
+    let (first, second) = emit_twice("pin-func-value", source);
+    assert_eq!(
+        first, second,
+        "pin-func-value: the emission must be deterministic"
+    );
+    assert_contains_all(
+        "pin-func-value",
+        &first,
+        &[
+            "__cl_owned0 = cl_std_text_stringOf(cl_str(\"x\"));",
+            "f(__cl_owned0)",
+            "FreeString(__cl_owned0)",
+        ],
+    );
+    assert_run_exit("pin-func-value-run", source, 1);
+}
+
+/// Every capture-move rejection reports its exact code once at its site.
+#[test]
+fn should_report_the_capture_move_codes_once_at_the_site() {
+    let block_return = r#"module spec.eeiimpl.blockreturn;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => { return x; })();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    let r: Wrap = outer<Wrap>(w);
+    return i32(len(r.v));
+}
+"#;
+    let stderr = compile_stderr("pin-block-return", block_return);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-block-return: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:10:32"),
+        "pin-block-return: the report lands on the moved capture; stderr:\n{stderr}"
+    );
+
+    let block_take = r#"module spec.eeiimpl.blocktake;
+
+import { String, stringOf } from std.text;
+
+struct Wrap {
+    v: String;
+}
+
+func sink(take w: Wrap): i32 {
+    return 0;
+}
+
+func outer<T>(x: T): i32 {
+    return ([x] () => { sink(take x); return 0; })();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    return outer<Wrap>(w);
+}
+"#;
+    let stderr = compile_stderr("pin-block-take", block_take);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-block-take: expected one report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:14:35"),
+        "pin-block-take: the report lands on the moved capture; stderr:\n{stderr}"
+    );
+
+    let conditional = r#"module spec.eeiimpl.conditional;
+
+import { String, stringOf } from std.text;
+
+const C: bool = true;
+
+struct Wrap {
+    v: String;
+}
+
+func outer<T>(x: T): T {
+    return ([x] () => C ? x : x)();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    let r: Wrap = outer<Wrap>(w);
+    return i32(len(r.v));
+}
+"#;
+    let stderr = compile_stderr("pin-conditional", conditional);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-conditional: expected one report for the two-arm site; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:12:23"),
+        "pin-conditional: the report lands on the conditional; stderr:\n{stderr}"
+    );
+
+    let concrete = r#"module spec.eeiimpl.conditionalconcrete;
+
+import { String, stringOf } from std.text;
+
+const C: bool = true;
+
+func outer(x: String): String {
+    return ([x] () => C ? x : x)();
+}
+
+func main(): i32 {
+    let r: String = outer(stringOf("ab"));
+    return i32(len(r));
+}
+"#;
+    let stderr = compile_stderr("pin-conditional-concrete", concrete);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-conditional-concrete: expected one report; stderr:\n{stderr}"
+    );
+
+    let take_argument = r#"module spec.eeiimpl.conditionaltake;
+
+import { String, stringOf } from std.text;
+
+const C: bool = true;
+
+struct Wrap {
+    v: String;
+}
+
+func sink(take w: Wrap): i32 {
+    return 0;
+}
+
+func outer<T>(x: T): i32 {
+    return ([x] () => sink(take (C ? x : x)))();
+}
+
+func main(): i32 {
+    let w: Wrap = Wrap { v: stringOf("ab") };
+    return outer<Wrap>(w);
+}
+"#;
+    let stderr = compile_stderr("pin-conditional-take", take_argument);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "pin-conditional-take: expected one report; stderr:\n{stderr}"
+    );
+}
+
+/// The duplicable conditional capture stays accepted and re-emits
+/// byte-identically.
+#[test]
+fn should_keep_the_duplicable_conditional_capture_byte_identical() {
+    let source = r#"module spec.eeiimpl.copycontrol;
+
+const C: bool = true;
+
+func outer<T>(x: T): T {
+    return ([x] () => C ? x : x)();
+}
+
+func main(): i32 {
+    return outer<i32>(42);
+}
+"#;
+    let (first, second) = emit_twice("pin-conditional-copy", source);
+    assert_eq!(
+        first, second,
+        "pin-conditional-copy: the emission must be deterministic"
+    );
+    assert_run_exit("pin-conditional-copy-run", source, 42);
+}

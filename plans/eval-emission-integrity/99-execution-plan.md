@@ -536,7 +536,7 @@ block-take pin (E10034 -> E10401 per the ruling).
 **Reference**: [03-05](03-05-ownership-lifetimes.md) §Testing Requirements
 **Objective**: Pin the internals, record the phase review evidence, and close the plan.
 
-- [ ] 5.3.1 Write the Phase 5 implementation pins (the owner binding and release counts, the preemption-edge drop shape, the argument materialization shape, the duty/report counts, byte-identity where pinned) — `compiler/tests/eval_emission_integrity_impl_test.rs`
+- [x] 5.3.1 Write the Phase 5 implementation pins (the owner binding and release counts, the preemption-edge drop shape, the argument materialization shape, the duty/report counts, byte-identity where pinned) — `compiler/tests/eval_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 22:05)
 - [ ] 5.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; run `make check` and the `make verify` legs; record the DEF-103 closure (marker site, recursion, top-level analogue, fail-closed proof) and sync the roadmap to Done
 
 **Deliverables**:
