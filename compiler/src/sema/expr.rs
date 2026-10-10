@@ -22,7 +22,7 @@ use crate::types::{
     ClosureTy, FuncParam, FuncTy, Ty, TyKind,
 };
 
-use super::Checker;
+use super::{CaptureMoveRequirement, Checker};
 
 impl Checker<'_, '_> {
     /// Checks an expression, records its type, and returns it.
@@ -211,6 +211,7 @@ impl Checker<'_, '_> {
                 // expression rather than a value.
                 let ty = self.check_expr(value, None);
                 self.reject_capture_move(value);
+                self.record_generic_capture_move(value);
                 ty
             }
             LambdaBody::Block(block) => {
@@ -282,6 +283,44 @@ impl Checker<'_, '_> {
                 value.span,
             );
         }
+    }
+
+    /// Records a by-value capture the lambda returns or consumes while the
+    /// capture's duplicability is still open.
+    ///
+    /// A copy capture is sound only when its type is duplicable; a capture
+    /// whose type still mentions the enclosing function's type parameter may
+    /// substitute to an owning type, and the copy would then alias the
+    /// enclosing binding. The site is recorded and the per-instance audit
+    /// applies the concrete judgment after substitution.
+    pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
+        let Some(root) = super::place_root_name(value) else {
+            return;
+        };
+        if !matches!(self.capture_mode(root), Some(CaptureMode::Copy)) {
+            return;
+        }
+        let Some(function) = self.function_name.clone() else {
+            return;
+        };
+        let ty = self.lambda_captures.iter().rev().find_map(|captures| {
+            captures
+                .iter()
+                .find(|info| info.name == root)
+                .map(|info| info.ty.clone())
+        });
+        let Some(ty) = ty else {
+            return;
+        };
+        if !crate::types::contains_param(&ty) {
+            return;
+        }
+        self.capture_moves.push(CaptureMoveRequirement {
+            function,
+            capture: root.to_owned(),
+            ty,
+            span: value.span,
+        });
     }
 
     /// Checks an expression in a value position, reporting a `void` result.

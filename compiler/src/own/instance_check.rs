@@ -55,6 +55,58 @@ pub fn check(
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
+    check_capture_move_requirements(program, sema, mono, diagnostics);
+}
+
+/// Reports `E10401` when a recorded capture move instantiates with an owning
+/// capture type.
+///
+/// A lambda body that returns or consumes a by-value capture is accepted
+/// while the capture's type is still a parameter, because the declaration
+/// cannot tell whether the copy aliases an owner. The audit substitutes each
+/// recorded instance's type arguments into the capture type: a duplicable or
+/// unknown substitution stays a copy and is legal, while an owning one
+/// reports the same diagnostic the concrete spelling emits. One duty reports
+/// once — the first owning instance — so the body site is not repeated.
+fn check_capture_move_requirements(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    let mut reported: BTreeSet<(String, String, u32)> = BTreeSet::new();
+    for requirement in &sema.capture_moves {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
+            if substituted.is_unknown() || sema.table.duplicable(&substituted) {
+                continue;
+            }
+            let key = (
+                requirement.function.clone(),
+                requirement.capture.clone(),
+                requirement.span.start,
+            );
+            if !reported.insert(key) {
+                break;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10401",
+                    format!("cannot move captured '{}' in a lambda", requirement.capture),
+                    requirement.span,
+                )
+                .with_help("copy the value at capture time"),
+            );
+            break;
+        }
+    }
 }
 
 /// Reports `E10200` when an out-slot duty's instance makes the slot nullable

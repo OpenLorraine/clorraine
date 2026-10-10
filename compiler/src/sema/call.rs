@@ -254,6 +254,7 @@ impl Checker<'_, '_> {
                 .unwrap_or(crate::ast::Mode::None);
             if mode == crate::ast::Mode::Take {
                 self.reject_capture_move(&arg.value);
+                self.record_generic_capture_move(&arg.value);
             }
             if let (Some((ty, arg_span)), Some(param)) =
                 (arg_types.get(index), signature.params.get(index))
@@ -542,6 +543,7 @@ impl Checker<'_, '_> {
                     .unwrap_or(crate::ast::Mode::None);
                 if mode == crate::ast::Mode::Take {
                     self.reject_capture_move(&arg.value);
+                    self.record_generic_capture_move(&arg.value);
                 }
                 if allow_cstring_literal && is_cstring_literal_argument(&arg.value, param) {
                     // A `static str` literal is a NUL-terminated C string, so

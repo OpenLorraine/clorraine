@@ -600,27 +600,32 @@ func main(): i32 {
 
 /// A called func-typed capture named like a module lender releases once.
 ///
-/// The local `run` shares its name with the module function, but the call
-/// goes through the captured value; the owned result must be bound and
-/// released like any other temporary, so the run reads the result's length
-/// and the sanitizer stays quiet.
+/// The local `lend` shares its name with the module lender (whose return is
+/// an elided view), but the call goes through the captured value, so the
+/// module lend must not claim it: the owned result is bound and released
+/// like any other temporary. The run reads the result's length and the
+/// sanitizer stays quiet.
 #[test]
 fn should_accept_and_run_a_called_func_typed_capture_named_like_a_lender() {
     let source = r#"module spec.ci.lendercapture;
 
 import { String, stringOf } from std.text;
 
-func run(borrow s: String): String {
-    return stringOf("mod");
+func lend(borrow v: str): str {
+    return v;
+}
+
+func copier(borrow v: String): String {
+    return stringOf("y");
 }
 
 func main(): i32 {
-    let run: func(borrow String): String = run;
-    let r: String = ([run] () => run(stringOf("ab")))();
-    return i32(len(r));
+    let lend: func(borrow String): String = copier;
+    let s: String = stringOf("x");
+    return ([lend, s] () => i32(len(lend(s))))();
 }
 "#;
     let output = run_memory("lender-capture", source);
-    assert_exit("lender-capture", &output, 3);
+    assert_exit("lender-capture", &output, 1);
     assert_no_asan("lender-capture", &output);
 }

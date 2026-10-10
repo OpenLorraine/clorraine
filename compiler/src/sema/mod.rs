@@ -61,6 +61,27 @@ pub struct SemaOutput {
     /// The ownership and emission stages read this instead of re-deriving the
     /// capture list and its modes from the source.
     pub closures: BTreeMap<usize, ClosureSite>,
+    /// Lambda bodies that return or consume a by-value capture whose type
+    /// still mentions a type parameter.
+    ///
+    /// The declaration cannot decide such a move: the capture copies while
+    /// its type is duplicable, but an owning substitution makes the copy
+    /// alias the enclosing binding, so the per-instance audit applies the
+    /// concrete judgment after substitution.
+    pub capture_moves: Vec<CaptureMoveRequirement>,
+}
+
+/// A lambda body that returns or consumes a by-value capture whose
+/// duplicability is still open.
+pub struct CaptureMoveRequirement {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The captured binding's name.
+    pub capture: String,
+    /// The capture's declared type in terms of the function's type parameters.
+    pub ty: Ty,
+    /// The returning or consuming site.
+    pub span: Span,
 }
 
 /// Checks every module of the loaded program and records the result.
@@ -71,6 +92,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     init_cycle::check(loaded, diagnostics);
     let mut expr_types: HashMap<usize, Ty> = HashMap::new();
     let mut closures: BTreeMap<usize, ClosureSite> = BTreeMap::new();
+    let mut capture_moves: Vec<CaptureMoveRequirement> = Vec::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
     // program always names the same lifted function and environment.
@@ -80,12 +102,14 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         checker.check_module();
         next_closure_id = checker.next_closure_id;
         closures.extend(checker.closures.drain(..).map(|site| (site.id, site)));
+        capture_moves.extend(checker.capture_moves.drain(..));
         expr_types.extend(checker.recorded.drain(..));
     }
     SemaOutput {
         table,
         expr_types,
         closures,
+        capture_moves,
     }
 }
 
@@ -123,6 +147,9 @@ struct Checker<'a, 'd> {
     next_closure_id: usize,
     /// The captured bindings of each capturing lambda, in site order.
     closures: Vec<ClosureSite>,
+    /// Lambda bodies that return or consume a by-value capture whose type
+    /// still mentions a type parameter, in check order.
+    capture_moves: Vec<CaptureMoveRequirement>,
     /// The capture lists of the lambdas currently being checked, innermost
     /// last. A body write or move of a name found here is a capture error.
     lambda_captures: Vec<Vec<CaptureInfo>>,
@@ -169,6 +196,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             recorded: Vec::new(),
             next_closure_id,
             closures: Vec::new(),
+            capture_moves: Vec::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),
             lambda_listed: Vec::new(),

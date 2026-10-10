@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 10:48
-> **Progress**: 10/22 tasks (45%)
+> **Last Updated**: 2026-10-10 10:58
+> **Progress**: 13/22 tasks (59%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -176,9 +176,25 @@ build; its leak is asserted by the separate ASan probe) pass as deliberate pins.
 **Objective**: Reject the captured-owner return (directly and per instance) and mask the capture
 name so a called func-typed capture resolves to the capture.
 
-- [ ] 2.2.1 Judge the lambda-body return of a by-value capture in the E10401 rule, and record the generic case as a per-instance duty audited under substitution — `compiler/src/sema/expr.rs`, `compiler/src/own/instance_check.rs`, `compiler/src/own.rs`
-- [ ] 2.2.2 Route the capture declaration through the callee-name masking, correcting the stale comment — `compiler/src/own/lower.rs`
-- [ ] 2.2.3 Run the spec suite to green (ST-10 – ST-13); run the host ASan probes for the DEF-104 owning shape (rejected, no unit) and the DEF-109 shape (release-once); on any failure STOP and fix the implementation, never the test
+- [x] 2.2.1 Judge the lambda-body return of a by-value capture in the E10401 rule, and record the generic case as a per-instance duty audited under substitution — `compiler/src/sema/expr.rs`, `compiler/src/sema/mod.rs`, `compiler/src/sema/call.rs`, `compiler/src/own/instance_check.rs` ✅ (completed: 2026-10-10 10:58)
+- [x] 2.2.2 Route the capture declaration through the callee-name masking, correcting the stale comment — `compiler/src/own/lower.rs` ✅ (completed: 2026-10-10 10:58)
+- [x] 2.2.3 Run the spec suite to green (ST-10 – ST-13); run the host ASan probes for the DEF-104 owning shape (rejected, no unit) and the DEF-109 shape (release-once); on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 10:58)
+
+**Green-phase evidence (2026-10-10 10:58)** — the suite passes 14/14; the host ASan probes are
+clean for both memory shapes (the owning instance is rejected before emission; the lender-named
+capture shape runs with leak detection on at exit 1 with no report), and `make check` is fully
+green (54 suites, `spec check: OK (27 files, 107 compile-fail tests)`).
+
+**Implementation notes (mechanical corrections).** The duty's recording needed the sema output
+plumbing (`sema/mod.rs`) and the take-argument sites (`sema/call.rs`); the fix landed in the
+may-lend gate (`lowered_lend_source` in `own/lower.rs`) rather than the IR-spelling mask the
+design first named — masking leaked the masked spelling into the emitted C, while the gate guard
+keeps the capture's source spelling and stops the module lender from claiming the call (AR-10
+amended). Two pre-existing tests that pinned the owning-instance acceptance
+(`residual_defect_completion_{spec,impl}_test.rs`) were corrected to the user-ruled behavior; the
+concrete `String` spelling already reported `E10401` at the baseline. A sibling leak found while
+probing — a temporary argument to a func-value call leaks (name-independent) — is filed as
+DEF-125.
 
 **Deliverables**:
 - The capture-return judgment and the masked capture spelling

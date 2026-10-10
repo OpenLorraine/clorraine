@@ -467,33 +467,32 @@ func main(): i32 {
 ///
 /// The environment struct, the callable struct, the lifted symbol, and the
 /// inline call all carry the enclosing instance key, and no site-only spelling
-/// remains.
+/// remains. The instance copies its capture (an owning instance rejects the
+/// captured return), which keeps the naming pins on a legal shape.
 #[test]
 fn should_name_the_environment_when_a_capturing_lambda_is_specialized() {
     let source = r#"module impl.rdc.capture;
-
-import { String, stringOf } from std.text;
 
 func outer<T>(x: T): T {
     return ([x] () => x)();
 }
 
 func main(): i32 {
-    return i32(len(outer<String>(stringOf("abc"))));
+    return outer<i32>(42);
 }
 "#;
     let emitted = emit_host("capture", source);
-    assert_contains("capture", &emitted, "struct ClEnv_0__String {");
-    assert_contains("capture", &emitted, "typedef struct ClClosure_0__String {");
+    assert_contains("capture", &emitted, "struct ClEnv_0__i32 {");
+    assert_contains("capture", &emitted, "typedef struct ClClosure_0__i32 {");
     assert_contains(
         "capture",
         &emitted,
-        "static ClString cl_lambda_0__String(struct ClEnv_0__String *__env);",
+        "static i32 cl_lambda_0__i32(struct ClEnv_0__i32 *__env);",
     );
     assert_contains(
         "capture",
         &emitted,
-        "cl_lambda_0__String(&(((struct ClEnv_0__String){ x })))",
+        "cl_lambda_0__i32(&(((struct ClEnv_0__i32){ x })))",
     );
     assert_absent("capture", &emitted, "struct ClEnv_0 {");
     assert_absent("capture", &emitted, "ClClosure_0 {");

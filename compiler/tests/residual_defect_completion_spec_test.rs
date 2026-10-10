@@ -465,14 +465,15 @@ func main(): i32 {
     assert_exit("rdc08", &output, 3);
 }
 
-/// A capturing lambda with a parameter-typed capture must run under an owning instance.
+/// An owning instance of a parameter-typed capture return is rejected.
 ///
-/// `outer<String>` captures its parameter and returns it through an immediate
-/// closure call. The environment and the lifted body mention `T`, so both must
-/// be specialized for `String`; the exit code `3` is the captured length, and a
-/// double release of the captured string would abort before the exit.
+/// `outer<String>` captures its read-only parameter and returns it through an
+/// immediate closure call; moving a borrowed capture out of the lambda is
+/// rejected exactly as the concrete `String` spelling is, so the alias the
+/// copy would create cannot be reached. One `E10401` names the capture and no
+/// translation unit is written.
 #[test]
-fn should_return_the_capture_when_a_capturing_lambda_runs_under_an_owning_instance() {
+fn should_reject_the_capture_return_under_an_owning_instance() {
     let source = r#"module spec.rdc.st9;
 
 import { String, stringOf } from std.text;
@@ -485,8 +486,7 @@ func main(): i32 {
     return i32(len(outer<String>(stringOf("abc"))));
 }
 "#;
-    let output = run_host("rdc09", source);
-    assert_exit("rdc09", &output, 3);
+    assert_rejected("rdc09", source, "E10401");
 }
 
 /// A returned projection of a fresh call result must release the sibling.
