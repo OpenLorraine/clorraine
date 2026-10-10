@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 09:00
-> **Progress**: 11/26 tasks (42%)
+> **Last Updated**: 2026-10-10 09:16
+> **Progress**: 13/26 tasks (50%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -211,8 +211,23 @@ workspace suite reporting zero failures.
 **Reference**: [03-02](03-02-immutable-view-writes.md) §Testing Requirements
 **Objective**: Pin the internal shapes and record the phase review evidence.
 
-- [ ] 2.3.1 Write the Phase 2 implementation pins (one report per write form, no translation unit for a rejected write, the accepted controls' emission unchanged, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs`
-- [ ] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 2.3.1 Write the Phase 2 implementation pins (one report per write form, no translation unit for a rejected write, the accepted controls' emission unchanged, byte-identical re-emission) — `compiler/tests/store_emission_integrity_impl_test.rs` ✅ (completed: 2026-10-10 09:02)
+- [x] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-10 09:16)
+
+**Phase review evidence (2026-10-10 09:16)** — three independent reviews ran on the phase diff
+(correctness reviewer, memory-safety auditor, semantics reviewer; AR-14). The semantics review was
+clean (conformance to the mutability table, the taxonomy ordering, and the spec boundary), and the
+memory audit found no defect in the reviewed change. The correctness review found a critical gap
+(a value-position update, `i32(s[0]++)`, bypassed the new rule) and the memory audit a
+pre-existing `raw`-pointer spelling; both were fixed in the remediation commit (a value-position
+update now judges the rule through a shared helper with the statement path routed so each site
+reports once; the projection walk's field step reaches through a raw pointer), with ST-14b and
+implementation pins added. The pre-existing residuals were filed on the roadmap (DEF-118: a `str`
+element loop is accepted and emits C that does not build; DEF-119: value-position updates bypass
+the const and read-only write rules). The one scoped re-review accepted both remediations with no
+findings (the base compiler accepts and the head rejects every closed shape; legal updates emit
+byte-identically; suites 19/19 + 5/5; the workspace runs 52 suites green). Rulings are recorded in
+[05-findings.md](05-findings.md).
 
 **Deliverables**:
 - Implementation pins for Phase 2
