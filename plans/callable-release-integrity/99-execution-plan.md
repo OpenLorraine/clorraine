@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 22:22
-> **Progress**: 15/36 tasks (42%)
+> **Last Updated**: 2026-10-10 22:30
+> **Progress**: 16/36 tasks (44%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -150,7 +150,7 @@ identity-based.
 **Objective**: Pin the mode vectors, materialization shapes, and report counts; record the
 phase review evidence.
 
-- [ ] 2.3.1 Write the Phase 2 implementation tests (per-kind mode vectors, temporary materialization, callee spellings, report counts) — `compiler/tests/callable_release_integrity_impl_test.rs`
+- [x] 2.3.1 Write the Phase 2 implementation tests (per-kind mode vectors, temporary materialization, callee spellings, report counts) — `compiler/tests/callable_release_integrity_impl_test.rs` ✅ (completed: 2026-10-10 22:30; six pins: the field/global take move-outs, the field/global/param/closure owned-temporary bindings, and the bound instance symbol)
 - [ ] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
 
 **Deliverables**:

@@ -306,3 +306,171 @@ func main(): i32 {
     let (first, second) = emit_twice("reemit-loop", looped);
     assert_eq!(first, second, "re-emission must be byte-identical");
 }
+
+/// A `take` field call moves its argument out through the field's signature.
+///
+/// The call goes through the field's own value (`(h.call)(s)`), and the
+/// argument's owner is emptied right after the call because the field's
+/// signature marks the parameter `take` — the same move a module twin emits.
+#[test]
+fn should_move_out_a_take_field_calls_argument() {
+    let source = r#"module spec.cri.impl.fieldtake;
+
+import { String, stringOf } from std.text;
+
+struct Holder {
+    call: func(take String): i32;
+}
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { call: sink };
+    let s: String = stringOf("x");
+    return h.call(s) - 1;
+}
+"#;
+    let emitted = emit_host("fieldtake", source);
+    let call = emitted
+        .find("__cl_tmp0 = (h.call)(s);")
+        .expect("fieldtake: the call must go through the field's own value");
+    assert!(
+        emitted[call..].contains("s = NULL;"),
+        "fieldtake: the take argument must be emptied after the call; emitted C:\n{emitted}"
+    );
+}
+
+/// A plain field call binds its owned temporary argument for release.
+///
+/// The field's signature is an unmarked (read-only lend) parameter, so a
+/// fresh `String` argument binds to a scope owner the cleanup releases; the
+/// field call receives the owner's spelling.
+#[test]
+fn should_release_an_owned_temporary_at_a_plain_field_call() {
+    let source = r#"module spec.cri.impl.fieldborrow;
+
+import { String, stringOf } from std.text;
+
+struct Holder { call: func(String): i32; }
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let h: Holder = Holder { call: lenOf };
+    return h.call(stringOf("x")) - 1;
+}
+"#;
+    let emitted = emit_host("fieldborrow", source);
+    assert_contains("fieldborrow", &emitted, "ClString __cl_owned0 = NULL;");
+    assert_contains("fieldborrow", &emitted, "(h.call)(__cl_owned0)");
+}
+
+/// A `take` global call moves its argument out through the global's signature.
+#[test]
+fn should_move_out_a_take_global_calls_argument() {
+    let source = r#"module spec.cri.impl.globaltake;
+
+import { String, stringOf } from std.text;
+
+func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+let g: func(take String): i32 = sink;
+
+func main(): i32 {
+    let s: String = stringOf("x");
+    return g(s) - 1;
+}
+"#;
+    let emitted = emit_host("globaltake", source);
+    let call = emitted
+        .find("__cl_tmp0 = cl_spec_cri_impl_globaltake_g(s);")
+        .expect("globaltake: the call must go through the global's own value");
+    assert!(
+        emitted[call..].contains("s = NULL;"),
+        "globaltake: the take argument must be emptied after the call; emitted C:\n{emitted}"
+    );
+}
+
+/// A plain global call binds its owned temporary argument for release.
+#[test]
+fn should_release_an_owned_temporary_at_a_plain_global_call() {
+    let source = r#"module spec.cri.impl.globalborrow;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+let g: func(String): i32 = lenOf;
+
+func main(): i32 {
+    return g(stringOf("x")) - 1;
+}
+"#;
+    let emitted = emit_host("globalborrow", source);
+    assert_contains("globalborrow", &emitted, "ClString __cl_owned0 = NULL;");
+    assert_contains(
+        "globalborrow",
+        &emitted,
+        "cl_spec_cri_impl_globalborrow_g(__cl_owned0)",
+    );
+}
+
+/// A callable-bound parameter call uses the bound's parameters and modes.
+///
+/// The monomorphized instance carries the bound's signature as its instance
+/// key, and the owned temporary argument binds to a scope owner the cleanup
+/// releases before the value crosses as a lend.
+#[test]
+fn should_release_an_owned_temporary_at_a_callable_bound_parameter() {
+    let source = r#"module spec.cri.impl.paramleak;
+
+import { String, stringOf } from std.text;
+
+func lenOf(s: String): i32 {
+    return i32(len(s));
+}
+
+func wrap<F: func(String): i32>(f: F): i32 {
+    return f(stringOf("x"));
+}
+
+func main(): i32 {
+    return wrap<func(String): i32>(lenOf) - 1;
+}
+"#;
+    let emitted = emit_host("paramleak", source);
+    assert_contains(
+        "paramleak",
+        &emitted,
+        "static i32 cl_wrap__fn_String__i32(i32 (*f)(ClString))",
+    );
+    assert_contains("paramleak", &emitted, "__cl_ret = f(__cl_owned0);");
+}
+
+/// A closure call binds its owned temporary argument for caller-side release.
+///
+/// The lambda's parameters are unmarked lends like a module function's, so a
+/// fresh argument binds to a scope owner the cleanup releases; the lifted
+/// function receives the owner's spelling.
+#[test]
+fn should_release_an_owned_temporary_at_a_closure_call() {
+    let source = r#"module spec.cri.impl.lambdaarg;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    return ((p: String) => i32(len(p)))(stringOf("x")) - 1;
+}
+"#;
+    let emitted = emit_host("lambdaarg", source);
+    assert_contains("lambdaarg", &emitted, "ClString __cl_owned0 = NULL;");
+    assert_contains("lambdaarg", &emitted, "cl_lambda_0(__cl_owned0)");
+}
