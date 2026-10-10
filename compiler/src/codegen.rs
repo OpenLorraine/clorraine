@@ -116,6 +116,12 @@ pub(super) struct Emitter<'a> {
     pub(super) function: Option<&'a ir::Function>,
     /// C name assigned to each source local or parameter of the open function.
     pub(super) local_names: BTreeMap<String, String>,
+    /// Init locals handed out in the module initializer being emitted.
+    ///
+    /// A module initializer stores operands it must not re-evaluate into
+    /// `__cl_itmp<N>` locals; the counter resets per init function, so the
+    /// numbering is stable per function.
+    pub(super) init_locals: usize,
     /// Parameters rendered as a pointer because they are a writable lend of a
     /// non-duplicable struct; a member access on one dereferences first.
     pub(super) pointer_params: BTreeSet<String>,
@@ -246,6 +252,7 @@ impl<'a> Emitter<'a> {
             used_names: BTreeSet::new(),
             function: None,
             local_names: BTreeMap::new(),
+            init_locals: 0,
             pointer_params: BTreeSet::new(),
             scope_actions: BTreeMap::new(),
             rungs: Vec::new(),

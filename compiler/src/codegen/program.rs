@@ -11,7 +11,7 @@ use crate::ast::{EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, Templ
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
-use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, CaptureMode, Ty, TyKind, TypeTable};
+use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, view_type, CaptureMode, Ty, TyKind, TypeTable};
 
 use super::types::{
     c_type, collect_slice_types, declarator, function_declarator, mangle_module,
@@ -623,6 +623,7 @@ impl<'a> Emitter<'a> {
                 mangle_module(&module_name)
             ));
             self.push("{");
+            self.init_locals = 0;
             for (name, value) in self.global_init_order(&module_name) {
                 self.emit_global_init(&module_name, &name, value);
             }
@@ -632,9 +633,18 @@ impl<'a> Emitter<'a> {
     }
 
     /// Writes one global's initializer assignment.
+    ///
+    /// A fixed array has no C assignment form, so its covered initializer
+    /// forms fill the target element-wise; every other value takes one
+    /// assignment after its guards.
     pub(super) fn emit_global_init(&mut self, module_name: &str, name: &str, value: &'a Expr) {
         self.emit_line_directive(value.span);
         let target = self.global_symbol(module_name, name);
+        let declared_ty = self
+            .globals
+            .values()
+            .find(|global| global.module == module_name && global.name == name)
+            .map(|global| global.ty.clone());
         let mut lowered = match self.loaded.module(module_name) {
             Some(module) => self.lower_global(module, value),
             None => Value {
@@ -651,12 +661,17 @@ impl<'a> Emitter<'a> {
         // A null initializer carries no type of its own, so the declared global
         // type supplies the empty state; a view needs its zero view.
         if matches!(lowered.kind, ValueKind::Null) {
-            if let Some(declared) = self
-                .globals
-                .values()
-                .find(|global| global.module == module_name && global.name == name)
-            {
-                lowered.ty = declared.ty.clone();
+            if let Some(declared) = &declared_ty {
+                lowered.ty = declared.clone();
+            }
+        }
+        // A call result and the other un-covered array forms keep the single
+        // assignment (a fixed-array call result lowers without its hidden
+        // destination, a separately tracked gap).
+        if let Some(declared) = &declared_ty {
+            if declared.is_fixed_array() && fills_element_wise(&lowered) {
+                self.emit_global_array_fill(&target, declared, &lowered);
+                return;
             }
         }
         let rendered = self.value(&lowered);
@@ -668,6 +683,150 @@ impl<'a> Emitter<'a> {
         self.push(&format!("    {target} = {rendered};"));
     }
 
+    /// Fills a fixed-array global element-wise.
+    ///
+    /// An array value has no C assignment form, so the init function writes
+    /// one element per statement, in declaration order. A nested array
+    /// recurses one extent per level; a literal's fill covers the elements its
+    /// list omits, and an omitted trailing element keeps the zero state the
+    /// global declaration starts from. A place value is copied element-wise
+    /// from its rendered base, and a conditional value reads its chosen arm
+    /// per element from a condition the preparation stored exactly once.
+    fn emit_global_array_fill(&mut self, target: &str, ty: &Ty, value: &Value) {
+        let TyKind::Array { element, extents } = &ty.kind else {
+            return;
+        };
+        let Some(Some(extent)) = extents.first() else {
+            return;
+        };
+        let row_ty = if extents.len() > 1 {
+            Ty::array((**element).clone(), extents[1..].to_vec())
+        } else {
+            (**element).clone()
+        };
+        let prepared = self.prepare_fill_value(value, None);
+        for index in 0..*extent {
+            let sub_target = format!("{target}[{index}]");
+            let Some(element_value) = fill_element_value(&prepared, index, &row_ty) else {
+                continue;
+            };
+            if row_ty.is_fixed_array() {
+                self.emit_global_array_fill(&sub_target, &row_ty, &element_value);
+                continue;
+            }
+            self.emit_guards(&element_value);
+            let text = self.store_text(&element_value, &row_ty);
+            self.push(&format!("    {sub_target} = {text};"));
+        }
+    }
+
+    /// Prepares a fill value so no sub-expression runs more than once.
+    ///
+    /// A conditional's condition runs exactly once, before the element
+    /// stores, and a nested condition or run-time index runs only when its
+    /// enclosing arm is chosen, so the prepared value reads an init local per
+    /// stored operand and each local's assignment carries its enclosing
+    /// guard. Every other form is safe to render per element.
+    fn prepare_fill_value(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        match &value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let (local_name, local) = self.materialize_init_local(condition, guard, "false");
+                let then_guard = match guard {
+                    Some(enclosing) => format!("{enclosing} && {local_name}"),
+                    None => local_name.clone(),
+                };
+                let else_guard = match guard {
+                    Some(enclosing) => format!("{enclosing} && !{local_name}"),
+                    None => format!("!{local_name}"),
+                };
+                let then_value = self.prepare_fill_value(then_value, Some(&then_guard));
+                let else_value = self.prepare_fill_value(else_value, Some(&else_guard));
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Conditional {
+                        condition: Box::new(local),
+                        then_value: Box::new(then_value),
+                        else_value: Box::new(else_value),
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.prepare_fill_value(base, guard);
+                let index = if init_operand_is_pure(index) {
+                    (**index).clone()
+                } else {
+                    let (_, local) = self.materialize_init_local(index, guard, "0");
+                    local
+                };
+                Value::new(
+                    value.ty.clone(),
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index: Box::new(index),
+                    },
+                )
+            }
+            ValueKind::Member { base, name } => Value::new(
+                value.ty.clone(),
+                ValueKind::Member {
+                    base: Box::new(self.prepare_fill_value(base, guard)),
+                    name: name.clone(),
+                },
+            ),
+            _ => value.clone(),
+        }
+    }
+
+    /// Stores a value into a fresh init local and returns the local's name and
+    /// its read value.
+    ///
+    /// With a guard, the store runs only when the guard holds — a nested
+    /// condition or a run-time index is evaluated only on the path that
+    /// reaches it — and the local starts at `zero` so reads on the untaken
+    /// path stay defined.
+    fn materialize_init_local(
+        &mut self,
+        value: &Value,
+        guard: Option<&str>,
+        zero: &str,
+    ) -> (String, Value) {
+        let name = self.next_init_local();
+        let rendered = self.value(value);
+        match guard {
+            Some(enclosing) => {
+                self.push(&format!(
+                    "    {} = {zero};",
+                    declarator(&value.ty, &name, &self.sema.table)
+                ));
+                self.push(&format!("    if ({enclosing}) {{ {name} = {rendered}; }}"));
+            }
+            None => self.push(&format!(
+                "    {} = {rendered};",
+                declarator(&value.ty, &name, &self.sema.table)
+            )),
+        }
+        let read = Value::new(
+            value.ty.clone(),
+            ValueKind::Place(Place {
+                base: PlaceBase::Local(name.clone()),
+                projections: Vec::new(),
+                ty: value.ty.clone(),
+            }),
+        );
+        (name, read)
+    }
+
+    /// The C name of the next init-function local.
+    fn next_init_local(&mut self) -> String {
+        let name = format!("__cl_itmp{}", self.init_locals);
+        self.init_locals += 1;
+        name
+    }
+
     /// Lowers a module-level initializer expression to a typed IR value.
     ///
     /// Module initialization is a program-level phase, so it reuses the IR
@@ -676,7 +835,7 @@ impl<'a> Emitter<'a> {
     /// field-projected, or written as a full module path, becomes a global
     /// place so the renderer spells its mangled symbol, and an enum member
     /// keeps its dotted path.
-    fn lower_global(&self, module: &Module, expr: &Expr) -> Value {
+    fn lower_global(&mut self, module: &Module, expr: &Expr) -> Value {
         let ty = self.expr_type(expr).unwrap_or_else(Ty::unknown);
         let kind = match &expr.kind {
             ExprKind::Int(value) => ValueKind::Int(*value as i128),
@@ -788,18 +947,157 @@ impl<'a> Emitter<'a> {
                 callee,
                 type_args,
                 args,
-            } => ValueKind::Call {
-                callee: callee_name(callee).unwrap_or_default(),
-                type_args: type_args.iter().map(|ty| self.resolve_written(ty)).collect(),
-                args: args
-                    .iter()
-                    .map(|arg| self.lower_global(module, &arg.value))
-                    .collect(),
-                receiver: None,
-            },
+            } => {
+                if let Some(intrinsic) =
+                    self.lower_global_intrinsic(module, callee, type_args, args)
+                {
+                    return intrinsic;
+                }
+                ValueKind::Call {
+                    callee: callee_name(callee).unwrap_or_default(),
+                    type_args: type_args.iter().map(|ty| self.resolve_written(ty)).collect(),
+                    args: args
+                        .iter()
+                        .map(|arg| self.lower_global(module, &arg.value))
+                        .collect(),
+                    receiver: None,
+                }
+            }
             _ => ValueKind::Aggregate,
         };
         Value { ty, kind }
+    }
+
+    /// Lowers a module-level call that names a compiler intrinsic.
+    ///
+    /// Mirrors the function path's rule: a user or `ffi` declaration of the
+    /// name keeps its own symbol, and only the receiver-taking `len` spelling
+    /// and the three view builders lower as intrinsics. An impure operand is
+    /// stored once into an init local first, because the rendered view builder
+    /// reads its offset argument twice.
+    fn lower_global_intrinsic(
+        &mut self,
+        module: &Module,
+        callee: &Expr,
+        type_args: &[crate::ast::Type],
+        args: &[crate::ast::Arg],
+    ) -> Option<Value> {
+        let name = self.global_intrinsic_call(callee)?;
+        if name == "len" {
+            let receiver = self.global_len_receiver(module, callee)?;
+            let receiver = self.init_intrinsic_arg(receiver);
+            return Some(Value::new(
+                Ty::usize_ty(),
+                ValueKind::Intrinsic {
+                    name: "len".to_owned(),
+                    args: vec![receiver],
+                    type_arg: None,
+                },
+            ));
+        }
+        let explicit: Vec<Ty> = type_args.iter().map(|ty| self.resolve_written(ty)).collect();
+        let mut lowered: Vec<Value> = args
+            .iter()
+            .map(|arg| self.lower_global(module, &arg.value))
+            .collect();
+        if name == "slice" {
+            for value in lowered.iter_mut() {
+                let pending =
+                    std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                *value = self.init_intrinsic_arg(pending);
+            }
+        }
+        // The view's element is one step of iteration over the source: whole
+        // rows for a multi-extent source, the scalar for a single-extent one.
+        let source_element = lowered
+            .first()
+            .map(|value| self.substitute(&value.ty).iterated_element());
+        let type_arg = explicit
+            .first()
+            .cloned()
+            .or_else(|| source_element.filter(|element| !element.is_unknown()));
+        let is_raw_str = name == "rawStr";
+        let result = if is_raw_str {
+            Ty {
+                kind: TyKind::Str,
+                nullable: false,
+            }
+        } else {
+            view_type(type_arg.clone().unwrap_or_else(Ty::unknown))
+        };
+        Some(Value::new(
+            result,
+            ValueKind::Intrinsic {
+                name,
+                args: lowered,
+                type_arg: if is_raw_str { None } else { type_arg },
+            },
+        ))
+    }
+
+    /// The compiler intrinsic a module-level call names, when it names one.
+    ///
+    /// A user or `ffi` declaration of the name keeps its own symbol, exactly
+    /// as the function path resolves the call; the view builders and the
+    /// receiver-taking `len` are the intrinsics a module initializer can
+    /// spell.
+    fn global_intrinsic_call(&self, callee: &Expr) -> Option<String> {
+        let name = callee_name(callee)?;
+        if !matches!(name.as_str(), "len" | "rawSlice" | "rawStr" | "slice") {
+            return None;
+        }
+        if self.ffi_functions.contains_key(&name)
+            || self.functions.keys().any(|(_, simple)| *simple == name)
+        {
+            return None;
+        }
+        Some(name)
+    }
+
+    /// The receiver value of a module-level dot-`len` callee.
+    ///
+    /// The receiver is the callee's base for a member spelling and the path
+    /// before the method segment for a module-qualified spelling.
+    fn global_len_receiver(&mut self, module: &Module, callee: &Expr) -> Option<Value> {
+        match &callee.kind {
+            ExprKind::Member { base, .. } => Some(self.lower_global(module, base)),
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                let receiver = crate::ast::QualifiedName {
+                    segments: name.segments[..name.segments.len() - 1].to_vec(),
+                    span: name.span,
+                };
+                let global = crate::init_graph::resolve_global(self.loaded, module, &receiver)?;
+                let identity = GlobalId::new(global.module, global.name);
+                let projections = global.fields.into_iter().map(Projection::Field).collect();
+                let ty = self
+                    .globals
+                    .get(&identity)
+                    .map(|info| info.ty.clone())
+                    .unwrap_or_else(Ty::unknown);
+                Some(Value::new(
+                    ty.clone(),
+                    ValueKind::Place(Place {
+                        base: PlaceBase::Global(identity),
+                        projections,
+                        ty,
+                    }),
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    /// Materializes an impure intrinsic operand into an init local.
+    ///
+    /// The rendered view builder reads its offset argument twice, so an
+    /// operand with effects must run once, before the construction. A pure
+    /// operand (a constant or a place) renders in place.
+    fn init_intrinsic_arg(&mut self, value: Value) -> Value {
+        if init_operand_is_pure(&value) {
+            return value;
+        }
+        let (_, local) = self.materialize_init_local(&value, None, "0");
+        local
     }
 
     /// Writes every function body, user functions first in source order, then
@@ -1060,5 +1358,100 @@ fn callee_name(callee: &Expr) -> Option<String> {
         ExprKind::Qualified(name) => name.segments.last().cloned(),
         ExprKind::Member { name, .. } => Some(name.clone()),
         _ => None,
+    }
+}
+
+/// True when a module array value has an element-wise fill form.
+///
+/// A literal, a place (or a member or index projection over one), and a
+/// conditional whose arms are fillable all have an element-wise form. A call
+/// result does not: a fixed-array-returning call lowers without its hidden
+/// destination, so it keeps the tracked single-assignment path.
+fn fills_element_wise(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::ArrayLit { .. } | ValueKind::Place(_) => true,
+        ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => fills_element_wise(base),
+        ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } => fills_element_wise(then_value) && fills_element_wise(else_value),
+        _ => false,
+    }
+}
+
+/// One element value of a filled array.
+///
+/// A literal contributes its listed element, else its fill; an omitted
+/// element keeps the zero state the global declaration starts from (`None`).
+/// A conditional selects each element from its chosen arm, and any other form
+/// is place-rooted, so the element reads the base at the constant index.
+fn fill_element_value(value: &Value, index: usize, element_ty: &Ty) -> Option<Value> {
+    match &value.kind {
+        ValueKind::ArrayLit { elements, fill } => {
+            elements.get(index).cloned().or_else(|| fill.as_deref().cloned())
+        }
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => Some(Value::new(
+            element_ty.clone(),
+            ValueKind::Conditional {
+                condition: condition.clone(),
+                then_value: Box::new(fill_element_value(then_value, index, element_ty)?),
+                else_value: Box::new(fill_element_value(else_value, index, element_ty)?),
+            },
+        )),
+        _ => Some(Value::new(
+            element_ty.clone(),
+            ValueKind::Index {
+                base: Box::new(value.clone()),
+                index: Box::new(Value::new(Ty::usize_ty(), ValueKind::Int(index as i128))),
+            },
+        )),
+    }
+}
+
+/// True when an initializer operand can be rendered where it is used.
+///
+/// Mirrors the checker's purity predicate: a call, template, closure call, or
+/// stored temporary runs effects or reads a name this phase cannot spell, so
+/// the init lowering stores it into an init local first; every other form is
+/// safe to render in place.
+fn init_operand_is_pure(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Call { .. }
+        | ValueKind::Intrinsic { .. }
+        | ValueKind::Template(_)
+        | ValueKind::ClosureCall { .. }
+        | ValueKind::Materialize { .. } => false,
+        ValueKind::Closure { captures, .. } => captures.iter().all(init_operand_is_pure),
+        ValueKind::Unary { op, operand } => !op.is_update() && init_operand_is_pure(operand),
+        ValueKind::Binary { left, right, .. } => {
+            init_operand_is_pure(left) && init_operand_is_pure(right)
+        }
+        ValueKind::Cast { value, .. } => init_operand_is_pure(value),
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            init_operand_is_pure(condition)
+                && init_operand_is_pure(then_value)
+                && init_operand_is_pure(else_value)
+        }
+        ValueKind::Member { base, .. } => init_operand_is_pure(base),
+        ValueKind::Index { base, index } => {
+            init_operand_is_pure(base) && init_operand_is_pure(index)
+        }
+        ValueKind::StructLit { fields, .. } => {
+            fields.iter().all(|(_, field)| init_operand_is_pure(field))
+        }
+        ValueKind::ArrayLit { elements, fill } => {
+            elements.iter().all(init_operand_is_pure)
+                && fill.as_deref().map_or(true, init_operand_is_pure)
+        }
+        _ => true,
     }
 }

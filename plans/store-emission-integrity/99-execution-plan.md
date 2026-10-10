@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 09:34
-> **Progress**: 21/26 tasks (81%)
+> **Last Updated**: 2026-10-10 09:41
+> **Progress**: 24/26 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -353,9 +353,17 @@ set is all eight cases (the plan's ST-23 – ST-29 list extends by ST-30).
 **Objective**: Fill array-typed initializers element-wise, lower intrinsic calls, and evaluate
 impure operands once.
 
-- [ ] 4.2.1 Implement the element-wise array fill (literal, fill, place-copy, and conditional values) in `emit_global_init` — `compiler/src/codegen/program.rs`
-- [ ] 4.2.2 Implement the intrinsic-call detection in `lower_global` and the init-local materialization for impure intrinsic operands — `compiler/src/codegen/program.rs`
-- [ ] 4.2.3 Run the spec suite to green (ST-23 – ST-29) and the strict-build runs; on any failure STOP and fix the implementation, never the test
+- [x] 4.2.1 Implement the element-wise array fill (literal, fill, place-copy, and conditional values) in `emit_global_init` — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-10 09:41)
+- [x] 4.2.2 Implement the intrinsic-call detection in `lower_global` and the init-local materialization for impure intrinsic operands — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-10 09:41)
+- [x] 4.2.3 Run the spec suite to green (ST-23 – ST-29) and the strict-build runs; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-10 09:41)
+
+**Green-phase evidence (2026-10-10 09:41)** — the suite passes 31/31 on the first run: the array
+fill stores elements in declaration order (literal, nested rows, fill tail, place copy), the
+`slice` intrinsic constructs the view behind its bounds guard, an impure offset is stored once
+into `i32 __cl_itmp0` before the construction, the conditional's condition is stored once into
+`bool __cl_itmp0` with per-element ternaries over the indexed arms, and the dot-`len` folds to the
+extent. The strict builds and runs assert the exits, and `make check` is fully green (52 suites;
+`spec check: OK (27 files, 106 compile-fail tests)`).
 
 **Deliverables**:
 - The fill walk, intrinsic lowering, and init-local materialization
