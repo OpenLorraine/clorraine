@@ -131,6 +131,7 @@
 | E10403 | `take` capture | `'take' captures are not supported` | copy or borrow the capture |
 | E10404 | Closure stored, returned, or captured (closures are ephemeral) | `closures are ephemeral and cannot be stored, returned, or captured` | pass the lambda directly |
 | E10405 | Lambda reads an enclosing name without listing it | `lambda reads '{name}' without listing it` | add '{name}' to the capture list |
+| E10406 | Capture list names a module-level binding | `module-level '{name}' needs no capture` | use the name directly |
 
 ## 8. Strings and templates (`E105xx`)
 

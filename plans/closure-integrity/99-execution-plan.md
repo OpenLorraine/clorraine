@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 10:35
-> **Progress**: 0/22 tasks (0%)
+> **Last Updated**: 2026-10-10 10:30
+> **Progress**: 3/22 tasks (14%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -66,9 +66,18 @@ task-size criteria in the make-plan quality checklist)
 **Objective**: Land the authorized `E10406` row and golden, then pin the corrected and preserved
 capture-list validity judgments before any implementation.
 
-- [ ] 1.1.1 [spec] Add the `E10406` registry row (`spec/14-diagnostics.md`) and the golden `spec/tests/compile-fail/E10406_module_capture.clo`, registering the code in the compile-fail driver (`compiler/tests/compile_fail_spec_test.rs`) — the authorized modification set (AR-2, AR-12)
-- [ ] 1.1.2 [spec-author] Write specification tests from ST-1 – ST-9 — `compiler/tests/closure_integrity_spec_test.rs`
-- [ ] 1.1.3 Run the spec suite and record the red phase (expected: ST-1, ST-3, ST-4, ST-6, ST-9 fail; ST-2, ST-5, ST-7, ST-8 pass as deliberate pins, each recorded with its justification)
+- [x] 1.1.1 [spec] Add the `E10406` registry row (`spec/14-diagnostics.md`) and the golden `spec/tests/compile-fail/E10406_module_capture.clo`, registering the code in the compile-fail driver (`compiler/tests/compile_fail_spec_test.rs`) — the authorized modification set (AR-2, AR-12) ✅ (completed: 2026-10-10 10:28)
+- [x] 1.1.2 [spec-author] Write specification tests from ST-1 – ST-9 — `compiler/tests/closure_integrity_spec_test.rs` ✅ (completed: 2026-10-10 10:30)
+- [x] 1.1.3 Run the spec suite and record the red phase (expected: ST-1, ST-3, ST-4, ST-6, ST-9 fail; ST-2, ST-5, ST-7, ST-8 pass as deliberate pins, each recorded with its justification) ✅ (completed: 2026-10-10 10:30)
+
+**Red-phase evidence (2026-10-10 10:30)** — the new suite (9 tests) fails exactly as designed: 5
+failed, 4 passed. ST-1 (the unlisted relay), ST-3 and ST-4 (the module-level entries), ST-6 (the
+dotted copy-capture write reports `E10024`), and ST-9 (the golden) fail against the baseline;
+ST-2 (the listed relay builds and runs — exit 3), ST-5 (a capture-less module read — exit 7),
+ST-7 (the borrow-capture write — exit 2), and ST-8 (the copy-capture read — exit 1) pass as
+deliberate pins. The compile-fail driver reports the same designed red state for the golden
+(`E10406_module_capture.clo: no 'error E10406: ...' diagnostic line (exit Some(0))`), and
+`./spec/check.sh` is green (27 files, 107 compile-fail tests).
 
 **Deliverables**:
 - The registry row and golden

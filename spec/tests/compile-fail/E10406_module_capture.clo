@@ -1,0 +1,9 @@
+// expect-error E10406
+// trigger: capture list names a module-level binding
+module tests.compile_fail.E10406;
+
+const base: i32 = 7;
+
+func main(): i32 {
+    return ([base] () => base)();
+}
