@@ -139,6 +139,37 @@ fn emit_host(tag: &str, source: &str) -> String {
     emitted
 }
 
+/// Emits the same program twice into one directory and returns both units.
+///
+/// Both emissions share the source path, so their `#line` directives match and
+/// a difference between the two strings is a difference in the translation
+/// itself, not in the scratch directory name.
+fn emit_twice(tag: &str, source: &str) -> (String, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let mut emitted = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emitted.push(std::fs::read_to_string(&c_path).unwrap_or_default());
+    }
+    (emitted[0].clone(), emitted[1].clone())
+}
+
 /// Compiles the emitted C with the host compiler under the strict flag set.
 ///
 /// Panics with the compiler's stderr when the build fails. Returns the built
@@ -300,6 +331,42 @@ fn assert_no_asan(tag: &str, output: &Output) {
         !stderr.contains("AddressSanitizer"),
         "{tag}: the run reported a memory error; stderr:\n{stderr}"
     );
+}
+
+/// Asserts a run failed and its first stderr line is exactly `expected`.
+///
+/// The `cl_trap` contract is `error CODE: message` on the first line followed
+/// by an abort, so a successful exit is always a failure, and a different first
+/// line (a stack-smashing message, a sanitizer banner, or the zero exit of an
+/// unchecked write) is a failure too.
+fn assert_trap_line(tag: &str, build: &str, output: &Output, expected: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag} ({build}): expected a runtime trap (nonzero exit); stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let first = String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    assert_eq!(first, expected, "{tag} ({build}): unexpected first stderr line");
+}
+
+/// Asserts a program traps with the exact first stderr line `expected` on both
+/// a plain strict host build and an AddressSanitizer build.
+///
+/// The bounds trap is the memory-safety contract for an out-of-range element
+/// access: the sanitizer build must reach the same trap and must not report a
+/// memory error instead, so the two runs must agree on the first line and the
+/// sanitizer run must print no `AddressSanitizer` report.
+fn assert_traps(tag: &str, source: &str, expected: &str) {
+    let plain = run_host(tag, source);
+    assert_trap_line(tag, "plain", &plain, expected);
+
+    let sanitized = run_asan(tag, source);
+    assert_trap_line(tag, "asan", &sanitized, expected);
+    assert_no_asan(tag, &sanitized);
 }
 
 /// A whole-slot self-assignment through an owning generic lend is rejected
@@ -840,4 +907,403 @@ func main(): i32 {
 }
 "#;
     assert_rejected_once("generic-read-only-lend-return", source, "E10034", &["'v'"]);
+}
+
+/// An element store through an unnarrowed possibly-null view is rejected once.
+///
+/// A store target's element base obeys the same non-null requirement the read
+/// path already enforces: writing `xs[0]` while `xs` may be null is rejected
+/// with exactly one `E10010` naming `xs`, and no translation unit is written.
+/// The caller passes a null view, so the accepted program would dereference a
+/// null pointer.
+#[test]
+fn should_reject_an_element_store_when_the_possibly_null_view_is_unnarrowed() {
+    let source = r#"module spec.bsi.p3.unnarrowedstore;
+
+func f(borrow xs: u8[]?): i32 {
+    xs[0] = 1;
+    return 0;
+}
+
+func main(): i32 {
+    let v: u8[]? = null;
+    f(borrow v);
+    return 0;
+}
+"#;
+    assert_rejected_once("unnarrowed-store", source, "E10010", &["'xs'"]);
+}
+
+/// An unnarrowed element store with a run-time index is rejected once.
+///
+/// The store target's null requirement does not depend on how the index was
+/// spelled, so `xs[i] = 1` through an unnarrowed `u8[]?` is rejected with
+/// exactly one `E10010` naming `xs`. The caller passes a null view.
+#[test]
+fn should_reject_an_element_store_when_the_possibly_null_view_uses_a_runtime_index() {
+    let source = r#"module spec.bsi.p3.unnarrowedvarstore;
+
+func f(borrow xs: u8[]?): i32 {
+    let i: i32 = 0;
+    xs[i] = 1;
+    return 0;
+}
+
+func main(): i32 {
+    let v: u8[]? = null;
+    f(borrow v);
+    return 0;
+}
+"#;
+    assert_rejected_once("unnarrowed-var-store", source, "E10010", &["'xs'"]);
+}
+
+/// A narrowed element store into an in-bounds view is accepted.
+///
+/// The `if (xs != null)` arm narrows the base, so the store is accepted as the
+/// matching read already is; the narrowing survives the write, so the read-back
+/// returns the stored value (exit 7). The run must be sanitizer-clean.
+#[test]
+fn should_accept_a_narrowed_element_store_when_the_view_is_in_bounds() {
+    let source = r#"module spec.bsi.p3.narrowedinbounds;
+
+import { slice } from std.mem;
+
+func f(borrow xs: u8[]?): i32 {
+    if (xs != null) {
+        xs[0] = 7;
+        return i32(xs[0]);
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: u8[4] = [1, 2, 3, 4];
+    let v: u8[]? = slice(d, 0, 2);
+    return f(borrow v);
+}
+"#;
+    let output = run_memory("narrowed-in-bounds", source);
+    assert_exit("narrowed-in-bounds", &output, 7);
+    assert_no_asan("narrowed-in-bounds", &output);
+}
+
+/// An element store through a non-nullable view is accepted.
+///
+/// A non-nullable `u8[]` lend needs no null narrowing, so the element store is
+/// accepted and the read-back returns the stored value (exit 7). The run must
+/// be sanitizer-clean.
+#[test]
+fn should_accept_an_element_store_when_the_lend_is_non_nullable() {
+    let source = r#"module spec.bsi.p3.nonnullableinbounds;
+
+import { slice } from std.mem;
+
+func f(borrow xs: u8[]): i32 {
+    xs[0] = 7;
+    return i32(xs[0]);
+}
+
+func main(): i32 {
+    let d: u8[4] = [1, 2, 3, 4];
+    let v: u8[] = slice(d, 0, 4);
+    return f(borrow v);
+}
+"#;
+    let output = run_memory("non-nullable-in-bounds", source);
+    assert_exit("non-nullable-in-bounds", &output, 7);
+    assert_no_asan("non-nullable-in-bounds", &output);
+}
+
+/// An element read through an unnarrowed possibly-null view stays rejected.
+///
+/// The read path already requires a non-null base, so `return i32(xs[0])` on a
+/// possibly-null `u8[]?` view is rejected with exactly one `E10010` naming
+/// `xs`. This pins the read rule the store rule now mirrors.
+#[test]
+fn should_reject_an_element_read_when_the_possibly_null_view_is_unnarrowed() {
+    let source = r#"module spec.bsi.p3.unnarrowedread;
+
+func f(borrow xs: u8[]?): i32 {
+    return i32(xs[0]);
+}
+
+func main(): i32 {
+    let v: u8[]? = null;
+    return f(borrow v);
+}
+"#;
+    assert_rejected_once("unnarrowed-read", source, "E10010", &["'xs'"]);
+}
+
+/// An element update through an unnarrowed possibly-null view is rejected once.
+///
+/// The update form `xs[0]++` evaluates its operand as a value first, so the
+/// read walk reports the null requirement. The store walk must not report it a
+/// second time: exactly one `E10010` names `xs` for the whole statement.
+#[test]
+fn should_reject_an_element_update_when_the_possibly_null_view_is_unnarrowed() {
+    let source = r#"module spec.bsi.p3.unnarrowedupdate;
+
+func f(borrow xs: u8[]?): i32 {
+    xs[0]++;
+    return 0;
+}
+
+func main(): i32 {
+    let v: u8[]? = null;
+    f(borrow v);
+    return 0;
+}
+"#;
+    assert_rejected_once("unnarrowed-update", source, "E10010", &["'xs'"]);
+}
+
+/// A narrowed constant-index element store past a dynamic bound traps.
+///
+/// The view `slice(d, 2, 2)` is non-null but empty, so the narrowed store
+/// `xs[0] = 1` is in range of no element. The store carries the read path's
+/// `E11211` trap, so the plain build aborts with `error E11211: index out of
+/// range` as its first stderr line, and the sanitizer build reaches the same
+/// trap without reporting a memory error (a baseline unchecked write instead
+/// smashes the stack or overflows the buffer).
+#[test]
+fn should_trap_when_a_narrowed_constant_element_store_is_out_of_bounds() {
+    let source = r#"module spec.bsi.p3.oobstore;
+
+import { slice } from std.mem;
+
+func f(borrow xs: i32[]?): i32 {
+    if (xs != null) {
+        xs[0] = 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 2, 2);
+    return f(borrow v);
+}
+"#;
+    assert_traps("oob-store", source, "error E11211: index out of range");
+}
+
+/// A narrowed run-time-index element store past a dynamic bound traps.
+///
+/// The run-time-index store already routes through the pointer path, whose
+/// guard is the read path's `E11211` trap, so `xs[i] = 1` on the empty view
+/// aborts with `error E11211: index out of range` on both a plain and a
+/// sanitizer build, and the sanitizer run reports no memory error. This pins
+/// the shape the constant-index fix must match.
+#[test]
+fn should_trap_when_a_narrowed_runtime_index_element_store_is_out_of_bounds() {
+    let source = r#"module spec.bsi.p3.oobvarstore;
+
+import { slice } from std.mem;
+
+func f(borrow xs: i32[]?): i32 {
+    let i: i32 = 0;
+    if (xs != null) {
+        xs[i] = 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 2, 2);
+    return f(borrow v);
+}
+"#;
+    assert_traps("oob-var-store", source, "error E11211: index out of range");
+}
+
+/// A narrowed constant-index element store inside the dynamic bound is
+/// accepted.
+///
+/// The view `slice(d, 0, 2)` holds the index, so the store's guard passes, the
+/// element is written, and the read-back returns the stored value (exit 9).
+/// The run must be sanitizer-clean.
+#[test]
+fn should_accept_a_narrowed_constant_element_store_when_the_view_is_in_bounds() {
+    let source = r#"module spec.bsi.p3.inboundsstore;
+
+import { slice } from std.mem;
+
+func f(borrow xs: i32[]?): i32 {
+    if (xs != null) {
+        xs[0] = 9;
+        return i32(xs[0]);
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 0, 2);
+    return f(borrow v);
+}
+"#;
+    let output = run_memory("in-bounds-store", source);
+    assert_exit("in-bounds-store", &output, 9);
+    assert_no_asan("in-bounds-store", &output);
+}
+
+/// A narrowed constant-index element read past a dynamic bound traps.
+///
+/// The read path already carries the `E11211` trap, so `return xs[0]` on the
+/// empty view aborts with `error E11211: index out of range` on both a plain
+/// and a sanitizer build, and the sanitizer run reports no memory error. This
+/// pins the read shape the store fix mirrors.
+#[test]
+fn should_trap_when_a_narrowed_constant_element_read_is_out_of_bounds() {
+    let source = r#"module spec.bsi.p3.oobread;
+
+import { slice } from std.mem;
+
+func f(borrow xs: i32[]?): i32 {
+    if (xs != null) {
+        return xs[0];
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 2, 2);
+    return f(borrow v);
+}
+"#;
+    assert_traps("oob-read", source, "error E11211: index out of range");
+}
+
+/// A narrowed compound element store past a dynamic bound traps.
+///
+/// The compound store `xs[0] += 1` reads and writes one element, so it needs
+/// the same bounds trap as the plain store. On the empty view it aborts with
+/// `error E11211: index out of range` on both a plain and a sanitizer build,
+/// and the sanitizer run reports no memory error (a baseline unchecked compound
+/// write instead smashes the stack or overflows the buffer).
+#[test]
+fn should_trap_when_a_narrowed_compound_element_store_is_out_of_bounds() {
+    let source = r#"module spec.bsi.p3.oobcompound;
+
+import { slice } from std.mem;
+
+func f(borrow xs: i32[]?): i32 {
+    if (xs != null) {
+        xs[0] += 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 2, 2);
+    return f(borrow v);
+}
+"#;
+    assert_traps("oob-compound", source, "error E11211: index out of range");
+}
+
+/// A narrowed compound store and update inside the dynamic bound are accepted.
+///
+/// The view `slice(d, 0, 2)` holds the index, so both the compound store
+/// (`xs[0] += 1`, giving 2) and the update (`xs[0]++`, giving 3) apply in
+/// order and the read-back returns 3. The run must be sanitizer-clean.
+#[test]
+fn should_accept_narrowed_compound_and_update_element_stores_when_the_view_is_in_bounds() {
+    let source = r#"module spec.bsi.p3.inboundscompound;
+
+import { slice } from std.mem;
+
+func f(borrow xs: i32[]?): i32 {
+    if (xs != null) {
+        xs[0] += 1;
+        xs[0]++;
+        return i32(xs[0]);
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 0, 2);
+    return f(borrow v);
+}
+"#;
+    let output = run_memory("in-bounds-compound", source);
+    assert_exit("in-bounds-compound", &output, 3);
+    assert_no_asan("in-bounds-compound", &output);
+}
+
+/// The accepted programs of the three phases re-emit byte-identically.
+///
+/// Determinism needs no state carried between emissions: the phase-1
+/// self-assign program, the phase-2 out-slot return program, and the phase-3
+/// in-bounds store program must each emit the same translation unit twice.
+#[test]
+fn should_emit_byte_identical_units_when_the_accepted_phase_programs_are_emitted_twice() {
+    let phase_1 = r#"module spec.bsi.p3.determinismphase1;
+
+func same<T>(borrow p: T): void {
+    p = p;
+}
+
+func main(): i32 {
+    let n: i32 = 1;
+    same<i32>(n);
+    return n;
+}
+"#;
+    let phase_2 = r#"module spec.bsi.p3.determinismphase2;
+
+import { String, stringOf } from std.text;
+
+func cid(borrow v: String?): String? {
+    return v;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("abc");
+    let r: String? = cid(borrow s);
+    if (s != null) {
+        return 90;
+    }
+    if (r == null) {
+        return 91;
+    }
+    return i32(len(r));
+}
+"#;
+    let phase_3 = r#"module spec.bsi.p3.determinismphase3;
+
+import { slice } from std.mem;
+
+func f(borrow xs: i32[]?): i32 {
+    if (xs != null) {
+        xs[0] = 9;
+        return i32(xs[0]);
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let d: i32[2] = [1, 2];
+    let v: i32[]? = slice(d, 0, 2);
+    return f(borrow v);
+}
+"#;
+    for (tag, source) in [
+        ("p3-determinism-phase-1", phase_1),
+        ("p3-determinism-phase-2", phase_2),
+        ("p3-determinism-phase-3", phase_3),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(
+            first, second,
+            "{tag}: two emissions of one program must be byte-identical"
+        );
+    }
 }

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-10 01:48
-> **Progress**: 14/22 tasks (64%)
+> **Last Updated**: 2026-10-10 02:02
+> **Progress**: 16/22 tasks (73%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -168,7 +168,7 @@ zeroing step.
 
 ## Phase 3: View-store guards (DEF-105, DEF-106)
 
-> **Phase baseline tree**: (recorded by the exec-plan skill at phase start)
+> **Phase baseline tree**: `548db16380eff69fb9efa00b1837f7933ff77a0b`
 > **Lenses**: correctness reviewer + memory-safety auditor + emission-integrity auditor (checker
 > rule plus IR statement and emission change; AGENTS.md dispatch matrix)
 > **Reasoning**: high — language-rule change on stores plus a new IR statement and emission shape
@@ -179,8 +179,8 @@ zeroing step.
 **Objective**: Pin the store null requirement, the bounds trap, and the unchanged acceptances
 before any implementation.
 
-- [ ] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-22 and the extension cases ST-28 – ST-30 — `compiler/tests/borrow_store_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-18, and ST-29 fail; the remaining cases pass as green pins)
+- [x] 3.1.1 [spec-author] Write specification tests from ST-13 – ST-22 and the extension cases ST-28 – ST-30 — `compiler/tests/borrow_store_integrity_spec_test.rs` ✅ (completed: 2026-10-10 02:02)
+- [x] 3.1.2 Run the spec suite and record the red phase (expected: ST-13, ST-14, ST-18, and ST-29 fail; the remaining cases pass as green pins) ✅ (completed: 2026-10-10 02:02)
 
 **Deliverables**:
 - Specification clauses for P3
