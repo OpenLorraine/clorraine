@@ -2153,3 +2153,111 @@ func main(): i32 {
     );
 }
 
+/// A capture moved through a `const` initializer reports the capture rule.
+///
+/// The `const` initializer is a move site of its own; without the record the
+/// program was accepted and double-freed.
+#[test]
+fn should_report_a_capture_moved_through_a_const_initializer() {
+    let source = r#"module spec.cc.captureconst;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        const y: T = x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "captureconst",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// The same `const` initializer at a duplicable instance stays accepted.
+#[test]
+fn should_keep_a_duplicable_const_capture_move_accepted() {
+    let source = r#"module spec.cc.captureconstdup;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        const y: T = x;
+    })();
+}
+
+func main(): i32 {
+    make<i32>(5);
+    return 0;
+}
+"#;
+    let output = run_host("captureconstdup", source);
+    assert_exit("captureconstdup", &output, 0);
+}
+
+/// A capture consumed by a bare discarded array literal reports the capture
+/// rule.
+#[test]
+fn should_report_a_capture_in_a_discarded_literal() {
+    let source = r#"module spec.cc.capturebarediscard;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        [x];
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "capturebarediscard",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// A capture repeated by an array fill reports the capture rule.
+#[test]
+fn should_report_a_capture_repeated_by_a_fill() {
+    let source = r#"module spec.cc.capturefill;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let ys: T[2] = [; x];
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "capturefill",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+

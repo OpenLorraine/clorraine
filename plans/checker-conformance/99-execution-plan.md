@@ -2,9 +2,9 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 36/38 tasks (95%)
+> **Progress**: 35/38 tasks (92%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 22:45
+> **Last Updated**: 2026-10-11 23:02
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
@@ -135,12 +135,12 @@
 
 - [x] 5.2.1 Dedupe the state reports per site — `compiler/src/own/` ✅ (completed: 2026-10-11 22:25; the per-site ledger funneled through `report_state_once`; amended: the key is the binding, the span's start, and the code — the element case's projections and end offset differ between its two reads)
 - [x] 5.2.2 Extend the capture recorder and retire the non-escape lend duty; render the generated-owner phrase — `compiler/src/sema/`, `compiler/src/own/` ✅ (completed: 2026-10-11 22:25; the recorder covers the `let`/assignment/composite-field sites with a per-lambda record set; the lend duty is retired for every by-value capture site and the dead `escape` flag merged away; `own/liveness.rs` renders the phrase)
-- [x] 5.2.3 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-11 22:25; the uninitialized element case failed the first green run — the ledger key was coarsened to the span start — and the fix round's rework (the move walk, the element sites, the projection judgment, the field-specific precedence) ended at spec 70/70)
+- [x] 5.2.3 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-11 22:25; the uninitialized element case failed the first green run — the ledger key was coarsened to the span start — and the fix rounds' rework (the move walk, the element/fill/`const` sites, the projection judgment, the field-specific precedence) ended at spec 74/74)
 
 ### Step 5.3: Impl Tests & Review
 
 - [x] 5.3.1 Write the phase implementation pins (the counts, the spans, the message) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 22:25; five pins — the moved update's one report at 10:13, the capture move's one report at 7:20 with no E10034, the phrase with no compiler spelling, and the accepted update/duplicable-capture emissions; impl 25/25)
-- [x] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ✅ (completed: 2026-10-11 22:28; the correctness lens found no critical/major and one records minor, fixed; the semantics lens found nothing in the phase and ruled both flagged behaviors conformant — the out-slot rejection is the frozen reading and the second-site silence matches the recorded reading — with three ruled pins added: `captureoutslot`, `capturetwosite`, `statededupepartial`) The review round found a critical, a major, and records minors (the array-literal and `unsafe` capture paths accepted double-frees; duplicable projections falsely rejected; the out-slot record wrong); the fix round corrected the move walk, the element sites, the projection judgment, the field-specific precedence, and the records; a scoped re-review follows.
+- [x] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ✅ (completed: 2026-10-11 22:28; the correctness lens found no critical/major and one records minor, fixed; the semantics lens found nothing in the phase and ruled both flagged behaviors conformant — the out-slot rejection is the frozen reading and the second-site silence matches the recorded reading — with three ruled pins added: `captureoutslot`, `capturetwosite`, `statededupepartial`) The review round found a critical, a major, and records minors (the array-literal and `unsafe` capture paths accepted double-frees; duplicable projections falsely rejected; the out-slot record wrong); the fix round corrected the move walk, the element sites, the projection judgment, the field-specific precedence, and the records; a scoped re-review follows. The round-2 scoped re-review found the `const` initializer hole (fixed with `captureconst`/`captureconstdup`), corrected the bare-discard label, and pinned the fill position; the array-element projection boundary routes into the pre-existing DEF-227 emitter gap and is recorded there.
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

@@ -155,6 +155,10 @@ impl Checker<'_, '_> {
                 ty
             }
         };
+        // A `const` initializer is a move site of its own, exactly as a `let`
+        // initializer is: the value's move may not escape, so the capture rule
+        // is recorded here for the per-instance judgment.
+        self.record_generic_capture_move(&decl.value);
         self.declare(&decl.name, ty);
     }
 

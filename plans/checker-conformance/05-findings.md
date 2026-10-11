@@ -405,7 +405,7 @@ the reporters.
 
 ### Verification
 
-Spec suite 70/70 plain and under `RDC_ASAN=1`; impl 25/25; `make check` 62 suites green; the
+Spec suite 74/74 plain and under `RDC_ASAN=1`; impl 25/25; `make check` 62 suites green; the
 fix-round corpus sweep base/head shows no acceptance or emission delta. The concrete read-only
 capture spelling (`([s] () => { let y = s; })()` with `s: String`) keeps its `E10034`
 attribution at the new sites — a pre-existing twin of DEF-160, filed as DEF-250.
@@ -419,8 +419,8 @@ fix round fixed all of them, with the lenses' overlapping root causes fixed toge
 
 | # | Sev | Finding | Resolution |
 | - | --- | ------- | ---------- |
-| SR-001 / RV-002 | 🔴 / 🟡 | A by-value capture moved through an array-literal element at an unrecorded position (`observe([x])`, `for (y in [x])`, a bare `[x];`) was accepted and double-freed; the literal recorded no element | Fixed: the element and fill values are recording sites, mirroring the struct-field hook; pinned by `capturearrayarg` and `captureiterable` |
-| RV-001 | 🟠 | A capture moved through an `unsafe` wrapper (`let y: T = unsafe x;`) was accepted and double-freed; the move walk had no `Unsafe` arm while the ownership stage unwraps it | Fixed: the walk passes through `unsafe`; pinned by `captureunsafe` (the direct `return unsafe x`/`take unsafe x` spellings, accepted-invalid at the baseline, report too) |
+| SR-001 / RV-002 | 🔴 / 🟡 | A by-value capture moved through an array-literal element at an unrecorded position (`observe([x])`, `for (y in [x])`) was accepted and double-freed; a bare `[x];` was accepted and emitted C the strict build rejects; the literal recorded no element | Fixed: the element and fill values are recording sites, mirroring the struct-field hook; pinned by `capturearrayarg`, `captureiterable`, `capturebarediscard`, and `capturefill` |
+| RV-001 | 🟠 | A capture moved through an `unsafe` wrapper (`let y: T = unsafe x;`) was accepted and double-freed; the move walk had no `Unsafe` arm while the ownership stage unwraps it | Fixed: the walk passes through `unsafe`; pinned by `captureunsafe` (the direct `return unsafe x`/`take unsafe x` spellings, accepted and double-freed at both baselines, report too) |
 | SR-002 | 🟠 | The new sites rejected valid programs: a duplicable projection of a capture (`let n: i32 = x.n;`) reported `E10401` because only the whole capture type was judged; the pre-existing return/take spellings had the same over-report | Fixed: the duty carries the moved place's projection path and the audit judges the substituted projection; pinned by `captureprojection` (accepted, runs), `captureprojectionowning` (one `E10401`, no `E10026`), and `returncaptureprojection` (accepted, runs) |
 | RV-003 | 🟡 | The per-site ledger could keep the whole-place text where a field-specific one was due (`(p).n++`) | Fixed: a later report selecting more projections replaces the emitted one at the same site; pinned by `statededupeparen` |
 | SR-003 / RV-004 | 🟡 / 🟡 | The records: the out-slot claim ("the base accepted it") was wrong — the base reported `E10034` and acceptance is unchanged — and the task texts carried stale counts | Fixed: the claim, the design note, and the case's comment corrected; the task texts carry the final counts |
@@ -429,7 +429,22 @@ The fix also extends `move_place`'s borrowed-parameter report and the partial-mo
 by-value captures — they own their environment field — so an owning projection reports the
 capture rule alone.
 
-**Round 2 (scoped re-review).** _(recorded after the re-review)_
+**Round 2 (scoped re-review, both lenses).** The correctness lens: no critical; **one major** —
+a by-value capture moved through a `const` initializer was accepted and double-freed
+(`check_const` never recorded, unlike `check_let`) — plus one records minor. The semantics
+lens: no critical or major; two records items (the bare-discard label; an unpinned fill) and
+one boundary note (the duplicable array-element projection newly accepted, which routes into
+the pre-existing DEF-227 emitter gap for owning-element arrays).
+
+| # | Sev | Finding | Resolution |
+| - | --- | ------- | ---------- |
+| The `const` initializer hole | 🟠 | `const y: T = x;` (and its inferred/parenthesized/`unsafe`/conditional/`for`-init spellings) was accepted and double-freed | Fixed: `check_const` records the initializer, exactly as `check_let` does; pinned by `captureconst` (one `E10401`) and `captureconstdup` (accepted, runs) |
+| The bare-discard label | 🟡 | The records called the bare `[x];` accepted-and-double-freed; it was accepted-invalid, and the `return/take unsafe x` spellings were the double-free pair | Corrected in the fix-round table above; the bare discard is pinned by `capturebarediscard` |
+| The fill position | 🟡 | Unpinned | Pinned by `capturefill` |
+| The array-element projection boundary | 🟡 | The projection judgment newly accepts a duplicable array-element capture projection (`make<O>([o, o2])` with `xs[0].n`), which the pre-existing DEF-227 emitter gap renders unbuildable | Recorded: DEF-227's row names the spelling; the fix is a codegen change outside this diagnostic phase and stays its own row; DEF-253's scope widened with the generic duplicable spellings |
+
+`--max-errors 0` silently accepts every rejected program (base–head identical) — filed as
+DEF-254.
 
 ### Filed
 
