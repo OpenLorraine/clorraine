@@ -197,22 +197,23 @@ Spec suite 25/25 plain and under `RDC_ASAN=1`; impl 13/13; `make check` 62 suite
 
 ### Red evidence
 
-At the phase baseline the ten row cases failed exactly as filed: the three view crossings
-(`cstringview`, `cstringslicearg`, and `cstringviewconv`'s crossing) passed the view struct
-where `char *` is declared and failed the strict build; the four arity cases were accepted and
+At the phase baseline the ten row cases failed exactly as filed: the two view crossings
+(`cstringview`, `cstringslicearg`) passed the view struct where `char *` is declared and failed
+the strict build (`cstringviewconv` was rejected at its `toCString` call); the four arity cases were accepted and
 failed the strict build on the prototype; the three member cases emitted implicit calls; and
 `toCString(view)` reported the old signature's `E10200`. The five references (`cstringliteral`,
 `cstringowned`, `arityok`, `memberfield`, `cstringownedconv`) were green, as intended.
 
 ### Design notes
 
-- **The DEF-144 crossing (the design's first amendment).** The design proposed an `E10200`
-  rejection for a view at a `cstring` parameter. The frozen text decides otherwise: Ch 12 CN-11
-  lists views among the values an uncontracted parameter accepts, and §10 fixes the crossing as
-  the ABI pointer. The emitter therefore extends its view crossing from `APTR` parameters to
-  `char *` ones, with a guard that a `static str` literal keeps its direct spelling (it already
-  renders as the NUL-terminated C string). The `String` handle keeps its today's crossing and
-  the semantics are filed; the `toCString` route stays the explicit spelling.
+- **The DEF-144 judgment (restored in the fix round).** The phase first crossed a view at a
+  `cstring` parameter as its pointer, reading Ch 12 CN-11/§10 as accepting views there. The
+  semantics review showed the reading is wrong: a `cstring` parameter is contracted (an
+  uncontracted parameter is a mode-less handle or aggregate), CN-9 checks the declared types,
+  and the conversion table is exhaustive — only the `static str` literal converts. The design's
+  original judgment therefore stands: the view reports `E10200` with the explicit `toCString`
+  route, and the emitter crossing was reverted with it. The `String` handle and a `raw` or
+  fixed-array argument report the same conversion (the handle is DEF-235, closed by the fix).
 - **The `toCString` body and the untyped `.ptr` member.** The view's `.ptr` member carries no
   checked type (the type stage leaves it unknown), so the store conversion recognizes the read
   by shape — a member value or a place's last field projection named `ptr` — and spells the
@@ -237,7 +238,36 @@ Spec suite 40/40 plain and under `RDC_ASAN=1`; impl 18/18; `make check` 62 suite
 
 ### Review and fix round
 
-_(findings recorded after the review round)_
+**All three lenses reported.** The emission audit: **no findings** (1634 units × 3 profiles; the
+deltas exactly the intended `toCString` shape, the widened call sites, and the new cases; zero
+new strict-build failures; determinism and declaration agreement hold). The correctness lens:
+five minors. The semantics lens: one major, one minor. All fixed in-phase:
+
+| Finding | Severity | Resolution |
+| ------- | -------- | ---------- |
+| SR-001 | 🟠 major | The `char *` crossing contradicted the conversion table: a `cstring` parameter is contracted, so CN-9 and the exhaustive table govern. **Reverted to the `E10200` rejection**: the emitter crossing is removed; the ffi argument path reports for a view, slice, handle, or `raw` argument (the literal and a `cstring` value stay accepted); the spec cases pin the rejection, with `cstringraw` added |
+| RV-001 | 🟡 minor | The ffi parameter types resolve once per declaration (cached in the checker), so a rejected parameter type reports once instead of once per call site |
+| SR-002 = RV-002 | 🟡 minor | The inferred-generic inference reports (`E10301`/`E10305`) are suppressed when the written count mismatches: the arity report is the report |
+| RV-003 | 🟡 minor | The design's acceptance restated: the references' own emission is unchanged apart from the intended `toCString` delta |
+| RV-004 | 🟡 minor | The red evidence corrected (two view crossings, not three) |
+| RV-005 | 🟡 minor | The design note cites DEF-235 |
+| DEF-235 | correction | A `String` at a contracted `cstring` parameter is `E10200` (TY-13), not `E10101`; the SR-001 fix closes it |
+| DEF-237 | withdrawal | The CN-10/CN-11 checks exist (`own/call_check.rs`); `Open(path: cstring, mode: i32)` has no uncontracted parameter, so no `unsafe` is due (the stdlib calls it without one). The real gap was the conversion at contracted ffi parameters — SR-001's family, fixed |
+
+**New filings from the reviews:** DEF-239 (the `std.mem` `Array` dot-call arm bypasses the
+zero-parameter candidate rule), DEF-240 (a module-qualified direct call bypasses the arity
+rule), DEF-241 (a raw receiver's callable field emits `p.foo(1)` where C wants `p->foo(1)`) —
+all pre-existing, base-identical.
+
+**Emission-audit pre-existing classes:** P1/P2 belong to DEF-238 (the untyped `.ptr`, including
+conditional arms); P3 is a hosted-amiga fixture-name conflict of the `Open` test programs (the
+suites are host-profile, and the conflict reproduces identically on the base compiler); P4 is
+the suites' appended C stubs.
+
+### Verification (after the fix round)
+
+Spec suite 41/41 plain and under `RDC_ASAN=1`; impl 17/17; `make check` 62 suites green. The
+scoped re-review is dispatched.
 
 ## Phase 4: Null-shaped values
 

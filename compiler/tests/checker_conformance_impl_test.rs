@@ -536,33 +536,6 @@ func main(): i32 {
     assert_contains("iterf32pin", &emitted, "s = (s + v);");
 }
 
-/// A view argument crosses an uncontracted `cstring` parameter as its pointer.
-///
-/// The prototype declares `char *`, so the crossing spells the cast instead of
-/// passing the view struct (red at the phase base: the strict build failed).
-#[test]
-fn should_cross_a_view_at_a_cstring_parameter() {
-    let source = r#"module spec.cc.impl.cstringviewpin;
-
-ffi probe {
-    func Open(path: cstring, mode: i32): raw u8;
-}
-
-func main(): i32 {
-    let s: str = "/definitely/not/here";
-    unsafe {
-        let f: raw u8 = Open(s, 0);
-        if (f == null) {
-            return 7;
-        }
-        return 1;
-    }
-}
-"#;
-    let emitted = emit_host("cstringviewpin", source);
-    assert_contains("cstringviewpin", &emitted, "Open((char *)(s).ptr, 0)");
-}
-
 /// A `static str` literal at a `cstring` parameter stays the C string.
 #[test]
 fn should_keep_a_cstring_literal_unwrapped() {

@@ -75,10 +75,7 @@ impl Checker<'_, '_> {
                 // handle argument is the emitter's rule, not a conversion.
                 if matches!(self.visible_decl_kind(name), Some(crate::load::DeclKind::Ffi)) {
                     if let Some(signature) = self.ffi_signature(name) {
-                        let mut params = Vec::with_capacity(signature.params.len());
-                        for param in &signature.params {
-                            params.push(self.resolve_type(&param.ty));
-                        }
+                        let params = self.ffi_parameter_types(name, signature);
                         self.check_ffi_arguments(name, &params, args, span);
                         let _ = self.check_value(callee, None);
                         return Ty::unknown();
@@ -256,20 +253,26 @@ impl Checker<'_, '_> {
             for ((ty, _), param) in arg_types.iter().zip(&signature.params) {
                 match_param(param, ty, &declared, &mut bindings);
             }
-            if declared.iter().any(|param| !bindings.contains_key(param)) {
-                self.error(
-                    "E10301",
-                    format!("cannot infer type arguments for '{name}'"),
-                    "write the type arguments explicitly",
-                    span,
-                );
-            } else if self.is_recursive_instantiation(name, &declared, &bindings) {
-                self.error(
-                    "E10305",
-                    format!("instantiation of '{name}' is recursive beyond the limit"),
-                    "break the generic recursion",
-                    span,
-                );
+            // A written count that disagrees with the declared parameters is
+            // reported on its own: the inference cannot bind from arguments
+            // that are missing, so its reports would be a cascade of the
+            // arity mistake.
+            if args.len() == signature.params.len() {
+                if declared.iter().any(|param| !bindings.contains_key(param)) {
+                    self.error(
+                        "E10301",
+                        format!("cannot infer type arguments for '{name}'"),
+                        "write the type arguments explicitly",
+                        span,
+                    );
+                } else if self.is_recursive_instantiation(name, &declared, &bindings) {
+                    self.error(
+                        "E10305",
+                        format!("instantiation of '{name}' is recursive beyond the limit"),
+                        "break the generic recursion",
+                        span,
+                    );
+                }
             }
         } else {
             let mut resolved = Vec::with_capacity(type_args.len());
@@ -681,11 +684,37 @@ impl Checker<'_, '_> {
         }
     }
 
+    /// The resolved parameter types of an `ffi` declaration, validated once.
+    ///
+    /// The declared types resolve at the declaration's first call site and are
+    /// cached for the rest of the module, so a declaration whose parameter
+    /// type is rejected reports once rather than once per call.
+    fn ffi_parameter_types(
+        &mut self,
+        name: &str,
+        signature: &crate::ast::FuncSignature,
+    ) -> Vec<Ty> {
+        if let Some(params) = self.ffi_params.get(name) {
+            return params.clone();
+        }
+        let mut params = Vec::with_capacity(signature.params.len());
+        for param in &signature.params {
+            params.push(self.resolve_type(&param.ty));
+        }
+        self.ffi_params.insert(name.to_owned(), params.clone());
+        params
+    }
+
     /// Checks an `ffi` call's written arguments.
     ///
     /// An `ffi` declaration carries no checked signature in the type table, so
     /// the ordinary call path checks nothing. The written count is judged
-    /// against the declared parameters like every other direct call, and every
+    /// against the declared parameters like every other direct call, and the
+    /// `cstring` parameter keeps the conversion table's judgment: only the
+    /// `static str` literal converts implicitly, so a view, slice, handle, or
+    /// `raw` argument reports the conversion the ordinary call path reports
+    /// (its bytes carry no zero-terminator guarantee). An unresolved argument
+    /// (error recovery or an extern result) keeps the accepted path, and every
     /// argument is still walked for its own errors.
     fn check_ffi_arguments(&mut self, name: &str, params: &[Ty], args: &[Arg], span: Span) {
         if args.len() != params.len() {
@@ -700,8 +729,27 @@ impl Checker<'_, '_> {
                 span,
             );
         }
-        for arg in args {
-            self.check_value(&arg.value, None);
+        for (index, arg) in args.iter().enumerate() {
+            let ty = self.check_value(&arg.value, None);
+            let Some(param) = params.get(index) else {
+                continue;
+            };
+            if matches!(param.kind, TyKind::CString)
+                && !is_cstring_literal_argument(&arg.value, param)
+                && !matches!(ty.kind, TyKind::CString)
+                && !ty.is_unknown()
+                && !crate::types::contains_param(&ty)
+            {
+                self.error(
+                    "E10200",
+                    format!(
+                        "cannot convert '{}' to 'cstring' implicitly",
+                        ty.display()
+                    ),
+                    "pass `toCString(value)`",
+                    arg.value.span,
+                );
+            }
         }
     }
 

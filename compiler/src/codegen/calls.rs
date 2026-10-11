@@ -138,28 +138,19 @@ impl Emitter<'_> {
                     self.argument_text(arg, expected)
                 };
                 // An uncontracted `ffi` parameter takes its ABI type from the
-                // FFI table, so a view argument crosses as the view's pointer
-                // member rather than as the view struct, cast to the pointer
-                // the prototype declares. An `APTR` parameter takes the
-                // pointer as it is; a `cstring` parameter declares `char *`,
-                // so the crossing spells that cast. A `cstring` literal never
-                // reaches this path (it renders as the pointer already) and a
-                // `String` handle crosses through the view widening only
-                // where a view parameter asks for it. The prototype and the
-                // tables are unchanged.
+                // FFI table, so a view argument whose ABI type is a pointer
+                // crosses as the view's pointer member rather than as the view
+                // struct, cast to the pointer the prototype declares. A
+                // `cstring` parameter is already a C pointer (its literals and
+                // values render as pointers), so it never wraps. The prototype
+                // and the tables are unchanged.
                 let text = if func_ty.is_none() && !user_call {
                     match expected {
-                        Some(expected) if self.argument_crosses_as_view(arg, expected) => {
-                            match crate::abi::ffi_type_with(expected, None).as_str() {
-                                "APTR" => format!("(APTR)({text}).ptr"),
-                                // A `static str` literal already renders as
-                                // the NUL-terminated C string a `cstring`
-                                // parameter wants.
-                                "char *" if !matches!(arg.kind, ValueKind::Str(_)) => {
-                                    format!("(char *)({text}).ptr")
-                                }
-                                _ => text,
-                            }
+                        Some(expected)
+                            if crate::abi::ffi_type_with(expected, None) == "APTR"
+                                && self.argument_crosses_as_view(arg, expected) =>
+                        {
+                            format!("(APTR)({text}).ptr")
                         }
                         _ => text,
                     }

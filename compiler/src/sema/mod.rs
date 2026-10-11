@@ -179,6 +179,9 @@ struct Checker<'a, 'd> {
     /// Value-form member reads whose base is a bare type parameter, in check
     /// order.
     opaque_projections: Vec<OpaqueProjection>,
+    /// The resolved parameter types of each `ffi` declaration this module
+    /// calls, so its declared types are validated once per declaration.
+    ffi_params: BTreeMap<String, Vec<Ty>>,
     /// The capture lists of the lambdas currently being checked, innermost
     /// last. A body write or move of a name found here is a capture error.
     lambda_captures: Vec<Vec<CaptureInfo>>,
@@ -227,6 +230,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             closures: Vec::new(),
             capture_moves: Vec::new(),
             opaque_projections: Vec::new(),
+            ffi_params: BTreeMap::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),
             lambda_listed: Vec::new(),

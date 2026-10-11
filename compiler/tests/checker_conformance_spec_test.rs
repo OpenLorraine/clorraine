@@ -168,14 +168,6 @@ fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str],
 }
 
 
-/// Emits one host program and builds the emitted C strictly, without running
-/// it: the acceptance case for a shape whose run-time behavior is filed.
-fn accepts_host(tag: &str, source: &str) {
-    let scratch = ScratchDir::new(tag);
-    let emitted = emit_host(tag, source);
-    let _ = build_host_c(tag, &scratch, &emitted);
-}
-
 /// Runs a built program with a time limit and the given environment values.
 fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
     let mut command = Command::new(program);
@@ -983,14 +975,15 @@ func main(): i32 {
     assert_exit("cstringliteral", &output, 7);
 }
 
-/// A `str` view at an uncontracted `cstring` parameter crosses as its pointer.
+/// A `str` view at a `cstring` parameter reports the conversion.
 ///
-/// The frozen ffi rules accept a view at an uncontracted parameter and cross
-/// it as the ABI pointer; the emitted C spells the pointer the prototype
-/// declares (red at the phase base: the view struct was passed where `char *`
-/// is declared and the strict build failed).
+/// A `cstring` parameter is an ordinary value parameter and the conversion
+/// table is exhaustive: only a `static str` literal converts implicitly, so
+/// the view reports the conversion rather than handing the C bytes no
+/// zero-terminator guarantee covers (red at the phase base: the view struct
+/// was passed and the strict build failed).
 #[test]
-fn should_accept_a_view_at_a_cstring_parameter() {
+fn should_report_a_view_at_a_cstring_parameter() {
     let source = r#"module spec.cc.cstringview;
 
 ffi probe {
@@ -1008,13 +1001,18 @@ func main(): i32 {
     }
 }
 "#;
-    let output = run_host("cstringview", source);
-    assert_exit("cstringview", &output, 7);
+    assert_rejected_once(
+        "cstringview",
+        source,
+        "E10200",
+        &["cannot convert 'str' to 'cstring' implicitly"],
+        &[],
+    );
 }
 
-/// A slice view at an uncontracted `cstring` parameter crosses as its pointer.
+/// A slice view at a `cstring` parameter reports the conversion.
 #[test]
-fn should_accept_a_slice_at_a_cstring_parameter() {
+fn should_report_a_slice_at_a_cstring_parameter() {
     let source = r#"module spec.cc.cstringslicearg;
 
 import { stringOf, bytes } from std.text;
@@ -1035,17 +1033,22 @@ func main(): i32 {
     }
 }
 "#;
-    let output = run_host("cstringslicearg", source);
-    assert_exit("cstringslicearg", &output, 7);
+    assert_rejected_once(
+        "cstringslicearg",
+        source,
+        "E10200",
+        &["cannot convert 'u8[]' to 'cstring' implicitly"],
+        &[],
+    );
 }
 
-/// A `String` handle at an uncontracted `cstring` parameter stays accepted.
+/// A `String` handle at a `cstring` parameter reports the conversion.
 ///
-/// The handle crossing keeps its today's emission (the block pointer); its
-/// run-time meaning is filed separately, so this case pins acceptance and the
-/// strict build only.
+/// The conversion table does not list the handle, so the explicit route
+/// (`toCString`) is the spelling (red at the phase base: the handle was
+/// accepted and crossed as its block pointer).
 #[test]
-fn should_accept_a_string_handle_at_a_cstring_parameter() {
+fn should_report_a_string_handle_at_a_cstring_parameter() {
     let source = r#"module spec.cc.cstringowned;
 
 import { stringOf } from std.text;
@@ -1065,7 +1068,43 @@ func main(): i32 {
     }
 }
 "#;
-    accepts_host("cstringowned", source);
+    assert_rejected_once(
+        "cstringowned",
+        source,
+        "E10200",
+        &["cannot convert 'String' to 'cstring' implicitly"],
+        &[],
+    );
+}
+
+/// A `raw` pointer at a `cstring` parameter reports the conversion.
+#[test]
+fn should_report_a_raw_pointer_at_a_cstring_parameter() {
+    let source = r#"module spec.cc.cstringraw;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let a: u8[4] = [65, 66, 67, 0];
+    let p: raw u8 = unsafe &a[0];
+    unsafe {
+        let f: raw u8 = Open(p, 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    assert_rejected_once(
+        "cstringraw",
+        source,
+        "E10200",
+        &["cannot convert 'raw u8' to 'cstring' implicitly"],
+        &[],
+    );
 }
 
 /// A dot-call arity mismatch reports once with the remaining parameter count.

@@ -37,12 +37,12 @@ unknown member callee (DEF-148), and the `toCString` stdlib widening (DEF-154).
 
 ## Proposed Changes
 
-> **Superseded (Phase 3):** the frozen ffi rules (Ch 12 CN-11: an uncontracted parameter
-> accepts views; §10: a view in an `ffi` signature is the ABI pointer) decide the crossing, not a
-> rejection: the emitter crosses a view argument at a `cstring` parameter as `(char *)view.ptr`,
-> so views build and run and the rejection was not implemented. The `String` handle keeps its
-> today's crossing (filed) and the literal keeps its direct spelling. See the ledger's design
-> notes and the register's AR-15 amendment.
+> **Reverted (Phase 3 fix round):** an attempt to cross a view at a `cstring` parameter as
+> `(char *)view.ptr` was reverted after the semantics review: a `cstring` parameter is
+> contracted (an uncontracted parameter is a mode-less handle or aggregate, Ch 12 §117-118),
+> CN-9 checks the declared types, and the conversion table is exhaustive — so the rejection
+> below stands, extended to a `raw` or fixed-array argument by the same rule. See the ledger's
+> fix round.
 
 ### 1. Reject a view at a `cstring` parameter (DEF-144) — `sema/call.rs`
 
@@ -77,9 +77,10 @@ caller's emission is byte-identical (the implicit widening provides the view). L
 | Case | Shape | Expectation |
 |------|-------|-------------|
 | `cstringliteral` | a literal at a `cstring` parameter | accepted; byte-identical emission |
-| `cstringowned` | a `String` handle | accepted; byte-identical emission |
-| `cstringview` | a `str` variable (DEF-144) | **amended:** accepted; the view crosses as `(char *)view.ptr` and runs |
-| `cstringslicearg` | a `u8[]` value | **amended:** accepted; the same crossing |
+| `cstringowned` | a `String` handle | one `E10200` (revised in the fix round) |
+| `cstringview` | a `str` variable (DEF-144) | one `E10200` |
+| `cstringslicearg` | a `u8[]` value | one `E10200` |
+| `cstringraw` | a `raw u8` value | one `E10200` (added in the fix round) |
 | `dotarity` | `x.addOne(5)` (DEF-147) | one arity report (AR-2 code) |
 | `directarity` | `f(1, 2)` (DEF-213) | one arity report (AR-2 code); the generic (`g<i32>(1, 2)`) and `ffi` twins join the same rule |
 | `arityok` | exact counts, both forms | accepted; byte-identical emission |
@@ -93,7 +94,9 @@ caller's emission is byte-identical (the implicit widening provides the view). L
 
 - Each row's reproduction reports exactly the pinned diagnostic (or builds and runs); every
   case failed at the phase baseline.
-- The accepted shapes (`cstringliteral`, `cstringowned`, `arityok`, `memberfield`,
-  `cstringownedconv`) emit byte-identically.
+- The references (`cstringliteral`, `arityok`, `memberfield`) keep their own emission; the
+  `toCString` cases (`cstringviewconv`, `cstringownedconv`) carry the intended stdlib delta,
+  and `cstringowned` (`String` at a `cstring` parameter) reports `E10200` (revised in the fix
+  round, with the register's AR-15 note reverted).
 - The stdlib change re-emits only `std.text`'s `toCString` shape; the corpus differential
   lists it as the one intended delta.
