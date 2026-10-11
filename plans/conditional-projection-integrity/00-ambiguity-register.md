@@ -1,0 +1,36 @@
+# Ambiguity Register: Conditional and Projection Integrity
+
+> **Status**: ✅ GATE PASSED — all items resolved (auto-design delegated; no user-owned item is open)
+> **Last Updated**: 2026-10-12 00:55
+> **Batch**: H of the defect mandate (the conditional/projection ownership and release cluster)
+> **Auto-design**: active — policy version 1 (the standing user mandate: all defects first, batches
+> continue without further go-aheads). Reserved decisions (spec text, new user-visible behavior,
+> acceptance criteria) are **not** touched: every fix below is conformance to the frozen
+> specification, and no registry or chapter text changes.
+
+## Why this batch
+
+The three remaining criticals (a guarded intrinsic argument of an owned conditional projection
+double-frees, a nested conditional arm's owned store double-frees, and a returned view whose
+elision candidate differs from its actual derivation reads freed storage) all live in the
+conditional/projection machinery of `own/` and its emission. The batch closes that cluster
+(13 filed rows) plus one row filed from the batch's own scoping probes (`DEF-256`), before the
+remaining residue (the batch E emission/null rows, the batch F initializer residue, and the
+batch G checker residue) follows in later batches.
+
+| # | Category | Ambiguity / Gap | Options Presented | Resolution | Status |
+|---|----------|-----------------|-------------------|------------|--------|
+| 1 | Scope | Which rows batch H closes | A) the conditional/projection cluster `DEF-176 – DEF-188` (all three criticals); B) the whole batch E residue (`DEF-167 – DEF-195`); C) severity-first across every residue | **A** — the cluster carries all three remaining criticals and one shared machinery; the other groups stay owned by follow-up batches (the emission/global and null rows next, then the batch F and batch G residues). Delegated under the standing "all defects, criticals first" mandate | ✅ Resolved |
+| 2 | Triage | `DEF-175`'s status (filed by the batch E Phase 2 re-review) | A) close as fixed; B) keep open | **A** — the batch E fix round recorded that the filed lend-argument and intrinsic spellings close (RV-003: the arm processor descends Member/Index to the root), and head probes on 2026-10-12 are clean on both spellings and both taken paths; the consuming spellings are `DEF-176` (in scope). The row is closed in this batch's planning commit | ✅ Resolved |
+| 3 | Behavior | `DEF-178`/`DEF-179`/`DEF-176` double-frees: the move-out shape | A) per-arm member move-outs (copy + zero the selected member of the chosen arm); B) bind the whole conditional root as one owner | **A** — a whole-root bind empties the place arm's storage (the reverted batch E attempt produced a UAF); per-arm move-outs leave the place arm readable and give exactly one owner per created value (O7) | ✅ Resolved |
+| 4 | Behavior | `DEF-187`'s target: which diagnostic closes the returned-view escape | A) `E10036` at the declaration when the actual derivation is not the single view-like lend candidate; B) `E10030` at each caller that passes a temporary | **A** — BR-7/EL-2 require the derivation to *name* a view-like lend parameter, and the zero-candidate twin (`func f(h: Box): str { return h.v; }`) already reports `E10036`; matching it removes the use-after-free (the writer of the temporary can no longer call a function that returns its storage as a view) | ✅ Resolved |
+| 5 | Behavior | `DEF-177`'s target: the `str[N]` binding of view elements | A) record the loan for the view-like binding target and judge array element derivations in the elision postlude (single-view parity); B) special-case the array spelling separately | **A** — the single-view twin already rejects the move with `E10022` and the temporary-element return already reports `E10030`; the array spelling must produce the same judgments (parity is the frozen rule: a `str[N]` repeats the borrows of the single `str`) | ✅ Resolved |
+| 6 | Behavior | `DEF-180`/`DEF-181`/`DEF-182` leaks: which routing | A) route the conditional place arm, the struct-literal receiver root, and the dot-`len` receiver root through the existing guarded binder and loan recording; B) build new binding machinery | **A** — the batch E fix round established `bind_guarded_projection_root` and the arm-fill helpers; these three rows are routing gaps in that machinery | ✅ Resolved |
+| 7 | Behavior | `DEF-183`/`DEF-184`/`DEF-188`/`DEF-256` emission targets | A) render/pin/fold through the existing emission paths (every accepted spelling stays accepted and builds strictly); B) reject the spellings | **A** — the shapes are accepted by the frozen checker; Ch 17 requires the emitted C to be valid. `DEF-256` routes the discarded intrinsic dot-call through the value-position lowering (see also `DEF-224` for the value-form `.len`) | ✅ Resolved |
+| 8 | Behavior | `DEF-185`/`DEF-186` release targets | A) use the named-call sibling's predicate and bind the selected arm's result in the statement path; B) leave the discard unbound | **A** — one release per created owner; the named-call sibling already uses `owns_drop \|\| maybe_owns` and binds | ✅ Resolved |
+| 9 | Diagnostics | New codes needed for any fix? | A) reuse the frozen registry (`E10022`, `E10030`, `E10031`, `E10036`); B) add registry rows | **A** — every fix is conformance; no spec or registry edit is in scope (a new code would be a reserved user decision) | ✅ Resolved |
+| 10 | Verification | The command set | — | `make check` per phase; `make verify` at close-out; the focused suites (`cargo test --test conditional_projection_integrity_spec_test --test conditional_projection_integrity_impl_test`); host-ASan (`RDC_ASAN=1` and host probes) on every ownership phase; the emission auditor's base/head corpus differential on every codegen/IR phase | ✅ Resolved |
+| 11 | Naming | Plan and suite names | — | Plan `conditional-projection-integrity`; suites `compiler/tests/conditional_projection_integrity_spec_test.rs` and `conditional_projection_integrity_impl_test.rs`; `AGENTS.md` test map updated at close-out | ✅ Resolved |
+| 12 | Lenses | Per-phase reviewer dispatch | — | P1 correctness + memory-safety; P2/P3 correctness + memory-safety + semantics; P4 correctness + memory-safety + emission-integrity; P5 correctness + emission-integrity + semantics; close-out none new (per the `AGENTS.md` dispatch matrix). The read-only auditors stay read-only | ✅ Resolved |
+| 13 | Specialist gap | Missing specialist types for this surface | — | None — `correctness-reviewer`, `semantics-reviewer`, the read-only `memory-safety-auditor`, and the read-only `emission-integrity-auditor` cover the batch; recorded in the index's Specialist Agents section | ✅ Resolved |
+| 14 | Complexity | Escalation triggers | — | None — every fix extends existing machinery (the guarded binder, the arm-fill helpers, the elision pre/postlude, the discard lowering); no new architecture, no new dependency | ✅ Resolved |
