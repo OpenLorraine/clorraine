@@ -144,15 +144,42 @@ Spec suite 18/18 plain and under `RDC_ASAN=1`; impl 11/11; `make check` 62 suite
 | RV-001 | 🟠 major | The projection audit falsely rejected resolving `raw` and enum instances (a working-program regression for `raw`) | **Fixed:** the audit mirrors the value-form dispatch (struct field, enum member, `raw`→struct, the structural `.len`); spec `memraw` (exit 7) and `memenum` (one `E10212`) |
 | SR-004 | 🟠 major | `.len` bypassed field-wins, falsely rejecting a struct field named `len` (regression) | **Fixed:** `instance_field` is tried for every struct base first |
 | SR-005 | 🟠 major | `.len` on `cstring`/`String` instances was accepted but not emittable | **Fixed:** the `.len` set is narrowed to the emittable kinds (fixed array, slice, `str`, `static str`); those instances report `E10212`; the concrete value-form gap is filed as DEF-224 |
-| SR-006 | 🟡 minor | An undeclared enum member's report contradicted the registry | **Fixed:** a declared member resolves (mirroring the concrete acceptance), an undeclared one reports the truthful `E10212` |
+| SR-006 | 🟡 minor | An undeclared enum member's report contradicted the registry | **Fixed:** a declared member resolves (mirroring the concrete acceptance), an undeclared one reports the truthful `E10212`. The declared-member acceptance emits invalid C because the value-form enum read is broken concretely too (base-identical); the class is filed as DEF-233 |
 | RV-003 | 🟡 minor | Stale plan/ledger counts (the denominator is 38, not 34) | Fixed: the header, the counts, and the 03-02 §2 supersede notes |
 | PE-001 | 🟠 pre-existing | The mixed-arm generic conditional `len` returns `0` (the concrete spelling is `E10200`) | Filed as DEF-225 |
-| PE-002 + the correctness pre-existing items | 🟡 pre-existing | The concrete value-form `.len`/enum reads, the nested opaque chain, the lifted-lambda array capture, and the generic `raw` unsafe bypass | Filed as DEF-224 and DEF-226–DEF-228 |
+| PE-002 + the correctness pre-existing items | 🟡 pre-existing | The concrete value-form `.len` reads, the nested opaque chain, the lifted-lambda array capture, and the generic `raw` unsafe bypass | Filed as DEF-224 (`.len` only), DEF-226–DEF-228; the concrete enum read is DEF-233 (corrected — the earlier note overclaimed DEF-224's scope) |
 
-### Verification (after the fix round)
+### Scoped re-reviews of the fix round (`8f0e5b8..d498a67`)
 
-Spec suite 25/25 plain and under `RDC_ASAN=1`; impl 13/13; `make check` 62 suites green. The
-scoped re-review of the fix round (`5a378fb..head`) is dispatched to the three lenses.
+**Both re-reviews confirmed every filed finding fixed** (the raw and enum projections, the
+multi-extent rows, the float sums, the struct/borrow instances, `E10040`, field-wins, the `.len`
+narrowing, the borrow aliasing, the placeholder hygiene — no `#element` in any C, symbol, or
+diagnostic) **and found one shared limit plus one acceptance question, both filed:**
+
+| Finding | Severity | Outcome |
+| ------- | -------- | ------- |
+| SR-007 / RV-005 (the member half) | 🟠 major | Filed as **DEF-229**: the placeholder reaches the binding, not the element's uses; the fix boundary is the type-stage hoist |
+| RV-005 (the capture half) | 🟠 major | Filed as **DEF-230** (float/row variants pre-existing; struct newly reachable) |
+| SR-008 | 🟠 major | Filed as **DEF-231**, with the emission audit's null-argument `unknownQ` case |
+| SR-009 | 🟠 major | Filed as **DEF-232** (no bounds guard on an element index) |
+| SR-010 / RV-006 | 🟠 major | Filed as **DEF-233** (the value-form enum read; the concrete twin is identically broken at the phase baseline) |
+| RV-007 | 🟡 minor | The round's cases: six are red at the fix base, and `memenum` is a control that reported truthfully before the round; the declared-member acceptance carries no runnable pin because its emission is broken (DEF-233) |
+| RV-008 | 🟡 minor | The plan header's stamp is refreshed with this reconciliation |
+
+The net interaction: the fix round widened the accepted set for struct/row elements, which
+exposes the pre-existing element-use gaps for those types (the scalar variants are
+byte-identical base↔head). Counting and binding-only bodies — the common case — build and run
+correctly; the filed rows carry the hoist boundary for the use sites.
+
+The emission audit of `5a378fb..8f0e5b8` reported **no findings**: 4617 emissions per compiler
+over three profiles, the eight differing units being exactly the intended shapes, zero new
+strict-build failures, and every new rejection removing base-invalid C. Its pre-existing table
+was reconciled: P-1/P-4/P-5 are closed by the fix round, P-2/P-6 are DEF-226/DEF-225, P-3 is
+DEF-231, P-6b is DEF-234, and P-7 belongs to DEF-224's class.
+
+### Verification (after the fix round and the re-reviews)
+
+Spec suite 25/25 plain and under `RDC_ASAN=1`; impl 13/13; `make check` 62 suites green.
 
 ## Phase 3: Call, member, and `cstring` surfaces
 

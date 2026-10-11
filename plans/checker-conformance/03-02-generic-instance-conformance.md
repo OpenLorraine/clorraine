@@ -82,7 +82,8 @@ common projection through the substituted base (both arms naming the same member
 that member's type; different types stay `Unknown` and keep today's behavior). The fold then
 sees the fixed array and yields the extent, and because the fold remains structural, the
 receiver's stores still never emit. The mixed-arm case (different extents) keeps the runtime
-path unchanged.
+path unchanged — byte-identical to the baseline, but the fold yields `0` rather than an error or
+an extent; the class is filed as DEF-225.
 
 ## Tests
 
