@@ -378,6 +378,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
         }
+        // A consumed projection of a mixed conditional moves the selected
+        // member out of each arm's root: the store adopts the value from the
+        // arm that produced it, the place arm keeps ownership of its remaining
+        // fields, and a fresh arm's root releases only what the move did not
+        // take.
+        if owning
+            && !is_view(ty)
+            && !ty.is_unknown()
+            && !super::lower::mentions_type_param(ty)
+            && self.consume_needs_conditional_arms(&lowered)
+        {
+            let lowered = self.consume_conditional_projection(lowered);
+            return PreparedStore::Assign { value: lowered };
+        }
         // A consumed projection of fresh statement-owned storage is a move:
         // a call result's projection is bound to an owned temporary first,
         // while a projection over an existing destination temporary (a
@@ -565,6 +579,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return BindingEffect::Move { source };
         }
         let sources = self.conditional_move_sources(value);
+        if !sources.is_empty() {
+            return BindingEffect::ConditionalMove { sources };
+        }
+        let sources = self.conditional_projection_move_sources(value);
         if !sources.is_empty() {
             return BindingEffect::ConditionalMove { sources };
         }
@@ -998,7 +1016,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let sources = if maybe_owning {
                     self.maybe_owning_move_sources(value)
                 } else {
-                    self.conditional_move_sources(value)
+                    let mut sources = self.conditional_move_sources(value);
+                    if sources.is_empty() {
+                        sources = self.conditional_projection_move_sources(value);
+                    }
+                    sources
                 };
                 if sources.is_empty() {
                     if !maybe_owning
@@ -1060,6 +1082,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             let lowered = self.lower_value(value);
             let lowered = self.bind_member_receiver(lowered);
+            // A returned projection of a mixed conditional moves the selected
+            // member out of each arm's root, so the returned value has exactly
+            // one owner and the chosen arm's remaining fields release once.
+            let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
+                && !is_view(&returns)
+                && !returns.is_unknown()
+                && !super::lower::mentions_type_param(&returns)
+                && self.consume_needs_conditional_arms(&lowered)
+            {
+                self.consume_conditional_projection(lowered)
+            } else {
+                lowered
+            };
             // A view read of a projection over a mixed conditional owns each
             // ownerless arm's root in the return's scope, so the escape rule
             // sees the fresh arm's release before the caller reads the view.

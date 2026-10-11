@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-12 01:24
-> **Progress**: 2/33 tasks (6%)
+> **Last Updated**: 2026-10-12 01:33
+> **Progress**: 4/33 tasks (12%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -55,8 +55,8 @@ task-size criteria: each task is independently testable and reviewable).
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Implement the per-arm move-outs and the guarded intrinsic argument — `compiler/src/own/lower.rs`
-- [ ] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 1.2.1 Implement the per-arm move-outs and the guarded intrinsic argument — `compiler/src/own/lower.rs` (plus the checker-side projected-source marking in `own/statements.rs`, `own/expr.rs`, `own/call_check.rs`; runtime AR-15) ✅ (completed: 2026-10-12 01:33)
+- [x] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-12 01:33)
 
 ### Step 1.3: Impl Tests & Review
 

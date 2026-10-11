@@ -132,6 +132,86 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         sources
     }
 
+    /// The owned places a consumed projection of a conditional may move out of.
+    ///
+    /// A consuming position that takes a member or element projection of a
+    /// conditional (`(c ? a : b).v`) moves whichever arm the condition selects,
+    /// so every arm that is itself a place contributes the projected member as
+    /// a maybe-moved source. A nested conditional recurses, an arm that is a
+    /// fresh value contributes nothing, the chain above the conditional is
+    /// applied to each arm, and duplicable or still-generic arms are left to
+    /// their own rules, mirroring the conditional move rule.
+    pub(super) fn conditional_projection_move_sources(&self, expr: &Expr) -> Vec<PlaceTarget> {
+        let mut steps: Vec<ir::Projection> = Vec::new();
+        let mut cursor = expr;
+        loop {
+            match &cursor.kind {
+                ExprKind::Member { base, name } => {
+                    // A fixed array's `.len` is its structural extent, not a
+                    // place: it names no storage and its base reads nothing.
+                    if name == "len" && self.ty(base).is_fixed_array() {
+                        return Vec::new();
+                    }
+                    steps.insert(0, ir::Projection::Field(name.clone()));
+                    cursor = base;
+                }
+                ExprKind::Index { base, index } => {
+                    let element = match &index.kind {
+                        ExprKind::Int(value) => {
+                            ir::Projection::Element(usize::try_from(*value).ok())
+                        }
+                        _ => ir::Projection::Element(None),
+                    };
+                    steps.insert(0, element);
+                    cursor = base;
+                }
+                ExprKind::Conditional { .. } => break,
+                _ => return Vec::new(),
+            }
+        }
+        let mut sources = Vec::new();
+        self.projection_move_arm_sources(cursor, &steps, &mut sources);
+        sources
+    }
+
+    /// Collects one conditional level's maybe-moved projected places.
+    ///
+    /// A leaf arm contributes its projected place when the arm owns storage —
+    /// non-duplicable and not still generic; a nested conditional recurses
+    /// with the same chain applied to its own arms.
+    fn projection_move_arm_sources(
+        &self,
+        expr: &Expr,
+        steps: &[ir::Projection],
+        sources: &mut Vec<PlaceTarget>,
+    ) {
+        if let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        {
+            for arm in [then_value.as_ref(), else_value.as_ref()] {
+                self.projection_move_arm_sources(arm, steps, sources);
+            }
+            return;
+        }
+        let ty = self.ty(expr);
+        if self.sema.table.duplicable(&ty) || super::lower::mentions_type_param(&ty) {
+            return;
+        }
+        let Some(target) = self.place_target(expr) else {
+            return;
+        };
+        let mut projections = match &target {
+            PlaceTarget::Local(_, projections) | PlaceTarget::Global(_, projections) => {
+                projections.clone()
+            }
+        };
+        projections.extend_from_slice(steps);
+        sources.push(target.with_projections(projections));
+    }
+
     /// Marks the owned arms a materialized conditional read may move.
     ///
     /// A read position that needs a place materializes a fixed-array

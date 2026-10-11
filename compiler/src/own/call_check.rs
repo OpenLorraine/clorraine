@@ -544,7 +544,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         let sources = if maybe_owning {
                             self.maybe_owning_move_sources(expr)
                         } else {
-                            self.conditional_move_sources(expr)
+                            let mut sources = self.conditional_move_sources(expr);
+                            if sources.is_empty() {
+                                sources = self.conditional_projection_move_sources(expr);
+                            }
+                            sources
                         };
                         if sources.is_empty() {
                             if !maybe_owning

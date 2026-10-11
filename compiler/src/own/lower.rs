@@ -1254,6 +1254,168 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
+    /// Lowers a consumed projection of a conditional per arm.
+    ///
+    /// A member or element projection whose root is a conditional that mixes a
+    /// place arm with an ownerless one cannot be consumed as one copy: the
+    /// chosen arm's member must move out of its root, or the root's release
+    /// frees the storage the consumer now owns (a double free) and the place
+    /// arm's own cleanup frees it again at scope exit. The condition is
+    /// evaluated once into a temporary; each arm runs in its own branch, where
+    /// the projected member is copied into an adopting temporary and zeroed in
+    /// the chosen root; the consumer then selects between the two temporaries.
+    /// The place arm keeps ownership of its remaining fields, and a fresh
+    /// arm's root releases only its un-moved fields. Evaluation order is
+    /// preserved: the condition evaluates once, then the chosen arm alone.
+    ///
+    /// Only an eager statement position (a store, a return, a `take` argument,
+    /// or a deferred body) reaches here; a conditionally evaluated operand
+    /// keeps its own deferred shapes.
+    pub(super) fn consume_conditional_projection(&mut self, value: Value) -> Value {
+        let result_ty = value.ty.clone();
+        let mut steps: Vec<ConditionalProjectionStep> = Vec::new();
+        let mut cursor = value;
+        let (condition, then_value, else_value) = loop {
+            match cursor.kind {
+                ValueKind::Member { base, name } => {
+                    steps.push(ConditionalProjectionStep::Field {
+                        name,
+                        ty: cursor.ty.clone(),
+                    });
+                    cursor = *base;
+                }
+                ValueKind::Index { base, index } => {
+                    steps.push(ConditionalProjectionStep::Index {
+                        index: *index,
+                        ty: cursor.ty.clone(),
+                    });
+                    cursor = *base;
+                }
+                ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } => break (condition, then_value, else_value),
+                other => return Value::new(cursor.ty, other),
+            }
+        };
+        let cond_ty = condition.ty.clone();
+        let cond_id = self.new_temp(cond_ty.clone());
+        let cond_place = Place {
+            base: ir::PlaceBase::Temp(cond_id),
+            projections: Vec::new(),
+            ty: cond_ty.clone(),
+        };
+        self.emit(Statement::Assign {
+            target: cond_place.clone(),
+            value: *condition,
+        });
+        let cond_value =
+            || Value::new(cond_ty.clone(), ValueKind::Place(cond_place.clone()));
+        let then_block = self.new_block();
+        let else_block = self.new_block();
+        let join = self.new_block();
+        self.terminate(Terminator::Branch {
+            condition: cond_value(),
+            on_true: then_block,
+            on_false: else_block,
+            shape: BranchShape::If { join },
+        });
+        self.switch_to(then_block);
+        let then_value = self.consume_conditional_arm(*then_value, &steps);
+        self.terminate(Terminator::Goto(join));
+        self.switch_to(else_block);
+        let else_value = self.consume_conditional_arm(*else_value, &steps);
+        self.terminate(Terminator::Goto(join));
+        self.switch_to(join);
+        Value::new(
+            result_ty,
+            ValueKind::Conditional {
+                condition: Box::new(cond_value()),
+                then_value: Box::new(then_value),
+                else_value: Box::new(else_value),
+            },
+        )
+    }
+
+    /// True when a consumed value carries a projection over a conditional.
+    ///
+    /// Only the shapes this predicate names route into
+    /// [`Self::consume_conditional_projection`]: a member or element chain
+    /// rooted at a conditional with a place arm, or a conditional with such a
+    /// chain in one of its arms. A chain rooted anywhere else keeps its
+    /// existing lowering.
+    pub(super) fn consume_needs_conditional_arms(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.consume_needs_conditional_arms(then_value)
+                    || self.consume_needs_conditional_arms(else_value)
+            }
+            ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                self.conditional_borrows_place_root(value)
+            }
+            _ => false,
+        }
+    }
+
+    /// Consumes one arm's projection in its own branch.
+    ///
+    /// The projection below the conditional is rebuilt on the arm, then the
+    /// selected member moves out of the arm's root into an adopting temporary.
+    /// A nested conditional arm recurses, so every level moves out its own
+    /// chosen member.
+    fn consume_conditional_arm(
+        &mut self,
+        arm: Value,
+        steps: &[ConditionalProjectionStep],
+    ) -> Value {
+        let projected = apply_conditional_steps(arm, steps);
+        if self.consume_needs_conditional_arms(&projected) {
+            self.consume_conditional_projection(projected)
+        } else {
+            self.settle_consumed_arm(projected)
+        }
+    }
+
+    /// Fills a consumed arm's adopting temporary in the current branch.
+    ///
+    /// The projection's root settles first — a fresh call root fills its own
+    /// temporary — then the selected member is copied into the adopting
+    /// temporary and the source is zeroed. The root keeps ownership of its
+    /// remaining fields and the consumer owns the moved value exactly once. A
+    /// value that owns nothing keeps its existing form.
+    fn settle_consumed_arm(&mut self, value: Value) -> Value {
+        let value = self.consume_place(value);
+        let ValueKind::Materialize {
+            temp,
+            value: inner,
+            move_outs,
+            ..
+        } = value.kind
+        else {
+            return value;
+        };
+        let inner = self.settle_projection_base(*inner);
+        let ty = inner.ty.clone();
+        let place = Place {
+            base: ir::PlaceBase::Temp(temp),
+            projections: Vec::new(),
+            ty: ty.clone(),
+        };
+        self.emit(Statement::Assign {
+            target: place,
+            value: inner,
+        });
+        for source in move_outs {
+            self.emit(Statement::MoveOut { place: source });
+        }
+        Value::new(ty, ValueKind::Temp(temp))
+    }
+
     /// The place a value reads, when it is a field reached through a place.
     ///
     /// A `Member` value keeps a run-time base for a call result, but when its
@@ -2018,17 +2180,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // arm is evaluated under a branch instead — at this statement position
         // when there is one — so the place stays readable, the fresh arm's
         // storage releases on its own path, and the argument keeps its
-        // position in the evaluation order.
-        if matches!(value.kind, ValueKind::Conditional { .. })
-            && self.conditional_borrows_place(&value)
-            && self.conditional_needs_arm_fill(&value)
+        // position in the evaluation order. A member or element projection of
+        // such a conditional (`(c ? b : mk()).v`) walks down to the
+        // conditional the same way, so the argument reads through the bound
+        // roots instead of materializing the projection into a released
+        // temporary that aliases the place arm.
+        if self.conditional_borrows_place_root(&value)
+            && self.arm_needs_fill(&value)
             && !self.speculative_lowering
             && self.materialize_owned_temporaries
+            && !value.ty.is_unknown()
         {
             return if self.defer_move_outs == 0 {
-                self.hoist_ownerless_conditional_arms(value)
+                self.hoist_ownerless_arm(value)
             } else {
-                self.own_ownerless_conditional_arms(value)
+                self.own_ownerless_arm(value)
             };
         }
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
@@ -2530,6 +2696,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// scope does not accumulate storage.
     pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
         if take {
+            // A `take` projection of a mixed conditional moves the selected
+            // member out of the chosen arm's root before the call runs: the
+            // caller's place is emptied, the fresh arm's root releases only
+            // its un-moved fields, and the callee owns the argument exactly
+            // once. A conditionally evaluated argument keeps its existing
+            // deferred handling.
+            if self.defer_move_outs == 0
+                && !self.sema.table.duplicable(&value.ty)
+                && !mentions_type_param(&value.ty)
+                && !is_view(&value.ty)
+                && !value.ty.is_unknown()
+                && self.consume_needs_conditional_arms(&value)
+            {
+                return self.consume_conditional_projection(value);
+            }
             // The base expression evaluates before the index (`m()[i]` runs
             // `m()` first and it may change the index), so an eager base is
             // filled before the index is pinned. A guarded operand keeps its
@@ -2748,13 +2929,50 @@ pub(super) fn mentions_type_param(ty: &Ty) -> bool {
     }
 }
 
+/// One projection segment between a consumed value and its conditional root.
+///
+/// The steps are recorded from the source's outermost segment inward, together
+/// with the type each segment selects, so an arm can rebuild the same chain
+/// over its own value without consulting the type table again.
+enum ConditionalProjectionStep {
+    /// A field selection and the selected field's type.
+    Field { name: String, ty: Ty },
+    /// An element selection with its index value and element type.
+    Index { index: Value, ty: Ty },
+}
+
+/// Rebuilds a value by applying projection steps from the innermost outward.
+///
+/// The steps were recorded outermost first, so applying them in reverse order
+/// reconstructs the source's own chain shape over the given value.
+fn apply_conditional_steps(mut value: Value, steps: &[ConditionalProjectionStep]) -> Value {
+    for step in steps.iter().rev() {
+        value = match step {
+            ConditionalProjectionStep::Field { name, ty } => Value::new(
+                ty.clone(),
+                ValueKind::Member {
+                    base: Box::new(value),
+                    name: name.clone(),
+                },
+            ),
+            ConditionalProjectionStep::Index { index, ty } => Value::new(
+                ty.clone(),
+                ValueKind::Index {
+                    base: Box::new(value),
+                    index: Box::new(index.clone()),
+                },
+            ),
+        };
+    }
+    value
+}
+
 /// True when evaluating a value has no side effect and may be rendered twice.
 ///
 /// A call, an intrinsic, or a template can allocate, read, or write, so it is
 /// not safe to re-evaluate; every other shape is a read of a place or a pure
 /// operator over pure operands.
-fn is_pure_value(value: &Value) -> bool {
-    match &value.kind {
+fn is_pure_value(value: &Value) -> bool {    match &value.kind {
         ValueKind::Call { .. }
         | ValueKind::Intrinsic { .. }
         | ValueKind::Template(_)
