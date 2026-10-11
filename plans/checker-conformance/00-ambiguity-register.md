@@ -1,7 +1,7 @@
 # Ambiguity Register: Checker Conformance
 
-> **Status**: ⏳ GATE — one user-owned item open (AR-2, the arity diagnostic code); all other
-> items resolved
+> **Status**: ✅ GATE PASSED — all items resolved (AR-2 by user ruling: add `E10308` and fix
+> both call forms)
 > **Last Updated**: 2026-10-11 15:20
 > **Batch**: G of the defect mandate (the checker-conformance cluster)
 > **Auto-design**: active — policy version 1; reserved decisions (spec text, new user-visible
@@ -10,7 +10,7 @@
 | # | Category | Ambiguity / Gap | Options Presented | Resolution | Status |
 |---|----------|-----------------|-------------------|------------|--------|
 | 1 | Scope | Which defects batch G closes | The 15 checker-conformance rows / a different partition | **User (standing):** the E → F → G split; G = the 15 rows listed in the index; D stays parked until no defects are left | ✅ Resolved |
-| 2 | Error handling | DEF-147 (and its direct-call twin, the new DEF-213): the frozen registry has **no code for a call arity mismatch** (E10300 covers type arguments only). A fix needs a registry row, which is a reserved spec edit | A) a new `E10308` row with the E10300-mirrored message, fixing both the dot-call and the direct-call forms in Phase 3 / B) the same row, dot-call only / C) file both rows, fix in a later spec batch | **User (pending):** asked before Phase 3 — Phases 1–2 proceed regardless | ⏳ Pending |
+| 2 | Error handling | DEF-147 (and its direct-call twin, the new DEF-213): the frozen registry has **no code for a call arity mismatch** (E10300 covers type arguments only). A fix needs a registry row, which is a reserved spec edit | A) a new `E10308` row with the E10300-mirrored message, fixing both the dot-call and the direct-call forms in Phase 3 / B) the same row, dot-call only / C) file both rows, fix in a later spec batch | **User (ruling):** option A — add `E10308 | Wrong number of arguments for '{name}': expected {expected}, found {found} | pass one argument per parameter` to `spec/14-diagnostics.md`, and fix DEF-147 and DEF-213 in Phase 3 | ✅ Resolved |
 | 3 | Behavioral | DEF-144: a `str`/slice view argument at a `cstring` parameter is accepted and emits the view struct where `char *` is declared | Reject with `E10200` (the conversion the language does not allow) / cross as the view's pointer member | **AI — delegated by --auto-design (PD-1):** reject. `implicit_conversion` (`types/mod.rs:595`) defines no view→`cstring` arm; the implicit String→`str` and literal rules stay; the explicit route is `toCString`, widened by DEF-154 (the frozen appendix documents it for `String` or `str`) | ✅ Resolved |
 | 4 | Behavioral | DEF-145: a `T` iterable is judged only after substitution; a struct-element array, a scalar, or an enum instance emits invalid C | Record an iterable requirement and audit per instance with `E10043` / emit a typed element view at the instance | **AI — delegated (PD-1):** audit per instance, mirroring the established `instance_check.rs` pattern (one report, the first offending instance). The element-binding case is pinned by the in-phase probe matrix: the concrete-body twin decides whether the instance emission is fixable or rejected | ✅ Resolved |
 | 5 | Behavioral | DEF-146: a value-form member read on a bare type parameter is accepted (only the call form reports `E10212`) | Report `E10212` for the value form / keep it accepted | **AI — delegated (PD-2):** report — the frozen Ch 04 §8 rule ("a bare type parameter carries no call operator"; no declared struct surface resolves a member) applies to reads too | ✅ Resolved |
@@ -31,12 +31,11 @@
 
 ### Resolution Notes
 
-**AR-2 (user-owned, pending):** the frozen registry (`spec/14-diagnostics.md`) has no row for a
-value-argument count mismatch; `E10300` covers type arguments. The recommended option (A)
-mirrors that wording: `E10308 | Wrong number of arguments for '{name}': expected {expected},
-found {found} | pass one argument per parameter`, and fixes DEF-147 plus the direct-call twin
-(filed as DEF-213) in Phase 3. Option (C) keeps the batch to the filed rows and leaves both
-rows in the backlog.
+**AR-2 (user ruling):** the frozen registry (`spec/14-diagnostics.md`) has no row for a
+value-argument count mismatch; `E10300` covers type arguments. The user ruled option (A): add
+`E10308 | Wrong number of arguments for '{name}': expected {expected}, found {found} | pass one
+argument per parameter`, and fix DEF-147 plus the direct-call twin (filed as DEF-213) in
+Phase 3. The registry edit is authorized by this ruling.
 
 **AR-3 (delegated):** probed at head — `RawC(s)` with `s: str` emits the `ClStr` struct where
 `char *` is declared (`incompatible type for argument 1`); a `u8[]` slice is identical; a

@@ -1460,10 +1460,11 @@ impl<'a> Emitter<'a> {
     /// - a fixed-array-returning call has no C expression form — the callee
     ///   writes through a hidden destination — so it binds into a fresh init
     ///   local and the local reads where the call stood;
-    /// - an impure index, divisor, or cast operand stores once into an init
-    ///   local, and the guard that checks it is emitted right there, so the
-    ///   guard and the read share one evaluation and a later operand's effects
-    ///   cannot run before an earlier operand's trap;
+    /// - an impure index, index base, dividend, divisor, or cast operand
+    ///   stores once into an init local, and the guard that checks it is
+    ///   emitted right there, so the guard and the read share one evaluation
+    ///   and a later operand's effects cannot run before an earlier operand's
+    ///   trap;
     /// - a conditional whose part binds or stores keeps the lazily evaluated
     ///   position lazy: the condition stores once and each part runs under its
     ///   branch guard;
@@ -1921,9 +1922,10 @@ impl<'a> Emitter<'a> {
     /// The walk uses the answer to decide whether a lazily evaluated position
     /// — a conditional's arms or a short-circuit right operand — needs its
     /// guard structured, without emitting anything. The predicate mirrors the
-    /// walk's own triggers: a fixed-array call result, an impure index,
-    /// divisor, or cast operand, and the same recursively. A part the walk
-    /// would leave alone answers `false`, so its lazy form keeps its spelling.
+    /// walk's own triggers: a fixed-array call result, an impure index, index
+    /// base, dividend, divisor, or cast operand, and the same recursively. A
+    /// part the walk would leave alone answers `false`, so its lazy form keeps
+    /// its spelling.
     fn init_value_needs_materialization(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Call { args, receiver, .. } => {

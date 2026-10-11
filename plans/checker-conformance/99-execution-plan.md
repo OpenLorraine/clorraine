@@ -2,7 +2,7 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 6/34 tasks (18%)
+> **Progress**: 7/34 tasks (21%)
 > **Created**: 2026-10-11 15:20
 > **Last Updated**: 2026-10-11 15:10
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
@@ -31,7 +31,7 @@
 ### Step 1.3: Impl Tests & Review
 
 - [x] 1.3.1 Write the phase implementation pins (the single-call shapes, the typedefs and their order) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 15:14; impl 6/6)
-- [~] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; dispatch the three lenses ⏳ (implemented: 2026-10-11 15:14; the three lenses dispatched after the commit)
+- [x] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; dispatch the three lenses ✅ (completed: 2026-10-11 16:22; three lenses reported no critical/major findings; the two minor items fixed directly; five pre-existing classes filed as DEF-219–DEF-223)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

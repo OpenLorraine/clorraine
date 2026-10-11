@@ -94,27 +94,6 @@ fn count(emitted: &str, needle: &str) -> usize {
     emitted.matches(needle).count()
 }
 
-/// Asserts the first `s = NULL;` after `call_at` follows the call directly.
-///
-/// The emitted C may carry `#line` markers between the call and the next
-/// statement, so the lines after the call's own line may consist of those
-/// markers and blank lines; any other text means a statement intervenes before
-/// the move-out.
-fn assert_move_out_follows(tag: &str, emitted: &str, call_at: usize) {
-    let after = &emitted[call_at..];
-    let line_end = after.find('\n').map_or(after.len(), |index| index + 1);
-    let rest = &after[line_end..];
-    let null_at = rest
-        .find("s = NULL;")
-        .unwrap_or_else(|| panic!("{tag}: no move-out follows the call; emitted C:\n{emitted}"));
-    assert!(
-        rest[..null_at]
-            .lines()
-            .all(|line| line.trim().is_empty() || line.trim_start().starts_with("#line")),
-        "{tag}: a statement intervenes before the move-out; emitted C:\n{emitted}"
-    );
-}
-
 /// Emits one program twice from the same source path, returning both texts.
 fn emit_twice(tag: &str, source: &str) -> (String, String) {
     let scratch = ScratchDir::new(tag);
@@ -350,4 +329,41 @@ func main(): i32 {
     );
     assert_contains("initownbase", &emitted, "FreeString(__cl_itmp0[0])");
     assert_contains("initownbase", &emitted, "FreeString(__cl_itmp0[1])");
+}
+
+/// A changed initializer shape re-emits byte-identically.
+///
+/// The store addition is deterministic: the same source emits the same
+/// translation unit on a second run.
+#[test]
+fn should_re_emit_a_stored_initializer_identically() {
+    let source = r#"module spec.cc.impl.reemit;
+
+import { slice } from std.mem;
+
+let calls: i32 = 0;
+let xs: i32[4] = [1, 2, 3, 4];
+
+func v(s: i32[]): i32[] {
+    calls = calls + 1;
+    return s;
+}
+
+let sl: i32[] = slice(xs, 0, 4);
+let e: i32 = v(sl)[1];
+
+func main(): i32 {
+    return calls * 10 + e;
+}
+"#;
+    let (first, second) = emit_twice("reemit", source);
+    assert_eq!(
+        first, second,
+        "reemit: the initializer store re-emitted differently"
+    );
+    assert_contains(
+        "reemit",
+        &first,
+        "ClSlice_i32 __cl_itmp0 = cl_spec_cc_impl_reemit_v(cl_spec_cc_impl_reemit_sl);",
+    );
 }

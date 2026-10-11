@@ -61,7 +61,32 @@ two new suites included). The phase review (`correctness` + `memory-safety` +
 
 ### Review and fix round
 
-_(findings recorded after the review round)_
+**Three lenses reported; no critical or major finding on the change.**
+
+| Lens | Verdict | Evidence highlights |
+| ---- | ------- | ------------------- |
+| correctness | no findings above minor | the five row cases red exactly as filed and green at head; ~40 base/head probes (laziness kept in arms and short-circuit sides, the guard/effect order now matching the body twins, fixed-array and pure operands byte-identical, the specialization gate, three-profile typedefs); the reference green at both refs |
+| memory-safety | **no findings** | 24 ASan probes clean on head (view bases release nothing, the dividend store adds no release, the lazy stores run only on their path, the owning fixed-array base releases once, the trap path); no leak, double free, or use-after-free attributable to the change |
+| emission-integrity | **no findings** | 4476 base/head emission pairs: the only differing units are the six new cases plus one pre-existing inline `slice(...)`-base unit (an intended DEF-136-class fix); 2989 strict builds across host/freestanding/hosted-amiga with zero new failures; deterministic re-emission; declaration agreement (the instance typedef before the slice typedef) |
+
+**Fix round (two minor items, fixed directly):**
+
+| Finding | Severity | Area | Resolution |
+| ------- | -------- | ---- | ---------- |
+| RV-001 | 🟡 minor | `checker_conformance_impl_test.rs` carried two unused helpers (`dead_code` warnings) | Fixed: the unused proximity helper deleted, and `emit_twice` wired into the new `reemit` determinism pin (the changed initializer store re-emits byte-identically) |
+| RV-002 | 🟡 minor | the initializer materialization's doc lists still said "an impure index, divisor, or cast operand" | Fixed: both lists now name the index base and the dividend |
+
+**Filed from the reviews' pre-existing observations** (base-identical; outside the phase):
+
+- **DEF-219** 🟠 major — an owned bind in a short-circuit right side is declared inside its `if` block but released outside it, so an accepted initializer emits `__cl_itmp1 undeclared` (the batch G Phase 1 memory audit, PRE-1).
+- **DEF-220** 🟠 major — a generic function called only from a module initializer with an inferred type argument emits no instance (undefined symbol); the memory audit's PRE-2.
+- **DEF-221** 🟡 minor — a fixed-array literal base with a run-time index in an initializer emits `{ ... }[pos]` (invalid C99); the emission audit's P-1 and the correctness review's P2.
+- **DEF-222** 🟡 minor — a generic instance recorded from a type argument is not field-expanded, so a nested instance field stays undeclared (`sizeOf<Box<i32>>()` names `ClPair__i32`); the correctness review's P1.
+- **DEF-223** 🟡 minor — the global-initializer `sizeof(Wrap<i32>[])` spelling still names an undeclared instance (the initializer twin of DEF-216); the emission audit's P-2.
+
+### Verification (updated)
+
+Spec suite 6/6 plain and under `RDC_ASAN=1`; impl 7/7 (the determinism pin added); `make check` 62 suites green.
 
 ## Phase 2: Generic instance conformance
 
