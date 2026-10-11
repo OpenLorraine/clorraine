@@ -658,6 +658,23 @@ impl<'a, 'd> Checker<'a, 'd> {
             .cloned()
     }
 
+    /// The written signature of an `ffi` function declared in this module.
+    ///
+    /// An `ffi` declaration is not registered in the type table: its C
+    /// prototype crosses by ABI types, so a check that needs the declared
+    /// parameter list reads the written signature here. A name reached
+    /// through an import has no `ffi` declaration: the declarations resolve
+    /// within their own module.
+    fn ffi_signature(&self, name: &str) -> Option<&'a crate::ast::FuncSignature> {
+        self.module.items.iter().find_map(|item| match item {
+            crate::ast::Item::Ffi(block) => block
+                .decls
+                .iter()
+                .find(|signature| signature.name == name),
+            _ => None,
+        })
+    }
+
     /// The kind of the declaration a name resolves to in this module.
     ///
     /// A module declaration wins, then an import; a name with no visible

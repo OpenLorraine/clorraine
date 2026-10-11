@@ -168,6 +168,14 @@ fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str],
 }
 
 
+/// Emits one host program and builds the emitted C strictly, without running
+/// it: the acceptance case for a shape whose run-time behavior is filed.
+fn accepts_host(tag: &str, source: &str) {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, source);
+    let _ = build_host_c(tag, &scratch, &emitted);
+}
+
 /// Runs a built program with a time limit and the given environment values.
 fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
     let mut command = Command::new(program);
@@ -948,4 +956,389 @@ func main(): i32 {
         &["'N' is not a member of 'E'"],
         &[],
     );
+}
+
+// ===== Phase 3: call, member, and cstring surfaces =====
+
+/// A literal at an uncontracted `cstring` parameter builds and runs.
+#[test]
+fn should_accept_a_literal_at_a_cstring_parameter() {
+    let source = r#"module spec.cc.cstringliteral;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    unsafe {
+        let f: raw u8 = Open("/definitely/not/here", 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let output = run_host("cstringliteral", source);
+    assert_exit("cstringliteral", &output, 7);
+}
+
+/// A `str` view at an uncontracted `cstring` parameter crosses as its pointer.
+///
+/// The frozen ffi rules accept a view at an uncontracted parameter and cross
+/// it as the ABI pointer; the emitted C spells the pointer the prototype
+/// declares (red at the phase base: the view struct was passed where `char *`
+/// is declared and the strict build failed).
+#[test]
+fn should_accept_a_view_at_a_cstring_parameter() {
+    let source = r#"module spec.cc.cstringview;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let s: str = "/definitely/not/here";
+    unsafe {
+        let f: raw u8 = Open(s, 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let output = run_host("cstringview", source);
+    assert_exit("cstringview", &output, 7);
+}
+
+/// A slice view at an uncontracted `cstring` parameter crosses as its pointer.
+#[test]
+fn should_accept_a_slice_at_a_cstring_parameter() {
+    let source = r#"module spec.cc.cstringslicearg;
+
+import { stringOf, bytes } from std.text;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("/definitely/not/here");
+    let v: u8[] = bytes(owned);
+    unsafe {
+        let f: raw u8 = Open(v, 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let output = run_host("cstringslicearg", source);
+    assert_exit("cstringslicearg", &output, 7);
+}
+
+/// A `String` handle at an uncontracted `cstring` parameter stays accepted.
+///
+/// The handle crossing keeps its today's emission (the block pointer); its
+/// run-time meaning is filed separately, so this case pins acceptance and the
+/// strict build only.
+#[test]
+fn should_accept_a_string_handle_at_a_cstring_parameter() {
+    let source = r#"module spec.cc.cstringowned;
+
+import { stringOf } from std.text;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("/definitely/not/here");
+    unsafe {
+        let f: raw u8 = Open(owned, 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    accepts_host("cstringowned", source);
+}
+
+/// A dot-call arity mismatch reports once with the remaining parameter count.
+///
+/// The receiver fills the first parameter, so no argument remains (red at the
+/// phase base: the call was accepted and the strict build failed).
+#[test]
+fn should_report_a_dot_call_arity_mismatch() {
+    let source = r#"module spec.cc.dotarity;
+
+func addOne(a: i32): i32 {
+    return a + 1;
+}
+
+func main(): i32 {
+    let x: i32 = 1;
+    return x.addOne(5);
+}
+"#;
+    assert_rejected_once(
+        "dotarity",
+        source,
+        "E10308",
+        &["wrong number of arguments for 'addOne': expected 0, found 1"],
+        &[],
+    );
+}
+
+/// A direct-call arity mismatch reports once.
+#[test]
+fn should_report_a_direct_call_arity_mismatch() {
+    let source = r#"module spec.cc.directarity;
+
+func addOne(a: i32): i32 {
+    return a + 1;
+}
+
+func main(): i32 {
+    return addOne(1, 2);
+}
+"#;
+    assert_rejected_once(
+        "directarity",
+        source,
+        "E10308",
+        &["wrong number of arguments for 'addOne': expected 1, found 2"],
+        &[],
+    );
+}
+
+/// A generic direct-call arity mismatch reports once.
+#[test]
+fn should_report_a_generic_call_arity_mismatch() {
+    let source = r#"module spec.cc.genericarity;
+
+func identity<T>(x: T): T {
+    return x;
+}
+
+func main(): i32 {
+    return identity<i32>(1, 2);
+}
+"#;
+    assert_rejected_once(
+        "genericarity",
+        source,
+        "E10308",
+        &["wrong number of arguments for 'identity': expected 1, found 2"],
+        &[],
+    );
+}
+
+/// An `ffi` direct-call arity mismatch reports once.
+#[test]
+fn should_report_an_ffi_call_arity_mismatch() {
+    let source = r#"module spec.cc.ffiarity;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    unsafe {
+        let f: raw u8 = Open("/definitely/not/here", 0, 1);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    assert_rejected_once(
+        "ffiarity",
+        source,
+        "E10308",
+        &["wrong number of arguments for 'Open': expected 2, found 3"],
+        &[],
+    );
+}
+
+/// Exact counts in both call forms build and run.
+#[test]
+fn should_accept_exact_argument_counts_in_both_forms() {
+    let source = r#"module spec.cc.arityok;
+
+func addOne(a: i32): i32 {
+    return a + 1;
+}
+
+func addTwo(a: i32, b: i32): i32 {
+    return a + b;
+}
+
+func main(): i32 {
+    let x: i32 = 10;
+    let y: i32 = x.addOne();
+    return addTwo(y, 5);
+}
+"#;
+    let output = run_host("arityok", source);
+    assert_exit("arityok", &output, 16);
+}
+
+/// An unknown member callee on a struct receiver reports once.
+#[test]
+fn should_report_an_unknown_member_callee_on_a_struct() {
+    let source = r#"module spec.cc.memberunknown;
+
+struct S {
+    x: i32;
+}
+
+func main(): i32 {
+    let s: S = S { x: 1 };
+    return s.foo(5);
+}
+"#;
+    assert_rejected_once(
+        "memberunknown",
+        source,
+        "E10212",
+        &["'foo' is not a member of 'S'"],
+        &[],
+    );
+}
+
+/// An unknown member callee through a `raw` receiver reports once.
+#[test]
+fn should_report_an_unknown_member_callee_through_a_raw_receiver() {
+    let source = r#"module spec.cc.memberraw;
+
+struct S {
+    x: i32;
+}
+
+func main(): i32 {
+    let s: S = S { x: 1 };
+    let p: raw S = unsafe &s;
+    return p.foo(5);
+}
+"#;
+    assert_rejected_once(
+        "memberraw",
+        source,
+        "E10212",
+        &["'foo' is not a member of 'raw S'"],
+        &[],
+    );
+}
+
+/// A zero-parameter free function is not a dot-call candidate.
+///
+/// A candidate must accept the receiver as its first parameter, so a
+/// zero-parameter function has zero matches and the member is unknown (red at
+/// the phase base: the receiver was passed and the strict build failed).
+#[test]
+fn should_report_a_zero_parameter_free_function_as_an_unknown_member() {
+    let source = r#"module spec.cc.memberzero;
+
+struct S {
+    x: i32;
+}
+
+func zero(): i32 {
+    return 5;
+}
+
+func main(): i32 {
+    let s: S = S { x: 1 };
+    return s.zero();
+}
+"#;
+    assert_rejected_once(
+        "memberzero",
+        source,
+        "E10212",
+        &["'zero' is not a member of 'S'"],
+        &[],
+    );
+}
+
+/// A callable field wins over a same-named free function.
+#[test]
+fn should_keep_the_callable_field_winning_over_a_free_function() {
+    let source = r#"module spec.cc.memberfield;
+
+struct S {
+    foo: func(i32): i32;
+}
+
+func foo(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    let s: S = S { foo: foo };
+    return s.foo(1);
+}
+"#;
+    let output = run_host("memberfield", source);
+    assert_exit("memberfield", &output, 2);
+}
+
+/// `toCString` accepts a `str` view (the widened signature).
+#[test]
+fn should_accept_a_view_argument_for_to_c_string() {
+    let source = r#"module spec.cc.cstringviewconv;
+
+import { toCString } from std.text;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let s: str = "/definitely/not/here";
+    let c: cstring = toCString(s);
+    unsafe {
+        let f: raw u8 = Open(c, 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let output = run_host("cstringviewconv", source);
+    assert_exit("cstringviewconv", &output, 7);
+}
+
+/// `toCString` keeps accepting an owned `String` caller (the widening).
+#[test]
+fn should_keep_an_owned_argument_for_to_c_string() {
+    let source = r#"module spec.cc.cstringownedconv;
+
+import { stringOf, toCString } from std.text;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let owned: String = stringOf("/definitely/not/here");
+    let c: cstring = toCString(owned);
+    unsafe {
+        let f: raw u8 = Open(c, 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let output = run_host("cstringownedconv", source);
+    assert_exit("cstringownedconv", &output, 7);
 }

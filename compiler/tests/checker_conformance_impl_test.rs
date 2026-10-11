@@ -536,3 +536,155 @@ func main(): i32 {
     assert_contains("iterf32pin", &emitted, "s = (s + v);");
 }
 
+/// A view argument crosses an uncontracted `cstring` parameter as its pointer.
+///
+/// The prototype declares `char *`, so the crossing spells the cast instead of
+/// passing the view struct (red at the phase base: the strict build failed).
+#[test]
+fn should_cross_a_view_at_a_cstring_parameter() {
+    let source = r#"module spec.cc.impl.cstringviewpin;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let s: str = "/definitely/not/here";
+    unsafe {
+        let f: raw u8 = Open(s, 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let emitted = emit_host("cstringviewpin", source);
+    assert_contains("cstringviewpin", &emitted, "Open((char *)(s).ptr, 0)");
+}
+
+/// A `static str` literal at a `cstring` parameter stays the C string.
+#[test]
+fn should_keep_a_cstring_literal_unwrapped() {
+    let source = r#"module spec.cc.impl.cstringlitpin;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    unsafe {
+        let f: raw u8 = Open("/definitely/not/here", 0);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let emitted = emit_host("cstringlitpin", source);
+    assert_contains(
+        "cstringlitpin",
+        &emitted,
+        r#"Open("/definitely/not/here", 0)"#,
+    );
+}
+
+/// The exact argument counts in both call forms keep their call shapes.
+///
+/// The dot form passes the receiver as the free function's first argument and
+/// the direct form passes the written arguments unchanged.
+#[test]
+fn should_keep_the_exact_argument_count_call_shapes() {
+    let source = r#"module spec.cc.impl.arityokpin;
+
+func addOne(a: i32): i32 {
+    return a + 1;
+}
+
+func addTwo(a: i32, b: i32): i32 {
+    return a + b;
+}
+
+func main(): i32 {
+    let x: i32 = 10;
+    let y: i32 = x.addOne();
+    return addTwo(y, 5);
+}
+"#;
+    let emitted = emit_host("arityokpin", source);
+    assert_contains(
+        "arityokpin",
+        &emitted,
+        "y = cl_spec_cc_impl_arityokpin_addOne(x);",
+    );
+    assert_contains(
+        "arityokpin",
+        &emitted,
+        "return cl_spec_cc_impl_arityokpin_addTwo(y, 5);",
+    );
+}
+
+/// A callable field keeps the field-wins call shape.
+#[test]
+fn should_keep_the_callable_field_call_shape() {
+    let source = r#"module spec.cc.impl.memberfieldpin;
+
+struct S {
+    foo: func(i32): i32;
+}
+
+func foo(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    let s: S = S { foo: foo };
+    return s.foo(1);
+}
+"#;
+    let emitted = emit_host("memberfieldpin", source);
+    assert_contains("memberfieldpin", &emitted, "return (s.foo)(1);");
+}
+
+/// The widened `toCString` returns the view's pointer and widens an owned
+/// argument through the view at the call site.
+#[test]
+fn should_emit_the_widened_to_c_string_shapes() {
+    let source = r#"module spec.cc.impl.convpin;
+
+import { stringOf, toCString } from std.text;
+
+ffi probe {
+    func Open(path: cstring, mode: i32): raw u8;
+}
+
+func main(): i32 {
+    let s: str = "/definitely/not/here";
+    let c: cstring = toCString(s);
+    let owned: String = stringOf("/definitely/not/here");
+    let d: cstring = toCString(owned);
+    unsafe {
+        let f: raw u8 = Open(c, 0);
+        let g: raw u8 = Open(d, 0);
+        if (f == null) {
+            return 7;
+        }
+        if (g == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let emitted = emit_host("convpin", source);
+    assert_contains("convpin", &emitted, "char * cl_std_text_toCString(ClStr s)");
+    assert_contains("convpin", &emitted, "return (char *)(s.ptr);");
+    assert_contains("convpin", &emitted, "c = cl_std_text_toCString(s);");
+    assert_contains(
+        "convpin",
+        &emitted,
+        "d = cl_std_text_toCString(cl_string_view(owned));",
+    );
+}
+

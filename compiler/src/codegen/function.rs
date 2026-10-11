@@ -1924,8 +1924,9 @@ impl<'a> Emitter<'a> {
     /// Renders a value for a store into a target of type `ty`.
     ///
     /// An owned `String` widens implicitly to the `str` view the target holds,
-    /// through the same shim view the call-argument widening uses. Every other
-    /// store renders the value directly.
+    /// through the same shim view the call-argument widening uses, and a
+    /// view's pointer member converts to the `cstring` the target declares.
+    /// Every other store renders the value directly.
     pub(super) fn store_text(&self, value: &Value, ty: &Ty) -> String {
         // A null literal is typed by its destination, and a struct-typed view
         // destination needs its zero struct rather than a null pointer.
@@ -1938,6 +1939,14 @@ impl<'a> Emitter<'a> {
             && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
         {
             return format!("cl_string_view({text})");
+        }
+        // A view's pointer member is a `const u8 *` in the C while a
+        // `cstring` destination is a `char *`: the store spells the
+        // conversion the declaration expects. The member is untyped, so only
+        // the read that names `ptr` takes this path; a read over a place
+        // arrives as a projection, a read over a value as a member.
+        if matches!(ty.kind, TyKind::CString) && names_pointer_member(value) {
+            return format!("(char *)({text})");
         }
         text
     }
@@ -2472,5 +2481,22 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>) {
         | ValueKind::Path(_)
         | ValueKind::Aggregate
         | ValueKind::Temp(_) => {}
+    }
+}
+
+
+/// True when a value reads a member named `ptr`.
+///
+/// A view's pointer member carries no checked type, so the store conversion
+/// recognizes it by shape: a member value over a computed base, or the last
+/// field projection of a place read.
+fn names_pointer_member(value: &Value) -> bool {
+    match &value.kind {
+        ValueKind::Member { name, .. } => name == "ptr",
+        ValueKind::Place(place) => matches!(
+            place.projections.last(),
+            Some(crate::ir::Projection::Field(field)) if field == "ptr"
+        ),
+        _ => false,
     }
 }

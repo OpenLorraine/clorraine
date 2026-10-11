@@ -122,6 +122,7 @@
 | E10305 | Instantiation recursion exceeds the cap | `instantiation of '{name}' is recursive beyond the limit` | break the generic recursion |
 | E10306 | Generic aggregate instantiated with an ephemeral type argument | `'{name}' cannot be instantiated with an ephemeral type argument` | use a storable type |
 | E10307 | Call of a type-parameter value without a callable bound | `type parameter '{param}' is not callable` | declare a callable bound: `T: func(...)` |
+| E10308 | Wrong number of arguments | `wrong number of arguments for '{name}': expected {expected}, found {found}` | pass one argument per parameter |
 
 ## 7. Lambdas (`E104xx`)
 

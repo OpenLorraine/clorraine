@@ -183,9 +183,59 @@ Spec suite 25/25 plain and under `RDC_ASAN=1`; impl 13/13; `make check` 62 suite
 
 ## Phase 3: Call, member, and `cstring` surfaces
 
-**Baseline**: _(recorded at phase start)_
+**Baseline**: `68d6428` (the Phase 2 close-out tree).
 **Lenses**: correctness, semantics, emission-integrity
-**Gate**: AR-2 (the arity diagnostic code) must be resolved before Step 3.2.
+
+### Deliverables
+
+| # | Shape | Result |
+| - | ----- | ------ |
+| DEF-144 | A view argument at an uncontracted `cstring` parameter crosses as its pointer: the emitter spells `(char *)view.ptr` (the frozen Ch 12 CN-11/§10 crossing), so a `str` or slice builds and runs where the view struct was passed before | Fixed; spec `cstringview`/`cstringslicearg` (exit 7); impl pin `Open((char *)(s).ptr, 0)`; the literal stays unwrapped |
+| DEF-147/DEF-213 | The written count is judged against the declared parameters: the dot-call candidate path against the remaining list (the receiver is not written) and the direct-call path against the whole list, under the ruled `E10308`; the generic and `ffi` direct-call twins join the same rule; a zero-parameter free function is not a dot-call candidate (Ch 04 §8's "must accept the receiver as its first parameter") | Fixed; spec `dotarity`, `directarity`, `genericarity`, `ffiarity`, `memberzero`; the registry row, its compile-fail golden, and the harness inventory line land under the AR-2 ruling |
+| DEF-148 | Every receiver whose surface resolves no field and no matching candidate reports `E10212` once (the frozen "zero matches is an ordinary member error"), instead of emitting an implicit call; a non-callable field of the name keeps its own path | Fixed; spec `memberunknown`, `memberraw`, `memberzero`; `memberfield` pins the field-wins rule |
+| DEF-154 | `toCString(s: str)` returns the view's pointer (`s.ptr`), and the store conversion spells the `char *` cast the declaration expects; the `String`→`str` widening keeps owned callers working | Fixed; spec `cstringviewconv`, `cstringownedconv`; impl pins the body (`return (char *)s.ptr;`), the widened parameter (`char * cl_std_text_toCString(ClStr s)`), and the call-site widening (`cl_string_view(owned)`) |
+
+### Red evidence
+
+At the phase baseline the ten row cases failed exactly as filed: the three view crossings
+(`cstringview`, `cstringslicearg`, and `cstringviewconv`'s crossing) passed the view struct
+where `char *` is declared and failed the strict build; the four arity cases were accepted and
+failed the strict build on the prototype; the three member cases emitted implicit calls; and
+`toCString(view)` reported the old signature's `E10200`. The five references (`cstringliteral`,
+`cstringowned`, `arityok`, `memberfield`, `cstringownedconv`) were green, as intended.
+
+### Design notes
+
+- **The DEF-144 crossing (the design's first amendment).** The design proposed an `E10200`
+  rejection for a view at a `cstring` parameter. The frozen text decides otherwise: Ch 12 CN-11
+  lists views among the values an uncontracted parameter accepts, and §10 fixes the crossing as
+  the ABI pointer. The emitter therefore extends its view crossing from `APTR` parameters to
+  `char *` ones, with a guard that a `static str` literal keeps its direct spelling (it already
+  renders as the NUL-terminated C string). The `String` handle keeps its today's crossing and
+  the semantics are filed; the `toCString` route stays the explicit spelling.
+- **The `toCString` body and the untyped `.ptr` member.** The view's `.ptr` member carries no
+  checked type (the type stage leaves it unknown), so the store conversion recognizes the read
+  by shape — a member value or a place's last field projection named `ptr` — and spells the
+  `char *` cast. The untyped members themselves (a `.ptr` flowing into a scalar is accepted and
+  emits invalid C) are filed as DEF-238.
+- **The arity rule's scope.** The named direct call, the generic direct call, and the `ffi`
+  direct call report `E10308`; a call through a func-typed value passes no name and keeps its
+  path (filed as DEF-236). The dot-call paths count the receiver as the first declared
+  parameter.
+- **The zero-parameter candidate rule.** `dot_call` requires a non-empty parameter list from a
+  free-function candidate, so a zero-parameter function falls through to the intrinsic lookup
+  and otherwise reports the unknown member instead of passing the receiver to a no-argument C
+  function.
+- **The uncontracted-extern rule set (CN-10/CN-11) is unchecked**: an `ffi` call outside
+  `unsafe` and an owned handle at an uncontracted parameter are both accepted (filed as
+  DEF-237), which is why the `cstringowned` case pins acceptance and the strict build only.
+
+### Verification
+
+Spec suite 40/40 plain and under `RDC_ASAN=1`; impl 18/18; `make check` 62 suites green
+(including the `E10308` golden and the whole-corpus sweep after the stdlib widening).
+
+### Review and fix round
 
 _(findings recorded after the review round)_
 

@@ -59,8 +59,30 @@ impl Checker<'_, '_> {
                     if !signature.type_params.is_empty() {
                         return self.check_generic_call(name, &signature, type_args, args, span);
                     }
-                    self.check_args_direct(args, &signature.params, &signature.modes);
+                    self.check_args_direct(
+                        args,
+                        &signature.params,
+                        &signature.modes,
+                        Some((name, span)),
+                    );
                     return signature.returns;
+                }
+                // An `ffi` declaration carries no checked signature in the
+                // type table, so the ordinary call path checks nothing here.
+                // The written signature is still available in the module: the
+                // written count is judged against it, and the arguments are
+                // walked for their own errors. The ABI crossing of a view or
+                // handle argument is the emitter's rule, not a conversion.
+                if matches!(self.visible_decl_kind(name), Some(crate::load::DeclKind::Ffi)) {
+                    if let Some(signature) = self.ffi_signature(name) {
+                        let mut params = Vec::with_capacity(signature.params.len());
+                        for param in &signature.params {
+                            params.push(self.resolve_type(&param.ty));
+                        }
+                        self.check_ffi_arguments(name, &params, args, span);
+                        let _ = self.check_value(callee, None);
+                        return Ty::unknown();
+                    }
                 }
                 // The compiler-known `text(v)` formatter is not declared in
                 // Clorraine; the compiler lowers it to a `String`-returning
@@ -212,6 +234,22 @@ impl Checker<'_, '_> {
             .iter()
             .map(|arg| (self.check_value(&arg.value, None), arg.value.span))
             .collect();
+
+        // The written count is judged against the declared parameters like
+        // every other direct call: the emitter's prototype would reject a
+        // mismatch.
+        if args.len() != signature.params.len() {
+            self.error(
+                "E10308",
+                format!(
+                    "wrong number of arguments for '{name}': expected {}, found {}",
+                    signature.params.len(),
+                    args.len()
+                ),
+                "pass one argument per parameter",
+                span,
+            );
+        }
 
         let mut bindings: BTreeMap<String, Ty> = BTreeMap::new();
         if type_args.is_empty() {
@@ -408,7 +446,13 @@ impl Checker<'_, '_> {
                 // A callable field carries its own parameter modes, so a
                 // `take` argument still moves and a call-site marker still
                 // matches, exactly as on a named call.
-                self.check_args_impl(args, &signature.params, &signature.modes, false);
+                self.check_args_impl(
+                    args,
+                    &signature.params,
+                    &signature.modes,
+                    false,
+                    Some((name, span)),
+                );
                 signature.returns
             }
             Some(DotCall::Function(signature)) => {
@@ -435,9 +479,9 @@ impl Checker<'_, '_> {
                     // modes line up with the written arguments; a nullable
                     // borrow parameter keeps its exact-place rule on this route.
                     let rest_modes = signature.modes.get(1..).unwrap_or(&[]);
-                    self.check_args_impl(args, rest, rest_modes, false);
+                    self.check_args_impl(args, rest, rest_modes, false, Some((name, span)));
                 } else {
-                    self.check_args(args, &signature.params);
+                    self.check_args(args, &signature.params, Some((name, span)));
                 }
                 signature.returns
             }
@@ -458,11 +502,13 @@ impl Checker<'_, '_> {
                         }
                     }
                 }
-                // A bare type parameter has no members of its own: the
-                // substitution may be any type, and only a declared struct
-                // surface resolves a member, so the callee is an unknown
-                // member rather than a callability question.
-                if matches!(receiver.kind, TyKind::Param(_)) {
+                // A receiver whose surface holds no field of that name and
+                // no matching function candidate has an unknown member: the
+                // call may not reach the emitter, where it would become an
+                // implicit call. A field of the name that is not callable
+                // keeps its own path, and an unresolved receiver (error
+                // recovery) stays silent so one error is not reported twice.
+                if self.field_type(&receiver, name).is_none() && !receiver.is_unknown() {
                     self.error(
                         "E10212",
                         format!("'{name}' is not a member of '{}'", receiver.display()),
@@ -511,7 +557,12 @@ impl Checker<'_, '_> {
             }
         }
         if let Some(signature) = self.free_function(name) {
-            return Some(DotCall::Function(signature));
+            // A candidate must accept the receiver as its first parameter, so
+            // a function with no parameters is not a candidate; the intrinsic
+            // lookup still runs, because `len` is offered for the same shape.
+            if !signature.params.is_empty() {
+                return Some(DotCall::Function(signature));
+            }
         }
         self.intrinsic_dot_call(name)
     }
@@ -535,20 +586,24 @@ impl Checker<'_, '_> {
 
     /// Checks a call's arguments against a known parameter list.
     ///
-    /// An arity mismatch is left alone: no diagnostic in this phase owns it.
-    fn check_args(&mut self, args: &[Arg], params: &[Ty]) {
-        self.check_args_impl(args, params, &[], false);
+    /// `callee` carries the call's name and span when the call names its
+    /// callee, so an arity mismatch reports through the same diagnostic every
+    /// other direct call uses; a call through a value passes `None`.
+    fn check_args(&mut self, args: &[Arg], params: &[Ty], callee: Option<(&str, Span)>) {
+        self.check_args_impl(args, params, &[], false, callee);
     }
 
     /// Checks a call's arguments against a func-value parameter list.
     ///
     /// A call through a `func(...)` value keeps the modes its type carries, so
     /// a `take` parameter still moves the argument and a `borrow` parameter
-    /// still accepts the lend.
+    /// still accepts the lend. The callee is a value, not a declared name, so
+    /// an arity mismatch has no member to report and is left to the C
+    /// prototype.
     fn check_args_func(&mut self, args: &[Arg], params: &[FuncParam]) {
         let types: Vec<Ty> = params.iter().map(|param| param.ty.clone()).collect();
         let modes: Vec<crate::ast::Mode> = params.iter().map(|param| param.mode).collect();
-        self.check_args_impl(args, &types, &modes, false);
+        self.check_args_impl(args, &types, &modes, false, None);
     }
 
     /// Like [`Self::check_args`] for a direct call of a named function.
@@ -557,8 +612,14 @@ impl Checker<'_, '_> {
     /// apply: the emitter can see the named callee's parameter type there. A
     /// call through a function-typed value keeps `E10200`, because the emitter
     /// cannot recover the expected type for the argument.
-    fn check_args_direct(&mut self, args: &[Arg], params: &[Ty], modes: &[crate::ast::Mode]) {
-        self.check_args_impl(args, params, modes, true);
+    fn check_args_direct(
+        &mut self,
+        args: &[Arg],
+        params: &[Ty],
+        modes: &[crate::ast::Mode],
+        callee: Option<(&str, Span)>,
+    ) {
+        self.check_args_impl(args, params, modes, true, callee);
     }
 
     /// Checks call arguments, optionally allowing a `cstring` literal argument.
@@ -566,13 +627,17 @@ impl Checker<'_, '_> {
     /// When a parameter is declared `take`, the argument moves its value to the
     /// callee. Moving a captured binding out of a lambda is `E10401`. A
     /// nullable writable lend is an ownership out-slot and takes a stricter
-    /// exact-place rule (see [`Self::check_out_slot_argument`]).
+    /// exact-place rule (see [`Self::check_out_slot_argument`]). A written
+    /// count that disagrees with the declared parameters reports once when the
+    /// call names its callee, and the written arguments are still checked for
+    /// their own errors.
     fn check_args_impl(
         &mut self,
         args: &[Arg],
         params: &[Ty],
         modes: &[crate::ast::Mode],
         allow_cstring_literal: bool,
+        callee: Option<(&str, Span)>,
     ) {
         if args.len() == params.len() {
             for (index, (arg, param)) in args.iter().zip(params).enumerate() {
@@ -598,9 +663,45 @@ impl Checker<'_, '_> {
                 self.check_into(&arg.value, param);
             }
         } else {
+            if let Some((name, span)) = callee {
+                self.error(
+                    "E10308",
+                    format!(
+                        "wrong number of arguments for '{name}': expected {}, found {}",
+                        params.len(),
+                        args.len()
+                    ),
+                    "pass one argument per parameter",
+                    span,
+                );
+            }
             for arg in args {
                 self.check_value(&arg.value, None);
             }
+        }
+    }
+
+    /// Checks an `ffi` call's written arguments.
+    ///
+    /// An `ffi` declaration carries no checked signature in the type table, so
+    /// the ordinary call path checks nothing. The written count is judged
+    /// against the declared parameters like every other direct call, and every
+    /// argument is still walked for its own errors.
+    fn check_ffi_arguments(&mut self, name: &str, params: &[Ty], args: &[Arg], span: Span) {
+        if args.len() != params.len() {
+            self.error(
+                "E10308",
+                format!(
+                    "wrong number of arguments for '{name}': expected {}, found {}",
+                    params.len(),
+                    args.len()
+                ),
+                "pass one argument per parameter",
+                span,
+            );
+        }
+        for arg in args {
+            self.check_value(&arg.value, None);
         }
     }
 

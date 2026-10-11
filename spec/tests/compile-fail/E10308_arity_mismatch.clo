@@ -1,0 +1,12 @@
+// expect-error E10308
+// trigger: too many written arguments for a direct call
+module tests.compile_fail.E10308;
+
+func addOne(a: i32): i32 {
+    return a + 1;
+}
+
+func main(): i32 {
+    addOne(1, 2);   // E10308: expected 1, found 2
+    return 0;
+}

@@ -42,8 +42,8 @@ export func bytes(s: String): u8[] {
     }
 }
 
-export func toCString(s: String): cstring {
+export func toCString(s: str): cstring {
     unsafe {
-        return cl_string_ptr(s);
+        return s.ptr;
     }
 }

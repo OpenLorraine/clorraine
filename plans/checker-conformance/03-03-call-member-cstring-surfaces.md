@@ -37,6 +37,13 @@ unknown member callee (DEF-148), and the `toCString` stdlib widening (DEF-154).
 
 ## Proposed Changes
 
+> **Superseded (Phase 3):** the frozen ffi rules (Ch 12 CN-11: an uncontracted parameter
+> accepts views; §10: a view in an `ffi` signature is the ABI pointer) decide the crossing, not a
+> rejection: the emitter crosses a view argument at a `cstring` parameter as `(char *)view.ptr`,
+> so views build and run and the rejection was not implemented. The `String` handle keeps its
+> today's crossing (filed) and the literal keeps its direct spelling. See the ledger's design
+> notes and the register's AR-15 amendment.
+
 ### 1. Reject a view at a `cstring` parameter (DEF-144) — `sema/call.rs`
 
 In the `cstring`-parameter argument path, keep the literal allowance and the `String`-handle
@@ -71,10 +78,10 @@ caller's emission is byte-identical (the implicit widening provides the view). L
 |------|-------|-------------|
 | `cstringliteral` | a literal at a `cstring` parameter | accepted; byte-identical emission |
 | `cstringowned` | a `String` handle | accepted; byte-identical emission |
-| `cstringview` | a `str` variable (DEF-144) | one `E10200` |
-| `cstringslicearg` | a `u8[]` value | one `E10200` |
+| `cstringview` | a `str` variable (DEF-144) | **amended:** accepted; the view crosses as `(char *)view.ptr` and runs |
+| `cstringslicearg` | a `u8[]` value | **amended:** accepted; the same crossing |
 | `dotarity` | `x.addOne(5)` (DEF-147) | one arity report (AR-2 code) |
-| `directarity` | `f(1, 2)` (DEF-213) | one arity report (AR-2 code) |
+| `directarity` | `f(1, 2)` (DEF-213) | one arity report (AR-2 code); the generic (`g<i32>(1, 2)`) and `ffi` twins join the same rule |
 | `arityok` | exact counts, both forms | accepted; byte-identical emission |
 | `memberunknown` | `s.foo(5)` (DEF-148) | one `E10212` |
 | `memberraw` | `p.foo(5)` on a `raw` receiver | one `E10212` |

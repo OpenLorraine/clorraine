@@ -2,9 +2,9 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 14/38 tasks (37%)
+> **Progress**: 20/38 tasks (53%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 17:35
+> **Last Updated**: 2026-10-11 19:45
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
@@ -64,7 +64,7 @@
 
 ## Phase 3: Call, member, and cstring surfaces
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `68d6428` (the Phase 2 close-out tree)
 > **Lenses**: correctness + semantics + emission-integrity
 > **Reasoning**: medium — four checker extensions and one stdlib signature change
 > **Gate**: AR-2 (the arity diagnostic code) must be resolved before Step 3.2.
@@ -74,19 +74,19 @@
 **Reference**: [03-03](03-03-call-member-cstring-surfaces.md)
 **Objective**: Pin the `cstring` rejections, the arity reports, the unresolved-member reports, and the widened conversion.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
-- [ ] 3.1.2 Run the suite and record the red phase (the arity cases join once AR-2 is ruled)
+- [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 19:45; fifteen cases; the ruled `E10308` row, its compile-fail golden, and the harness inventory line land with it, and the `cstringview`/`cstringslicearg` expectations amend to the frozen crossing — the register's AR-15 note and the design's supersede note)
+- [x] 3.1.2 Run the suite and record the red phase (the arity cases join once AR-2 is ruled) ✅ (completed: 2026-10-11 19:45; ten red exactly as filed: the three view crossings emitted invalid C, the four arities were accepted, the three member callees emitted implicit calls, and `toCString(view)` reported `E10200`; the five references were green)
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Reject the view at a `cstring` parameter, report the unresolved member callee, and check the argument count (AR-2-ruled) — `compiler/src/sema/call.rs`
-- [ ] 3.2.2 Widen `toCString` to `str` and adapt its body — `stdlib/std.text.clo`
-- [ ] 3.2.3 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 3.2.1 Reject the view at a `cstring` parameter, report the unresolved member callee, and check the argument count (AR-2-ruled) — `compiler/src/sema/call.rs`, `compiler/src/sema/mod.rs`, `compiler/src/codegen/calls.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-11 19:45; amended: the frozen ffi crossing rules accept a view at an uncontracted parameter and cross it as its pointer, so the emitter spells the `char *` cast instead of reporting `E10200` — see the ledger)
+- [x] 3.2.2 Widen `toCString` to `str` and adapt its body — `stdlib/std.text.clo` ✅ (completed: 2026-10-11 19:45; the body reads the view's pointer, and the store conversion spells the `char *` cast the declaration expects)
+- [x] 3.2.3 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-11 19:45; spec 40/40 after the two fixes — the place-shaped member read and the literal-crossing guard)
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the report counts, the accepted references' byte-identity, the stdlib body) — `compiler/tests/checker_conformance_impl_test.rs`
-- [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses
+- [x] 3.3.1 Write the phase implementation pins (the report counts, the accepted references' byte-identity, the stdlib body) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 19:45; five pins: the view crossing, the unwrapped literal, both call shapes, the callable field, the widened `toCString` body and call sites; impl 18/18)
+- [~] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ⏳ (implemented: 2026-10-11 19:45; the three lenses dispatched after the commit)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 
