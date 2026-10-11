@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-12 00:55
-> **Progress**: 0/33 tasks (0%)
+> **Last Updated**: 2026-10-12 01:24
+> **Progress**: 2/33 tasks (6%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -41,7 +41,7 @@ task-size criteria: each task is independently testable and reviewable).
 
 ## Phase 1: Conditional arm ownership
 
-> **Phase baseline tree**: `5452bce` (the batch H plan creation)
+> **Phase baseline tree**: `0ae53eabf119f957d4b7b38083d94ce1781cbc88` (execution start: the batch H plan-creation tree plus the defect-verification ledger commit)
 > **Lenses**: correctness + memory-safety
 > **Reasoning**: high — two criticals plus the previously reverted whole-root attempt
 
@@ -50,8 +50,8 @@ task-size criteria: each task is independently testable and reviewable).
 **Reference**: [03-01](03-01-conditional-arm-ownership.md)
 **Objective**: Pin the three double-free shapes and the accepted arm controls.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (armstore, armreturn, armtake, armdefer, armguard, armnested, armplace)
-- [ ] 1.1.2 Run the suite and record the red phase
+- [x] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (armstore, armreturn, armtake, armdefer, armguard, armnested, armplace) ✅ (completed: 2026-10-12 01:24)
+- [x] 1.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-12 01:24)
 
 ### Step 1.2: Implementation
 
