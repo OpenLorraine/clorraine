@@ -13,6 +13,7 @@ use crate::load::Module;
 use crate::profile::Profile;
 use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, view_type, CaptureMode, Ty, TyKind, TypeTable};
 
+use super::function::ArrayTarget;
 use super::types::{
     c_type, collect_slice_types, declarator, function_declarator, innermost_is_struct,
     mangle_module, pointer_to_array_declarator, scalar_of, type_key,
@@ -819,7 +820,18 @@ impl<'a> Emitter<'a> {
         // operand it checks is evaluated, so evaluation order and per-branch
         // laziness match the function path.
         let lowered = self.materialize_init_value(&lowered, None);
-        let rendered = self.value(&lowered);
+        // A view destination takes an owned `String` value through the view
+        // constructor, exactly as the function path's store does; without the
+        // wrapper the handle cannot assign to the view.
+        let rendered = match (&declared_ty, &self.substitute(&lowered.ty).kind) {
+            (Some(declared), TyKind::Handle(handle))
+                if handle == "String"
+                    && matches!(declared.kind, TyKind::Str | TyKind::StaticStr) =>
+            {
+                format!("cl_string_view({})", self.value(&lowered))
+            }
+            _ => self.value(&lowered),
+        };
         self.push(&format!("    {target} = {rendered};"));
     }
 
@@ -1053,6 +1065,93 @@ impl<'a> Emitter<'a> {
             }),
         );
         (name, read)
+    }
+
+    /// Binds a struct literal whose fields need statements into an init local.
+    ///
+    /// A compound literal cannot carry an array member initialized from an
+    /// expression, so the literal declares a local in the empty state and
+    /// stores its fields in source order; the local reads where the literal
+    /// stood. The walk already emitted every field operand's guards where the
+    /// operand is evaluated, so this store only reads them — the body's field
+    /// emitter would place the guards a second time. Under a branch guard the
+    /// stores run only on the path that reaches the literal.
+    fn materialize_init_literal(&mut self, value: &Value, guard: Option<&str>) -> Value {
+        let ty = value.ty.clone();
+        let fields = match &value.kind {
+            ValueKind::StructLit { fields, .. } => fields.clone(),
+            _ => return value.clone(),
+        };
+        let name = self.next_init_local();
+        let empty = self.empty_state(&ty);
+        self.push(&format!(
+            "    {} = {empty};",
+            declarator(&ty, &name, &self.sema.table)
+        ));
+        let target = Place {
+            base: PlaceBase::Local(name.clone()),
+            projections: Vec::new(),
+            ty: ty.clone(),
+        };
+        let target_c = self.place(&target);
+        match guard {
+            Some(enclosing) => {
+                self.push(&format!("    if ({enclosing}) {{"));
+                self.emit_init_literal_fields(&target_c, &fields);
+                self.push("    }");
+            }
+            None => self.emit_init_literal_fields(&target_c, &fields),
+        }
+        Value::new(ty, ValueKind::Place(target))
+    }
+
+    /// Stores a walked literal's fields into a rendered C lvalue.
+    ///
+    /// The field rules mirror the body's literal store: a fixed-array field
+    /// goes through the fixed-array store core because C cannot assign an
+    /// array field, a nested literal that needs stores recurses field by
+    /// field, an owned conditional branches through the conditional move, and
+    /// every other field stores as one assignment with the view wrap its
+    /// destination drives. The guards are not emitted here: the walk already
+    /// placed each operand's guard where the operand was evaluated.
+    fn emit_init_literal_fields(&mut self, target_c: &str, fields: &[(String, Value)]) {
+        for (field_name, field) in fields {
+            let field_ty = self.substitute(&field.ty);
+            let field_c = format!("{target_c}.{field_name}");
+            if field_ty.is_fixed_array() {
+                let field_target = ArrayTarget::object(&field_c);
+                self.emit_fixed_array_assign_to(&field_target, &field_ty, field, false);
+                continue;
+            }
+            if let ValueKind::StructLit { fields: inner, .. } = &field.kind {
+                if self.struct_literal_needs_stores(inner) {
+                    self.emit_init_literal_fields(&field_c, inner);
+                    continue;
+                }
+            }
+            if self.needs_drop(&field_ty) {
+                if let ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } = &field.kind
+                {
+                    self.emit_conditional_move_assign(
+                        &field_c,
+                        &field_ty,
+                        condition,
+                        then_value,
+                        else_value,
+                    );
+                    continue;
+                }
+            }
+            let lowered = self.store_text(field, &field_ty);
+            self.push(&format!("    {field_c} = {lowered};"));
+            if self.needs_drop(&field_ty) {
+                self.emit_arm_source_moves(field, &field_ty);
+            }
+        }
     }
 
     /// Renders a call whose result lands in `destination`.
@@ -1366,21 +1465,34 @@ impl<'a> Emitter<'a> {
                         .map(|fill| Box::new(self.materialize_init_value(fill, guard))),
                 },
             ),
-            ValueKind::StructLit { name, fields } => Value::new(
-                value.ty.clone(),
-                ValueKind::StructLit {
-                    name: name.clone(),
-                    fields: fields
-                        .iter()
-                        .map(|(field_name, field_value)| {
-                            (
-                                field_name.clone(),
-                                self.materialize_init_value(field_value, guard),
-                            )
-                        })
-                        .collect(),
-                },
-            ),
+            ValueKind::StructLit { name, fields } => {
+                let walked = Value::new(
+                    value.ty.clone(),
+                    ValueKind::StructLit {
+                        name: name.clone(),
+                        fields: fields
+                            .iter()
+                            .map(|(field_name, field_value)| {
+                                (
+                                    field_name.clone(),
+                                    self.materialize_init_value(field_value, guard),
+                                )
+                            })
+                            .collect(),
+                    },
+                );
+                // A literal whose fields need statements (a fixed-array field,
+                // a deferred fill, a nested literal) has no C expression form:
+                // a compound literal cannot carry an array member initialized
+                // from an expression. Bind it into an init local and store the
+                // fields per statement, as the body's assignment path does.
+                match &walked.kind {
+                    ValueKind::StructLit { fields, .. } if self.struct_literal_needs_stores(fields) => {
+                        self.materialize_init_literal(&walked, guard)
+                    }
+                    _ => walked,
+                }
+            }
             ValueKind::Template(pieces) => Value::new(
                 value.ty.clone(),
                 ValueKind::Template(
@@ -1523,9 +1635,15 @@ impl<'a> Emitter<'a> {
                     || self.init_value_needs_materialization(then_value)
                     || self.init_value_needs_materialization(else_value)
             }
-            ValueKind::StructLit { fields, .. } => fields
-                .iter()
-                .any(|(_, field)| self.init_value_needs_materialization(field)),
+            ValueKind::StructLit { fields, .. } => {
+                // A literal whose fields need statements is bound into an init
+                // local wherever it stands, so a lazily evaluated position
+                // prepares it like a call that writes through a destination.
+                self.struct_literal_needs_stores(fields)
+                    || fields
+                        .iter()
+                        .any(|(_, field)| self.init_value_needs_materialization(field))
+            }
             ValueKind::ArrayLit { elements, fill } => {
                 elements
                     .iter()
@@ -1727,7 +1845,7 @@ impl<'a> Emitter<'a> {
                 // argument, like the body's dot-call path; a path that names a
                 // module or a declared function has no receiver.
                 let mut written_args: Vec<Value> = Vec::new();
-                if let Some(receiver) = self.init_dot_receiver(module, callee) {
+                if let Some(receiver) = self.global_dot_receiver(module, callee) {
                     written_args.push(receiver);
                 }
                 for arg in args {
@@ -1809,43 +1927,53 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// The receiver value a module-level dot call passes as its first argument.
+    /// The receiver value of a module-level dot callee.
     ///
-    /// Mirrors the body's dot-receiver semantics: a member spelling reads its
-    /// base, and a qualified spelling resolves only the head segment as a
-    /// value and keeps the middle segments as field projections. A head that
-    /// names no global (a module qualifier or a declared function) has no
-    /// receiver — even when a module path spells a segment like an exported
-    /// global.
-    fn init_dot_receiver(&mut self, module: &Module, callee: &Expr) -> Option<Value> {
+    /// The receiver is the callee's base for a member spelling and the
+    /// segments before the called name for a qualified spelling. Both the
+    /// dot-call receiver argument and the structural `len` fold read this
+    /// value, and the read carries the projected field's type: the fold
+    /// reports the field's extent and the call's argument conversions see the
+    /// receiver's own signature.
+    fn global_dot_receiver(&mut self, module: &Module, callee: &Expr) -> Option<Value> {
         match &callee.kind {
             ExprKind::Member { base, .. } => Some(self.lower_global(module, base)),
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                let method = name.segments.len() - 1;
-                let head = &name.segments[0];
-                let global = crate::init_graph::resolve_name_global(self.loaded, module, head)?;
-                let identity = GlobalId::new(global.module, global.name);
-                let mut ty = self
-                    .globals
-                    .get(&identity)
-                    .map(|info| info.ty.clone())
-                    .unwrap_or_else(Ty::unknown);
-                let mut projections: Vec<Projection> = Vec::new();
-                for segment in &name.segments[1..method] {
-                    projections.push(Projection::Field(segment.clone()));
-                    ty = self.field_type(&ty, segment);
-                }
-                Some(Value::new(
-                    ty.clone(),
-                    ValueKind::Place(Place {
-                        base: PlaceBase::Global(identity),
-                        projections,
-                        ty,
-                    }),
-                ))
+                self.global_projected_read(module, &name.segments[..name.segments.len() - 1])
             }
             _ => None,
         }
+    }
+
+    /// The projected read a module-level qualified receiver path names.
+    ///
+    /// Resolves only the head segment as a value and walks the rest as field
+    /// projections, so the read carries the projected field's type and a
+    /// module path that spells a segment like an exported global is never a
+    /// value. A head that names no global (a module qualifier or a declared
+    /// function) has no read.
+    fn global_projected_read(&mut self, module: &Module, segments: &[String]) -> Option<Value> {
+        let (head, rest) = segments.split_first()?;
+        let global = crate::init_graph::resolve_name_global(self.loaded, module, head)?;
+        let identity = GlobalId::new(global.module, global.name);
+        let mut ty = self
+            .globals
+            .get(&identity)
+            .map(|info| info.ty.clone())
+            .unwrap_or_else(Ty::unknown);
+        let mut projections: Vec<Projection> = Vec::new();
+        for segment in rest {
+            projections.push(Projection::Field(segment.clone()));
+            ty = self.field_type(&ty, segment);
+        }
+        Some(Value::new(
+            ty.clone(),
+            ValueKind::Place(Place {
+                base: PlaceBase::Global(identity),
+                projections,
+                ty,
+            }),
+        ))
     }
 
     /// Lowers a module-level call that names a compiler intrinsic.
@@ -1864,7 +1992,7 @@ impl<'a> Emitter<'a> {
     ) -> Option<Value> {
         let name = self.global_intrinsic_call(module, callee)?;
         if name == "len" {
-            let receiver = self.global_len_receiver(module, callee)?;
+            let receiver = self.global_dot_receiver(module, callee)?;
             return Some(Value::new(
                 Ty::usize_ty(),
                 ValueKind::Intrinsic {
@@ -1953,39 +2081,6 @@ impl<'a> Emitter<'a> {
             return None;
         }
         Some(name)
-    }
-
-    /// The receiver value of a module-level dot-`len` callee.
-    ///
-    /// The receiver is the callee's base for a member spelling and the path
-    /// before the method segment for a module-qualified spelling.
-    fn global_len_receiver(&mut self, module: &Module, callee: &Expr) -> Option<Value> {
-        match &callee.kind {
-            ExprKind::Member { base, .. } => Some(self.lower_global(module, base)),
-            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                let receiver = crate::ast::QualifiedName {
-                    segments: name.segments[..name.segments.len() - 1].to_vec(),
-                    span: name.span,
-                };
-                let global = crate::init_graph::resolve_global(self.loaded, module, &receiver)?;
-                let identity = GlobalId::new(global.module, global.name);
-                let projections = global.fields.into_iter().map(Projection::Field).collect();
-                let ty = self
-                    .globals
-                    .get(&identity)
-                    .map(|info| info.ty.clone())
-                    .unwrap_or_else(Ty::unknown);
-                Some(Value::new(
-                    ty.clone(),
-                    ValueKind::Place(Place {
-                        base: PlaceBase::Global(identity),
-                        projections,
-                        ty,
-                    }),
-                ))
-            }
-            _ => None,
-        }
     }
 
     /// Writes every function body, user functions first in source order, then

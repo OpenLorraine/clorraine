@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 02:10
-> **Progress**: 9/34 tasks (26%)
+> **Last Updated**: 2026-10-11 09:09
+> **Progress**: 16/34 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -81,7 +81,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 2: Initializer aggregate emission
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `f81235752c2d5fabe88b20b54083c82853b17251` (the `77c268d` tree)
 > **Lenses**: correctness + emission-integrity
 > **Reasoning**: medium — three contained emission forms, each with a body contract to mirror
 
@@ -90,23 +90,23 @@ task-size criteria in the make-plan quality checklist)
 **Reference**: [03-02](03-02-initializer-aggregate-emission.md) §Proposed Changes · [AR-7, AR-8, AR-9](00-ambiguity-register.md)
 **Objective**: Pin the store form, the view wrap, and the fold before any change.
 
-- [ ] 2.1.1 [spec-author] Write specification tests ST-F5 – ST-F7 — `compiler/tests/module_initializer_integrity_spec_test.rs`
-- [ ] 2.1.2 Run the spec suite and record the red phase (expected: invalid C / the wrapped-type error / the wrong `0`)
+- [x] 2.1.1 [spec-author] Write specification tests ST-F5 – ST-F7 — `compiler/tests/module_initializer_integrity_spec_test.rs` ✅ (completed: 2026-10-11 09:09; seven cases: store from a place, from a call, nested, conditional arm, template wrap, String-call wrap, field fold)
+- [x] 2.1.2 Run the spec suite and record the red phase (expected: invalid C / the wrapped-type error / the wrong `0`) ✅ (completed: 2026-10-11 09:09; red errors: missing braces / int-conversion for the stores, `ClStr` from `void *` for both str values, exit 254 for the fold)
 
 ### Step 2.2: Implementation
 
 **Reference**: [03-02](03-02-initializer-aggregate-emission.md) §Proposed Changes
 **Objective**: Give the init store the body store's destination decisions, shape-gated.
 
-- [ ] 2.2.1 Statement-form struct stores for fixed-array fields (DEF-134) — `compiler/src/codegen/program.rs`
-- [ ] 2.2.2 Destination-aware `str` view wrap (DEF-135) — `compiler/src/codegen/program.rs`
-- [ ] 2.2.3 Structural qualified `.len` fold (DEF-143) — `compiler/src/codegen/program.rs`
-- [ ] 2.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 2.2.1 Statement-form struct stores for fixed-array fields (DEF-134) — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-11 09:09; the literal binds into an init local wherever it stands, including nested fields and guarded conditional arms)
+- [x] 2.2.2 Destination-aware `str` view wrap (DEF-135) — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-11 09:09)
+- [x] 2.2.3 Structural qualified `.len` fold (DEF-143) — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-11 09:09; the shared projected read carries the field's type and keeps module paths out of the receiver)
+- [x] 2.2.4 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-11 09:09; spec 18/18 plain and under AddressSanitizer)
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the Phase 2 implementation pins (store fragments, wrapped text, folded constant) — `compiler/tests/module_initializer_integrity_impl_test.rs`
-- [ ] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 2.3.1 Write the Phase 2 implementation pins (store fragments, wrapped text, folded constant) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 09:09; impl 10/10)
+- [~] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 09:09; review dispatched)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 

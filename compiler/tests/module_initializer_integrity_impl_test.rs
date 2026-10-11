@@ -286,3 +286,134 @@ func main(): i32 {
         "cl_spec_mii_impl_lambdavalue_g = (cl_spec_mii_impl_lambdavalue_f)(cl_std_text_stringOf(cl_str(\"abc\")));",
     );
 }
+
+/// A struct literal with an array field stores statement-form.
+///
+/// The literal binds into an init local, the array field copies with
+/// `memcpy` from the source place, and the local assigns to the global — the
+/// body's literal-store shape.
+#[test]
+fn should_store_a_struct_literal_statement_form() {
+    let source = r#"module spec.mii.impl.structstore;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let garr: i32[2] = [1, 2];
+let boxed: BoxA = BoxA { arr: garr, tag: 3 };
+
+func main(): i32 {
+    return boxed.arr[0] + boxed.arr[1] + boxed.tag - 6;
+}
+"#;
+    let emitted = emit_host("structstore", source);
+    assert_contains("structstore", &emitted, "ClBoxA __cl_itmp0 = {0};");
+    assert_contains(
+        "structstore",
+        &emitted,
+        "memcpy(&(__cl_itmp0.arr), &(cl_spec_mii_impl_structstore_garr), sizeof(__cl_itmp0.arr));",
+    );
+    assert_contains("structstore", &emitted, "__cl_itmp0.tag = 3;");
+    assert_contains(
+        "structstore",
+        &emitted,
+        "cl_spec_mii_impl_structstore_boxed = __cl_itmp0;",
+    );
+}
+
+/// A call-filled array field writes through its hidden destination first.
+///
+/// The fixed-array call fills an init local, the field copies from it with
+/// `memcpy`, and the literal assigns to the global; no compound literal
+/// carries an array expression.
+#[test]
+fn should_store_a_call_filled_array_field() {
+    let source = r#"module spec.mii.impl.structstorecall;
+
+struct BoxA { arr: i32[2]; }
+
+func dup(): i32[2] {
+    return [5, 6];
+}
+
+let boxed: BoxA = BoxA { arr: dup() };
+
+func main(): i32 {
+    return boxed.arr[0] + boxed.arr[1] - 11;
+}
+"#;
+    let emitted = emit_host("structstorecall", source);
+    assert_contains(
+        "structstorecall",
+        &emitted,
+        "cl_spec_mii_impl_structstorecall_dup(__cl_itmp0);",
+    );
+    assert_contains(
+        "structstorecall",
+        &emitted,
+        "memcpy(&(__cl_itmp1.arr), &(__cl_itmp0), sizeof(__cl_itmp1.arr));",
+    );
+    assert_contains(
+        "structstorecall",
+        &emitted,
+        "cl_spec_mii_impl_structstorecall_boxed = __cl_itmp1;",
+    );
+}
+
+/// A template at a `str` global reaches it through the view constructor.
+#[test]
+fn should_wrap_a_template_at_a_str_global() {
+    let source = r#"module spec.mii.impl.templateview;
+
+let n: i32 = 4;
+let label: str = $"n={n}";
+
+func main(): i32 {
+    return i32(len(label)) - 3;
+}
+"#;
+    let emitted = emit_host("templateview", source);
+    assert_contains(
+        "templateview",
+        &emitted,
+        "cl_spec_mii_impl_templateview_label = cl_string_view(cl_string_concat(",
+    );
+}
+
+/// A String-valued call at a `str` global reaches it through the view wrapper.
+#[test]
+fn should_wrap_a_string_call_at_a_str_global() {
+    let source = r#"module spec.mii.impl.strviewcall;
+
+import { stringOf } from std.text;
+
+let s: str = stringOf("abc");
+
+func main(): i32 {
+    return i32(len(s)) - 3;
+}
+"#;
+    let emitted = emit_host("strviewcall", source);
+    assert_contains(
+        "strviewcall",
+        &emitted,
+        "cl_spec_mii_impl_strviewcall_s = cl_string_view(cl_std_text_stringOf(",
+    );
+}
+
+/// A qualified field `.len` folds to the field's declared extent.
+#[test]
+fn should_fold_a_field_len_in_an_initializer() {
+    let source = r#"module spec.mii.impl.foldlen;
+
+struct BoxB { arr: i32[2]; }
+
+let b: BoxB = BoxB { arr: [1, 2] };
+let n: usize = b.arr.len();
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let emitted = emit_host("foldlen", source);
+    assert_contains("foldlen", &emitted, "cl_spec_mii_impl_foldlen_n = 2;");
+}

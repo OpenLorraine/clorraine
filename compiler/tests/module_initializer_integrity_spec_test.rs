@@ -469,7 +469,7 @@ func main(): i32 {
 fn should_widen_an_argument_through_a_func_typed_global() {
     let source = r#"module spec.mii.globalwiden;
 
-import { String, stringOf } from std.text;
+import { stringOf } from std.text;
 
 func lenOf(s: str): i32 {
     return i32(len(s));
@@ -496,7 +496,7 @@ func main(): i32 {
 fn should_widen_an_argument_through_a_callable_field() {
     let source = r#"module spec.mii.fieldwiden;
 
-import { String, stringOf } from std.text;
+import { stringOf } from std.text;
 
 struct Box { get: func(str): i32; }
 
@@ -553,7 +553,7 @@ func main(): i32 {
 fn should_call_a_lambda_valued_global_from_a_module_initializer() {
     let source = r#"module spec.mii.lambdavalue;
 
-import { String, stringOf } from std.text;
+import { stringOf } from std.text;
 
 let f: func(String): i32 = (s: String) => i32(len(s));
 let g: i32 = f(stringOf("abc"));
@@ -605,4 +605,170 @@ func main(): i32 {
     let program = build_host_c("guardedpath", &scratch, &emitted);
     let output = run_with_timeout("guardedpath", &program, &[]);
     assert_exit("guardedpath", &output, 0);
+}
+
+/// A struct literal with an array field from a place stores statement-form.
+///
+/// The fixed-array field copies with `memcpy` exactly as the body's store
+/// does, so the strict build accepts the translation unit (red at the phase
+/// base: the compound literal carried an array expression and the strict
+/// build failed).
+#[test]
+fn should_store_a_struct_literal_with_an_array_field_from_a_place() {
+    let source = r#"module spec.mii.structstore;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let garr: i32[2] = [1, 2];
+let boxed: BoxA = BoxA { arr: garr, tag: 3 };
+
+func main(): i32 {
+    return boxed.arr[0] + boxed.arr[1] + boxed.tag - 6;
+}
+"#;
+    let output = run_memory("structstore", source);
+    assert_no_asan("structstore", &output);
+    assert_exit("structstore", &output, 0);
+}
+
+/// A struct literal with an array field from a call result stores the same way.
+///
+/// The call fills the hidden destination and the field copies with `memcpy`,
+/// so the strict build accepts and the elements read back (red at the phase
+/// base: the compound literal carried the call expression).
+#[test]
+fn should_store_a_struct_literal_with_an_array_field_from_a_call() {
+    let source = r#"module spec.mii.structstorecall;
+
+struct BoxA { arr: i32[2]; }
+
+func dup(): i32[2] {
+    return [5, 6];
+}
+
+let boxed: BoxA = BoxA { arr: dup() };
+
+func main(): i32 {
+    return boxed.arr[0] + boxed.arr[1] - 11;
+}
+"#;
+    let output = run_memory("structstorecall", source);
+    assert_no_asan("structstorecall", &output);
+    assert_exit("structstorecall", &output, 0);
+}
+
+/// A template initializer at a `str` destination receives the view wrapper.
+///
+/// The concatenation result reaches the `str` binding through the view
+/// constructor, exactly as the body's store does, so the strict build accepts
+/// and the bytes read back (red at the phase base: the raw handle was
+/// assigned and the strict build failed).
+#[test]
+fn should_wrap_a_template_initializer_at_a_str_destination() {
+    let source = r#"module spec.mii.templateview;
+
+let n: i32 = 4;
+let label: str = $"n={n}";
+
+func main(): i32 {
+    return i32(len(label)) - 3;
+}
+"#;
+    let output = run_memory("templateview", source);
+    assert_no_asan("templateview", &output);
+    assert_exit("templateview", &output, 0);
+}
+
+/// A qualified dot-`len` on a fixed-array field folds to the extent.
+///
+/// The initializer's receiver walks the field projections like the body's
+/// structural fold, so the binding holds the declared extent instead of a
+/// silent zero (red at the phase base: the fold yielded `0` and the run
+/// failed).
+#[test]
+fn should_fold_a_qualified_dot_len_in_a_module_initializer() {
+    let source = r#"module spec.mii.foldlen;
+
+struct BoxB { arr: i32[2]; }
+
+let b: BoxB = BoxB { arr: [1, 2] };
+let n: usize = b.arr.len();
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("foldlen", source);
+    assert_no_asan("foldlen", &output);
+    assert_exit("foldlen", &output, 0);
+}
+
+/// A String-valued call at a `str` destination receives the view wrapper.
+///
+/// The call's owned result reaches the `str` binding through the view
+/// constructor, exactly as the body's store does, so the strict build accepts
+/// and the bytes read back (red at the phase base: the raw handle was
+/// assigned and the strict build failed).
+#[test]
+fn should_wrap_a_string_call_at_a_str_destination() {
+    let source = r#"module spec.mii.strviewcall;
+
+import { stringOf } from std.text;
+
+let s: str = stringOf("abc");
+
+func main(): i32 {
+    return i32(len(s)) - 3;
+}
+"#;
+    let output = run_host("strviewcall", source);
+    assert_exit("strviewcall", &output, 0);
+}
+
+/// A nested struct literal with an array field stores through the outer local.
+///
+/// The inner literal's array field copies with `memcpy` and the outer local
+/// carries both levels, so the strict build accepts (red before the phase's
+/// store work: the nested compound literal carried the array expression).
+#[test]
+fn should_store_a_nested_struct_literal_with_an_array_field() {
+    let source = r#"module spec.mii.nestedstore;
+
+struct BoxA { arr: i32[2]; }
+struct Outer { inner: BoxA; }
+
+let garr: i32[2] = [1, 2];
+let o: Outer = Outer { inner: BoxA { arr: garr } };
+
+func main(): i32 {
+    return o.inner.arr[1] - 2;
+}
+"#;
+    let output = run_memory("nestedstore", source);
+    assert_no_asan("nestedstore", &output);
+    assert_exit("nestedstore", &output, 0);
+}
+
+/// A conditional arm's struct literal stores under its branch guard.
+///
+/// Only the chosen arm's fields store, exactly as the body's conditional
+/// store keeps each arm lazy (red before the phase's store work: the arm's
+/// compound literal carried the array expression).
+#[test]
+fn should_store_a_conditional_arm_literal_under_its_guard() {
+    let source = r#"module spec.mii.guardstore;
+
+struct BoxA { arr: i32[2]; }
+
+let garr: i32[2] = [1, 2];
+let c: bool = true;
+let boxed: BoxA = c ? BoxA { arr: garr } : BoxA { arr: [3, 4] };
+
+func main(): i32 {
+    return boxed.arr[0] - 1;
+}
+"#;
+    let output = run_memory("guardstore", source);
+    assert_no_asan("guardstore", &output);
+    assert_exit("guardstore", &output, 0);
 }

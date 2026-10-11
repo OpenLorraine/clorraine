@@ -57,3 +57,32 @@ Spec suite 11/11 plain and under `RDC_ASAN=1`; impl 5/5; `make check` 60 suites 
 Direct probes: the two-file collision builds and runs (the receiver is not prepended); every
 other receiver and widening shape stays green; the qualified-call family is byte-identical to
 the batch base.
+
+## Phase 2: Initializer aggregate emission (DEF-134, DEF-135, DEF-143)
+
+**Baseline**: `f81235752c2d5fabe88b20b54083c82853b17251` (the `77c268d` tree). Implementation committed before the review.
+
+### Deliverables
+
+| # | Shape | Result |
+| - | ----- | ------ |
+| DEF-134 | A struct literal whose fields need statements (a fixed-array field, a deferred fill, a nested literal) binds into an init local and stores per field with `memcpy` for array fields — the body's literal-store predicate and shape, in every position: whole-init, nested field, array element, conditional arm under its branch guard | Fixed; spec cases `structstore`, `structstorecall`, `nestedstore`, `guardstore` |
+| DEF-135 | A `str`/`static str` destination takes an owned `String` value through the view constructor (`templates` and String-valued calls) | Fixed; spec cases `templateview`, `strviewcall` |
+| DEF-143 | A qualified dot-`len` receiver walks the field projections, so a fixed-array field folds to its extent; the receiver value now also resolves only the head segment (a module path that spells a segment like an exported global stays a named call) | Fixed; spec case `foldlen`; the shared helper now serves both the call receiver and the fold |
+
+### Red evidence
+
+- Store shapes: `missing braces around initializer` / `initialization of 'int' from 'i32 *'` on the emitted compound literals.
+- Str values: `incompatible types when assigning to type 'ClStr' from type 'void *'` (template) and `... from type 'ClString'` (the call).
+- Fold: `n = 0`, run exit 254 where 2 is expected.
+- The nested and conditional-arm positions were probe-verified red before the fix (`C BUILD FAILED` on the same errors) and are green after.
+
+### Implementation notes
+
+- **Shape convergence (intended).** A struct literal with a fixed-array field now takes the statement store in every case, including array-literal fields (`BoxB { arr: [1, 2] }`) whose compound-literal spelling built before. This follows the body's predicate exactly (`struct_literal_needs_stores`), so the initializer and body emissions agree; `make check` (60 suites) shows no pinned shape changed.
+- **Guard placement.** The initializer walk emits each operand's guard where the operand is evaluated, so the literal store does not re-emit them; a guarded (conditional-arm) literal stores under its branch guard and single-emits the operand guards — verified with a run-time division probe (the trap fires, one check). One corner remains: an unguarded fixed-array field built from an array literal re-emits an element's guard at the store core (correct but redundant) — filed **DEF-206** with the analysis (the store core's guard emission is what makes the guarded path single, so the fix is a deliberate flag, not a removal).
+- **The collapse bonus.** `global_len_receiver` and the dot receiver now share one helper; the module-path collision class fixed in Phase 1's re-review cannot reappear through the fold.
+
+### Verification
+
+Spec suite 18/18 plain and under `RDC_ASAN=1`; impl 10/10; `make check` 60 suites green.
