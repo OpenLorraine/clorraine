@@ -421,7 +421,7 @@ func main(): i32 {
 /// A literal receiver's fold materializes nothing.
 ///
 /// The extent is a structural property, so the initializer emits the folded
-/// constant and no receiver stores at all — exactly as the body\'s fold
+/// constant and no receiver stores at all — exactly as the body's fold
 /// drops them.
 #[test]
 fn should_fold_a_literal_receiver_without_receiver_stores() {
@@ -441,5 +441,31 @@ func main(): i32 {
         count(&emitted, "__cl_itmp"),
         0,
         "literalfold: the fold must not materialize the receiver"
+    );
+}
+
+/// A free `len` of a literal receiver folds without materializing it.
+///
+/// Both spellings fold through one rule: the fixed-array extent is a
+/// structural property, so the initializer emits the constant and no
+/// receiver stores.
+#[test]
+fn should_fold_a_free_len_of_a_literal_receiver() {
+    let source = r#"module spec.mii.impl.freelen;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let n: usize = len(BoxA { arr: [1, 2], tag: 3 }.arr);
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let emitted = emit_host("freelen", source);
+    assert_contains("freelen", &emitted, "cl_spec_mii_impl_freelen_n = 2u;");
+    assert_eq!(
+        count(&emitted, "__cl_itmp"),
+        0,
+        "freelen: the fold must not materialize the receiver"
     );
 }

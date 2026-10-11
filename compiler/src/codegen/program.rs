@@ -1764,6 +1764,17 @@ impl<'a> Emitter<'a> {
                         IntrinsicArg::Type(written) => type_arg = Some(self.resolve_written(written)),
                     }
                 }
+                // The free `len` spelling folds a fixed-array operand exactly
+                // as the dot spelling does: the extent is a structural
+                // property, so the operand never materializes and its own
+                // operands are never evaluated.
+                if name == "len" && type_arg.is_none() {
+                    if let [receiver] = values.as_slice() {
+                        if let Some(extent) = self.fixed_array_len_extent(receiver) {
+                            return Value::new(Ty::usize_ty(), ValueKind::Int(extent as i128));
+                        }
+                    }
+                }
                 ValueKind::Intrinsic {
                     name: name.clone(),
                     args: values,
@@ -1976,6 +1987,22 @@ impl<'a> Emitter<'a> {
         ))
     }
 
+    /// The extent a fixed-array `len` operand folds to, when it folds.
+    ///
+    /// A fixed-array length is a structural property: the fold reads no
+    /// runtime value, so the operand's stores never emit and its operands
+    /// are never evaluated, exactly as the function path's structural fold
+    /// drops them. A slice or an owned `Array` yields `None`, because their
+    /// length is a runtime field. Both the dot spelling and the free `len`
+    /// spelling fold through this rule.
+    fn fixed_array_len_extent(&self, receiver: &Value) -> Option<usize> {
+        let ty = self.resolved_value_ty(receiver);
+        match &ty.kind {
+            TyKind::Array { extents, .. } => extents.first().and_then(|size| *size),
+            _ => None,
+        }
+    }
+
     /// Lowers a module-level call that names a compiler intrinsic.
     ///
     /// Mirrors the function path's rule: a user or `ffi` declaration of the
@@ -1995,15 +2022,12 @@ impl<'a> Emitter<'a> {
             let receiver = self.global_dot_receiver(module, callee)?;
             // A fixed-array receiver folds to its extent here, before any
             // materialization: the fold reads no runtime value, so the
-            // receiver's stores and operands are never evaluated, exactly as
-            // the function path's structural fold drops them. A slice or an
-            // owned `Array` keeps its receiver, because their length is a
-            // runtime field.
-            let receiver_ty = self.resolved_value_ty(&receiver);
-            if let TyKind::Array { extents, .. } = &receiver_ty.kind {
-                if let Some(extent) = extents.first().and_then(|size| *size) {
-                    return Some(Value::new(Ty::usize_ty(), ValueKind::Int(extent as i128)));
-                }
+            // receiver's stores never emit and its operands are never
+            // evaluated, exactly as the function path's structural fold drops
+            // them. A slice or an owned `Array` keeps its receiver, because
+            // their length is a runtime field.
+            if let Some(extent) = self.fixed_array_len_extent(&receiver) {
+                return Some(Value::new(Ty::usize_ty(), ValueKind::Int(extent as i128)));
             }
             return Some(Value::new(
                 Ty::usize_ty(),

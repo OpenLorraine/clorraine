@@ -819,3 +819,48 @@ func main(): i32 {
     assert_no_asan("folddiscard", &output);
     assert_exit("folddiscard", &output, 0);
 }
+
+/// A free `len` of a literal receiver folds without materializing it.
+///
+/// Both `len` spellings share one structural fold, so the initializer emits
+/// the folded constant and no receiver stores (red at the fix base: the
+/// materialized receiver was set but unused and the strict build failed).
+#[test]
+fn should_fold_a_free_len_of_a_literal_receiver() {
+    let source = r#"module spec.mii.freelenfold;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let n: usize = len(BoxA { arr: [1, 2], tag: 3 }.arr);
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("freelenfold", source);
+    assert_no_asan("freelenfold", &output);
+    assert_exit("freelenfold", &output, 0);
+}
+
+/// A free `len` never evaluates its folded receiver's operands.
+///
+/// The shared structural fold reads no runtime value, so a discarded
+/// receiver's division does not run and no trap fires, exactly as the dot
+/// spelling and the body fold.
+#[test]
+fn should_not_evaluate_a_free_folded_receiver() {
+    let source = r#"module spec.mii.freelendiscard;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let d: i32 = 0;
+let n: usize = len(BoxA { arr: [4 / d, 2], tag: 1 }.arr);
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("freelendiscard", source);
+    assert_no_asan("freelendiscard", &output);
+    assert_exit("freelendiscard", &output, 0);
+}

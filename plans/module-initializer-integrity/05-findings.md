@@ -95,6 +95,19 @@ The same reviewer verified every other deliverable, the guarded-path guard place
 
 **Cross-batch pin updated**: `store_emission_integrity_impl_test.rs`'s `init-intrinsic-len` pin expected the renderer's bare `3`; the shared fold now spells the honest `usize` constant `3u` (consistent with a written literal). Re-pinned with that note — the store-emission suite is otherwise untouched.
 
+### Scoped re-review (`6fc0bbb..39adc5d`) and its fix round
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| RV-002 | 🟠 major | The sibling spelling `len(BoxA { arr: [1, 2], tag: 3 }.arr)` still materialized the receiver while the renderer folded it away (`-Werror=unused-but-set-variable`), and a discarded receiver's division trapped where the body folds without evaluating. | **Ruling (auto-design, delegated):** fix in-phase — the same class as the already-fixed RV-001 and a mechanism decision mirroring the body's structural fold. Fixed: both spellings fold through one helper (`fixed_array_len_extent`); the free spelling folds at its lowering arm. Spec cases `freelenfold`, `freelendiscard`; impl pin asserts the constant and zero init locals. |
+| RV-003 | 🟡 minor | A stray escape in a new doc comment (`body\'s`). | Fixed. |
+
+The same reviewer verified RV-001 closed for the dot spelling (three reproductions strict-built and run; the new cases red at the fix base; the division case also red at the batch base). The emission-integrity audit of `77c268d..6fc0bbb` reported **no findings**: all 13 corpus deltas are the intended DEF-134/135/143 shapes, every strict-build failure is base-identical, and every variant is deterministic.
+
+**Adjacent class closed by the fold work**: the audit's P4 (an initializer `xs[k].arr.len()` with a run-time `k` evaluated the discarded receiver and trapped where the body folds without evaluating) is fixed by the lowering-time fold — verified by probe (exit 0, no bounds guard).
+
+**Filed from the audit's pre-existing classes**: DEF-207 (a nullable-view conditional with a null arm dereferences NULL — the body spelling segfaults at base too) and DEF-208 (a mixed `str`/`String` conditional emits an invalid ternary in both spellings).
+
 ### Verification
 
-Spec suite 20/20 plain and under `RDC_ASAN=1`; impl 11/11; `make check` 60 suites green.
+Spec suite 22/22 plain and under `RDC_ASAN=1`; impl 12/12; `make check` 60 suites green.
