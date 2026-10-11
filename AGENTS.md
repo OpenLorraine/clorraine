@@ -252,6 +252,15 @@ in `CMD`).
   `__cl_ownedN` owner binding and release counts, the preemption-edge drop, the
   argument materialization, the duty/report counts and spans, and byte-identical
   re-emission where pinned).
+- `compiler/tests/module_initializer_integrity_spec_test.rs` holds the
+  **specification tests** for module-initializer integrity (initializer call
+  resolution: lifted lambdas, func-typed globals, callable fields, generics,
+  and qualified receivers; aggregate stores, the `str` view wrap, the
+  structural `len` fold, owned-temporary release and view retention, and the
+  write-mutability checks; the body-side slice type arguments), and
+  `compiler/tests/module_initializer_integrity_impl_test.rs` holds its
+  **implementation tests** (emitted call and store shapes, wrapped text,
+  folded constants, release text and null guards, and byte-identity pins).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

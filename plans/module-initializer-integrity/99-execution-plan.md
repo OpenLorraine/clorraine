@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 14:53
-> **Progress**: 30/33 tasks (91%)
+> **Last Updated**: 2026-10-11 14:58
+> **Progress**: 33/33 tasks (100%) — complete
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -174,7 +174,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 5: Batch close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `de5c27d2b4b3a325be8b6d73e8b32ef167e749ad` (the `8f4ea3a` tree)
 > **Lenses**: none new — the close-out runs the full verification over already-reviewed phases
 > **Reasoning**: low — verification and documentation sync only
 
@@ -183,9 +183,9 @@ task-size criteria in the make-plan quality checklist)
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria
 **Objective**: Run the full acceptance, sync the docs and the roadmap, and close the plan.
 
-- [ ] 5.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan spec suite; record the evidence
-- [ ] 5.1.2 Update `AGENTS.md` (test naming map with the new suites)
-- [ ] 5.1.3 Sync the roadmap rows (DEF-130 – DEF-135, DEF-137, DEF-143, DEF-152 → Done with evidence), record the findings ledger, and close the plan
+- [x] 5.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan spec suite; record the evidence ✅ (completed: 2026-10-11 14:58; `make check` 60 suites; `make verify` rc=0 — every hosted-amiga cross-toolchain leg, the vbcc build-only leg, the FS-UAE interrupt-counter and graphics captures, and the six runtime faults all passed; spec 38/38 plain and under `RDC_ASAN=1`; impl 19/19)
+- [x] 5.1.2 Update `AGENTS.md` (test naming map with the new suites) ✅ (completed: 2026-10-11 14:58; the module-initializer integrity suite pair added)
+- [x] 5.1.3 Sync the roadmap rows (DEF-130 – DEF-135, DEF-137, DEF-143, DEF-152 → Done with evidence), record the findings ledger, and close the plan ✅ (completed: 2026-10-11 14:58; nine rows closed with per-row evidence clauses)
 
 **Verify**: `make check`; `make verify`
 

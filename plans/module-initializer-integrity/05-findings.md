@@ -219,3 +219,32 @@ The same reviewer verified the deliverable (the filed repro, the spec case's bas
 ### Verification
 
 Spec suite 38/38 plain and under `RDC_ASAN=1`; impl 19/19; `make check` 60 suites green.
+
+## Phase 5: Batch close-out
+
+**Baseline**: `de5c27d2b4b3a325be8b6d73e8b32ef167e749ad` (the `8f4ea3a` tree).
+
+### Full verification
+
+| Leg | Result |
+| --- | ------ |
+| `make check` | 60 suites `ok`; `spec/check.sh` OK |
+| `make verify` | **rc=0, all legs passed**: the hosted-amiga cross-toolchain corpus (all portable programs match), the vbcc build-only leg, the FS-UAE interrupt-counter and graphics captures, and the six runtime faults under `vamos` |
+| AddressSanitizer spec suite | 38/38 under `RDC_ASAN=1` |
+| Strict-build sweep | every accepted unit of the spec/corpus/examples suites builds under `-Wall -Wextra -Werror` in host, freestanding, and hosted-amiga emission (the phase audits' differentials) |
+
+### Documentation and roadmap
+
+- `AGENTS.md` gained the `module_initializer_integrity_spec_test.rs` / `_impl_test.rs` entry in the test naming map.
+- The nine batch-F defect rows (DEF-130–DEF-135, DEF-137, DEF-143, DEF-152) are **Done ✅** with per-row `Fixed by …` evidence clauses; the review residue (DEF-196–DEF-212) stays in the backlog for the following batches.
+- The plan is closed at 33/33 tasks.
+
+### Batch summary
+
+| Phase | Rows | Review outcome |
+| ----- | ---- | -------------- |
+| 1 — call resolution | DEF-131/132/133 | 3 lenses; two fix rounds (a regression and a module-path collision) |
+| 2 — aggregate emission | DEF-134/135/143 | correctness + emission; two fix rounds (the fold materialization and the free `len` spelling) |
+| 3 — release and checks | DEF-130/152/204 | three lenses; one fix round (the retention compounds, consumed arguments, signature-first modes, the `.len` parity) |
+| 4 — body slice typedefs | DEF-137 | correctness + emission; one fix round (the store pointer operand) |
+| 5 — close-out | — | `make verify` rc=0 |
