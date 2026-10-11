@@ -772,3 +772,50 @@ func main(): i32 {
     assert_no_asan("guardstore", &output);
     assert_exit("guardstore", &output, 0);
 }
+
+/// A literal receiver's fold never materializes the receiver.
+///
+/// The extent is a structural property, so the initializer emits the folded
+/// constant and no receiver stores, exactly as the body's fold does (red at
+/// the phase head: the materialized receiver was set but unused and the
+/// strict build failed; the fold discards it).
+#[test]
+fn should_fold_a_literal_receiver_len_without_materializing_it() {
+    let source = r#"module spec.mii.literalfold;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let n: usize = BoxA { arr: [1, 2], tag: 3 }.arr.len();
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("literalfold", source);
+    assert_no_asan("literalfold", &output);
+    assert_exit("literalfold", &output, 0);
+}
+
+/// A folded receiver's operands are never evaluated.
+///
+/// The body's structural fold reads no runtime value, so a discarded
+/// receiver's division does not run and no trap fires; the initializer folds
+/// the same way (red at the batch base and the phase head: the materialized
+/// receiver evaluated the division and trapped).
+#[test]
+fn should_not_evaluate_a_folded_receiver() {
+    let source = r#"module spec.mii.folddiscard;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let d: i32 = 0;
+let n: usize = BoxA { arr: [4 / d, 2], tag: 1 }.arr.len();
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("folddiscard", source);
+    assert_no_asan("folddiscard", &output);
+    assert_exit("folddiscard", &output, 0);
+}

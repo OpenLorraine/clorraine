@@ -1993,6 +1993,18 @@ impl<'a> Emitter<'a> {
         let name = self.global_intrinsic_call(module, callee)?;
         if name == "len" {
             let receiver = self.global_dot_receiver(module, callee)?;
+            // A fixed-array receiver folds to its extent here, before any
+            // materialization: the fold reads no runtime value, so the
+            // receiver's stores and operands are never evaluated, exactly as
+            // the function path's structural fold drops them. A slice or an
+            // owned `Array` keeps its receiver, because their length is a
+            // runtime field.
+            let receiver_ty = self.resolved_value_ty(&receiver);
+            if let TyKind::Array { extents, .. } = &receiver_ty.kind {
+                if let Some(extent) = extents.first().and_then(|size| *size) {
+                    return Some(Value::new(Ty::usize_ty(), ValueKind::Int(extent as i128)));
+                }
+            }
             return Some(Value::new(
                 Ty::usize_ty(),
                 ValueKind::Intrinsic {

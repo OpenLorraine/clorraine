@@ -939,7 +939,7 @@ fn should_render_module_intrinsics_in_the_init_function() {
 
     let (unit, _) = emit_twice("init-intrinsic-len", INIT_LEN);
     assert!(
-        unit.contains("cl_spec_sei_impl_initlen_n = 3;"),
+        unit.contains("cl_spec_sei_impl_initlen_n = 3u;"),
         "init-intrinsic-len: the fixed-array count did not fold"
     );
 }

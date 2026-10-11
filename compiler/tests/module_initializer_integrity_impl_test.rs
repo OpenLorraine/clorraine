@@ -415,5 +415,31 @@ func main(): i32 {
 }
 "#;
     let emitted = emit_host("foldlen", source);
-    assert_contains("foldlen", &emitted, "cl_spec_mii_impl_foldlen_n = 2;");
+    assert_contains("foldlen", &emitted, "cl_spec_mii_impl_foldlen_n = 2u;");
+}
+
+/// A literal receiver's fold materializes nothing.
+///
+/// The extent is a structural property, so the initializer emits the folded
+/// constant and no receiver stores at all — exactly as the body\'s fold
+/// drops them.
+#[test]
+fn should_fold_a_literal_receiver_without_receiver_stores() {
+    let source = r#"module spec.mii.impl.literalfold;
+
+struct BoxA { arr: i32[2]; tag: i32; }
+
+let n: usize = BoxA { arr: [1, 2], tag: 3 }.arr.len();
+
+func main(): i32 {
+    return i32(n) - 2;
+}
+"#;
+    let emitted = emit_host("literalfold", source);
+    assert_contains("literalfold", &emitted, "cl_spec_mii_impl_literalfold_n = 2u;");
+    assert_eq!(
+        count(&emitted, "__cl_itmp"),
+        0,
+        "literalfold: the fold must not materialize the receiver"
+    );
 }

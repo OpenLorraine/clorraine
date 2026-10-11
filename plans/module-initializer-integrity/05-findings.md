@@ -83,6 +83,18 @@ the batch base.
 - **Guard placement.** The initializer walk emits each operand's guard where the operand is evaluated, so the literal store does not re-emit them; a guarded (conditional-arm) literal stores under its branch guard and single-emits the operand guards — verified with a run-time division probe (the trap fires, one check). One corner remains: an unguarded fixed-array field built from an array literal re-emits an element's guard at the store core (correct but redundant) — filed **DEF-206** with the analysis (the store core's guard emission is what makes the guarded path single, so the fix is a deliberate flag, not a removal).
 - **The collapse bonus.** `global_len_receiver` and the dot receiver now share one helper; the module-path collision class fixed in Phase 1's re-review cannot reappear through the fold.
 
+### Review and fix round (`77c268d..6fc0bbb`)
+
+**Correctness reviewer** found one phase regression:
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| RV-001 | 🟠 major | A needs-stores struct literal as the receiver of a folded `.len()` (`BoxA { arr: [1, 2], tag: 3 }.arr.len()`) was materialized by the walk while the renderer folded the intrinsic without reading it: `-Werror=unused-but-set-variable` at the phase head, where the batch base folded it cleanly. | Fixed: the fixed-array fold now happens at lowering time (`lower_global_intrinsic`), returning the extent as a value before any materialization — the body's structural-fold semantics. The discarded receiver's operands are never evaluated (a division inside it no longer traps, matching the body twin), and slice/`Array` receivers still keep their runtime value. Spec cases `literalfold` and `folddiscard`; impl pin asserts the folded constant and zero init locals. |
+
+The same reviewer verified every other deliverable, the guarded-path guard placement (single, lazy), the unchanged emissions of pure conditional/logical shapes, and the test discriminability.
+
+**Cross-batch pin updated**: `store_emission_integrity_impl_test.rs`'s `init-intrinsic-len` pin expected the renderer's bare `3`; the shared fold now spells the honest `usize` constant `3u` (consistent with a written literal). Re-pinned with that note — the store-emission suite is otherwise untouched.
+
 ### Verification
 
-Spec suite 18/18 plain and under `RDC_ASAN=1`; impl 10/10; `make check` 60 suites green.
+Spec suite 20/20 plain and under `RDC_ASAN=1`; impl 11/11; `make check` 60 suites green.

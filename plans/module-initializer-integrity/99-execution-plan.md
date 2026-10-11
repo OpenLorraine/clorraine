@@ -2,7 +2,7 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 09:09
+> **Last Updated**: 2026-10-11 09:22
 > **Progress**: 16/34 tasks (47%)
 > **CodeOps Artifact Schema**: 1
 
@@ -106,7 +106,7 @@ task-size criteria in the make-plan quality checklist)
 ### Step 2.3: Impl Tests & Review
 
 - [x] 2.3.1 Write the Phase 2 implementation pins (store fragments, wrapped text, folded constant) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 09:09; impl 10/10)
-- [~] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 09:09; review dispatched)
+- [~] 2.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 09:09; correctness review merged — RV-001 fixed at lowering time; ledger §Phase 2; scoped re-review dispatched)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 
