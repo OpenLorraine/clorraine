@@ -46,10 +46,11 @@ unknown member callee (DEF-148), and the `toCString` stdlib widening (DEF-154).
 
 ### 1. Reject a view at a `cstring` parameter (DEF-144) — `sema/call.rs`
 
-In the `cstring`-parameter argument path, keep the literal allowance and the `String`-handle
-case, and report `E10200` (`cannot convert 'str' to 'cstring' implicitly`) for a `str` or
-slice argument; the help names the explicit route (`toCString`). One report per site; the
-accepted shapes' emission is untouched.
+In the `cstring`-parameter argument path, keep the literal allowance, and report `E10200`
+(`cannot convert '{type}' to 'cstring' implicitly`) for every other argument the conversion
+table does not admit: a `str` view, a slice, a `String` handle, or a `raw` pointer (the fix
+round extended the original `str`/slice pair by the same rule). The help names the explicit
+route (`toCString`). One report per site; the accepted shapes' emission is untouched.
 
 ### 2. Check the argument count (DEF-147/DEF-213) — `sema/call.rs` *(AR-2-gated)*
 
@@ -88,7 +89,7 @@ caller's emission is byte-identical (the implicit widening provides the view). L
 | `memberraw` | `p.foo(5)` on a `raw` receiver | one `E10212` |
 | `memberfield` | a callable field and a same-named free function | accepted (the field-wins rule) |
 | `cstringviewconv` | `toCString(view)` (DEF-154) | accepted; builds and runs |
-| `cstringownedconv` | `toCString(string)` | accepted; byte-identical emission |
+| `cstringownedconv` | `toCString(string)` | accepted; the intended `toCString` delta only |
 
 ## Acceptance
 

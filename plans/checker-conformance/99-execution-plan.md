@@ -2,9 +2,9 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 20/38 tasks (53%)
+> **Progress**: 21/38 tasks (55%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 20:06
+> **Last Updated**: 2026-10-11 20:19
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
@@ -85,8 +85,8 @@
 
 ### Step 3.3: Impl Tests & Review
 
-- [x] 3.3.1 Write the phase implementation pins (the report counts, the accepted references' byte-identity, the stdlib body) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 19:45; five pins: the view crossing, the unwrapped literal, both call shapes, the callable field, the widened `toCString` body and call sites; impl 18/18)
-- [~] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ⏳ (reviews reported at 2026-10-11 20:06: the emission audit found nothing, the correctness lens five minors, the semantics lens one major and one minor; the fix round reverted the `cstring` crossing to `E10200`, cached the ffi parameter types, suppressed the inference cascade, and corrected the records; the scoped re-review is dispatched)
+- [x] 3.3.1 Write the phase implementation pins (the report counts, the accepted references' byte-identity, the stdlib body) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 19:45; revised in the fix round: four pins — the unwrapped literal, both call shapes, the callable field, and the widened `toCString` body and call sites; impl 17/17)
+- [x] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ✅ (completed: 2026-10-11 20:19; the emission audit found nothing, the correctness and semantics reviews one major and seven minors; the fix round reverted the `cstring` crossing to `E10200`, cached the ffi parameter types, suppressed the inference cascade, corrected the records, and pinned the two fixes; the scoped re-reviews verified all three fixes and their five minors are fixed; DEF-235 closed, DEF-237 withdrawn, DEF-239–DEF-244 filed)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

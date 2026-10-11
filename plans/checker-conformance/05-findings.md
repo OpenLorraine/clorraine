@@ -190,7 +190,7 @@ Spec suite 25/25 plain and under `RDC_ASAN=1`; impl 13/13; `make check` 62 suite
 
 | # | Shape | Result |
 | - | ----- | ------ |
-| DEF-144 | A view argument at an uncontracted `cstring` parameter crosses as its pointer: the emitter spells `(char *)view.ptr` (the frozen Ch 12 CN-11/§10 crossing), so a `str` or slice builds and runs where the view struct was passed before | Fixed; spec `cstringview`/`cstringslicearg` (exit 7); impl pin `Open((char *)(s).ptr, 0)`; the literal stays unwrapped |
+| DEF-144 | A view, slice, `String`, or `raw` argument at a `cstring` parameter reports the conversion: the parameter is contracted and the conversion table exhaustive, so the argument reports `E10200` with the explicit `toCString` route (the phase's crossing experiment was reverted by the review) | Fixed; spec `cstringview`/`cstringslicearg`/`cstringowned`/`cstringraw` (one `E10200` each); the literal stays unwrapped |
 | DEF-147/DEF-213 | The written count is judged against the declared parameters: the dot-call candidate path against the remaining list (the receiver is not written) and the direct-call path against the whole list, under the ruled `E10308`; the generic and `ffi` direct-call twins join the same rule; a zero-parameter free function is not a dot-call candidate (Ch 04 §8's "must accept the receiver as its first parameter") | Fixed; spec `dotarity`, `directarity`, `genericarity`, `ffiarity`, `memberzero`; the registry row, its compile-fail golden, and the harness inventory line land under the AR-2 ruling |
 | DEF-148 | Every receiver whose surface resolves no field and no matching candidate reports `E10212` once (the frozen "zero matches is an ordinary member error"), instead of emitting an implicit call; a non-callable field of the name keeps its own path | Fixed; spec `memberunknown`, `memberraw`, `memberzero`; `memberfield` pins the field-wins rule |
 | DEF-154 | `toCString(s: str)` returns the view's pointer (`s.ptr`), and the store conversion spells the `char *` cast the declaration expects; the `String`→`str` widening keeps owned callers working | Fixed; spec `cstringviewconv`, `cstringownedconv`; impl pins the body (`return (char *)s.ptr;`), the widened parameter (`char * cl_std_text_toCString(ClStr s)`), and the call-site widening (`cl_string_view(owned)`) |
@@ -227,9 +227,10 @@ failed the strict build on the prototype; the three member cases emitted implici
   free-function candidate, so a zero-parameter function falls through to the intrinsic lookup
   and otherwise reports the unknown member instead of passing the receiver to a no-argument C
   function.
-- **The uncontracted-extern rule set (CN-10/CN-11) is unchecked**: an `ffi` call outside
-  `unsafe` and an owned handle at an uncontracted parameter are both accepted (filed as
-  DEF-237), which is why the `cstringowned` case pins acceptance and the strict build only.
+- **The uncontracted-extern rules (CN-10/CN-11) are implemented** (`own/call_check.rs`); a
+  `cstring`/`i32` declaration has no uncontracted parameter, so a plain `Open` call needs no
+  `unsafe` (the stdlib calls it without one). The earlier DEF-237 filing was withdrawn with
+  this correction.
 
 ### Verification
 
@@ -264,10 +265,25 @@ conditional arms); P3 is a hosted-amiga fixture-name conflict of the `Open` test
 suites are host-profile, and the conflict reproduces identically on the base compiler); P4 is
 the suites' appended C stubs.
 
-### Verification (after the fix round)
+### Scoped re-reviews of the fix round (`7e32f39..88a818e`)
 
-Spec suite 41/41 plain and under `RDC_ASAN=1`; impl 17/17; `make check` 62 suites green. The
-scoped re-review is dispatched.
+**Both re-reviews confirmed the three fixes behaviorally** (the four rejections, the
+one-report cache, the suppressed cascade, the reverted emitter, the byte-identical references)
+**and added five minors, all fixed in-phase, plus three pre-existing classes filed:**
+
+| Finding | Severity | Resolution |
+| ------- | -------- | ---------- |
+| RV-006 = SR-003 | 🟡 minor | Five stale record locations and the design's §1 sentence updated to the reverted state (this reconciliation) |
+| RV-007 = SR-005 | 🟡 minor | Two pins added: the inferred-generic arity (one `E10308`, no `E10301`) and the ffi declaration's one-report cache (one `E10226` for two call sites) |
+| SR-004 | 🟡 minor | The qualified spelling (`probe.Open(view, 0)`) bypasses the ffi checks like the arity: DEF-240's fix direction extended to cover it |
+| PE-1 | 🟠 pre-existing | An ffi result's declared type is discarded (the sema types it unknown), so a mismatched result passes conversions: filed as DEF-243 |
+| PE-2 | 🟠 pre-existing | A parameter-typed argument's conversion is deferred to an instance audit that does not exist (`call<str>` and the ordinary twin emit invalid C): filed as DEF-242 |
+| PE-3 | 🟡 pre-existing | A never-called ffi declaration's types are never validated: filed as DEF-244 |
+| PE-4/PE-5 | note | The untyped `.ptr` is DEF-238; the null-shaped local's `E10010`-to-`E10012` move is Phase 4's DEF-151 |
+
+### Verification (after the fix round and the re-reviews)
+
+Spec suite 43/43 plain; impl 17/17; `make check` 62 suites green.
 
 ## Phase 4: Null-shaped values
 

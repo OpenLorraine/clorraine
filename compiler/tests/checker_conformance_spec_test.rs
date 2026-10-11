@@ -1381,3 +1381,52 @@ func main(): i32 {
     let output = run_host("cstringownedconv", source);
     assert_exit("cstringownedconv", &output, 7);
 }
+
+/// An inferred generic call with a wrong count reports only the arity.
+///
+/// The inference cannot bind from arguments that are missing, so its
+/// missing-type-parameter report would be a cascade of the arity mistake; the
+/// suppression is pinned here (red at the fix-round base: two reports).
+#[test]
+fn should_report_only_the_arity_for_an_inferred_generic_call() {
+    let source = r#"module spec.cc.genericaritycascade;
+
+func first<T>(a: T, b: T): T {
+    return a;
+}
+
+func main(): i32 {
+    return i32(first());
+}
+"#;
+    assert_rejected_once(
+        "genericaritycascade",
+        source,
+        "E10308",
+        &["wrong number of arguments for 'first': expected 2, found 0"],
+        &["E10301"],
+    );
+}
+
+/// A rejected `ffi` declaration type reports once per declaration.
+///
+/// The declared parameter types resolve at the first call site and are
+/// cached, so a second call does not repeat the declaration's report (red at
+/// the fix-round base: one report per call site).
+#[test]
+fn should_report_an_ffi_declaration_type_once() {
+    let source = r#"module spec.cc.ffideclonce;
+
+ffi probe {
+    func cl_probe_zero(x: i32[0]): i32;
+}
+
+func main(): i32 {
+    unsafe {
+        return cl_probe_zero() + cl_probe_zero();
+    }
+}
+"#;
+    assert_rejected_once("ffideclonce", source, "E10226", &[], &[]);
+}
+
