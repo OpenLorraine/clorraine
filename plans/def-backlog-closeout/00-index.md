@@ -6,7 +6,7 @@
 > slice view over a statement temporary, an ownerless call result consumed as a borrow inside a
 > larger expression, a do-while deferred return leaking the condition temporary, and an unlisted
 > lambda capture emitting undeclared C)
-> **Status**: Planning Complete
+> **Status**: Complete — executed and verified 2026-10-04 … 2026-10-12 (44/44 tasks; `make verify` all legs passed; close-out review lenses clean; CFN-1 filed as DEF-255)
 > **Created**: 2026-10-03 22:53
 > **Implements**: DEF-63, DEF-64, DEF-65, DEF-66, DEF-67, DEF-68, DEF-69
 > **CodeOps Artifact Schema**: 1

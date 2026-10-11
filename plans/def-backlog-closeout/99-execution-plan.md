@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-08 00:08
-> **Progress**: 42/44 tasks (95%)
+> **Last Updated**: 2026-10-12 00:47
+> **Progress**: 44/44 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -760,14 +760,14 @@ observations are filed as DEF-91 – DEF-94.
 - [x] 6.1.2 Write and run the close-out probe runner with one run probe per fixed defect — `build/def-backlog-closeout-probes/run-def-backlog-closeout.sh` ✅ (completed: 2026-10-04 14:29)
 - [x] 6.1.3 Update the `AGENTS.md` test map with both new suites and set roadmap DEF-63 – DEF-69 to Done ✅ (completed: 2026-10-04 14:29) — `AGENTS.md` test map entry added; all seven roadmap rows verified `Done ✅`
 - [x] 6.1.4 Verify acceptance criteria 1 – 8 and confirm the spec-directory diff from the plan-start baseline contains only the approved E10405 change ✅ (completed: 2026-10-04 14:30)
-- [~] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included) ⏳ (review returned 2026-10-04 14:41; CO-1 fixed in-phase per the user's option A ruling; the memory and emission re-review lenses returned clean; the correctness re-review lens is pending on resume — session checkpoint for a machine restart 2026-10-08 00:08)
-- [ ] 6.1.6 Resolve close-out findings within scope, write the plan summary into this document, and mark the plan Complete in `00-index.md`
+- [x] 6.1.5 Dispatch the close-out review (blast-radius and test-integrity steps included) ✅ (completed: 2026-10-12 00:47) — the correctness re-review lens was re-dispatched on resume and returned **PASS** on the CO-1 fix diff `f10d6f6…2848517` (the pin is red at the parent and green at the fix; 27 host strict-build + ASan probes clean across every expression-body spelling; non-lambda units byte-identical; suites green), so all three lenses are now clean; adjacent pre-existing notes: **CFN-1** (a void expression-bodied lambda over `assert`/`panic` emits `return 0;` and drops the abort) is filed as DEF-255, **CFN-2** (report-only `close_scope_after_edge()` cleanup nit) stays in the close-out findings table
+- [x] 6.1.6 Resolve close-out findings within scope, write the plan summary into this document, and mark the plan Complete in `00-index.md` ✅ (completed: 2026-10-12 00:47) — CFN-1 filed as DEF-255 (a separate pre-existing defect, out of this plan's scope), CFN-2 report-only; the Plan Summary below records the phase outcomes; `00-index.md` reads Complete
 
 **Deliverables**:
 - [x] All verification passing
 - [x] Close-out probe runner with recorded results
 - [x] Updated `AGENTS.md` and roadmap
-- [ ] Close-out review with no open critical/major finding
+- [x] Close-out review with no open critical/major finding (all three lenses clean; CFN-1 filed as DEF-255; CFN-2 report-only)
 
 **Verify**: `make verify`
 
@@ -808,8 +808,8 @@ clean with no expression-temporary leak.
 | 4 | The only `spec/` changes are the approved `E10405` row, golden, and `ASSERTED_CODES` entry; `spec/check.sh` passes | `git diff 12b02b668370bcb93594c557ece0de9c72f8fc5b..2091fe2 -- spec/` touches exactly `spec/14-diagnostics.md` (one-row registry addition) and `spec/tests/compile-fail/E10405_unlisted_capture.clo` (new golden); the `ASSERTED_CODES` entry lives in `compiler/tests/compile_fail_spec_test.rs`; `spec/check.sh` OK (27 files, 105 compile-fail tests) | ✅ |
 | 5 | The close-out probe runner reproduces each original defect as fixed and exits zero | 6.1.2 runner exit 0 | ✅ |
 | 6 | Unaffected programs keep their emitted C | the per-phase emission-integrity audits found no unintended differences (including the Phase 5 byte-identical re-review); determinism suite and every corpus leg green in `make verify`; the close-out review re-audits the plan-start baseline against the final head | ✅ |
-| 7 | `AGENTS.md` lists the new suites; roadmap DEF-63 – DEF-69 are Done; the plan is Complete | `AGENTS.md` test map entry added; all seven roadmap rows `Done ✅`; plan Complete is written by 6.1.6 | ⏳ final step |
-| 8 | Every phase review dispatched per the matrix with blast-radius and test-integrity steps; no open critical/major finding | every phase review record in this document names the blast-radius and test-integrity results and closes with no open critical/major; the close-out review runs in 6.1.5 | ⏳ 6.1.5 |
+| 7 | `AGENTS.md` lists the new suites; roadmap DEF-63 – DEF-69 are Done; the plan is Complete | `AGENTS.md` test map entry added; all seven roadmap rows `Done ✅`; `00-index.md` reads Complete (6.1.6) | ✅ |
+| 8 | Every phase review dispatched per the matrix with blast-radius and test-integrity steps; no open critical/major finding | every phase review record in this document names the blast-radius and test-integrity results and closes with no open critical/major; the close-out review's three lenses are all clean (the correctness re-dispatch returned PASS on 2026-10-12) | ✅ |
 
 **Close-out review findings (2026-10-04 14:41)** — correctness (generic), memory-safety, and
 emission-integrity lenses dispatched in parallel on the close-out diff (`5c53c90…f10d6f6`) and the
@@ -842,8 +842,47 @@ repro, a capture, two temporaries, a block body, a nested lambda, and owned retu
 exactly one release each; the non-lambda DEF-67 probes emit byte-identically), **emission integrity
 PASS** (986 jobs; 57 differ, all `cl_lambda_*`: 11 intended read-before-ladder reorders and 46
 `#line`-only markers; corpus, run, and staged sets byte-identical; 0 introduced strict-C failures),
-and **correctness pending** (the lens was cancelled with the session; the budgeted round re-dispatches
-it on resume).
+and **correctness PASS** (the lens was re-dispatched on resume; the verdict and its evidence are
+recorded below).
+
+**Correctness re-review evidence (2026-10-12 00:47)** — the pending correctness lens was
+re-dispatched over the same fix diff (`f10d6f6…2848517`) and returned **PASS**: the pin
+`should_release_the_temporary_after_the_lifted_lambda_reads_it` fails at the parent (`b788c3e`)
+and passes at the fix (plain and under `RDC_ASAN=1`); 27 host strict-build + ASan probes cover
+every expression-body spelling (a call temporary, a parameter plus a temporary, two temporaries, a
+capture, nested and directly-invoked lambdas, block bodies, owned locals, conditionals, and
+projections) with zero sanitizer findings; lambda units reading an owned temporary differ from the
+parent exactly by the intended `read; goto ladder` reorder; every non-lambda corpus unit is
+byte-identical; the suites are green (spec 45, impl 32, `cargo test --workspace` exit 0). Two
+adjacent notes were recorded: **CFN-1** (🟠 major, pre-existing and base-identical — a void
+expression-bodied lambda over `assert`/`panic` emits `return 0;` in a `void` function and drops the
+abort) is filed as DEF-255; **CFN-2** (report-only — the `Expr` arm pops scopes with
+`self.scopes.pop()` rather than `close_scope_after_edge()`; no observable effect) is noted for a
+future `lift_lambda` cleanup.
+
+---
+
+## Plan Summary
+
+All seven filed defects are closed through the specification-first loop (spec tests → red →
+implementation → green → implementation tests → verification) with independent post-phase
+reviews; the close-out review's correctness, memory-safety, and emission-integrity lenses are all
+clean.
+
+| Phase | Outcome |
+| ----- | ------- |
+| 1 — Take/move-out integrity (DEF-63, DEF-64, DEF-66) | A guarded member-root take binds the call root through the deferred `Materialize` shape; an indexed aggregate-literal consume pins the run-time index and empties the selected slot; a slice element over a statement temporary is moved out before the row release. The reviews filed DEF-70 – DEF-75 |
+| 2 — Expression temporaries (DEF-67) | An ownerless call result consumed as a borrow inside a larger expression (an intrinsic argument, a dot-`len` receiver, a guard) binds once and releases once. The reviews filed DEF-76 – DEF-77 |
+| 3 — Borrow out-slot ABI (DEF-65) | Nullable `borrow T?` out-slots are spelled as pointers when the kinds are passed (the declaration key and the call site agree); the non-null incoming slot writes through, and the instance key keeps nullability distinct. The reviews filed DEF-78 – DEF-83 |
+| 4 — Defer condition release (DEF-68) | A do-while body's deferred/return edges receive the condition's registered releases through the successor append, newest-first and deduped. The reviews filed DEF-84 – DEF-90 |
+| 5 — Capture diagnostic (DEF-69) | An unlisted enclosing name is rejected with the approved `E10405`; the dotted spellings route through the shared name check; the re-review is clean. The review filed DEF-92 – DEF-94 |
+| 6 — Close-out | `make verify` all legs passed; the 15-probe runner sanitizer-clean; CO-1 (the DEF-67 crash regression, filed as DEF-91) fixed in-phase under the user's option A; the correctness re-review returned PASS (2026-10-12); CFN-1 filed as DEF-255, CFN-2 report-only |
+
+Verification totals: specification suite 45/45, implementation suite 32/32, `make check` 42 suites
+green at the close-out head, `make verify` green, and the `spec/` diff from the plan start contains
+only the approved `E10405` registry row and its golden. Residuals discovered by the reviews and the
+execution are filed as backlog rows DEF-70 – DEF-94 (DEF-91, the plan-introduced CO-1 crash, was
+fixed in-phase); the close-out's own correctness re-review added DEF-255 (CFN-1).
 
 ---
 
