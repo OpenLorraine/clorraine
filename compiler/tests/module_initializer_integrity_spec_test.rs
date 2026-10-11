@@ -864,3 +864,180 @@ func main(): i32 {
     assert_no_asan("freelendiscard", &output);
     assert_exit("freelendiscard", &output, 0);
 }
+
+/// An owned member projection in an initializer releases its temporary.
+///
+/// A call result used only by a member projection binds into an init local
+/// and releases at the init function's end, so the program start leaks
+/// nothing (red at the phase base: host AddressSanitizer reports the
+/// `Direct leak` the row filed).
+#[test]
+fn should_release_an_owned_member_projection_temporary() {
+    let source = r#"module spec.mii.memberrelease;
+
+import { String, stringOf } from std.text;
+
+struct Box { count: i32; name: String; }
+
+func mkBox(): Box {
+    return Box { count: 3, name: stringOf("n") };
+}
+
+let g: i32 = mkBox().count;
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let output = run_memory("memberrelease", source);
+    assert_no_asan("memberrelease", &output);
+    assert_exit("memberrelease", &output, 0);
+}
+
+/// An owned `String[2]` element projection releases the array temporary.
+///
+/// The call result binds into an init local and releases at the init
+/// function's end, so both element owners free (red at the phase base: host
+/// AddressSanitizer reports two `Direct leak` records).
+#[test]
+fn should_release_an_owned_element_projection_temporary() {
+    let source = r#"module spec.mii.elementrelease;
+
+import { String, stringOf } from std.text;
+
+func two(): String[2] {
+    return [stringOf("a"), stringOf("bb")];
+}
+
+let g: usize = len(two()[0]);
+
+func main(): i32 {
+    return i32(g) - 1;
+}
+"#;
+    let output = run_memory("elementrelease", source);
+    assert_no_asan("elementrelease", &output);
+    assert_exit("elementrelease", &output, 0);
+}
+
+/// An owned conditional arm in an initializer releases the chosen value.
+///
+/// The conditional's chosen `String` binds into an init local and releases
+/// at the init function's end (red at the phase base: host AddressSanitizer
+/// reports the chosen arm's `Direct leak`, while the body twin is clean).
+#[test]
+fn should_release_an_owned_conditional_arm_temporary() {
+    let source = r#"module spec.mii.armrelease;
+
+import { String, stringOf } from std.text;
+
+let c: bool = true;
+let g: i32 = i32(len(c ? stringOf("a") : stringOf("bb")));
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    let output = run_memory("armrelease", source);
+    assert_no_asan("armrelease", &output);
+    assert_exit("armrelease", &output, 0);
+}
+
+/// An owned argument to a lend parameter releases after the call.
+///
+/// The argument temporary binds into an init local and releases at the init
+/// function's end, exactly as the body's owned-argument materialization
+/// does (red at the phase base: host AddressSanitizer reports a 12-byte
+/// `Direct leak`).
+#[test]
+fn should_release_an_owned_argument_temporary() {
+    let source = r#"module spec.mii.argrelease;
+
+import { String, stringOf } from std.text;
+
+func first(xs: String): i32 {
+    return i32(len(xs));
+}
+
+let g: i32 = first(stringOf("abc"));
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let output = run_memory("argrelease", source);
+    assert_no_asan("argrelease", &output);
+    assert_exit("argrelease", &output, 0);
+}
+
+/// A write through a const global in an initializer reports like the body.
+///
+/// The initializer's write checks run the function path's rule: `G++` on a
+/// `const` global reports one `E10023` (red at the phase base: the write was
+/// accepted and mutated the const at startup).
+#[test]
+fn should_reject_a_const_global_write_in_an_initializer() {
+    let source = r#"module spec.mii.constwrite;
+
+const G: i32 = 0;
+let H: i32 = i32(G++);
+
+func main(): i32 {
+    return H;
+}
+"#;
+    assert_rejected_once(
+        "constwrite",
+        source,
+        "E10023",
+        &["cannot assign to immutable 'G'"],
+        &["E10042"],
+    );
+}
+
+/// A write through an immutable view in an initializer reports like the body.
+///
+/// `S[0]++` through the `str` global reports one `E10042`, exactly as the
+/// body spelling (red at the phase base: the write was accepted and emitted
+/// C the strict build rejects).
+#[test]
+fn should_reject_an_immutable_view_write_in_an_initializer() {
+    let source = r#"module spec.mii.viewwrite;
+
+let S: str = "ab";
+let T: i32 = i32(S[0]++);
+
+func main(): i32 {
+    return T;
+}
+"#;
+    assert_rejected_once(
+        "viewwrite",
+        source,
+        "E10042",
+        &["cannot write through immutable view 'S'"],
+        &["E10023"],
+    );
+}
+
+/// Read-only initializer expressions stay accepted.
+///
+/// The checks judge writes only: a const read, an element read, and a
+/// narrowed view read in initializers keep compiling (the controls for the
+/// write rejections).
+#[test]
+fn should_accept_read_only_initializer_expressions() {
+    let source = r#"module spec.mii.readonly;
+
+const G: i32 = 7;
+let S: str = "ab";
+let a: i32 = G + 1;
+let b: i32 = i32(S[0]);
+
+func main(): i32 {
+    return a + b - 105;
+}
+"#;
+    let output = run_host("readonly", source);
+    assert_exit("readonly", &output, 0);
+}

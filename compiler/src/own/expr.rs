@@ -1025,7 +1025,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the memory it names is not part of the binding: `BASE.field = ...`
     /// writes the pointee, which the const does not forbid. Only a write with
     /// no projection reaches the binding itself.
-    fn writes_through_raw_global(&self, id: &ir::GlobalId, projections: &[ir::Projection]) -> bool {
+    pub(super) fn writes_through_raw_global(&self, id: &ir::GlobalId, projections: &[ir::Projection]) -> bool {
         !projections.is_empty()
             && self
                 .program

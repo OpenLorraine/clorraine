@@ -111,3 +111,44 @@ The same reviewer verified RV-001 closed for the dot spelling (three reproductio
 ### Verification
 
 Spec suite 22/22 plain and under `RDC_ASAN=1`; impl 12/12; `make check` 60 suites green.
+
+**Audit coverage boundary (recorded for transparency).** The emission-integrity audit ran
+`77c268d..6fc0bbb` with no findings; the dedicated re-audit of the fix range
+(`39adc5d`/`032d92c`) was cancelled before running. The fix-range delta is bounded and
+reviewer-verified: the correctness re-review probed every receiver kind (fixed-array field,
+element, 2D, plain global, slice, owned `Array`, `str`/`String`, call results, run-time
+index, conditional, lazy operands, and both literal spellings) and confirmed only the intended
+changes — the `u` spelling, no receiver stores, no evaluation of discarded operands; the
+cross-batch pin was re-pinned for the one changed spelling. The full acceptance run in Phase 5
+re-exercises the corpus and the cross-profile legs over the final tree.
+
+## Phase 3: Initializer release and checks (DEF-130, DEF-152, DEF-204)
+
+**Baseline**: `df4154dc81fefc7f57d0ef9371c0cd1bc18d9e93` (the `032d92c` tree). Implementation committed before the review.
+
+### Deliverables
+
+| # | Shape | Result |
+| - | ----- | ------ |
+| DEF-130 | An init-owner registry records every owning init local; the init function's end releases them in reverse creation order through the ordinary drop emitter (null-guarded handles, element walks for fixed arrays). A member projection's call result and a `String[2]` element projection now bind into init locals instead of leaking | Fixed; spec cases `memberrelease`, `elementrelease`, `armrelease` |
+| DEF-204 | An owned call result, argument, or template in a non-retained position binds into an init local, so the release pass frees it; a `take` parameter's argument drops its record because the callee frees it | Fixed; spec case `argrelease`; the `take` exclusion probed for named and func-typed callees (ASan-clean) |
+| DEF-152 | A check-only walk over initializer expressions judges updates and assignments with the function path's module-level rules and messages: `E10023` for a `const` binding, `E10042` for an element of an immutable view, exactly one report per site | Fixed; spec cases `constwrite`, `viewwrite`; the read-only control stays accepted |
+
+### Implementation notes
+
+- **The walk runs through the Phase 1 synthetic checker** (`check_initializer_writes`), so place resolution (`place_target`), the `const` rule with its through-`raw` carve-out, and the immutable-view predicate are the checker's own — no duplicated predicate. Lambda bodies are skipped: the lift checks them with the ordinary body rules.
+- **Retention rule.** A view destination (`str`/`static str`) keeps the storage it points into for the program's lifetime, so its initializer's owned values stay unbound and unreleased; every other destination copies its bytes and releases its temporaries. This keeps the Phase 2 wrap emissions byte-identical.
+- **Resolution context fix (intended).** The init emitter now resolves names in the module it is initializing (`current_module`), where it previously inherited the last emitted body's module; a same-named function elsewhere could have supplied a callee's symbol or modes. Multi-module initializer emissions may differ from the batch base for the better.
+- **Shape convergence (intended).** An owned argument, arm, or template in a non-view position now binds into an init local and releases; the `lambdavalue` impl pin was re-pinned to the bound form plus its release (one cross-suite pin change; `make check` confirms no other pinned shape moved).
+- **DEF-203 (the global-borrow rule) stays filed**: it is a borrow rule, not one of the write-mutability rules R9 names, and the check walk deliberately judges writes only.
+- **DEF-209 (the body-side projection leak)** stays filed: the body's own projection-root binding is a separate ownership fix outside this batch.
+
+### Red evidence
+
+- The four release shapes: host-ASan `Direct leak` reports (10 B member, 11+10 B elements, 10 B arm, 12 B argument) at the phase base, and the ASan spec run failed exactly those four cases.
+- The two write shapes: the front end accepted both at the phase base (the spec rejection assertions failed), and the view write's emission failed the strict build (`increment of read-only location`).
+- The read-only control needed no implementation change (the walk reports writes only).
+
+### Verification
+
+Spec suite 29/29 plain and under `RDC_ASAN=1`; impl 17/17; `make check` 60 suites green.

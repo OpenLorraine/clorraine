@@ -122,6 +122,18 @@ pub(super) struct Emitter<'a> {
     /// `__cl_itmp<N>` locals; the counter resets per init function, so the
     /// numbering is stable per function.
     pub(super) init_locals: usize,
+    /// The owning init locals of the current init function, in creation order.
+    ///
+    /// The release pass frees them in reverse order at the init function's
+    /// end; a local an untaken path left zero drops nothing.
+    pub(super) init_owners: Vec<(String, Ty)>,
+    /// True while the current global's initializer feeds a view destination.
+    ///
+    /// A view keeps the storage it points into for the program's lifetime, so
+    /// the owned values of such an initializer are retained rather than
+    /// released; every other destination copies its bytes and releases its
+    /// temporaries.
+    pub(super) init_retain_owners: bool,
     /// Parameters rendered as a pointer because they are a writable lend of a
     /// non-duplicable struct; a member access on one dereferences first.
     pub(super) pointer_params: BTreeSet<String>,
@@ -263,6 +275,8 @@ impl<'a> Emitter<'a> {
             function: None,
             local_names: BTreeMap::new(),
             init_locals: 0,
+            init_owners: Vec::new(),
+            init_retain_owners: false,
             pointer_params: BTreeSet::new(),
             scope_actions: BTreeMap::new(),
             rungs: Vec::new(),

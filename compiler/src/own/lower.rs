@@ -514,6 +514,121 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Reports the write-mutability errors a module initializer carries.
+    ///
+    /// A module initializer has no enclosing body, so the statement path's
+    /// checks never see it: a write through a `const` module binding or an
+    /// element of an immutable view is judged here with the same rules and
+    /// messages the function path reports. Only updates and assignments are
+    /// judged, and a lambda body is skipped because the lift checks it with
+    /// the ordinary body rules.
+    pub(super) fn check_initializer_writes(&mut self, values: &'a [&'a Expr]) {
+        for value in values {
+            self.walk_initializer_writes(value);
+        }
+    }
+
+    /// Reports a write through a `const` module binding or an immutable view.
+    ///
+    /// Mirrors the update path's module-level judgment: a `const` binding
+    /// reports `E10023` first, and the immutable-view element rule runs
+    /// otherwise, so a rejected write keeps exactly one diagnostic.
+    fn check_initializer_write_target(&mut self, expr: &'a Expr) {
+        let Some(PlaceTarget::Global(id, projections)) = self.place_target(expr) else {
+            return;
+        };
+        let is_const = self
+            .program
+            .globals
+            .get(&id)
+            .is_some_and(|global| global.is_const);
+        // A field update through a `raw` global reaches the pointee, not the
+        // constant pointer binding.
+        let through_pointer = self.writes_through_raw_global(&id, &projections);
+        if is_const && !through_pointer {
+            self.error(
+                "E10023",
+                format!("cannot assign to immutable '{}'", id.name),
+                "declare it with `let` (mutable)",
+                expr.span,
+            );
+            return;
+        }
+        self.check_global_immutable_view_write(&id, &projections, expr.span);
+    }
+
+    /// Walks one initializer expression for its write forms.
+    fn walk_initializer_writes(&mut self, expr: &'a Expr) {
+        match &expr.kind {
+            ExprKind::Unary { op, operand } if op.is_update() => {
+                self.check_initializer_write_target(operand);
+                self.walk_initializer_writes(operand);
+            }
+            ExprKind::Unary { operand, .. } => self.walk_initializer_writes(operand),
+            ExprKind::Assign { target, value, .. } => {
+                self.check_initializer_write_target(target);
+                self.walk_initializer_writes(target);
+                self.walk_initializer_writes(value);
+            }
+            ExprKind::Call { callee, args, .. } => {
+                self.walk_initializer_writes(callee);
+                for arg in args {
+                    self.walk_initializer_writes(&arg.value);
+                }
+            }
+            ExprKind::Index { base, index } => {
+                self.walk_initializer_writes(base);
+                self.walk_initializer_writes(index);
+            }
+            ExprKind::Member { base, .. } => self.walk_initializer_writes(base),
+            ExprKind::Binary { left, right, .. } => {
+                self.walk_initializer_writes(left);
+                self.walk_initializer_writes(right);
+            }
+            ExprKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.walk_initializer_writes(condition);
+                self.walk_initializer_writes(then_value);
+                self.walk_initializer_writes(else_value);
+            }
+            ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
+                self.walk_initializer_writes(value)
+            }
+            ExprKind::StructLiteral { fields, .. } => {
+                for field in fields {
+                    self.walk_initializer_writes(&field.value);
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.walk_initializer_writes(element);
+                }
+                if let Some(fill) = fill {
+                    self.walk_initializer_writes(fill);
+                }
+            }
+            ExprKind::Unsafe(inner) => self.walk_initializer_writes(inner),
+            ExprKind::IntrinsicCall { args, .. } => {
+                for arg in args {
+                    if let crate::ast::IntrinsicArg::Expr(inner) = arg {
+                        self.walk_initializer_writes(inner);
+                    }
+                }
+            }
+            ExprKind::Template(pieces) => {
+                for piece in pieces {
+                    if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
+                        self.walk_initializer_writes(inner);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Lowers one capture expression per recorded capture, in field order.
     ///
     /// A `Copy` capture reads the enclosing binding's value, so the environment

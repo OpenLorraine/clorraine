@@ -762,8 +762,19 @@ impl<'a> Emitter<'a> {
             ));
             self.push("{");
             self.init_locals = 0;
+            self.init_owners.clear();
+            // An initializer resolves its names in its own module: a
+            // same-named function elsewhere must not supply the callee's
+            // symbol, signature, or parameter modes.
+            self.current_module = module_name.clone();
             for (name, value) in self.global_init_order(&module_name) {
                 self.emit_global_init(&module_name, &name, value);
+            }
+            // Release every owning init temporary in reverse creation order.
+            // A local an untaken conditional path left zero drops nothing.
+            let owners = std::mem::take(&mut self.init_owners);
+            for (name, ty) in owners.into_iter().rev() {
+                self.emit_drop_expr(&name, &ty);
             }
             self.push("}");
             self.push("");
@@ -785,6 +796,12 @@ impl<'a> Emitter<'a> {
             .values()
             .find(|global| global.module == module_name && global.name == name)
             .map(|global| global.ty.clone());
+        // A view destination keeps the storage it points into for the
+        // program's lifetime, so this initializer's owned values are retained
+        // rather than released; every other destination copies its bytes.
+        self.init_retain_owners = declared_ty
+            .as_ref()
+            .is_some_and(|declared| matches!(declared.kind, TyKind::Str | TyKind::StaticStr));
         let mut lowered = match self.loaded.module(module_name) {
             Some(module) => self.lower_global(module, value),
             None => Value {
@@ -1056,6 +1073,12 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        if !self.init_retain_owners && self.needs_drop(&value.ty) {
+            // The local holds an owned value, so the release pass frees it at
+            // the init function's end; a `take` argument's record is dropped
+            // again when the callee consumes it.
+            self.init_owners.push((name.clone(), value.ty.clone()));
+        }
         let read = Value::new(
             value.ty.clone(),
             ValueKind::Place(Place {
@@ -1154,6 +1177,37 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Drops the release record of each argument a `take` parameter consumes.
+    ///
+    /// The argument's own walk may have bound it into an owning init local; a
+    /// `take` parameter moves that value into the callee, which frees it, so
+    /// the init function's release pass must not free it again. The modes come
+    /// from a known name or from the callable's own signature; a callee whose
+    /// signature is unknown keeps its arguments owned here, which is the lend
+    /// convention.
+    fn forget_consumed_arguments(&mut self, callee: &str, receiver: Option<&Value>, args: &[Value]) {
+        let modes = self.callee_modes(callee).or_else(|| {
+            let ty = self.callee_func_type(callee, receiver)?;
+            match ty.kind {
+                TyKind::Func(signature) => {
+                    Some(signature.params.iter().map(|param| param.mode).collect())
+                }
+                _ => None,
+            }
+        });
+        let Some(modes) = modes else {
+            return;
+        };
+        for (arg, mode) in args.iter().zip(modes) {
+            if mode != crate::ast::Mode::Take {
+                continue;
+            }
+            if let Some(name) = stored_init_read_name(arg) {
+                self.init_owners.retain(|(owner, _)| owner != &name);
+            }
+        }
+    }
+
     /// Renders a call whose result lands in `destination`.
     ///
     /// A fixed-array result passes the destination as the callee's trailing
@@ -1218,10 +1272,15 @@ impl<'a> Emitter<'a> {
                 let receiver = receiver
                     .as_deref()
                     .map(|inner| Box::new(self.materialize_init_value(inner, guard)));
-                let args = args
+                let args: Vec<Value> = args
                     .iter()
                     .map(|arg| self.materialize_init_value(arg, guard))
                     .collect();
+                // A `take` parameter consumes its argument: the callee frees
+                // it, so the release pass must not free the local again.
+                if !self.init_retain_owners {
+                    self.forget_consumed_arguments(callee, receiver.as_deref(), &args);
+                }
                 let rewritten = Value::new(
                     value.ty.clone(),
                     ValueKind::Call {
@@ -1236,19 +1295,37 @@ impl<'a> Emitter<'a> {
                     let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
                     return local;
                 }
+                // An owned result used by a larger expression binds into an
+                // init local too, so the release pass frees it; a view
+                // destination retains it instead.
+                if !self.init_retain_owners && self.needs_drop(&value.ty) {
+                    let zero = self.empty_state(&value.ty);
+                    let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
+                    return local;
+                }
                 rewritten
             }
             ValueKind::ClosureCall { callable, args } => {
                 let callable = Box::new(self.materialize_init_value(callable, guard));
-                let args = args
+                let args: Vec<Value> = args
                     .iter()
                     .map(|arg| self.materialize_init_value(arg, guard))
                     .collect();
+                // A closure's `take` parameter consumes its argument exactly
+                // as a named callee's does.
+                if !self.init_retain_owners {
+                    self.forget_consumed_arguments("", Some(&callable), &args);
+                }
                 let rewritten = Value::new(
                     value.ty.clone(),
                     ValueKind::ClosureCall { callable, args },
                 );
                 if self.substitute(&value.ty).is_fixed_array() {
+                    let zero = self.empty_state(&value.ty);
+                    let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
+                    return local;
+                }
+                if !self.init_retain_owners && self.needs_drop(&value.ty) {
                     let zero = self.empty_state(&value.ty);
                     let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
                     return local;
@@ -1493,20 +1570,30 @@ impl<'a> Emitter<'a> {
                     _ => walked,
                 }
             }
-            ValueKind::Template(pieces) => Value::new(
-                value.ty.clone(),
-                ValueKind::Template(
-                    pieces
-                        .iter()
-                        .map(|piece| match piece {
-                            ValuePiece::Literal(text) => ValuePiece::Literal(text.clone()),
-                            ValuePiece::Placeholder(inner) => {
-                                ValuePiece::Placeholder(self.materialize_init_value(inner, guard))
-                            }
-                        })
-                        .collect(),
-                ),
-            ),
+            ValueKind::Template(pieces) => {
+                let walked = Value::new(
+                    value.ty.clone(),
+                    ValueKind::Template(
+                        pieces
+                            .iter()
+                            .map(|piece| match piece {
+                                ValuePiece::Literal(text) => ValuePiece::Literal(text.clone()),
+                                ValuePiece::Placeholder(inner) => ValuePiece::Placeholder(
+                                    self.materialize_init_value(inner, guard),
+                                ),
+                            })
+                            .collect(),
+                    ),
+                );
+                // A formatted value owns its buffer; bind it so the release
+                // pass frees it, unless a view destination retains it.
+                if !self.init_retain_owners && self.needs_drop(&value.ty) {
+                    let zero = self.empty_state(&value.ty);
+                    let (_, local) = self.materialize_init_local(&walked, guard, &zero);
+                    return local;
+                }
+                walked
+            }
             _ => value.clone(),
         }
     }
@@ -1590,6 +1677,7 @@ impl<'a> Emitter<'a> {
         match &value.kind {
             ValueKind::Call { args, receiver, .. } => {
                 self.substitute(&value.ty).is_fixed_array()
+                    || self.init_result_needs_binding(&value.ty)
                     || receiver
                         .as_deref()
                         .is_some_and(|receiver| self.init_value_needs_materialization(receiver))
@@ -1597,6 +1685,7 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::ClosureCall { callable, args } => {
                 self.substitute(&value.ty).is_fixed_array()
+                    || self.init_result_needs_binding(&value.ty)
                     || self.init_value_needs_materialization(callable)
                     || args.iter().any(|arg| self.init_value_needs_materialization(arg))
             }
@@ -1652,12 +1741,27 @@ impl<'a> Emitter<'a> {
                         .as_deref()
                         .is_some_and(|fill| self.init_value_needs_materialization(fill))
             }
-            ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
-                ValuePiece::Literal(_) => false,
-                ValuePiece::Placeholder(inner) => self.init_value_needs_materialization(inner),
-            }),
+            ValueKind::Template(pieces) => {
+                self.init_result_needs_binding(&value.ty)
+                    || pieces.iter().any(|piece| match piece {
+                        ValuePiece::Literal(_) => false,
+                        ValuePiece::Placeholder(inner) => {
+                            self.init_value_needs_materialization(inner)
+                        }
+                    })
+            }
             _ => false,
         }
+    }
+
+    /// True when an owned call result must bind into an init local.
+    ///
+    /// The walk binds an owned result so the release pass frees it, except
+    /// when the destination retains the storage (a view destination); a
+    /// lazily evaluated position prepares the same way, so this predicate
+    /// gates the structured conditional and logical paths too.
+    fn init_result_needs_binding(&self, ty: &Ty) -> bool {
+        !self.init_retain_owners && self.needs_drop(ty)
     }
 
     /// The C name of the next init-function local.

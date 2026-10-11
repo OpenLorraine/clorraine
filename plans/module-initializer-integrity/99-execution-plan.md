@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 09:34
-> **Progress**: 17/34 tasks (50%)
+> **Last Updated**: 2026-10-11 10:43
+> **Progress**: 24/34 tasks (71%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -114,7 +114,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 3: Initializer release and checks
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `df4154dc81fefc7f57d0ef9371c0cd1bc18d9e93` (the `032d92c` tree)
 > **Lenses**: correctness + memory-safety + semantics
 > **Reasoning**: high — release placement and check extraction touch ownership and mutability rules
 
@@ -123,22 +123,22 @@ task-size criteria in the make-plan quality checklist)
 **Reference**: [03-03](03-03-initializer-release-and-checks.md) §Proposed Changes · [AR-4, AR-10](00-ambiguity-register.md)
 **Objective**: Pin the three leak shapes under ASan and the write rejections with their controls.
 
-- [ ] 3.1.1 [spec-author] Write specification tests ST-F8 – ST-F9 — `compiler/tests/module_initializer_integrity_spec_test.rs`
-- [ ] 3.1.2 Run the spec suite and record the red phase (expected: the filed leaks under host ASan; the accepted writes)
+- [x] 3.1.1 [spec-author] Write specification tests ST-F8 – ST-F9 — `compiler/tests/module_initializer_integrity_spec_test.rs` ✅ (completed: 2026-10-11 10:43; seven cases: the four filed leak shapes, the two write rejections, the read-only control)
+- [x] 3.1.2 Run the spec suite and record the red phase (expected: the filed leaks under host ASan; the accepted writes) ✅ (completed: 2026-10-11 10:43; four leaks (10/11+10/12 B) and both writes accepted)
 
 ### Step 3.2: Implementation
 
 **Reference**: [03-03](03-03-initializer-release-and-checks.md) §Proposed Changes
 **Objective**: Record owning init locals and release them at the init function's end; run the extracted mutability predicates over initializer expressions.
 
-- [ ] 3.2.1 Init-owner registry, owned-argument materialization, and null-guarded end-of-init releases (DEF-130; includes the DEF-204 shape) — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs`
-- [ ] 3.2.2 Extract the write predicates and add the check-only initializer walk (DEF-152) — `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`, `compiler/src/own/program.rs`
-- [ ] 3.2.3 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 3.2.1 Init-owner registry, owned-argument materialization, and null-guarded end-of-init releases (DEF-130; includes the DEF-204 shape) — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs` ✅ (completed: 2026-10-11 10:43; owned results, arguments, templates, and array destinations bind and release in reverse order; a `take` argument's record is dropped; a view destination retains)
+- [x] 3.2.2 Extract the write predicates and add the check-only initializer walk (DEF-152) — `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`, `compiler/src/own/program.rs` ✅ (completed: 2026-10-11 10:43; the synthetic init checker walks updates and assignments; E10023/E10042 report with the body twins' spans, messages, and one-per-site count)
+- [x] 3.2.3 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-11 10:43; spec 29/29 plain and under AddressSanitizer)
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the Phase 3 implementation pins (release text and null guards, one-report-per-site counts) — `compiler/tests/module_initializer_integrity_impl_test.rs`
-- [ ] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 3.3.1 Write the Phase 3 implementation pins (release text and null guards, one-report-per-site counts) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 10:43; five pins: the four release shapes and the `take` exclusion; the report counts ride the spec suite's rejection assertions; impl 17/17)
+- [~] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 10:43; review dispatched)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 

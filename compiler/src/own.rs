@@ -170,6 +170,7 @@ pub fn check(
             diagnostics,
             &mut next_lifted,
         );
+        checker.check_initializer_writes(&values);
         let (sites, lifted) = checker.lift_initializer_lambdas(&values);
         init_lambdas.extend(sites);
         functions.extend(lifted);

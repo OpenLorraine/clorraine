@@ -283,7 +283,17 @@ func main(): i32 {
     assert_contains(
         "lambdavalue",
         &emitted,
-        "cl_spec_mii_impl_lambdavalue_g = (cl_spec_mii_impl_lambdavalue_f)(cl_std_text_stringOf(cl_str(\"abc\")));",
+        "ClString __cl_itmp0 = cl_std_text_stringOf(cl_str(\"abc\"));",
+    );
+    assert_contains(
+        "lambdavalue",
+        &emitted,
+        "cl_spec_mii_impl_lambdavalue_g = (cl_spec_mii_impl_lambdavalue_f)(__cl_itmp0);",
+    );
+    assert_contains(
+        "lambdavalue",
+        &emitted,
+        "if (__cl_itmp0) { FreeString(__cl_itmp0); }",
     );
 }
 
@@ -467,5 +477,189 @@ func main(): i32 {
         count(&emitted, "__cl_itmp"),
         0,
         "freelen: the fold must not materialize the receiver"
+    );
+}
+
+/// An owned member projection binds its temporary and releases it.
+///
+/// The call result binds into an init local, the projection reads it, and the
+/// release pass frees the owned member at the init function's end.
+#[test]
+fn should_release_a_member_projection_temporary() {
+    let source = r#"module spec.mii.impl.memberrelease;
+
+import { String, stringOf } from std.text;
+
+struct Box { count: i32; name: String; }
+
+func mkBox(): Box {
+    return Box { count: 3, name: stringOf("n") };
+}
+
+let g: i32 = mkBox().count;
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let emitted = emit_host("memberrelease", source);
+    assert_contains(
+        "memberrelease",
+        &emitted,
+        "ClBox __cl_itmp0 = cl_spec_mii_impl_memberrelease_mkBox();",
+    );
+    assert_contains(
+        "memberrelease",
+        &emitted,
+        "cl_spec_mii_impl_memberrelease_g = __cl_itmp0.count;",
+    );
+    assert_contains(
+        "memberrelease",
+        &emitted,
+        "if (__cl_itmp0.name) { FreeString(__cl_itmp0.name); }",
+    );
+}
+
+/// An owned element projection releases both element owners.
+#[test]
+fn should_release_an_element_projection_temporary() {
+    let source = r#"module spec.mii.impl.elementrelease;
+
+import { String, stringOf } from std.text;
+
+func two(): String[2] {
+    return [stringOf("a"), stringOf("bb")];
+}
+
+let g: usize = len(two()[0]);
+
+func main(): i32 {
+    return i32(g) - 1;
+}
+"#;
+    let emitted = emit_host("elementrelease", source);
+    assert_contains(
+        "elementrelease",
+        &emitted,
+        "ClString __cl_itmp0[2] = {0};",
+    );
+    assert_contains(
+        "elementrelease",
+        &emitted,
+        "cl_spec_mii_impl_elementrelease_two(__cl_itmp0);",
+    );
+    assert_contains(
+        "elementrelease",
+        &emitted,
+        "if (__cl_itmp0[0]) { FreeString(__cl_itmp0[0]); }",
+    );
+    assert_contains(
+        "elementrelease",
+        &emitted,
+        "if (__cl_itmp0[1]) { FreeString(__cl_itmp0[1]); }",
+    );
+}
+
+/// A conditional arm's owned value binds under its guard and releases.
+///
+/// Only the chosen arm stores, and the releases run in reverse creation
+/// order with a null guard, so the untaken arm's zero local frees nothing.
+#[test]
+fn should_release_a_guarded_arm_temporary() {
+    let source = r#"module spec.mii.impl.armrelease;
+
+import { stringOf } from std.text;
+
+let c: bool = true;
+let g: i32 = i32(len(c ? stringOf("a") : stringOf("bb")));
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    let emitted = emit_host("armrelease", source);
+    let then_store = "if (__cl_itmp0) { __cl_itmp1 = cl_std_text_stringOf(cl_str(\"a\")); }";
+    let else_store = "if (!__cl_itmp0) { __cl_itmp2 = cl_std_text_stringOf(cl_str(\"bb\")); }";
+    assert_contains("armrelease", &emitted, then_store);
+    assert_contains("armrelease", &emitted, else_store);
+    let else_release = "    if (__cl_itmp2) { FreeString(__cl_itmp2); }";
+    let then_release = "    if (__cl_itmp1) { FreeString(__cl_itmp1); }";
+    let else_at = emitted
+        .find(else_release)
+        .unwrap_or_else(|| panic!("armrelease: the second arm's release is missing"));
+    let then_at = emitted
+        .find(then_release)
+        .unwrap_or_else(|| panic!("armrelease: the first arm's release is missing"));
+    assert!(
+        else_at < then_at,
+        "armrelease: the releases do not run in reverse creation order"
+    );
+}
+
+/// A lend argument's owned temporary binds and releases after the call.
+#[test]
+fn should_release_a_lend_argument_temporary() {
+    let source = r#"module spec.mii.impl.argrelease;
+
+import { String, stringOf } from std.text;
+
+func first(xs: String): i32 {
+    return i32(len(xs));
+}
+
+let g: i32 = first(stringOf("abc"));
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let emitted = emit_host("argrelease", source);
+    assert_contains(
+        "argrelease",
+        &emitted,
+        "ClString __cl_itmp0 = cl_std_text_stringOf(cl_str(\"abc\"));",
+    );
+    assert_contains(
+        "argrelease",
+        &emitted,
+        "cl_spec_mii_impl_argrelease_g = cl_spec_mii_impl_argrelease_first(__cl_itmp0);",
+    );
+    assert_contains(
+        "argrelease",
+        &emitted,
+        "if (__cl_itmp0) { FreeString(__cl_itmp0); }",
+    );
+}
+
+/// A `take` argument's temporary does not release.
+///
+/// The callee consumes and frees the value, so the init function leaves its
+/// local unreleased — a release here would double-free.
+#[test]
+fn should_not_release_a_take_argument_temporary() {
+    let source = r#"module spec.mii.impl.takearg;
+
+import { String, stringOf } from std.text;
+
+func consume(take xs: String): i32 {
+    return i32(len(xs));
+}
+
+let g: i32 = consume(stringOf("abc"));
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let emitted = emit_host("takearg", source);
+    assert_contains(
+        "takearg",
+        &emitted,
+        "cl_spec_mii_impl_takearg_g = cl_spec_mii_impl_takearg_consume(__cl_itmp0);",
+    );
+    assert_eq!(
+        count(&emitted, "FreeString(__cl_itmp0)"),
+        0,
+        "takearg: the callee frees the consumed argument"
     );
 }
