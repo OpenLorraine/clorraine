@@ -2,9 +2,9 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 27/38 tasks (71%)
+> **Progress**: 28/38 tasks (74%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 20:19
+> **Last Updated**: 2026-10-11 21:47
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
@@ -102,7 +102,7 @@
 **Objective**: Pin the rejected uses and the accepted positions.
 
 - [x] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 21:35; six cases — the store, the return, the argument, the comparisons, the nullable declarations, the null-shaped copy; the iterable row is the Phase 2 `iternull` case)
-- [x] 4.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-11 21:35; three red exactly as filed — the store, the return, and the argument were accepted and failed the strict build — and the three references green)
+- [x] 4.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-11 21:35; three red exactly as filed — the store and the return were accepted and failed the strict build, the argument was already rejected as `E10010` (the change is the code) — and the three references green)
 
 ### Step 4.2: Implementation
 
@@ -113,7 +113,7 @@
 ### Step 4.3: Impl Tests & Review
 
 - [x] 4.3.1 Write the phase implementation pins (the message text, the accepted references) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 21:35; three pins: the comparison shapes, the null-shaped copy, the nullable zero initializers; impl 20/20)
-- [~] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ⏳ (implemented: 2026-10-11 21:35; the two lenses dispatched after the commit)
+- [x] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ✅ (completed: 2026-10-11 21:47; the correctness lens found no critical/major and one records minor, fixed; the semantics lens found nothing in the phase and confirmed the recorded reading; its six pre-existing gaps are filed as DEF-245–DEF-249 and in DEF-242's note)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

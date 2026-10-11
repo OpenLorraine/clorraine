@@ -538,8 +538,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let value_ty = self.ty(expr);
-        // A type that still mentions a parameter defers to the instance audit,
-        // exactly as the conversion check defers it.
+        // A type that still mentions a parameter is not judged here: the
+        // declaration has no concrete substitution to compare against.
         let concrete = !expected.nullable
             && !expected.is_unknown()
             && !crate::types::contains_param(expected);

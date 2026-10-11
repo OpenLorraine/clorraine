@@ -315,11 +315,12 @@ Spec suite 43/43 plain; impl 17/17; `make check` 62 suites green.
 
 ### Red evidence
 
-At the phase baseline the three rejection cases were accepted and failed the strict build
-(`void * = ClStr`, `void *` returned where `i32` is declared, an argument mismatch); the three
-references were green. The first implementation run left `nullarg` failing on its own program
-(`take` is a reserved keyword) — the case was renamed to `consume`, not an implementation
-change.
+At the phase baseline the store and the return were accepted and failed the strict build
+(`void * = ClStr`; `void *` returned where `i32` is declared); the argument case was already
+rejected at the baseline with `E10010` (its change is the code: `E10010` → `E10012`), and the
+three references were green. The first implementation run left `nullarg` failing on its own
+program (`take` is a reserved keyword) — the case was renamed to `consume`, not an
+implementation change.
 
 ### Verification
 
@@ -328,7 +329,22 @@ whole corpus and stdlib are unaffected by the new rejections).
 
 ### Review and fix round
 
-_(findings recorded after the review round)_
+**Both lenses reported; no phase findings.** The correctness lens: no critical or major; one
+minor records item (the red evidence described the argument case as accepted — it was already
+rejected at the baseline with `E10010`). The semantics lens: **no findings** — the four sites
+enforce the recorded reading, the diagnostics match the registry, one report per site, and the
+accepted positions are byte-identical. It confirmed the `E10012`-over-`E10010` precedence and
+the DEF-149 store reading as conformant under the register's delegation, with no user ruling
+needed (the frozen text does not define the null shape itself; a future reserved spec edit could
+pin it).
+
+| Item | Resolution |
+| ---- | ---------- |
+| RV-001 | The red evidence corrected (the store and the return were accepted-invalid; the argument row is an `E10010` → `E10012` code change); the plan's `Last Updated` refreshed |
+| SR-001…SR-006 (pre-existing) | Filed: DEF-245 (the shape at a nullable non-pointer destination emits `void *` — major; every profile for views, hosted-amiga for handles), DEF-246 (the literal `null` at a non-nullable aggregate position), DEF-247 (a member read/store through the null-shaped head), DEF-248 (the shape at arithmetic/comparison operands), DEF-249 (the shape at a condition — the missing `E10218`); SR-006 folds into DEF-242's note (the parameter-typed return and declaration positions) |
+
+The gate's comment about an "instance audit" was corrected to state what the check does (a
+parameter-typed expected cannot be judged at the declaration), closing SR-006's comment half.
 
 ## Phase 5: Diagnostic hygiene
 
