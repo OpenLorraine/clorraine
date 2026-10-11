@@ -301,6 +301,22 @@ impl<'a> Emitter<'a> {
                     element
                 }
             }
+            // A conditional selects one arm at run time, so the projection
+            // resolves only when both arms name the same substituted type; a
+            // mixed pair stays opaque and keeps the existing behavior.
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                let then_ty = self.resolved_value_ty(then_value);
+                let else_ty = self.resolved_value_ty(else_value);
+                if then_ty.is_unknown() || then_ty != else_ty {
+                    ty
+                } else {
+                    then_ty
+                }
+            }
             // A projected read carries the same opacity: the place's root
             // type is substituted and its projections walk like the place
             // renderer's, so `(*b).s` resolves through the instance.
@@ -326,8 +342,7 @@ impl<'a> Emitter<'a> {
 
     /// True when a value carries the null literal's nullable-unknown shape.
     fn is_null_shaped(&self, value: &Value) -> bool {
-        let ty = self.substitute(&value.ty);
-        ty.is_unknown() && ty.nullable
+        crate::types::is_null_shaped(&self.substitute(&value.ty))
     }
 
     /// Renders an integer literal with a suffix when it does not fit `int`.

@@ -622,6 +622,16 @@ pub fn implicit_conversion(from: &Ty, to: &Ty) -> bool {
     }
 }
 
+/// True for the null literal's shape: an unresolved type that is nullable.
+///
+/// A local inferred from `null` carries this shape: it has no concrete value
+/// type, so a use that requires one — a store, a return, an argument, or an
+/// iterable — reports the null rule, while comparisons and nullable targets
+/// stay accepted.
+pub fn is_null_shaped(ty: &Ty) -> bool {
+    ty.is_unknown() && ty.nullable
+}
+
 /// True when a type mentions a generic parameter anywhere inside it.
 ///
 /// The checker treats such a type as compatible with any concrete type, the

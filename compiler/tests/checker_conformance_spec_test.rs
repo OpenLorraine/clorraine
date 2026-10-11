@@ -120,6 +120,54 @@ fn build_host_c(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
     program
 }
 
+/// Asserts one compiler run rejected the program with exactly one `code`
+/// diagnostic, that the message contains every fragment and none of the
+/// absent markers, and that no translation unit is written.
+fn assert_rejected_output(
+    tag: &str,
+    output: &Output,
+    c_path: &Path,
+    code: &str,
+    fragments: &[&str],
+    absent: &[&str],
+) {
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let marker = format!("error {code}:");
+    assert_eq!(
+        stderr.matches(&marker).count(),
+        1,
+        "{tag}: expected exactly one {code}; stderr:\n{stderr}"
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    for absent_marker in absent {
+        assert!(
+            !stderr.contains(absent_marker),
+            "{tag}: the report {absent_marker:?} must be absent; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// Compiles `source` and asserts the rejection contract on the output.
+fn assert_rejected_once(tag: &str, source: &str, code: &str, fragments: &[&str], absent: &[&str]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    assert_rejected_output(tag, &output, &c_path, code, fragments, absent);
+}
+
+
 /// Runs a built program with a time limit and the given environment values.
 fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
     let mut command = Command::new(program);
@@ -400,4 +448,319 @@ func main(): i32 {
     let output = run_memory("initownbase", source);
     assert_no_asan("initownbase", &output);
     assert_exit("initownbase", &output, 12);
+}
+
+
+/// A scalar instance of an opaque iterable is rejected at the instantiation.
+///
+/// The declaration accepts an opaque `T` because its instance may be an array;
+/// this instance is not, so the loop reports the instance's judgment (red at
+/// the phase base: the program was accepted and emitted a loop over a scalar).
+#[test]
+fn should_reject_a_scalar_instance_of_an_opaque_iterable() {
+    let source = r#"module spec.cc.iterscalar;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return each<i32>(0);
+}
+"#;
+    assert_rejected_once(
+        "iterscalar",
+        source,
+        "E10043",
+        &["type 'i32' cannot be iterated"],
+        &[],
+    );
+}
+
+/// An enum instance of an opaque iterable is rejected at the instantiation.
+#[test]
+fn should_reject_an_enum_instance_of_an_opaque_iterable() {
+    let source = r#"module spec.cc.iterenum;
+
+enum E : u8 { A, B }
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return each<E>(E.A);
+}
+"#;
+    assert_rejected_once(
+        "iterenum",
+        source,
+        "E10043",
+        &["type 'E' cannot be iterated"],
+        &[],
+    );
+}
+
+/// A struct-element array instance is rejected by the pinned element rule.
+///
+/// The opaque element binding cannot emit a copy of an aggregate element, so
+/// the instance reports the loop's judgment instead of emitting invalid C (red
+/// at the phase base: the program was accepted and failed the strict build).
+#[test]
+fn should_reject_a_struct_element_array_instance_of_an_opaque_iterable() {
+    let source = r#"module spec.cc.iterstruct;
+
+struct S {
+    x: i32;
+}
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { x: 1 }, S { x: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    assert_rejected_once(
+        "iterstruct",
+        source,
+        "E10043",
+        &["type 'S[2]' cannot be iterated"],
+        &[],
+    );
+}
+
+/// A null-shaped iterable is rejected at the declaration.
+///
+/// The null literal's shape has no element sequence, so the loop reports the
+/// null rule (red at the phase base: the program was accepted and failed the
+/// strict build on an unsigned comparison).
+#[test]
+fn should_reject_a_null_shaped_iterable() {
+    let source = r#"module spec.cc.iternull;
+
+func main(): i32 {
+    let x = null;
+    for (v in x) {
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "iternull",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &["cannot be iterated"],
+    );
+}
+
+/// A scalar-element array instance builds and runs (the reference).
+#[test]
+fn should_accept_a_scalar_element_array_instance() {
+    let source = r#"module spec.cc.iterok;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let s: i32[4] = [1, 2, 3, 4];
+    return each<i32[4]>(s);
+}
+"#;
+    let output = run_host("iterok", source);
+    assert_exit("iterok", &output, 4);
+}
+
+/// An enum-element array instance builds and runs (the reference).
+#[test]
+fn should_accept_an_enum_element_array_instance() {
+    let source = r#"module spec.cc.iterenumelem;
+
+enum Dir : u8 { N, S }
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: Dir[2] = [Dir.N, Dir.S];
+    return each<Dir[2]>(a);
+}
+"#;
+    let output = run_host("iterenumelem", source);
+    assert_exit("iterenumelem", &output, 2);
+}
+
+/// A borrow element over a scalar array instance builds and runs.
+#[test]
+fn should_accept_a_borrow_element_array_instance() {
+    let source = r#"module spec.cc.iterborrow;
+
+func eachB<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (borrow v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32[4] = [1, 2, 3, 4];
+    return eachB<i32[4]>(a);
+}
+"#;
+    let output = run_host("iterborrow", source);
+    assert_exit("iterborrow", &output, 4);
+}
+
+/// A value-form member read on a bare type parameter is judged per instance.
+///
+/// The instance's substituted type has no such field, so the read reports the
+/// unknown member at the instance instead of emitting an unresolved member
+/// access (red at the phase base: the program was accepted and failed the
+/// strict build).
+#[test]
+fn should_reject_a_value_form_member_read_on_a_type_parameter() {
+    let source = r#"module spec.cc.memval;
+
+func get<T>(x: T): i32 {
+    return x.foo;
+}
+
+func main(): i32 {
+    return get<i32>(1);
+}
+"#;
+    assert_rejected_once(
+        "memval",
+        source,
+        "E10212",
+        &["'foo' is not a member of 'i32'"],
+        &[],
+    );
+}
+
+/// The call form's unknown-member report is unchanged (one report).
+#[test]
+fn should_keep_one_report_for_a_call_form_member_on_a_type_parameter() {
+    let source = r#"module spec.cc.memvalcall;
+
+func callIt<T>(x: T): i32 {
+    return x.foo();
+}
+
+func main(): i32 {
+    return callIt<i32>(1);
+}
+"#;
+    assert_rejected_once(
+        "memvalcall",
+        source,
+        "E10212",
+        &["'foo' is not a member of 'T'"],
+        &[],
+    );
+}
+
+/// A conditional-wrapped projection folds through the substituted base.
+///
+/// Both arms name the same field of the substituted struct, so the structural
+/// fold reads the real extent (red at the phase base: the instance emitted
+/// zero where the extent is seven).
+#[test]
+fn should_fold_a_conditional_wrapped_projection_through_the_substitution() {
+    let source = r#"module spec.cc.condfold;
+
+struct B {
+    s: i32[7];
+}
+
+func cond<T>(b: T, flag: bool): usize {
+    return len(flag ? b.s : b.s);
+}
+
+func main(): i32 {
+    return i32(cond(B { s: [1, 2, 3, 4, 5, 6, 7] }, true));
+}
+"#;
+    let output = run_host("condfold", source);
+    assert_exit("condfold", &output, 7);
+}
+
+/// The conditional fold still evaluates nothing.
+///
+/// The condition behind the folded `len` must not run and the arms' projections
+/// must not evaluate; the value is the extent and the side-effect counter stays
+/// zero (red at the phase base: the instance emitted zero).
+#[test]
+fn should_keep_the_conditional_fold_evaluating_nothing() {
+    let source = r#"module spec.cc.condfolddrop;
+
+struct B {
+    s: i32[7];
+}
+
+let calls: i32 = 0;
+
+func callFlag(): bool {
+    calls = calls + 1;
+    return true;
+}
+
+func condD<T>(b: T): usize {
+    return len(callFlag() ? b.s : b.s);
+}
+
+func main(): i32 {
+    let n: usize = condD(B { s: [1, 2, 3, 4, 5, 6, 7] });
+    return calls * 100 + i32(n);
+}
+"#;
+    let output = run_host("condfolddrop", source);
+    assert_exit("condfolddrop", &output, 7);
+}
+
+/// The concrete twin of the conditional fold is unchanged (the reference).
+#[test]
+fn should_fold_a_concrete_conditional_projection_unchanged() {
+    let source = r#"module spec.cc.condfoldconcrete;
+
+struct B {
+    s: i32[7];
+}
+
+func condC(b: B, flag: bool): usize {
+    return len(flag ? b.s : b.s);
+}
+
+func main(): i32 {
+    return i32(condC(B { s: [1, 2, 3, 4, 5, 6, 7] }, true));
+}
+"#;
+    let output = run_host("condfoldconcrete", source);
+    assert_exit("condfoldconcrete", &output, 7);
 }

@@ -2,7 +2,7 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 7/34 tasks (21%)
+> **Progress**: 13/34 tasks (38%)
 > **Created**: 2026-10-11 15:20
 > **Last Updated**: 2026-10-11 15:10
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
@@ -37,7 +37,7 @@
 
 ## Phase 2: Generic instance conformance
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `5a378fb` (the Phase 1 close-out tree)
 > **Lenses**: correctness + semantics + emission-integrity
 > **Reasoning**: medium — a new recorded duty list plus two focused check extensions
 
@@ -46,19 +46,19 @@
 **Reference**: [03-02](03-02-generic-instance-conformance.md)
 **Objective**: Pin the iterable instances, the value-form member report, and the conditional fold.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
-- [ ] 2.1.2 Run the suite and record the red phase
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 17:03; twelve cases: iterscalar, iterenum, iterstruct, iternull, iterok, iterenumelem, iterborrow, memval, memvalcall, condfold, condfolddrop, condfoldconcrete)
+- [x] 2.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-11 17:03; seven red as filed: the rejections accepted (iterscalar/iternull failed the strict build; iterstruct/iterenum accepted), the fold cases returned 0; the five references green)
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Record the iterable duty and audit it per instance — `compiler/src/sema/mod.rs`, `compiler/src/own/instance_check.rs`
-- [ ] 2.2.2 Report the value-form member and resolve the conditional arm in the projection — `compiler/src/sema/expr.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 2.2.3 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 2.2.1 Record the iterable duty and audit it per instance — `compiler/src/ir/mono.rs`, `compiler/src/own.rs`, `compiler/src/own/loops.rs`, `compiler/src/own/instance_check.rs` ✅ (completed: 2026-10-11 17:03; the null arm lands in `check_for_in` with the shared predicate)
+- [x] 2.2.2 Report the value-form member and resolve the conditional arm in the projection — `compiler/src/sema/mod.rs`, `compiler/src/sema/expr.rs`, `compiler/src/own/instance_check.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-11 17:03; the member report is per instance — the register's AR-5 amendment — because a declaration-site report rejects the designed late resolution and DEF-150's own shape)
+- [x] 2.2.3 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-11 17:03; spec 18/18 after the AR-5 amendment)
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the report counts and spans, the folded constant) — `compiler/tests/checker_conformance_impl_test.rs`
-- [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses
+- [x] 2.3.1 Write the phase implementation pins (the report counts and spans, the folded constant) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 17:03; four pins: the folded constant, the late-resolved member, the scalar and borrow loop shapes; impl 11/11)
+- [~] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ⏳ (implemented: 2026-10-11 17:03; the three lenses dispatched after the commit)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

@@ -69,6 +69,13 @@ pub struct SemaOutput {
     /// alias the enclosing binding, so the per-instance audit applies the
     /// concrete judgment after substitution.
     pub capture_moves: Vec<CaptureMoveRequirement>,
+    /// Value-form member reads whose base is a bare type parameter.
+    ///
+    /// A member of an opaque base is resolved after substitution: the instance
+    /// decides whether the substituted type has the member, so the read stays
+    /// accepted at the declaration and the per-instance audit reports the
+    /// unknown member exactly as a concrete read would.
+    pub opaque_projections: Vec<OpaqueProjection>,
 }
 
 /// A lambda body that returns or consumes a by-value capture whose
@@ -84,6 +91,22 @@ pub struct CaptureMoveRequirement {
     pub span: Span,
 }
 
+/// One value-form member read on a bare type parameter.
+///
+/// The declaration cannot resolve the member: the substitution may be any
+/// type, so the read records this duty and the per-instance audit resolves it
+/// through the concrete type argument.
+pub struct OpaqueProjection {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The base's declared type, still mentioning the parameter.
+    pub ty: Ty,
+    /// The member's spelling.
+    pub name: String,
+    /// The read's span, for the diagnostic.
+    pub span: Span,
+}
+
 /// Checks every module of the loaded program and records the result.
 pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -> SemaOutput {
     let table = TypeTable::build(loaded);
@@ -93,6 +116,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut expr_types: HashMap<usize, Ty> = HashMap::new();
     let mut closures: BTreeMap<usize, ClosureSite> = BTreeMap::new();
     let mut capture_moves: Vec<CaptureMoveRequirement> = Vec::new();
+    let mut opaque_projections: Vec<OpaqueProjection> = Vec::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
     // program always names the same lifted function and environment.
@@ -103,6 +127,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         next_closure_id = checker.next_closure_id;
         closures.extend(checker.closures.drain(..).map(|site| (site.id, site)));
         capture_moves.extend(checker.capture_moves.drain(..));
+        opaque_projections.extend(checker.opaque_projections.drain(..));
         expr_types.extend(checker.recorded.drain(..));
     }
     SemaOutput {
@@ -110,6 +135,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         expr_types,
         closures,
         capture_moves,
+        opaque_projections,
     }
 }
 
@@ -150,6 +176,9 @@ struct Checker<'a, 'd> {
     /// Lambda bodies that return or consume a by-value capture whose type
     /// still mentions a type parameter, in check order.
     capture_moves: Vec<CaptureMoveRequirement>,
+    /// Value-form member reads whose base is a bare type parameter, in check
+    /// order.
+    opaque_projections: Vec<OpaqueProjection>,
     /// The capture lists of the lambdas currently being checked, innermost
     /// last. A body write or move of a name found here is a capture error.
     lambda_captures: Vec<Vec<CaptureInfo>>,
@@ -197,6 +226,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             next_closure_id,
             closures: Vec::new(),
             capture_moves: Vec::new(),
+            opaque_projections: Vec::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),
             lambda_listed: Vec::new(),

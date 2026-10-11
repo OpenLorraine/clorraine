@@ -157,6 +157,24 @@ pub struct RequiresNotLend {
     pub span: Span,
 }
 
+/// One element loop whose iterable type still mentions a type parameter.
+///
+/// The declaration-site check accepts an opaque iterable because its instance
+/// may be a fixed array or a slice. The per-instance audit substitutes each
+/// recorded instance's type arguments and reports `E10043` when the
+/// substitution is not an array or when its element is not a value the opaque
+/// element binding can emit (a scalar or an enum), so the accepted declaration
+/// never emits a loop over a sequence it cannot bind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresIterable {
+    /// The generic function whose body spells the loop.
+    pub function: String,
+    /// The iterable's declared type, still mentioning the parameter.
+    pub ty: Ty,
+    /// The loop's span, for the diagnostic.
+    pub span: Span,
+}
+
 /// A body's obligation that a parameter-typed nullable borrow slot receives an
 /// exact-typed place.
 ///
@@ -255,6 +273,7 @@ pub struct Monomorphization {
     out_slot_requirements: Vec<RequiresOutSlotPlace>,
     storable_slot_requirements: Vec<RequiresStorableSlot>,
     self_assign_requirements: Vec<RequiresSelfAssign>,
+    iterable_requirements: Vec<RequiresIterable>,
 }
 
 impl Monomorphization {
@@ -300,6 +319,16 @@ impl Monomorphization {
     /// Every distinct lifted-lambda specialization recorded so far.
     pub fn lifted_specializations(&self) -> &[LiftedSpecialization] {
         &self.lifted
+    }
+
+    /// Records a loop over a still-opaque iterable.
+    pub fn require_iterable(&mut self, requirement: RequiresIterable) {
+        self.iterable_requirements.push(requirement);
+    }
+
+    /// Every recorded opaque-iterable duty.
+    pub fn iterable_requirements(&self) -> &[RequiresIterable] {
+        &self.iterable_requirements
     }
 
     /// Records a copy obligation the generic body owes.

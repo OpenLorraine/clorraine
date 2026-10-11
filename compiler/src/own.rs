@@ -100,6 +100,7 @@ pub fn check(
     let mut functions = Vec::new();
     let mut duplicable_requirements = Vec::new();
     let mut not_lend_requirements = Vec::new();
+    let mut iterable_duties = Vec::new();
     let mut out_slot_duties = Vec::new();
     let mut storable_duties = Vec::new();
     let mut self_assign_duties = Vec::new();
@@ -128,6 +129,7 @@ pub fn check(
                     lifted,
                     requirements,
                     lend_duties,
+                    iterable_reqs,
                     slot_duties,
                     store_duties,
                     self_assign_reqs,
@@ -137,6 +139,7 @@ pub fn check(
                 functions.extend(lifted);
                 duplicable_requirements.extend(requirements);
                 not_lend_requirements.extend(lend_duties);
+                iterable_duties.extend(iterable_reqs);
                 out_slot_duties.extend(slot_duties);
                 storable_duties.extend(store_duties);
                 self_assign_duties.extend(self_assign_reqs);
@@ -181,6 +184,9 @@ pub fn check(
     }
     for requirement in not_lend_requirements {
         monomorphization.require_not_lend(requirement);
+    }
+    for duty in iterable_duties {
+        monomorphization.require_iterable(duty);
     }
     for duty in out_slot_duties {
         monomorphization.require_out_slot(duty);
@@ -379,6 +385,12 @@ struct FunctionChecker<'a, 'd> {
     /// judged after substitution: the per-instance audit reports `E10034` when
     /// the type argument owns.
     not_lend_requirements: Vec<ir::RequiresNotLend>,
+    /// The element-loop iterable duties this body owes its instances.
+    ///
+    /// A loop over an opaque `T` accepts the declaration because its instance
+    /// may be an array; the per-instance audit reports `E10043` when the
+    /// substituted sequence or its element cannot be bound.
+    iterable_requirements: Vec<ir::RequiresIterable>,
     /// The out-slot place duties this body owes its instances.
     ///
     /// A nullable borrow slot whose declared type still mentions a type
@@ -480,6 +492,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             defer_body: false,
             duplicable_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
+            iterable_requirements: Vec::new(),
             out_slot_duties: Vec::new(),
             storable_slot_requirements: Vec::new(),
             self_assign_requirements: Vec::new(),
@@ -507,6 +520,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Vec<ir::Function>,
         Vec<ir::RequiresDuplicable>,
         Vec<ir::RequiresNotLend>,
+        Vec<ir::RequiresIterable>,
         Vec<ir::RequiresOutSlotPlace>,
         Vec<ir::RequiresStorableSlot>,
         Vec<ir::RequiresSelfAssign>,
@@ -549,6 +563,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.lifted,
             self.duplicable_requirements,
             self.not_lend_requirements,
+            self.iterable_requirements,
             self.out_slot_duties,
             self.storable_slot_requirements,
             self.self_assign_requirements,

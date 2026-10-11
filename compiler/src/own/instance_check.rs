@@ -37,7 +37,9 @@ use super::program::{Callee, ProgramInfo};
 /// use needs a duplicable instance, `E10034` when a lend moved into an owned
 /// position instantiates with an owning type, and the whole-binding
 /// self-assign judgments (`E10020` for a nullable substitution, `E10034` for
-/// an owning one). Only declared types that mention a type parameter are
+/// an owning one), and `E10043` when a recorded loop's substituted iterable
+/// cannot be bound, and `E10212` when an opaque projection's substituted
+/// base has no such member. Only declared types that mention a type parameter are
 /// checked for the field and fill guards, so a program whose illegal field or
 /// fill is already concrete keeps its single declaration-site diagnostic.
 pub fn check(
@@ -52,6 +54,8 @@ pub fn check(
     check_fill_instances(program, functions, sema, mono, diagnostics);
     check_duplicable_requirements(program, sema, mono, diagnostics);
     check_not_lend_requirements(program, sema, mono, diagnostics);
+    check_iterable_requirements(program, mono, diagnostics);
+    check_opaque_projections(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
@@ -871,5 +875,117 @@ func demo(): void {
 func main(): i32 { return 0; }
 "#;
         assert_eq!(errors_of(source, "E10215").len(), 1);
+    }
+}
+
+/// Reports `E10043` when a recorded loop's substituted iterable cannot be
+/// bound.
+///
+/// The declaration accepts an opaque iterable because its instance may be a
+/// fixed array or a slice; the audit substitutes each recorded instance's type
+/// arguments. A substitution that is not an array has no element sequence,
+/// and one whose element is neither a scalar nor an enum cannot be bound by
+/// the opaque element copy, so both report the loop's judgment once — the
+/// first offending instance — at the loop's span. A substitution that still
+/// mentions a parameter is judged at its own instance, and an unresolved one
+/// keeps the declaration's accepted path.
+fn check_iterable_requirements(
+    program: &ProgramInfo,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.iterable_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
+            if crate::types::contains_param(&substituted) || substituted.is_unknown() {
+                continue;
+            }
+            let bindable = match &substituted.kind {
+                TyKind::Array { element, .. } => {
+                    matches!(element.kind, TyKind::Scalar(_) | TyKind::Enum(_))
+                }
+                _ => false,
+            };
+            if bindable {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10043",
+                    format!("type '{}' cannot be iterated", substituted.display()),
+                    requirement.span,
+                )
+                .with_help("iterate a fixed array or a slice"),
+            );
+            break;
+        }
+    }
+}
+
+/// Reports `E10212` when an opaque projection's substituted base has no such
+/// member.
+///
+/// The declaration accepts a value-form member read on a bare type parameter
+/// because the instance decides: the substituted type resolves the field. An
+/// instance whose type has no such field would emit an unresolved member, so
+/// the audit reports the unknown member once — the first offending instance —
+/// at the read's span. `.len` is the structural length the `len` intrinsic
+/// accepts for an array, `str`, `cstring`, or `String` base, so those
+/// instances keep it.
+fn check_opaque_projections(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for projection in &sema.opaque_projections {
+        let Some(Callee::User(decl)) = program.callee(&projection.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != projection.function {
+                continue;
+            }
+            let substituted = substitute_instance(&projection.ty, &params, &instance.args);
+            if crate::types::contains_param(&substituted) || substituted.is_unknown() {
+                continue;
+            }
+            let resolves = if projection.name == "len" {
+                match &substituted.kind {
+                    TyKind::Array { .. }
+                    | TyKind::Str
+                    | TyKind::StaticStr
+                    | TyKind::CString => true,
+                    TyKind::Handle(name) => name == "String",
+                    _ => false,
+                }
+            } else {
+                sema.table.instance_field(&substituted, &projection.name).is_some()
+            };
+            if resolves {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10212",
+                    format!(
+                        "'{}' is not a member of '{}'",
+                        projection.name,
+                        substituted.display()
+                    ),
+                    projection.span,
+                )
+                .with_help("check the declaration or the spelling"),
+            );
+            break;
+        }
     }
 }

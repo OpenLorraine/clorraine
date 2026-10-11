@@ -478,20 +478,40 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// so the exit joins the pre-loop state.
     pub(super) fn check_for_in(&mut self, decl: &'a ForInStmt) {
         let iterable_ty = self.eval(&decl.iterable);
-        // The element form walks a fixed array or a slice; a concrete type of
-        // any other kind has no element sequence to bind. An opaque type
-        // parameter (or an unresolved type) may be either once its instance is
-        // known, so it keeps its accepted path and is judged at the instance.
-        if !matches!(
+        // The null literal's shape has no element sequence at all, so the loop
+        // reports the null rule instead of reaching the emitter.
+        if crate::types::is_null_shaped(&iterable_ty) {
+            self.error(
+                "E10012",
+                "'null' is not allowed here",
+                "declare the type `T?` or avoid the empty state",
+                decl.span,
+            );
+        } else if !matches!(
             iterable_ty.kind,
             TyKind::Array { .. } | TyKind::Param(_) | TyKind::Unknown
         ) {
+            // The element form walks a fixed array or a slice; a concrete type
+            // of any other kind has no element sequence to bind. An opaque
+            // type parameter (or an unresolved type) may be either once its
+            // instance is known, so it keeps its accepted path and is judged
+            // at the instance.
             self.error(
                 "E10043",
                 format!("type '{}' cannot be iterated", iterable_ty.display()),
                 "iterate a fixed array or a slice",
                 decl.span,
             );
+        }
+        // An opaque iterable's instance decides: the audit substitutes the
+        // concrete type and reports the loop's judgment when the sequence or
+        // its element cannot be bound.
+        if matches!(iterable_ty.kind, TyKind::Param(_)) {
+            self.iterable_requirements.push(ir::RequiresIterable {
+                function: self.decl.name.clone(),
+                ty: iterable_ty.clone(),
+                span: decl.span,
+            });
         }
         let element = iterable_ty.iterated_element();
         if !decl.borrow && !self.sema.table.duplicable(&element) {

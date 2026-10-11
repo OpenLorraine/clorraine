@@ -417,3 +417,19 @@ fn a_non_array_iterates_the_unknown_type() {
     assert!(Ty::i32_ty().iterated_element().is_unknown());
     assert!(Ty::boolean().iterated_element().is_unknown());
 }
+
+/// The null shape is an unresolved type that is nullable, and only that.
+#[test]
+fn the_null_shape_is_an_unresolved_nullable_type() {
+    let null_shape = Ty {
+        kind: TyKind::Unknown,
+        nullable: true,
+    };
+    assert!(is_null_shaped(&null_shape));
+    assert!(!is_null_shaped(&Ty::unknown()));
+    let nullable_handle = Ty {
+        kind: TyKind::Handle("String".to_owned()),
+        nullable: true,
+    };
+    assert!(!is_null_shaped(&nullable_handle));
+}

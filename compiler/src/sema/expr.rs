@@ -22,7 +22,7 @@ use crate::types::{
     ClosureTy, FuncParam, FuncTy, Ty, TyKind,
 };
 
-use super::{CaptureMoveRequirement, Checker};
+use super::{CaptureMoveRequirement, Checker, OpaqueProjection};
 
 impl Checker<'_, '_> {
     /// Checks an expression, records its type, and returns it.
@@ -561,6 +561,21 @@ impl Checker<'_, '_> {
             // A field reached through a raw pointer is typed from the pointee;
             // the unsafe gate for the dereference stays in the ownership stage.
             TyKind::Raw(_) => self.field_type(base_ty, name).unwrap_or_else(Ty::unknown),
+            // A member of an opaque base is resolved after substitution: the
+            // instance decides whether the substituted type has the field, so
+            // the read stays accepted here and the per-instance audit reports
+            // the unknown member exactly as a concrete read would.
+            TyKind::Param(_) => {
+                if let Some(function) = self.function_name.clone() {
+                    self.opaque_projections.push(OpaqueProjection {
+                        function,
+                        ty: base_ty.clone(),
+                        name: name.to_owned(),
+                        span,
+                    });
+                }
+                Ty::unknown()
+            }
             _ => Ty::unknown(),
         }
     }

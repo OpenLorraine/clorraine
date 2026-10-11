@@ -367,3 +367,108 @@ func main(): i32 {
         "ClSlice_i32 __cl_itmp0 = cl_spec_cc_impl_reemit_v(cl_spec_cc_impl_reemit_sl);",
     );
 }
+
+/// The conditional-wrapped projection folds through the substituted base.
+///
+/// Both arms name the same field of the instance's struct, so the fold emits
+/// the extent as a constant (red at the phase base: the instance returned
+/// zero).
+#[test]
+fn should_fold_the_conditional_projection_in_the_instance() {
+    let source = r#"module spec.cc.impl.condfold;
+
+struct B {
+    s: i32[7];
+}
+
+func cond<T>(b: T, flag: bool): usize {
+    return len(flag ? b.s : b.s);
+}
+
+func main(): i32 {
+    return i32(cond(B { s: [1, 2, 3, 4, 5, 6, 7] }, true));
+}
+"#;
+    let emitted = emit_host("condfold", source);
+    assert_contains("condfold", &emitted, "static usize cl_cond__B(ClB b, bool flag)");
+    assert_contains("condfold", &emitted, "return 7;");
+}
+
+/// An opaque projection resolves through the instance's substituted type.
+///
+/// The read stays accepted at the declaration; the instance resolves it to the
+/// struct field, so the emitted member access builds.
+#[test]
+fn should_resolve_an_opaque_projection_in_the_instance() {
+    let source = r#"module spec.cc.impl.memok;
+
+struct W {
+    foo: i32;
+}
+
+func get<T>(x: T): i32 {
+    return x.foo;
+}
+
+func main(): i32 {
+    return get(W { foo: 7 });
+}
+"#;
+    let emitted = emit_host("memok", source);
+    assert_contains("memok", &emitted, "static i32 cl_get__W(ClW x)");
+    assert_contains("memok", &emitted, "return x.foo;");
+}
+
+/// A scalar-element array instance keeps its loop shape.
+#[test]
+fn should_keep_the_scalar_element_loop_shape() {
+    let source = r#"module spec.cc.impl.iterok;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let s: i32[4] = [1, 2, 3, 4];
+    return each<i32[4]>(s);
+}
+"#;
+    let emitted = emit_host("iterok", source);
+    assert_contains("iterok", &emitted, "static i32 cl_each__arr4_i32(i32 xs[4])");
+    assert_contains("iterok", &emitted, "i32 v = 0;");
+    assert_contains("iterok", &emitted, "v = xs[__cl_tmp0];");
+    assert_contains("iterok", &emitted, "(__cl_tmp0 < 4)");
+}
+
+/// A borrow element over a scalar array instance keeps its aliasing shape.
+#[test]
+fn should_keep_the_borrow_element_loop_shape() {
+    let source = r#"module spec.cc.impl.iterborrow;
+
+func eachB<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (borrow v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32[4] = [1, 2, 3, 4];
+    return eachB<i32[4]>(a);
+}
+"#;
+    let emitted = emit_host("iterborrow", source);
+    assert_contains(
+        "iterborrow",
+        &emitted,
+        "static i32 cl_eachB__arr4_i32(i32 xs[4])",
+    );
+    assert_contains("iterborrow", &emitted, "i32 *__cl_tmp1 = NULL;");
+    assert_contains("iterborrow", &emitted, "__cl_tmp1 = &(xs[__cl_tmp0]);");
+}
+
