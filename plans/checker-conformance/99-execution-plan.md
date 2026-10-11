@@ -2,7 +2,7 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 13/34 tasks (38%)
+> **Progress**: 14/38 tasks (37%)
 > **Created**: 2026-10-11 15:20
 > **Last Updated**: 2026-10-11 15:10
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
@@ -46,7 +46,7 @@
 **Reference**: [03-02](03-02-generic-instance-conformance.md)
 **Objective**: Pin the iterable instances, the value-form member report, and the conditional fold.
 
-- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 17:03; twelve cases: iterscalar, iterenum, iterstruct, iternull, iterok, iterenumelem, iterborrow, memval, memvalcall, condfold, condfolddrop, condfoldconcrete)
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 17:03; thirteen cases: iterscalar, iterenum, iterstruct, iternull, iterok, iterenumelem, iterborrow, memval, memvalcall, condfold, condfolddrop, condfoldconcrete)
 - [x] 2.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-11 17:03; seven red as filed: the rejections accepted (iterscalar/iternull failed the strict build; iterstruct/iterenum accepted), the fold cases returned 0; the five references green)
 
 ### Step 2.2: Implementation
@@ -58,7 +58,7 @@
 ### Step 2.3: Impl Tests & Review
 
 - [x] 2.3.1 Write the phase implementation pins (the report counts and spans, the folded constant) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 17:03; four pins: the folded constant, the late-resolved member, the scalar and borrow loop shapes; impl 11/11)
-- [~] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ⏳ (implemented: 2026-10-11 17:03; the three lenses dispatched after the commit)
+- [x] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ✅ (completed: 2026-10-11 17:20; the semantics and correctness reviews found one critical and five major items; the fix round fixed the element binding per instance and the projection dispatch, pinned by new cases; the scoped re-review is dispatched)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

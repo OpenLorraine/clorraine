@@ -161,16 +161,19 @@ pub struct RequiresNotLend {
 ///
 /// The declaration-site check accepts an opaque iterable because its instance
 /// may be a fixed array or a slice. The per-instance audit substitutes each
-/// recorded instance's type arguments and reports `E10043` when the
-/// substitution is not an array or when its element is not a value the opaque
-/// element binding can emit (a scalar or an enum), so the accepted declaration
-/// never emits a loop over a sequence it cannot bind.
+/// recorded instance's type arguments: a substitution that is not an array
+/// reports `E10043`, and a non-borrow copy of a non-duplicable substituted
+/// element reports `E10040`, exactly as the concrete spellings report. The
+/// binding itself carries the substituted element through the element
+/// placeholder, so an accepted instance emits the concrete element type.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequiresIterable {
     /// The generic function whose body spells the loop.
     pub function: String,
     /// The iterable's declared type, still mentioning the parameter.
     pub ty: Ty,
+    /// True when the loop binds a `borrow` element.
+    pub borrow: bool,
     /// The loop's span, for the diagnostic.
     pub span: Span,
 }

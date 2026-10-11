@@ -54,7 +54,7 @@ pub fn check(
     check_fill_instances(program, functions, sema, mono, diagnostics);
     check_duplicable_requirements(program, sema, mono, diagnostics);
     check_not_lend_requirements(program, sema, mono, diagnostics);
-    check_iterable_requirements(program, mono, diagnostics);
+    check_iterable_requirements(program, sema, mono, diagnostics);
     check_opaque_projections(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
@@ -878,19 +878,20 @@ func main(): i32 { return 0; }
     }
 }
 
-/// Reports `E10043` when a recorded loop's substituted iterable cannot be
-/// bound.
+/// Reports the loop's judgment when a recorded opaque iterable's substitution
+/// cannot be bound.
 ///
 /// The declaration accepts an opaque iterable because its instance may be a
 /// fixed array or a slice; the audit substitutes each recorded instance's type
-/// arguments. A substitution that is not an array has no element sequence,
-/// and one whose element is neither a scalar nor an enum cannot be bound by
-/// the opaque element copy, so both report the loop's judgment once — the
-/// first offending instance — at the loop's span. A substitution that still
-/// mentions a parameter is judged at its own instance, and an unresolved one
-/// keeps the declaration's accepted path.
+/// arguments. A substitution that is not an array has no element sequence and
+/// reports `E10043`; a non-borrow copy of a non-duplicable element reports
+/// `E10040`, matching the concrete spelling. Both report once — the first
+/// offending instance — at the loop's span. A substitution that still mentions
+/// a parameter is judged at its own instance, and an unresolved one keeps the
+/// declaration's accepted path.
 fn check_iterable_requirements(
     program: &ProgramInfo,
+    sema: &SemaOutput,
     mono: &Monomorphization,
     diagnostics: &mut Diagnostics,
 ) {
@@ -907,24 +908,32 @@ fn check_iterable_requirements(
             if crate::types::contains_param(&substituted) || substituted.is_unknown() {
                 continue;
             }
-            let bindable = match &substituted.kind {
-                TyKind::Array { element, .. } => {
-                    matches!(element.kind, TyKind::Scalar(_) | TyKind::Enum(_))
-                }
-                _ => false,
-            };
-            if bindable {
-                continue;
+            if !matches!(substituted.kind, TyKind::Array { .. }) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10043",
+                        format!("type '{}' cannot be iterated", substituted.display()),
+                        requirement.span,
+                    )
+                    .with_help("iterate a fixed array or a slice"),
+                );
+                break;
             }
-            diagnostics.push(
-                Diagnostic::error(
-                    "E10043",
-                    format!("type '{}' cannot be iterated", substituted.display()),
-                    requirement.span,
-                )
-                .with_help("iterate a fixed array or a slice"),
-            );
-            break;
+            let element = substituted.iterated_element();
+            if !requirement.borrow && !sema.table.duplicable(&element) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10040",
+                        format!(
+                            "element loop requires 'borrow' for non-duplicable '{}'",
+                            element.display()
+                        ),
+                        requirement.span,
+                    )
+                    .with_help("write `for (borrow e in xs)`"),
+                );
+                break;
+            }
         }
     }
 }
@@ -933,12 +942,10 @@ fn check_iterable_requirements(
 /// member.
 ///
 /// The declaration accepts a value-form member read on a bare type parameter
-/// because the instance decides: the substituted type resolves the field. An
-/// instance whose type has no such field would emit an unresolved member, so
+/// because the instance decides: the substituted type resolves the member. An
+/// instance whose type has no such member would emit an unresolved member, so
 /// the audit reports the unknown member once — the first offending instance —
-/// at the read's span. `.len` is the structural length the `len` intrinsic
-/// accepts for an array, `str`, `cstring`, or `String` base, so those
-/// instances keep it.
+/// at the read's span.
 fn check_opaque_projections(
     program: &ProgramInfo,
     sema: &SemaOutput,
@@ -958,19 +965,7 @@ fn check_opaque_projections(
             if crate::types::contains_param(&substituted) || substituted.is_unknown() {
                 continue;
             }
-            let resolves = if projection.name == "len" {
-                match &substituted.kind {
-                    TyKind::Array { .. }
-                    | TyKind::Str
-                    | TyKind::StaticStr
-                    | TyKind::CString => true,
-                    TyKind::Handle(name) => name == "String",
-                    _ => false,
-                }
-            } else {
-                sema.table.instance_field(&substituted, &projection.name).is_some()
-            };
-            if resolves {
+            if projection_resolves(sema, &substituted, &projection.name) {
                 continue;
             }
             diagnostics.push(
@@ -987,5 +982,26 @@ fn check_opaque_projections(
             );
             break;
         }
+    }
+}
+
+/// True when a value-form member resolves on the substituted type.
+///
+/// The dispatch mirrors the value-form checker's own rules: a struct field
+/// (which wins over everything else, including a field named `len`), an enum
+/// member, a member reached through a `raw` pointer to a struct, and the
+/// structural `.len` a fixed array, a slice, a `str`, or a `static str` value
+/// carries. Every other kind has no member surface.
+fn projection_resolves(sema: &SemaOutput, ty: &Ty, name: &str) -> bool {
+    match &ty.kind {
+        TyKind::Struct(..) => sema.table.instance_field(ty, name).is_some(),
+        TyKind::Enum(enum_name) => sema.table.enum_has_member(enum_name, name),
+        TyKind::Raw(inner) => match &inner.kind {
+            TyKind::Struct(..) => sema.table.instance_field(inner, name).is_some(),
+            TyKind::Raw(_) => projection_resolves(sema, inner, name),
+            _ => false,
+        },
+        TyKind::Array { .. } | TyKind::Str | TyKind::StaticStr => name == "len",
+        _ => false,
     }
 }

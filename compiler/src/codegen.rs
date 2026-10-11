@@ -741,6 +741,14 @@ impl<'a> Emitter<'a> {
         let mut subst = BTreeMap::new();
         for (param, arg) in decl.type_params.iter().zip(args) {
             subst.insert(param.name.clone(), arg.clone());
+            // A loop over the opaque parameter binds its element from the
+            // substituted argument: the placeholder the ownership stage wrote
+            // resolves to the argument's one-step element, so the binding
+            // carries the instance's real element type.
+            subst.insert(
+                crate::types::element_param(&param.name),
+                arg.iterated_element(),
+            );
         }
         subst
     }

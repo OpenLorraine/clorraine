@@ -472,3 +472,67 @@ func main(): i32 {
     assert_contains("iterborrow", &emitted, "__cl_tmp1 = &(xs[__cl_tmp0]);");
 }
 
+/// A struct-element instance binds the concrete element type.
+///
+/// The element placeholder resolves to the substituted argument's one-step
+/// element, so the binding and its borrow address temporary carry the struct
+/// (red at the phase base: the binding was the unknown fallback and failed the
+/// strict build).
+#[test]
+fn should_bind_a_struct_element_in_the_instance() {
+    let source = r#"module spec.cc.impl.iterstructpin;
+
+struct S {
+    x: i32;
+}
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { x: 1 }, S { x: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    let emitted = emit_host("iterstructpin", source);
+    assert_contains("iterstructpin", &emitted, "static i32 cl_each__arr2_S(ClS xs[2])");
+    assert_contains("iterstructpin", &emitted, "ClS v = {0};");
+    assert_contains("iterstructpin", &emitted, "ClS *__cl_tmp1 = NULL;");
+}
+
+/// A float-element instance binds the float element type.
+///
+/// The binding carries the substituted element, so the accumulation is a float
+/// sum and the instance computes the concrete result.
+#[test]
+fn should_bind_a_float_element_in_the_instance() {
+    let source = r#"module spec.cc.impl.iterf32pin;
+
+func sumf<T>(xs: T): f32 {
+    let s: f32 = 0.0;
+    for (v in xs) {
+        s = s + v;
+    }
+    return s;
+}
+
+func main(): i32 {
+    let a: f32[2] = [1.5, 2.5];
+    return i32(sumf<f32[2]>(a) * 10.0);
+}
+"#;
+    let emitted = emit_host("iterf32pin", source);
+    assert_contains(
+        "iterf32pin",
+        &emitted,
+        "static float cl_sumf__arr2_f32(float xs[2])",
+    );
+    assert_contains("iterf32pin", &emitted, "float v = 0;");
+    assert_contains("iterf32pin", &emitted, "s = (s + v);");
+}
+

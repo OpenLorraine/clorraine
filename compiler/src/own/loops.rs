@@ -504,16 +504,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
         }
         // An opaque iterable's instance decides: the audit substitutes the
-        // concrete type and reports the loop's judgment when the sequence or
-        // its element cannot be bound.
+        // concrete type and reports the loop's judgment when the sequence is
+        // not an array, or when a non-borrow copy of a non-duplicable element
+        // needs the `borrow` form.
         if matches!(iterable_ty.kind, TyKind::Param(_)) {
             self.iterable_requirements.push(ir::RequiresIterable {
                 function: self.decl.name.clone(),
                 ty: iterable_ty.clone(),
+                borrow: decl.borrow,
                 span: decl.span,
             });
         }
-        let element = iterable_ty.iterated_element();
+        // A bare type parameter cannot name its element, so the binding
+        // carries a placeholder the instantiation fills from the substituted
+        // argument's one-step element; a concrete iterable names its element
+        // directly.
+        let element = match &iterable_ty.kind {
+            TyKind::Param(name) => Ty {
+                kind: TyKind::Param(crate::types::element_param(name)),
+                nullable: false,
+            },
+            _ => iterable_ty.iterated_element(),
+        };
         if !decl.borrow && !self.sema.table.duplicable(&element) {
             self.error(
                 "E10040",

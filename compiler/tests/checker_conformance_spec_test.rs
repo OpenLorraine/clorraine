@@ -509,13 +509,14 @@ func main(): i32 {
     );
 }
 
-/// A struct-element array instance is rejected by the pinned element rule.
+/// A struct-element array instance binds the concrete element type.
 ///
-/// The opaque element binding cannot emit a copy of an aggregate element, so
-/// the instance reports the loop's judgment instead of emitting invalid C (red
-/// at the phase base: the program was accepted and failed the strict build).
+/// The loop binding carries the substituted one-step element, so a duplicable
+/// struct element copies exactly as the concrete spelling does (red at the
+/// phase base: the binding was the unknown fallback and failed the strict
+/// build).
 #[test]
-fn should_reject_a_struct_element_array_instance_of_an_opaque_iterable() {
+fn should_accept_a_struct_element_array_instance() {
     let source = r#"module spec.cc.iterstruct;
 
 struct S {
@@ -535,12 +536,118 @@ func main(): i32 {
     return each<S[2]>(a);
 }
 "#;
+    let output = run_host("iterstruct", source);
+    assert_exit("iterstruct", &output, 2);
+}
+
+/// A borrow element over a struct array instance binds the element type.
+#[test]
+fn should_accept_a_borrow_struct_element_array_instance() {
+    let source = r#"module spec.cc.iterborrowstruct;
+
+struct S {
+    x: i32;
+}
+
+func eachB<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (borrow v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { x: 1 }, S { x: 2 }];
+    return eachB<S[2]>(a);
+}
+"#;
+    let output = run_host("iterborrowstruct", source);
+    assert_exit("iterborrowstruct", &output, 2);
+}
+
+/// A multi-extent array instance binds the row element, not the innermost one.
+///
+/// The loop binds one row per step and the row carries the substituted element
+/// type (red at the phase base: the binding was the innermost scalar's
+/// fallback and failed the strict build).
+#[test]
+fn should_accept_a_multi_extent_array_instance() {
+    let source = r#"module spec.cc.iterrow;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return each<i32[2][3]>(a);
+}
+"#;
+    let output = run_host("iterrow", source);
+    assert_exit("iterrow", &output, 2);
+}
+
+/// A float-element array instance binds the float element.
+///
+/// The read keeps the element's own type, so the accumulation is a float sum
+/// (red at the phase base: the binding truncated each element to an integer
+/// and the instance computed 3.0 instead of 4.0).
+#[test]
+fn should_accept_a_float_element_array_instance() {
+    let source = r#"module spec.cc.iterf32;
+
+func sumf<T>(xs: T): f32 {
+    let s: f32 = 0.0;
+    for (v in xs) {
+        s = s + v;
+    }
+    return s;
+}
+
+func main(): i32 {
+    let a: f32[2] = [1.5, 2.5];
+    return i32(sumf<f32[2]>(a) * 10.0);
+}
+"#;
+    let output = run_host("iterf32", source);
+    assert_exit("iterf32", &output, 40);
+}
+
+/// A non-borrow copy of a non-duplicable element requires `borrow`.
+///
+/// The instance applies the concrete `E10040` judgment the declaration could
+/// not make (red at the phase base: the instance was accepted and failed the
+/// strict build).
+#[test]
+fn should_require_borrow_for_a_non_duplicable_element_instance() {
+    let source = r#"module spec.cc.iterstring;
+
+import { stringOf } from std.text;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: String[2] = [stringOf("ab"), stringOf("cd")];
+    return each<String[2]>(a);
+}
+"#;
     assert_rejected_once(
-        "iterstruct",
+        "iterstring",
         source,
-        "E10043",
-        &["type 'S[2]' cannot be iterated"],
-        &[],
+        "E10040",
+        &["element loop requires 'borrow' for non-duplicable 'String'"],
+        &["cannot be iterated"],
     );
 }
 
@@ -789,3 +896,56 @@ func main(): i32 {
     assert_exit("memok", &output, 7);
 }
 
+/// A projection through a raw pointer to a struct instance resolves.
+///
+/// The audit mirrors the value-form checker's raw arm, so the pointee's field
+/// resolves and the accepted read runs (red at the fix-round base: the audit
+/// reported the field missing).
+#[test]
+fn should_accept_a_raw_pointer_projection_at_a_struct_instance() {
+    let source = r#"module spec.cc.memraw;
+
+struct S {
+    foo: i32;
+}
+
+func get<T>(x: T): i32 {
+    return x.foo;
+}
+
+func main(): i32 {
+    let s: S = S { foo: 7 };
+    let p: raw S = unsafe &s;
+    return get<raw S>(p);
+}
+"#;
+    let output = run_host("memraw", source);
+    assert_exit("memraw", &output, 7);
+}
+
+/// An undeclared enum member on an instance reports the unknown member.
+///
+/// The audit mirrors the concrete enum rule, so a declared member stays
+/// accepted while an undeclared one reports the registry message.
+#[test]
+fn should_reject_an_undeclared_enum_member_on_an_instance() {
+    let source = r#"module spec.cc.memenum;
+
+enum E : u8 { A, B }
+
+func pick<T>(x: T): i32 {
+    return i32(x.N);
+}
+
+func main(): i32 {
+    return pick<E>(E.B);
+}
+"#;
+    assert_rejected_once(
+        "memenum",
+        source,
+        "E10212",
+        &["'N' is not a member of 'E'"],
+        &[],
+    );
+}

@@ -47,6 +47,12 @@ condition and the arms' stores must not emit.
 
 ## Proposed Changes
 
+> **Superseded (Phase 2 fix round):** the element rule below was replaced by the instance-typed
+> element binding — the binding carries a placeholder resolved from the substituted argument's
+> one-step element, so struct, row, and float elements are accepted and only a non-array
+> substitution reports `E10043`, with `E10040` for a non-borrow non-duplicable element. See the
+> register's AR-4 and the ledger's fix round.
+
 ### 1. An iterable duty and its instance audit (DEF-145)
 
 - `sema/mod.rs`: add `iterables: Vec<IterableRequirement>` (the function's name, the
@@ -62,9 +68,12 @@ condition and the arms' stores must not emit.
 
 ### 2. The value-form member report (DEF-146)
 
-`member_type`'s bare-parameter base reports `E10212` with the existing message
-(`'{name}' is not a member of '{type}'`) and returns `Ty::unknown()` so the chain's remaining
-segments stay quiet (one report per site).
+> **Superseded (Phase 2 fix round):** the report lands per instance (the register's AR-5), with
+> the substituted display and the kind dispatch mirrored from the value-form checker; the
+> declaration keeps accepting the read.
+
+The audit's fallback reports `E10212` with the existing message
+(`'{name}' is not a member of '{type}'`) once at the first offending instance.
 
 ### 3. A conditional arm in the substituted projection (DEF-150)
 

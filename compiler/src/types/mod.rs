@@ -632,6 +632,18 @@ pub fn is_null_shaped(ty: &Ty) -> bool {
     ty.is_unknown() && ty.nullable
 }
 
+/// The synthetic parameter name that carries an opaque iterable's element.
+///
+/// A `for (v in xs)` whose iterable is a bare type parameter cannot name its
+/// element at the declaration, so the ownership stage types the binding with
+/// this placeholder and each instantiation fills it from the substituted
+/// argument's one-step element. The name cannot collide with a written
+/// parameter: it contains characters the language cannot spell in an
+/// identifier.
+pub fn element_param(name: &str) -> String {
+    format!("#element of {name}")
+}
+
 /// True when a type mentions a generic parameter anywhere inside it.
 ///
 /// The checker treats such a type as compatible with any concrete type, the

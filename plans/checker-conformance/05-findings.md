@@ -134,7 +134,25 @@ Spec suite 18/18 plain and under `RDC_ASAN=1`; impl 11/11; `make check` 62 suite
 
 ### Review and fix round
 
-_(findings recorded after the review round)_
+**Semantics and correctness reported; one critical and five major items; all fixed in-phase.**
+
+| Finding | Severity | Resolution |
+| ------- | -------- | ---------- |
+| SR-001 | 🔴 critical | The element predicate accepted non-i32 scalar elements the emitter mis-binds (`sumf<f32[2]>` computed 3.0; float/enum borrow instances failed the strict build) | **Fixed:** the element binding is typed per instance through the element placeholder — `float v`/`ClS v` bind correctly and the float sum is 4.0; spec `iterf32` (exit 40), impl pins the `float v`/`ClS v` shapes |
+| SR-002 = RV-002 | 🟠 major | The audit measured the innermost element, not the loop's one-step element, so multi-extent arrays passed and emitted invalid C | **Fixed:** the binding carries the substituted one-step element; spec `iterrow` (exit 2) |
+| SR-003 = RV-004 | 🟠 major | Legal iterables (struct/handle/view elements, the borrow form) were rejected with `E10043`; `E10040` was skipped | **Fixed:** the typed binding accepts them (spec `iterstruct`, `iterborrowstruct`); a non-borrow non-duplicable element reports `E10040` (spec `iterstring`); only a non-array substitution reports `E10043` |
+| RV-001 | 🟠 major | The projection audit falsely rejected resolving `raw` and enum instances (a working-program regression for `raw`) | **Fixed:** the audit mirrors the value-form dispatch (struct field, enum member, `raw`→struct, the structural `.len`); spec `memraw` (exit 7) and `memenum` (one `E10212`) |
+| SR-004 | 🟠 major | `.len` bypassed field-wins, falsely rejecting a struct field named `len` (regression) | **Fixed:** `instance_field` is tried for every struct base first |
+| SR-005 | 🟠 major | `.len` on `cstring`/`String` instances was accepted but not emittable | **Fixed:** the `.len` set is narrowed to the emittable kinds (fixed array, slice, `str`, `static str`); those instances report `E10212`; the concrete value-form gap is filed as DEF-224 |
+| SR-006 | 🟡 minor | An undeclared enum member's report contradicted the registry | **Fixed:** a declared member resolves (mirroring the concrete acceptance), an undeclared one reports the truthful `E10212` |
+| RV-003 | 🟡 minor | Stale plan/ledger counts (the denominator is 38, not 34) | Fixed: the header, the counts, and the 03-02 §2 supersede notes |
+| PE-001 | 🟠 pre-existing | The mixed-arm generic conditional `len` returns `0` (the concrete spelling is `E10200`) | Filed as DEF-225 |
+| PE-002 + the correctness pre-existing items | 🟡 pre-existing | The concrete value-form `.len`/enum reads, the nested opaque chain, the lifted-lambda array capture, and the generic `raw` unsafe bypass | Filed as DEF-224 and DEF-226–DEF-228 |
+
+### Verification (after the fix round)
+
+Spec suite 25/25 plain and under `RDC_ASAN=1`; impl 13/13; `make check` 62 suites green. The
+scoped re-review of the fix round (`5a378fb..head`) is dispatched to the three lenses.
 
 ## Phase 3: Call, member, and `cstring` surfaces
 
