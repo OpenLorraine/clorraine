@@ -16,7 +16,7 @@
 //! stage after a clean name pass, so a file that already failed resolution
 //! never reaches here.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{ BTreeMap, HashMap, BTreeSet };
 
 use crate::ast::{Expr, ExprKind, FuncDecl, Item, ScalarType, Type};
 use crate::consts::ConstFolder;
@@ -199,6 +199,13 @@ struct Checker<'a, 'd> {
     /// non-`void` value type here, so a block body gets the same return type an
     /// expression body would.
     lambda_returns: Vec<Option<Ty>>,
+    /// The capture names whose by-value move each currently checked lambda has
+    /// already recorded, innermost last.
+    ///
+    /// A composite move site nests: the field value's walk records first and
+    /// the enclosing site's walk would find the same capture again, so one
+    /// record per capture keeps the site's report single.
+    captured_move_records: Vec<BTreeSet<String>>,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
     /// The selected profile, so profile-surface rules can be reported here.
@@ -235,6 +242,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             lambda_floors: Vec::new(),
             lambda_listed: Vec::new(),
             lambda_returns: Vec::new(),
+            captured_move_records: Vec::new(),
             diagnostics,
             profile,
         }

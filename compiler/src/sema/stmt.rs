@@ -111,6 +111,12 @@ impl Checker<'_, '_> {
             }
             (None, None) => self.declare(&decl.name, Ty::unknown()),
         }
+        // A `let` initializer is a move site of its own: the value's move may
+        // not escape (a local binding receives it), so the capture rule is
+        // recorded here for the per-instance judgment.
+        if let Some(value) = &decl.value {
+            self.record_generic_capture_move(value);
+        }
     }
 
     /// Reports `E10304` when a callable-only type-parameter value is stored or

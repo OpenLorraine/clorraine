@@ -715,6 +715,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_ordinals = std::mem::take(&mut self.next_ordinal);
         let saved_loans = std::mem::take(&mut self.loan_ids);
         let saved_names = std::mem::take(&mut self.binding_names);
+        let saved_state_reports = std::mem::take(&mut self.state_reports);
         let saved_continues = std::mem::take(&mut self.continue_states);
         let saved_defer = self.defer_anchor;
         let saved_move_outs = self.defer_move_outs;
@@ -808,7 +809,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         function.module = self.module.name.clone();
         function.lambda_site = Some(site);
         function.enclosing = Some(self.decl.name.clone());
-        liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
+        let generated = self.generated_owner_ids();
+        liveness::check(
+            &function,
+            &self.events,
+            &self.binding_names,
+            &generated,
+            self.diagnostics,
+        );
         // Only a discarded speculative pass skips the record: that pass lowers
         // the body with owned-temporary materialization suppressed, and its IR
         // is re-lowered by the real pass. A `defer` registration lowering also
@@ -831,6 +839,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.next_ordinal = saved_ordinals;
         self.loan_ids = saved_loans;
         self.binding_names = saved_names;
+        self.state_reports = saved_state_reports;
         self.continue_states = saved_continues;
         self.defer_anchor = saved_defer;
         self.defer_move_outs = saved_move_outs;

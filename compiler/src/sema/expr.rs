@@ -204,6 +204,7 @@ impl Checker<'_, '_> {
         self.lambda_captures.push(infos.clone());
         self.lambda_floors.push(floor);
         self.lambda_listed.push(listed);
+        self.captured_move_records.push(BTreeSet::new());
         let returns = match body {
             LambdaBody::Expr(value) => {
                 // An expression body may be `void` (for example a lambda that
@@ -230,6 +231,7 @@ impl Checker<'_, '_> {
         self.lambda_listed.pop();
         self.lambda_floors.pop();
         self.lambda_captures.pop();
+        self.captured_move_records.pop();
         self.pop_scope();
 
         if infos.is_empty() {
@@ -300,10 +302,14 @@ impl Checker<'_, '_> {
     /// applies the concrete judgment after substitution.
     ///
     /// Every body form records the duty: the expression body's value and a
-    /// block body's `return` both reach this walk, and a `take` argument is
-    /// recorded at its call site. A conditional selects one arm at run time,
-    /// so its arms are walked like the ownership stage's conditional move
-    /// sources; one record per capture keeps the site's report single.
+    /// block body's `return` both reach this walk, and a `take` argument, a
+    /// `let` initializer, an assignment value, and a composite literal's field
+    /// value are recorded at their own sites, because a move there is a move
+    /// of the capture at a position no escape covers. A conditional selects
+    /// one arm at run time, so its arms are walked like the ownership stage's
+    /// conditional move sources; one record per capture keeps the site's
+    /// report single, and a composite records at its innermost move site
+    /// before the enclosing site's walk reaches the same name.
     pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
         let mut roots = Vec::new();
         super::place_root_names(value, &mut roots);
@@ -331,6 +337,12 @@ impl Checker<'_, '_> {
                 continue;
             };
             if !crate::types::contains_param(&ty) {
+                continue;
+            }
+            let Some(records) = self.captured_move_records.last_mut() else {
+                continue;
+            };
+            if !records.insert(root.to_owned()) {
                 continue;
             }
             self.capture_moves.push(CaptureMoveRequirement {
@@ -738,6 +750,12 @@ impl Checker<'_, '_> {
             } else {
                 self.check_value(&field.value, None);
             }
+            // A field value is a move site of its own: the composite may sit
+            // in a position no enclosing move covers (a condition, a
+            // projection), and a capture carried into the field is consumed
+            // there. The record dedupes per capture, so an enclosing site's
+            // walk keeps this innermost span.
+            self.record_generic_capture_move(&field.value);
         }
         target
     }

@@ -348,14 +348,52 @@ parameter-typed expected cannot be judged at the declaration), closing SR-006's 
 
 ## Phase 5: Diagnostic hygiene
 
-**Baseline**: _(recorded at phase start)_
+**Baseline**: `f84a26b` (the Phase 4 close-out tree).
 **Lenses**: correctness, semantics
+
+### Deliverables
+
+| # | Shape | Result |
+| - | ----- | ------ |
+| DEF-153 | A place-state error reports once per site: the statement update path evaluated the operand, then the read check and the write check reported again | Fixed; the reports funnel through a per-site ledger (`own/place.rs::report_state_once`, keyed by the binding, the span's start, and the code); spec `statededupe` (3× → one `E10020`), `statededupestmt`, `statededupeinit` (2× → one `E10021`), `statededupefield`, and the accepted `statededupeok` |
+| DEF-160 | A by-value capture moved into a local or assigned reports `E10401`, not the lend-storage `E10034` | Fixed; the sema records the move at the `let` initializer and the assignment value, and the lend duty is retired for a by-value capture root at every site; spec `capturelet`, `captureassign`, and the accepted `captureduplicable` |
+| DEF-161 | The block-bodied composite capture return reports one `E10401` | Fixed; a composite field value is a recording site of its own; spec `captureblock`, `captureexpr` |
+| DEF-162 | The `E10030` message renders a generated owner as a phrase | Fixed; `own/liveness.rs` renders `a compiler-generated owner` for a `generated` owner binding; spec `escapeowner`, impl pin |
+
+### Design notes
+
+- **The state ledger's key.** The design suggested (binding, projections, span); the
+  uninitialized *element* update showed the projections and the end offset differ between the
+  two reads (an element read also reads its base), so the key is (binding, the span's start,
+  the code): reads of one site share the start, and distinct wanted sites always differ there.
+- **The capture move sites.** The recording sites are the return, the expression body, a
+  `take` argument, the `let` initializer, the assignment value, and each composite field
+  value; a per-lambda record set keeps the innermost site's span, so a nested composite
+  reports once at the field value — the move's own position. The lend duty is retired for a
+  by-value capture at every site, and the `escape` flag became dead with it (the
+  `mark_escape_move_if_owning` wrapper merged into `mark_moved_if_owning`).
+- **The design's `captureexpr` annotation.** The design recorded the expression-bodied twin
+  as unchanged (one `E10401`); measured at the baseline it pairs `E10034` and `E10401` exactly
+  as the block body does, so the case pins one `E10401` for both forms (the same fix covers
+  both).
+- **The `escapeowner` phrase** deviates from the registry template the way the existing
+  `a statement temporary` subject already does; the registry itself is untouched.
+
+### Red evidence
+
+At the baseline: `E10020` three times per moved update site, `E10021` twice per uninitialized
+one; `E10034` at the capture `let`/assignment sites; `E10034` + `E10401` at both composite
+forms; `__cl_owned0` in the `E10030` message. The first green run left the uninitialized
+element case failing (two reports again) — the ledger key was coarsened to the span's start,
+not a change to the reporters.
+
+### Verification
+
+Spec suite 60/60 plain and under `RDC_ASAN=1`; impl 25/25; `make check` 62 suites green. The
+concrete read-only capture spelling (`([s] () => { let y = s; })()` with `s: String`) keeps
+its `E10034` attribution at the new sites — a pre-existing twin of DEF-160, filed as DEF-250.
+
+### Review and fix round
 
 _(findings recorded after the review round)_
 
-## Phase 6: Close-out
-
-**Baseline**: _(recorded at phase start)_
-**Lenses**: none new
-
-_(the full-verification evidence recorded at close-out)_

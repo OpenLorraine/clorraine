@@ -1571,3 +1571,290 @@ func main(): i32 {
     assert_exit("nullcopy", &output, 4);
 }
 
+// ===== Phase 5: diagnostic hygiene =====
+
+/// A value update on a wholly moved local's field reports one state error.
+///
+/// The operand walk and the read/write checks all reach the state reporters,
+/// so the site used to report three times (red at the phase base).
+#[test]
+fn should_report_a_moved_field_update_once() {
+    let source = r#"module spec.cc.statededupe;
+
+import { String, stringOf } from std.text;
+
+struct P { s: String; n: i32; }
+
+func main(): i32 {
+    let p = P { s: stringOf("ab"), n: 1 };
+    let q = p;
+    let y = p.n++;
+    return q.n + y;
+}
+"#;
+    assert_rejected_once(
+        "statededupe",
+        source,
+        "E10020",
+        &["'p' was moved and cannot be used"],
+        &[],
+    );
+}
+
+/// The statement form of the same update reports once too.
+#[test]
+fn should_report_a_moved_field_statement_update_once() {
+    let source = r#"module spec.cc.statededupestmt;
+
+import { String, stringOf } from std.text;
+
+struct P { s: String; n: i32; }
+
+func main(): i32 {
+    let p = P { s: stringOf("ab"), n: 1 };
+    let q = p;
+    p.n++;
+    return q.n;
+}
+"#;
+    assert_rejected_once(
+        "statededupestmt",
+        source,
+        "E10020",
+        &["'p' was moved and cannot be used"],
+        &[],
+    );
+}
+
+/// An uninitialized element update reports one state error.
+#[test]
+fn should_report_an_uninitialized_element_update_once() {
+    let source = r#"module spec.cc.statededupeinit;
+
+func main(): i32 {
+    let a: i32[2];
+    a[0]++;
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "statededupeinit",
+        source,
+        "E10021",
+        &["'a' may be used before it is initialized"],
+        &[],
+    );
+}
+
+/// An uninitialized field update reports one state error.
+#[test]
+fn should_report_an_uninitialized_field_update_once() {
+    let source = r#"module spec.cc.statededupefield;
+
+struct P { n: i32; m: i32; }
+
+func main(): i32 {
+    let p: P;
+    p.n++;
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "statededupefield",
+        source,
+        "E10021",
+        &["'p.n' may be used before it is initialized"],
+        &[],
+    );
+}
+
+/// A legal update still builds and runs.
+#[test]
+fn should_keep_a_legal_update_accepted() {
+    let source = r#"module spec.cc.statededupeok;
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    a[0]++;
+    let n: i32 = 3;
+    n++;
+    return a[0] + n;
+}
+"#;
+    let output = run_host("statededupeok", source);
+    assert_exit("statededupeok", &output, 6);
+}
+
+/// A generic capture moved into a local reports the capture-move rule at the
+/// owning instance, not the lend-storage rule (red at the phase base: E10034).
+#[test]
+fn should_attribute_a_let_bound_capture_move_to_the_capture_rule() {
+    let source = r#"module spec.cc.capturelet;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let y: T = x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "capturelet",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// The assignment form of the same move reports the capture-move rule.
+#[test]
+fn should_attribute_an_assigned_capture_move_to_the_capture_rule() {
+    let source = r#"module spec.cc.captureassign;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let y: T;
+        y = x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "captureassign",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// The same move at a duplicable instance stays accepted.
+#[test]
+fn should_keep_a_duplicable_capture_move_accepted() {
+    let source = r#"module spec.cc.captureduplicable;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let y: T = x;
+    })();
+}
+
+func main(): i32 {
+    make<i32>(5);
+    return 0;
+}
+"#;
+    let output = run_host("captureduplicable", source);
+    assert_exit("captureduplicable", &output, 0);
+}
+
+/// A block-bodied composite capture return reports the capture rule alone
+/// (red at the phase base: E10401 and E10034 together).
+#[test]
+fn should_report_a_block_composite_capture_return_once() {
+    let source = r#"module spec.cc.captureblock;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> { v: T; }
+
+func make<T>(x: T): Holder<T> {
+    return ([x] () => {
+        return Holder<T> { v: x };
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let h: Holder<String> = make<String>(s);
+    return i32(len(h.v));
+}
+"#;
+    assert_rejected_once(
+        "captureblock",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// The expression-bodied twin keeps its single report.
+#[test]
+fn should_report_an_expression_composite_capture_return_once() {
+    let source = r#"module spec.cc.captureexpr;
+
+import { String, stringOf } from std.text;
+
+struct Holder<T> { v: T; }
+
+func make<T>(x: T): Holder<T> {
+    return ([x] () => Holder<T> { v: x })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let h: Holder<String> = make<String>(s);
+    return i32(len(h.v));
+}
+"#;
+    assert_rejected_once(
+        "captureexpr",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// An escaped generated owner renders a display phrase, not its compiler
+/// spelling.
+#[test]
+fn should_render_a_generated_owner_as_a_phrase() {
+    let source = r#"module spec.cc.escapeowner;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    v: String;
+}
+
+func use(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: str = "zz";
+    let i: i32 = 0;
+    while (i < 2) {
+        let t: str = (Box { v: stringOf("ab") }).v;
+        if (i == 0) { s = t; }
+        i = i + 1;
+    }
+    return use(s);
+}
+"#;
+    assert_rejected_once(
+        "escapeowner",
+        source,
+        "E10030",
+        &["a compiler-generated owner", "does not live long enough"],
+        &["__cl_"],
+    );
+}
+

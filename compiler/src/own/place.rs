@@ -26,51 +26,83 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // records the duplicability duty; a duplicable instance stays accepted.
         self.note_maybe_moved_use(id, projections, span);
         if state.moved {
-            self.error(
+            self.report_state_once(
+                id,
+                span,
                 "E10020",
                 format!("'{name}' was moved and cannot be used"),
                 "re-initialize the binding or use a view",
-                span,
             );
             return;
         }
         if let Some(ir::Projection::Field(field)) = projections.first() {
             if state.partial.contains(field) {
-                self.error(
+                self.report_state_once(
+                    id,
+                    span,
                     "E10020",
                     format!("'{name}.{field}' was moved and cannot be used"),
                     "re-initialize the field or use a view",
-                    span,
                 );
                 return;
             }
             if !state.field_initialized(field) {
-                self.error(
+                self.report_state_once(
+                    id,
+                    span,
                     "E10021",
                     format!("'{name}.{field}' may be used before it is initialized"),
                     "initialize the field on every path",
-                    span,
                 );
             }
             return;
         }
         if !state.partial.is_empty() {
-            self.error(
+            self.report_state_once(
+                id,
+                span,
                 "E10025",
                 format!("'{name}' is partially moved and cannot be used as a whole"),
                 "use the remaining fields or re-initialize the struct",
-                span,
             );
             return;
         }
         if !state.initialized && !self.all_fields_initialized(id, &state) {
-            self.error(
+            self.report_state_once(
+                id,
+                span,
                 "E10021",
                 format!("'{name}' may be used before it is initialized"),
                 "initialize the binding on every path; out-parameter slots are not exempt",
-                span,
             );
         }
+    }
+
+    /// Reports a place-state error at most once per site.
+    ///
+    /// The site is the binding, the span's start, and the code: reads of one
+    /// site share the span's start even when they select different projections
+    /// (an element read also reads its base), and the update paths read a
+    /// place twice and write it again, so one site would otherwise repeat the
+    /// same state error. The first report at a site emits and later reports
+    /// for the same site are suppressed; a report the speculative pass would
+    /// suppress leaves the site free for the reporting pass.
+    fn report_state_once(
+        &mut self,
+        id: usize,
+        span: Span,
+        code: &'static str,
+        message: impl Into<String>,
+        help: &str,
+    ) {
+        if !self.report_diagnostics {
+            return;
+        }
+        let site = (id, span.start, code);
+        if !self.state_reports.insert(site) {
+            return;
+        }
+        self.error(code, message, help, span);
     }
 
     /// True when every declared top-level field of a struct binding is written.
@@ -101,21 +133,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let binding = &self.bindings[id];
         if binding.is_const {
             let name = binding.name.clone();
-            self.error(
+            self.report_state_once(
+                id,
+                span,
                 "E10023",
                 format!("cannot assign to immutable '{name}'"),
                 "declare it with `let` (mutable)",
-                span,
             );
             return;
         }
         if self.is_readonly_param(id) {
             let name = binding.name.clone();
-            self.error(
+            self.report_state_once(
+                id,
+                span,
                 "E10024",
                 format!("cannot write through read-only parameter '{name}'"),
                 "declare the parameter `borrow`",
-                span,
             );
             return;
         }
@@ -146,11 +180,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         if !projections.is_empty() && self.state.place(id).moved {
             let name = self.bindings[id].name.clone();
-            self.error(
+            self.report_state_once(
+                id,
+                span,
                 "E10020",
                 format!("'{name}' was moved and cannot be used"),
                 "re-initialize the binding before writing a field",
-                span,
             );
             return;
         }
@@ -429,21 +464,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// parameter additionally records a duty the per-instance audit judges
     /// against the substituted type: moving a lend into an owned position is
     /// legal only for a duplicable instance, and the `borrow T?` out-param slot
-    /// stays exempt.
+    /// stays exempt. A by-value lambda capture is exempt from that duty at
+    /// every site — including a return and a `take` argument — because the
+    /// capture-move rule judges it instead.
     pub(super) fn mark_moved_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_at(target, span, false, false);
-    }
-
-    /// Records a move whose value leaves the enclosing frame: a `return` or a
-    /// `take` argument.
-    ///
-    /// A by-value lambda capture that escapes is judged by the capture-move
-    /// rule after substitution (`E10401`), which the semantic stage records at
-    /// the same sites; the lend-storage duty would name the capture a borrowed
-    /// parameter (`E10034`) instead, so it is skipped for a by-value capture
-    /// here. Every other escape keeps the lend-storage duty.
-    pub(super) fn mark_escape_move_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_at(target, span, false, true);
+        self.mark_moved_if_owning_at(target, span, false);
     }
 
     /// Records a maybe-owning move whose destination is a writable parameter
@@ -454,22 +479,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// only for these moves; every other destination keeps the strict
     /// judgment.
     pub(super) fn mark_moved_into_slot_if_owning(&mut self, target: PlaceTarget, span: Span) {
-        self.mark_moved_if_owning_at(target, span, true, false);
+        self.mark_moved_if_owning_at(target, span, true);
     }
 
     /// Records a value-consuming move of a maybe-owning place.
     ///
     /// `stores_into_slot` flags a writable-parameter-slot destination for the
-    /// out-slot carve-out; `escape` flags a destination outside the enclosing
-    /// frame (a return or a `take` argument), where a by-value capture's move
-    /// is judged by the capture-move rule instead of the lend-storage duty.
-    fn mark_moved_if_owning_at(
-        &mut self,
-        target: PlaceTarget,
-        span: Span,
-        stores_into_slot: bool,
-        escape: bool,
-    ) {
+    /// out-slot carve-out.
+    fn mark_moved_if_owning_at(&mut self, target: PlaceTarget, span: Span, stores_into_slot: bool) {
         if let PlaceTarget::Local(id, projections) = target {
             self.with_place(id, |place| {
                 place.moved_if_owning.insert(projections.clone());
@@ -483,12 +500,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !lend {
                 return;
             }
-            // A by-value capture that escapes is judged by the capture-move
-            // rule after substitution; the capture-move recorder covers the
-            // return and take sites, so the lend duty would only add the
-            // wrong report. A move into an owned local stays with the lend
-            // duty, which the capture-move recorder does not cover.
-            if escape && is_by_value_capture_base(&binding.base) {
+            // A by-value capture is judged by the capture-move rule after
+            // substitution (`E10401`), which the semantic stage records at
+            // every move site — the return, a `take` argument, a `let` or
+            // assignment target, and a composite field value — so the lend
+            // duty would only add the wrong report here.
+            if is_by_value_capture_base(&binding.base) {
                 return;
             }
             let writable_source = binding.mode == Mode::Borrow;

@@ -262,6 +262,17 @@ struct FunctionChecker<'a, 'd> {
     bindings: Vec<Binding>,
     /// The current flow state.
     state: FlowState,
+    /// The place-state reports already emitted at each site.
+    ///
+    /// The site is the binding, the span's start, and the code. The update
+    /// paths read a place twice and write it again — the operand walk, the
+    /// read check, and the write check — so one site would otherwise repeat
+    /// the same state error up to three times; the first report at a site
+    /// emits and later reports for the same site are suppressed. Reads of one
+    /// site share the span's start even when they select different projections
+    /// (an element read also reads its base), which is why the projections and
+    /// the end offset are not part of the identity.
+    state_reports: BTreeSet<(usize, u32, &'static str)>,
     /// Number of enclosing `unsafe` constructs.
     unsafe_depth: u32,
     /// View-like lend parameters of the function, an elision candidate count.
@@ -478,6 +489,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             next_ordinal: BTreeMap::new(),
             loan_ids: BTreeMap::new(),
             binding_names: BTreeMap::new(),
+            state_reports: BTreeSet::new(),
             continue_states: BTreeMap::new(),
             defer_anchor: None,
             next_registration: 0,
@@ -543,6 +555,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     releases: Vec::new(),
                 });
         }
+        let generated = self.generated_owner_ids();
         let mut function = self.builder.finish();
         Self::sync_param_names(&mut function, &self.bindings);
         function.locals = self
@@ -557,7 +570,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             })
             .collect();
         function.temps = self.temps.clone();
-        liveness::check(&function, &self.events, &self.binding_names, self.diagnostics);
+        liveness::check(
+            &function,
+            &self.events,
+            &self.binding_names,
+            &generated,
+            self.diagnostics,
+        );
         (
             function,
             self.lifted,
@@ -928,6 +947,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         );
         self.bindings[id].generated = true;
         id
+    }
+
+    /// The binding indices of the compiler-generated owners.
+    ///
+    /// A generated owner has no source name a reader could recognize, so the
+    /// liveness report renders it as a display phrase and needs the
+    /// generated bindings' identities to do so.
+    fn generated_owner_ids(&self) -> BTreeSet<usize> {
+        self.bindings
+            .iter()
+            .enumerate()
+            .filter(|(_, binding)| binding.generated)
+            .map(|(id, _)| id)
+            .collect()
     }
 
     /// Declares a function parameter.

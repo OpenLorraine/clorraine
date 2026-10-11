@@ -174,12 +174,15 @@ fn terminator_successors(terminator: &Terminator) -> Vec<BlockId> {
 /// Runs the liveness pass over one finished function and reports its findings.
 ///
 /// `events` is the walk's log for this function, `names` maps a binding index
-/// to its written name for diagnostics, and every reported error keeps the
-/// version 1 code, message, help, and span.
+/// to its written name for diagnostics, `generated` names the compiler-created
+/// owner bindings, whose messages use a display phrase instead of the
+/// compiler's spelling, and every reported error keeps the version 1 code,
+/// message, help, and span.
 pub(super) fn check(
     function: &ir::Function,
     events: &[LoanEvent],
     names: &BTreeMap<usize, String>,
+    generated: &BTreeSet<usize>,
     diagnostics: &mut Diagnostics,
 ) {
     if events.is_empty() {
@@ -187,7 +190,7 @@ pub(super) fn check(
     }
     let analysis = Analysis::build(&successors(function), events);
     let live = analysis.regions();
-    analysis.report(events, &live, names, diagnostics);
+    analysis.report(events, &live, names, generated, diagnostics);
 }
 
 /// The reachability facts the rules are decided against.
@@ -283,6 +286,7 @@ impl Analysis {
         events: &[LoanEvent],
         live: &BTreeMap<LoanId, BTreeSet<Position>>,
         names: &BTreeMap<usize, String>,
+        generated: &BTreeSet<usize>,
         diagnostics: &mut Diagnostics,
     ) {
         for event in events {
@@ -292,14 +296,17 @@ impl Analysis {
                         let (code, message, help) = match access {
                             AccessKind::Move => (
                                 "E10022",
-                                format!("cannot move '{}' while it is borrowed", display(owner, names)),
+                                format!(
+                                    "cannot move '{}' while it is borrowed",
+                                    display(owner, names, generated)
+                                ),
                                 "end the borrow first",
                             ),
                             AccessKind::Write => (
                                 "E10031",
                                 format!(
                                     "cannot modify '{}' while it is shared-borrowed",
-                                    display(owner, names)
+                                    display(owner, names, generated)
                                 ),
                                 "end the shared borrow first",
                             ),
@@ -312,7 +319,10 @@ impl Analysis {
                         push(
                             diagnostics,
                             "E10032",
-                            format!("'{}' is already borrowed", display(owner, names)),
+                            format!(
+                            "'{}' is already borrowed",
+                            display(owner, names, generated)
+                        ),
                             "end the first borrow first",
                             event.span,
                         );
@@ -327,7 +337,12 @@ impl Analysis {
             }
             let span = self.spans.get(loan).copied().unwrap_or_default();
             let subject = match owner {
-                LoanOwner::Binding(_) => format!("'{}'", display(*owner, names)),
+                // A borrowed generated owner is the compiler's own binding, so
+                // its phrase reads without the quotes a source name carries.
+                LoanOwner::Binding(id) if generated.contains(id) => {
+                    display(*owner, names, generated)
+                }
+                LoanOwner::Binding(_) => format!("'{}'", display(*owner, names, generated)),
                 LoanOwner::Temp(_) => "a statement temporary".to_owned(),
             };
             push(
@@ -572,8 +587,15 @@ fn closure_avoiding(
 }
 
 /// The written name of an owner, for a diagnostic message.
-fn display(owner: LoanOwner, names: &BTreeMap<usize, String>) -> String {
+///
+/// A compiler-generated owner (`__cl_ownedN`) has no source name a reader
+/// could place, so it renders as a phrase the way a statement temporary does;
+/// every named owner keeps its written name.
+fn display(owner: LoanOwner, names: &BTreeMap<usize, String>, generated: &BTreeSet<usize>) -> String {
     match owner {
+        LoanOwner::Binding(id) if generated.contains(&id) => {
+            String::from("a compiler-generated owner")
+        }
         LoanOwner::Binding(id) => names
             .get(&id)
             .cloned()
@@ -647,7 +669,7 @@ mod tests {
         let analysis = Analysis::build(successors, events);
         let live = analysis.regions();
         let mut diagnostics = Diagnostics::new(false, None);
-        analysis.report(events, &live, &names(), &mut diagnostics);
+        analysis.report(events, &live, &names(), &BTreeSet::new(), &mut diagnostics);
         diagnostics
             .items()
             .iter()

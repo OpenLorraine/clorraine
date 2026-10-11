@@ -2,9 +2,9 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 28/38 tasks (74%)
+> **Progress**: 35/38 tasks (92%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 21:47
+> **Last Updated**: 2026-10-11 22:25
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
@@ -119,7 +119,7 @@
 
 ## Phase 5: Diagnostic hygiene
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `f84a26b` (the Phase 4 close-out tree)
 > **Lenses**: correctness + semantics
 > **Reasoning**: medium — two reporting-path changes and one audit extension
 
@@ -128,19 +128,19 @@
 **Reference**: [03-05](03-05-diagnostic-hygiene.md)
 **Objective**: Pin the single reports, the `E10401` attribution, and the display phrase.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
-- [ ] 5.1.2 Run the suite and record the red phase
+- [x] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 22:25; eleven cases — the update dedupe (four rejection spellings and one accepted), the capture `let`/assignment/duplicable/composite forms, and the generated-owner phrase; the `captureexpr` case pins one E10401 for the expression-bodied twin, corrected from the design's "unchanged" note)
+- [x] 5.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-11 22:25; nine red exactly as designed — the three-report and two-report doubles, both capture sites, both composite forms, and the `__cl_owned0` message — with the accepted controls green)
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Dedupe the state reports per site — `compiler/src/own/`
-- [ ] 5.2.2 Extend the capture recorder and retire the non-escape lend duty; render the generated-owner phrase — `compiler/src/sema/`, `compiler/src/own/`
-- [ ] 5.2.3 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 5.2.1 Dedupe the state reports per site — `compiler/src/own/` ✅ (completed: 2026-10-11 22:25; the per-site ledger funneled through `report_state_once`; amended: the key is the binding, the span's start, and the code — the element case's projections and end offset differ between its two reads)
+- [x] 5.2.2 Extend the capture recorder and retire the non-escape lend duty; render the generated-owner phrase — `compiler/src/sema/`, `compiler/src/own/` ✅ (completed: 2026-10-11 22:25; the recorder covers the `let`/assignment/composite-field sites with a per-lambda record set; the lend duty is retired for every by-value capture site and the dead `escape` flag merged away; `own/liveness.rs` renders the phrase)
+- [x] 5.2.3 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-11 22:25; the uninitialized element case failed the first green run — the ledger key was coarsened to the span start, then spec 60/60)
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the counts, the spans, the message) — `compiler/tests/checker_conformance_impl_test.rs`
-- [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses
+- [x] 5.3.1 Write the phase implementation pins (the counts, the spans, the message) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 22:25; five pins — the moved update's one report at 10:13, the capture move's one report at 7:20 with no E10034, the phrase with no compiler spelling, and the accepted update/duplicable-capture emissions; impl 25/25)
+- [~] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ⏳ (implemented: 2026-10-11 22:25; the two lenses dispatched after the commit)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

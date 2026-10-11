@@ -81,6 +81,35 @@ fn emit_host(tag: &str, source: &str) -> String {
     emitted
 }
 
+/// Runs one host-profile program and asserts the front end rejected it.
+///
+/// Returns the diagnostics' text. The phase's changes are diagnostic-only, so
+/// a rejected program must not write a translation unit.
+fn reject_host(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program wrote a translation unit"
+    );
+    String::from_utf8_lossy(&output.stderr).to_string()
+}
+
 /// Asserts the emitted C contains `needle`, reporting the full text otherwise.
 fn assert_contains(tag: &str, emitted: &str, needle: &str) {
     assert!(
@@ -724,5 +753,154 @@ func main(): i32 {
     let emitted = emit_host("nullnullablepin", source);
     assert_contains("nullnullablepin", &emitted, "BPTR f = NULL;");
     assert_contains("nullnullablepin", &emitted, "u8 *p = NULL;");
+}
+
+// ===== Phase 5: diagnostic hygiene =====
+
+/// The moved field update keeps one report at its own site.
+///
+/// The file's path is a scratch directory, so the pin asserts the line and
+/// column spelling inside the message's `-->` line.
+#[test]
+fn should_report_a_moved_update_once_with_its_site() {
+    let source = r#"module spec.cc.impl.statededupepin;
+
+import { String, stringOf } from std.text;
+
+struct P { s: String; n: i32; }
+
+func main(): i32 {
+    let p = P { s: stringOf("ab"), n: 1 };
+    let q = p;
+    let y = p.n++;
+    return q.n + y;
+}
+"#;
+    let stderr = reject_host("statededupepin", source);
+    assert_eq!(
+        stderr.matches("error E10020:").count(),
+        1,
+        "statededupepin: expected one E10020; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'p' was moved and cannot be used"),
+        "statededupepin: the moved message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:10:13"),
+        "statededupepin: the report moved off its site; stderr:\n{stderr}"
+    );
+}
+
+/// The capture move keeps one report at its own site and names the capture
+/// rule, not the lend rule.
+#[test]
+fn should_report_a_capture_move_once_with_its_site() {
+    let source = r#"module spec.cc.impl.capturepin;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let y: T = x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    let stderr = reject_host("capturepin", source);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "capturepin: expected one E10401; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("E10034"),
+        "capturepin: the lend rule still reports; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:7:20"),
+        "capturepin: the report moved off its site; stderr:\n{stderr}"
+    );
+}
+
+/// A generated owner renders as a phrase, never its compiler spelling.
+#[test]
+fn should_render_a_generated_owner_as_a_phrase() {
+    let source = r#"module spec.cc.impl.escapeownerpin;
+
+import { String, stringOf } from std.text;
+
+struct Box {
+    v: String;
+}
+
+func use(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: str = "zz";
+    let i: i32 = 0;
+    while (i < 2) {
+        let t: str = (Box { v: stringOf("ab") }).v;
+        if (i == 0) { s = t; }
+        i = i + 1;
+    }
+    return use(s);
+}
+"#;
+    let stderr = reject_host("escapeownerpin", source);
+    assert!(
+        stderr.contains("borrow of a compiler-generated owner does not live long enough"),
+        "escapeownerpin: the phrase is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("__cl_"),
+        "escapeownerpin: the compiler spelling leaks; stderr:\n{stderr}"
+    );
+}
+
+/// The legal update keeps its read-modify-write emission, byte-identically.
+#[test]
+fn should_keep_the_legal_update_emission() {
+    let source = r#"module spec.cc.impl.stateokpin;
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    a[0]++;
+    let n: i32 = 3;
+    n++;
+    return a[0] + n;
+}
+"#;
+    let (first, second) = emit_twice("stateokpin", source);
+    assert_contains("stateokpin", &first, "a[0] = (i32)((u32)a[0] + (u32)1);");
+    assert_eq!(first, second, "stateokpin: re-emission is not byte-identical");
+}
+
+/// A duplicable capture move keeps the copied environment emission.
+#[test]
+fn should_keep_the_duplicable_capture_emission() {
+    let source = r#"module spec.cc.impl.captureduppin;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let y: T = x;
+    })();
+}
+
+func main(): i32 {
+    make<i32>(5);
+    return 0;
+}
+"#;
+    let emitted = emit_host("captureduppin", source);
+    assert_contains("captureduppin", &emitted, "struct ClEnv_0__i32");
+    assert_contains("captureduppin", &emitted, "cl_lambda_0__i32");
 }
 
