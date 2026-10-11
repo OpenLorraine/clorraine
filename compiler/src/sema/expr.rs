@@ -17,10 +17,7 @@ use crate::ast::{
 };
 use crate::profile::Profile;
 use crate::span::Span;
-use crate::types::{
-    implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite,
-    ClosureTy, FuncParam, FuncTy, Ty, TyKind,
-};
+use crate::types::{ implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite, ClosureTy, FuncParam, FuncTy, Ty, TyKind, PlacePathStep };
 
 use super::{CaptureMoveRequirement, Checker, OpaqueProjection};
 
@@ -275,20 +272,29 @@ impl Checker<'_, '_> {
     /// site reports once.
     pub(super) fn reject_capture_move(&mut self, value: &Expr) {
         let mut roots = Vec::new();
-        super::place_root_names(value, &mut roots);
-        for root in roots {
-            if matches!(
+        super::place_move_paths(value, &[], &mut roots);
+        for (root, path) in roots {
+            if !matches!(
                 self.capture_mode(root),
                 Some(CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow)
             ) {
-                self.error(
-                    "E10401",
-                    format!("cannot move captured '{root}' in a lambda"),
-                    "copy the value at capture time",
-                    value.span,
-                );
-                return;
+                continue;
             }
+            // Only a move is rejected: a projection whose type is duplicable
+            // copies out of the borrow, so a read of such a field stays
+            // accepted and only a whole-root or owning move reports.
+            let projected =
+                crate::types::project_place_path(&self.name_type(root), &path, self.table);
+            if projected.is_unknown() || self.table.duplicable(&projected) {
+                continue;
+            }
+            self.error(
+                "E10401",
+                format!("cannot move captured '{root}' in a lambda"),
+                "copy the value at capture time",
+                value.span,
+            );
+            return;
         }
     }
 
@@ -312,16 +318,16 @@ impl Checker<'_, '_> {
     /// before the enclosing site's walk reaches the same name.
     pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
         let mut roots = Vec::new();
-        super::place_root_names(value, &mut roots);
+        super::place_move_paths(value, &[], &mut roots);
         if roots.is_empty() {
             return;
         }
         let Some(function) = self.function_name.clone() else {
             return;
         };
-        let mut seen: BTreeSet<&str> = BTreeSet::new();
-        for root in roots {
-            if !seen.insert(root) {
+        let mut seen: BTreeSet<(String, Vec<PlacePathStep>)> = BTreeSet::new();
+        for (root, path) in roots {
+            if !seen.insert((root.to_owned(), path.clone())) {
                 continue;
             }
             if !matches!(self.capture_mode(root), Some(CaptureMode::Copy)) {
@@ -342,13 +348,14 @@ impl Checker<'_, '_> {
             let Some(records) = self.captured_move_records.last_mut() else {
                 continue;
             };
-            if !records.insert(root.to_owned()) {
+            if !records.insert((root.to_owned(), path.clone())) {
                 continue;
             }
             self.capture_moves.push(CaptureMoveRequirement {
                 function: function.clone(),
                 capture: root.to_owned(),
                 ty,
+                path,
                 span: value.span,
             });
         }
@@ -874,6 +881,11 @@ impl Checker<'_, '_> {
             if element.is_none() {
                 element = Some(ty);
             }
+            // An element value is a move site of its own: the literal may sit
+            // in a position no enclosing move covers (a call argument, an
+            // iterable), and a capture carried into the element is consumed
+            // there.
+            self.record_generic_capture_move(expr);
         }
         if let Some(fill_expr) = fill {
             match &element {
@@ -888,6 +900,9 @@ impl Checker<'_, '_> {
                     self.reject_ephemeral_storage(&value_ty, fill_expr.span);
                 }
             }
+            // The fill copies its value into every element, so it is a move
+            // site of the same kind as an element.
+            self.record_generic_capture_move(fill_expr);
         }
         // An expected slice extent cannot type a fill-free literal: a literal's
         // shape is fixed, so a ``None`` outer extent takes the literal's own

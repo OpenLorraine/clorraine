@@ -122,6 +122,17 @@ impl Diagnostics {
         }
     }
 
+    /// Replaces one kept diagnostic in place.
+    ///
+    /// A later, more specific report about the same site supersedes an earlier
+    /// one. The severity is unchanged, so the error and warning counts stay as
+    /// they are.
+    pub fn replace_at(&mut self, index: usize, diagnostic: Diagnostic) {
+        if let Some(slot) = self.items.get_mut(index) {
+            *slot = diagnostic;
+        }
+    }
+
     /// Drops diagnostics added at or after `from` that repeat an earlier one
     /// (same code, message, and span).
     ///

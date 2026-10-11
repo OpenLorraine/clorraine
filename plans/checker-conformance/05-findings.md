@@ -378,15 +378,20 @@ parameter-typed expected cannot be judged at the declaration), closing SR-006's 
   both).
 - **The `escapeowner` phrase** deviates from the registry template the way the existing
   `a statement temporary` subject already does; the registry itself is untouched.
-- **The ruled acceptance deltas.** Recording the assignment value covers a by-value capture
-  stored into a `borrow T?` out-slot, so at a nullable owning instance the shape reports
-  `E10401` where the base accepted it (the lend duty's carve-out with no capture record at an
-  assignment site). The semantics review ruled this the frozen reading: the environment field
-  is an aliasing copy at an owning substitution, and the carve-out governs lend parameters,
-  not captures — the base's acceptance was a double-free path. Pinned by `captureoutslot`. A
-  lambda that moves one capture at two sites reports once (the per-lambda record set; the
-  second site is the ordinary moved-value error) — pinned by `capturetwosite`; a partially
-  moved struct's remaining-field update stays accepted — pinned by `statededupepartial`.
+- **The capture-move coverage.** Recording the assignment value covers a by-value capture
+  stored into a `borrow T?` out-slot: the base reported the lend rule (`E10034`) there and the
+  head reports the capture rule (`E10401`), so acceptance is unchanged — pinned by
+  `captureoutslot`. A lambda that moves one capture at two sites reports once (the per-lambda
+  record set; the second site is the ordinary moved-value error) — pinned by
+  `capturetwosite`; a partially moved struct's remaining-field update stays accepted — pinned
+  by `statededupepartial`.
+- **The moved place, not the whole capture.** A capture duty carries the moved place's
+  projection path. The per-instance audit substitutes the capture's type and projects the same
+  steps, so a duplicable field read out of a capture is the copy the frozen rules say it is,
+  while a whole capture or an owning projection is the unsound move. The same judgment covers
+  the pre-existing return and take spellings. A by-value capture also owns its environment
+  field: the partial-move limit and the borrowed-parameter report step past it, so a projected
+  move reports the capture rule alone.
 
 ### Red evidence
 
@@ -400,29 +405,38 @@ the reporters.
 
 ### Verification
 
-Spec suite 63/63 plain and under `RDC_ASAN=1`; impl 25/25; `make check` 62 suites green. The
-concrete read-only capture spelling (`([s] () => { let y = s; })()` with `s: String`) keeps
-its `E10034` attribution at the new sites — a pre-existing twin of DEF-160, filed as DEF-250.
+Spec suite 70/70 plain and under `RDC_ASAN=1`; impl 25/25; `make check` 62 suites green; the
+fix-round corpus sweep base/head shows no acceptance or emission delta. The concrete read-only
+capture spelling (`([s] () => { let y = s; })()` with `s: String`) keeps its `E10034`
+attribution at the new sites — a pre-existing twin of DEF-160, filed as DEF-250.
 
 ### Review and fix round
 
-**Both lenses reported; no phase findings.** The correctness lens: no critical or major; one
-records item (the exact red baselines) plus two behavior observations it asked the semantics
-lens to rule. The semantics lens: **no findings** — the single-report discipline, the capture
-attribution, and the generated-owner phrase all conform to the frozen text — and it **ruled
-both observations conformant**: the out-slot rejection is the frozen reading (Ch 06 L-2/L-3;
-the carve-out governs lend parameters, not captures, and the base's acceptance was a
-double-free path), and the second-site silence matches the recorded one-record-per-capture
-reading. No user ruling is needed.
+**Round 1 (both lenses).** The correctness lens: no critical or major; records items and
+behavior observations. The semantics lens: **1 critical, 1 major, 1 records minor** — the
+capture-recorder extension accepted two double-free spellings and rejected a valid one. The
+fix round fixed all of them, with the lenses' overlapping root causes fixed together.
 
-| Item | Resolution |
-| ---- | ---------- |
-| RV-001 (records) | The red evidence names the exact baselines (the `captureexpr` pair; the compound spelling reported once at the baseline) and the design notes record the second-site silence, the ruled out-slot delta, and the remaining-field acceptance |
-| The out-slot acceptance delta (base accepted → head rejects) | Ruled the frozen reading; accepted as an intended consequence and pinned by `captureoutslot` |
-| The second-site silence | Ruled conformant under the recorded reading; pinned by `capturetwosite` |
-| SR-005 (the remaining-field acceptance unpinned) | Pinned by `statededupepartial` |
-| SR-001 | Filed as DEF-250 (the concrete read-only capture twin) |
+| # | Sev | Finding | Resolution |
+| - | --- | ------- | ---------- |
+| SR-001 / RV-002 | 🔴 / 🟡 | A by-value capture moved through an array-literal element at an unrecorded position (`observe([x])`, `for (y in [x])`, a bare `[x];`) was accepted and double-freed; the literal recorded no element | Fixed: the element and fill values are recording sites, mirroring the struct-field hook; pinned by `capturearrayarg` and `captureiterable` |
+| RV-001 | 🟠 | A capture moved through an `unsafe` wrapper (`let y: T = unsafe x;`) was accepted and double-freed; the move walk had no `Unsafe` arm while the ownership stage unwraps it | Fixed: the walk passes through `unsafe`; pinned by `captureunsafe` (the direct `return unsafe x`/`take unsafe x` spellings, accepted-invalid at the baseline, report too) |
+| SR-002 | 🟠 | The new sites rejected valid programs: a duplicable projection of a capture (`let n: i32 = x.n;`) reported `E10401` because only the whole capture type was judged; the pre-existing return/take spellings had the same over-report | Fixed: the duty carries the moved place's projection path and the audit judges the substituted projection; pinned by `captureprojection` (accepted, runs), `captureprojectionowning` (one `E10401`, no `E10026`), and `returncaptureprojection` (accepted, runs) |
+| RV-003 | 🟡 | The per-site ledger could keep the whole-place text where a field-specific one was due (`(p).n++`) | Fixed: a later report selecting more projections replaces the emitted one at the same site; pinned by `statededupeparen` |
+| SR-003 / RV-004 | 🟡 / 🟡 | The records: the out-slot claim ("the base accepted it") was wrong — the base reported `E10034` and acceptance is unchanged — and the task texts carried stale counts | Fixed: the claim, the design note, and the case's comment corrected; the task texts carry the final counts |
 
-The reconciliation added the three ruled pins (spec 63/63); the reviewed implementation is
-unchanged.
+The fix also extends `move_place`'s borrowed-parameter report and the partial-move limit past
+by-value captures — they own their environment field — so an owning projection reports the
+capture rule alone.
+
+**Round 2 (scoped re-review).** _(recorded after the re-review)_
+
+### Filed
+
+| Item | Row |
+| ---- | --- |
+| The writable `[borrow x]` capture stored into a nullable owning out-slot is accepted and double-frees (base == head) | DEF-251 |
+| Moving out of a `const` binding is accepted (Ch 03 §2 V3) | DEF-252 |
+| A concrete discarded array literal is accepted and emits C the strict build rejects (base == head) | DEF-253 |
+| The concrete read-only capture's attribution at the new sites, and its writable spelling | DEF-250 (extended) |
 

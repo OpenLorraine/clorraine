@@ -24,10 +24,7 @@ use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::profile::Profile;
 use crate::span::Span;
-use crate::types::{
-    resolve_ty_with, substitute_instance, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind,
-    TypeTable,
-};
+use crate::types::{ resolve_ty_with, substitute_instance, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind, TypeTable, PlacePathStep };
 
 pub(crate) mod call;
 mod expr;
@@ -87,6 +84,12 @@ pub struct CaptureMoveRequirement {
     pub capture: String,
     /// The capture's declared type in terms of the function's type parameters.
     pub ty: Ty,
+    /// The projection path from the capture to the moved place.
+    ///
+    /// An empty path is a whole-capture move; a path names the field or
+    /// element the move selects, so the per-instance audit judges the moved
+    /// place's substituted type and a duplicable projection stays a copy.
+    pub path: Vec<PlacePathStep>,
     /// The returning or consuming site.
     pub span: Span,
 }
@@ -205,7 +208,7 @@ struct Checker<'a, 'd> {
     /// A composite move site nests: the field value's walk records first and
     /// the enclosing site's walk would find the same capture again, so one
     /// record per capture keeps the site's report single.
-    captured_move_records: Vec<BTreeSet<String>>,
+    captured_move_records: Vec<BTreeSet<(String, Vec<PlacePathStep>)>>,
     /// Diagnostic sink.
     diagnostics: &'d mut Diagnostics,
     /// The selected profile, so profile-surface rules can be reported here.
@@ -750,48 +753,71 @@ pub(super) fn place_root_name(expr: &Expr) -> Option<&str> {
     }
 }
 
-/// Collects every root name a capture move site may consume.
+/// Collects every capture root a move site may consume, with the projection
+/// path from each root.
 ///
-/// A plain place roots at one name, but a conditional selects one of its arms
-/// at run time, so a move out of `c ? x : y` may consume either arm's root; a
-/// nested conditional recurses. A struct or array literal consumes each field
-/// or element value, so a capture carried inside one is a move of that
-/// capture, and a projection of such a literal reaches the same roots. This
-/// mirrors the ownership stage's conditional move sources and its aggregate
-/// consumption, so the capture rules and the per-instance duty judge the same
-/// shapes.
-pub(super) fn place_root_names<'e>(expr: &'e Expr, roots: &mut Vec<&'e str>) {
+/// `path` is the projection chain built so far, outermost step first, and a
+/// root records its steps innermost first. A plain place roots at one entry; a
+/// conditional selects one of its arms at run time, so both arms are walked
+/// with the same chain. A struct or array literal consumes each field or
+/// element value whole, so the parts start a fresh chain and a projection of
+/// the literal never extends the parts' paths. A projection of a place extends
+/// that place's chain, `unsafe` passes through so a wrapped place is found,
+/// and a dotted qualified place contributes its later segments as field steps.
+/// This mirrors the ownership stage's move targets, so the capture rules and
+/// the per-instance duty judge the same places.
+pub(super) fn place_move_paths<'e>(
+    expr: &'e Expr,
+    path: &[PlacePathStep],
+    roots: &mut Vec<(&'e str, Vec<PlacePathStep>)>,
+) {
     match &expr.kind {
         ExprKind::Conditional {
             then_value,
             else_value,
             ..
         } => {
-            place_root_names(then_value, roots);
-            place_root_names(else_value, roots);
+            place_move_paths(then_value, path, roots);
+            place_move_paths(else_value, path, roots);
         }
         ExprKind::StructLiteral { fields, .. } => {
             for field in fields {
-                place_root_names(&field.value, roots);
+                place_move_paths(&field.value, &[], roots);
             }
         }
         ExprKind::ArrayLiteral { elements, fill } => {
             for element in elements {
-                place_root_names(element, roots);
+                place_move_paths(element, &[], roots);
             }
             if let Some(fill) = fill {
-                place_root_names(fill, roots);
+                place_move_paths(fill, &[], roots);
             }
         }
-        // A projection reaches into the storage its base names, so its roots
-        // are the base's roots: a place keeps its own root name, and a literal
-        // base reaches the captures its fields or elements consume.
-        ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
-            place_root_names(base, roots);
+        ExprKind::Member { base, name } => {
+            let mut nested = path.to_vec();
+            nested.push(PlacePathStep::Field(name.clone()));
+            place_move_paths(base, &nested, roots);
         }
+        ExprKind::Index { base, .. } => {
+            let mut nested = path.to_vec();
+            nested.push(PlacePathStep::Element);
+            place_move_paths(base, &nested, roots);
+        }
+        ExprKind::Unsafe(inner) => place_move_paths(inner, path, roots),
         _ => {
             if let Some(root) = place_root_name(expr) {
-                roots.push(root);
+                let mut steps: Vec<PlacePathStep> = Vec::new();
+                if let ExprKind::Qualified(name) = &expr.kind {
+                    steps.extend(
+                        name.segments
+                            .iter()
+                            .skip(1)
+                            .cloned()
+                            .map(PlacePathStep::Field),
+                    );
+                }
+                steps.extend(path.iter().rev().cloned());
+                roots.push((root, steps));
             }
         }
     }

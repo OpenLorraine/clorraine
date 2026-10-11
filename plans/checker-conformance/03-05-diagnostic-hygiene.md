@@ -67,7 +67,7 @@ enough` is untouched.
 | `capturelet` | `let y: T = x;` at an owning instance (DEF-160) | exactly one `E10401`; no `E10034` |
 | `captureduplicable` | the same shape at a duplicable instance | accepted; byte-identical emission |
 | `captureblock` | the block-bodied composite return (DEF-161) | exactly one `E10401` |
-| `captureexpr` | the expression-bodied twin | exactly one `E10401` (unchanged) |
+| `captureexpr` | the expression-bodied twin | exactly one `E10401` (the baseline paired `E10034` and `E10401`, like the block body — corrected during the phase) |
 | `escapeowner` | the escaped generated owner (DEF-162) | the message renders the phrase; no `__cl_owned` |
 
 ## Acceptance

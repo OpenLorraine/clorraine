@@ -1794,7 +1794,8 @@ func main(): i32 {
     );
 }
 
-/// The expression-bodied twin keeps its single report.
+/// The expression-bodied twin reports once after the fix; at the baseline it
+/// paired the two reports exactly as the block body did.
 #[test]
 fn should_report_an_expression_composite_capture_return_once() {
     let source = r#"module spec.cc.captureexpr;
@@ -1864,9 +1865,8 @@ func main(): i32 {
 /// The capture's environment field is an aliasing copy of the enclosing
 /// binding at an owning substitution, so storing it through the slot hands the
 /// caller an unsound alias; the out-slot carve-out governs lend parameters,
-/// not captures. The base accepted the shape (the lend duty's carve-out with
-/// no capture recording at an assignment site), so this pin records the ruled
-/// consequence.
+/// not captures. The base reported the lend rule (`E10034`) at the store and
+/// the capture rule reports instead, so acceptance is unchanged.
 #[test]
 fn should_reject_a_capture_stored_into_an_out_slot() {
     let source = r#"module spec.cc.captureoutslot;
@@ -1946,5 +1946,210 @@ func main(): i32 {
 "#;
     let output = run_host("statededupepartial", source);
     assert_exit("statededupepartial", &output, 4);
+}
+
+// ===== Phase 5 fix round =====
+
+/// A capture moved into an array literal at a call argument reports the
+/// capture rule.
+///
+/// The element store consumes the capture, and the literal sits in a position
+/// no enclosing move site covers; without the element record the program was
+/// accepted and double-freed.
+#[test]
+fn should_report_a_capture_moved_into_an_array_argument() {
+    let source = r#"module spec.cc.capturearrayarg;
+
+import { String, stringOf } from std.text;
+
+func observe<T>(v: T[1]): void {}
+
+func make<T>(x: T): void {
+    ([x] () => {
+        observe([x]);
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "capturearrayarg",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// A capture moved into an array literal in an iterable position reports the
+/// capture rule.
+#[test]
+fn should_report_a_capture_moved_into_an_iterable_literal() {
+    let source = r#"module spec.cc.captureiterable;
+
+import { String, stringOf } from std.text;
+
+func observe<T>(v: T[1]): void {}
+
+func make<T>(x: T): void {
+    ([x] () => {
+        for (y in [x]) {
+            observe([y]);
+        }
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "captureiterable",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// A capture moved through an `unsafe` wrapper reports the capture rule.
+#[test]
+fn should_report_a_capture_moved_through_unsafe() {
+    let source = r#"module spec.cc.captureunsafe;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let y: T = unsafe x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "captureunsafe",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// A read of a duplicable projection of a capture stays accepted.
+///
+/// The move is judged at the place it consumes: the numeric field copies out
+/// of the capture, and the base runs it clean.
+#[test]
+fn should_keep_a_duplicable_capture_projection_accepted() {
+    let source = r#"module spec.cc.captureprojection;
+
+import { String, stringOf } from std.text;
+
+struct O { s: String; n: i32; }
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let n: i32 = x.n;
+    })();
+}
+
+func main(): i32 {
+    let o: O = O { s: stringOf("ab"), n: 7 };
+    make<O>(o);
+    return 0;
+}
+"#;
+    let output = run_host("captureprojection", source);
+    assert_exit("captureprojection", &output, 0);
+}
+
+/// A move of an owning projection of a capture reports the capture rule
+/// alone.
+#[test]
+fn should_report_an_owning_capture_projection_once() {
+    let source = r#"module spec.cc.captureprojectionowning;
+
+import { String, stringOf } from std.text;
+
+struct O { s: String; n: i32; }
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let s: String = x.s;
+    })();
+}
+
+func main(): i32 {
+    let o: O = O { s: stringOf("ab"), n: 7 };
+    make<O>(o);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "captureprojectionowning",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034", "E10026"],
+    );
+}
+
+/// A returned duplicable projection of a capture stays accepted, so a copy out
+/// of a borrow is never mistaken for a move.
+#[test]
+fn should_keep_a_returned_duplicable_projection_accepted() {
+    let source = r#"module spec.cc.returncaptureprojection;
+
+import { String, stringOf } from std.text;
+
+struct O { s: String; n: i32; }
+
+func read<T>(x: T): i32 {
+    return ([x] () => {
+        return x.n;
+    })();
+}
+
+func main(): i32 {
+    let o: O = O { s: stringOf("ab"), n: 7 };
+    return read<O>(o);
+}
+"#;
+    let output = run_host("returncaptureprojection", source);
+    assert_exit("returncaptureprojection", &output, 7);
+}
+
+/// A parenthesized member update keeps the field-specific state text at its
+/// site.
+#[test]
+fn should_keep_the_field_specific_state_text_at_a_colliding_site() {
+    let source = r#"module spec.cc.statededupeparen;
+
+struct P { n: i32; m: i32; }
+
+func main(): i32 {
+    let p: P;
+    let y = (p).n++;
+    return y;
+}
+"#;
+    assert_rejected_once(
+        "statededupeparen",
+        source,
+        "E10021",
+        &["'p.n' may be used before it is initialized"],
+        &["'p' may be used"],
+    );
 }
 

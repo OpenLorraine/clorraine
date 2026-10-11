@@ -89,7 +89,12 @@ fn check_capture_move_requirements(
                 continue;
             }
             let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
-            if substituted.is_unknown() || sema.table.duplicable(&substituted) {
+            // The move is judged at the place it consumes: a duplicable
+            // projection copies out, so a field read stays accepted while a
+            // whole capture or an owning projection is the unsound move.
+            let moved =
+                crate::types::project_place_path(&substituted, &requirement.path, &sema.table);
+            if moved.is_unknown() || sema.table.duplicable(&moved) {
                 continue;
             }
             let key = (

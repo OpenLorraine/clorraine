@@ -511,6 +511,63 @@ pub fn substitute(ty: &Ty, bindings: &BTreeMap<String, Ty>) -> Ty {
     }
 }
 
+/// One step of a place's projection path from a binding root.
+///
+/// The ownership rules judge a moved place, not only its root: moving a
+/// duplicable field out of a struct copies it, while moving an owning field is
+/// a real move. A capture duty records the moved path so the per-instance
+/// audit can substitute the root's type and project the same steps.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PlacePathStep {
+    /// A named struct field.
+    Field(String),
+    /// An array or slice element.
+    Element,
+}
+
+/// The type of a place reached by following a projection path from `ty`.
+///
+/// A step that cannot be resolved — a member of a type this stage does not
+/// model, or a field a struct does not declare — yields `Unknown`, matching
+/// the checker's opaque-type convention: the caller leaves the judgment to the
+/// per-instance audit or accepts the place rather than reporting on a guess.
+pub fn project_place_path(ty: &Ty, steps: &[PlacePathStep], table: &TypeTable) -> Ty {
+    let mut current = ty.clone();
+    for step in steps {
+        current = match step {
+            PlacePathStep::Field(name) => project_field(&current, name, table),
+            PlacePathStep::Element => project_element(&current),
+        };
+        if current.is_unknown() {
+            break;
+        }
+    }
+    current
+}
+
+/// The declared type of one field, with the struct's arguments substituted.
+fn project_field(ty: &Ty, name: &str, table: &TypeTable) -> Ty {
+    let TyKind::Struct(struct_name, args) = &ty.kind else {
+        return Ty::unknown();
+    };
+    let Some(fields) = table.struct_fields(struct_name) else {
+        return Ty::unknown();
+    };
+    let Some((_, field_ty)) = fields.iter().find(|(field, _)| field == name) else {
+        return Ty::unknown();
+    };
+    let params = table.struct_type_params(struct_name).unwrap_or(&[]);
+    substitute_instance(field_ty, params, args)
+}
+
+/// The element type of an array or slice, or `Unknown` for any other type.
+fn project_element(ty: &Ty) -> Ty {
+    match &ty.kind {
+        TyKind::Array { element, .. } => (**element).clone(),
+        _ => Ty::unknown(),
+    }
+}
+
 /// Substitutes a generic instance's type arguments into a declared type.
 ///
 /// `declared` is written in terms of `params`; `args` are the instance's

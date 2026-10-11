@@ -28,6 +28,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if state.moved {
             self.report_state_once(
                 id,
+                projections,
                 span,
                 "E10020",
                 format!("'{name}' was moved and cannot be used"),
@@ -39,6 +40,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if state.partial.contains(field) {
                 self.report_state_once(
                     id,
+                    projections,
                     span,
                     "E10020",
                     format!("'{name}.{field}' was moved and cannot be used"),
@@ -49,6 +51,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !state.field_initialized(field) {
                 self.report_state_once(
                     id,
+                    projections,
                     span,
                     "E10021",
                     format!("'{name}.{field}' may be used before it is initialized"),
@@ -60,6 +63,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !state.partial.is_empty() {
             self.report_state_once(
                 id,
+                projections,
                 span,
                 "E10025",
                 format!("'{name}' is partially moved and cannot be used as a whole"),
@@ -70,6 +74,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !state.initialized && !self.all_fields_initialized(id, &state) {
             self.report_state_once(
                 id,
+                projections,
                 span,
                 "E10021",
                 format!("'{name}' may be used before it is initialized"),
@@ -85,11 +90,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// (an element read also reads its base), and the update paths read a
     /// place twice and write it again, so one site would otherwise repeat the
     /// same state error. The first report at a site emits and later reports
-    /// for the same site are suppressed; a report the speculative pass would
-    /// suppress leaves the site free for the reporting pass.
+    /// for the same site are suppressed — unless a later report selects more
+    /// projections, which is the more specific text for the same site and
+    /// replaces the whole-place one already emitted. A report the speculative
+    /// pass would suppress leaves the site free for the reporting pass.
     fn report_state_once(
         &mut self,
         id: usize,
+        projections: &[ir::Projection],
         span: Span,
         code: &'static str,
         message: impl Into<String>,
@@ -99,10 +107,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let site = (id, span.start, code);
-        if !self.state_reports.insert(site) {
-            return;
+        let rank = projections.len();
+        match self.state_reports.get(&site).copied() {
+            None => {
+                let index = self.diagnostics.items().len();
+                self.state_reports.insert(site, (index, rank));
+                self.error(code, message, help, span);
+            }
+            Some((index, recorded)) => {
+                if rank > recorded {
+                    self.diagnostics.replace_at(
+                        index,
+                        Diagnostic::error(code, message, span).with_help(help),
+                    );
+                    self.state_reports.insert(site, (index, rank));
+                }
+            }
         }
-        self.error(code, message, help, span);
     }
 
     /// True when every declared top-level field of a struct binding is written.
@@ -135,6 +156,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let name = binding.name.clone();
             self.report_state_once(
                 id,
+                projections,
                 span,
                 "E10023",
                 format!("cannot assign to immutable '{name}'"),
@@ -146,6 +168,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let name = binding.name.clone();
             self.report_state_once(
                 id,
+                projections,
                 span,
                 "E10024",
                 format!("cannot write through read-only parameter '{name}'"),
@@ -182,6 +205,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let name = self.bindings[id].name.clone();
             self.report_state_once(
                 id,
+                projections,
                 span,
                 "E10020",
                 format!("'{name}' was moved and cannot be used"),
@@ -372,6 +396,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         if binding.kind == BindingKind::Param
             && matches!(binding.mode, Mode::None | Mode::Const | Mode::Borrow)
+            // A by-value capture owns its environment field, so moving it (or
+            // a field of it) is judged by the capture-move rule, exactly as a
+            // whole move is; the lend-storage report would name it a borrowed
+            // parameter of the enclosing function.
+            && !is_by_value_capture_base(&binding.base)
         {
             let name = binding.name.clone();
             self.error(
@@ -384,6 +413,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let owner_kind = binding.kind;
         let owner_mode = binding.mode;
+        let owns_environment_field = is_by_value_capture_base(&binding.base);
         self.record_event(
             LoanEventKind::Access {
                 owner: LoanOwner::Binding(id),
@@ -402,11 +432,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             });
             return;
         }
-        // A partial move is a single top-level field of an owned local or a
-        // `take`/out parameter.
+        // A partial move is a single top-level field of an owned local, a
+        // `take`/out parameter, or a by-value capture, which owns its
+        // environment field the way a local does.
         let top_level = projections.len() == 1
             && matches!(projections[0], ir::Projection::Field(_));
-        let owned = matches!(owner_kind, BindingKind::Local) || owner_mode == Mode::Take;
+        let owned = matches!(owner_kind, BindingKind::Local)
+            || owner_mode == Mode::Take
+            || owns_environment_field;
         if !top_level || !owned {
             self.error(
                 "E10026",

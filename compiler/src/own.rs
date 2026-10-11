@@ -270,9 +270,11 @@ struct FunctionChecker<'a, 'd> {
     /// the same state error up to three times; the first report at a site
     /// emits and later reports for the same site are suppressed. Reads of one
     /// site share the span's start even when they select different projections
-    /// (an element read also reads its base), which is why the projections and
-    /// the end offset are not part of the identity.
-    state_reports: BTreeSet<(usize, u32, &'static str)>,
+    /// (an element read also reads its base), so the projections are not part
+    /// of the identity; they rank the reports instead, and a later report with
+    /// more projections replaces the whole-place one at the same site. The
+    /// value is the emitted diagnostic's index and the report's rank.
+    state_reports: BTreeMap<(usize, u32, &'static str), (usize, usize)>,
     /// Number of enclosing `unsafe` constructs.
     unsafe_depth: u32,
     /// View-like lend parameters of the function, an elision candidate count.
@@ -489,7 +491,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             next_ordinal: BTreeMap::new(),
             loan_ids: BTreeMap::new(),
             binding_names: BTreeMap::new(),
-            state_reports: BTreeSet::new(),
+            state_reports: BTreeMap::new(),
             continue_states: BTreeMap::new(),
             defer_anchor: None,
             next_registration: 0,
