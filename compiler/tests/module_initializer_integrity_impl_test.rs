@@ -655,11 +655,11 @@ func main(): i32 {
     assert_contains(
         "takearg",
         &emitted,
-        "cl_spec_mii_impl_takearg_g = cl_spec_mii_impl_takearg_consume(__cl_itmp0);",
+        "cl_spec_mii_impl_takearg_g = cl_spec_mii_impl_takearg_consume(cl_std_text_stringOf(cl_str(\"abc\")));",
     );
     assert_eq!(
-        count(&emitted, "FreeString(__cl_itmp0)"),
+        count(&emitted, "__cl_itmp"),
         0,
-        "takearg: the callee frees the consumed argument"
+        "takearg: a consumed argument binds no init local, so nothing releases it"
     );
 }

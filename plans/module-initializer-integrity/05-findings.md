@@ -138,7 +138,7 @@ re-exercises the corpus and the cross-profile legs over the final tree.
 
 - **The walk runs through the Phase 1 synthetic checker** (`check_initializer_writes`), so place resolution (`place_target`), the `const` rule with its through-`raw` carve-out, and the immutable-view predicate are the checker's own — no duplicated predicate. Lambda bodies are skipped: the lift checks them with the ordinary body rules.
 - **Retention rule.** A view destination (`str`/`static str`) keeps the storage it points into for the program's lifetime, so its initializer's owned values stay unbound and unreleased; every other destination copies its bytes and releases its temporaries. This keeps the Phase 2 wrap emissions byte-identical.
-- **Resolution context fix (intended).** The init emitter now resolves names in the module it is initializing (`current_module`), where it previously inherited the last emitted body's module; a same-named function elsewhere could have supplied a callee's symbol or modes. Multi-module initializer emissions may differ from the batch base for the better.
+- **Resolution context fix (intended).** The init emitter now resolves names in the module it is initializing (`current_module`), which was previously unset while init functions are emitted before any body; an ambiguous same-named callee lowered to its bare spelling (a strict-build failure) rather than resolving the initializing module's own. Multi-module initializer emissions may differ from the batch base for the better.
 - **Shape convergence (intended).** An owned argument, arm, or template in a non-view position now binds into an init local and releases; the `lambdavalue` impl pin was re-pinned to the bound form plus its release (one cross-suite pin change; `make check` confirms no other pinned shape moved).
 - **DEF-203 (the global-borrow rule) stays filed**: it is a borrow rule, not one of the write-mutability rules R9 names, and the check walk deliberately judges writes only.
 - **DEF-209 (the body-side projection leak)** stays filed: the body's own projection-root binding is a separate ownership fix outside this batch.
@@ -152,3 +152,25 @@ re-exercises the corpus and the cross-profile legs over the final tree.
 ### Verification
 
 Spec suite 29/29 plain and under `RDC_ASAN=1`; impl 17/17; `make check` 60 suites green.
+
+### Review fix round (memory-safety + correctness + semantics)
+
+The three review lenses converged on the same classes in the release work; all were fixed and
+re-verified directly (the review budget's direct-verification rule).
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| MS-003 = SR-001 = RV-001 | 🔴 critical | The retention predicate covered only top-level `str`/`static str`, so a `cstring`, `str[N]`, `str[N][M]`, or struct-with-view-field destination freed the storage its views pointed into (use-after-free in `main`). | Fixed: retention descends arrays and struct fields (`stores_view_storage`). A rejected alternative was rejecting the escaping loans outright (the filed DEF-203 family); retention preserves the base's acceptance and restores its memory behavior, so no new rejection was introduced. |
+| MS-001 = SR-002 = RV-002 | 🔴 critical | A `take` argument whose value was a projection or conditional kept its owner records, so the init-end release freed what the callee already owned (double free). | Fixed: the parameter modes are resolved before the argument walk, and nothing inside a consumed argument's subtree records an owner — the argument flows into the callee unreleased, exactly as at the batch base. The `takearg` pin asserts the unbound spelling and zero init locals. |
+| MS-002 = SR-003 | 🟠 major | `forget_consumed_arguments` consulted the name-based modes before the callable's own signature, so a same-named function supplied the wrong modes (double free or leak). | Fixed: `call_param_modes` prefers the value callee's signature. Spec case `modesshadow`. |
+| SR-001 (semantics) P-1 | 🟡 minor | A structural `.len` update in an initializer was accepted where the body reports `E10221`, emitting invalid C. | Fixed in the same walk: `structural_len_target`/`reject_structural_len_target` (visibility widened) now judge it. Spec case `lenupdate`. |
+| RV-003 (correctness) | 🟡 minor | The plan header's progress count and the ledger's resolution-context sentence. | Corrected (23/33, and the base mechanism was an unset module, not a stale one). |
+
+**New spec cases**: `takecond`, `takeproject`, `modesshadow` (the three release classes),
+`cstringretain`, `viewarrayretain`, `structviewretain` (the retention compounds), and
+`lenupdate` (the `.len` parity). **New evidence**: every reviewer counterexample re-probed under
+host AddressSanitizer (clean), and the `takearg` pin re-pinned to the unbound spelling.
+
+**Filed**: DEF-210 — an initializer `take` argument that projects an element of a call-result
+array frees the consumed element but leaves its sibling unreleased (base-equal; the body twin
+reports `E10026`), so the residual belongs to the initializer call-check family.

@@ -134,6 +134,12 @@ pub(super) struct Emitter<'a> {
     /// released; every other destination copies its bytes and releases its
     /// temporaries.
     pub(super) init_retain_owners: bool,
+    /// True while an argument a `take` parameter consumes is prepared.
+    ///
+    /// The callee frees a consumed value, so nothing in the argument's own
+    /// subtree records an owner; the values flow into the callee unreleased
+    /// here, exactly as the base behaved before the release pass existed.
+    pub(super) init_skip_owner_binding: bool,
     /// Parameters rendered as a pointer because they are a writable lend of a
     /// non-duplicable struct; a member access on one dereferences first.
     pub(super) pointer_params: BTreeSet<String>,
@@ -277,6 +283,7 @@ impl<'a> Emitter<'a> {
             init_locals: 0,
             init_owners: Vec::new(),
             init_retain_owners: false,
+            init_skip_owner_binding: false,
             pointer_params: BTreeSet::new(),
             scope_actions: BTreeMap::new(),
             rungs: Vec::new(),

@@ -1041,3 +1041,181 @@ func main(): i32 {
     let output = run_host("readonly", source);
     assert_exit("readonly", &output, 0);
 }
+
+/// A consumed conditional argument is not released by the initializer.
+///
+/// The callee frees the chosen arm, so the initializer must not: the walk
+/// binds nothing inside a consumed argument (red at the review base: the
+/// release pass freed both arms and the chosen one double-freed).
+#[test]
+fn should_not_release_a_consumed_conditional_argument() {
+    let source = r#"module spec.mii.takecond;
+
+import { String, stringOf } from std.text;
+
+func consume(take xs: String): i32 {
+    return i32(len(xs));
+}
+
+let c: bool = true;
+let g: i32 = consume(c ? stringOf("a") : stringOf("bb"));
+
+func main(): i32 {
+    return g - 1;
+}
+"#;
+    let output = run_memory("takecond", source);
+    assert_no_asan("takecond", &output);
+    assert_exit("takecond", &output, 0);
+}
+
+/// A consumed projection argument is not released by the initializer.
+///
+/// The callee takes the projected member out of the call result, so the
+/// initializer frees nothing (red at the review base: it freed the member the
+/// callee already owned).
+#[test]
+fn should_not_release_a_consumed_projection_argument() {
+    let source = r#"module spec.mii.takeproject;
+
+import { String, stringOf } from std.text;
+
+func consume(take xs: String): i32 {
+    return i32(len(xs));
+}
+
+struct Box { name: String; count: i32; }
+
+func mkBox(): Box {
+    return Box { name: stringOf("abc"), count: 3 };
+}
+
+let g: i32 = consume(mkBox().name);
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let output = run_memory("takeproject", source);
+    assert_no_asan("takeproject", &output);
+    assert_exit("takeproject", &output, 0);
+}
+
+/// A value callee's modes come from its own signature, not a same-named one.
+///
+/// The field's `take` parameter decides consumption even though a module
+/// function shares the field's name with different modes (red at the review
+/// base: the name lookup supplied the wrong modes and the argument
+/// double-freed).
+#[test]
+fn should_use_the_callable_signature_modes_for_a_name_collision() {
+    let source = r#"module spec.mii.modesshadow;
+
+import { String, stringOf } from std.text;
+
+func consume(take xs: String): i32 {
+    return i32(len(xs));
+}
+
+func go(xs: String): i32 {
+    return i32(len(xs)) + 100;
+}
+
+struct H { go: func(take String): i32; }
+
+let h: H = H { go: consume };
+let g: i32 = h.go(stringOf("abc"));
+
+func main(): i32 {
+    return g - 3;
+}
+"#;
+    let output = run_memory("modesshadow", source);
+    assert_no_asan("modesshadow", &output);
+    assert_exit("modesshadow", &output, 0);
+}
+
+/// A `cstring` destination retains the storage its view points into.
+///
+/// The view keeps the backing for the program's lifetime, so nothing frees
+/// it at the init function's end (red at the review base: the backing was
+/// freed and `main` read freed storage).
+#[test]
+fn should_retain_a_cstring_backing() {
+    let source = r#"module spec.mii.cstringretain;
+
+import { toCString, stringOf } from std.text;
+
+let c: cstring = toCString(stringOf("x"));
+
+func main(): i32 {
+    return i32(c[0]) - 120;
+}
+"#;
+    let output = run_memory("cstringretain", source);
+    assert_no_asan("cstringretain", &output);
+    assert_exit("cstringretain", &output, 0);
+}
+
+/// A view-array destination retains the storage its views point into.
+#[test]
+fn should_retain_a_view_array_backing() {
+    let source = r#"module spec.mii.viewarrayretain;
+
+import { String, stringOf } from std.text;
+
+let a: str[2] = [stringOf("a"), stringOf("b")];
+
+func main(): i32 {
+    return i32(a[0][0]) - 97;
+}
+"#;
+    let output = run_memory("viewarrayretain", source);
+    assert_no_asan("viewarrayretain", &output);
+    assert_exit("viewarrayretain", &output, 0);
+}
+
+/// A struct field that holds views retains the storage behind them.
+#[test]
+fn should_retain_a_struct_view_field_backing() {
+    let source = r#"module spec.mii.structviewretain;
+
+import { stringOf } from std.text;
+
+struct S { cells: str[1]; }
+
+let s: S = S { cells: [stringOf("abc")] };
+
+func main(): i32 {
+    return i32(s.cells[0][0]) - 97;
+}
+"#;
+    let output = run_memory("structviewretain", source);
+    assert_no_asan("structviewretain", &output);
+    assert_exit("structviewretain", &output, 0);
+}
+
+/// A structural `.len` update reports like the body.
+///
+/// The extent is a compile-time property with no storage, so the update
+/// reports the body's own rejection (red at the review base: the initializer
+/// accepted the form and emitted an invalid increment).
+#[test]
+fn should_reject_a_structural_len_update_in_an_initializer() {
+    let source = r#"module spec.mii.lenupdate;
+
+let a: i32[2] = [1, 2];
+let x: usize = a.len++;
+
+func main(): i32 {
+    return i32(x);
+}
+"#;
+    assert_rejected_once(
+        "lenupdate",
+        source,
+        "E10221",
+        &["left side of an assignment must be a place"],
+        &["E10023", "E10042"],
+    );
+}

@@ -561,7 +561,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn walk_initializer_writes(&mut self, expr: &'a Expr) {
         match &expr.kind {
             ExprKind::Unary { op, operand } if op.is_update() => {
-                self.check_initializer_write_target(operand);
+                if self.structural_len_target(operand) {
+                    // A fixed array's structural `.len` names no storage, so
+                    // the update reports the body's own rejection.
+                    self.reject_structural_len_target(operand);
+                } else {
+                    self.check_initializer_write_target(operand);
+                }
                 self.walk_initializer_writes(operand);
             }
             ExprKind::Unary { operand, .. } => self.walk_initializer_writes(operand),

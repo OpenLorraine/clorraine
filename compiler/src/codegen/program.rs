@@ -801,7 +801,7 @@ impl<'a> Emitter<'a> {
         // rather than released; every other destination copies its bytes.
         self.init_retain_owners = declared_ty
             .as_ref()
-            .is_some_and(|declared| matches!(declared.kind, TyKind::Str | TyKind::StaticStr));
+            .is_some_and(|declared| self.stores_view_storage(declared));
         let mut lowered = match self.loaded.module(module_name) {
             Some(module) => self.lower_global(module, value),
             None => Value {
@@ -1073,10 +1073,10 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
-        if !self.init_retain_owners && self.needs_drop(&value.ty) {
+        if !self.init_retain_owners && !self.init_skip_owner_binding && self.needs_drop(&value.ty) {
             // The local holds an owned value, so the release pass frees it at
-            // the init function's end; a `take` argument's record is dropped
-            // again when the callee consumes it.
+            // the init function's end; a view destination retains it, and a
+            // consumed argument's subtree records nothing.
             self.init_owners.push((name.clone(), value.ty.clone()));
         }
         let read = Value::new(
@@ -1177,34 +1177,48 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// Drops the release record of each argument a `take` parameter consumes.
+    /// The parameter modes a call applies, from the callee's own signature.
     ///
-    /// The argument's own walk may have bound it into an owning init local; a
-    /// `take` parameter moves that value into the callee, which frees it, so
-    /// the init function's release pass must not free it again. The modes come
-    /// from a known name or from the callable's own signature; a callee whose
-    /// signature is unknown keeps its arguments owned here, which is the lend
-    /// convention.
-    fn forget_consumed_arguments(&mut self, callee: &str, receiver: Option<&Value>, args: &[Value]) {
-        let modes = self.callee_modes(callee).or_else(|| {
-            let ty = self.callee_func_type(callee, receiver)?;
-            match ty.kind {
-                TyKind::Func(signature) => {
-                    Some(signature.params.iter().map(|param| param.mode).collect())
-                }
-                _ => None,
+    /// A value callee (a func-typed global, field, or closure value) carries
+    /// its own signature, which is authoritative for its modes; a declared or
+    /// `ffi` name resolves by name as the fallback. `None` when neither
+    /// resolves: the arguments then keep their owned values here, which is
+    /// the lend convention.
+    fn call_param_modes(
+        &self,
+        callee: &str,
+        receiver: Option<&Value>,
+    ) -> Option<Vec<crate::ast::Mode>> {
+        if let Some(ty) = self.callee_func_type(callee, receiver) {
+            if let TyKind::Func(signature) = &ty.kind {
+                return Some(signature.params.iter().map(|param| param.mode).collect());
             }
-        });
-        let Some(modes) = modes else {
-            return;
-        };
-        for (arg, mode) in args.iter().zip(modes) {
-            if mode != crate::ast::Mode::Take {
-                continue;
-            }
-            if let Some(name) = stored_init_read_name(arg) {
-                self.init_owners.retain(|(owner, _)| owner != &name);
-            }
+        }
+        self.callee_modes(callee)
+    }
+
+    /// True when a declared type reaches view storage anywhere it stores.
+    ///
+    /// A view destination keeps the storage it points into for the program's
+    /// lifetime, so its initializer's owned values are retained rather than
+    /// released. Views hide behind arrays and struct fields too, so the check
+    /// descends both; a generic field that names no resolved view stays out,
+    /// because the retention question is only ever asked of a concrete
+    /// destination type.
+    fn stores_view_storage(&self, ty: &Ty) -> bool {
+        match &ty.kind {
+            TyKind::Str | TyKind::StaticStr | TyKind::CString => true,
+            TyKind::Array { element, .. } => self.stores_view_storage(element),
+            TyKind::Struct(name, _) => self
+                .sema
+                .table
+                .struct_fields(name)
+                .is_some_and(|fields| {
+                    fields
+                        .iter()
+                        .any(|(_, field)| self.stores_view_storage(field))
+                }),
+            _ => false,
         }
     }
 
@@ -1269,18 +1283,26 @@ impl<'a> Emitter<'a> {
                 args,
                 receiver,
             } => {
+                // The parameter modes decide which arguments move into the
+                // callee before the arguments are prepared: nothing in a
+                // consumed argument's subtree records an owner, because the
+                // callee frees the value.
+                let modes = self.call_param_modes(callee, receiver.as_deref());
                 let receiver = receiver
                     .as_deref()
                     .map(|inner| Box::new(self.materialize_init_value(inner, guard)));
-                let args: Vec<Value> = args
-                    .iter()
-                    .map(|arg| self.materialize_init_value(arg, guard))
-                    .collect();
-                // A `take` parameter consumes its argument: the callee frees
-                // it, so the release pass must not free the local again.
-                if !self.init_retain_owners {
-                    self.forget_consumed_arguments(callee, receiver.as_deref(), &args);
+                let mut written: Vec<Value> = Vec::new();
+                for (index, arg) in args.iter().enumerate() {
+                    let consumed = modes.as_ref().and_then(|modes| modes.get(index))
+                        == Some(&crate::ast::Mode::Take);
+                    let restore = self.init_skip_owner_binding;
+                    if consumed {
+                        self.init_skip_owner_binding = true;
+                    }
+                    written.push(self.materialize_init_value(arg, guard));
+                    self.init_skip_owner_binding = restore;
                 }
+                let args = written;
                 let rewritten = Value::new(
                     value.ty.clone(),
                     ValueKind::Call {
@@ -1298,7 +1320,7 @@ impl<'a> Emitter<'a> {
                 // An owned result used by a larger expression binds into an
                 // init local too, so the release pass frees it; a view
                 // destination retains it instead.
-                if !self.init_retain_owners && self.needs_drop(&value.ty) {
+                if self.init_result_needs_binding(&value.ty) {
                     let zero = self.empty_state(&value.ty);
                     let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
                     return local;
@@ -1306,26 +1328,34 @@ impl<'a> Emitter<'a> {
                 rewritten
             }
             ValueKind::ClosureCall { callable, args } => {
+                // A closure value carries its own parameter modes, exactly as
+                // a func-typed global or field does.
+                let modes = self.call_param_modes("", Some(callable));
                 let callable = Box::new(self.materialize_init_value(callable, guard));
-                let args: Vec<Value> = args
-                    .iter()
-                    .map(|arg| self.materialize_init_value(arg, guard))
-                    .collect();
-                // A closure's `take` parameter consumes its argument exactly
-                // as a named callee's does.
-                if !self.init_retain_owners {
-                    self.forget_consumed_arguments("", Some(&callable), &args);
+                let mut written: Vec<Value> = Vec::new();
+                for (index, arg) in args.iter().enumerate() {
+                    let consumed = modes.as_ref().and_then(|modes| modes.get(index))
+                        == Some(&crate::ast::Mode::Take);
+                    let restore = self.init_skip_owner_binding;
+                    if consumed {
+                        self.init_skip_owner_binding = true;
+                    }
+                    written.push(self.materialize_init_value(arg, guard));
+                    self.init_skip_owner_binding = restore;
                 }
                 let rewritten = Value::new(
                     value.ty.clone(),
-                    ValueKind::ClosureCall { callable, args },
+                    ValueKind::ClosureCall {
+                        callable,
+                        args: written,
+                    },
                 );
                 if self.substitute(&value.ty).is_fixed_array() {
                     let zero = self.empty_state(&value.ty);
                     let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
                     return local;
                 }
-                if !self.init_retain_owners && self.needs_drop(&value.ty) {
+                if self.init_result_needs_binding(&value.ty) {
                     let zero = self.empty_state(&value.ty);
                     let (_, local) = self.materialize_init_local(&rewritten, guard, &zero);
                     return local;
@@ -1757,11 +1787,12 @@ impl<'a> Emitter<'a> {
     /// True when an owned call result must bind into an init local.
     ///
     /// The walk binds an owned result so the release pass frees it, except
-    /// when the destination retains the storage (a view destination); a
-    /// lazily evaluated position prepares the same way, so this predicate
-    /// gates the structured conditional and logical paths too.
+    /// when the destination retains the storage (a view destination) or the
+    /// value moves into a consuming callee; a lazily evaluated position
+    /// prepares the same way, so this predicate gates the structured
+    /// conditional and logical paths too.
     fn init_result_needs_binding(&self, ty: &Ty) -> bool {
-        !self.init_retain_owners && self.needs_drop(ty)
+        !self.init_retain_owners && !self.init_skip_owner_binding && self.needs_drop(ty)
     }
 
     /// The C name of the next init-function local.

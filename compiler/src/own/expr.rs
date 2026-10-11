@@ -706,7 +706,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// parameter base keeps the mode's own report, exactly as for any other
     /// write to the binding; every other structural-`.len` target is the
     /// not-a-place error.
-    fn reject_structural_len_target(&mut self, target: &'a Expr) {
+    pub(super) fn reject_structural_len_target(&mut self, target: &'a Expr) {
         if let Some(id) = self.structural_len_base_binding(target) {
             if self.bindings[id].is_const || self.is_readonly_param(id) {
                 self.write_place(id, &[], target.span);
@@ -726,7 +726,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The parser spells `value.len` as a dotted name, and a `Member` shape
     /// also reaches the store path; both name the array's compile-time extent,
     /// which has no storage to write.
-    fn structural_len_target(&self, target: &Expr) -> bool {
+    pub(super) fn structural_len_target(&self, target: &Expr) -> bool {
         match &target.kind {
             ExprKind::Qualified(name) => self.qualified_structural_len(name).is_some(),
             ExprKind::Member { base, name } => name == "len" && self.ty(base).is_fixed_array(),

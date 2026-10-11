@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 10:43
-> **Progress**: 24/34 tasks (71%)
+> **Last Updated**: 2026-10-11 10:56
+> **Progress**: 24/33 tasks (73%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -25,11 +25,11 @@ existing init pins are the byte-identity oracle. Execution runs under `--auto-co
 | ----- | ----- | ----- |
 | 1 | Initializer call resolution (DEF-131/132/133) | 9 |
 | 2 | Initializer aggregate emission (DEF-134/135/143) | 8 |
-| 3 | Initializer release and checks (DEF-130/152) | 8 |
+| 3 | Initializer release and checks (DEF-130/152) | 7 |
 | 4 | Body slice typedefs (DEF-137) | 6 |
 | 5 | Batch close-out | 3 |
 
-**Total: 34 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the
+**Total: 33 tasks across 5 phases** (no fabricated hour estimates — scope is bounded by the
 task-size criteria in the make-plan quality checklist)
 
 > **⚠️ EXECUTION RULE — APPLIES TO EVERY AGENT EXECUTING THIS PLAN:**
@@ -138,7 +138,7 @@ task-size criteria in the make-plan quality checklist)
 ### Step 3.3: Impl Tests & Review
 
 - [x] 3.3.1 Write the Phase 3 implementation pins (release text and null guards, one-report-per-site counts) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 10:43; five pins: the four release shapes and the `take` exclusion; the report counts ride the spec suite's rejection assertions; impl 17/17)
-- [~] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 10:43; review dispatched)
+- [x] 3.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-11 10:56; three lenses reviewed; one fix round — the retention compounds, consumed-argument suppression, signature-first modes, the .len parity, and bookkeeping corrected; all counterexamples re-probed clean)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 
