@@ -127,7 +127,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             if let Some(target) = self.place_target(arm) {
                 sources.push(target);
+                continue;
             }
+            // An arm that is itself a projection over a conditional names no
+            // single place (`d ? (c ? b : mk()).v : z`), so the projected
+            // places of that arm's own arms are collected instead; consuming
+            // the outer conditional marks the moved member either way.
+            sources.extend(self.conditional_projection_move_sources(arm));
         }
         sources
     }

@@ -36,6 +36,24 @@ store-path emission is byte-identical to the pre-fix compiler.
 | DEF-257 | 🟠 major | a generic destination (`let s: T = (c ? a : mk<T>()).v;` instantiated owning) keeps copy semantics and is accepted-unsound at base and head (the generic gate is deliberate) |
 | DEF-258 | 🟠 major | a conditional-of-projections spellings' fresh root leaks its sibling (`let s: String = c ? a.v : mkBox().v;`) |
 | DEF-259 | 🟡 minor | a struct-literal fresh arm's sibling leaks (`(c ? a : Box { ... }).v`) — the literal root is never bound |
+| DEF-260 | 🟠 major | a guarded `take` of a conditional projection double-frees (`g && consume((c ? a : mkBox()).v)`, the `\|\|` and fresh-arm variants alike; byte-identical at base and head) |
+
+### Scoped re-review of the fix round
+
+Both lenses re-ran on the fix diff (`a447db4..33070ad`). The correctness lens closed RV-001 and RV-002 and
+filed three follow-ups; the memory lens closed SA-001 for every eager `take` shape and confirmed the store
+and return emission is byte-identical.
+
+| Finding | Severity | Area | Ruling |
+|---------|----------|------|--------|
+| RV-101 = SA-102 | 🟠 major | the new `armtakeloop` spec case (test integrity) | **Fixed**: the case alternated arms, so neither per-arm temporary was re-entered and the base compiler passed it; it now takes the place arm twice and the fresh arm twice, which the base compiler double-frees |
+| RV-102 | 🟠 major | `own/expr.rs` (`conditional_move_sources`) | **Fixed**: an arm that is a projection over a conditional and names no single place now contributes its own arms' projected places, so the place-sibling spelling marks the moved member; the new spec case `armnestedplace` pins the `E10020` read |
+| RV-103 | 🟡 minor | `own/lower.rs` (a dead per-arm temporary when the carrier exists) | **Fixed** directly: the carrier is passed into the consumption so no unused temporary is allocated |
+| SA-101 | 🔴 critical | a guarded `take` of a conditional projection (pre-existing, base == head) | **Filed** as DEF-260 (outside the phase's declared scope; the guarded intrinsic read is DEF-178) |
+| SA-001 | 🔴 critical | the eager `take` carrier | **Closed**: every base-failing eager shape (loop, defer copy, nested, func-typed callee, discarded call, two takes, early return/panic) is ASan-clean at head |
+
+**Targeted confirmation**: dispatched once on the follow-up fix diff; recorded in the phase progress at
+task 1.3.2.
 
 ## Phase 2 — Guarded receivers and loans
 

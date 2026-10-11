@@ -1224,6 +1224,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// a loop's reassigned-temp drop would free what the destination owns.
     /// A value that already names no storage is returned unchanged.
     pub(super) fn consume_place(&mut self, value: Value) -> Value {
+        self.consume_place_into(value, None)
+    }
+
+    /// Consumes an owned place into a chosen destination temporary.
+    ///
+    /// [`Self::consume_place`] allocates a fresh temporary for the consumed
+    /// value. A caller that already owns a destination — the shared carrier a
+    /// `take` argument fills — passes that temporary here instead, so no
+    /// unused temporary is created.
+    fn consume_place_into(&mut self, value: Value, target: Option<ir::TempId>) -> Value {
         // A maybe-owning value moves through the same shape: the emitted move
         // copies and zeroes only for an owning instance.
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
@@ -1242,7 +1252,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         };
         let ty = self.materialized_ty(&value);
-        let temp = self.new_temp(ty.clone());
+        let temp = match target {
+            Some(temp) => temp,
+            None => self.new_temp(ty.clone()),
+        };
         Value::new(
             ty,
             ValueKind::Materialize {
@@ -1425,7 +1438,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// value that owns nothing fills the carrier as a plain store; without
     /// one, such a value keeps its existing form.
     fn settle_consumed_arm(&mut self, value: Value, carrier: Option<ir::TempId>) -> Value {
-        let value = self.consume_place(value);
+        let value = self.consume_place_into(value, carrier);
         let kind = value.kind;
         let ValueKind::Materialize {
             temp,
@@ -1452,9 +1465,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let inner = self.settle_projection_base(*inner);
         let ty = inner.ty.clone();
-        let store = carrier.unwrap_or(temp);
         let place = Place {
-            base: ir::PlaceBase::Temp(store),
+            base: ir::PlaceBase::Temp(temp),
             projections: Vec::new(),
             ty: ty.clone(),
         };
@@ -1465,7 +1477,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for source in move_outs {
             self.emit(Statement::MoveOut { place: source });
         }
-        Value::new(ty, ValueKind::Temp(store))
+        Value::new(ty, ValueKind::Temp(temp))
     }
 
     /// The place a value reads, when it is a field reached through a place.

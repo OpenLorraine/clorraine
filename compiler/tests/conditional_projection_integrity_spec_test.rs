@@ -908,10 +908,10 @@ func main(): i32 {
 /// A re-executed `take` of a conditional projection transfers the value once
 /// per iteration.
 ///
-/// The statement runs twice with different taken arms; the caller's copy of
-/// the transferred value must be emptied after each call, so a later
-/// iteration never releases what the callee already owns. The run is clean
-/// and both lengths are correct.
+/// The place arm is taken twice in one loop and the fresh arm twice in a
+/// second loop; the caller's copy of the transferred value must be emptied
+/// after each call, so re-entering the same arm never releases what the
+/// callee already owns. The run is clean and every length is correct.
 #[test]
 fn should_take_a_conditional_projection_again_in_a_loop() {
     let source = r#"module spec.cpi.armtakeloop;
@@ -933,11 +933,16 @@ func main(): i32 {
     let i: i32 = 0;
     while (i < 2) {
         let a: Box = Box { v: stringOf("aa"), w: stringOf("wwww") };
-        let c: bool = i == 0;
-        n = n + consume((c ? a : mkBox()).v);
+        n = n + consume((true ? a : mkBox()).v);
         i = i + 1;
     }
-    return n - 4;
+    let j: i32 = 0;
+    while (j < 2) {
+        let b: Box = Box { v: stringOf("bb"), w: stringOf("wwww") };
+        n = n + consume((false ? b : mkBox()).v);
+        j = j + 1;
+    }
+    return n - 8;
 }
 "#;
     let output = run_memory("armtakeloop", source);
@@ -986,5 +991,50 @@ func main(): i32 {
     assert!(
         !c_path.exists(),
         "armnestedread: a rejected program must not produce a translation unit"
+    );
+}
+
+/// A read of the moved member reports after a nested projection whose sibling
+/// arm is a named place.
+///
+/// The sibling arm contributes its own move source, so the walk must still
+/// collect the projection arm's member: consuming the outer conditional moves
+/// `b.v`, and a later read of it is the ordinary moved-value error.
+#[test]
+fn should_report_the_moved_member_after_a_nested_projection_with_a_place_sibling() {
+    let source = r#"module spec.cpi.armnestedplace;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("mk"), w: stringOf("wwww") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let d: bool = true;
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("wwww") };
+    let z: String = stringOf("zz");
+    let s: String = d ? (c ? b : mk()).v : z;
+    let t: i32 = i32(len(b.v));
+    return i32(len(s)) + t - 4;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("armnestedplace", source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "armnestedplace: expected a rejection; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("E10020"),
+        "armnestedplace: expected the moved-value report; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "armnestedplace: a rejected program must not produce a translation unit"
     );
 }
