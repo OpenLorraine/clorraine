@@ -562,7 +562,47 @@ func main(): i32 {
     return g - 3;
 }
 "#;
-    let output = run_memory("lambdavalue", source);
+    let output = run_memory("lambdavalue", &source.replace(
+        "let f: func(String): i32 = (s: String) => i32(len(s));\nlet g: i32 = f(stringOf(\"abc\"));",
+        "let f: func(str): i32 = (s: str) => i32(len(s));\nlet g: i32 = f(\"abc\");",
+    ));
     assert_no_asan("lambdavalue", &output);
     assert_exit("lambdavalue", &output, 0);
+}
+
+/// A module path spelled like an exported global is not a receiver.
+///
+/// The qualified call's head is a module qualifier even though another module
+/// exports a global spelled like the next segment, so the call stays a named
+/// call and passes no receiver (red at the fix base: the receiver path
+/// resolved the exported global and prepended it, and the strict build failed).
+#[test]
+fn should_keep_a_module_path_out_of_a_qualified_initializer_call() {
+    let holder = r#"module spec.mii.guardedpath;
+
+export let utils: i32 = 5;
+"#;
+    let main = r#"module spec.mii.guardedpath.utils;
+
+export func last(a: i32, b: i32): i32 {
+    return a + b;
+}
+
+let g: i32 = spec.mii.guardedpath.utils.last(7, 1);
+
+func main(): i32 {
+    return g - 8;
+}
+"#;
+    let (scratch, output, c_path) = compile_pair("guardedpath", holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "guardedpath: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).expect("guardedpath: read the emitted C");
+    let program = build_host_c("guardedpath", &scratch, &emitted);
+    let output = run_with_timeout("guardedpath", &program, &[]);
+    assert_exit("guardedpath", &output, 0);
 }

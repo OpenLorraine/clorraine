@@ -1812,37 +1812,37 @@ impl<'a> Emitter<'a> {
     /// The receiver value a module-level dot call passes as its first argument.
     ///
     /// Mirrors the body's dot-receiver semantics: a member spelling reads its
-    /// base, and a qualified spelling resolves the head as a global and keeps
-    /// the middle segments as field projections. A path whose head names no
-    /// global (a module qualifier or a declared function) has no receiver.
+    /// base, and a qualified spelling resolves only the head segment as a
+    /// value and keeps the middle segments as field projections. A head that
+    /// names no global (a module qualifier or a declared function) has no
+    /// receiver — even when a module path spells a segment like an exported
+    /// global.
     fn init_dot_receiver(&mut self, module: &Module, callee: &Expr) -> Option<Value> {
         match &callee.kind {
             ExprKind::Member { base, .. } => Some(self.lower_global(module, base)),
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                let receiver = crate::ast::QualifiedName {
-                    segments: name.segments[..name.segments.len() - 1].to_vec(),
-                    span: name.span,
-                };
-                let global = crate::init_graph::resolve_global(self.loaded, module, &receiver)?;
+                let method = name.segments.len() - 1;
+                let head = &name.segments[0];
+                let global = crate::init_graph::resolve_name_global(self.loaded, module, head)?;
                 let identity = GlobalId::new(global.module, global.name);
-                let base_ty = self
+                let mut ty = self
                     .globals
                     .get(&identity)
                     .map(|info| info.ty.clone())
                     .unwrap_or_else(Ty::unknown);
-                let projections = global.fields.into_iter().map(Projection::Field).collect();
-                let value = Value::new(
-                    base_ty.clone(),
+                let mut projections: Vec<Projection> = Vec::new();
+                for segment in &name.segments[1..method] {
+                    projections.push(Projection::Field(segment.clone()));
+                    ty = self.field_type(&ty, segment);
+                }
+                Some(Value::new(
+                    ty.clone(),
                     ValueKind::Place(Place {
                         base: PlaceBase::Global(identity),
                         projections,
-                        ty: base_ty,
+                        ty,
                     }),
-                );
-                let resolved = self.resolved_value_ty(&value);
-                let mut receiver = value;
-                receiver.ty = resolved;
-                Some(receiver)
+                ))
             }
             _ => None,
         }

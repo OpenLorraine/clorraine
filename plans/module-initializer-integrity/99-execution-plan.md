@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 01:49
-> **Progress**: 8/34 tasks (24%)
+> **Last Updated**: 2026-10-11 02:10
+> **Progress**: 9/34 tasks (26%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -73,7 +73,7 @@ task-size criteria in the make-plan quality checklist)
 ### Step 1.3: Impl Tests & Review
 
 - [x] 1.3.1 Write the Phase 1 implementation pins (lifted identity, mangled symbol, instance symbol, receiver argument) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 01:31; impl 4/4)
-- [~] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 01:31; three-lens review merged — EIA-001 regression + RV-001/002/003 fixed, RV-004/005 addressed; ledger §Phase 1; scoped re-review dispatched)
+- [x] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-11 02:10; three-lens review + one scoped re-review; two fix rounds — EIA-001/RV-001/002/003/004/005 and the head-only receiver resolution; ledger §Phase 1)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 
@@ -131,7 +131,7 @@ task-size criteria in the make-plan quality checklist)
 **Reference**: [03-03](03-03-initializer-release-and-checks.md) §Proposed Changes
 **Objective**: Record owning init locals and release them at the init function's end; run the extracted mutability predicates over initializer expressions.
 
-- [ ] 3.2.1 Init-owner registry and null-guarded end-of-init releases (DEF-130) — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs`
+- [ ] 3.2.1 Init-owner registry, owned-argument materialization, and null-guarded end-of-init releases (DEF-130; includes the DEF-204 shape) — `compiler/src/codegen/program.rs`, `compiler/src/codegen.rs`
 - [ ] 3.2.2 Extract the write predicates and add the check-only initializer walk (DEF-152) — `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`, `compiler/src/own/program.rs`
 - [ ] 3.2.3 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
 

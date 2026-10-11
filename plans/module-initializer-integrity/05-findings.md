@@ -38,6 +38,22 @@ func-global call re-pinned to the callable-style call; the lambda-value identity
 the module-function dot call, both signature widenings, and the intrinsic-named field build and
 run; every original Phase 1 shape stays green.
 
-### Scoped re-review (fix diff)
+### Scoped re-review (`6e084c8..91c5847`)
 
-_Pending — one scoped round on the fix diff._
+One scoped round (correctness + emission-integrity).
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| RV-001 (re-review) | 🟠 major | `init_dot_receiver`'s qualified branch resolved the whole receiver path through `resolve_global`, whose module-path branch binds a module qualifier as a global: a call like `acme.utils.last()` prepended the exported global `utils` (`too many arguments`, or a silently shifted argument where the arity coincidentally matched). Base built it. | Fixed: the head-only resolution mirrors the body (`resolve_name_global(head)` plus field projections); the `guardedpath` pair spec case pins the collision (red at the fix base). |
+| EIA-001 (verification) | — | Verified fixed: every qualified-call profile (`a.b.c.func`, `Demo.MinMax.clamp`, `std.text.stringOf`, cross-module, nested) is byte-identical to the batch base at head. | Closed. |
+| RV-001..RV-005 (re-verification) | — | All verified closed: the dot receiver, both widenings, the intrinsic-named field, the pins, and the doc header. | Closed. |
+| EIA-002 | 🟠 major | Owned argument temporaries of initializer calls are never materialized or released (host-ASan leak; root cause pre-existing; the body binds and releases the same argument). | Filed DEF-204; the batch's Phase 3 release work extends to argument materialization. The `lambdavalue` spec case now uses a non-owning spelling so the suite's ASan path stays green. |
+| Re-review P1/P2 | — | The initializer qualified fixed-array field `.len` fold (DEF-143's filed class) and the body's unmangled global field receiver (DEF-170's filed class). | Already filed; noted. |
+| Re-review P3 / N1 | 🟡 | The func-typed fixed-array global declarator and the initializer global-borrow acceptance. | Filed DEF-202 and DEF-203; the body-side view-builder shadow filed DEF-205. |
+
+### Fix-round 2 verification
+
+Spec suite 11/11 plain and under `RDC_ASAN=1`; impl 5/5; `make check` 60 suites green.
+Direct probes: the two-file collision builds and runs (the receiver is not prepended); every
+other receiver and widening shape stays green; the qualified-call family is byte-identical to
+the batch base.

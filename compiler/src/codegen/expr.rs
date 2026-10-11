@@ -257,7 +257,7 @@ impl<'a> Emitter<'a> {
     /// the enclosing generic context's substitution is applied on top. This
     /// keeps a projected field concrete (`Pair<i32>.first` is `i32`) so a later
     /// projection or index picks the right C type.
-    fn field_type(&self, base: &Ty, field: &str) -> Ty {
+    pub(super) fn field_type(&self, base: &Ty, field: &str) -> Ty {
         match &base.kind {
             TyKind::Struct(..) => self
                 .sema
