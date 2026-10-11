@@ -174,3 +174,27 @@ host AddressSanitizer (clean), and the `takearg` pin re-pinned to the unbound sp
 **Filed**: DEF-210 — an initializer `take` argument that projects an element of a call-result
 array frees the consumed element but leaves its sibling unreleased (base-equal; the body twin
 reports `E10026`), so the residual belongs to the initializer call-check family.
+
+## Phase 4: Body slice typedefs (DEF-137)
+
+**Baseline**: `a8dec2fa329b862d29394c8cc180593f003d62e3` (the `6bb8722` tree). Implementation committed before the review.
+
+### Deliverables
+
+| # | Shape | Result |
+| - | ----- | ------ |
+| DEF-137 | The body-side collector gains a value walk: every value position a block holds (statement operands, guard checks, call arguments and receivers, and terminator values) contributes its written slice type argument to the typedef set, and a generic body's walk runs again per instance with that instance's substitution | Fixed; spec case `bodyslice`; impl pin asserts the `ClSlice_i32` typedef and the `sizeof` use |
+
+### Red evidence
+
+The body spelling built at the phase base only up to the strict build: `sizeof(i32[])` emitted `sizeof(ClSlice_i32)` with the typedef missing, and the host compiler reported `'ClSlice_i32' undeclared (first use in this function)` — exactly the filed shape.
+
+### Implementation notes
+
+- **Shape gating (AR-13).** The walk only adds types to the set; a unit whose set already carried its types emits byte-identically. The collection is deduplicated by the set's key. `make check` (60 suites) shows no pinned shape moved; the corpus differential is the review's check.
+- **Position coverage.** The plan's contract is the `Intrinsic { type_arg }` arm; the walk descends every sub-value so the argument is found wherever it sits, and terminators are walked too (`return sizeof(i32[])` has no statement of its own).
+- **Per-instance substitution.** A generic body's written type argument is still a parameter in the declared body and is skipped there; the instance walk substitutes it exactly as the existing locals and temporaries path does.
+
+### Verification
+
+Spec suite 37/37 plain and under `RDC_ASAN=1`; impl 18/18; `make check` 60 suites green.

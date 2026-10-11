@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 10:56
-> **Progress**: 24/33 tasks (73%)
+> **Last Updated**: 2026-10-11 14:44
+> **Progress**: 29/33 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -146,7 +146,7 @@ task-size criteria in the make-plan quality checklist)
 
 ## Phase 4: Body slice typedefs
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `a8dec2fa329b862d29394c8cc180593f003d62e3` (the `6bb8722` tree)
 > **Lenses**: correctness + emission-integrity
 > **Reasoning**: low — one collector walk mirroring an existing arm
 
@@ -155,18 +155,18 @@ task-size criteria in the make-plan quality checklist)
 **Reference**: [03-04](03-04-body-slice-typedefs.md) §Proposed Changes · [AR-11](00-ambiguity-register.md)
 **Objective**: Pin the body `sizeof(i32[])` spelling (strict build + run) before the change.
 
-- [ ] 4.1.1 [spec-author] Write specification test ST-F10 — `compiler/tests/module_initializer_integrity_spec_test.rs`
-- [ ] 4.1.2 Run the spec suite and record the red phase (expected: the missing-typedef strict-build failure)
+- [x] 4.1.1 [spec-author] Write specification test ST-F10 — `compiler/tests/module_initializer_integrity_spec_test.rs` ✅ (completed: 2026-10-11 14:44; the body `sizeof(i32[])` spelling with an ABI-robust size assertion)
+- [x] 4.1.2 Run the spec suite and record the red phase (expected: the missing-typedef strict-build failure) ✅ (completed: 2026-10-11 14:44; `ClSlice_i32 undeclared` for `sizeof(ClSlice_i32)`, exactly as filed)
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Collect written slice type arguments from body IR values — `compiler/src/codegen/program.rs`
-- [ ] 4.2.2 Run the spec suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 4.2.1 Collect written slice type arguments from body IR values — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-11 14:44; the walk covers statement operands, guard checks, call arguments and receivers, and terminator values; instance bodies walk with their substitutions)
+- [x] 4.2.2 Run the spec suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-11 14:44; spec 37/37)
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the Phase 4 implementation pin (typedef plus use) — `compiler/tests/module_initializer_integrity_impl_test.rs`
-- [ ] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode
+- [x] 4.3.1 Write the Phase 4 implementation pin (typedef plus use) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 14:44; impl 18/18)
+- [~] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 14:44; review dispatched)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 

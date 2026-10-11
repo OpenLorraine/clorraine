@@ -1219,3 +1219,30 @@ func main(): i32 {
         &["E10023", "E10042"],
     );
 }
+
+/// A body `sizeof` of a written slice type defines its typedef.
+///
+/// The written type argument needs the same `ClSlice_...` typedef a value
+/// position needs, so the strict build accepts the unit and the size is at
+/// least the pointer-and-length pair every profile stores (red at the phase
+/// base: the typedef was missing and the strict build failed).
+#[test]
+fn should_define_a_body_slice_type_argument_typedef() {
+    let source = r#"module spec.mii.bodyslice;
+
+func size(): usize {
+    let n: usize = sizeof(i32[]);
+    return n;
+}
+
+func main(): i32 {
+    if (size() >= 8) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("bodyslice", source);
+    assert_no_asan("bodyslice", &output);
+    assert_exit("bodyslice", &output, 0);
+}

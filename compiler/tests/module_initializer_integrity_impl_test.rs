@@ -663,3 +663,33 @@ func main(): i32 {
         "takearg: a consumed argument binds no init local, so nothing releases it"
     );
 }
+
+/// A body `sizeof` of a written slice type emits its typedef and use.
+///
+/// The written type argument joins the typedef set exactly as a value
+/// position would, so the slice struct is defined before the function that
+/// measures it.
+#[test]
+fn should_define_a_body_slice_type_argument_typedef() {
+    let source = r#"module spec.mii.impl.bodyslice;
+
+func size(): usize {
+    let n: usize = sizeof(i32[]);
+    return n;
+}
+
+func main(): i32 {
+    if (size() >= 8) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let emitted = emit_host("bodyslice", source);
+    assert_contains(
+        "bodyslice",
+        &emitted,
+        "typedef struct { i32 *ptr; usize len; } ClSlice_i32;",
+    );
+    assert_contains("bodyslice", &emitted, "n = sizeof(ClSlice_i32);");
+}

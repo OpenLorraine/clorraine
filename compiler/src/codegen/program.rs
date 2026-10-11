@@ -8,7 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{BinaryOp, EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
-use crate::ir::{GlobalId, Place, PlaceBase, Projection, Value, ValueKind, ValuePiece};
+use crate::ir::{GlobalId, Place, PlaceBase, Projection, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
 use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, view_type, CaptureMode, Ty, TyKind, TypeTable};
@@ -273,6 +273,12 @@ impl<'a> Emitter<'a> {
             for temp in &function.temps {
                 collect_slice_types(temp, &mut found);
             }
+            // A written type argument such as `sizeof(i32[])` appears in no
+            // local or signature, so the body's own values are the only
+            // evidence of its element type. A generic body's argument is still
+            // a parameter here and is skipped; the instance walk below
+            // substitutes it.
+            self.collect_body_slice_types(function, &BTreeMap::new(), &mut found);
         }
         // A generic body's slice types become concrete only where it is
         // instantiated, so collect the substituted parameter and return types
@@ -310,8 +316,154 @@ impl<'a> Emitter<'a> {
             for temp in &body.temps {
                 collect_slice_types(&super::substitute_in(temp, &subst), &mut found);
             }
+            self.collect_body_slice_types(body, &subst, &mut found);
         }
         found.into_iter().collect()
+    }
+
+    /// Records the slice element types a body's written type arguments need.
+    ///
+    /// The walk visits every value position a block can hold — statement
+    /// operands, guard checks, call arguments and receivers, and the values a
+    /// terminator reads — so an argument's typedef exists wherever the value
+    /// lands. `subst` carries an instance's substitutions for a generic body
+    /// and is empty for a plain one.
+    fn collect_body_slice_types(
+        &self,
+        function: &crate::ir::Function,
+        subst: &BTreeMap<String, Ty>,
+        found: &mut BTreeMap<String, Ty>,
+    ) {
+        for block in &function.blocks {
+            for instr in &block.statements {
+                match &instr.statement {
+                    Statement::Assign { value, .. }
+                    | Statement::StorePointer { value, .. }
+                    | Statement::Discard { value } => {
+                        self.collect_value_slice_types(value, subst, found);
+                    }
+                    Statement::Guards { checks } => {
+                        for check in checks {
+                            self.collect_value_slice_types(check, subst, found);
+                        }
+                    }
+                    Statement::Call { args, receiver, .. } => {
+                        for arg in args {
+                            self.collect_value_slice_types(arg, subst, found);
+                        }
+                        if let Some(receiver) = receiver {
+                            self.collect_value_slice_types(receiver, subst, found);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            match &block.terminator {
+                Terminator::Branch { condition, .. } => {
+                    self.collect_value_slice_types(condition, subst, found);
+                }
+                Terminator::Switch { value, arms, .. } => {
+                    self.collect_value_slice_types(value, subst, found);
+                    for (label, _) in arms {
+                        self.collect_value_slice_types(label, subst, found);
+                    }
+                }
+                Terminator::Return { value, .. } => {
+                    if let Some(value) = value {
+                        self.collect_value_slice_types(value, subst, found);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Walks one IR value for written slice type arguments.
+    ///
+    /// A `sizeof`'s `type_arg` is the one position a written type reaches the
+    /// body IR, so the walk descends every sub-value to find it; the
+    /// substitution applies exactly as it does to locals and temporaries.
+    fn collect_value_slice_types(
+        &self,
+        value: &Value,
+        subst: &BTreeMap<String, Ty>,
+        found: &mut BTreeMap<String, Ty>,
+    ) {
+        match &value.kind {
+            ValueKind::Intrinsic { args, type_arg, .. } => {
+                if let Some(ty) = type_arg {
+                    collect_slice_types(&super::substitute_in(ty, subst), found);
+                }
+                for arg in args {
+                    self.collect_value_slice_types(arg, subst, found);
+                }
+            }
+            ValueKind::Call { args, receiver, .. } => {
+                for arg in args {
+                    self.collect_value_slice_types(arg, subst, found);
+                }
+                if let Some(receiver) = receiver {
+                    self.collect_value_slice_types(receiver, subst, found);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.collect_value_slice_types(callable, subst, found);
+                for arg in args {
+                    self.collect_value_slice_types(arg, subst, found);
+                }
+            }
+            ValueKind::Member { base, .. } => self.collect_value_slice_types(base, subst, found),
+            ValueKind::Index { base, index } => {
+                self.collect_value_slice_types(base, subst, found);
+                self.collect_value_slice_types(index, subst, found);
+            }
+            ValueKind::Unary { operand, .. } => {
+                self.collect_value_slice_types(operand, subst, found);
+            }
+            ValueKind::Binary { left, right, .. } => {
+                self.collect_value_slice_types(left, subst, found);
+                self.collect_value_slice_types(right, subst, found);
+            }
+            ValueKind::Cast { value, .. } => self.collect_value_slice_types(value, subst, found),
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.collect_value_slice_types(condition, subst, found);
+                self.collect_value_slice_types(then_value, subst, found);
+                self.collect_value_slice_types(else_value, subst, found);
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    self.collect_value_slice_types(field, subst, found);
+                }
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.collect_value_slice_types(element, subst, found);
+                }
+                if let Some(fill) = fill {
+                    self.collect_value_slice_types(fill, subst, found);
+                }
+            }
+            ValueKind::Template(pieces) => {
+                for piece in pieces {
+                    if let ValuePiece::Placeholder(inner) = piece {
+                        self.collect_value_slice_types(inner, subst, found);
+                    }
+                }
+            }
+            ValueKind::Closure { captures, .. } => {
+                for capture in captures {
+                    self.collect_value_slice_types(capture, subst, found);
+                }
+            }
+            ValueKind::Materialize { value, .. } => {
+                self.collect_value_slice_types(value, subst, found);
+            }
+            _ => {}
+        }
     }
 
     /// Records the slice element types a module initializer spells.
