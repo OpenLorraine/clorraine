@@ -318,6 +318,37 @@ impl<'a> Emitter<'a> {
             }
             self.collect_body_slice_types(body, &subst, &mut found);
         }
+        // A lifted lambda whose types mention an enclosing parameter is
+        // emitted once per recorded specialization, so the specialization's
+        // substitution decides the slice types its body spells.
+        for function in &self.ownership.functions {
+            let Some(site) = function.lambda_site else {
+                continue;
+            };
+            let Some(info) = function
+                .enclosing
+                .as_deref()
+                .and_then(|name| self.first_function_by_name(name))
+            else {
+                continue;
+            };
+            if !crate::own::lifted_needs_specialization(function, info.decl, &self.sema.closures) {
+                continue;
+            }
+            for specialization in self.ownership.monomorphization.lifted_specializations() {
+                if specialization.site != site {
+                    continue;
+                }
+                let subst = self.instance_subst(info.decl, &specialization.args);
+                for local in &function.locals {
+                    collect_slice_types(&super::substitute_in(&local.ty, &subst), &mut found);
+                }
+                for temp in &function.temps {
+                    collect_slice_types(&super::substitute_in(temp, &subst), &mut found);
+                }
+                self.collect_body_slice_types(function, &subst, &mut found);
+            }
+        }
         found.into_iter().collect()
     }
 
@@ -405,6 +436,10 @@ impl<'a> Emitter<'a> {
         subst: &BTreeMap<String, Ty>,
         found: &mut BTreeMap<String, Ty>,
     ) {
+        // A value's own type is evidence too: an inline `slice(...)` result is
+        // built as a compound literal of its view type, so the typedef must
+        // exist even though no written type argument names it.
+        collect_slice_types(&super::substitute_in(&value.ty, subst), found);
         match &value.kind {
             ValueKind::Intrinsic { args, type_arg, .. } => {
                 if let Some(ty) = type_arg {
@@ -1567,6 +1602,16 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Index { base, index } => {
                 let base = self.materialize_init_value(base, guard);
+                // The bounds guard and the access both render the base, so an
+                // impure base (a call returning a view) stores once here and
+                // both read the stored value. A fixed-array base keeps its
+                // spelling: C cannot assign an array to a temporary, and the
+                // element access reads it through the array's decay.
+                let base = if base.ty.is_fixed_array() {
+                    base
+                } else {
+                    self.store_impure_init_operand(&base, guard)
+                };
                 let index = self.materialize_init_value(index, guard);
                 let index = self.store_impure_init_operand(&index, guard);
                 if guard.is_none() {
@@ -1645,6 +1690,14 @@ impl<'a> Emitter<'a> {
                     );
                 }
                 let left = self.materialize_init_value(left, guard);
+                // The division guard renders the dividend too, so an impure
+                // dividend stores once before the guard and the operation
+                // read the same value.
+                let left = if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                    self.store_impure_init_operand(&left, guard)
+                } else {
+                    left
+                };
                 let right = if matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr) {
                     // Nothing in the right side needs preparing, so the lazy
                     // form keeps its spelling and its guards stay embedded.
@@ -1900,6 +1953,7 @@ impl<'a> Emitter<'a> {
             ValueKind::Index { base, index } => {
                 self.init_value_needs_materialization(base)
                     || self.init_value_needs_materialization(index)
+                    || !init_operand_is_pure(base) && !base.ty.is_fixed_array()
                     || !init_operand_is_pure(index)
             }
             ValueKind::Member { base, .. } => self.init_value_needs_materialization(base),
@@ -1908,7 +1962,7 @@ impl<'a> Emitter<'a> {
                 self.init_value_needs_materialization(left)
                     || self.init_value_needs_materialization(right)
                     || (matches!(op, BinaryOp::Div | BinaryOp::Rem)
-                        && !init_operand_is_pure(right))
+                        && (!init_operand_is_pure(left) || !init_operand_is_pure(right)))
             }
             ValueKind::Cast { value: inner, .. } => {
                 self.init_value_needs_materialization(inner) || !init_operand_is_pure(inner)

@@ -888,6 +888,15 @@ fn walk_value(
     enclosing: Option<&str>,
 ) {
     record_struct_type(&substitute(&value.ty, bindings), sema, mono);
+    // A written type argument names concrete types of its own: `sizeof(T[])`
+    // at a `Wrap<i32>` instance names the struct inside the view, so the
+    // instance is recorded even when no local or parameter spells it.
+    if let ValueKind::Intrinsic {
+        type_arg: Some(ty), ..
+    } = &value.kind
+    {
+        record_struct_type(&substitute(ty, bindings), sema, mono);
+    }
     match &value.kind {
         ValueKind::Call {
             callee,

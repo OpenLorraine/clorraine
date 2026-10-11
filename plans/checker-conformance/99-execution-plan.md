@@ -2,15 +2,15 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 0/34 tasks (0%)
+> **Progress**: 6/34 tasks (18%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 15:20
+> **Last Updated**: 2026-10-11 15:10
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
 ## Phase 1: Initializer guard operands and typedef collectors
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `477f27dd36dcbde5f40e6dc267ce1864388dbe11` (the `8170199` tree)
 > **Lenses**: correctness + memory-safety + emission-integrity
 > **Reasoning**: medium — one initializer materialization extension plus three collector additions
 
@@ -19,19 +19,19 @@
 **Reference**: [03-01](03-01-initializer-guards-typedefs.md)
 **Objective**: Pin the two double-evaluation initializers, the inline-argument typedef, the lifted specialization, and the struct-instance element.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
-- [ ] 1.1.2 Run the suite and record the red phase (expected: two calls, undeclared `ClSlice_*`)
+- [x] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 15:10; the six cases: initdividend, initbase, inlinearg, lambdaspec, structelement, and the initownbase reference)
+- [x] 1.1.2 Run the suite and record the red phase (expected: two calls, undeclared `ClSlice_*`) ✅ (completed: 2026-10-11 15:10; exactly as filed: initdividend/initbase exit 22 (two runs), inlinearg `'ClSlice_String' undeclared`, lambdaspec `'ClSlice_i32' undeclared`, structelement build failure; the initownbase reference green)
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Materialize the impure dividend and index base in the initializer path — `compiler/src/codegen/program.rs`
-- [ ] 1.2.2 Collect the value-result slice type, the lifted specializations, and the struct-instance element — `compiler/src/codegen/program.rs`
-- [ ] 1.2.3 Run the suite to green; on any failure STOP and fix the implementation, never the test
+- [x] 1.2.1 Materialize the impure dividend and index base in the initializer path — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-11 15:14; the index base keeps its fixed-array spelling, the dividend stores for `Div`/`Rem`, and the needs predicate mirrors both)
+- [x] 1.2.2 Collect the value-result slice type, the lifted specializations, and the struct-instance element — `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-11 15:14; the value walk records every value's own slice type, the specialization loop uses the emission's guard and substitution, and the mono records a written type argument's struct instances)
+- [x] 1.2.3 Run the suite to green; on any failure STOP and fix the implementation, never the test ✅ (completed: 2026-10-11 15:14; spec 6/6)
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the single-call shapes, the typedefs and their order) — `compiler/tests/checker_conformance_impl_test.rs`
-- [ ] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; dispatch the three lenses
+- [x] 1.3.1 Write the phase implementation pins (the single-call shapes, the typedefs and their order) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 15:14; impl 6/6)
+- [~] 1.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode; dispatch the three lenses ⏳ (implemented: 2026-10-11 15:14; the three lenses dispatched after the commit)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 
