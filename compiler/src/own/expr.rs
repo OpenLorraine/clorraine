@@ -178,38 +178,63 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A leaf arm contributes its projected place when the arm owns storage —
     /// non-duplicable and not still generic; a nested conditional recurses
-    /// with the same chain applied to its own arms.
+    /// with the same chain applied to its own arms; and a projection arm under
+    /// the conditional — the nested spelling `d ? (c ? b : mk()).v : z` —
+    /// descends to its own conditional root with the segment appended, so
+    /// every arm's projected place is recorded at every depth.
     fn projection_move_arm_sources(
         &self,
         expr: &Expr,
         steps: &[ir::Projection],
         sources: &mut Vec<PlaceTarget>,
     ) {
-        if let ExprKind::Conditional {
-            then_value,
-            else_value,
-            ..
-        } = &expr.kind
-        {
-            for arm in [then_value.as_ref(), else_value.as_ref()] {
-                self.projection_move_arm_sources(arm, steps, sources);
+        match &expr.kind {
+            ExprKind::Member { base, name } => {
+                // A fixed array's `.len` is its structural extent, not a
+                // place: it names no storage and its base reads nothing.
+                if name == "len" && self.ty(base).is_fixed_array() {
+                    return;
+                }
+                let mut steps = steps.to_vec();
+                steps.insert(0, ir::Projection::Field(name.clone()));
+                self.projection_move_arm_sources(base, &steps, sources);
             }
-            return;
-        }
-        let ty = self.ty(expr);
-        if self.sema.table.duplicable(&ty) || super::lower::mentions_type_param(&ty) {
-            return;
-        }
-        let Some(target) = self.place_target(expr) else {
-            return;
-        };
-        let mut projections = match &target {
-            PlaceTarget::Local(_, projections) | PlaceTarget::Global(_, projections) => {
-                projections.clone()
+            ExprKind::Index { base, index } => {
+                let element = match &index.kind {
+                    ExprKind::Int(value) => {
+                        ir::Projection::Element(usize::try_from(*value).ok())
+                    }
+                    _ => ir::Projection::Element(None),
+                };
+                let mut steps = steps.to_vec();
+                steps.insert(0, element);
+                self.projection_move_arm_sources(base, &steps, sources);
             }
-        };
-        projections.extend_from_slice(steps);
-        sources.push(target.with_projections(projections));
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                for arm in [then_value.as_ref(), else_value.as_ref()] {
+                    self.projection_move_arm_sources(arm, steps, sources);
+                }
+            }
+            _ => {
+                let ty = self.ty(expr);
+                if self.sema.table.duplicable(&ty) || super::lower::mentions_type_param(&ty) {
+                    return;
+                }
+                let Some(target) = self.place_target(expr) else {
+                    return;
+                };
+                let mut projections = match &target {
+                    PlaceTarget::Local(_, projections)
+                    | PlaceTarget::Global(_, projections) => projections.clone(),
+                };
+                projections.extend_from_slice(steps);
+                sources.push(target.with_projections(projections));
+            }
+        }
     }
 
     /// Marks the owned arms a materialized conditional read may move.

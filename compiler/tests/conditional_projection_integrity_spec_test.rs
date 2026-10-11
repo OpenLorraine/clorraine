@@ -904,3 +904,87 @@ func main(): i32 {
     assert_no_asan("armplacesiblings", &output);
     assert_exit("armplacesiblings", &output, 0);
 }
+
+/// A re-executed `take` of a conditional projection transfers the value once
+/// per iteration.
+///
+/// The statement runs twice with different taken arms; the caller's copy of
+/// the transferred value must be emptied after each call, so a later
+/// iteration never releases what the callee already owns. The run is clean
+/// and both lengths are correct.
+#[test]
+fn should_take_a_conditional_projection_again_in_a_loop() {
+    let source = r#"module spec.cpi.armtakeloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box {
+    return Box { v: stringOf("mk"), w: stringOf("wwww") };
+}
+
+func consume(take s: String): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 2) {
+        let a: Box = Box { v: stringOf("aa"), w: stringOf("wwww") };
+        let c: bool = i == 0;
+        n = n + consume((c ? a : mkBox()).v);
+        i = i + 1;
+    }
+    return n - 4;
+}
+"#;
+    let output = run_memory("armtakeloop", source);
+    assert_no_asan("armtakeloop", &output);
+    assert_exit("armtakeloop", &output, 0);
+}
+
+/// A read of the moved member after a nested conditional store reports the
+/// moved-value error.
+///
+/// Consuming `d ? (c ? b : mk()).v : z` moves `b.v` out on the path that
+/// selects it, so a later read of that member is the ordinary moved-value
+/// error rather than a read of an emptied handle.
+#[test]
+fn should_report_the_moved_member_after_a_nested_conditional_store() {
+    let source = r#"module spec.cpi.armnestedread;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("mk"), w: stringOf("wwww") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let d: bool = true;
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("wwww") };
+    let s: String = d ? (c ? b : mk()).v : stringOf("zz");
+    let t: i32 = i32(len(b.v));
+    return i32(len(s)) + t - 4;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("armnestedread", source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "armnestedread: expected a rejection; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("E10020"),
+        "armnestedread: expected the moved-value report; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "armnestedread: a rejected program must not produce a translation unit"
+    );
+}

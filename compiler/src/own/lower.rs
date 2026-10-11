@@ -1272,6 +1272,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// or a deferred body) reaches here; a conditionally evaluated operand
     /// keeps its own deferred shapes.
     pub(super) fn consume_conditional_projection(&mut self, value: Value) -> Value {
+        self.consume_conditional_projection_into(value, None)
+    }
+
+    /// Lowers a `take` projection of a conditional into one caller carrier.
+    ///
+    /// The callee owns a `take` argument, so the caller's copy of the value
+    /// must be emptied once the call returns. A per-arm temporary would keep
+    /// the pointer the callee freed, and a statement that runs again — a loop
+    /// iteration or a duplicated deferred copy — would free it a second time.
+    /// Every arm therefore fills one shared carrier temporary that the
+    /// ordinary post-call move-out empties, exactly as a plain-place `take`
+    /// argument empties its source.
+    pub(super) fn materialize_take_conditional_projection(&mut self, value: Value) -> Value {
+        let ty = value.ty.clone();
+        let carrier = self.new_temp(ty.clone());
+        self.consume_conditional_projection_into(value, Some(carrier));
+        Value::new(ty, ValueKind::Temp(carrier))
+    }
+
+    /// Lowers a consumed projection of a conditional, optionally into a
+    /// shared carrier.
+    ///
+    /// Without a carrier each arm fills its own adopting temporary and the
+    /// result selects between them; with one every arm fills that temporary
+    /// and the result is the carrier itself.
+    fn consume_conditional_projection_into(
+        &mut self,
+        value: Value,
+        carrier: Option<ir::TempId>,
+    ) -> Value {
         let result_ty = value.ty.clone();
         let mut steps: Vec<ConditionalProjectionStep> = Vec::new();
         let mut cursor = value;
@@ -1322,20 +1352,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             shape: BranchShape::If { join },
         });
         self.switch_to(then_block);
-        let then_value = self.consume_conditional_arm(*then_value, &steps);
+        let then_value = self.consume_conditional_arm(*then_value, &steps, carrier);
         self.terminate(Terminator::Goto(join));
         self.switch_to(else_block);
-        let else_value = self.consume_conditional_arm(*else_value, &steps);
+        let else_value = self.consume_conditional_arm(*else_value, &steps, carrier);
         self.terminate(Terminator::Goto(join));
         self.switch_to(join);
-        Value::new(
-            result_ty,
-            ValueKind::Conditional {
-                condition: Box::new(cond_value()),
-                then_value: Box::new(then_value),
-                else_value: Box::new(else_value),
-            },
-        )
+        match carrier {
+            Some(carrier) => Value::new(result_ty, ValueKind::Temp(carrier)),
+            None => Value::new(
+                result_ty,
+                ValueKind::Conditional {
+                    condition: Box::new(cond_value()),
+                    then_value: Box::new(then_value),
+                    else_value: Box::new(else_value),
+                },
+            ),
+        }
     }
 
     /// True when a consumed value carries a projection over a conditional.
@@ -1365,44 +1398,63 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Consumes one arm's projection in its own branch.
     ///
     /// The projection below the conditional is rebuilt on the arm, then the
-    /// selected member moves out of the arm's root into an adopting temporary.
-    /// A nested conditional arm recurses, so every level moves out its own
+    /// selected member moves out of the arm's root into the destination. A
+    /// nested conditional arm recurses, so every level moves out its own
     /// chosen member.
     fn consume_conditional_arm(
         &mut self,
         arm: Value,
         steps: &[ConditionalProjectionStep],
+        carrier: Option<ir::TempId>,
     ) -> Value {
         let projected = apply_conditional_steps(arm, steps);
         if self.consume_needs_conditional_arms(&projected) {
-            self.consume_conditional_projection(projected)
+            self.consume_conditional_projection_into(projected, carrier)
         } else {
-            self.settle_consumed_arm(projected)
+            self.settle_consumed_arm(projected, carrier)
         }
     }
 
-    /// Fills a consumed arm's adopting temporary in the current branch.
+    /// Fills a consumed arm's destination in the current branch.
     ///
     /// The projection's root settles first — a fresh call root fills its own
-    /// temporary — then the selected member is copied into the adopting
-    /// temporary and the source is zeroed. The root keeps ownership of its
-    /// remaining fields and the consumer owns the moved value exactly once. A
-    /// value that owns nothing keeps its existing form.
-    fn settle_consumed_arm(&mut self, value: Value) -> Value {
+    /// temporary — then the selected member is copied into the destination and
+    /// the source is zeroed. The root keeps ownership of its remaining fields
+    /// and the consumer owns the moved value exactly once. With a carrier the
+    /// destination is the shared temporary the callee's `take` empties, and a
+    /// value that owns nothing fills the carrier as a plain store; without
+    /// one, such a value keeps its existing form.
+    fn settle_consumed_arm(&mut self, value: Value, carrier: Option<ir::TempId>) -> Value {
         let value = self.consume_place(value);
+        let kind = value.kind;
         let ValueKind::Materialize {
             temp,
             value: inner,
             move_outs,
             ..
-        } = value.kind
+        } = kind
         else {
-            return value;
+            let value = Value::new(value.ty, kind);
+            let Some(carrier) = carrier else {
+                return value;
+            };
+            let ty = value.ty.clone();
+            let place = Place {
+                base: ir::PlaceBase::Temp(carrier),
+                projections: Vec::new(),
+                ty: ty.clone(),
+            };
+            self.emit(Statement::Assign {
+                target: place,
+                value,
+            });
+            return Value::new(ty, ValueKind::Temp(carrier));
         };
         let inner = self.settle_projection_base(*inner);
         let ty = inner.ty.clone();
+        let store = carrier.unwrap_or(temp);
         let place = Place {
-            base: ir::PlaceBase::Temp(temp),
+            base: ir::PlaceBase::Temp(store),
             projections: Vec::new(),
             ty: ty.clone(),
         };
@@ -1413,7 +1465,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for source in move_outs {
             self.emit(Statement::MoveOut { place: source });
         }
-        Value::new(ty, ValueKind::Temp(temp))
+        Value::new(ty, ValueKind::Temp(store))
     }
 
     /// The place a value reads, when it is a field reached through a place.
@@ -2700,8 +2752,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // member out of the chosen arm's root before the call runs: the
             // caller's place is emptied, the fresh arm's root releases only
             // its un-moved fields, and the callee owns the argument exactly
-            // once. A conditionally evaluated argument keeps its existing
-            // deferred handling.
+            // once. Every arm fills one shared carrier the post-call move-out
+            // empties, so a re-executed statement never frees the transferred
+            // value twice. A conditionally evaluated argument keeps its
+            // existing deferred handling.
             if self.defer_move_outs == 0
                 && !self.sema.table.duplicable(&value.ty)
                 && !mentions_type_param(&value.ty)
@@ -2709,7 +2763,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && !value.ty.is_unknown()
                 && self.consume_needs_conditional_arms(&value)
             {
-                return self.consume_conditional_projection(value);
+                return self.materialize_take_conditional_projection(value);
             }
             // The base expression evaluates before the index (`m()[i]` runs
             // `m()` first and it may change the index), so an eager base is
@@ -2972,7 +3026,8 @@ fn apply_conditional_steps(mut value: Value, steps: &[ConditionalProjectionStep]
 /// A call, an intrinsic, or a template can allocate, read, or write, so it is
 /// not safe to re-evaluate; every other shape is a read of a place or a pure
 /// operator over pure operands.
-fn is_pure_value(value: &Value) -> bool {    match &value.kind {
+fn is_pure_value(value: &Value) -> bool {
+    match &value.kind {
         ValueKind::Call { .. }
         | ValueKind::Intrinsic { .. }
         | ValueKind::Template(_)
