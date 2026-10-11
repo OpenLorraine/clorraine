@@ -764,3 +764,28 @@ func main(): i32 {
     let output = run_host("condfoldconcrete", source);
     assert_exit("condfoldconcrete", &output, 7);
 }
+
+/// A resolving projection at a struct instance keeps the read (the reference).
+///
+/// The value-form member read resolves through the instance's substituted
+/// type, so the late resolution stays the designed path and runs.
+#[test]
+fn should_accept_a_resolving_projection_at_a_struct_instance() {
+    let source = r#"module spec.cc.memok;
+
+struct W {
+    foo: i32;
+}
+
+func get<T>(x: T): i32 {
+    return x.foo;
+}
+
+func main(): i32 {
+    return get(W { foo: 7 });
+}
+"#;
+    let output = run_host("memok", source);
+    assert_exit("memok", &output, 7);
+}
+
