@@ -378,22 +378,51 @@ parameter-typed expected cannot be judged at the declaration), closing SR-006's 
   both).
 - **The `escapeowner` phrase** deviates from the registry template the way the existing
   `a statement temporary` subject already does; the registry itself is untouched.
+- **The ruled acceptance deltas.** Recording the assignment value covers a by-value capture
+  stored into a `borrow T?` out-slot, so at a nullable owning instance the shape reports
+  `E10401` where the base accepted it (the lend duty's carve-out with no capture record at an
+  assignment site). The semantics review ruled this the frozen reading: the environment field
+  is an aliasing copy at an owning substitution, and the carve-out governs lend parameters,
+  not captures — the base's acceptance was a double-free path. Pinned by `captureoutslot`. A
+  lambda that moves one capture at two sites reports once (the per-lambda record set; the
+  second site is the ordinary moved-value error) — pinned by `capturetwosite`; a partially
+  moved struct's remaining-field update stays accepted — pinned by `statededupepartial`.
 
 ### Red evidence
 
-At the baseline: `E10020` three times per moved update site, `E10021` twice per uninitialized
-one; `E10034` at the capture `let`/assignment sites; `E10034` + `E10401` at both composite
-forms; `__cl_owned0` in the `E10030` message. The first green run left the uninitialized
-element case failing (two reports again) — the ledger key was coarsened to the span's start,
-not a change to the reporters.
+At the baseline: `E10020` three times per moved field update (the value and statement forms),
+`E10021` twice per uninitialized field/element update; `E10034` at the capture `let`,
+assignment, and out-slot sites; `E10034` + `E10401` at both composite forms — the
+expression-bodied twin measured the same pair, correcting the design's "unchanged" note;
+`__cl_owned0` in the `E10030` message. The first green run left the uninitialized element case
+failing (two reports again) — the ledger key was coarsened to the span's start, not a change to
+the reporters.
 
 ### Verification
 
-Spec suite 60/60 plain and under `RDC_ASAN=1`; impl 25/25; `make check` 62 suites green. The
+Spec suite 63/63 plain and under `RDC_ASAN=1`; impl 25/25; `make check` 62 suites green. The
 concrete read-only capture spelling (`([s] () => { let y = s; })()` with `s: String`) keeps
 its `E10034` attribution at the new sites — a pre-existing twin of DEF-160, filed as DEF-250.
 
 ### Review and fix round
 
-_(findings recorded after the review round)_
+**Both lenses reported; no phase findings.** The correctness lens: no critical or major; one
+records item (the exact red baselines) plus two behavior observations it asked the semantics
+lens to rule. The semantics lens: **no findings** — the single-report discipline, the capture
+attribution, and the generated-owner phrase all conform to the frozen text — and it **ruled
+both observations conformant**: the out-slot rejection is the frozen reading (Ch 06 L-2/L-3;
+the carve-out governs lend parameters, not captures, and the base's acceptance was a
+double-free path), and the second-site silence matches the recorded one-record-per-capture
+reading. No user ruling is needed.
+
+| Item | Resolution |
+| ---- | ---------- |
+| RV-001 (records) | The red evidence names the exact baselines (the `captureexpr` pair; the compound spelling reported once at the baseline) and the design notes record the second-site silence, the ruled out-slot delta, and the remaining-field acceptance |
+| The out-slot acceptance delta (base accepted → head rejects) | Ruled the frozen reading; accepted as an intended consequence and pinned by `captureoutslot` |
+| The second-site silence | Ruled conformant under the recorded reading; pinned by `capturetwosite` |
+| SR-005 (the remaining-field acceptance unpinned) | Pinned by `statededupepartial` |
+| SR-001 | Filed as DEF-250 (the concrete read-only capture twin) |
+
+The reconciliation added the three ruled pins (spec 63/63); the reviewed implementation is
+unchanged.
 

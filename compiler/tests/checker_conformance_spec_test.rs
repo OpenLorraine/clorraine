@@ -1858,3 +1858,93 @@ func main(): i32 {
     );
 }
 
+/// A by-value capture stored into a `borrow T?` out-slot reports the capture
+/// rule at a nullable owning instance.
+///
+/// The capture's environment field is an aliasing copy of the enclosing
+/// binding at an owning substitution, so storing it through the slot hands the
+/// caller an unsound alias; the out-slot carve-out governs lend parameters,
+/// not captures. The base accepted the shape (the lend duty's carve-out with
+/// no capture recording at an assignment site), so this pin records the ruled
+/// consequence.
+#[test]
+fn should_reject_a_capture_stored_into_an_out_slot() {
+    let source = r#"module spec.cc.captureoutslot;
+
+import { String, stringOf } from std.text;
+
+func make<T>(borrow out: T, x: T): void {
+    ([x, borrow out] () => {
+        out = x;
+    })();
+}
+
+func main(): i32 {
+    let out: String? = null;
+    let s: String = stringOf("ab");
+    make<String?>(borrow out, s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "captureoutslot",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// One capture keeps one report even when a lambda moves it at two sites.
+///
+/// The second site's use of the moved capture is the ordinary moved-value
+/// error, so the capture rule still reports once for the lambda.
+#[test]
+fn should_report_one_capture_move_for_two_sites() {
+    let source = r#"module spec.cc.capturetwosite;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): void {
+    ([x] () => {
+        let a: T = x;
+        let b: T = x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    make<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "capturetwosite",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// A partially moved struct's remaining-field update stays accepted, so the
+/// per-site dedupe never masks a legitimate update.
+#[test]
+fn should_keep_a_remaining_field_update_accepted() {
+    let source = r#"module spec.cc.statededupepartial;
+
+import { String, stringOf } from std.text;
+
+struct P { s: String; n: i32; }
+
+func main(): i32 {
+    let p = P { s: stringOf("ab"), n: 1 };
+    let q: String = p.s;
+    p.n++;
+    return p.n + i32(len(q));
+}
+"#;
+    let output = run_host("statededupepartial", source);
+    assert_exit("statededupepartial", &output, 4);
+}
+

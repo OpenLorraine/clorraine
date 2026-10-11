@@ -2,9 +2,9 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 35/38 tasks (92%)
+> **Progress**: 36/38 tasks (95%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 22:25
+> **Last Updated**: 2026-10-11 22:28
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
@@ -140,7 +140,7 @@
 ### Step 5.3: Impl Tests & Review
 
 - [x] 5.3.1 Write the phase implementation pins (the counts, the spans, the message) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 22:25; five pins — the moved update's one report at 10:13, the capture move's one report at 7:20 with no E10034, the phrase with no compiler spelling, and the accepted update/duplicable-capture emissions; impl 25/25)
-- [~] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ⏳ (implemented: 2026-10-11 22:25; the two lenses dispatched after the commit)
+- [x] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ✅ (completed: 2026-10-11 22:28; the correctness lens found no critical/major and one records minor, fixed; the semantics lens found nothing in the phase and ruled both flagged behaviors conformant — the out-slot rejection is the frozen reading and the second-site silence matches the recorded reading — with three ruled pins added: `captureoutslot`, `capturetwosite`, `statededupepartial`)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 
