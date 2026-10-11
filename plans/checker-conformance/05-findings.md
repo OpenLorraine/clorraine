@@ -287,8 +287,46 @@ Spec suite 43/43 plain; impl 17/17; `make check` 62 suites green.
 
 ## Phase 4: Null-shaped values
 
-**Baseline**: _(recorded at phase start)_
+**Baseline**: `5a3727c` (the Phase 3 close-out tree).
 **Lenses**: correctness, semantics
+
+### Deliverables
+
+| # | Shape | Result |
+| - | ----- | ------ |
+| DEF-149 | A store of a concrete value into the local inferred from `null` reports `E10012`: the null shape accepts only the null shape (or `null`) | Fixed; spec `nullassignview`; the copy between null-shaped locals stays accepted (`nullcopy`) |
+| DEF-151 | A null-shaped value used where a concrete type is required (a return, an argument) reports `E10012`: the narrowing that silences the possible-null rule does not give the value a type | Fixed; spec `nullreturn`, `nullarg`; the comparisons (`nullcompare`) and the nullable declarations (`nullnullable`) stay accepted |
+| DEF-145 (the iterable sub-case) | The null-shaped iterable already reports `E10012` at the declaration (Phase 2's `iternull`) | Covered; no new code |
+
+### Design notes
+
+- **The sites live in the own stage's shared gate.** The design named `compiler/src/sema/`,
+  but the nullability gate is `own/expr.rs::check_value_into`, which every position already
+  funnels through (the store, the `let`, the return, the arguments). The extension is two
+  branches there: a null-SHAPED value at a concrete expected reports `E10012` (ahead of the
+  possible-null rule, so a narrowing cannot answer for a value with no type), and a concrete
+  value stored into a null-SHAPED expected reports `E10012` (the copy between two null-shaped
+  locals returns before it). The registry message and help are the shared text, reported
+  through one small helper.
+- **The predicate** (`types::is_null_shaped`) landed in Phase 2 with its unit tests; Phase 4
+  reuses it unchanged.
+- **The accepted positions are unchanged and pinned by emission** (the null comparisons, the
+  null-shaped copy, the nullable declarations).
+
+### Red evidence
+
+At the phase baseline the three rejection cases were accepted and failed the strict build
+(`void * = ClStr`, `void *` returned where `i32` is declared, an argument mismatch); the three
+references were green. The first implementation run left `nullarg` failing on its own program
+(`take` is a reserved keyword) — the case was renamed to `consume`, not an implementation
+change.
+
+### Verification
+
+Spec suite 49/49 plain and under `RDC_ASAN=1`; impl 20/20; `make check` 62 suites green (the
+whole corpus and stdlib are unaffected by the new rejections).
+
+### Review and fix round
 
 _(findings recorded after the review round)_
 

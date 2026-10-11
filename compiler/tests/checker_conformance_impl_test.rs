@@ -661,3 +661,68 @@ func main(): i32 {
     );
 }
 
+/// The null comparisons keep their delegation shape.
+#[test]
+fn should_keep_the_null_shaped_comparison_shapes() {
+    let source = r#"module spec.cc.impl.nullcomparepin;
+
+func main(): i32 {
+    let x = null;
+    if (x == null) {
+        return 1;
+    }
+    if (x != null) {
+        return 2;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("nullcomparepin", source);
+    assert_contains("nullcomparepin", &emitted, "void * x = NULL;");
+    assert_contains("nullcomparepin", &emitted, "(x == NULL)");
+    assert_contains("nullcomparepin", &emitted, "(x != NULL)");
+}
+
+/// A copy between null-shaped locals keeps its assignment shape.
+#[test]
+fn should_keep_the_null_shaped_copy_shape() {
+    let source = r#"module spec.cc.impl.nullcopypin;
+
+func main(): i32 {
+    let x = null;
+    let y = x;
+    if (y == null) {
+        return 4;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("nullcopypin", source);
+    assert_contains("nullcopypin", &emitted, "void * y = NULL;");
+    assert_contains("nullcopypin", &emitted, "y = x;");
+}
+
+/// Nullable declarations keep their zero initializers.
+#[test]
+fn should_keep_the_nullable_declaration_shapes() {
+    let source = r#"module spec.cc.impl.nullnullablepin;
+
+import { File } from std.io;
+
+func main(): i32 {
+    let f: File? = null;
+    if (f != null) {
+        return 1;
+    }
+    let p: raw u8? = null;
+    if (p == null) {
+        return 3;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("nullnullablepin", source);
+    assert_contains("nullnullablepin", &emitted, "BPTR f = NULL;");
+    assert_contains("nullnullablepin", &emitted, "u8 *p = NULL;");
+}
+

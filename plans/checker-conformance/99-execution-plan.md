@@ -2,7 +2,7 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 21/38 tasks (55%)
+> **Progress**: 27/38 tasks (71%)
 > **Created**: 2026-10-11 15:20
 > **Last Updated**: 2026-10-11 20:19
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
@@ -92,7 +92,7 @@
 
 ## Phase 4: Null-shaped values
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `5a3727c` (the Phase 3 close-out tree)
 > **Lenses**: correctness + semantics
 > **Reasoning**: low — one predicate and four rejection sites
 
@@ -101,19 +101,19 @@
 **Reference**: [03-04](03-04-null-shaped-values.md)
 **Objective**: Pin the rejected uses and the accepted positions.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
-- [ ] 4.1.2 Run the suite and record the red phase
+- [x] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` ✅ (completed: 2026-10-11 21:35; six cases — the store, the return, the argument, the comparisons, the nullable declarations, the null-shaped copy; the iterable row is the Phase 2 `iternull` case)
+- [x] 4.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-11 21:35; three red exactly as filed — the store, the return, and the argument were accepted and failed the strict build — and the three references green)
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Add the null-shape predicate with unit tests — `compiler/src/types/mod.rs`
-- [ ] 4.2.2 Reject the null-shaped uses at the four sites — `compiler/src/sema/`
-- [ ] 4.2.3 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 4.2.1 Add the null-shape predicate with unit tests — `compiler/src/types/mod.rs` ✅ (completed: 2026-10-11 21:35; the predicate and its unit tests landed in Phase 2 and are reused unchanged)
+- [x] 4.2.2 Reject the null-shaped uses at the four sites — `compiler/src/sema/` ✅ (completed: 2026-10-11 21:35; amended: the nullability gate is the own stage's shared `check_value_into`, extended with the null-shaped-value and null-shaped-target branches; the iterable site is Phase 2's)
+- [x] 4.2.3 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-11 21:35; spec 49/49; the `nullarg` failure was the case's own `take` keyword, renamed to `consume`)
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the message text, the accepted references) — `compiler/tests/checker_conformance_impl_test.rs`
-- [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses
+- [x] 4.3.1 Write the phase implementation pins (the message text, the accepted references) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-11 21:35; three pins: the comparison shapes, the null-shaped copy, the nullable zero initializers; impl 20/20)
+- [~] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ⏳ (implemented: 2026-10-11 21:35; the two lenses dispatched after the commit)
 
 **Verify**: `make -C docker exec CMD="cargo test --test checker_conformance_spec_test --test checker_conformance_impl_test"`; `make check`
 

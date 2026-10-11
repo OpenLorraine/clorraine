@@ -524,28 +524,48 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Checks an expression against an expected type for nullability.
+    ///
+    /// A value inferred from `null` has no concrete value surface at all: a
+    /// narrowing silences the possible-null rule but does not give it a type,
+    /// so the null rule reports where a concrete type is required. The null
+    /// shape's own store accepts only the null shape (or `null`), and every
+    /// other nullable value keeps the possible-null rule.
     pub(super) fn check_value_into(&mut self, expr: &Expr, expected: &Ty, span: Span) {
         if matches!(expr.kind, ExprKind::Null) {
             if !expected.nullable && !expected.is_unknown() {
-                self.error(
-                    "E10012",
-                    "'null' is not allowed here",
-                    "declare the type `T?` or avoid the empty state",
-                    span,
-                );
+                self.report_null_rule(span);
             }
             return;
         }
         let value_ty = self.ty(expr);
         // A type that still mentions a parameter defers to the instance audit,
         // exactly as the conversion check defers it.
-        if value_ty.nullable
-            && !expected.nullable
+        let concrete = !expected.nullable
             && !expected.is_unknown()
-            && !crate::types::contains_param(expected)
-        {
+            && !crate::types::contains_param(expected);
+        if crate::types::is_null_shaped(&value_ty) {
+            if concrete {
+                self.report_null_rule(span);
+            }
+            return;
+        }
+        if crate::types::is_null_shaped(expected) {
+            self.report_null_rule(span);
+            return;
+        }
+        if value_ty.nullable && concrete {
             self.check_nonnull_expr(expr, span);
         }
+    }
+
+    /// Reports the null rule at a position that requires a concrete value.
+    fn report_null_rule(&mut self, span: Span) {
+        self.error(
+            "E10012",
+            "'null' is not allowed here",
+            "declare the type `T?` or avoid the empty state",
+            span,
+        );
     }
 
     /// Checks an assignment expression.

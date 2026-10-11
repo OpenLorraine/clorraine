@@ -1430,3 +1430,144 @@ func main(): i32 {
     assert_rejected_once("ffideclonce", source, "E10226", &[], &[]);
 }
 
+// ===== Phase 4: null-shaped values =====
+
+/// A concrete value stored into the null-shaped local reports the null rule.
+///
+/// The local inferred from `null` has no concrete type to hold the view, so
+/// the store reports instead of emitting `void * = ClStr` (red at the phase
+/// base: the program was accepted and failed the strict build).
+#[test]
+fn should_report_a_concrete_store_into_a_null_shaped_local() {
+    let source = r#"module spec.cc.nullassignview;
+
+func main(): i32 {
+    let x = null;
+    let s: str = "ab";
+    x = s;
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "nullassignview",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+}
+
+/// A null-shaped value returned where a concrete type is required reports.
+///
+/// The narrowed guard does not give the value a concrete type, so the return
+/// reports the null rule (red at the phase base: the program was accepted and
+/// emitted `void *` where `i32` is declared).
+#[test]
+fn should_report_a_null_shaped_return_value() {
+    let source = r#"module spec.cc.nullreturn;
+
+func pick(): i32 {
+    let x = null;
+    if (x != null) {
+        return x;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return pick();
+}
+"#;
+    assert_rejected_once(
+        "nullreturn",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+}
+
+/// A null-shaped value at a concrete parameter reports the null rule.
+#[test]
+fn should_report_a_null_shaped_argument() {
+    let source = r#"module spec.cc.nullarg;
+
+func consume(n: i32): i32 {
+    return n;
+}
+
+func main(): i32 {
+    let x = null;
+    return consume(x);
+}
+"#;
+    assert_rejected_once(
+        "nullarg",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+}
+
+/// The null comparisons stay accepted and run.
+#[test]
+fn should_keep_the_null_comparisons_accepted() {
+    let source = r#"module spec.cc.nullcompare;
+
+func main(): i32 {
+    let x = null;
+    if (x == null) {
+        return 1;
+    }
+    if (x != null) {
+        return 2;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("nullcompare", source);
+    assert_exit("nullcompare", &output, 1);
+}
+
+/// A nullable declaration and its null guards stay accepted.
+#[test]
+fn should_keep_the_nullable_declarations_accepted() {
+    let source = r#"module spec.cc.nullnullable;
+
+import { File } from std.io;
+
+func main(): i32 {
+    let f: File? = null;
+    if (f != null) {
+        return 1;
+    }
+    let p: raw u8? = null;
+    if (p == null) {
+        return 3;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("nullnullable", source);
+    assert_exit("nullnullable", &output, 3);
+}
+
+/// A copy between two null-shaped locals stays accepted.
+#[test]
+fn should_keep_a_copy_between_null_shaped_locals_accepted() {
+    let source = r#"module spec.cc.nullcopy;
+
+func main(): i32 {
+    let x = null;
+    let y = x;
+    if (y == null) {
+        return 4;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("nullcopy", source);
+    assert_exit("nullcopy", &output, 4);
+}
+
