@@ -248,3 +248,18 @@ Spec suite 38/38 plain and under `RDC_ASAN=1`; impl 19/19; `make check` 60 suite
 | 3 — release and checks | DEF-130/152/204 | three lenses; one fix round (the retention compounds, consumed arguments, signature-first modes, the `.len` parity) |
 | 4 — body slice typedefs | DEF-137 | correctness + emission; one fix round (the store pointer operand) |
 | 5 — close-out | — | `make verify` rc=0 |
+
+### Emission audit outcome (reported after the phase closed)
+
+The Phase 4 emission auditor (range `6bb8722..73a7f9e` with the fix range verified) reported **no
+new findings**: its one finding EIA-001 is the correctness review's RV-001 (the store pointer
+operand), already fixed by `8f4ea3a` and independently re-verified. Its differential (138
+tracked programs plus 1368 inline suite programs, three profiles each) showed only the two
+intended `bodyslice` units differing; the strict sweep found three base-identical pre-existing
+failures and no new ones. Four pre-existing emission classes were filed from its residual table
+— DEF-215 (a lifted-lambda specialization's typedef), DEF-216 (a struct-instance element's
+typedef), DEF-217 (a func-pointer element declarator), DEF-218 (an explicit `slice<i32[]>`
+discarded) — and DEF-215/DEF-216 join batch G's Phase 1. Its `E10213` observation is the
+deliberately unasserted staged golden (`compiler/tests/compile_fail_spec_test.rs:49`), not a
+defect. The audit's coverage boundary: it re-diffed across the fix range rather than auditing
+`73a7f9e` alone.
