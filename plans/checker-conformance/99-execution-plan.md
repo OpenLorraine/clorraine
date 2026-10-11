@@ -2,9 +2,9 @@
 
 > **Feature**: checker-conformance
 > **Status**: Not Started
-> **Progress**: 35/38 tasks (92%)
+> **Progress**: 38/38 tasks (100%)
 > **Created**: 2026-10-11 15:20
-> **Last Updated**: 2026-10-11 23:02
+> **Last Updated**: 2026-10-11 23:10
 > **Commit mode**: `--auto-commit` — commit and push after each verified task group
 > **Design authority**: `--auto-design` — one user-owned item open (AR-2, the arity diagnostic code)
 
@@ -146,7 +146,7 @@
 
 ## Phase 6: Batch close-out
 
-> **Phase baseline tree**: _(recorded by the exec-plan skill)_
+> **Phase baseline tree**: `34542c4` (the Phase 5 fix-round close).
 > **Lenses**: none new — the close-out verifies the reviewed phases
 
 ### Step 6.1: Final Verification & Documentation
@@ -154,9 +154,9 @@
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria
 **Objective**: Run the full acceptance, sync the docs and the roadmap, and close the plan.
 
-- [ ] 6.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence
-- [ ] 6.1.2 Update `AGENTS.md` (test naming map with the new suites)
-- [ ] 6.1.3 Sync the roadmap rows (the batch's rows → Done with evidence), record the findings ledger, and close the plan
+- [x] 6.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence ✅ (completed: 2026-10-11 23:10; `make check` 62 suites green; `make verify` green — every hosted-amiga cross-toolchain leg; spec 74/74 plain and under `RDC_ASAN=1`; impl 25/25; the corpus sweeps byte-identical for accepted programs and no translation unit for rejected ones)
+- [x] 6.1.2 Update `AGENTS.md` (test naming map with the new suites) ✅ (completed: 2026-10-11 23:09; the test map carries the `checker_conformance_spec_test` and `checker_conformance_impl_test` entries)
+- [x] 6.1.3 Sync the roadmap rows (the batch's rows → Done with evidence), record the findings ledger, and close the plan ✅ (completed: 2026-10-11 23:09; the 18 batch rows read Done ✅ with their per-row fix evidence; the ledger carries the close-out section; the plan closes at 38/38 with 6.1.1's evidence)
 
 **Verify**: `make check`; `make verify`
 

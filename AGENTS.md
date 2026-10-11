@@ -261,6 +261,14 @@ in `CMD`).
   `compiler/tests/module_initializer_integrity_impl_test.rs` holds its
   **implementation tests** (emitted call and store shapes, wrapped text,
   folded constants, release text and null guards, and byte-identity pins).
+- `compiler/tests/checker_conformance_spec_test.rs` holds the **specification
+  tests** for the checker-conformance batch (the ffi and callable arity and
+  conversion checks, the per-instance slice typedefs and opaque projections,
+  the null-shaped value rules, the per-site state report, the moved-place
+  capture judgment, and the generated-owner phrase), and
+  `compiler/tests/checker_conformance_impl_test.rs` holds its **implementation
+  tests** (the emitted slice typedefs and ffi call shapes, the captured-owner
+  release counts, the report spans, and the byte-identity pins).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

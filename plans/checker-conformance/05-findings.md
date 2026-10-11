@@ -454,4 +454,20 @@ DEF-254.
 | Moving out of a `const` binding is accepted (Ch 03 §2 V3) | DEF-252 |
 | A concrete discarded array literal is accepted and emits C the strict build rejects (base == head) | DEF-253 |
 | The concrete read-only capture's attribution at the new sites, and its writable spelling | DEF-250 (extended) |
+| `--max-errors 0` silently accepts rejected programs | DEF-254 |
+
+## Phase 6: Batch close-out
+
+**Close-out**: `34542c4` plus this record.
+
+All six phases closed; the review rounds: Phase 1 (`31e0b26`), Phase 2 (`c39c9c8`..`68d6428`),
+Phase 3 (`7e32f39`..`5a3727c`), Phase 4 (`5893b07`, `f84a26b`), Phase 5 (`5faf3af`, `6420e3f`,
+`71a6810`, `34542c4`), plus the two scoped re-reviews with their confirmations (no findings).
+The rounds filed DEF-217...DEF-254; every batch row is fixed, and the residual rows stay on the
+backlog with their repro evidence.
+
+**Verification**: `make check` 62 suites green; `make verify` green (the full hosted-amiga
+cross-toolchain acceptance); spec 74/74 plain and under `RDC_ASAN=1`; impl 25/25; the corpus
+base/head sweeps byte-identical for accepted programs and no translation unit for rejected ones.
+AGENTS.md's test map carries the batch's two suites; the plan reads 38/38.
 
