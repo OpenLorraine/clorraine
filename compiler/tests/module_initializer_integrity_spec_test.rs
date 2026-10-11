@@ -1246,3 +1246,26 @@ func main(): i32 {
     assert_no_asan("bodyslice", &output);
     assert_exit("bodyslice", &output, 0);
 }
+
+/// A written slice type argument in a store index defines its typedef.
+///
+/// The run-time store index (and its bounds guard) carries the written type's
+/// `sizeof`, so the collector's pointer operand yields the typedef and the
+/// strict build accepts (red before the pointer walk: the typedef was missing
+/// and the strict build failed).
+#[test]
+fn should_define_a_store_index_slice_type_argument_typedef() {
+    let source = r#"module spec.mii.storeslice;
+
+let position: usize = 0;
+
+func main(): i32 {
+    let xs: i32[4] = [1, 2, 3, 4];
+    xs[position + sizeof(i32[]) - sizeof(i32[])] = 9;
+    return xs[0] - 9;
+}
+"#;
+    let output = run_memory("storeslice", source);
+    assert_no_asan("storeslice", &output);
+    assert_exit("storeslice", &output, 0);
+}

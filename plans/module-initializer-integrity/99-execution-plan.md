@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-11 14:44
-> **Progress**: 29/33 tasks (88%)
+> **Last Updated**: 2026-10-11 14:53
+> **Progress**: 30/33 tasks (91%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -166,7 +166,7 @@ task-size criteria in the make-plan quality checklist)
 ### Step 4.3: Impl Tests & Review
 
 - [x] 4.3.1 Write the Phase 4 implementation pin (typedef plus use) — `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-11 14:44; impl 18/18)
-- [~] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ⏳ (implemented: 2026-10-11 14:44; review dispatched)
+- [x] 4.3.2 Phase review evidence in the findings ledger and plan progress update — commit per the active commit mode ✅ (completed: 2026-10-11 14:53; correctness review merged — RV-001 fixed (the store pointer operand) with the exhaustive statement/terminator matches; emission audit pending)
 
 **Verify**: `make -C docker exec CMD="cargo test --test module_initializer_integrity_spec_test --test module_initializer_integrity_impl_test"`; `make check`
 

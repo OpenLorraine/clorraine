@@ -693,3 +693,32 @@ func main(): i32 {
     );
     assert_contains("bodyslice", &emitted, "n = sizeof(ClSlice_i32);");
 }
+
+/// A written slice type argument in a store index emits its typedef.
+///
+/// The store's run-time index carries the written type's `sizeof`, so the
+/// typedef is defined before the function that stores through it.
+#[test]
+fn should_define_a_store_index_slice_type_argument_typedef() {
+    let source = r#"module spec.mii.impl.storeslice;
+
+let position: usize = 0;
+
+func main(): i32 {
+    let xs: i32[4] = [1, 2, 3, 4];
+    xs[position + sizeof(i32[]) - sizeof(i32[])] = 9;
+    return xs[0] - 9;
+}
+"#;
+    let emitted = emit_host("storeslice", source);
+    assert_contains(
+        "storeslice",
+        &emitted,
+        "typedef struct { i32 *ptr; usize len; } ClSlice_i32;",
+    );
+    assert_contains(
+        "storeslice",
+        &emitted,
+        "__cl_tmp0 = ((cl_spec_mii_impl_storeslice_position + sizeof(ClSlice_i32)) - sizeof(ClSlice_i32));",
+    );
+}

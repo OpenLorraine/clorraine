@@ -337,9 +337,14 @@ impl<'a> Emitter<'a> {
         for block in &function.blocks {
             for instr in &block.statements {
                 match &instr.statement {
-                    Statement::Assign { value, .. }
-                    | Statement::StorePointer { value, .. }
-                    | Statement::Discard { value } => {
+                    Statement::Assign { value, .. } | Statement::Discard { value } => {
+                        self.collect_value_slice_types(value, subst, found);
+                    }
+                    // A run-time store index (and its guards) lives in the
+                    // pointer operand, so a written type argument there needs
+                    // its typedef exactly like the stored value's would.
+                    Statement::StorePointer { pointer, value } => {
+                        self.collect_value_slice_types(pointer, subst, found);
                         self.collect_value_slice_types(value, subst, found);
                     }
                     Statement::Guards { checks } => {
@@ -355,7 +360,17 @@ impl<'a> Emitter<'a> {
                             self.collect_value_slice_types(receiver, subst, found);
                         }
                     }
-                    _ => {}
+                    // The remaining statements hold places, scopes, or
+                    // registrations and read no value.
+                    Statement::Move { .. }
+                    | Statement::MoveOut { .. }
+                    | Statement::Borrow { .. }
+                    | Statement::Drop { .. }
+                    | Statement::ReleaseTemp(_)
+                    | Statement::Defer { .. }
+                    | Statement::ScopeEnd { .. }
+                    | Statement::ScopeExit { .. }
+                    | Statement::Nop => {}
                 }
             }
             match &block.terminator {
@@ -373,7 +388,8 @@ impl<'a> Emitter<'a> {
                         self.collect_value_slice_types(value, subst, found);
                     }
                 }
-                _ => {}
+                // No other terminator reads a value.
+                Terminator::Goto(_) | Terminator::Unreachable => {}
             }
         }
     }

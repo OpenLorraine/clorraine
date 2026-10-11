@@ -192,9 +192,30 @@ The body spelling built at the phase base only up to the strict build: `sizeof(i
 ### Implementation notes
 
 - **Shape gating (AR-13).** The walk only adds types to the set; a unit whose set already carried its types emits byte-identically. The collection is deduplicated by the set's key. `make check` (60 suites) shows no pinned shape moved; the corpus differential is the review's check.
-- **Position coverage.** The plan's contract is the `Intrinsic { type_arg }` arm; the walk descends every sub-value so the argument is found wherever it sits, and terminators are walked too (`return sizeof(i32[])` has no statement of its own).
+- **Position coverage.** The plan's contract is the `Intrinsic { type_arg }` arm; the walk descends every sub-value so the argument is found wherever it sits, and terminators are walked too (`return sizeof(i32[])` has no statement of its own). Both the statement and the terminator matches are exhaustive, so an operand-bearing variant cannot be silently skipped (the first review round found exactly that gap on `StorePointer`'s pointer).
 - **Per-instance substitution.** A generic body's written type argument is still a parameter in the declared body and is skipped there; the instance walk substitutes it exactly as the existing locals and temporaries path does.
 
 ### Verification
 
 Spec suite 37/37 plain and under `RDC_ASAN=1`; impl 18/18; `make check` 60 suites green.
+
+### Review and fix round
+
+**Correctness reviewer** found one gap in the collector's claimed coverage:
+
+| Finding | Severity | Area | Ruling |
+| ------- | -------- | ---- | ------ |
+| RV-001 | 🟠 major | `collect_body_slice_types` walked only the stored `value` of `Statement::StorePointer`; a run-time store index (and its guards) lives in the `pointer` operand, so a written slice type argument that appears only there missed its typedef — the exact DEF-137 failure class the phase closes. The ledger's "found wherever it sits" claim was false for that operand. | **Ruling (auto-design, delegated):** fix in-phase — a one-line walk extension plus the reviewer's suggested hardening. Fixed: the arm splits and walks `pointer` first, and both the statement and terminator matches are now exhaustive. |
+
+The same reviewer verified the deliverable (the filed repro, the spec case's base-red, the pin's discrimination), the value-position blast radius (19 positions plus the generic-instance substitution), the duplicate dedup, and the shape gating (a 24-file base/head differential: zero diffs).
+
+**New coverage**: spec case `storeslice` (a run-time store index whose expression carries the written type's `sizeof`; ABI-robust, strict-built and run) and the impl pin (the typedef plus the store-pointer expression).
+
+**Filed from the review's pre-existing observations** (base and head byte-identical, outside the phase):
+
+- **DEF-211** — `sizeof(i32[2])` emits `sizeof(i32)` (4, not 8): the intrinsic renders the element type for a fixed array. The spec types `sizeof(type)` as the size of the type (`spec/04-expressions.md`) but does not pin the fixed-array spelling, so the value wants a ruling before the fix.
+- **DEF-212** — a local used only as a run-time index of a store target is reported `W10000 unused local` although the emitted C reads it.
+
+### Verification
+
+Spec suite 38/38 plain and under `RDC_ASAN=1`; impl 19/19; `make check` 60 suites green.
