@@ -52,8 +52,11 @@ and return emission is byte-identical.
 | SA-101 | 🔴 critical | a guarded `take` of a conditional projection (pre-existing, base == head) | **Filed** as DEF-260 (outside the phase's declared scope; the guarded intrinsic read is DEF-178) |
 | SA-001 | 🔴 critical | the eager `take` carrier | **Closed**: every base-failing eager shape (loop, defer copy, nested, func-typed callee, discarded call, two takes, early return/panic) is ASan-clean at head |
 
-**Targeted confirmation**: dispatched once on the follow-up fix diff; recorded in the phase progress at
-task 1.3.2.
+**Targeted confirmation**: dispatched once on the follow-up fix diff (`33070ad..3af940b`) and returned
+**PASS** (2026-10-12 02:03): the rewritten loop case double-frees on the pre-carrier base under both ASan
+and a plain build; the place-sibling program is accepted at the base and rejected `E10020` at head; the
+dead per-arm temporary is gone and the carrier is filled by both arms with the post-call move-out intact;
+spec 22/22 plain and under `RDC_ASAN=1`, impl 7/7, `make check` exit 0.
 
 ## Phase 2 — Guarded receivers and loans
 

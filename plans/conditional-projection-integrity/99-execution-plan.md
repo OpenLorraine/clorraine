@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-12 01:33
-> **Progress**: 5/33 tasks (15%)
+> **Last Updated**: 2026-10-12 02:03
+> **Progress**: 6/33 tasks (18%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -61,7 +61,7 @@ task-size criteria: each task is independently testable and reviewable).
 ### Step 1.3: Impl Tests & Review
 
 - [x] 1.3.1 Write the phase implementation pins (the move-out shapes, the guarded fill, the release counts) — `compiler/tests/conditional_projection_integrity_impl_test.rs` ✅ (completed: 2026-10-12 01:35)
-- [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses
+- [x] 1.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the two lenses ✅ (completed: 2026-10-12 02:03; correctness + memory-safety found RV-001/RV-002/SA-001, the scoped re-review found RV-101/RV-102/RV-103/SA-102 and closed SA-001; all fixed and the targeted confirmation returned PASS; DEF-257–DEF-260 filed)
 
 **Verify**: `make -C docker exec CMD="cargo test --test conditional_projection_integrity_spec_test --test conditional_projection_integrity_impl_test"`; `make check`
 
