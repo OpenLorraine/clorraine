@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-12 08:39
-> **Progress**: 8/33 tasks (24%)
+> **Last Updated**: 2026-10-12 08:46
+> **Progress**: 10/33 tasks (30%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -81,8 +81,8 @@ task-size criteria: each task is independently testable and reviewable).
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Route the struct-literal receiver root, record the conditional place arm's shared loan, and extend the conditional gate to the dot-`len` receiver — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`, `compiler/src/own/place.rs`
-- [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 2.2.1 Route the struct-literal receiver root, record the conditional place arm's shared loan, and extend the conditional gate to the dot-`len` receiver — `compiler/src/own/lower.rs`, `compiler/src/own/place.rs` (the `own/call.rs` receiver-extraction caller already routes through the guarded binder, so it needed no change) ✅ (completed: 2026-10-12 08:46; runtime AR-16 corrected the phase-1 armplace control to the named spelling's binding-granular loan)
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-12 08:46; 39/39 plain and under ASan; `make check` exit 0)
 
 ### Step 2.3: Impl Tests & Review
 

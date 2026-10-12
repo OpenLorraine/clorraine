@@ -2188,6 +2188,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     value
                 }
             }
+            // A struct literal with owning fields is a storage root of its
+            // own: its C compound literal has block lifetime and no cleanup,
+            // so the deferred materialization fills a temporary with it where
+            // the operand is evaluated — the taken path only — and the
+            // statement's release frees the fields the consumer does not
+            // move. A literal that owns nothing stays inline.
+            ValueKind::StructLit { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                    self.materialize_guard_operand(value)
+                } else {
+                    value
+                }
+            }
             // A conditional whose arms own their values is bound as one value
             // through the deferred materialization: the guard emitter fills it
             // with the chosen arm on the evaluated path only, and its release
@@ -2238,19 +2252,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_view(&value.ty) || value.ty.is_unknown() || self.projects_from_place(&value) {
             return value;
         }
-        // A conditional with an arm that roots in a place must not be bound as
-        // a whole: the owned-conditional store adopts the chosen arm, which
-        // would empty storage the borrow argument only reads. Each ownerless
-        // arm is evaluated under a branch instead — at this statement position
-        // when there is one — so the place stays readable, the fresh arm's
-        // storage releases on its own path, and the argument keeps its
-        // position in the evaluation order. A member or element projection of
-        // such a conditional (`(c ? b : mk()).v`) walks down to the
+        // A projection chain rooted at a conditional that needs an arm fill
+        // must not be bound as one value: the owned-conditional store adopts
+        // the chosen arm, which would empty storage a place-borrowing arm only
+        // reads, and an all-ownerless conditional's un-moved root fields would
+        // leak. Each arm is bound on its own path instead — evaluated under a
+        // branch at this statement position when there is one — so a place
+        // stays readable, a fresh arm's root releases exactly once, and the
+        // argument keeps its position in the evaluation order. A member or
+        // element projection (`(c ? b : mk()).v`) walks down to the
         // conditional the same way, so the argument reads through the bound
         // roots instead of materializing the projection into a released
-        // temporary that aliases the place arm.
-        if self.conditional_borrows_place_root(&value)
-            && self.arm_needs_fill(&value)
+        // temporary that aliases the place arm or leaks the root's other
+        // fields.
+        if self.conditional_root_needs_arm_fill(&value)
             && !self.speculative_lowering
             && self.materialize_owned_temporaries
             && !value.ty.is_unknown()
@@ -2358,6 +2373,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.conditional_borrows_place_root(base)
             }
             ValueKind::Conditional { .. } => self.conditional_borrows_place(value),
+            _ => false,
+        }
+    }
+
+    /// True when a value is a chain rooted at a conditional whose arms need a
+    /// fill.
+    ///
+    /// A member or element chain descends to its root; a root that is not a
+    /// conditional names no arms to bind. The predicate covers both a mixed
+    /// conditional with a place-borrowing arm and a conditional whose arms are
+    /// all ownerless results, so an intrinsic argument never materializes the
+    /// projection alone.
+    fn conditional_root_needs_arm_fill(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.conditional_root_needs_arm_fill(base)
+            }
+            ValueKind::Conditional { .. } => self.conditional_needs_arm_fill(value),
             _ => false,
         }
     }

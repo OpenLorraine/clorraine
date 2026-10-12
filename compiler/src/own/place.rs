@@ -777,19 +777,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Collects the owners the source expression derives from, arm by arm.
+    ///
+    /// A conditional contributes every arm's owners, and a projection points
+    /// into the same storage as its base, so the walk descends a member or
+    /// element chain to its base before reading the provenance. A conditional
+    /// under a projection therefore still contributes each arm's owner of the
+    /// storage the projection reads.
     fn collect_view_owners(&self, expr: &Expr, owners: &mut BTreeSet<LoanOwner>) {
-        if let ExprKind::Conditional {
-            then_value,
-            else_value,
-            ..
-        } = &expr.kind
-        {
-            self.collect_view_owners(then_value, owners);
-            self.collect_view_owners(else_value, owners);
-            return;
-        }
-        if let Some(owner) = owner_of(&self.view_provenance(expr)) {
-            owners.insert(owner);
+        match &expr.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_view_owners(then_value, owners);
+                self.collect_view_owners(else_value, owners);
+            }
+            ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+                self.collect_view_owners(base, owners);
+            }
+            ExprKind::Unsafe(inner) => self.collect_view_owners(inner, owners),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.collect_view_owners(value, owners);
+            }
+            _ => {
+                if let Some(owner) = owner_of(&self.view_provenance(expr)) {
+                    owners.insert(owner);
+                }
+            }
         }
     }
 

@@ -854,8 +854,10 @@ func main(): i32 {
 /// The place arm stays readable around a fresh-arm view binding.
 ///
 /// The view selects the fresh call arm, so the named place is never emptied;
-/// its sibling field can be read before the binding and mutated and read
-/// after it. The run is clean and exits 0.
+/// its sibling field stays owned and readable before and after the binding —
+/// an emptied root would read as the empty view. A write to the place while
+/// the view is live is the shared-loan conflict its named spelling reports,
+/// so the control only reads. The run is clean and exits 0.
 #[test]
 fn should_keep_a_place_arm_readable_around_a_fresh_arm_view() {
     let source = r#"module spec.cpi.armplaceview;
@@ -873,9 +875,8 @@ func main(): i32 {
     let a: Box = Box { v: stringOf("aa"), w: stringOf("wwww") };
     let before: i32 = i32(len(a.w));
     let s: str = (c ? a : mkBox()).v;
-    a.w = stringOf("ww");
     let after: i32 = i32(len(a.w));
-    return before + after + i32(len(s)) - 8;
+    return before + after + i32(len(s)) - 10;
 }
 "#;
     let output = run_memory("armplaceview", source);
