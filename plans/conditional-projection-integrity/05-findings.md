@@ -75,11 +75,12 @@ correctness (RV), memory-safety (SA), semantics (PR), all dispatched on the phas
 
 | Finding | Severity | Area | Ruling |
 |---------|----------|------|--------|
-| SA-201 | 🔴 critical | `own/loops.rs` (`materialize_owned_calls`) | **Fixed**: the materialize skip now covers a struct-literal inner, so the literal's temporary is the single owner of its fields and the loop releases them once per iteration; the new spec case `guardliteralloop` pins the shape (clean at base, double-free at the pre-fix head) |
+| SA-201 | 🔴 critical | `own/loops.rs` (`materialize_owned_calls`) | **Fixed**: the materialize skip now covers a struct-literal inner, so the literal's temporary is the single owner of its fields and the loop releases them once per iteration; the new spec case `guardliteralloop` pins the shape (clean at the phase baseline, double-freeing at the phase head before this fix under both plain and ASan) |
 | RV-201 | 🟡 minor | `own/lower.rs` (`conditional_root_needs_arm_fill`) | **Fixed** directly: the predicate now routes a projection chain per arm whenever its root's arms need a fill, but a *bare* conditional only when an arm borrows a place — restoring the whole-value route for the bare all-ownerless spelling |
 | RV-202 | 🟡 minor | `own/call.rs`, `own/lower.rs` (pre-existing) | **Filed** as DEF-263 (spec-silent; needs a ruling on the folded receiver's evaluation) |
 | SA-202 | 🟠 major | `own/place.rs` (`view_provenance`; pre-existing) | **Filed** as DEF-261 |
 | SA-203 | 🟠 major | `own/loops.rs` (pre-existing) | **Filed** as DEF-262 |
+| SA-301 | 🟠 major | `own/lower.rs` (the literal binder's field paths; pre-existing) | **Filed** as DEF-264 — the loop manifestation is a leak where the base double-freed, and the `if` position leaks identically at base and head, so the root cause (the literal binder never binds a field's projection root) is the pre-existing DEF-259 class; the proper fix binds the root in the literal lowering and covers every position |
 
 **Verification after the fix round**: spec 40/40 plain and under `RDC_ASAN=1` (the new loop
 regression included); impl 11/11; `make check` exit 0; the critical reproducers (the exact loop
@@ -87,7 +88,25 @@ condition, a `for`/`do-while` pair, and the `||` twin) are ASan-clean.
 
 ### Re-review of the fix round
 
-Pending — dispatched on the fix diff.
+One scoped round on the fix diff (`a00ea4d..d3ae995`).
+
+- **Correctness: PASS** (no findings). RV-201 is closed: a bare all-ownerless conditional takes the
+  whole-value route again (one `__cl_ownedN` local; the base emitted per-arm temporaries), a bare
+  place-borrowing conditional keeps the per-arm route byte-identically, the projection chains
+  (DEF-178/DEF-182) still fire, and the `len(cond.v)` control is byte-identical base→head. The new
+  loop regression case is present and red at the phase head before the fix under both plain and ASan.
+- **Memory: SA-201 closed.** The exact reproducer and the whole failing family (`for`/`do-while`,
+  `||`, the chosen `?:` arm, two fields, nested literals, nested loops, a `defer` body, `break`/
+  `return` exits, and a generic instantiation) are ASan-clean; the base double-freed every one.
+  The audit filed **SA-301** instead: a loop-condition literal whose field projects an ownerless
+  root (`s: mkBox().v`) now leaks the root's un-moved sibling (33 B over three iterations) where
+  the base double-freed it; the identical field in an `if` guarded position leaks at base *and*
+  head with byte-identical emission, so the root cause — the literal binder never binds a field's
+  projection root — is pre-existing (the DEF-259 class) and filed as **DEF-264**. The audit's
+  array-literal variant of the second-owner class is recorded in DEF-262's note.
+
+**Phase verdict**: SA-201 fixed and verified; RV-201 fixed and verified; no open critical/major
+finding in the phase's own change; the pre-existing findings are filed as DEF-261 through DEF-264.
 
 ## Phase 3 — View provenance and elision
 
