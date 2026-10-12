@@ -2381,14 +2381,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// fill.
     ///
     /// A member or element chain descends to its root; a root that is not a
-    /// conditional names no arms to bind. The predicate covers both a mixed
-    /// conditional with a place-borrowing arm and a conditional whose arms are
-    /// all ownerless results, so an intrinsic argument never materializes the
-    /// projection alone.
+    /// conditional names no arms to bind. A projection chain fires whenever
+    /// its root's arms need a fill — the mixed conditional with a
+    /// place-borrowing arm and the all-ownerless conditional alike, so an
+    /// intrinsic argument never materializes the projection alone. A bare
+    /// conditional fires only when an arm borrows a place: an ownerless bare
+    /// conditional is handled by the whole-value binder, which owns its
+    /// chosen arm itself.
     fn conditional_root_needs_arm_fill(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
-                self.conditional_root_needs_arm_fill(base)
+                self.chain_conditional_needs_arm_fill(base)
+            }
+            ValueKind::Conditional { .. } => {
+                self.conditional_borrows_place(value) && self.conditional_needs_arm_fill(value)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when the base under a projection is a conditional whose arms need
+    /// a fill.
+    fn chain_conditional_needs_arm_fill(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.chain_conditional_needs_arm_fill(base)
             }
             ValueKind::Conditional { .. } => self.conditional_needs_arm_fill(value),
             _ => false,

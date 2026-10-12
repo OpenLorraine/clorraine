@@ -1574,3 +1574,33 @@ func main(): i32 {
     assert_no_asan("guardplaceslice", &output);
     assert_exit("guardplaceslice", &output, 0);
 }
+
+/// A guarded struct-literal receiver in a loop condition releases once per
+/// iteration.
+///
+/// The condition re-evaluates the literal every iteration, so the literal's
+/// owning field must be held by exactly one temporary: a second owner would
+/// release the same storage twice when the loop exits. The run is clean and
+/// exits 0.
+#[test]
+fn should_release_a_loop_condition_struct_literal_receiver_once_per_iteration() {
+    let source = r#"module spec.cpi.guardliteralloop;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 1 && H { call: addOne, s: stringOf("x") }.call(5) > 0) {
+        i = i + 1;
+    }
+    return i - 1;
+}
+"#;
+    let output = run_memory("guardliteralloop", source);
+    assert_no_asan("guardliteralloop", &output);
+    assert_exit("guardliteralloop", &output, 0);
+}

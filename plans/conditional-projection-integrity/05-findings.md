@@ -60,8 +60,34 @@ spec 22/22 plain and under `RDC_ASAN=1`, impl 7/7, `make check` exit 0.
 
 ## Phase 2 — Guarded receivers and loans
 
-_(to be filled by the Phase 2 review: correctness + memory-safety + semantics verdicts, the fix
-round, filed rows)_
+**Baseline**: `e6f8848c8561c161dcb39c317b3a4bef804ec973` (phase 1's final commit tree at `576b424`). **Lenses**:
+correctness (RV), memory-safety (SA), semantics (PR), all dispatched on the phase diff in parallel.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | no blockers; 1 minor in scope, 1 minor pre-existing | RV-201 (the widened gate also fired for a bare all-ownerless conditional), RV-202 (a fixed-array `.len` folds and never evaluates its receiver); all 39 spec and 11 impl cases verified, the red phase reproduced at the baseline (plain 37/2, ASan 32/7) |
+| memory-safety | 1 critical regression; 2 major pre-existing | SA-201 (the guarded struct-literal receiver double-freed in a **loop condition**: the loop-condition walk gave the literal's field call a second owner), SA-202 (a call-wrapped conditional view escapes the loan), SA-203 (a conditional-of-literals receiver in a loop condition double-frees at base and head); every other probed shape clean |
+| semantics | no findings | The shared-loan reading verified against Ch 03 §7 and Ch 16 §3 across 18 probes: named/conditional parity for same-member and sibling writes, whole-owner writes, moves, take/borrow parameters, nested chains, element arms, and the arm-less spelling; the corrected `armplace` control judged forced by the frozen rule, not a weakening |
+
+### Findings and rulings
+
+| Finding | Severity | Area | Ruling |
+|---------|----------|------|--------|
+| SA-201 | 🔴 critical | `own/loops.rs` (`materialize_owned_calls`) | **Fixed**: the materialize skip now covers a struct-literal inner, so the literal's temporary is the single owner of its fields and the loop releases them once per iteration; the new spec case `guardliteralloop` pins the shape (clean at base, double-free at the pre-fix head) |
+| RV-201 | 🟡 minor | `own/lower.rs` (`conditional_root_needs_arm_fill`) | **Fixed** directly: the predicate now routes a projection chain per arm whenever its root's arms need a fill, but a *bare* conditional only when an arm borrows a place — restoring the whole-value route for the bare all-ownerless spelling |
+| RV-202 | 🟡 minor | `own/call.rs`, `own/lower.rs` (pre-existing) | **Filed** as DEF-263 (spec-silent; needs a ruling on the folded receiver's evaluation) |
+| SA-202 | 🟠 major | `own/place.rs` (`view_provenance`; pre-existing) | **Filed** as DEF-261 |
+| SA-203 | 🟠 major | `own/loops.rs` (pre-existing) | **Filed** as DEF-262 |
+
+**Verification after the fix round**: spec 40/40 plain and under `RDC_ASAN=1` (the new loop
+regression included); impl 11/11; `make check` exit 0; the critical reproducers (the exact loop
+condition, a `for`/`do-while` pair, and the `||` twin) are ASan-clean.
+
+### Re-review of the fix round
+
+Pending — dispatched on the fix diff.
 
 ## Phase 3 — View provenance and elision
 

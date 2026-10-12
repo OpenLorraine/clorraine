@@ -808,11 +808,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ValueKind::Materialize { value: inner, .. } => {
                 // The direct stored value already runs once through the
-                // materialize guard; a call nested deeper still needs its own
-                // temporary and release.
+                // materialize guard — a call or a struct literal whose owning
+                // fields the temporary itself holds — so it needs no second
+                // owner; a call nested deeper still needs its own temporary
+                // and release.
                 if !matches!(
                     inner.kind,
-                    ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+                    ValueKind::Call { .. }
+                        | ValueKind::ClosureCall { .. }
+                        | ValueKind::StructLit { .. }
                 ) {
                     self.materialize_owned_calls(inner);
                 }
