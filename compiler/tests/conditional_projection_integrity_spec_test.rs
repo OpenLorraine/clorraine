@@ -238,6 +238,43 @@ fn assert_no_asan(tag: &str, output: &Output) {
     );
 }
 
+/// Asserts the front end rejected `source` with exactly `count` error reports,
+/// each carrying `code`, and emitted no translation unit.
+///
+/// The exact count is the point: a shared-loan conflict is reported once at the
+/// mutation site, matching the named spelling of the loan. Every error line
+/// must carry the expected code, so a fix cannot pass by adding an unrelated
+/// diagnostic, and a rejected program must leave no emitted `.c` behind.
+fn compile_rejects(tag: &str, source: &str, code: &str, count: usize) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        count,
+        "{tag}: expected {count} error(s), saw {}; stderr:\n{stderr}",
+        errors.len()
+    );
+    for line in &errors {
+        assert!(
+            line.contains(code),
+            "{tag}: expected the {code} report; saw `{line}`; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // armstore: the projection of a mixed conditional consumed by a store.
 //
@@ -1037,4 +1074,502 @@ func main(): i32 {
         !c_path.exists(),
         "armnestedplace: a rejected program must not produce a translation unit"
     );
+}
+
+// ---------------------------------------------------------------------------
+// guardliteral: a guarded callable-field call on a struct-literal receiver.
+//
+// The receiver is a struct literal that owns an owned field, so the call's
+// taken path must release the literal's storage exactly once. When a guard
+// short-circuits and never evaluates the call, the literal is never created,
+// so nothing may be released on that path.
+// ---------------------------------------------------------------------------
+
+/// The `&&` right operand reaches the struct-literal receiver.
+///
+/// The left operand is `true`, so the guarded call runs: it returns 6 and the
+/// taken path returns 1. The literal's owned field releases exactly once on
+/// that path, so the run is clean.
+#[test]
+fn should_release_a_guarded_struct_literal_receiver_under_and() {
+    let source = r#"module spec.cpi.guardliteral;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    if (true && H { call: addOne, s: stringOf("x") }.call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("guardliteral", source);
+    assert_no_asan("guardliteral", &output);
+    assert_exit("guardliteral", &output, 1);
+}
+
+/// The `||` right operand reaches the struct-literal receiver.
+///
+/// The left operand is `false`, so the right operand runs the guarded call and
+/// the taken path returns 1; the literal's owned field releases exactly once on
+/// that path, so the run is clean.
+#[test]
+fn should_release_a_guarded_struct_literal_receiver_under_or() {
+    let source = r#"module spec.cpi.guardliteralor;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    if (false || H { call: addOne, s: stringOf("x") }.call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("guardliteralor", source);
+    assert_no_asan("guardliteralor", &output);
+    assert_exit("guardliteralor", &output, 1);
+}
+
+/// The chosen `?:` arm reaches the struct-literal receiver.
+///
+/// The condition is `true`, so the selected arm runs the guarded call and the
+/// taken path returns 1; the literal's owned field releases exactly once on
+/// that path, so the run is clean.
+#[test]
+fn should_release_a_guarded_struct_literal_receiver_in_a_chosen_arm() {
+    let source = r#"module spec.cpi.guardliteralcond;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    if ((true ? H { call: addOne, s: stringOf("x") }.call(5) : 0) > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("guardliteralcond", source);
+    assert_no_asan("guardliteralcond", &output);
+    assert_exit("guardliteralcond", &output, 1);
+}
+
+/// The `&&` right operand is skipped, so nothing is released.
+///
+/// The left operand is `false`, which fixes the guard without evaluating the
+/// struct literal. The literal is never created, so its release must be a
+/// no-op; the run exits 0 and is clean.
+#[test]
+fn should_not_release_a_skipped_struct_literal_receiver_under_and() {
+    let source = r#"module spec.cpi.guardliteralskipand;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    if (false && H { call: addOne, s: stringOf("x") }.call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("guardliteralskipand", source);
+    assert_no_asan("guardliteralskipand", &output);
+    assert_exit("guardliteralskipand", &output, 0);
+}
+
+/// The `||` right operand is skipped, so nothing is released.
+///
+/// The left operand is `true`, which fixes the guard without evaluating the
+/// struct literal. The literal is never created, so its release must be a
+/// no-op; the taken path returns 1 and the run is clean.
+#[test]
+fn should_not_release_a_skipped_struct_literal_receiver_under_or() {
+    let source = r#"module spec.cpi.guardliteralskipor;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    if (true || H { call: addOne, s: stringOf("x") }.call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("guardliteralskipor", source);
+    assert_no_asan("guardliteralskipor", &output);
+    assert_exit("guardliteralskipor", &output, 1);
+}
+
+/// The unselected `?:` arm is not evaluated, so nothing is released.
+///
+/// The condition is `false`, so the `0` arm is selected and the struct literal
+/// is never created; the untaken release must be a no-op. The run exits 0 and
+/// is clean.
+#[test]
+fn should_not_release_an_unselected_struct_literal_receiver_arm() {
+    let source = r#"module spec.cpi.guardliteralskipcond;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    if ((false ? H { call: addOne, s: stringOf("x") }.call(5) : 0) > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("guardliteralskipcond", source);
+    assert_no_asan("guardliteralskipcond", &output);
+    assert_exit("guardliteralskipcond", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// placearmloan: a shared loan recorded by a conditional view's place arm.
+//
+// Binding a view of a place records a shared loan of that place, and mutating
+// the place while the loan is live is E10031. A conditional view whose arm
+// roots in a place behaves exactly like the named spelling, so it records the
+// same loan; the fresh-call arm adds no loan, and a read-only use of the view
+// stays accepted.
+// ---------------------------------------------------------------------------
+
+/// A conditional view whose chosen arm is a place records that place's shared
+/// loan, so the later mutation reports E10031 once.
+///
+/// The view `(c ? b : mk()).v` derives from the place `b`, exactly like the
+/// named spelling `let s: str = b.v;`. Writing `b.v` while the view is live is
+/// the shared-loan mutation error; it is reported once at the mutation site and
+/// no translation unit is emitted.
+#[test]
+fn should_report_a_shared_loan_for_a_conditional_views_place_arm() {
+    let source = r#"module spec.cpi.placearmloan;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("mm") }; }
+
+func main(): i32 {
+    let c: bool = true;
+    let b: Box = Box { v: stringOf("bb") };
+    let s: str = (c ? b : mk()).v;
+    b.v = stringOf("zz");
+    return i32(len(s));
+}
+"#;
+    compile_rejects("placearmloan", source, "E10031", 1);
+}
+
+/// The named view spelling keeps reporting the shared-loan mutation error.
+///
+/// `let s: str = b.v;` records a shared loan of `b`, so the later `b.v` write
+/// reports E10031 once. This control pins the behavior the conditional spelling
+/// must match.
+#[test]
+fn should_report_a_shared_loan_for_a_named_views_place() {
+    let source = r#"module spec.cpi.placearmnamed;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("bb") };
+    let s: str = b.v;
+    b.v = stringOf("zz");
+    return i32(len(s));
+}
+"#;
+    compile_rejects("placearmnamed", source, "E10031", 1);
+}
+
+/// A conditional view whose chosen arm is a place stays accepted when the place
+/// is not mutated.
+///
+/// The view derives from `b.v` and is read for its length; with no write while
+/// the loan is live, the program is accepted and runs to exit 0.
+#[test]
+fn should_accept_a_conditional_views_place_arm_without_a_mutation() {
+    let source = r#"module spec.cpi.placearmnomut;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("mm") }; }
+
+func main(): i32 {
+    let c: bool = true;
+    let b: Box = Box { v: stringOf("bb") };
+    let s: str = (c ? b : mk()).v;
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("placearmnomut", source);
+    assert_no_asan("placearmnomut", &output);
+    assert_exit("placearmnomut", &output, 0);
+}
+
+/// A mixed conditional view records the place arm's shared loan even when the
+/// taken arm is the fresh call.
+///
+/// The conditional `(c ? b : mk())` has a place candidate on every path, so the
+/// checker records the shared loan conservatively. Mutating `b` while the view
+/// is live reports E10031 once, exactly like the named spelling.
+#[test]
+fn should_report_a_shared_loan_for_a_mixed_conditional_views_place_arm() {
+    let source = r#"module spec.cpi.placearmfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("mm") }; }
+
+func main(): i32 {
+    let c: bool = false;
+    let b: Box = Box { v: stringOf("bb") };
+    let s: str = (c ? b : mk()).v;
+    b.v = stringOf("zz");
+    return i32(len(s));
+}
+"#;
+    compile_rejects("placearmfresh", source, "E10031", 1);
+}
+
+// ---------------------------------------------------------------------------
+// dotlenreceiver: a dot-`len` receiver that is a conditional view projection.
+//
+// The receiver is a projection of a conditional, so the root that owns the
+// projected member must release its un-moved fields exactly once on the taken
+// path. The `len(...)` intrinsic argument spelling is a control and must stay
+// unchanged.
+// ---------------------------------------------------------------------------
+
+/// A conditional view's dot-`len` receiver releases the fresh root's fields.
+///
+/// `(c ? mk(1) : mk(2)).v.len()` reads the projected member and releases the
+/// chosen call result's un-moved sibling field exactly once. The length is 2,
+/// so the run exits 0 and is clean.
+#[test]
+fn should_release_the_root_of_a_conditional_views_dot_len_receiver() {
+    let source = r#"module spec.cpi.dotlenreceiver;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(n: i32): Box {
+    return Box { v: stringOf("mm"), w: stringOf("ww") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let n: usize = (c ? mk(1) : mk(2)).v.len();
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("dotlenreceiver", source);
+    assert_no_asan("dotlenreceiver", &output);
+    assert_exit("dotlenreceiver", &output, 0);
+}
+
+/// A conditional view's dot-`len` receiver with a place arm keeps the place
+/// live.
+///
+/// `(c ? b : mk()).v.len()` reads the named place's projected member; the place
+/// `b` keeps its sibling field and is released once at scope end. The length is
+/// 2, so the run exits 0 and is clean.
+#[test]
+fn should_release_the_place_arm_root_of_a_conditional_views_dot_len_receiver() {
+    let source = r#"module spec.cpi.dotlenplace;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("mm"), w: stringOf("ww") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let b: Box = Box { v: stringOf("bb"), w: stringOf("ww") };
+    let n: usize = (c ? b : mk()).v.len();
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("dotlenplace", source);
+    assert_no_asan("dotlenplace", &output);
+    assert_exit("dotlenplace", &output, 0);
+}
+
+/// A guarded conditional view's dot-`len` receiver releases the root once.
+///
+/// `g && (c ? mk(1) : mk(2)).v.len() > 0` reaches the projection, which
+/// releases the chosen call result's un-moved fields exactly once. The run
+/// exits 0 and is clean.
+#[test]
+fn should_release_a_guarded_conditional_views_dot_len_receiver() {
+    let source = r#"module spec.cpi.dotlenguarded;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(n: i32): Box {
+    return Box { v: stringOf("mm"), w: stringOf("ww") };
+}
+
+func main(): i32 {
+    let g: bool = true;
+    let c: bool = true;
+    if (g && (c ? mk(1) : mk(2)).v.len() > 0) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("dotlenguarded", source);
+    assert_no_asan("dotlenguarded", &output);
+    assert_exit("dotlenguarded", &output, 0);
+}
+
+/// The `len(...)` intrinsic argument spelling stays accepted and clean.
+///
+/// `len((c ? mk(1) : mk(2)).v)` binds the conditional argument through the
+/// intrinsic gate; the chosen root releases its un-moved fields once. The
+/// length is 2, so the run exits 0 and is clean. This spelling is a control and
+/// must not change.
+#[test]
+fn should_keep_the_len_intrinsic_argument_of_a_conditional_view_clean() {
+    let source = r#"module spec.cpi.dotlencontrol;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(n: i32): Box {
+    return Box { v: stringOf("mm"), w: stringOf("ww") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let n: usize = len((c ? mk(1) : mk(2)).v);
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("dotlencontrol", source);
+    assert_no_asan("dotlencontrol", &output);
+    assert_exit("dotlencontrol", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardplace: accepted controls whose behavior must not change.
+//
+// An unguarded struct-literal receiver, a conditional of two places, and a
+// slice-view receiver in the dot-`len` position all stay accepted and release
+// their storage exactly once.
+// ---------------------------------------------------------------------------
+
+/// An unguarded struct-literal receiver stays accepted.
+///
+/// `H { call: addOne, s: stringOf("x") }.call(5)` binds the literal as a
+/// temporary, calls through the field, and releases the literal's owned field
+/// once at statement end. The call returns 6, so the run exits 0 and is clean.
+#[test]
+fn should_keep_an_unguarded_struct_literal_receiver_clean() {
+    let source = r#"module spec.cpi.guardplaceliteral;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    let n: i32 = H { call: addOne, s: stringOf("x") }.call(5);
+    return n - 6;
+}
+"#;
+    let output = run_memory("guardplaceliteral", source);
+    assert_no_asan("guardplaceliteral", &output);
+    assert_exit("guardplaceliteral", &output, 0);
+}
+
+/// A conditional of two places stays accepted.
+///
+/// `c ? a.v : b.v` selects one place's view and the chosen place keeps its
+/// storage; both locals release once at scope end. The selected view reads
+/// "aa", so the run exits 0 and is clean.
+#[test]
+fn should_keep_a_conditional_of_places_clean() {
+    let source = r#"module spec.cpi.guardplacecond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func main(): i32 {
+    let c: bool = true;
+    let a: Box = Box { v: stringOf("aa") };
+    let b: Box = Box { v: stringOf("bb") };
+    let s: str = c ? a.v : b.v;
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("guardplacecond", source);
+    assert_no_asan("guardplacecond", &output);
+    assert_exit("guardplacecond", &output, 0);
+}
+
+/// A slice-view receiver in the dot-`len` position stays accepted.
+///
+/// `slice(r.xs, 0, 2).len()` derives a `u8[]` view over a fixed-array field and
+/// reads its length. The view borrows the local `r`, which releases once at
+/// scope end. The length is 2, so the run exits 0 and is clean. This control
+/// pins that an ordinary call-result slice receiver is not caught by the
+/// conditional gate.
+#[test]
+fn should_keep_a_slice_view_receiver_in_the_dot_len_position_clean() {
+    let source = r#"module spec.cpi.guardplaceslice;
+
+import { slice } from std.mem;
+
+struct Row { xs: u8[4]; }
+
+func main(): i32 {
+    let r: Row = Row { xs: [1, 2, 3, 4] };
+    let n: usize = slice(r.xs, 0, 2).len();
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("guardplaceslice", source);
+    assert_no_asan("guardplaceslice", &output);
+    assert_exit("guardplaceslice", &output, 0);
 }

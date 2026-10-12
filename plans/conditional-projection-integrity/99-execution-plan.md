@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-12 02:03
-> **Progress**: 6/33 tasks (18%)
+> **Last Updated**: 2026-10-12 08:39
+> **Progress**: 8/33 tasks (24%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -67,7 +67,7 @@ task-size criteria: each task is independently testable and reviewable).
 
 ## Phase 2: Guarded receivers and loans
 
-> **Phase baseline tree**: to be recorded at Phase 1's close (= Phase 1's final commit tree)
+> **Phase baseline tree**: `e6f8848c8561c161dcb39c317b3a4bef804ec973` (Phase 1's final commit tree at `576b424`)
 > **Lenses**: correctness + memory-safety + semantics
 > **Reasoning**: medium — three routing extensions in the batch E binder machinery
 
@@ -76,8 +76,8 @@ task-size criteria: each task is independently testable and reviewable).
 **Reference**: [03-02](03-02-guarded-receivers-and-loans.md)
 **Objective**: Pin the struct-literal receiver leak, the place-arm loan, and the dot-`len` receiver leak.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (guardliteral, placearmloan, dotlenreceiver, guardplace)
-- [ ] 2.1.2 Run the suite and record the red phase
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (guardliteral, placearmloan, dotlenreceiver, guardplace) ✅ (completed: 2026-10-12 08:39)
+- [x] 2.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-12 08:39; plain 37 passed / 2 failed on the two conditional loan cases; ASan 32 passed / 7 failed with 10-byte guarded-literal and 11-byte dot-`len` leaks)
 
 ### Step 2.2: Implementation
 
