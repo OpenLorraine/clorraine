@@ -348,3 +348,192 @@ fn should_emit_a_byte_identical_unit_for_the_view_control() {
         "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+/// Compiles `source` and returns the compiler's stderr, asserting rejection.
+///
+/// A rejected program must exit non-zero and leave no emitted translation
+/// unit, so a pin can hold the report's exact code, message, and location.
+fn compile_rejected(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// The guarded struct-literal receiver case: a callable-field call on a
+/// literal whose owning field is a fresh call.
+const GUARDED_LITERAL_SOURCE: &str = r#"module spec.cpiimpl.guardliteral;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func main(): i32 {
+    if (true && H { call: addOne, s: stringOf("x") }.call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+
+/// A guarded struct-literal receiver fills one temporary on the taken path.
+///
+/// The literal assigns into a statement temporary where the guard runs — the
+/// skipped path never constructs it — the call reads through the temporary,
+/// and the statement's release frees the literal's owning field once.
+#[test]
+fn should_fill_a_guarded_struct_literal_receiver_once() {
+    let tag = "guardliteral";
+    let emitted = emit_host(tag, GUARDED_LITERAL_SOURCE);
+    assert_contains(
+        tag,
+        &emitted,
+        "__cl_tmp0 = (ClH){ cl_spec_cpiimpl_guardliteral_addOne, cl_std_text_stringOf(cl_str(\"x\")) }",
+    );
+    assert_contains(tag, &emitted, "(__cl_tmp0.call)(5)");
+    assert_contains(
+        tag,
+        &emitted,
+        "__cl_tmp0.s ? (FreeString(__cl_tmp0.s), __cl_tmp0.s = NULL) : 0",
+    );
+    assert_contains(tag, &emitted, "if (__cl_tmp0.s) { FreeString(__cl_tmp0.s); }");
+}
+
+/// The conditional dot-`len` receiver case: each arm is a fresh two-field
+/// call result.
+const DOT_LEN_SOURCE: &str = r#"module spec.cpiimpl.dotlen;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(n: i32): Box {
+    return Box { v: stringOf("mm"), w: stringOf("ww") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let n: usize = (c ? mk(1) : mk(2)).v.len();
+    return i32(n) - 2;
+}
+"#;
+
+/// A conditional dot-`len` receiver binds each arm's root.
+///
+/// Each arm's call root fills its own temporary in its branch, the read takes
+/// the length through the selected root's member, and the taken root releases
+/// its un-moved sibling exactly once.
+#[test]
+fn should_bind_each_root_of_a_conditional_dot_len_receiver() {
+    let tag = "dotlen";
+    let emitted = emit_host(tag, DOT_LEN_SOURCE);
+    assert_contains(tag, &emitted, "__cl_tmp1 = cl_spec_cpiimpl_dotlen_mk(1);");
+    assert_contains(tag, &emitted, "__cl_tmp2 = cl_spec_cpiimpl_dotlen_mk(2);");
+    assert_contains(
+        tag,
+        &emitted,
+        "(cl_string_view((__cl_tmp0 ? __cl_tmp1 : __cl_tmp2).v)).len",
+    );
+    assert_contains(tag, &emitted, "if (__cl_tmp2.w) { FreeString(__cl_tmp2.w); }");
+}
+
+/// The conditional view's shared loan case: a view of a mixed conditional's
+/// place arm with a write to that member afterwards.
+const LOAN_SOURCE: &str = r#"module spec.cpiimpl.placearmloan;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("mm") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let b: Box = Box { v: stringOf("bb") };
+    let s: str = (c ? b : mk()).v;
+    b.v = stringOf("zz");
+    return i32(len(s));
+}
+"#;
+
+/// A conditional view's place arm reports the shared loan at the mutation.
+///
+/// The report names the place, uses the frozen message, and points at the
+/// write — exactly one report, like the named spelling.
+#[test]
+fn should_report_the_shared_loan_at_the_mutation() {
+    let tag = "placearmloan";
+    let stderr = compile_rejected(tag, LOAN_SOURCE);
+    assert!(
+        stderr.contains("error E10031: cannot modify 'b' while it is shared-borrowed"),
+        "{tag}: expected the shared-loan report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:15:5"),
+        "{tag}: expected the report at the mutation; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("error E10031").count(),
+        1,
+        "{tag}: expected exactly one report; stderr:\n{stderr}"
+    );
+}
+
+/// The accepted `len(cond.v)` control case: the intrinsic-argument spelling
+/// of a conditional projection.
+const LEN_CONTROL_SOURCE: &str = r#"module spec.cpiimpl.lencontrol;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(n: i32): Box {
+    return Box { v: stringOf("mm"), w: stringOf("ww") };
+}
+
+func main(): i32 {
+    let c: bool = true;
+    let n: usize = len((c ? mk(1) : mk(2)).v);
+    return i32(n) - 2;
+}
+"#;
+
+/// The `len(cond.v)` control binds the whole conditional root and re-emits
+/// byte-identically.
+///
+/// The argument keeps its named spelling: one owned local holds the chosen
+/// conditional root, so the length reads through the bound root, and two
+/// emissions of the same source are the same translation unit.
+#[test]
+fn should_keep_the_len_argument_control_byte_identical() {
+    let tag = "lencontrol";
+    let (first, second) = emit_twice(tag, LEN_CONTROL_SOURCE);
+    assert!(
+        first == second,
+        "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(tag, &first, "__cl_owned0 = cl_spec_cpiimpl_lencontrol_mk(1);");
+}

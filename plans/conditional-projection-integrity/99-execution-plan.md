@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-12 08:46
-> **Progress**: 10/33 tasks (30%)
+> **Last Updated**: 2026-10-12 08:47
+> **Progress**: 11/33 tasks (33%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -86,7 +86,7 @@ task-size criteria: each task is independently testable and reviewable).
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the guarded fill shape, the loan report, the byte-identity controls) — `compiler/tests/conditional_projection_integrity_impl_test.rs`
+- [x] 2.3.1 Write the phase implementation pins (the guarded fill shape, the loan report, the byte-identity controls) — `compiler/tests/conditional_projection_integrity_impl_test.rs` ✅ (completed: 2026-10-12 08:47; four new pins: the guarded literal fill and release, the conditional dot-`len` per-arm roots, the one-report loan span, and the `len(cond.v)` byte-identity)
 - [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses
 
 **Verify**: `make -C docker exec CMD="cargo test --test conditional_projection_integrity_spec_test --test conditional_projection_integrity_impl_test"`; `make check`
