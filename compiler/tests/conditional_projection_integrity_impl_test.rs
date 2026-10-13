@@ -931,3 +931,228 @@ fn should_keep_the_untouched_discard_shapes_byte_identical() {
     assert_contains(tag, &first, "(void)((cl_string_view(s)).len);");
     assert_contains(tag, &first, "cl_trap(\"E11213\", \"assertion failed\");");
 }
+
+/// A view-typed conditional over an owned `String` member.
+const CONDITIONAL_ARM_SPELLING_SOURCE: &str = r#"module spec.cpiimpl.condreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func use(c: bool, b: Box, a: str): str {
+    return (c ? b.v : a);
+}
+
+func store(c: bool, b: Box, a: str): i32 {
+    let s: str = c ? b.v : a;
+    return i32(len(s));
+}
+
+func pick(c: bool, a: i32, b: i32): i32 { return c ? a : b; }
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab") };
+    return i32(len(use(true, b, "zz"))) + store(false, b, "xyzw") + pick(true, 3, 4) - 9;
+}
+"#;
+
+/// A view result spells the owned arm like the store the view takes.
+///
+/// One C `?:` carries one type in both arms, so the owned `String` arm widens
+/// through the shim view in the return and in the store spelling, while a
+/// conditional whose arms already agree keeps its plain form.
+#[test]
+fn should_widen_one_conditional_arm_to_the_view_spelling() {
+    let tag = "condreturn";
+    let emitted = emit_host(tag, CONDITIONAL_ARM_SPELLING_SOURCE);
+    assert_contains(tag, &emitted, "return (c ? cl_string_view(b.v) : a);");
+    assert_contains(tag, &emitted, "s = (c ? cl_string_view(b.v) : a);");
+    assert_contains(tag, &emitted, "return (c ? a : b);");
+}
+
+/// A same-typed conditional.
+const CONDITIONAL_CONTROL_SOURCE: &str = r#"module spec.cpiimpl.condreturncontrol;
+
+func pick(c: bool, a: i32, b: i32): i32 { return c ? a : b; }
+
+func main(): i32 {
+    return pick(true, 3, 4) - 3;
+}
+"#;
+
+/// Two arms of one type stay byte-identical.
+#[test]
+fn should_keep_a_same_typed_conditional_byte_identical() {
+    let tag = "condreturncontrol";
+    let (first, second) = emit_twice(tag, CONDITIONAL_CONTROL_SOURCE);
+    assert!(
+        first == second,
+        "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(tag, &first, "(c ? a : b)");
+}
+
+/// An update that shares an expression with other reads of the same place.
+const POSTFIX_ORDER_SOURCE: &str = r#"module spec.cpiimpl.postfixseq;
+
+func f(a: i32, b: i32): i32 { return a + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let j: i32 = i++ + i;
+    let k: i32 = i + i++;
+    let n: i32 = f(i++, i);
+    let m: i32 = i++ * 2;
+    return j + k + n + m - 14;
+}
+"#;
+
+/// A shared update pins both operands so the C has one defined order.
+///
+/// The update stores its old value first, then the other operand's read stores
+/// the value its position sees; a call argument does the same, and the update
+/// alone in a wider expression still pins so its side effect runs where it is
+/// written. No rendered expression carries an inline update beside another
+/// access to its place.
+#[test]
+fn should_pin_a_shared_postfix_update_in_order() {
+    let tag = "postfixseq";
+    let emitted = emit_host(tag, POSTFIX_ORDER_SOURCE);
+    assert_follows(tag, &emitted, "__cl_tmp0 = (i)++;", "__cl_tmp1 = i;");
+    assert_follows(tag, &emitted, "__cl_tmp2 = i;", "__cl_tmp3 = (i)++;");
+    assert_follows(tag, &emitted, "__cl_tmp4 = (i)++;", "__cl_tmp5 = i;");
+    assert_contains(
+        tag,
+        &emitted,
+        "n = cl_spec_cpiimpl_postfixseq_f(__cl_tmp4, __cl_tmp5);",
+    );
+    assert_contains(tag, &emitted, "__cl_tmp6 = (i)++;");
+    assert_contains(tag, &emitted, "m = (i32)((u32)__cl_tmp6 * (u32)2);");
+    assert_absent(tag, &emitted, "(u32)(i)++");
+}
+
+/// A fixed-array projection of a call result.
+const FIXED_ARRAY_ADDRESS_SOURCE: &str = r#"module spec.cpiimpl.fixedarrayaddr;
+
+struct Box { xs: u8[4]; }
+
+func mk(): Box { return Box { xs: [1, 2, 3, 4] }; }
+func f(): u8[4] { return mk().xs; }
+
+func main(): i32 {
+    let a: u8[4] = mk().xs;
+    let b: u8[4] = f();
+    b = mk().xs;
+    return i32(a[0]) + i32(b[1]) - 3;
+}
+"#;
+
+/// A fixed-array copy binds the call root before it takes the source address.
+///
+/// C cannot take the address of a member of a function call, so the return and
+/// the store spellings bind the call result to a local first and the copy names
+/// that local.
+#[test]
+fn should_bind_a_fixed_array_call_root_before_the_address() {
+    let tag = "fixedarrayaddr";
+    let emitted = emit_host(tag, FIXED_ARRAY_ADDRESS_SOURCE);
+    let body = after(
+        tag,
+        &emitted,
+        "static void cl_spec_cpiimpl_fixedarrayaddr_f(u8 __cl_ret[4])\n{",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp0 = cl_spec_cpiimpl_fixedarrayaddr_mk();",
+        "memcpy(__cl_ret, &(__cl_tmp0.xs), (sizeof(__cl_ret[0]) * 4));",
+    );
+    let body = after(
+        tag,
+        &emitted,
+        "static i32 cl_spec_cpiimpl_fixedarrayaddr_main(void)\n{",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp0 = cl_spec_cpiimpl_fixedarrayaddr_mk();",
+        "memcpy(&(a), &(__cl_tmp0.xs), sizeof(a));",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp1 = cl_spec_cpiimpl_fixedarrayaddr_mk();",
+        "memcpy(&(b), &(__cl_tmp1.xs), sizeof(b));",
+    );
+}
+
+/// A fixed-array projection whose root owns storage.
+const FIXED_ARRAY_ADDRESS_CONTROL_SOURCE: &str = r#"module spec.cpiimpl.fixedarrayaddrcontrol;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: u8[4]; v: String; }
+
+func mk(): Box { return Box { xs: [5, 6, 7, 8], v: stringOf("x") }; }
+func f(): u8[4] { return mk().xs; }
+
+func main(): i32 {
+    let a: u8[4] = f();
+    return i32(a[0]) - 5;
+}
+"#;
+
+/// An owning root keeps its bound spelling and its release byte-identically.
+#[test]
+fn should_keep_an_owning_fixed_array_root_byte_identical() {
+    let tag = "fixedarrayaddrcontrol";
+    let (first, second) = emit_twice(tag, FIXED_ARRAY_ADDRESS_CONTROL_SOURCE);
+    assert!(
+        first == second,
+        "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(
+        tag,
+        &first,
+        "__cl_owned0 = cl_spec_cpiimpl_fixedarrayaddrcontrol_mk();",
+    );
+    assert_contains(
+        tag,
+        &first,
+        "memcpy(__cl_ret, &(__cl_owned0.xs), (sizeof(__cl_ret[0]) * 4));",
+    );
+    assert_contains(tag, &first, "if (__cl_owned0.v) { FreeString(__cl_owned0.v); }");
+}
+
+/// The untouched update and conditional spellings.
+const UNTOUCHED_UPDATE_SOURCE: &str = r#"module spec.cpiimpl.emissioncontrol;
+
+import { String, stringOf } from std.text;
+
+func pick(c: bool, a: i32, b: i32): i32 { return c ? a : b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    i++;
+    let j: i32 = i++;
+    let k: i32 = pick(true, 3, 4) + pick(false, 3, 4);
+    let s: String = stringOf("ab");
+    let t: str = s;
+    return j + k + i32(len(t)) - 10;
+}
+"#;
+
+/// A standalone update, an update initializer, and a same-typed conditional
+/// keep their spellings byte-identically.
+#[test]
+fn should_keep_the_untouched_update_spellings_byte_identical() {
+    let tag = "emissioncontrol";
+    let (first, second) = emit_twice(tag, UNTOUCHED_UPDATE_SOURCE);
+    assert!(
+        first == second,
+        "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(tag, &first, "i = (i32)((u32)i + (u32)1);");
+    assert_contains(tag, &first, "j = (i)++;");
+    assert_contains(tag, &first, "(c ? a : b)");
+}

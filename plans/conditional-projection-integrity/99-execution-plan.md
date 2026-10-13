@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-13 19:50
-> **Progress**: 28/33 tasks (85%)
+> **Progress**: 29/33 tasks (88%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -164,7 +164,7 @@ task-size criteria: each task is independently testable and reviewable).
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the unified spelling, the update temporary, the bound root, the byte-identity controls) — `compiler/tests/conditional_projection_integrity_impl_test.rs`
+- [x] 5.3.1 Write the phase implementation pins (the unified spelling, the update temporary, the bound root, the byte-identity controls) — `compiler/tests/conditional_projection_integrity_impl_test.rs` ✅ (completed: 2026-10-13 19:50; six new pins: the widened arm in the return and store spellings with the same-typed control, the same-typed conditional byte-identity, the update temporaries in both operand orders, call arguments, and a single-access wider expression (with no inline update beside another access to its place), the bound fixed-array root in the return and store spellings, the owning root's byte-identical scope-owner spelling and release, and the untouched standalone update and update initializer byte-identity)
 - [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses
 
 **Verify**: `make -C docker exec CMD="cargo test --test conditional_projection_integrity_spec_test --test conditional_projection_integrity_impl_test"`; `make check`
