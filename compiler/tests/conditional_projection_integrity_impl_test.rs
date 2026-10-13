@@ -537,3 +537,157 @@ fn should_keep_the_len_argument_control_byte_identical() {
     );
     assert_contains(tag, &first, "__cl_owned0 = cl_spec_cpiimpl_lencontrol_mk(1);");
 }
+
+/// The stored view-array temporary case: a `str[1]` binding whose element
+/// projects a fresh call.
+const VIEW_ARRAY_TEMP_SOURCE: &str = r#"module spec.cpiimpl.viewarraytemp;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("aa") };
+}
+
+func main(): i32 {
+    let vs: str[1] = [mk().v];
+    return i32(len(vs[0])) - 2;
+}
+"#;
+
+/// A view array's temporary element adopts a scoped owner.
+///
+/// The element's backing binds to one owner local in the binding's scope, the
+/// element view reads through that owner, and the scope cleanup releases it.
+/// The element is never moved out of the owner: the pre-fix spelling moved the
+/// member into a statement temporary that no path released.
+#[test]
+fn should_bind_a_view_arrays_temporary_backing_to_a_scoped_owner() {
+    let tag = "viewarraytemp";
+    let emitted = emit_host(tag, VIEW_ARRAY_TEMP_SOURCE);
+    assert_contains(
+        tag,
+        &emitted,
+        "__cl_owned0 = cl_spec_cpiimpl_viewarraytemp_mk();",
+    );
+    assert_contains(tag, &emitted, "vs[0] = cl_string_view(__cl_owned0.v);");
+    assert_contains(
+        tag,
+        &emitted,
+        "if (__cl_owned0.v) { FreeString(__cl_owned0.v); }",
+    );
+    assert_absent(tag, &emitted, "__cl_tmp0 = cl_spec_cpiimpl_viewarraytemp_mk();");
+    assert_absent(tag, &emitted, "__cl_tmp1 = __cl_tmp0.v;");
+}
+
+/// The loan case: a view array over a place whose backing is later moved.
+const VIEW_ARRAY_LOAN_SOURCE: &str = r#"module spec.cpiimpl.viewarrayloan;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("ww") };
+    let vs: str[1] = [a.v];
+    let b: Box = a;
+    return i32(len(vs[0])) + i32(len(b.v)) - 4;
+}
+"#;
+
+/// A view array's place element reports the move-while-borrowed error.
+///
+/// The element loans the place it reads, so moving the place while the view is
+/// live reports `E10022` once at the move — the single-view spelling's code,
+/// never the partial-move `E10025` that the pre-fix element transfer produced.
+#[test]
+fn should_report_the_view_array_loan_once_at_the_move() {
+    let tag = "viewarrayloan";
+    let stderr = compile_rejected(tag, VIEW_ARRAY_LOAN_SOURCE);
+    assert!(
+        stderr.contains("error E10022: cannot move 'a' while it is borrowed"),
+        "{tag}: expected the move-while-borrowed report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:10:5"),
+        "{tag}: expected the report at the move; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("error E10022").count(),
+        1,
+        "{tag}: expected exactly one report; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("error E10025").count(),
+        0,
+        "{tag}: the partial-move report must not appear; stderr:\n{stderr}"
+    );
+}
+
+/// The derivation case: a view return that reads a non-candidate parameter.
+const ELISION_DERIVE_SOURCE: &str = r#"module spec.cpiimpl.elisionderive;
+
+import { String } from std.text;
+
+struct Box { v: String; }
+
+func pick(x: str, h: Box): str {
+    return h.v;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A view return through a non-candidate parameter reports at the declaration.
+///
+/// The function has exactly one view-like lend candidate (`x`), so the count
+/// alone would accept the return; the returned view reads `h` instead, so the
+/// derivation judgment reports `E10036` once at the declaration's name.
+#[test]
+fn should_report_the_view_return_derivation_at_the_declaration() {
+    let tag = "elisionderive";
+    let stderr = compile_rejected(tag, ELISION_DERIVE_SOURCE);
+    assert!(
+        stderr.contains("error E10036: view return does not derive from exactly one parameter"),
+        "{tag}: expected the derivation report; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:7:6"),
+        "{tag}: expected the report at the declaration; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("error E10036").count(),
+        1,
+        "{tag}: expected exactly one report; stderr:\n{stderr}"
+    );
+}
+
+/// The accepted view-array control: a `str[1]` binding of a view parameter.
+const VIEW_ARRAY_CONTROL_SOURCE: &str = r#"module spec.cpiimpl.viewarraycontrol;
+
+func first(buf: str): i32 {
+    let vs: str[1] = [buf];
+    return i32(len(vs[0]));
+}
+
+func main(): i32 {
+    return first("aa") - 2;
+}
+"#;
+
+/// The parameter-derived view array copies the view and re-emits identically.
+///
+/// The element reads an existing view, so the binding binds no owner and no
+/// temporary; two emissions of the same source are the same translation unit.
+#[test]
+fn should_keep_the_view_array_control_byte_identical() {
+    let tag = "viewarraycontrol";
+    let (first, second) = emit_twice(tag, VIEW_ARRAY_CONTROL_SOURCE);
+    assert!(
+        first == second,
+        "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(tag, &first, "vs[0] = buf;");
+    assert_absent(tag, &first, "__cl_owned");
+}
