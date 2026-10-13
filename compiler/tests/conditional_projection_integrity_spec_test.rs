@@ -1604,3 +1604,250 @@ func main(): i32 {
     assert_no_asan("guardliteralloop", &output);
     assert_exit("guardliteralloop", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// viewarrayloan: a view array bound over a place or a call temporary.
+//
+// Binding a `str[N]` array of view elements must follow the single-view rule.
+// An element derived from a place keeps that place borrowed, so moving the
+// owner while the view is live is the move-while-borrowed error; an element
+// derived from a call temporary adopts that backing for the binding's scope,
+// so the temporary is released exactly once and the view stays readable.
+// ---------------------------------------------------------------------------
+
+/// Moving a place while a view array over its member is live reports the
+/// move-while-borrowed error.
+///
+/// The single-view twin `let v: str = a.v;` already reports one E10022 when the
+/// borrowed owner is later moved, and the array spelling `let vs: str[1] =
+/// [a.v];` must report the same code exactly once for the same move.
+#[test]
+fn should_report_a_move_of_a_borrowed_backing_behind_a_view_array() {
+    let source_twin = r#"module spec.cpi.viewarrayloantwin;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("ww") };
+    let v: str = a.v;
+    let b: Box = a;
+    return i32(len(v)) + i32(len(b.v)) - 4;
+}
+"#;
+    compile_rejects("viewarrayloantwin", source_twin, "E10022", 1);
+
+    let source_array = r#"module spec.cpi.viewarrayloan;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("ww") };
+    let vs: str[1] = [a.v];
+    let b: Box = a;
+    return i32(len(vs[0])) + i32(len(b.v)) - 4;
+}
+"#;
+    compile_rejects("viewarrayloan", source_array, "E10022", 1);
+}
+
+/// A view array bound over a call temporary adopts the backing and releases it
+/// once.
+///
+/// Each element of `[mk().v]` derives from a temporary, so the binding owns the
+/// backing for its own scope: the view stays readable after the statement, the
+/// run exits 0, and neither a leak nor a use-after-free is reported.
+///
+/// Two spellings are pinned. The single-shot binding guards the adoption: it
+/// reads the view one time and must be memory-clean on every path. The loop
+/// spelling re-binds the array once per iteration, so the backing of each
+/// iteration must be released when that iteration's binding ends; the earlier
+/// iterations' storage is then genuinely unreachable, which makes a missing
+/// release observable to the container's leak sanitizer even when a
+/// single-shot binding would only leave the last, still-reachable block behind.
+#[test]
+fn should_adopt_a_temporary_backing_bound_into_a_view_array() {
+    let source = r#"module spec.cpi.viewarraytemp;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("aa") };
+}
+
+func main(): i32 {
+    let vs: str[1] = [mk().v];
+    return i32(len(vs[0])) - 2;
+}
+"#;
+    let output = run_memory("viewarraytemp", source);
+    assert_no_asan("viewarraytemp", &output);
+    assert_exit("viewarraytemp", &output, 0);
+
+    let source_loop = r#"module spec.cpi.viewarraytemploop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("aa") };
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let vs: str[1] = [mk().v];
+        n = n + i32(len(vs[0]));
+        i = i + 1;
+    }
+    return n - 6;
+}
+"#;
+    let output = run_memory("viewarraytemploop", source_loop);
+    assert_no_asan("viewarraytemploop", &output);
+    assert_exit("viewarraytemploop", &output, 0);
+}
+
+/// Static-string and parameter-derived view arrays stay accepted and clean.
+///
+/// A `str[2]` binding of static strings and a `str[1]` binding of a view
+/// parameter both read their elements without owning a temporary backing, so
+/// both programs run to exit 0 with no memory report.
+#[test]
+fn should_keep_static_and_parameter_view_array_bindings_clean() {
+    let source_static = r#"module spec.cpi.viewarraycontrolstatic;
+
+func main(): i32 {
+    let vs: str[2] = ["aa", "bb"];
+    return i32(len(vs[0])) + i32(len(vs[1])) - 4;
+}
+"#;
+    let output = run_memory("viewarraycontrolstatic", source_static);
+    assert_no_asan("viewarraycontrolstatic", &output);
+    assert_exit("viewarraycontrolstatic", &output, 0);
+
+    let source_param = r#"module spec.cpi.viewarraycontrolparam;
+
+func first(buf: str): i32 {
+    let vs: str[1] = [buf];
+    return i32(len(vs[0]));
+}
+
+func main(): i32 {
+    return first("aa") - 2;
+}
+"#;
+    let output = run_memory("viewarraycontrolparam", source_param);
+    assert_no_asan("viewarraycontrolparam", &output);
+    assert_exit("viewarraycontrolparam", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// elisionderive: a view return judged by its derivation, not by the count of
+// view-like lend candidates.
+//
+// A view-returning function must derive its result from exactly one view-like
+// lend parameter. A candidate that is not the derivation source is an error
+// even when it is the only candidate, and zero candidates is an error too.
+// The valid single-candidate spelling stays accepted.
+// ---------------------------------------------------------------------------
+
+/// A view return that derives from a non-candidate parameter reports the
+/// derivation error, and the zero-candidate and valid spellings keep their
+/// behavior.
+///
+/// The zero-candidate twin `f(h: Box): str { return h.v; }` already reports one
+/// E10036. The valid control `pick(x: str): str { return x; }` derives from its
+/// single candidate and stays accepted and clean. The candidate spelling
+/// `pick(x: str, h: Box): str { return h.v; }` has exactly one view-like lend
+/// candidate (`x`) but derives from `h`, so it must report one E10036 at its
+/// declaration.
+#[test]
+fn should_report_a_view_return_that_derives_from_a_non_candidate() {
+    let source_zero = r#"module spec.cpi.elisionderivezero;
+
+import { String } from std.text;
+
+struct Box { v: String; }
+
+func f(h: Box): str {
+    return h.v;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    compile_rejects("elisionderivezero", source_zero, "E10036", 1);
+
+    let source_ok = r#"module spec.cpi.elisionderiveok;
+
+func pick(x: str): str {
+    return x;
+}
+
+func main(): i32 {
+    let r: str = pick("aa");
+    return i32(len(r)) - 2;
+}
+"#;
+    let output = run_memory("elisionderiveok", source_ok);
+    assert_no_asan("elisionderiveok", &output);
+    assert_exit("elisionderiveok", &output, 0);
+
+    let source_candidate = r#"module spec.cpi.elisionderivecandidate;
+
+import { String } from std.text;
+
+struct Box { v: String; }
+
+func pick(x: str, h: Box): str {
+    return h.v;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    compile_rejects("elisionderivecandidate", source_candidate, "E10036", 1);
+}
+
+/// A view return derived from a caller temporary inside a relay reports once at
+/// the callee declaration.
+///
+/// `pick(x: str, h: Box)` returns a view derived from its `h` argument, so its
+/// own declaration is E10036. The relay `mid(s: str)` returns `pick(s,
+/// Box { ... })`, which derives from `mid`'s own view-like parameter `s`, so
+/// `mid` itself is accepted. The single report names `pick`, and the rejected
+/// program emits no translation unit, so nothing runs.
+#[test]
+fn should_report_a_caller_temporary_derivation_at_the_callee() {
+    let source = r#"module spec.cpi.elisiontemp;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(x: str, h: Box): str {
+    return h.v;
+}
+
+func mid(s: str): str {
+    return pick(s, Box { v: stringOf("aa") });
+}
+
+func main(): i32 {
+    let r: str = mid("qq");
+    let c: String = stringOf(r);
+    return i32(len(c)) - 2;
+}
+"#;
+    compile_rejects("elisiontemp", source, "E10036", 1);
+}

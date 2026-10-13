@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-12 09:11
-> **Progress**: 12/33 tasks (36%)
+> **Last Updated**: 2026-10-13 11:14
+> **Progress**: 14/33 tasks (42%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -93,7 +93,7 @@ task-size criteria: each task is independently testable and reviewable).
 
 ## Phase 3: View provenance and elision
 
-> **Phase baseline tree**: to be recorded at Phase 2's close (= Phase 2's final commit tree)
+> **Phase baseline tree**: `8de8e082855c075053a70cd82dab4af59f2d08e7` (Phase 2's final commit tree at `01c2481`)
 > **Lenses**: correctness + memory-safety + semantics
 > **Reasoning**: high — the third critical and the frozen elision reading
 
@@ -102,8 +102,8 @@ task-size criteria: each task is independently testable and reviewable).
 **Reference**: [03-03](03-03-view-provenance-and-elision.md)
 **Objective**: Pin the `str[N]` judgments, the derived-candidate rejection, and the accepted controls.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (viewarrayloan, viewarraytemp, viewarraycontrol, elisionderive, elisiontemp)
-- [ ] 3.1.2 Run the suite and record the red phase
+- [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (viewarrayloan, viewarraytemp, viewarraycontrol, elisionderive, elisiontemp) ✅ (completed: 2026-10-13 11:14; five new cases: the loan parity and its single-view twin, the adopted temporary backing with the loop spelling, the static and parameter controls, the derivation judgment with its twin and control, the caller-temporary declaration rejection)
+- [x] 3.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-13 11:14; plain 42/45 — the three rejection cases red with the filed symptoms (E10025 instead of E10022; the accepted `pick`; the accepted caller temporary); ASan 41/45 — plus the loop-backed temporary binding red with 22 B leaked in 2 allocations)
 
 ### Step 3.2: Implementation
 

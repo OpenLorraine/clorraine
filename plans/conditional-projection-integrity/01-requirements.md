@@ -32,7 +32,7 @@ no diagnostic row is added or changed.
 
 | # | Defect | Requirement | Frozen reference |
 |---|--------|-------------|------------------|
-| FR-7 | DEF-177 | A `str[N]` binding of view elements records the same loan as the single-view twin: moving the backing while the binding is live reports `E10022`, and a binding of a temporary-derived element (`[mk().v]`) is judged in the elision postlude (`E10030`), never left dangling or leaking. | Ch 03 §7 (E10022/E10030); Ch 06 §3.1; Ch 16 §4 (EL-1..EL-6) |
+| FR-7 | DEF-177 | A `str[N]` binding of view elements records the same loan as the single-view twin: moving the backing while the binding is live reports `E10022`, and a binding of a temporary-derived element (`[mk().v]`) adopts the backing for the binding's scope — released exactly once, never left dangling or leaking (the single-view twin's pinned behavior). | Ch 03 §7 (E10022/E10030); Ch 06 §3.1; Ch 16 §4 (EL-1..EL-6) |
 | FR-8 | DEF-187 | A returned view's elision judgment follows the value's **actual derivation**: a derivation that does not name the single view-like lend candidate (e.g. from a non-view-like `Box` lend) reports `E10036` at the declaration; a derivation from the candidate stays accepted; no caller can obtain a view of a dying temporary. | Ch 06 §3.1 (EL-2/EL-3); Ch 16 §4 (BR-6/BR-7, E10036) |
 
 ### Statement-path discards
