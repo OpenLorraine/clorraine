@@ -717,6 +717,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 loans.extend(self.view_loans(else_value));
                 loans
             }
+            // A view array's elements each contribute their loans: a call
+            // that returns the array's view reborrows every element source.
+            // The binding effect below does not use this union directly — an
+            // element list carries independent loans, so it records one loan
+            // per owner instead — but the call path reads it to carry the
+            // reborrow of the elements' sources.
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let mut loans = BTreeSet::new();
+                for element in elements {
+                    loans.extend(self.view_loans(element));
+                }
+                if let Some(fill) = fill {
+                    loans.extend(self.view_loans(fill));
+                }
+                loans
+            }
             _ => BTreeSet::new(),
         }
     }

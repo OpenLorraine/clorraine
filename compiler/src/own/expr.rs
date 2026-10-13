@@ -722,8 +722,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // borrowed slot or a projected target can outlive the
                 // element's backing, so it keeps the derived element in place.
                 let saved_adopts = self.view_destination_adopts;
+                // A `for (borrow e in xs)` element alias is a local whose
+                // place override points into the iterable, which outlives
+                // the iteration, so only a genuine frame local may adopt a
+                // backing here. A projected destination under a frame local
+                // shares the frame, so it may adopt too.
                 self.view_destination_adopts = self.bindings[id].kind == BindingKind::Local
-                    && projections.is_empty();
+                    && self.bindings[id].base.is_none();
                 let view_elements = self.view_destination_adopts
                     && is_view_like(&target_ty)
                     && matches!(&value.kind, ExprKind::ArrayLiteral { .. });

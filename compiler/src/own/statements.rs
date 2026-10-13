@@ -610,6 +610,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return BindingEffect::MoveIfOwning { sources };
         }
         if is_view_like(target) {
+            // A view array's elements are independent loans, so the binding
+            // records one loan per element owner instead of sharing only the
+            // first element's loan, which a mixed element list would
+            // otherwise drop; a single view keeps sharing the loan it
+            // already carries.
+            let sources = if matches!(&value.kind, ExprKind::ArrayLiteral { .. }) {
+                BTreeSet::new()
+            } else {
+                self.view_loans(value)
+            };
             return BindingEffect::View {
                 provenance: match self.view_provenance(value) {
                     Provenance::None => lowered
@@ -618,7 +628,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     provenance => provenance,
                 },
                 kind: self.view_loan_kind(value),
-                sources: self.view_loans(value),
+                sources,
                 owners: self.view_owners(value, lowered),
             };
         }
