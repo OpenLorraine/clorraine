@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 12:09
-> **Progress**: 18/33 tasks (55%)
+> **Last Updated**: 2026-10-13 14:30
+> **Progress**: 20/33 tasks (61%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -119,7 +119,7 @@ task-size criteria: each task is independently testable and reviewable).
 
 ## Phase 4: Statement-path discards
 
-> **Phase baseline tree**: to be recorded at Phase 3's close (= Phase 3's final commit tree)
+> **Phase baseline tree**: `66026bfdbe2ddc72b95135d261927e3a4c56a5ca` (Phase 3's final commit tree at `a51c508`)
 > **Lenses**: correctness + memory-safety + emission-integrity
 > **Reasoning**: medium — three changes in the discard lowering
 
@@ -128,8 +128,8 @@ task-size criteria: each task is independently testable and reviewable).
 **Reference**: [03-04](03-04-statement-path-discards.md)
 **Objective**: Pin the closure-call and conditional discards and the intrinsic dot-call emission.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (closurecalldiscard, conddiscard, dotlendiscard, discardcontrol)
-- [ ] 4.1.2 Run the suite and record the red phase
+- [x] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (closurecalldiscard, conddiscard, dotlendiscard, discardcontrol) ✅ (completed: 2026-10-13 14:30; four new cases: the owning and duplicable closure-call instances, the conditional loop exercise of both arms, the two dot-call statement spellings with the value-position control, and the untouched discard-shape control)
+- [x] 4.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-13 14:30; plain 53/54 — the dot-call case red with the implicit `len` declaration; ASan 51/54 — plus the closure-call leak 11 B and the conditional leak 33 B in 3 allocations; the control case green as designed)
 
 ### Step 4.2: Implementation
 

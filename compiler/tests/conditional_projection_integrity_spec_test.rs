@@ -2023,3 +2023,190 @@ func main(): i32 {
     assert_no_asan("viewarrayalias", &output);
     assert_exit("viewarrayalias", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// discardresult: an expression statement whose result is discarded.
+//
+// An expression statement throws its result away. A discarded result that may
+// own storage — a directly invoked closure returning a generic value, or a
+// conditional whose selected arm is a fresh call — must still be bound to a
+// statement temporary and released, so the run is leak-free. A discarded
+// intrinsic dot-call must fold through the same lowering the value position
+// uses, so the strict C build accepts it. The control program pins the discard
+// shapes that already release or fold correctly, whose behavior must not
+// change.
+// ---------------------------------------------------------------------------
+
+/// A discarded direct invocation of a generic closure releases its result.
+///
+/// `([m] () => mkG<T>(m()))()` is an expression statement, so its result is
+/// discarded. With the owning instantiation (`T` = `String`) the closure
+/// returns the storage `make` created, which must be released; with the
+/// duplicable instantiation (`T` = `i32`) there is nothing to release. Both
+/// instantiations build under the strict flags, the run is leak-free, and it
+/// exits 0.
+#[test]
+fn should_release_a_discarded_directly_invoked_generic_closure() {
+    let source = r#"module spec.cpi.closurecalldiscard;
+
+import { String, stringOf } from std.text;
+
+func mkG<T>(take x: T): T { return x; }
+
+func make(): String { return stringOf("ab"); }
+func makeInt(): i32 { return 7; }
+
+func run<T>(m: func(): T): void {
+    ([m] () => mkG<T>(m()))();
+}
+
+func main(): i32 {
+    run<String>(make);
+    run<i32>(makeInt);
+    return 0;
+}
+"#;
+    let output = run_memory("closurecalldiscard", source);
+    assert_no_asan("closurecalldiscard", &output);
+    assert_exit("closurecalldiscard", &output, 0);
+}
+
+/// A discarded conditional of fresh results releases the selected arm.
+///
+/// The statement `c ? make1() : make2();` discards its result, so the arm the
+/// condition selects creates storage that must be released once per execution.
+/// The first program fixes the condition to `true` and runs the body three
+/// times; the second toggles the condition each iteration so both arms run.
+/// Both programs build under the strict flags, are leak-free, and exit 0.
+#[test]
+fn should_release_a_discarded_conditional_of_fresh_results() {
+    let source = r#"module spec.cpi.conddiscard;
+
+import { String, stringOf } from std.text;
+
+func make1(): String { return stringOf("aa"); }
+func make2(): String { return stringOf("bbb"); }
+
+func main(): i32 {
+    let c: bool = true;
+    let i: i32 = 0;
+    while (i < 3) {
+        c ? make1() : make2();
+        i = i + 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("conddiscard", source);
+    assert_no_asan("conddiscard", &output);
+    assert_exit("conddiscard", &output, 0);
+
+    let source_arms = r#"module spec.cpi.conddiscardarms;
+
+import { String, stringOf } from std.text;
+
+func make1(): String { return stringOf("aa"); }
+func make2(): String { return stringOf("bbb"); }
+
+func main(): i32 {
+    let i: i32 = 0;
+    while (i < 4) {
+        let c: bool = i % 2 == 0;
+        c ? make1() : make2();
+        i = i + 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("conddiscardarms", source_arms);
+    assert_no_asan("conddiscardarms", &output);
+    assert_exit("conddiscardarms", &output, 0);
+}
+
+/// A discarded intrinsic dot-call lowers like the value position.
+///
+/// `s.len();` and `mk().v.len();` discard the intrinsic result. The lowering
+/// must be the same one the value position `let n: usize = mk().v.len();`
+/// already uses, so the emitted C declares and calls the intrinsic instead of
+/// emitting a bare `len(...)` that the strict build rejects. All three
+/// programs build under the strict flags, are leak-free, and exit 0.
+#[test]
+fn should_lower_a_discarded_intrinsic_dot_call_like_the_value_position() {
+    let source_place = r#"module spec.cpi.dotlendiscard;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    s.len();
+    return 0;
+}
+"#;
+    let output = run_memory("dotlendiscard", source_place);
+    assert_no_asan("dotlendiscard", &output);
+    assert_exit("dotlendiscard", &output, 0);
+
+    let source_fresh = r#"module spec.cpi.dotlendiscardfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("ab") }; }
+
+func main(): i32 {
+    mk().v.len();
+    return 0;
+}
+"#;
+    let output = run_memory("dotlendiscardfresh", source_fresh);
+    assert_no_asan("dotlendiscardfresh", &output);
+    assert_exit("dotlendiscardfresh", &output, 0);
+
+    let source_value = r#"module spec.cpi.dotlendiscardvalue;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("ab") }; }
+
+func main(): i32 {
+    let n: usize = mk().v.len();
+    return i32(n) - 2;
+}
+"#;
+    let output = run_memory("dotlendiscardvalue", source_value);
+    assert_no_asan("dotlendiscardvalue", &output);
+    assert_exit("dotlendiscardvalue", &output, 0);
+}
+
+/// The discard shapes that already work stay unchanged.
+///
+/// A discarded named call with an owning result (`make();`), a function-style
+/// intrinsic statement (`len(s);`), a discarded non-owning call (`num();`), and
+/// an `assert(1 > 0);` statement all already release or fold correctly. The run
+/// builds under the strict flags, is leak-free, and exits 0.
+#[test]
+fn should_keep_the_untouched_discard_shapes_clean() {
+    let source = r#"module spec.cpi.discardcontrol;
+
+import { String, stringOf } from std.text;
+
+func make(): String { return stringOf("ab"); }
+
+func num(): i32 { return 3; }
+
+func main(): i32 {
+    make();
+    let s: String = stringOf("cd");
+    len(s);
+    num();
+    assert(1 > 0);
+    return 0;
+}
+"#;
+    let output = run_memory("discardcontrol", source);
+    assert_no_asan("discardcontrol", &output);
+    assert_exit("discardcontrol", &output, 0);
+}
