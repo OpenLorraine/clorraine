@@ -188,6 +188,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 operand: Box::new(self.lower_value(operand)),
             },
             ExprKind::Binary { op, left, right } => {
+                // An update inside either operand runs at its own position:
+                // evaluation is strictly left-to-right, and C leaves the order
+                // of a binary's operands unspecified. Both operands bind to
+                // statement temporaries where they are lowered, so the
+                // rendered operation reads values whose order is fixed.
+                // `&&` and `||` already sequence their operands, so they keep
+                // their spelling and their deferred move-outs.
+                let pin_updates = !matches!(op, BinaryOp::LogicalAnd | BinaryOp::LogicalOr)
+                    && (contains_update(left) || contains_update(right));
                 // A division guard re-reads both operands, so a
                 // side-effecting one is stored once and the guard and the
                 // operation share it.
@@ -203,7 +212,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     self.lower_value(right)
                 };
-                let (left, right) = if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                let (left, right) = if pin_updates {
+                    (self.pin_update_value(left), self.pin_update_value(right))
+                } else if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
                     (
                         self.materialize_guard_operand(left),
                         self.materialize_guard_operand(right),
@@ -1189,6 +1200,104 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 adopting: false,
             },
         )
+    }
+
+    /// Binds a value whose evaluation position matters to a statement temporary.
+    ///
+    /// Evaluation is strictly left-to-right, and C leaves the order of a
+    /// binary's operands and a call's arguments unspecified. When one of them
+    /// updates a place, the update and every value the update can affect are
+    /// stored into temporaries where they are lowered, so the operation reads
+    /// the temporaries and the emitted C has one defined order. Only a value
+    /// whose copy carries no ownership is pinned — the update leaves and the
+    /// reads they can affect are scalars — and a constant has no position to
+    /// lose. A guarded or loop-condition operand keeps its existing spelling,
+    /// because a statement emitted here would run on a path that may skip it.
+    pub(super) fn pin_update_value(&mut self, value: Value) -> Value {
+        if self.defer_move_outs > 0
+            || self.in_loop_condition
+            || !(self.sema.table.duplicable(&value.ty)
+                || matches!(&value.kind, ValueKind::Unary { op, .. } if op.is_update()))
+            || matches!(
+                value.kind,
+                ValueKind::Int(_)
+                    | ValueKind::Float(_)
+                    | ValueKind::Char(_)
+                    | ValueKind::Str(_)
+                    | ValueKind::Bool(_)
+                    | ValueKind::Null
+                    | ValueKind::Aggregate
+                    | ValueKind::Temp(_)
+                    | ValueKind::Materialize { .. }
+            )
+        {
+            return value;
+        }
+        let value = if value.ty.is_fixed_array() {
+            self.bind_fixed_array_root(value)
+        } else {
+            value
+        };
+        let ty = value.ty.clone();
+        let temp = self.new_temp(ty.clone());
+        let target = Place {
+            base: ir::PlaceBase::Temp(temp),
+            projections: Vec::new(),
+            ty: ty.clone(),
+        };
+        self.emit(Statement::Assign { target, value });
+        Value::new(ty, ValueKind::Temp(temp))
+    }
+
+    /// Binds the ownerless root a fixed-array copy reads.
+    ///
+    /// A fixed-array copy takes its source's address, and C cannot take the
+    /// address of a member of a function call. A projection whose root is a
+    /// fresh call, a closure call, or a struct literal binds the root to a
+    /// local first, so the copy names an addressable value. A root that owns
+    /// storage registers its release through the ordinary argument binding; a
+    /// root that owns nothing only provides the address. A chain that roots in
+    /// existing storage is returned unchanged.
+    pub(super) fn bind_fixed_array_root(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Member { base, name } => {
+                let base = self.bind_fixed_array_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            ValueKind::Index { base, index } => {
+                let base = self.bind_fixed_array_root(*base);
+                Value::new(
+                    value.ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index,
+                    },
+                )
+            }
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } | ValueKind::StructLit { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) && !value.ty.is_unknown() {
+                    self.materialize_owned_argument(value, false)
+                } else {
+                    let ty = value.ty.clone();
+                    let temp = self.new_temp(ty.clone());
+                    let target = Place {
+                        base: ir::PlaceBase::Temp(temp),
+                        projections: Vec::new(),
+                        ty: ty.clone(),
+                    };
+                    self.emit(Statement::Assign { target, value });
+                    Value::new(ty, ValueKind::Temp(temp))
+                }
+            }
+            _ => value,
+        }
     }
 
     /// Fills an eager materialized projection base before an index is pinned.
@@ -3248,6 +3357,54 @@ fn apply_conditional_steps(mut value: Value, steps: &[ConditionalProjectionStep]
         };
     }
     value
+}
+
+/// True when an expression contains an update of a place.
+///
+/// A lambda body is a function of its own, so an update inside it belongs to
+/// that body's statements and is not counted here.
+pub(super) fn contains_update(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Unary { op, operand } => op.is_update() || contains_update(operand),
+        ExprKind::Index { base, index } => contains_update(base) || contains_update(index),
+        ExprKind::Member { base, .. } => contains_update(base),
+        ExprKind::Binary { left, right, .. } => contains_update(left) || contains_update(right),
+        ExprKind::Assign { target, value, .. } => contains_update(target) || contains_update(value),
+        ExprKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => contains_update(condition) || contains_update(then_value) || contains_update(else_value),
+        ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => contains_update(value),
+        ExprKind::Unsafe(inner) => contains_update(inner),
+        ExprKind::Call { callee, args, .. } => {
+            contains_update(callee) || args.iter().any(|arg| contains_update(&arg.value))
+        }
+        ExprKind::StructLiteral { fields, .. } => {
+            fields.iter().any(|field| contains_update(&field.value))
+        }
+        ExprKind::ArrayLiteral { elements, fill } => {
+            elements.iter().any(contains_update) || fill.as_deref().is_some_and(contains_update)
+        }
+        ExprKind::IntrinsicCall { args, .. } => args.iter().any(|arg| match arg {
+            crate::ast::IntrinsicArg::Expr(inner) => contains_update(inner),
+            crate::ast::IntrinsicArg::Type(_) => false,
+        }),
+        ExprKind::Template(pieces) => pieces.iter().any(|piece| match piece {
+            crate::ast::TemplatePiece::Placeholder(inner) => contains_update(inner),
+            crate::ast::TemplatePiece::Literal(_) => false,
+        }),
+        ExprKind::Int(_)
+        | ExprKind::Float(_)
+        | ExprKind::Char(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Null
+        | ExprKind::Name(_)
+        | ExprKind::Qualified(_)
+        | ExprKind::Lambda { .. }
+        | ExprKind::Error => false,
+    }
 }
 
 /// True when evaluating a value has no side effect and may be rendered twice.

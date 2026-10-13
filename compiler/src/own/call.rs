@@ -241,6 +241,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }),
             }
         };
+        // An update inside an argument runs at its own position: evaluation
+        // is strictly left-to-right, and C leaves the order of argument
+        // evaluations unspecified. Each position-dependent argument binds to
+        // a statement temporary, so the call reads values whose order is
+        // fixed. A `take` argument keeps its place — the post-call move-out
+        // empties caller storage, which a temporary would hide — and a
+        // constant has no position to lose.
+        if args
+            .iter()
+            .any(|arg| super::lower::contains_update(&arg.value))
+        {
+            for (index, value) in values.iter_mut().enumerate() {
+                let take = modes
+                    .as_ref()
+                    .and_then(|modes| modes.get(index))
+                    .is_some_and(|mode| *mode == Mode::Take);
+                if take {
+                    continue;
+                }
+                let pending =
+                    std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                *value = self.pin_update_value(pending);
+            }
+        }
         if let Some(modes) = &modes {
             for (value, mode) in values.iter_mut().zip(modes) {
                 let pending =

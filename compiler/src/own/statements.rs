@@ -464,6 +464,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return PreparedStore::Assign { value: rebound };
             }
         }
+        // A fixed-array copy takes its source's address, and C cannot name the
+        // address of a member of a call result: an ownerless projection root
+        // binds to a local first, so the copy names an addressable value. An
+        // owning root is bound above; this branch covers a root that owns
+        // nothing to release, and a chain that already roots in storage keeps
+        // its spelling.
+        if !owning
+            && ty.is_fixed_array()
+            && matches!(
+                lowered.kind,
+                ValueKind::Member { .. } | ValueKind::Index { .. }
+            )
+            && !self.projects_from_place(&lowered)
+        {
+            let lowered = self.bind_fixed_array_root(lowered);
+            return PreparedStore::Assign { value: lowered };
+        }
         // A view bound to a projection of fresh ownerless storage — a call
         // result, a struct literal, or a conditional whose value is such an
         // aggregate — binds the backing to a local in the view's scope, so the
@@ -1212,6 +1229,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             {
                 let lowered = self.settle_projection_base(lowered);
                 self.materialize_index_chain(lowered)
+            } else {
+                lowered
+            };
+            // A fixed-array return copies its source by address, and C cannot
+            // name the address of a member of a call result: an ownerless
+            // projection root binds to a local first. An owning root is bound
+            // above; this branch covers a root that owns nothing to release,
+            // and a chain that already roots in storage keeps its spelling.
+            let lowered = if returns.is_fixed_array()
+                && matches!(
+                    lowered.kind,
+                    ValueKind::Member { .. } | ValueKind::Index { .. }
+                )
+                && !self.projects_from_place(&lowered)
+            {
+                self.bind_fixed_array_root(lowered)
             } else {
                 lowered
             };

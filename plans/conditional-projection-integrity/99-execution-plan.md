@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 19:43
-> **Progress**: 26/33 tasks (79%)
+> **Last Updated**: 2026-10-13 19:50
+> **Progress**: 28/33 tasks (85%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -159,8 +159,8 @@ task-size criteria: each task is independently testable and reviewable).
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Unify the conditional arm spelling, pin the postfix update, and bind the call root before the fixed-array address — `compiler/src/codegen/expr.rs`, `compiler/src/own/lower.rs`
-- [ ] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 5.2.1 Unify the conditional arm spelling, pin the postfix update, and bind the call root before the fixed-array address — `compiler/src/codegen/expr.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-10-13 19:50; the arm widening is the shared `widen_text_view` helper (`codegen/function.rs`, `codegen/expr.rs`) so the return and store spellings take one C type; the update order pins through `contains_update` + `pin_update_value` in the `Binary` arm and in the call-argument loop (a `take` argument and a constant keep their spelling, and a guarded or loop-condition operand keeps its existing deferred form); the fixed-array address binds the ownerless root through `bind_fixed_array_root` in `prepare_store` and `check_return`, with the owning root keeping its scope-owner spelling)
+- [x] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-13 19:50; spec 59/59 plain and under `RDC_ASAN=1`; impl 21/21; `make check` exit 0 — 64 binaries, 1878 tests; the emitted shapes verified by hand: `return (c ? cl_string_view(b.v) : a);`, `__cl_tmp0 = (i)++; __cl_tmp1 = i;`, `__cl_tmp0 = mk(); memcpy(&(a), &(__cl_tmp0.xs), sizeof(a));`)
 
 ### Step 5.3: Impl Tests & Review
 

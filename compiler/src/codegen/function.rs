@@ -1934,12 +1934,7 @@ impl<'a> Emitter<'a> {
             return self.null_value(ty);
         }
         let text = self.value(value);
-        let value_ty = self.substitute(&value.ty);
-        if matches!(ty.kind, TyKind::Str | TyKind::StaticStr)
-            && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
-        {
-            return format!("cl_string_view({text})");
-        }
+        let text = self.widen_text_view(text, &self.substitute(&value.ty), ty);
         // A view's pointer member is a `const u8 *` in the C while a
         // `cstring` destination is a `char *`: the store spells the
         // conversion the declaration expects. The member is untyped, so only
@@ -1947,6 +1942,22 @@ impl<'a> Emitter<'a> {
         // arrives as a projection, a read over a value as a member.
         if matches!(ty.kind, TyKind::CString) && names_pointer_member(value) {
             return format!("(char *)({text})");
+        }
+        text
+    }
+
+    /// Wraps a rendered owned `String` in the shim view constructor.
+    ///
+    /// An owned `String` widens implicitly to the `str` view in a value
+    /// position, and the C spells the widening through the shim view. A store
+    /// and a conditional arm both need the wrapper: one C `?:` must carry one
+    /// type in both arms, so the owned arm takes the same shape the store
+    /// spells.
+    pub(super) fn widen_text_view(&self, text: String, value_ty: &Ty, target: &Ty) -> String {
+        if matches!(target.kind, TyKind::Str | TyKind::StaticStr)
+            && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
+        {
+            return format!("cl_string_view({text})");
         }
         text
     }
