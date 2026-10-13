@@ -422,10 +422,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if owning
             && !is_view(ty)
             && !ty.is_unknown()
-            && !super::lower::mentions_type_param(ty)
             && self.consume_needs_conditional_arms(&lowered)
         {
             let lowered = self.consume_conditional_projection(lowered);
+            return PreparedStore::Assign { value: lowered };
+        }
+        // A conditional whose arms project out of ownerless storage
+        // (`c ? a.v : mkBox().v`) binds each arm's root through the arm-fill
+        // machinery, so the fresh root's un-moved fields release at the
+        // statement end and the chosen member still transfers to the
+        // destination through the ordinary owned-conditional store. A
+        // condition whose arms already root at a conditional is covered
+        // above.
+        if owning
+            && !is_view(ty)
+            && !ty.is_unknown()
+            && matches!(lowered.kind, ValueKind::Conditional { .. })
+            && self.conditional_projection_root_owns_residual(&lowered)
+        {
+            let lowered = self.hoist_ownerless_conditional_arms(lowered);
             return PreparedStore::Assign { value: lowered };
         }
         // A consumed projection of fresh statement-owned storage is a move:
@@ -625,6 +640,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 sources.push(source);
             } else {
                 sources.extend(self.maybe_owning_move_sources(value));
+                if sources.is_empty() {
+                    sources.extend(self.maybe_owning_projection_move_sources(value));
+                }
             }
             if sources.is_empty() {
                 return BindingEffect::None;
@@ -1096,7 +1114,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             } else {
                 let sources = if maybe_owning {
-                    self.maybe_owning_move_sources(value)
+                    let mut sources = self.maybe_owning_move_sources(value);
+                    if sources.is_empty() {
+                        sources = self.maybe_owning_projection_move_sources(value);
+                    }
+                    sources
                 } else {
                     let mut sources = self.conditional_move_sources(value);
                     if sources.is_empty() {

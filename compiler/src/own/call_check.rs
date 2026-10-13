@@ -542,7 +542,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                     } else {
                         let sources = if maybe_owning {
-                            self.maybe_owning_move_sources(expr)
+                            let mut sources = self.maybe_owning_move_sources(expr);
+                            if sources.is_empty() {
+                                sources = self.maybe_owning_projection_move_sources(expr);
+                            }
+                            sources
                         } else {
                             let mut sources = self.conditional_move_sources(expr);
                             if sources.is_empty() {

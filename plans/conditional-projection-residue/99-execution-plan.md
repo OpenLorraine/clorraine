@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 23:29
-> **Progress**: 2/39 tasks (5%)
+> **Last Updated**: 2026-10-13 23:48
+> **Progress**: 4/39 tasks (10%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -62,8 +62,8 @@ the guarded take carrier, and the struct-literal field root.
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Extend the per-instance arm duty, the fresh-root binding, the literal arm root, and the guarded field/argument roots — `compiler/src/own/lower.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/call_check.rs`
-- [ ] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 1.2.1 Extend the per-instance arm duty, the fresh-root binding, the literal arm root, and the guarded field/argument roots — `compiler/src/own/lower.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/call_check.rs` ✅ (completed: 2026-10-13 23:48; the generic arm projection routes through the per-arm move-out with the instance's type judged at emission and the checker's projected-source duty recorded (`own/statements.rs`, `own/expr.rs`, `own/call_check.rs`); a conditional-of-projections fresh root binds only when it still owns an un-taken field; the guarded take fills one shared carrier on the evaluated path with the post-call move-out emptying it; a struct-literal field's ownerless projection root binds in the deferred/guarded path, with the guard form skipping the reassigned drop for an adopting carrier)
+- [x] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-13 23:48; the eight phase cases green plain and under `RDC_ASAN=1`; `make check` exit 0 — 65 suites, no failures; the batch-H suites stay green)
 
 ### Step 1.3: Impl Tests & Review
 

@@ -243,6 +243,107 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The maybe-owning projected places a consumed conditional projection may
+    /// move out of.
+    ///
+    /// Mirrors [`Self::conditional_projection_move_sources`] for a type that
+    /// mentions a parameter: every arm whose projected root may own becomes a
+    /// source, so the caller can mark it consumed without rejecting a
+    /// duplicable instance. A duplicable arm contributes nothing, and a fresh
+    /// arm has no place to mark. The projected source is judged at each
+    /// instantiation, exactly as the concrete twin's is.
+    pub(super) fn maybe_owning_projection_move_sources(&self, expr: &Expr) -> Vec<PlaceTarget> {
+        let mut steps: Vec<ir::Projection> = Vec::new();
+        let mut cursor = expr;
+        loop {
+            match &cursor.kind {
+                ExprKind::Member { base, name } => {
+                    // A fixed array's `.len` is its structural extent, not a
+                    // place: it names no storage and its base reads nothing.
+                    if name == "len" && self.ty(base).is_fixed_array() {
+                        return Vec::new();
+                    }
+                    steps.insert(0, ir::Projection::Field(name.clone()));
+                    cursor = base;
+                }
+                ExprKind::Index { base, index } => {
+                    let element = match &index.kind {
+                        ExprKind::Int(value) => {
+                            ir::Projection::Element(usize::try_from(*value).ok())
+                        }
+                        _ => ir::Projection::Element(None),
+                    };
+                    steps.insert(0, element);
+                    cursor = base;
+                }
+                ExprKind::Conditional { .. } => break,
+                _ => return Vec::new(),
+            }
+        }
+        let mut sources = Vec::new();
+        self.maybe_owning_projection_arm_sources(cursor, &steps, &mut sources);
+        sources
+    }
+
+    /// Collects one conditional level's maybe-owning projected places.
+    ///
+    /// Mirrors [`Self::projection_move_arm_sources`] with the maybe-owning
+    /// predicate: a leaf arm contributes its projected place when the arm's
+    /// type may own once substituted, and a nested conditional recurses with
+    /// the same chain applied to its own arms.
+    fn maybe_owning_projection_arm_sources(
+        &self,
+        expr: &Expr,
+        steps: &[ir::Projection],
+        sources: &mut Vec<PlaceTarget>,
+    ) {
+        match &expr.kind {
+            ExprKind::Member { base, name } => {
+                if name == "len" && self.ty(base).is_fixed_array() {
+                    return;
+                }
+                let mut steps = steps.to_vec();
+                steps.insert(0, ir::Projection::Field(name.clone()));
+                self.maybe_owning_projection_arm_sources(base, &steps, sources);
+            }
+            ExprKind::Index { base, index } => {
+                let element = match &index.kind {
+                    ExprKind::Int(value) => {
+                        ir::Projection::Element(usize::try_from(*value).ok())
+                    }
+                    _ => ir::Projection::Element(None),
+                };
+                let mut steps = steps.to_vec();
+                steps.insert(0, element);
+                self.maybe_owning_projection_arm_sources(base, &steps, sources);
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                for arm in [then_value.as_ref(), else_value.as_ref()] {
+                    self.maybe_owning_projection_arm_sources(arm, steps, sources);
+                }
+            }
+            _ => {
+                let ty = self.ty(expr);
+                if !self.maybe_owns(&ty) {
+                    return;
+                }
+                let Some(target) = self.place_target(expr) else {
+                    return;
+                };
+                let mut projections = match &target {
+                    PlaceTarget::Local(_, projections)
+                    | PlaceTarget::Global(_, projections) => projections.clone(),
+                };
+                projections.extend_from_slice(steps);
+                sources.push(target.with_projections(projections));
+            }
+        }
+    }
+
     /// Marks the owned arms a materialized conditional read may move.
     ///
     /// A read position that needs a place materializes a fixed-array
@@ -753,7 +854,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         let value_ty = self.ty(value);
                         let maybe_owning = self.maybe_owns(&value_ty);
                         let sources = if maybe_owning {
-                            self.maybe_owning_move_sources(value)
+                            let mut sources = self.maybe_owning_move_sources(value);
+                            if sources.is_empty() {
+                                sources = self.maybe_owning_projection_move_sources(value);
+                            }
+                            sources
                         } else {
                             self.conditional_move_sources(value)
                         };
@@ -1047,7 +1152,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let mut sources = if self.maybe_owns(target_ty) {
             match self.place_target(value) {
                 Some(source) => vec![source],
-                None => self.maybe_owning_move_sources(value),
+                None => {
+                    let mut sources = self.maybe_owning_move_sources(value);
+                    if sources.is_empty() {
+                        sources = self.maybe_owning_projection_move_sources(value);
+                    }
+                    sources
+                }
             }
         } else if is_view(target_ty) || self.sema.table.duplicable(target_ty) {
             Vec::new()

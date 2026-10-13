@@ -286,7 +286,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let mut lowered = Vec::with_capacity(fields.len());
                 for field in fields {
                     let value = self.lower_value(&field.value);
-                    let value = if deferred {
+                    // A field that projects out of a fresh ownerless root
+                    // binds that root even inside a conditionally evaluated
+                    // operand: the field's own store moves the selected member
+                    // and the root releases only its un-moved fields. A
+                    // place-derived field stays in place, so a skipped arm's
+                    // value is not stranded in an unreleased temporary.
+                    let value = if deferred && !self.arm_has_ownerless_projection(&value) {
                         value
                     } else {
                         self.consume_place(value)
@@ -1578,6 +1584,67 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let carrier = self.new_temp(ty.clone());
         self.consume_conditional_projection_into(value, Some(carrier));
         Value::new(ty, ValueKind::Temp(carrier))
+    }
+
+    /// Lowers a guarded `take` projection of a conditional into a deferred
+    /// carrier.
+    ///
+    /// The operand runs only on the path its guard reaches, so the per-arm
+    /// move-out cannot be eager branch statements. Each arm binds its
+    /// ownerless root through the deferred fill, the projection chain is
+    /// rebuilt on the arm, and the chosen member moves into one carrier the
+    /// guard emitter fills where the operand is evaluated. The ordinary
+    /// post-call move-out empties the carrier, and a fresh arm's root releases
+    /// only its un-moved fields. A place-rooted arm stays a place the carrier
+    /// copies and empties.
+    fn materialize_guarded_take_conditional_projection(&mut self, value: Value) -> Value {
+        let result_ty = value.ty.clone();
+        let mut steps: Vec<ConditionalProjectionStep> = Vec::new();
+        let mut cursor = value;
+        let (condition, then_value, else_value) = loop {
+            match cursor.kind {
+                ValueKind::Member { base, name } => {
+                    steps.push(ConditionalProjectionStep::Field {
+                        name,
+                        ty: cursor.ty.clone(),
+                    });
+                    cursor = *base;
+                }
+                ValueKind::Index { base, index } => {
+                    steps.push(ConditionalProjectionStep::Index {
+                        index: *index,
+                        ty: cursor.ty.clone(),
+                    });
+                    cursor = *base;
+                }
+                ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } => break (condition, then_value, else_value),
+                other => return Value::new(cursor.ty, other),
+            }
+        };
+        let then_value = apply_conditional_steps(self.own_ownerless_arm(*then_value), &steps);
+        let else_value = apply_conditional_steps(self.own_ownerless_arm(*else_value), &steps);
+        let carrier = self.new_temp(result_ty.clone());
+        let conditional = Value::new(
+            result_ty.clone(),
+            ValueKind::Conditional {
+                condition,
+                then_value: Box::new(then_value),
+                else_value: Box::new(else_value),
+            },
+        );
+        Value::new(
+            result_ty,
+            ValueKind::Materialize {
+                temp: carrier,
+                value: Box::new(conditional),
+                move_outs: Vec::new(),
+                adopting: false,
+            },
+        )
     }
 
     /// Lowers a consumed projection of a conditional, optionally into a
@@ -2941,6 +3008,63 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a conditional arm's ownerless projection root still owns
+    /// storage the projection does not take.
+    ///
+    /// Binding a fresh root is only needed to release its un-moved fields. A
+    /// root whose only owning field is the projected member releases nothing
+    /// once that member moves, so it keeps its inline copy and the call result
+    /// stays a single rendered expression. A nested conditional recurses into
+    /// its own arms.
+    pub(super) fn conditional_projection_root_owns_residual(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.conditional_projection_root_owns_residual(then_value)
+                    || self.conditional_projection_root_owns_residual(else_value)
+            }
+            ValueKind::Member { base, name } => self.member_root_owns_residual(base, name),
+            ValueKind::Index { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// True when the base under a member projection owns a field other than
+    /// the selected one.
+    fn member_root_owns_residual(&self, base: &Value, selected: &str) -> bool {
+        match &base.kind {
+            ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                self.conditional_projection_root_owns_residual(base)
+            }
+            _ => {
+                let root_ty = &base.ty;
+                if self.sema.table.duplicable(root_ty) {
+                    return false;
+                }
+                let TyKind::Struct(struct_name, args) = &root_ty.kind else {
+                    return false;
+                };
+                let Some(fields) = self.sema.table.struct_fields(struct_name) else {
+                    return false;
+                };
+                let params = self
+                    .sema
+                    .table
+                    .struct_type_params(struct_name)
+                    .unwrap_or(&[]);
+                fields.iter().any(|(field_name, field_ty)| {
+                    field_name != selected
+                        && !self.sema.table.duplicable(&crate::types::substitute_instance(
+                            field_ty, params, args,
+                        ))
+                })
+            }
+        }
+    }
+
     /// Evaluates a conditional lend argument's ownerless arms at its position.
     ///
     /// The condition is evaluated once into a temporary; each ownerless arm
@@ -2950,7 +3074,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// temporaries and the places — so the argument keeps its position in the
     /// left-to-right evaluation order and every argument ABI sees plain places
     /// and a select of places.
-    fn hoist_ownerless_conditional_arms(&mut self, value: Value) -> Value {
+    pub(super) fn hoist_ownerless_conditional_arms(&mut self, value: Value) -> Value {
         match value.kind {
             ValueKind::Conditional {
                 condition,
@@ -3104,16 +3228,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // its un-moved fields, and the callee owns the argument exactly
             // once. Every arm fills one shared carrier the post-call move-out
             // empties, so a re-executed statement never frees the transferred
-            // value twice. A conditionally evaluated argument keeps its
-            // existing deferred handling.
-            if self.defer_move_outs == 0
-                && !self.sema.table.duplicable(&value.ty)
+            // value twice. An eagerly evaluated argument fills the carrier
+            // through branch statements; a guarded one defers the fill to the
+            // path that evaluates it, keeping the short circuit.
+            if !self.sema.table.duplicable(&value.ty)
                 && !mentions_type_param(&value.ty)
                 && !is_view(&value.ty)
                 && !value.ty.is_unknown()
                 && self.consume_needs_conditional_arms(&value)
             {
-                return self.materialize_take_conditional_projection(value);
+                return if self.defer_move_outs == 0 {
+                    self.materialize_take_conditional_projection(value)
+                } else {
+                    self.materialize_guarded_take_conditional_projection(value)
+                };
             }
             // The base expression evaluates before the index (`m()[i]` runs
             // `m()` first and it may change the index), so an eager base is

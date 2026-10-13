@@ -772,7 +772,7 @@ impl<'a> Emitter<'a> {
                 temp,
                 value: inner,
                 move_outs,
-                adopting: _,
+                adopting,
             } => {
                 let inner_ty = self.substitute(&inner.ty);
                 let destination = format!("__cl_tmp{temp}");
@@ -791,9 +791,14 @@ impl<'a> Emitter<'a> {
                     // The conditional moves its chosen arm. Its condition's
                     // guards embed with the store expression, and each arm's
                     // guards embed where the arm is evaluated, so nothing is
-                    // hoisted out of the conditionally evaluated path.
-                    if let Some(drop) = self.drop_expr_text(&destination, &inner_ty) {
-                        out.push(drop);
+                    // hoisted out of the conditionally evaluated path. An
+                    // adopting carrier's consumer owns the value, so a re-fill
+                    // must not release the previous value; the consumer's own
+                    // cleanup is the sole owner.
+                    if !*adopting {
+                        if let Some(drop) = self.drop_expr_text(&destination, &inner_ty) {
+                            out.push(drop);
+                        }
                     }
                     out.push(self.conditional_move_expr(
                         &destination,
@@ -807,13 +812,15 @@ impl<'a> Emitter<'a> {
                     // its store, so walking the literal here would materialize
                     // a side-effecting element twice and empty a `take` source
                     // before the second evaluation. The previous temporary is
-                    // dropped before the element stores run.
+                    // dropped before the element stores run, unless the carrier
+                    // is adopting: its consumer owns the value, so a re-fill
+                    // must not release what the consumer stored.
                     let literal_stores = inner_ty.is_fixed_array()
                         && matches!(&inner.kind, ValueKind::ArrayLit { .. });
                     if !literal_stores {
                         self.guard_expressions(inner, out);
                     }
-                    if self.needs_drop(&inner_ty) {
+                    if !*adopting && self.needs_drop(&inner_ty) {
                         if let Some(drop) = self.drop_expr_text(&destination, &inner_ty) {
                             out.push(drop);
                         }
