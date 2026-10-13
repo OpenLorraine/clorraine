@@ -999,6 +999,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         {
             return value;
         }
+        // A struct literal materializes only when every owning field is a
+        // fresh result. A field that reads a place or an already bound
+        // temporary is copied by the aggregate's store, so releasing the
+        // aggregate alongside the field's own owner would free the same
+        // storage twice; the literal stays an inline value instead.
+        if let ValueKind::StructLit { fields, .. } = &value.kind {
+            if fields.iter().any(|(_, field)| {
+                self.discard_binds_owner(&field.ty) && self.projects_from_place(field)
+            }) {
+                return value;
+            }
+        }
         let ty = value.ty.clone();
         let temp = self.new_temp(ty.clone());
         self.register_pending_release(temp, &ty);
@@ -3196,8 +3208,8 @@ fn apply_conditional_steps(mut value: Value, steps: &[ConditionalProjectionStep]
 ///
 /// A call, an intrinsic, or a template can allocate, read, or write, so it is
 /// not safe to re-evaluate; every other shape is a read of a place or a pure
-/// operator over pure operands.
-/// True when a value has no side effect worth running when discarded.
+/// operator over pure operands. A discarded expression statement with a pure
+/// value has nothing to run and lowers to nothing.
 pub(super) fn is_pure_value(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Call { .. }

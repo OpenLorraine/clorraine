@@ -2210,3 +2210,55 @@ func main(): i32 {
     assert_no_asan("discardcontrol", &output);
     assert_exit("discardcontrol", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// conddiscardstruct: a discarded conditional whose arms are struct literals.
+//
+// A literal whose owning fields are fresh results materializes and releases
+// like a call arm. A literal whose owning field reads a place is not
+// materialized: the aggregate store copies the field, so releasing the
+// aggregate alongside the place's own owner would free the same storage
+// twice.
+// ---------------------------------------------------------------------------
+
+/// A discarded conditional of struct-literal arms stays memory-clean.
+#[test]
+fn should_handle_a_discarded_conditionals_struct_literal_arms() {
+    let fresh = r#"module spec.cpi.conddiscardstructfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func main(): i32 {
+    let ok: bool = true;
+    let i: i32 = 0;
+    while (i < 3) {
+        ok ? Box { v: stringOf("aa") } : Box { v: stringOf("bb") };
+        i = i + 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("conddiscardstructfresh", fresh);
+    assert_no_asan("conddiscardstructfresh", &output);
+    assert_exit("conddiscardstructfresh", &output, 0);
+
+    let place = r#"module spec.cpi.conddiscardstructplace;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func main(): i32 {
+    let ok: bool = true;
+    let t: String = stringOf("ab");
+    let u: String = stringOf("cde");
+    ok ? Box { v: t } : Box { v: u };
+    return 0;
+}
+"#;
+    let output = run_memory("conddiscardstructplace", place);
+    assert_no_asan("conddiscardstructplace", &output);
+    assert_exit("conddiscardstructplace", &output, 0);
+}
