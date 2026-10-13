@@ -274,7 +274,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let Some(ty) = &declared {
             self.check_nullable_decl(ty, decl.span);
         }
+        // A view-element array initializer binds its elements as views, so the
+        // evaluation must not consume an owned element source: the element is
+        // a read the view binding loans or adopts.
+        let view_elements = declared
+            .as_ref()
+            .is_some_and(is_view_like)
+            && decl
+                .value
+                .as_ref()
+                .is_some_and(|value| matches!(&value.kind, ExprKind::ArrayLiteral { .. }));
+        if view_elements {
+            self.view_array_literal_depth += 1;
+        }
         let value_ty = decl.value.as_ref().map(|value| self.eval(value));
+        if view_elements {
+            self.view_array_literal_depth -= 1;
+        }
         let target = declared
             .clone()
             .or(value_ty)
@@ -356,7 +372,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.report_element_move_limit(value.span);
             }
         }
+        // A view-element array target binds its elements as views: the
+        // elements stay in place while the literal lowers, so the store loans
+        // or adopts each element's backing instead of moving it out.
+        let view_elements = is_view_like(ty) && matches!(&value.kind, ExprKind::ArrayLiteral { .. });
+        if view_elements {
+            self.view_array_literal_depth += 1;
+        }
         let lowered = self.lower_value(value);
+        if view_elements {
+            self.view_array_literal_depth -= 1;
+        }
         // A registered destination temporary is adopted by moving its value
         // out: the store copies it into the destination and the move-out
         // empties the temporary, so the statement-end release this temporary
@@ -438,8 +464,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A conditional whose arms project an ownerless literal directly
         // (`c ? (P { a, b }).a : (Q { a, b }).a`) is not bound here: its value
         // is the projected view, and binding each arm's root eagerly would run
-        // both arms. Such a shape keeps its unreleased backing.
-        let lowered = if is_view(ty) && !self.projects_from_place(&lowered) {
+        // both arms. Such a shape keeps its unreleased backing. A view-element
+        // array binds every element the same way, so a temporary element's
+        // backing adopts a scoped owner while a place element keeps its loan.
+        let lowered = if is_view_like(ty) && !self.projects_from_place(&lowered) {
             self.bind_view_projection_root(lowered)
         } else {
             lowered
@@ -466,7 +494,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let Some(ty) = &declared {
             self.check_nullable_decl(ty, decl.span);
         }
-        let value_ty = self.eval(&decl.value);
+        let value_ty = {
+            // A view-element array initializer binds its elements as views,
+            // so the evaluation must not consume an owned element source.
+            let view_elements = declared
+                .as_ref()
+                .is_some_and(is_view_like)
+                && matches!(&decl.value.kind, ExprKind::ArrayLiteral { .. });
+            if view_elements {
+                self.view_array_literal_depth += 1;
+            }
+            let value_ty = self.eval(&decl.value);
+            if view_elements {
+                self.view_array_literal_depth -= 1;
+            }
+            value_ty
+        };
         let target = declared.or(Some(value_ty)).unwrap_or_else(Ty::unknown);
         // As in `check_let`, the store, the ownership effect, and the null
         // check resolve before the binding is declared, so the initializer's
@@ -559,7 +602,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return BindingEffect::MoveIfOwning { sources };
         }
-        if is_view(target) {
+        if is_view_like(target) {
             return BindingEffect::View {
                 provenance: match self.view_provenance(value) {
                     Provenance::None => lowered
@@ -1077,6 +1120,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.suppress_elision = true;
                     }
                     Provenance::Static => self.suppress_elision = true,
+                    // A view return must derive from the single view-like
+                    // lend candidate, not merely count one: a derivation
+                    // through a different parameter leaves the mismatch for
+                    // the declaration's elision postlude to report. A
+                    // derivation the walk cannot attribute (an intrinsic
+                    // accessor chain, for example) keeps the previous
+                    // acceptance: the model sees no wrong source to name.
+                    Provenance::Param(id) => {
+                        if is_elided_view(&returns)
+                            && self.elision_candidate.as_deref()
+                                != Some(self.bindings[id].name.as_str())
+                        {
+                            self.return_derivation_mismatch = true;
+                        }
+                    }
                     _ => {}
                 }
             }

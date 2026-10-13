@@ -717,6 +717,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 loans.extend(self.view_loans(else_value));
                 loans
             }
+            // A view array's elements each contribute their loans: the
+            // binding shares every loan its element views already carry.
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let mut loans = BTreeSet::new();
+                for element in elements {
+                    loans.extend(self.view_loans(element));
+                }
+                if let Some(fill) = fill {
+                    loans.extend(self.view_loans(fill));
+                }
+                loans
+            }
             _ => BTreeSet::new(),
         }
     }
@@ -742,37 +754,53 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             // A chain the store re-rooted at a bound owner reads through that
             // local, so the view carries a loan of it exactly as it would for a
-            // chain that named the place in source.
-            if let Some(id) = self.lowered_root_binding(lowered) {
+            // chain that named the place in source. A view array reads through
+            // every element's root, so each contributes a loan.
+            let mut roots = BTreeSet::new();
+            self.lowered_root_bindings(lowered, &mut roots);
+            for id in roots {
                 owners.insert(LoanOwner::Binding(id));
             }
         }
         owners
     }
 
-    /// The binding a lowered projection chain roots at, when its root is a
-    /// local place.
+    /// The bindings a lowered projection chain roots at, when its roots are
+    /// local places.
     ///
     /// A view derivation the store rebinding re-rooted reads through the owner
     /// local that binding declared, so the view must carry a loan of it; the
     /// liveness pass then treats the owner's cleanup as the release the view's
     /// uses depend on, exactly as it does for a view of a named place. A chain
     /// that roots at anything else — a temporary, a module global, or fresh
-    /// storage — names no binding here.
-    fn lowered_root_binding(&self, value: &Value) -> Option<usize> {
+    /// storage — names no binding here. A view array contributes one root per
+    /// element and fill value.
+    fn lowered_root_bindings(&self, value: &Value, roots: &mut BTreeSet<usize>) {
         match &value.kind {
-            ValueKind::Place(place) => match &place.base {
-                ir::PlaceBase::Local(name) => self
-                    .bindings
-                    .iter()
-                    .position(|binding| binding.ir_name == *name),
-                _ => None,
-            },
-            ValueKind::Index { base, .. } | ValueKind::Member { base, .. } => {
-                self.lowered_root_binding(base)
+            ValueKind::Place(place) => {
+                if let ir::PlaceBase::Local(name) = &place.base {
+                    if let Some(id) = self
+                        .bindings
+                        .iter()
+                        .position(|binding| binding.ir_name == *name)
+                    {
+                        roots.insert(id);
+                    }
+                }
             }
-            ValueKind::Cast { value: inner, .. } => self.lowered_root_binding(inner),
-            _ => None,
+            ValueKind::Index { base, .. } | ValueKind::Member { base, .. } => {
+                self.lowered_root_bindings(base, roots);
+            }
+            ValueKind::Cast { value: inner, .. } => self.lowered_root_bindings(inner, roots),
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.lowered_root_bindings(element, roots);
+                }
+                if let Some(fill) = fill {
+                    self.lowered_root_bindings(fill, roots);
+                }
+            }
+            _ => {}
         }
     }
 
@@ -799,6 +827,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Unsafe(inner) => self.collect_view_owners(inner, owners),
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
                 self.collect_view_owners(value, owners);
+            }
+            // Every element of a view array contributes its own owners, so a
+            // binding loans each element's backing independently.
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.collect_view_owners(element, owners);
+                }
+                if let Some(fill) = fill {
+                    self.collect_view_owners(fill, owners);
+                }
             }
             _ => {
                 if let Some(owner) = owner_of(&self.view_provenance(expr)) {
@@ -1202,11 +1240,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Counts the view-like lend parameters for return elision.
+    ///
+    /// The name of the single candidate is kept so the postlude can compare
+    /// the return's actual derivation against it: a view return must derive
+    /// from exactly one view-like lend parameter, not merely count one.
     pub(super) fn elision_prelude(&mut self) {
         if !is_elided_view(&self.returns) {
             return;
         }
-        self.elision_candidates = self
+        let candidates: Vec<String> = self
             .decl
             .params
             .iter()
@@ -1214,15 +1256,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 param.mode != Mode::Take
                     && is_lend_candidate(&self.resolve_with(&param.ty, &self.type_params))
             })
-            .count();
+            .map(|param| param.name.clone())
+            .collect();
+        self.elision_candidates = candidates.len();
+        self.elision_candidate = if candidates.len() == 1 {
+            candidates.into_iter().next()
+        } else {
+            None
+        };
     }
 
     /// Reports `E10036` when a view return cannot elide a single parameter.
+    ///
+    /// The count decides the zero-candidate and two-or-more cases; with
+    /// exactly one candidate the return's observed derivation must name it,
+    /// so a view read through a different parameter is rejected here at the
+    /// declaration instead of leaking a borrowed view to the caller.
     pub(super) fn elision_postlude(&mut self) {
         if !is_elided_view(&self.returns) || self.suppress_elision {
             return;
         }
-        if self.elision_candidates == 1 {
+        if self.elision_candidates == 1 && !self.return_derivation_mismatch {
             return;
         }
         self.error(

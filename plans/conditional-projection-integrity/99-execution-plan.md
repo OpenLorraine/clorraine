@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 11:14
-> **Progress**: 14/33 tasks (42%)
+> **Last Updated**: 2026-10-13 11:25
+> **Progress**: 16/33 tasks (48%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -107,8 +107,8 @@ task-size criteria: each task is independently testable and reviewable).
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Record the binding loan, judge array element derivations, and tie the elision judgment to the actual derivation — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
-- [ ] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 3.2.1 Record the binding loan, judge array element derivations, and tie the elision judgment to the actual derivation — `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-10-13 11:25; the view-element binder sweeps (`view_loans`, `collect_view_owners`, the lowered-root collection), the binding-side gates (`is_view_like` for the effect and the view binder), the in-place element lowering (`view_array_literal_depth` across the eval, the store preparation, and the lowered lambda boundary; `own/expr.rs` and `own.rs` carry the flag), and the elision derivation comparison (`elision_candidate`/`return_derivation_mismatch`); the derivation check flags a named non-candidate parameter only, so the intrinsic accessor chains of the standard library keep their acceptance)
+- [x] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-13 11:25; spec 45/45 plain and under `RDC_ASAN=1`; impl 11/11; `make check` exit 0 — 64 binaries, 1854 tests)
 
 ### Step 3.3: Impl Tests & Review
 

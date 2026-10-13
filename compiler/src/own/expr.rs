@@ -471,8 +471,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             ExprKind::ArrayLiteral { elements, fill } => {
+                // A view-element array binds its elements as views, so each
+                // element is a read of the source the view names, never a
+                // move out of it; the consuming marks stay for an owned
+                // element list only.
+                let view_elements = self.view_array_literal_depth > 0;
                 for element in elements {
                     self.eval(element);
+                    if view_elements {
+                        continue;
+                    }
                     self.consume_owned_place(element, element.span);
                     // An owned conditional element moves its chosen arm into
                     // the element; a maybe-owning element records the duty.
@@ -696,7 +704,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.check_store_index_nonnull(target, target.span);
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
+                // A view-element array target binds its elements as views, so
+                // the evaluation must not consume an owned element source.
+                let view_elements = is_view_like(&target_ty)
+                    && matches!(&value.kind, ExprKind::ArrayLiteral { .. });
+                if view_elements {
+                    self.view_array_literal_depth += 1;
+                }
                 self.eval(value);
+                if view_elements {
+                    self.view_array_literal_depth -= 1;
+                }
                 self.check_lend_target_store(id, &projections, value, target.span);
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026

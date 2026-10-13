@@ -282,6 +282,19 @@ struct FunctionChecker<'a, 'd> {
     /// True when a returned view derives from static storage or a local, so
     /// the elision count should stay silent.
     suppress_elision: bool,
+    /// The single view-like lend candidate of the function, when there is
+    /// exactly one; the elision postlude compares the return's actual
+    /// derivation against it.
+    elision_candidate: Option<String>,
+    /// True when an observed view return derives from something other than
+    /// the single candidate, so the postlude reports `E10036` even though the
+    /// candidate count is one.
+    return_derivation_mismatch: bool,
+    /// Number of enclosing array-literal lowerings whose target is a
+    /// view-element array: those elements keep their sources in place, so the
+    /// view binding loans or adopts each element's backing instead of moving
+    /// it out.
+    view_array_literal_depth: u32,
     /// The control-flow graph being built.
     builder: Builder,
     /// Type of each compiler-created temporary, by creation order.
@@ -481,6 +494,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             unsafe_depth: 0,
             elision_candidates: 0,
             suppress_elision: false,
+            elision_candidate: None,
+            return_derivation_mismatch: false,
+            view_array_literal_depth: 0,
             builder: Builder::new(&decl.name, params, returns),
             temps: Vec::new(),
             current_span: Span::default(),

@@ -276,12 +276,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
                 // As for a struct literal, a deferred operand leaves its
                 // element sources in place; the arm's store moves the chosen
-                // source and empties it.
+                // source and empties it. A view-element array keeps its
+                // sources in place too: an element is a view of its source,
+                // so the binding loans or adopts the backing rather than
+                // moving it out of the source.
                 elements: elements
                     .iter()
                     .map(|element| {
                         let value = self.lower_value(element);
-                        if self.defer_move_outs > 0 {
+                        if self.defer_move_outs > 0 || self.view_array_literal_depth > 0 {
                             value
                         } else {
                             self.consume_place(value)
@@ -724,6 +727,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_owned_temp = self.next_owned_temp;
         let saved_returns = self.returns.clone();
         let saved_current_span = self.current_span;
+        let saved_elision_candidate = self.elision_candidate.clone();
+        let saved_derivation_mismatch = self.return_derivation_mismatch;
+        let saved_view_array_depth = self.view_array_literal_depth;
         self.next_registration = 0;
         self.next_owned_temp = 0;
         self.defer_anchor = None;
@@ -734,6 +740,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.defer_move_outs = 0;
         self.in_loop_condition = false;
         self.returns = ret.clone();
+        // The elision judgment belongs to the enclosing function, not to a
+        // lifted lambda body; the body's own view returns must not decide it.
+        self.return_derivation_mismatch = false;
+        self.view_array_literal_depth = 0;
 
         let body_span = match body {
             LambdaBody::Expr(value) => value.span,
@@ -848,6 +858,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.next_owned_temp = saved_owned_temp;
         self.returns = saved_returns;
         self.current_span = saved_current_span;
+        self.elision_candidate = saved_elision_candidate;
+        self.return_derivation_mismatch = saved_derivation_mismatch;
+        self.view_array_literal_depth = saved_view_array_depth;
     }
 
     /// Declares one lambda parameter in the lifted function.
@@ -2137,6 +2150,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     value
                 }
+            }
+            // A view-element array is a list of views, so each element's
+            // storage binds exactly as a single view's would: a place element
+            // keeps its loan, a temporary element's backing adopts a scoped
+            // owner, and a static element needs none.
+            ValueKind::ArrayLit { elements, fill } => {
+                let elements = elements
+                    .into_iter()
+                    .map(|element| self.bind_view_projection_root(element))
+                    .collect();
+                let fill = fill.map(|fill| Box::new(self.bind_view_projection_root(*fill)));
+                Value::new(value.ty, ValueKind::ArrayLit { elements, fill })
             }
             _ => value,
         }
