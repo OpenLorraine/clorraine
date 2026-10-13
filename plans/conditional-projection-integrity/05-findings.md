@@ -234,6 +234,21 @@ two regression spec cases pin the nested-update order (`postfixnested`) and the 
 rejects (`condreturnlocal`, `condreturnview`). **Verification after the fix**: spec 61/61 plain and
 under `RDC_ASAN=1`; impl 27/27; `make check` exit 0 (64 binaries, 1886 tests).
 
+### Re-review (scoped to the fix diff)
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 minor (report-only), 2 pre-existing edges | RV-001 verified fixed: the reproducers and composites match the strict left-to-right values, and the emitted pins are in source order; the two escape rejects verified; the provenance blast radius checked (mixed conditional arguments and `let` spellings stay accepted, the suites' parameter cases stay accepted); the element-store over-rejection observed and judged consistent with the pre-existing named-spelling rule; the dot-receiver and loop-condition pin edges re-stated |
+| memory-safety | no new findings; the critical verified fixed | the four dangling-return programs now report `E10035`; the safe `let` store stays accepted and ASan-clean; the update-pin and fixed-array matrices are clean, including loops, early exits, `take` lists, and generic instances; the out-slot store remains a pre-existing row with corrected evidence |
+| emission-integrity | no critical or major; 1 minor | the order probes and the full probe family now emit source-order pins and the spec values; the corpus is byte-identical or an intended shape; the two new `E10035` rejections are the intended escape class; one already-rejected program now reports `E10035` beside its `E10030` |
+
+| Finding | Severity | Ruling |
+|---------|----------|--------|
+| The element-store over-rejection (`xs[1] = c ? b.v : a;` reports `E10033`; the named spelling already reports it) | 🟡 minor | **Accepted** (report-only): the pre-existing element-store rule over-rejects a local-backed view, and the phase's provenance rule reaches one more spelling consistently; the reviewer judged it no lifetime-safety regression. Filed as `DEF-280` |
+| The duplicate escape report (`E10035` beside `E10030` at one returned mixed conditional) | 🟡 minor | **Accepted** (report-only): both diagnostics are true, the program stays rejected, and the oracle test passes; one-report-per-site needs a liveness-pass suppression, deferred. Filed as `DEF-279` |
+| The update-pin edges (the dot receiver and the loop condition) | pre-existing | Filed as `DEF-277` (strict-build failures, base == head) |
+| The non-duplicable argument order (`f(g(), i++)` builds and evaluates in the wrong order) | pre-existing | Filed as `DEF-278` (base == head) |
+
 ## Close-out
 
 _(to be filled by the close-out: the final verification, the roadmap sync, and any late filings)_
