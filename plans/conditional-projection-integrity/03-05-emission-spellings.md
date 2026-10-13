@@ -38,7 +38,10 @@ result: one `ClStr` (or the projected type) on both branches.
 When a postfix update shares an expression with another read of the same place (the sequence-point
 shape), lower the update into an explicit temporary statement (`__cl_tmp = i++;` then use
 `__cl_tmp`), so the emitted C has one update and one read with a defined order. A standalone
-postfix statement keeps its current spelling.
+postfix statement keeps its current spelling. The rule covers every non-short-circuit binary whose
+operands contain an update and every non-`take` argument of a call whose arguments contain one,
+because the left-to-right rule orders the whole operation, not only the shared read; each pin lands
+at its operand's or argument's own position.
 
 ### 3. Bind the call root before the fixed-array address — `compiler/src/own/lower.rs`
 

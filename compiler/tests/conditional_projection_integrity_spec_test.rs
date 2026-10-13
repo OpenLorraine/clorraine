@@ -2507,3 +2507,72 @@ func main(): i32 {
     assert_no_asan("emissioncontrol", &output);
     assert_exit("emissioncontrol", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// postfixnested: an update nested inside a later operand.
+//
+// The pin runs at the operand's own position, so a nested update in the right
+// operand cannot reorder the left read: the emitted C evaluates the left
+// operand first, then the right one that contains the update.
+// ---------------------------------------------------------------------------
+
+/// An update nested in a later operand keeps the left-to-right order.
+#[test]
+fn should_keep_a_nested_update_in_its_operand_position() {
+    let source = r#"module spec.cpi.postfixnested;
+
+func h(a: i32): i32 { return a + 100; }
+func k(a: i32, b: i32): i32 { return a * 1000 + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let x: i32 = i + h(i++);
+    let y: i32 = k(i, h(i++));
+    return x + y - 1201;
+}
+"#;
+    let output = run_memory("postfixnested", source);
+    assert_no_asan("postfixnested", &output);
+    assert_exit("postfixnested", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// condreturnlocal: a view-typed conditional return over a local.
+//
+// A local's storage dies at the return, so a conditional whose chosen arm
+// points into a local cannot leave the function; the escape rule reports it
+// for the owned-member and for the view-binding spelling alike.
+// ---------------------------------------------------------------------------
+
+/// A view-typed conditional return of a local's storage is rejected.
+#[test]
+fn should_reject_a_view_typed_conditional_return_of_a_local() {
+    let member = r#"module spec.cpi.condreturnlocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func leak(c: bool, a: str): str {
+    let b: Box = Box { v: stringOf("ab") };
+    return (c ? b.v : a);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("condreturnlocal", member, "E10035", 1);
+
+    let view = r#"module spec.cpi.condreturnview;
+
+import { String, stringOf } from std.text;
+
+func leak(c: bool, a: str): str {
+    let s: String = stringOf("ab");
+    let v: str = s;
+    return (c ? v : a);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("condreturnview", view, "E10035", 1);
+}

@@ -206,8 +206,33 @@ no findings.
 
 ## Phase 5 — Emission spellings
 
-_(to be filled by the Phase 5 review: correctness + emission-integrity + semantics verdicts, the
-fix round, filed rows)_
+**Baseline**: `4cfe13ebf04c44ee28a7eeffa78a729b18d41ac3` (Phase 4's final commit tree at `926b3ad`). **Lenses**:
+correctness, emission-integrity, semantics, all dispatched on the phase diff in parallel; the scoped
+re-review covered the fix diff.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 critical (the pin order), 1 pre-existing minor | RV-001: the pin ran after both operands were lowered, so a nested update in the right operand reordered the left read (`i + h(i++)` returned 1 where the strict left-to-right rule gives 0); RV-002: a fixed-array projection of a conditional root still fails the strict build |
+| memory-safety | 1 critical (a newly reachable dangling view), 3 pre-existing | the widened owned arm made a local-backed conditional return build and run — heap-use-after-free on `return (c ? b.v : a)` with a local `b`; the view-arm variant, the out-slot store, and the conditional fixed-array root are pre-existing |
+| emission-integrity | 1 critical (the same order reversal on a base-green program), 1 minor, pre-existing rows | EIA-5.1: `readg() + h(gv++)` returned 101 where the spec gives 100 (base green — a phase regression); EIA-5.2: the call-argument form; EIA-5.3: the discarded `j++ + 1;` changes spelling (intended; the plan wording was narrower); the corpus is otherwise byte-identical and every unit builds |
+
+### Findings and rulings
+
+| Finding | Severity | Area | Ruling |
+|---------|----------|------|--------|
+| RV-001 = EIA-5.1 = EIA-5.2 | 🔴 critical | `own/lower.rs` (the Binary arm), `own/call.rs` (the argument loop) | **Fixed**: the pin now runs at each operand's and each argument's own lowering position (source order), so a nested update in a later operand cannot reorder an earlier read; the call loop resolves the parameter modes before lowering and pins each non-`take` argument in place |
+| The dangling conditional return (memory) | 🔴 critical | `own/place.rs` (`view_provenance`) | **Fixed**: a conditional whose arms disagree keeps a local-backed arm's provenance, so the local-backed conditional return reports `E10035` instead of widening and dangling; the same rule now rejects the pre-existing view-arm spelling |
+| EIA-5.3 | 🟡 minor | the update rule's breadth | **Accepted** (record-only): any non-short-circuit binary whose operands contain an update pins both, and any call whose arguments contain one pins each non-`take` argument, because the left-to-right rule orders the whole operation; the design wording in `03-05` was corrected |
+| RV-002, the `for`-iterable projection, the assignment-target update spellings, the literal field order, the out-slot store view | pre-existing | filed as `DEF-273` – `DEF-276` | rows with base == head evidence |
+
+### Fix round and verification
+
+The fix round corrected the pin position in both constructs and added the conditional provenance rule;
+two regression spec cases pin the nested-update order (`postfixnested`) and the two local-escape
+rejects (`condreturnlocal`, `condreturnview`). **Verification after the fix**: spec 61/61 plain and
+under `RDC_ASAN=1`; impl 27/27; `make check` exit 0 (64 binaries, 1886 tests).
 
 ## Close-out
 

@@ -202,25 +202,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 values.push(value);
             }
         }
-        for arg in args {
-            let value = self.lower_value(&arg.value);
-            let value = self.bind_member_receiver(value);
-            arg_types.push(value.ty.clone());
-            values.push(value);
-        }
-        let explicit: Vec<Ty> = type_args.iter().map(|arg| self.resolve(arg)).collect();
-        let resolved = if explicit.is_empty() {
-            // A func-typed binding has no declared generic parameters, so no
-            // type inference runs for its call even when a same-named module
-            // function would infer one.
-            if local_callee {
-                Vec::new()
-            } else {
-                self.infer_call_types(&name, &arg_types).unwrap_or_default()
-            }
-        } else {
-            explicit
-        };
         // A call result the callee only borrows stays owned by the caller; an
         // unnamed one is bound to a scope local so the cleanup drops it, since
         // the callee never does. A `take` argument is skipped: the callee owns
@@ -244,27 +225,42 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // An update inside an argument runs at its own position: evaluation
         // is strictly left-to-right, and C leaves the order of argument
         // evaluations unspecified. Each position-dependent argument binds to
-        // a statement temporary, so the call reads values whose order is
-        // fixed. A `take` argument keeps its place — the post-call move-out
-        // empties caller storage, which a temporary would hide — and a
-        // constant has no position to lose.
-        if args
+        // a statement temporary where it is lowered, so a later argument's
+        // update never reorders an earlier argument. A `take` argument keeps
+        // its place — the post-call move-out empties caller storage, which a
+        // temporary would hide — and a constant has no position to lose.
+        let pin_updates = args
             .iter()
-            .any(|arg| super::lower::contains_update(&arg.value))
-        {
-            for (index, value) in values.iter_mut().enumerate() {
-                let take = modes
-                    .as_ref()
-                    .and_then(|modes| modes.get(index))
-                    .is_some_and(|mode| *mode == Mode::Take);
-                if take {
-                    continue;
-                }
-                let pending =
-                    std::mem::replace(value, Value::new(Ty::unknown(), ValueKind::Aggregate));
-                *value = self.pin_update_value(pending);
-            }
+            .any(|arg| super::lower::contains_update(&arg.value));
+        for arg in args {
+            let value = self.lower_value(&arg.value);
+            let value = self.bind_member_receiver(value);
+            let position = values.len();
+            let take = modes
+                .as_ref()
+                .and_then(|modes| modes.get(position))
+                .is_some_and(|mode| *mode == Mode::Take);
+            let value = if pin_updates && !take {
+                self.pin_update_value(value)
+            } else {
+                value
+            };
+            arg_types.push(value.ty.clone());
+            values.push(value);
         }
+        let explicit: Vec<Ty> = type_args.iter().map(|arg| self.resolve(arg)).collect();
+        let resolved = if explicit.is_empty() {
+            // A func-typed binding has no declared generic parameters, so no
+            // type inference runs for its call even when a same-named module
+            // function would infer one.
+            if local_callee {
+                Vec::new()
+            } else {
+                self.infer_call_types(&name, &arg_types).unwrap_or_default()
+            }
+        } else {
+            explicit
+        };
         if let Some(modes) = &modes {
             for (value, mode) in values.iter_mut().zip(modes) {
                 let pending =

@@ -628,7 +628,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.view_provenance(base)
             }
             // A conditional's storage is the chosen arm's storage, so the
-            // provenance is shared only when both arms agree.
+            // provenance is shared only when both arms agree. A local-backed
+            // arm keeps its provenance even when the other arm differs,
+            // because the chosen value then points into a frame that dies at
+            // the return, exactly as a plain local view does; naming the
+            // local lets the escape and loan rules judge the mixed spelling.
             ExprKind::Conditional {
                 then_value,
                 else_value,
@@ -638,6 +642,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let otherwise = self.view_provenance(else_value);
                 if then == otherwise {
                     then
+                } else if let Provenance::Local(id) = then {
+                    Provenance::Local(id)
+                } else if let Provenance::Local(id) = otherwise {
+                    Provenance::Local(id)
                 } else {
                     Provenance::None
                 }

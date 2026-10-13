@@ -201,6 +201,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // side-effecting one is stored once and the guard and the
                 // operation share it.
                 let left = self.lower_value(left);
+                // The pin runs at the operand's own position: a nested
+                // update or read inside the right operand must not reorder
+                // the left one, so the temporary is emitted here rather than
+                // after both operands are lowered.
+                let left = if pin_updates {
+                    self.pin_update_value(left)
+                } else {
+                    left
+                };
                 // The right operand of `&&`/`||` runs only when the left
                 // decides to evaluate it, so a `take` move-out inside it must
                 // wait for that path.
@@ -212,9 +221,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     self.lower_value(right)
                 };
-                let (left, right) = if pin_updates {
-                    (self.pin_update_value(left), self.pin_update_value(right))
-                } else if matches!(op, BinaryOp::Div | BinaryOp::Rem) {
+                let right = if pin_updates {
+                    self.pin_update_value(right)
+                } else {
+                    right
+                };
+                let (left, right) = if !pin_updates && matches!(op, BinaryOp::Div | BinaryOp::Rem) {
                     (
                         self.materialize_guard_operand(left),
                         self.materialize_guard_operand(right),
