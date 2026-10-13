@@ -1000,14 +1000,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         }
         // A struct literal materializes only when every owning field is a
-        // fresh result. A field that reads a place or an already bound
-        // temporary is copied by the aggregate's store, so releasing the
-        // aggregate alongside the field's own owner would free the same
-        // storage twice; the literal stays an inline value instead.
+        // fresh result. A field that reads a place, an already bound
+        // temporary, or an aggregate built from either is copied by the
+        // aggregate's store, so releasing the aggregate alongside the field's
+        // own owner would free the same storage twice; the literal stays an
+        // inline value instead.
         if let ValueKind::StructLit { fields, .. } = &value.kind {
-            if fields.iter().any(|(_, field)| {
-                self.discard_binds_owner(&field.ty) && self.projects_from_place(field)
-            }) {
+            if fields
+                .iter()
+                .any(|(_, field)| self.field_aliases_owned_storage(field))
+            {
                 return value;
             }
         }
@@ -1023,6 +1025,38 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 adopting: false,
             },
         )
+    }
+
+    /// True when a guard-materialized field reads storage another owner holds.
+    ///
+    /// A field that reads a place, an already bound temporary, or a projection
+    /// of either is copied by the aggregate store, so releasing the
+    /// materialized aggregate would free storage the source still owns. An
+    /// aggregate built from such fields is covered too, because the same copy
+    /// reaches them through the field's own store; a fresh call or a literal
+    /// of fresh results aliases nothing. A duplicable field carries no
+    /// storage, so it never counts.
+    fn field_aliases_owned_storage(&self, value: &Value) -> bool {
+        if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
+            return false;
+        }
+        if self.projects_from_place(value) {
+            return true;
+        }
+        match &value.kind {
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .any(|(_, field)| self.field_aliases_owned_storage(field)),
+            ValueKind::ArrayLit { elements, fill } => {
+                elements
+                    .iter()
+                    .any(|element| self.field_aliases_owned_storage(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.field_aliases_owned_storage(fill))
+            }
+            _ => false,
+        }
     }
 
     /// True when a discarded result needs a statement temporary to release.

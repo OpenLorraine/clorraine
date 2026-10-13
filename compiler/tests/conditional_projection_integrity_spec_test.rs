@@ -2261,4 +2261,27 @@ func main(): i32 {
     let output = run_memory("conddiscardstructplace", place);
     assert_no_asan("conddiscardstructplace", &output);
     assert_exit("conddiscardstructplace", &output, 0);
+
+    let nested = r#"module spec.cpi.conddiscardstructnested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Outer { inner: Box; }
+struct Holder { xs: String[1]; }
+
+func main(): i32 {
+    let ok: bool = true;
+    let t: String = stringOf("ab");
+    let u: String = stringOf("cde");
+    ok ? Outer { inner: Box { v: t } } : Outer { inner: Box { v: u } };
+    let s: String = stringOf("ef");
+    let r: String = stringOf("gh");
+    ok ? Holder { xs: [s] } : Holder { xs: [r] };
+    return 0;
+}
+"#;
+    let output = run_memory("conddiscardstructnested", nested);
+    assert_no_asan("conddiscardstructnested", &output);
+    assert_exit("conddiscardstructnested", &output, 0);
 }
