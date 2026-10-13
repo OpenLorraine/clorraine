@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 11:27
-> **Progress**: 17/33 tasks (52%)
+> **Last Updated**: 2026-10-13 12:09
+> **Progress**: 18/33 tasks (55%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -113,7 +113,7 @@ task-size criteria: each task is independently testable and reviewable).
 ### Step 3.3: Impl Tests & Review
 
 - [x] 3.3.1 Write the phase implementation pins (the report codes/spans/counts, the byte-identity controls) — `compiler/tests/conditional_projection_integrity_impl_test.rs` ✅ (completed: 2026-10-13 11:27; four new pins: the adopted scoped owner with the element view and its release, the one-report loan at the move span, the declaration-span derivation report, and the byte-identical parameter control)
-- [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses
+- [x] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ✅ (completed: 2026-10-13 12:09; correctness + memory-safety + semantics found RV-301/SA-302 (both critical, fixed), the scoped re-review found RV-302 = SR-002/SA-303/SR-301 (fixed in the second round with three new pins), the targeted confirmation returned PASS (RV-303 fixed directly, RV-304 accepted); DEF-265 – DEF-269 filed; spec 50/50 plain and ASan, impl 15/15, `make check` exit 0)
 
 **Verify**: `make -C docker exec CMD="cargo test --test conditional_projection_integrity_spec_test --test conditional_projection_integrity_impl_test"`; `make check`
 

@@ -110,8 +110,51 @@ finding in the phase's own change; the pre-existing findings are filed as DEF-26
 
 ## Phase 3 — View provenance and elision
 
-_(to be filled by the Phase 3 review: correctness + memory-safety + semantics verdicts, the fix
-round, filed rows)_
+**Baseline**: `8de8e082855c075053a70cd82dab4af59f2d08e7` (Phase 2's final commit tree at `01c2481`). **Lenses**:
+correctness (RV-30x), memory-safety (SA-30x), semantics (SR-30x), all dispatched on the phase diff in
+parallel.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 critical | RV-301 (a mixed view-array element list shared only the first element's loan, so the second owner stayed movable and its view dangled while base rejected E10025); all 45 spec and 15 impl cases verified, the red base reproduced (plain 42/45, ASan 41/45, impl 12/15), the pins checked against the base compiler |
+| memory-safety | 1 critical in scope, plus pre-existing classes | SA-302 (the widened view-array store adopted a function-scoped backing for destinations that outlive the frame — a global store, a `borrow` slot, a returned struct field — turning base leaks into use-after-frees); every direct local store spelling (single, loop, defer, break/continue, multi-element, mixed, fill, conditional, nested, assignment, `const`) was leak-free and double-free-free |
+| semantics | no phase findings; 3 pre-existing | The adoption and derivation readings judged forced by the pinned oracle (`deferview`, `condviewstruct`, `viewarrayretain`) and the frozen stdlib (`bytes`' intrinsic accessor chain); PRE-1/2/3 filed (see DEF-267 – DEF-269) |
+
+### Findings and rulings
+
+| Finding | Severity | Area | Ruling |
+|---------|----------|------|--------|
+| RV-301 | 🔴 critical | `own/statements.rs` (`apply_binding_effect`), `own/place.rs` (`view_loans`) | **Fixed**: a view-array element list records one loan per element owner (the shared-source shortcut dropped every owner after the first); `viewarraymixed` pins the mixed list, and the second fix round restored the union for the reborrowing call path (`viewarraycall`) |
+| SA-302 | 🔴 critical | `own/expr.rs`, `own/statements.rs` | **Fixed**: the view-array adoption runs only for a whole-slot store into a genuine frame local (no globals, no borrowed slots, no place-overridden element aliases); a struct-literal field value that is a loan reports `E10033`, so the returned-aggregate spelling rejects instead of dangling |
+| RV-302 = SR-002 | 🟠 major | `own/expr.rs` (the destination guard) | **Fixed** in the second round: a projected destination under a frame local (`h.names = [mk().v]`) adopts again (the containment case was dropped and leaked), while a place-overridden alias keeps its storage in place |
+| SA-303 | 🔴 critical | `own/expr.rs` (the destination guard) | **Fixed** in the second round: a `for (borrow e in xs)` element alias is not a frame-local destination, so it never adopts a per-iteration owner whose storage the iterable outlives; `viewarrayalias` pins it |
+| SR-301 | 🔴 critical | `own/place.rs` (`view_loans`), `own/statements.rs` (`prepare_binding_effect`) | **Fixed** in the second round: the array union stays for the reborrowing call path while the binding effect takes the per-owner path, so a call-wrapped mixed list carries every element owner's loan; `viewarraycall` pins it |
+| RV-303 | 🟡 minor | the second fix round (test integrity) | **Fixed** directly: the three behaviors of the second round are pinned (`viewarraycall`, `viewarrayproj`, `viewarrayalias`) |
+| RV-304 | 🟡 minor | `own/expr.rs` (a rejected struct field reports `E10033` plus the pre-existing `E10025`) | **Accepted** (report-only): the program is rejected either way; the duplicated diagnostic is cosmetic and a diagnostic-hygiene pass can dedupe it |
+
+### Fix rounds and confirmation
+
+The first fix round (`954687a`) closed RV-301 and SA-302. The scoped re-review on that fix diff found
+the guard's over-reach (RV-302 = SR-002), the alias adoption (SA-303), and the call-path loan loss
+(SR-301); the second round (`50c5ebd`) fixed all three, and the pins commit (`2425d02`) added the three
+regression cases. The targeted confirmation on the second fix diff returned **PASS** on all five items
+(the mixed call reborrow, the projected adoption clean, the alias base-equivalence, the first-round
+regression sweep, the suites) and filed RV-303, fixed directly.
+
+**Verification after the fix rounds**: spec 50/50 plain and under `RDC_ASAN=1`; impl 15/15;
+`make check` exit 0 (64 binaries).
+
+### Pre-existing findings (filed as DEF-265 – DEF-269)
+
+| Row | Severity | Shape |
+|-----|----------|-------|
+| DEF-265 | 🟠 major | A view stored into a destination that outlives the storing frame (a global, a borrowed slot, a projected target) keeps the derived element in place: the single-view spelling reads freed storage (base == head), the array spelling leaks (base == head after the phase's destination restriction) |
+| DEF-266 | 🟠 major | View-array literals in nested positions (a call argument, a struct-literal field) leak their temporary elements (base == head) |
+| DEF-267 | 🟡 minor | The `str[N]` return spelling treats a place/handle-derived element as a move (a false `E10034` plus a new `E10036`) where the single-view twin stays accepted (base == head) |
+| DEF-268 | 🟠 major | A conditional view return whose arms disagree is accepted and emits C that fails a strict build (base == head, byte-identical) |
+| DEF-269 | 🟡 minor | A view-array store to a global struct field (and a capturing lambda over a `str[1]`) emits invalid C at base and head |
 
 ## Phase 4 — Statement-path discards
 
