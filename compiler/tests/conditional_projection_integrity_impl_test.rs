@@ -93,6 +93,17 @@ fn assert_absent(tag: &str, emitted: &str, needle: &str) {
     );
 }
 
+/// The text after the first occurrence of `needle`.
+///
+/// Fails the case when the needle is absent, so a shape assertion always names
+/// the construct it expected to find.
+fn after<'a>(tag: &str, text: &'a str, needle: &str) -> &'a str {
+    let start = text
+        .find(needle)
+        .unwrap_or_else(|| panic!("{tag}: the emitted C does not contain {needle:?}"));
+    &text[start + needle.len()..]
+}
+
 /// Asserts `second` follows `first` with only `#line` markers between them.
 ///
 /// The emitter prints a `#line` fact before most statements, so two adjacent
@@ -690,4 +701,233 @@ fn should_keep_the_view_array_control_byte_identical() {
     );
     assert_contains(tag, &first, "vs[0] = buf;");
     assert_absent(tag, &first, "__cl_owned");
+}
+
+/// The discarded generic closure call: a `run<T>` body discards the result of
+/// a directly invoked lambda.
+const CLOSURE_DISCARD_SOURCE: &str = r#"module spec.cpiimpl.closurecalldiscard;
+
+import { String, stringOf } from std.text;
+
+func mkG<T>(take x: T): T { return x; }
+
+func make(): String { return stringOf("ab"); }
+func makeInt(): i32 { return 7; }
+
+func run<T>(m: func(): T): void {
+    ([m] () => mkG<T>(m()))();
+}
+
+func main(): i32 {
+    run<String>(make);
+    run<i32>(makeInt);
+    return 0;
+}
+"#;
+
+/// A discarded directly invoked closure binds a maybe-owning result.
+///
+/// The owning `String` instance assigns the closure result to a statement
+/// temporary and releases it after the statement; the duplicable `i32`
+/// instance binds the same temporary and releases nothing, exactly like the
+/// named-call discard spelling.
+#[test]
+fn should_bind_a_discarded_generic_closure_result() {
+    let tag = "closurecalldiscard";
+    let emitted = emit_host(tag, CLOSURE_DISCARD_SOURCE);
+    assert_contains(tag, &emitted, "__cl_tmp0 = cl_lambda_0__String(");
+    assert_follows(
+        tag,
+        &emitted,
+        "__cl_tmp0 = cl_lambda_0__String(&(((struct ClEnv_0__String){ m })));",
+        "if (__cl_tmp0) { FreeString(__cl_tmp0); }",
+    );
+    let body = after(tag, &emitted, "static void cl_run__i32(i32 (*m)(void))\n{");
+    let body = &body[..body.find("\n}").expect("the i32 instance body ends with a brace")];
+    assert_contains(tag, body, "__cl_tmp0 = cl_lambda_0__i32(");
+    assert_absent(tag, body, "FreeString");
+}
+
+/// The discarded conditional of fresh results in a loop.
+const CONDITIONAL_DISCARD_SOURCE: &str = r#"module spec.cpiimpl.conddiscard;
+
+import { String, stringOf } from std.text;
+
+func make1(): String { return stringOf("m1"); }
+func make2(): String { return stringOf("m2"); }
+
+func main(): i32 {
+    let c: bool = true;
+    let i: i32 = 0;
+    while (i < 3) {
+        c ? make1() : make2();
+        i = i + 1;
+    }
+    return 0;
+}
+"#;
+
+/// A discarded conditional guard-materializes each fresh owning arm.
+///
+/// Each arm assigns its call's result to its own statement temporary inside
+/// the ternary, and the statement releases both temporaries after it; the arm
+/// that did not run keeps a null temporary, so its release is a no-op and the
+/// taken arm frees exactly once per iteration.
+#[test]
+fn should_guard_materialize_a_discarded_conditionals_arms() {
+    let tag = "conddiscard";
+    let emitted = emit_host(tag, CONDITIONAL_DISCARD_SOURCE);
+    assert_contains(
+        tag,
+        &emitted,
+        "(__cl_tmp0 = cl_spec_cpiimpl_conddiscard_make1())",
+    );
+    assert_contains(
+        tag,
+        &emitted,
+        "(__cl_tmp1 = cl_spec_cpiimpl_conddiscard_make2())",
+    );
+    let tail = after(tag, &emitted, "(void)((c ?");
+    assert_contains(tag, tail, "if (__cl_tmp1) { FreeString(__cl_tmp1); }");
+    assert_contains(tag, tail, "if (__cl_tmp0) { FreeString(__cl_tmp0); }");
+}
+
+/// The discarded conditional with a place arm.
+const CONDITIONAL_PLACE_SOURCE: &str = r#"module spec.cpiimpl.conddiscardplace;
+
+import { String, stringOf } from std.text;
+
+func make1(): String { return stringOf("m1"); }
+
+func main(): i32 {
+    let ok: bool = true;
+    let t: String = stringOf("t");
+    ok ? make1() : t;
+    return i32(len(t));
+}
+"#;
+
+/// A discarded conditional's place arm stays a read.
+///
+/// The discard never takes ownership, so the place arm is read by the ternary
+/// and its binding stays live for the rest of the statement; only the fresh
+/// arm's result materializes into a temporary the statement releases.
+#[test]
+fn should_keep_a_discarded_conditionals_place_arm_a_read() {
+    let tag = "conddiscardplace";
+    let emitted = emit_host(tag, CONDITIONAL_PLACE_SOURCE);
+    let tail = after(tag, &emitted, "(void)((ok ?");
+    let stmt = &tail[..tail
+        .find(';')
+        .expect("the discard statement ends with a semicolon")];
+    assert_contains(
+        tag,
+        stmt,
+        "(__cl_tmp0 = cl_spec_cpiimpl_conddiscardplace_make1())",
+    );
+    assert_contains(tag, stmt, ": t))");
+    assert_absent(tag, stmt, "t = NULL");
+    assert_contains(tag, &emitted, "if (__cl_tmp0) { FreeString(__cl_tmp0); }");
+}
+
+/// The discarded intrinsic dot-call statements.
+const DOT_LEN_DISCARD_SOURCE: &str = r#"module spec.cpiimpl.dotlendiscard;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("mm") }; }
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    s.len();
+    mk().v.len();
+    return 0;
+}
+"#;
+
+/// A discarded intrinsic dot-call folds like the value position.
+///
+/// `s.len();` reads the receiver's view length under a void cast, and
+/// `mk().v.len();` binds the ownerless receiver to a scope owner first,
+/// releases it at the scope end, and reads the length the same way — never a
+/// bare `len(...)` call the strict C build cannot resolve.
+#[test]
+fn should_lower_a_discarded_intrinsic_dot_call_without_a_bare_len() {
+    let tag = "dotlendiscard";
+    let emitted = emit_host(tag, DOT_LEN_DISCARD_SOURCE);
+    assert_contains(tag, &emitted, "(void)((cl_string_view(s)).len);");
+    assert_contains(
+        tag,
+        &emitted,
+        "__cl_owned0 = cl_spec_cpiimpl_dotlendiscard_mk().v;",
+    );
+    assert_contains(tag, &emitted, "(void)((cl_string_view(__cl_owned0)).len);");
+    assert_contains(tag, &emitted, "if (__cl_owned0) { FreeString(__cl_owned0); }");
+}
+
+/// The value-position spelling of a fresh dot-call receiver.
+const DOT_LEN_VALUE_SOURCE: &str = r#"module spec.cpiimpl.dotlenvalue;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("mm") }; }
+
+func main(): i32 {
+    let n: usize = mk().v.len();
+    return i32(n) - 2;
+}
+"#;
+
+/// The value-position dot-call spelling stays byte-identical.
+#[test]
+fn should_keep_the_value_position_dot_len_byte_identical() {
+    let tag = "dotlenvalue";
+    let (first, second) = emit_twice(tag, DOT_LEN_VALUE_SOURCE);
+    assert!(
+        first == second,
+        "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(tag, &first, "n = (cl_string_view(__cl_owned0)).len;");
+}
+
+/// The untouched discard shapes: a named call, a function-style intrinsic, a
+/// non-owning call, and an assertion.
+const DISCARD_CONTROL_SOURCE: &str = r#"module spec.cpiimpl.discardcontrol;
+
+import { String, stringOf } from std.text;
+
+func make(): String { return stringOf("ab"); }
+func num(): i32 { return 3; }
+
+func main(): i32 {
+    make();
+    let s: String = stringOf("cd");
+    len(s);
+    num();
+    assert(1 > 0);
+    return 0;
+}
+"#;
+
+/// The untouched discard shapes stay byte-identical and keep their spellings.
+#[test]
+fn should_keep_the_untouched_discard_shapes_byte_identical() {
+    let tag = "discardcontrol";
+    let (first, second) = emit_twice(tag, DISCARD_CONTROL_SOURCE);
+    assert!(
+        first == second,
+        "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    assert_contains(
+        tag,
+        &first,
+        "__cl_tmp0 = cl_spec_cpiimpl_discardcontrol_make();",
+    );
+    assert_contains(tag, &first, "if (__cl_tmp0) { FreeString(__cl_tmp0); }");
+    assert_contains(tag, &first, "(void)((cl_string_view(s)).len);");
+    assert_contains(tag, &first, "cl_trap(\"E11213\", \"assertion failed\");");
 }
