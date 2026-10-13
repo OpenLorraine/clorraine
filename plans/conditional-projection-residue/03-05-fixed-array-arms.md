@@ -17,13 +17,16 @@ spelling.
 
 `func a(): u8[2]` and `func b(): u8[2]`, then `c ? a() : b();` emits
 `(void)((c ? cl_a() : cl_b()));`, but the fixed-array return ABI passes a hidden out-parameter
-(`static void a(u8 __cl_ret[2])`), so the strict build fails (`too few arguments`). A literal
-mixing a `str[2]` field with a `String` field fails the same way.
+(`static void a(u8 __cl_ret[2])`, the compiler contract of `spec/17-codegen.md:59-84`), so the
+strict build fails (`too few arguments`). A literal mixing a `str[2]` field with a `String` field
+fails the same way. The deferred fill falls back to a value expression for a fixed-array
+conditional (`codegen/guards.rs`), which cannot pass the hidden destination.
 
-Route a fixed-array conditional arm through the destination-store shape the discard path already
-uses for a direct call: the conditional's destination is one temporary array, each arm fills it
-on its path (the call arm passes the hidden destination; the literal arm assigns element-wise),
-and the consumer reads the temporary. The direct spelling `a();` keeps its shape byte-identically.
+Route a fixed-array conditional arm through the per-arm destination store the discard path already
+uses for a direct call: the conditional's destination is one temporary array, each arm fills it on
+its path as the arm's own statement (the call arm passes the hidden destination; the literal arm
+assigns element-wise), and the consumer reads the temporary. The per-arm destination store
+replaces the value-expression fallback; the direct spelling `a();` keeps its shape.
 
 ### 2. The conditional-root and `for`-iterable projection (`DEF-275`, AR-11)
 
@@ -32,33 +35,38 @@ non-lvalue; the batch-H `bind_fixed_array_root` covers direct Member/Index proje
 conditional root or a `for` iterable.
 
 - Conditional root: the projection's base is a conditional; the arm the conditional selects owns
-  the storage, so the arm's root binds (each arm binds its own root on its path, through the
-  existing arm-fill machinery) and the address names a local on each path.
+  the storage, so each arm binds its own root on its path (through the existing arm-fill
+  machinery) and the projection renders a per-arm **address** form (`(c ? &b1.xs : &b2.xs)`) — a
+  value copy is illegal for a move-only root (the head emits `lvalue required`).
 - `for` iterable: route the iterable through the same projection preparation the store and return
-  paths use (bind the ownerless root before the loop's iterable value is taken).
+  paths use (bind the ownerless root before the loop's iterable value is taken); the iterable
+  lowers in `own/loops.rs`.
 
 Both fixes reuse the destination/root shapes from the direct spellings; no new C construct is
 introduced.
 
 ## Integration Points
 
-- `codegen`: the conditional-arm store shape (`calls.rs`/`expr.rs`/`function.rs` conditional
-  arms) and the fixed-array destination rendering.
-- `own/lower.rs`: `bind_fixed_array_root` (:1273), the conditional arm binders (:2711/:2953), and
-  the `for`-iterable lowering.
+- `codegen`: the conditional-arm store shape (`codegen/guards.rs`'s deferred fill,
+  `codegen/function.rs`'s arm stores, and the fixed-array destination rendering).
+- `own/lower.rs`: `bind_fixed_array_root` (:1279) and the conditional arm binders (:2778/:3077).
+- `own/loops.rs`: the `for`-iterable lowering.
 
 ## Error Handling
 
 | Error Case | Handling Strategy | AR Ref |
 |------------|-------------------|--------|
-| A fixed-array conditional arm | The shared destination temporary, filled per path | AR-11 |
-| A conditional root in a fixed-array projection | Each arm's root binds on its path | AR-11 |
+| A fixed-array conditional arm | The shared destination temporary, filled per path by the arm's own statement | AR-11 |
+| A conditional root in a fixed-array projection | Each arm's root binds on its path; the per-arm address form | AR-11 |
+| A move-only conditional root | The per-arm address form; never a value copy | AR-11 |
 | A `for` iterable projecting an ownerless root | The root binds before the iterable is taken | AR-11 |
-| The direct spellings | Byte-identical | — |
+| The direct spellings | Re-emit identically | — |
 
 ## Testing Requirements
 
 - Spec: the fixed-array conditional (statement discard and a consuming store), the mixed
-  `str[2]`/`String` literal field, the conditional-root projection (store and return), and the
-  `for` iterable, all strict-built and run; the direct spellings stay byte-identical.
-- Impl: the destination temporary shapes per arm, the bound roots, and the byte-identity controls.
+  `str[2]`/`String` literal field, the conditional-root projection (store and return; a move-only
+  root included), and the `for` iterable, all strict-built and run; the direct spellings keep
+  their pinned shapes.
+- Impl: the destination temporary shapes per arm, the per-arm address form, the bound roots, and
+  the re-emission determinism pins.

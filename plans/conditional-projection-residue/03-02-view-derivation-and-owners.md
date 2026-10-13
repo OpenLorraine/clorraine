@@ -1,29 +1,36 @@
-# View Derivation, Owners, and Escape Reports: Conditional, Projection, and Update Residue
+# View Derivation and Owners: Conditional, Projection, and Update Residue
 
 > **Document**: 03-02-view-derivation-and-owners.md
 > **Parent**: [Index](00-index.md)
 
 ## Overview
 
-Five rows in the view machinery: the owner walk through a view-returning call (its conditional
-argument records no owner), the view-element array in argument and field positions, the `str[N]`
-return spelling's false judgment, the disagreeing conditional return, and the duplicate escape
-report. The frozen rules are the single-view parity (a `str[N]` repeats the borrows of the single
-`str`), the derivation rule (a view return must name the single view-like lend candidate —
-BR-7/EL-2), and one report per site.
+Three in-scope rows in the view machinery: the owner walk through a view-returning call (the
+call-wrapped conditional's every arm), the view-element array in argument and field positions,
+and the `str[N]` return spelling's false judgment. Two further rows (`DEF-268`, `DEF-279`) are
+parked for rulings and stay at current behavior (AR-2). The operative rules are the single-view
+parity (a `str[N]` repeats the borrows of the single `str`; pinned by the batch-H suites and
+`spec/16-borrow-rules.md:150,193`) and the derivation rule (a view return must name the single
+view-like lend candidate — BR-7/EL-2).
 
 ## Design
 
-### 1. The call-wrapped conditional's owner (`DEF-261`)
+### 1. The call-wrapped conditional's owner (`DEF-261`, AR-19)
 
-`let s: u8[] = bytes((c ? b : mk()).v);` records no owner: the owner walk reaches the
-view-returning call through its fallback, and the call's argument is a conditional whose arms
-disagree (so `view_provenance` yields nothing to *this* walk's derivation check).
+`let s: u8[] = bytes((c ? b : d).v);` (both arms are borrow parameters) and the two-arm spelling
+`bytes(c ? b.v : d.v)` are accepted but record no owner for the call-wrapped conditional: the
+owner walk reaches the view-returning call through its fallback and short-circuits at the
+conditional, so the parameter-backed arms contribute no owner (the local-backed arm is the only
+one the current provenance rule preserves). The view then carries no loan on the selected arm's
+owner, so a later use of the view beside a writable alias reads freed storage (heap-use-after-free
+at base and head). The local-arm spelling (`bytes((c ? b : mk()).v)`) already reports its judgment
+at the head (`E10031` at the mutation) and is a control, not a red.
 
-Extend `collect_view_owners`/`call_provenance`: a view-returning call contributes its arguments'
-owners through the *same* conditional rule the borrow rules use (a local-backed arm keeps its
-provenance; a fresh arm contributes none). The plain twins (`bytes(b.v)`, `let s: str = b.v`)
-already record the owner; the call-wrapped spelling must match.
+Extend `collect_view_owners`/`call_provenance`: the call path recurses through the view-returning
+call's argument (the Conditional included) and collects *every* arm's owners — exactly the rule
+the direct walk applies (a local-backed arm keeps its provenance; a fresh arm contributes none).
+The plain twins (`bytes(b.v)`, `let s: str = b.v`) already record the owner; the call-wrapped and
+two-arm spellings must match.
 
 ### 2. View-element positions (`DEF-266`)
 
@@ -32,7 +39,7 @@ The in-place element lowering and the field check cover a direct literal value o
 
 Extend the view-element treatment to the argument and field positions: each temporary element's
 backing binds (adopts a scoped owner) or the element retains its place, exactly as the direct
-binding spelling does; the direct binding and the single-view twins stay byte-identical.
+binding spelling does; the direct binding and the single-view twins keep their pinned shapes.
 
 ### 3. The `str[N]` return spelling (`DEF-267`)
 
@@ -43,53 +50,39 @@ source as a released borrow) and `return [h.v]` gains an extra `E10036` where th
 Run the return spelling through the same view-element lowering as the binding: the return's array
 literal evaluates its elements with the view-element guard, so the array reports exactly its
 single-view twin's judgment (accepted where the twin is accepted; the same report where the twin
-reports).
+reports). The single-view parity is pinned by the batch-H suites and
+`spec/16-borrow-rules.md:150,193`.
 
-### 4. The disagreeing conditional return (`DEF-268`, AR-7)
+### Parked rows (`DEF-268`, `DEF-279`, AR-2)
 
-`func pick(x: str, h: Box, c: bool): str { return c ? x : h.v; }` is accepted because
-`view_provenance` yields none for a conditional whose arms disagree, and the derivation judgment
-flags only a named non-candidate parameter.
-
-A conditional return whose arms do not agree on the single view-like lend candidate reports
-`E10036` at the declaration, exactly as the named non-candidate spelling does. The batch-H
-phase-5 rule already reports `E10035` when an arm is local-backed; this judgment covers the
-parameter-vs-parameter disagreement. (The batch-H widening already makes the mixed spelling build
-strictly; this judgment is the derivation rule's.)
-
-### 5. One escape report per site (`DEF-279`, AR-8)
-
-`return (c ? a : mkBox()).v;` now reports `E10035` (the local escape) and `E10030` (the
-generated-owner escape) at the same span. Both are true; the repo's convention is one report per
-site.
-
-When the return already reports the local escape for the same value, the generated-owner loan that
-would report `E10030` is not recorded (the rejected return's elision/loan bookkeeping is moot, and
-the local report names the cause). The oracle spec test
-(`callable_release_integrity_spec_test::should_reject_a_mixed_conditional_view_return`) keeps
-passing: it pins the `E10030` presence for its own shape, which has no local arm.
+`DEF-268`'s disagreeing conditional return and `DEF-279`'s duplicate escape report stay at current
+behavior: each fix would require re-pinning an immutable batch-H suite pin through a user ruling
+(`conditional_projection_integrity_spec_test.rs:2313-2333` pins the conditional twin accepted;
+`callable_release_integrity_spec_test.rs:1772-1802` pins exactly one `E10030` for a shape with a
+local arm). The rows' roadmap entries return to Backlog with the ruling notes (AR-2).
 
 ## Integration Points
 
 - `own/place.rs`: `view_provenance` (:605), `collect_view_owners` (:826), `call_provenance` (:966).
-- `own/call_check.rs`: `argument_owner` (:676).
-- `own/statements.rs`: `check_return` (:1141) and its loan record.
-- `own/liveness.rs`: the `E10030` report (:350).
+- `own/call_check.rs`: `argument_owner` (:680).
+- `own/statements.rs`: `check_return` (:1163) and its loan record.
 - `own/lower.rs`: the view-element lowering.
 
 ## Error Handling
 
 | Error Case | Handling Strategy | AR Ref |
 |------------|-------------------|--------|
-| A disagreeing conditional return | `E10036` at the declaration (one report) | AR-7 |
-| A local-backed arm at a return | `E10035` (existing), without the duplicate `E10030` | AR-8 |
+| A call-wrapped conditional argument | Every arm's owners are recorded; the loan covers the selected arm | AR-19 |
+| A disagreeing conditional return | Parked: current behavior unchanged pending a ruling | AR-2, AR-7 |
+| A local-backed arm at a return | Parked: current behavior unchanged pending a ruling | AR-2, AR-8 |
 | A view-element argument/field with a fresh element | The element's backing adopts a scoped owner (or the element retains its place) | AR-6-adjacent |
-| The `str[N]` return whose twin is accepted | Accepted, byte-identical judgment to the twin | — |
+| The `str[N]` return whose twin is accepted | Accepted, judgment-identical to the twin | — |
 
 ## Testing Requirements
 
-- Spec: the call-wrapped owner case (mutate after, ASan), the view-element argument/field cases
-  (ASan), the `str[N]` return cases (accepted and rejected twins), the disagreeing conditional
-  return (`E10036` once), and the single-report case; the oracle suite stays green.
+- Spec: the call-wrapped owner case (the parameter/parameter and two-arm spellings; the view used
+  beside a writable alias; ASan), the view-element argument/field cases (ASan), the `str[N]` return
+  cases (accepted and rejected twins), and the chained view-returning callee twin; the parked rows'
+  shapes are not authored; the oracle suites stay green.
 - Impl: the owner-record shapes, the element-owner bindings, the report counts and spans, and the
-  byte-identity controls.
+  re-emission determinism pins.

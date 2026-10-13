@@ -8,10 +8,12 @@
 
 ## Overview
 
-Close the 23 batch-H residue rows in six phases (arm roots and per-instance duty; view derivation
-and owners; escaping stores; guarded and discarded literal positions; fixed-array arms; update
-order completion) and a close-out. Every fix extends the batch-H machinery; every phase follows
-the specification-first ordering (spec tests → red → implement → green → impl pins → review).
+Handle the 23 batch-H residue rows — 20 implemented closes, the incidental `DEF-259`, and the two
+parked rows (`DEF-268`, `DEF-279`, AR-2) — in six phases (arm roots and per-instance duty; view
+derivation and owners; escaping stores; guarded and discarded literal positions; fixed-array arms;
+update order completion) and a close-out. Every fix extends the batch-H machinery; every phase
+follows the specification-first ordering (spec tests → red → implement → green → impl pins →
+review).
 
 **🚨 Update this document after EACH completed task!**
 
@@ -53,9 +55,10 @@ the specification-first ordering (spec tests → red → implement → green →
 
 ### Step 1.1: Specification Tests
 
-**Reference**: [03-01](03-01-arm-roots-and-duty.md) · [07](07-testing-strategy.md) ST-1..ST-6 · AR-3, AR-4
-**Objective**: Pin the per-instance duty, the fresh-root sibling binding, the literal arm root,
-the guarded take carrier, and the struct-literal field root.
+**Reference**: [03-01](03-01-arm-roots-and-duty.md) · [07](07-testing-strategy.md) ST-1..ST-6 · AR-3, AR-4, AR-23
+**Objective**: Pin the per-instance duty, the fresh-root sibling binding, the guarded take
+carrier, and the struct-literal field root; keep the incidentally closed literal arm root (ST-3)
+as the green control.
 
 - [x] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (armduty, armfresh, armliteral, guardtake, fieldroot, controls) ✅ (completed: 2026-10-13 23:29; eight cases authored on the new suite; the two packet errors the author found were corrected by the parent and re-verified — the fieldroot call now doubles its true arm, and the control program uses legal ownership; the literal-arm case is green at the head, so `DEF-259`'s probed spellings appear incidentally fixed — recorded for the review)
 - [x] 1.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-13 23:29; plain and ASan: armduty RED (heap-use-after-free), armfresh RED under ASan (11 B leak), guardtake and its loop RED (double-free), fieldroot RED under ASan (11 B leak) and its loop RED under ASan (22 B / 33 B serial), armliteral and the controls GREEN as designed)
@@ -67,13 +70,13 @@ the guarded take carrier, and the struct-literal field root.
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the carrier/binding shapes, the release counts, the byte-identity controls) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [ ] 1.3.1 Write the phase implementation pins (the carrier/binding shapes, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
-**Verify**: `make check`
+**Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-1..ST-6 red then green
+- [ ] ST-1, ST-2, ST-4, ST-5 red then green; ST-3 and ST-6 green controls (the incidental closure — AR-23 — and the direct spellings)
 - [ ] All verification passing
 
 ---
@@ -86,16 +89,16 @@ the guarded take carrier, and the struct-literal field root.
 
 ### Step 2.1: Specification Tests
 
-**Reference**: [03-02](03-02-view-derivation-and-owners.md) · [07](07-testing-strategy.md) ST-7..ST-11 · AR-7, AR-8
-**Objective**: Pin the call-wrapped owner, the element positions, the `str[N]` return, the
-disagreeing return, and the single escape report.
+**Reference**: [03-02](03-02-view-derivation-and-owners.md) · [07](07-testing-strategy.md) ST-7..ST-9, ST-28, ST-29 · AR-19 (ST-10/ST-11 parked — AR-2)
+**Objective**: Pin the call-wrapped owner (every arm and the chained callee), the element
+positions, and the `str[N]` return; the parked rows are not authored.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (callwrappedowner, elementpositions, arrayreturn, condreturnjudge, escapereport)
+- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (callwrappedowner, elementpositions, arrayreturn, ownertwins)
 - [ ] 2.1.2 Run the suite and record the red phase
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Extend the owner walk through a view-returning call, the element positions, the return's view-element lowering, the disagreeing-return judgment, and the report dedupe — `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/liveness.rs`
+- [ ] 2.2.1 Extend the owner walk through a view-returning call (every arm and the chained callee), the element positions, and the return's view-element lowering — `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
 - [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
 ### Step 2.3: Impl Tests & Review
@@ -103,10 +106,10 @@ disagreeing return, and the single escape report.
 - [ ] 2.3.1 Write the phase implementation pins (the owner shapes, the element bindings, the report counts and spans) — `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
-**Verify**: `make check`
+**Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-7..ST-11 red then green
+- [ ] ST-7..ST-9, ST-28, ST-29 red then green; ST-10/ST-11 stay parked at current behavior (AR-2)
 - [ ] The batch-H suites and the `callable_release_integrity` oracle stay green
 
 ---
@@ -114,32 +117,33 @@ disagreeing return, and the single escape report.
 ## Phase 3: Escaping stores
 
 > **Phase baseline tree**: _(recorded at phase start)_
-> **Lenses**: correctness + semantics + memory-safety
+> **Lenses**: correctness + semantics + memory-safety + emission-integrity
 > **Reasoning**: high — the escape rule is frozen; the over-rejection also changes acceptance
+> and the store/capture shapes are emission-critical
 
 ### Step 3.1: Specification Tests
 
-**Reference**: [03-03](03-03-escaping-stores.md) · [07](07-testing-strategy.md) ST-12..ST-15 · AR-5, AR-6
-**Objective**: Pin the escaping-store judgment (globals, fields, out-slots), the store and capture
-spellings, and the local element acceptance.
+**Reference**: [03-03](03-03-escaping-stores.md) · [07](07-testing-strategy.md) ST-12..ST-15, ST-30..ST-33 · AR-5, AR-6, AR-20, AR-21
+**Objective**: Pin the per-destination store judgment (globals/fields vs out-slots), the store and
+capture spellings, and the scoped local element acceptance.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (globalstore, outslotstore, fieldstore, localelement)
+- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (globalstore, outslotstore, fieldstore, localelement, widenedstore, loopstore, staticelement, viewcapture)
 - [ ] 3.1.2 Run the suite and record the red phase
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Judge the stored view's provenance against the frame it escapes; lower the field store and the capture; scope the element-store rule to escaping storage — `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`, `compiler/src/codegen/*`
+- [ ] 3.2.1 Judge the stored view's provenance per destination kind (globals/fields `E10033`, out-slots `E10030`); lower the field store and the capture; scope the element-store loan to backings whose scope covers the array's — `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`, `compiler/src/codegen/*`
 - [ ] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the report spans, the store/capture shapes, the byte-identity controls) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [ ] 3.3.1 Write the phase implementation pins (the report spans, the store/capture shapes, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
-**Verify**: `make check`
+**Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-12..ST-15 red then green
+- [ ] ST-12..ST-15, ST-30..ST-33 red then green
 - [ ] No accepted safe program newly rejected without a frozen-rule citation
 
 ---
@@ -152,27 +156,27 @@ spellings, and the local element acceptance.
 
 ### Step 4.1: Specification Tests
 
-**Reference**: [03-04](03-04-guarded-literal-positions.md) · [07](07-testing-strategy.md) ST-16..ST-18 · AR-12
-**Objective**: Pin the loop-condition conditional literal, the discarded mixed-field literal, and
-the discarded fresh projection arm.
+**Reference**: [03-04](03-04-guarded-literal-positions.md) · [07](07-testing-strategy.md) ST-16..ST-18, ST-34 · AR-12, AR-22
+**Objective**: Pin the loop-condition conditional literal (both literal forms), the `?:`/`||`
+positions, the discarded mixed-field literal, and the discarded fresh projection arm.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (loopcondliteral, discardmixed, discardprojection)
+- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (loopcondliteral, literalpositions, discardmixed, discardprojection)
 - [ ] 4.1.2 Run the suite and record the red phase
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Reuse the direct-literal per-arm binding for the loop-condition walk; make the discard decision per field; bind the discarded arm's projection root — `compiler/src/own/lower.rs`
+- [ ] 4.2.1 Reuse the direct-literal per-arm binding for the loop-condition walk; make the discard decision per field (the place fields stay reads); bind the discarded arm's projection root — `compiler/src/own/lower.rs`
 - [ ] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the per-field shapes, the root binding, the release counts, the byte-identity controls) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [ ] 4.3.1 Write the phase implementation pins (the per-field shapes, the root binding, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
-**Verify**: `make check`
+**Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-16..ST-18 red then green
+- [ ] ST-16..ST-18, ST-34 red then green
 - [ ] The batch-H discard pins stay green
 
 ---
@@ -185,27 +189,27 @@ the discarded fresh projection arm.
 
 ### Step 5.1: Specification Tests
 
-**Reference**: [03-05](03-05-fixed-array-arms.md) · [07](07-testing-strategy.md) ST-19..ST-22 · AR-11
+**Reference**: [03-05](03-05-fixed-array-arms.md) · [07](07-testing-strategy.md) ST-19..ST-22, ST-35 · AR-11
 **Objective**: Pin the fixed-array conditional arm, the mixed literal field, and the
-conditional-root/`for`-iterable projections.
+conditional-root (a move-only root included)/`for`-iterable projections.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (condarmfixed, mixedliteral, condroot, foriterable)
+- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (condarmfixed, mixedliteral, condroot, foriterable, moveonlyroot)
 - [ ] 5.1.2 Run the suite and record the red phase
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Route each fixed-array arm through the destination-store shape; bind the conditional root and the `for` iterable through the projection preparation — `compiler/src/own/lower.rs`, `compiler/src/codegen/*`
+- [ ] 5.2.1 Route each fixed-array arm through the per-arm destination store; bind each arm's root and render the conditional root as the per-arm address form; route the `for` iterable through the projection preparation — `compiler/src/own/lower.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs`
 - [ ] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the destination shapes, the bound roots, the byte-identity controls) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [ ] 5.3.1 Write the phase implementation pins (the per-arm destination shapes, the per-arm address form, the bound roots, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
-**Verify**: `make check`
+**Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-19..ST-22 red then green
+- [ ] ST-19..ST-22, ST-35 red then green
 - [ ] The emission differential shows only intended deltas
 
 ---
@@ -218,27 +222,27 @@ conditional-root/`for`-iterable projections.
 
 ### Step 6.1: Specification Tests
 
-**Reference**: [03-06](03-06-update-order.md) · [07](07-testing-strategy.md) ST-23..ST-27 · AR-9, AR-10
-**Objective**: Pin the assignment-target, literal, dot-receiver, loop-condition, and
-owning-argument order cases.
+**Reference**: [03-06](03-06-update-order.md) · [07](07-testing-strategy.md) ST-23..ST-27 · AR-9, AR-10, AR-24
+**Objective**: Pin the assignment-target (the update-containing right-hand side included),
+literal, dot-receiver, loop-condition, and owning-argument order cases.
 
 - [ ] 6.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (assigntarget, literalorder, dotreceiver, loopcondupdate, owningarg)
-- [ ] 6.1.2 Run the suite and record the red phase
+- [ ] 6.1.2 Run the suite and record the red phase (the strict-build failures on the pinned container, the site/emission pins, and the order-observing case — AR-24)
 
 ### Step 6.2: Implementation
 
-- [ ] 6.2.1 Extend the pin to the assignment targets, the literal fields/elements, the dot receiver, the loop condition, and the owning argument — `compiler/src/own/lower.rs`
+- [ ] 6.2.1 Extend the pin to the assignment targets (the update-containing right-hand side included), the literal fields/elements, the dot receiver, the loop condition (a per-iteration `Materialize` fill), and the owning argument — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/control.rs`
 - [ ] 6.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
 ### Step 6.3: Impl Tests & Review
 
-- [ ] 6.3.1 Write the phase implementation pins (the pin positions, the owning-argument shape, the byte-identity controls) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [ ] 6.3.1 Write the phase implementation pins (the pin positions, the owning-argument shape, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
 - [ ] 6.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
 **Verify**: `make check`
 
 **Deliverables**:
-- [ ] ST-23..ST-27 red then green
+- [ ] ST-23..ST-27 red (the site/emission pins and the order-observing case — AR-24) then green
 - [ ] The batch-H update pins stay green
 
 ---
@@ -252,13 +256,13 @@ owning-argument order cases.
 ### Step 7.1: Verification and Sync
 
 - [ ] 7.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence
-- [ ] 7.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows to Done with per-row evidence
+- [ ] 7.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows: 20 Done with per-row evidence, `DEF-259` closed with the incidental note, and `DEF-268`/`DEF-279` returned to Backlog with their ruling notes
 - [ ] 7.1.3 Record the close-out section in the findings ledger and mark the plan Complete in `00-index.md`
 
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] All 23 rows Done with evidence; the six parked rows stay open with their rulings listed
+- [ ] The 23 handled rows accounted for: 20 Done with evidence; `DEF-259` closed as incidental; `DEF-268`/`DEF-279` parked in Backlog; the eight parked rows stay open with their rulings listed (AR-2)
 - [ ] The plan marked Complete
 
 ---
@@ -274,6 +278,10 @@ Phase 5 (fixed arrays) → Phase 6 (update order)
         ↓
 Phase 7 (close-out)
 ```
+
+Arrow legend: `A → B` marks a machinery dependency (B extends the binders, owner walk, or
+preparation A touches); the vertical order is the executable sequence — the phases run
+1 → 2 → 3 → 4 → 5 → 6 → 7 in order.
 
 ---
 
