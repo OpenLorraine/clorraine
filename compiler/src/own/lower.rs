@@ -1055,6 +1055,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .as_deref()
                         .is_some_and(|fill| self.field_aliases_owned_storage(fill))
             }
+            // Whichever arm the condition selects supplies the field's value,
+            // so an aliasing arm aliases it on that path; the aggregate stays
+            // inline when either arm reads owned storage.
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.field_aliases_owned_storage(then_value)
+                    || self.field_aliases_owned_storage(else_value)
+            }
             _ => false,
         }
     }
