@@ -269,6 +269,22 @@ in `CMD`).
   `compiler/tests/checker_conformance_impl_test.rs` holds its **implementation
   tests** (the emitted slice typedefs and ffi call shapes, the captured-owner
   release counts, the report spans, and the byte-identity pins).
+- `compiler/tests/conditional_projection_integrity_spec_test.rs` holds the
+  **specification tests** for the conditional-projection-integrity batch (a
+  projection of a mixed conditional moves the selected member out of each arm's
+  root; a guarded intrinsic argument of an owned conditional projection
+  releases once; a conditional place arm records its shared loan; a guarded
+  struct-literal receiver and a dot-`len` receiver release their roots; a view
+  return derives from its elision candidate and a local-backed conditional
+  return reports the escape; a discarded closure-call, conditional, or
+  intrinsic dot-call result releases exactly once; a view-typed conditional
+  renders one arm spelling; a shared update evaluates strictly left-to-right;
+  a fixed-array projection of a call result binds its root), and
+  `compiler/tests/conditional_projection_integrity_impl_test.rs` holds its
+  **implementation tests** (the per-arm move-out and carrier shapes, the
+  guarded fills and loans, the view-array element owners, the statement
+  temporaries and the call spelling, the update pins, the bound fixed-array
+  root, and the byte-identity pins).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

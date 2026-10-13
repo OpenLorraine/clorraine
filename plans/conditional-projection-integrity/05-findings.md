@@ -251,4 +251,16 @@ under `RDC_ASAN=1`; impl 27/27; `make check` exit 0 (64 binaries, 1886 tests).
 
 ## Close-out
 
-_(to be filled by the close-out: the final verification, the roadmap sync, and any late filings)_
+**Final verification** (2026-10-13):
+
+- `make check` — exit 0; 64 test binaries, 1886 tests; the spec check OK (27 files, 110 compile-fail tests).
+- `make verify` — exit 0, **all legs passed**: the hosted-amiga cross-toolchain corpus (every portable program matches; interrupt-counter and graphics built), the FS-UAE-only boots (interrupt-counter and graphics output match), and the six runtime-fault programs under `vamos`.
+- The focused suites at the final tree: spec 61/61 plain and under `RDC_ASAN=1`; impl 27/27.
+- The strict-build sweep (the emission re-audit): every head-accepted suite and corpus unit compiles under `cc -std=c99 -O0 -g -Wall -Wextra -Werror`, plus the hosted-amiga and freestanding profile builds of the changed shapes.
+
+**Roadmap sync**: the 14 batch-H rows (`DEF-176` – `DEF-188` and `DEF-256`) are Done with per-row
+evidence; six earlier-phase rows (`DEF-176`, `DEF-178` – `DEF-182`) still read `Executing` and are
+corrected here. The review-filed rows `DEF-257` – `DEF-280` remain in the backlog with their
+base == head evidence.
+
+**Plan close**: `00-index.md` marks the plan Complete; the execution plan ends at 33/33 tasks.

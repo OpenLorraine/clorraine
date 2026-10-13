@@ -8,7 +8,7 @@
 > leaks, the conditional-return spelling, the postfix sequence point, the discarded closure-call and
 > conditional-call releases, the owned fixed-array projection emission, and the discarded `.len()`
 > statement emission
-> **Status**: Planning Complete
+> **Status**: Complete
 > **Created**: 2026-10-12 00:55
 > **Implements**: DEF-176, DEF-177, DEF-178, DEF-179, DEF-180, DEF-181, DEF-182, DEF-183, DEF-184,
 > DEF-185, DEF-186, DEF-187, DEF-188, DEF-256

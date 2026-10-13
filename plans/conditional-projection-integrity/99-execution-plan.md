@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 20:09
-> **Progress**: 30/33 tasks (91%)
+> **Last Updated**: 2026-10-13 20:26
+> **Progress**: 33/33 tasks (100%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -179,9 +179,9 @@ task-size criteria: each task is independently testable and reviewable).
 **Reference**: [01-requirements.md](01-requirements.md) §Acceptance Criteria
 **Objective**: Run the full acceptance, sync the docs and the roadmap, and close the plan.
 
-- [ ] 6.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence
-- [ ] 6.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows to Done with per-row evidence
-- [ ] 6.1.3 Record the close-out section in the findings ledger and mark the plan Complete in `00-index.md`
+- [x] 6.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence ✅ (completed: 2026-10-13 20:26; `make check` exit 0 — 64 binaries, 1886 tests, spec check OK (27 files, 110 compile-fail); `make verify` exit 0 — all legs passed (the hosted-amiga corpus matches, the FS-UAE-only programs match, the runtime-fault programs run); the focused suites: spec 61/61 plain and under `RDC_ASAN=1`, impl 27/27; the strict-build sweep: every head-accepted suite and corpus unit compiles under `-Werror` on host, hosted-amiga, and freestanding)
+- [x] 6.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows to Done with per-row evidence ✅ (completed: 2026-10-13 20:26; the test naming map lists the two suites with their coverage; the 14 batch-H rows are Done with per-row evidence — six earlier-phase rows (`DEF-176`, `DEF-178` – `DEF-182`) were still `Executing` and are corrected; the review-filed rows `DEF-257` – `DEF-280` stay in the backlog)
+- [x] 6.1.3 Record the close-out section in the findings ledger and mark the plan Complete in `00-index.md` ✅ (completed: 2026-10-13 20:26; the close-out records the final verification, the roadmap sync, and the plan close; `00-index.md` marks the plan Complete)
 
 **Verify**: `make check`; `make verify`
 
