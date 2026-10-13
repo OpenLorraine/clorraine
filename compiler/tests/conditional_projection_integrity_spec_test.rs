@@ -1920,3 +1920,106 @@ func main(): i32 {
 "#;
     compile_rejects("viewarrayfield", source, "E10033", 1);
 }
+
+// ---------------------------------------------------------------------------
+// viewarraycall: a view array reborrowed through a view-returning call.
+//
+// A call that returns its view-array argument reborrows every element's
+// source, so the caller's copy carries each owner's loan. A mixed element
+// list that loses the loan of an element owner leaves that owner movable
+// while the returned view still reads it.
+// ---------------------------------------------------------------------------
+
+/// Moving an owner through a call-wrapped mixed view array reports the move.
+#[test]
+fn should_report_the_call_wrapped_mixed_view_arrays_loan() {
+    let source = r#"module spec.cpi.viewarraycall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func id(xs: str[2]): str[2] {
+    return xs;
+}
+
+func consume(take b: Box): void { }
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("ww") };
+    let b: Box = Box { v: stringOf("bb"), w: stringOf("xx") };
+    let v: str = a.v;
+    let vs: str[2] = id([v, b.w]);
+    consume(a);
+    return i32(vs[0][0]) - 97;
+}
+"#;
+    compile_rejects("viewarraycall", source, "E10022", 1);
+}
+
+// ---------------------------------------------------------------------------
+// viewarrayproj: a view array stored into a field of a local.
+//
+// The field shares the local's frame, so a projected store adopts each
+// temporary element's backing for the binding's scope and releases it at
+// frame exit; the temporary's backing must not be dropped un-freed.
+// ---------------------------------------------------------------------------
+
+/// A projected local view-array store adopts and releases its backing.
+#[test]
+fn should_adopt_a_projected_view_array_temporary_backing() {
+    let source = r#"module spec.cpi.viewarrayproj;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct H { names: str[1]; }
+
+func mk(): Box {
+    return Box { v: stringOf("aa") };
+}
+
+func main(): i32 {
+    let h: H = H { names: ["zz"] };
+    h.names = [mk().v];
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    let output = run_memory("viewarrayproj", source);
+    assert_no_asan("viewarrayproj", &output);
+    assert_exit("viewarrayproj", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// viewarrayalias: a view array assigned through a `for (borrow e in xs)` alias.
+//
+// The alias's storage is the iterable element, which outlives the iteration,
+// so the derived element stays in place instead of adopting a per-iteration
+// owner that the iterable would outlive.
+// ---------------------------------------------------------------------------
+
+/// A view-array element alias stays memory-clean across the iteration.
+#[test]
+fn should_keep_a_view_array_element_alias_memory_clean() {
+    let source = r#"module spec.cpi.viewarrayalias;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box {
+    return Box { v: stringOf("aa") };
+}
+
+func main(): i32 {
+    let outer: str[1][1] = [["zz"]];
+    for (borrow row in outer) {
+        row = [mk().v];
+    }
+    return i32(outer[0][0][0]) - 97;
+}
+"#;
+    let output = run_memory("viewarrayalias", source);
+    assert_no_asan("viewarrayalias", &output);
+    assert_exit("viewarrayalias", &output, 0);
+}
