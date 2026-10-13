@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 20:40
-> **Progress**: 0/39 tasks (0%)
+> **Last Updated**: 2026-10-13 23:29
+> **Progress**: 2/39 tasks (5%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -46,7 +46,7 @@ the specification-first ordering (spec tests → red → implement → green →
 
 ## Phase 1: Arm roots and per-instance duty
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `9833e73917a43e1bd7750c1fcbf040f277025270` (at phase start, 2026-10-13)
 > **Lenses**: correctness + memory-safety
 > **Reasoning**: high — per-arm ownership in the freshly reviewed machinery (extend, never
 > re-architect)
@@ -57,8 +57,8 @@ the specification-first ordering (spec tests → red → implement → green →
 **Objective**: Pin the per-instance duty, the fresh-root sibling binding, the literal arm root,
 the guarded take carrier, and the struct-literal field root.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (armduty, armfresh, armliteral, guardtake, fieldroot, controls)
-- [ ] 1.1.2 Run the suite and record the red phase
+- [x] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (armduty, armfresh, armliteral, guardtake, fieldroot, controls) ✅ (completed: 2026-10-13 23:29; eight cases authored on the new suite; the two packet errors the author found were corrected by the parent and re-verified — the fieldroot call now doubles its true arm, and the control program uses legal ownership; the literal-arm case is green at the head, so `DEF-259`'s probed spellings appear incidentally fixed — recorded for the review)
+- [x] 1.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-13 23:29; plain and ASan: armduty RED (heap-use-after-free), armfresh RED under ASan (11 B leak), guardtake and its loop RED (double-free), fieldroot RED under ASan (11 B leak) and its loop RED under ASan (22 B / 33 B serial), armliteral and the controls GREEN as designed)
 
 ### Step 1.2: Implementation
 
