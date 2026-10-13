@@ -2290,3 +2290,220 @@ func main(): i32 {
     assert_no_asan("conddiscardstructnested", &output);
     assert_exit("conddiscardstructnested", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// condreturn: a view-typed conditional over an owned member.
+//
+// Both arms of the conditional produce the same view type: one arm projects an
+// owned member and the other is a `str` parameter. The emitted C must convert
+// the owned arm to the view type on that arm's own path instead of joining two
+// differently typed operands in one C `?:`, which the strict build rejects
+// (`type mismatch in conditional expression`). The return spelling and the
+// store spelling each build and run with the language's semantics.
+// ---------------------------------------------------------------------------
+
+/// A view-typed conditional over an owned member builds and runs through both
+/// the return spelling and the store spelling.
+///
+/// The first program returns `c ? b.v : a`, mixing the owned member `b.v` with
+/// the view parameter `a`; the second binds the same conditional into a `str`
+/// local. The resulting view reads the selected arm's text, so the true call
+/// gives length 2 and the false call length 4 — the two lengths minus 6 exit 0
+/// on each program. The runs are clean on both paths.
+#[test]
+fn should_build_a_view_typed_conditional_over_an_owned_member() {
+    let source_return = r#"module spec.cpi.condreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func use(c: bool, b: Box, a: str): str {
+    return (c ? b.v : a);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab") };
+    return i32(len(use(true, b, "zz"))) + i32(len(use(false, b, "xyzw"))) - 6;
+}
+"#;
+    let output = run_memory("condreturn", source_return);
+    assert_no_asan("condreturn", &output);
+    assert_exit("condreturn", &output, 0);
+
+    let source_store = r#"module spec.cpi.condreturnstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func use(c: bool, b: Box, a: str): i32 {
+    let s: str = c ? b.v : a;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab") };
+    return use(true, b, "zz") + use(false, b, "xyzw") - 6;
+}
+"#;
+    let output = run_memory("condreturnstore", source_store);
+    assert_no_asan("condreturnstore", &output);
+    assert_exit("condreturnstore", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// postfixseq: an update that shares one expression with a read.
+//
+// The language evaluates each expression strictly left to right: a postfix
+// `i++` yields the old value and the operand that follows reads the updated
+// value, while a prefix `++i` yields the new value. A single C expression that
+// leaves that order undefined is rejected by the strict build (`sequence-point`
+// for the shared statements), so the emitter must split the shared expression
+// while keeping the language's result. The program's final value is fixed, so
+// only its exit code is pinned.
+// ---------------------------------------------------------------------------
+
+/// A postfix update shared with another read of the same place builds and runs
+/// with left-to-right order.
+///
+/// Every mixed statement pairs `i++` with a plain read of `i`, and the two
+/// calls pass a postfix update beside a plain read. Under the strict
+/// left-to-right rule the accumulated value cancels the trailing constant, so
+/// the program exits 0. The run is clean.
+#[test]
+fn should_evaluate_a_shared_postfix_update_left_to_right() {
+    let source = r#"module spec.cpi.postfixseq;
+
+func f(a: i32, b: i32): i32 { return a + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let j: i32 = i++ + i;
+    let k: i32 = i + i++;
+    let m: i32 = i++ + i++;
+    let n: i32 = f(i++, i);
+    let p: i32 = f(i, i++);
+    i++;
+    let q: i32 = i;
+    let r: i32 = i++ * 2;
+    return j + k + m + n + p + q + r - 48;
+}
+"#;
+    let output = run_memory("postfixseq", source);
+    assert_no_asan("postfixseq", &output);
+    assert_exit("postfixseq", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// fixedarrayaddr: a fixed-array projection of a call result.
+//
+// Projecting a fixed-array member out of a call result must copy the member's
+// bytes into the consuming destination. Emitting a copy that takes the address
+// of a member of a function call (`&(mk().xs)`) is rejected by the strict build
+// (`lvalue required as unary '&' operand`), so the call result must first be
+// bound to a place. The return spelling and the store spellings build and run;
+// a projection whose root already binds stays unchanged.
+// ---------------------------------------------------------------------------
+
+/// A fixed-array projection of a call result builds and runs through the return
+/// spelling, the `let`/assignment store spellings, and the owned-root control.
+///
+/// The first program returns `mk().xs;`, the second copies the member into a
+/// fresh local and overwrites an existing one, and the third projects from a
+/// call result whose root already carries an owned field. The first element is
+/// 1 in the first two programs and 5 in the third, so each program exits 0. The
+/// runs are clean.
+#[test]
+fn should_project_a_fixed_array_member_of_a_call_result() {
+    let source_return = r#"module spec.cpi.fixedarrayaddr;
+
+struct Box { xs: u8[4]; }
+
+func mk(): Box { return Box { xs: [1, 2, 3, 4] }; }
+func f(): u8[4] { return mk().xs; }
+
+func main(): i32 {
+    let a: u8[4] = f();
+    return i32(a[0]) - 1;
+}
+"#;
+    let output = run_memory("fixedarrayaddr", source_return);
+    assert_no_asan("fixedarrayaddr", &output);
+    assert_exit("fixedarrayaddr", &output, 0);
+
+    let source_stores = r#"module spec.cpi.fixedarrayaddrstores;
+
+struct Box { xs: u8[4]; }
+
+func mk(): Box { return Box { xs: [1, 2, 3, 4] }; }
+
+func main(): i32 {
+    let a: u8[4] = mk().xs;
+    let b: u8[4] = [0, 0, 0, 0];
+    b = mk().xs;
+    return i32(a[0]) + i32(b[1]) - 3;
+}
+"#;
+    let output = run_memory("fixedarrayaddrstores", source_stores);
+    assert_no_asan("fixedarrayaddrstores", &output);
+    assert_exit("fixedarrayaddrstores", &output, 0);
+
+    let source_control = r#"module spec.cpi.fixedarrayaddrcontrol;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: u8[4]; v: String; }
+
+func mk(): Box { return Box { xs: [5, 6, 7, 8], v: stringOf("x") }; }
+func f(): u8[4] { return mk().xs; }
+func useArr(a: u8[4]): i32 { return i32(a[0]); }
+
+func main(): i32 {
+    let a: u8[4] = f();
+    return i32(a[0]) + useArr(mk().xs) - 10;
+}
+"#;
+    let output = run_memory("fixedarrayaddrcontrol", source_control);
+    assert_no_asan("fixedarrayaddrcontrol", &output);
+    assert_exit("fixedarrayaddrcontrol", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// emissioncontrol: the untouched projection spellings.
+//
+// A standalone update, a postfix update used as a whole initializer, a
+// same-typed conditional, and an owned-to-view binding already emit C the
+// strict build accepts. Their behavior must not change.
+// ---------------------------------------------------------------------------
+
+/// The untouched update, conditional, and view-binding spellings stay clean.
+///
+/// The standalone `i++;` is a statement of its own, and `let j: i32 = i++;`
+/// takes the postfix result as the whole initializer, so neither shares an
+/// expression with another read. The conditional `pick(...)` has two same-typed
+/// arms, and `let t: str = s;` binds a view over the owned local. The
+/// accumulated value cancels the trailing constant, so the program exits 0. The
+/// run is clean.
+#[test]
+fn should_keep_the_untouched_update_and_conditional_spellings_clean() {
+    let source = r#"module spec.cpi.emissioncontrol;
+
+import { String, stringOf } from std.text;
+
+func pick(c: bool, a: i32, b: i32): i32 { return c ? a : b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    i++;
+    let j: i32 = i++;
+    let k: i32 = pick(true, 3, 4) + pick(false, 3, 4);
+    let s: String = stringOf("ab");
+    let t: str = s;
+    return j + k + i32(len(t)) - 10;
+}
+"#;
+    let output = run_memory("emissioncontrol", source);
+    assert_no_asan("emissioncontrol", &output);
+    assert_exit("emissioncontrol", &output, 0);
+}

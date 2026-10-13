@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 15:20
-> **Progress**: 24/33 tasks (73%)
+> **Last Updated**: 2026-10-13 19:43
+> **Progress**: 26/33 tasks (79%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -145,7 +145,7 @@ task-size criteria: each task is independently testable and reviewable).
 
 ## Phase 5: Emission spellings
 
-> **Phase baseline tree**: to be recorded at Phase 4's close (= Phase 4's final commit tree)
+> **Phase baseline tree**: `4cfe13ebf04c44ee28a7eeffa78a729b18d41ac3` (Phase 4's final commit tree at `926b3ad`)
 > **Lenses**: correctness + emission-integrity + semantics
 > **Reasoning**: medium — three emitter/lowering spellings
 
@@ -154,8 +154,8 @@ task-size criteria: each task is independently testable and reviewable).
 **Reference**: [03-05](03-05-emission-spellings.md)
 **Objective**: Pin the conditional return, the postfix pin, and the fixed-array address.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (condreturn, postfixseq, fixedarrayaddr, emissioncontrol)
-- [ ] 5.1.2 Run the suite and record the red phase
+- [x] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_integrity_spec_test.rs` (condreturn, postfixseq, fixedarrayaddr, emissioncontrol) ✅ (completed: 2026-10-13 19:43; four new cases: the view-typed conditional in the return and store spellings, the shared postfix update program (both operand orders, two updates, the call-argument spellings, the standalone initializer, and the single-access form), the fixed-array projection in the return, `let`, and assignment spellings with the owned-field and call-argument controls, and the untouched-spelling control; the author's arithmetic check caught two packet subtrahend errors, corrected by the parent — the strict left-to-right sums are 48 and 10)
+- [x] 5.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-13 19:43; plain 56/59 — the three filed strict-build failures (the conditional type mismatch, the sequence-point update, and the fixed-array address of a non-lvalue); ASan 56/59 — the same three; the control case green as designed)
 
 ### Step 5.2: Implementation
 
