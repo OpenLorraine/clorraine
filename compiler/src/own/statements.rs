@@ -193,24 +193,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } => {
                 // A directly invoked lambda is an ephemeral closure call, not a
                 // named function call. The whole expression lowers to the
-                // two-word call; an owned result binds to a statement
-                // temporary the statement's release frees, while a
+                // two-word call; an owned or maybe-owning result binds to a
+                // statement temporary the statement's release frees, while a
                 // fixed-array result already releases through the discard
                 // path's own destination and a duplicable or empty result
                 // owns nothing.
                 if self.is_closure_callee(callee) {
                     let value = self.lower_value(expr);
                     let ty = value.ty.clone();
-                    if !ty.is_fixed_array() && self.owns_drop(&ty) {
-                        let temp = self.new_temp(ty.clone());
-                        self.register_pending_release(temp, &ty);
-                        let target = Place {
-                            base: ir::PlaceBase::Temp(temp),
-                            projections: Vec::new(),
-                            ty,
-                        };
-                        self.emit(Statement::Assign { target, value });
+                    if self.discard_binds_owner(&ty) {
+                        self.bind_discarded_owner(value);
                     } else {
+                        self.emit(Statement::Discard { value });
+                    }
+                    return;
+                }
+                // The dot-call spelling of a compiler-known intrinsic
+                // (`s.len()`) lowers through the same intrinsic-aware path the
+                // value position uses, so the statement folds the length or
+                // calls its defined helper instead of emitting a bare call the
+                // C build cannot resolve.
+                if let Some((ty, kind)) = self.lower_intrinsic_call(callee, type_args, args) {
+                    let value = Value::new(ty, kind);
+                    if !super::lower::is_pure_value(&value) {
                         self.emit(Statement::Discard { value });
                     }
                     return;

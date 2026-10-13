@@ -301,6 +301,11 @@ struct FunctionChecker<'a, 'd> {
     /// borrowed parameter slot, or a projected target — keeps the derived
     /// element in place instead.
     view_destination_adopts: bool,
+    /// Number of enclosing discarded conditionals: their arms materialize a
+    /// fresh owning result into a statement temporary the guard fills on the
+    /// arm's own path, so the statement's release frees exactly the arm that
+    /// ran.
+    discard_conditional_depth: u32,
     /// The control-flow graph being built.
     builder: Builder,
     /// Type of each compiler-created temporary, by creation order.
@@ -504,6 +509,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
             view_destination_adopts: true,
+            discard_conditional_depth: 0,
             builder: Builder::new(&decl.name, params, returns),
             temps: Vec::new(),
             current_span: Span::default(),

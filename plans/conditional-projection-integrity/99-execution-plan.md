@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 14:30
-> **Progress**: 20/33 tasks (61%)
+> **Last Updated**: 2026-10-13 14:36
+> **Progress**: 22/33 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -133,8 +133,8 @@ task-size criteria: each task is independently testable and reviewable).
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Fix the closure-call predicate, bind the conditional arm's result, and route the discarded intrinsic dot-call — `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
-- [ ] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 4.2.1 Fix the closure-call predicate, bind the conditional arm's result, and route the discarded intrinsic dot-call — `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-10-13 14:36; the shared `discard_binds_owner` predicate (`!unknown && !fixed-array && owns_drop || maybe_owns`) drives the closure-call binding; the conditional arm guard-materializes each fresh owning result into a statement temporary via `defer_discarded_arm` + `discard_conditional_depth` (place arms stay reads; the deferred take-arm spelling is untouched); the discarded intrinsic dot-call routes through `lower_intrinsic_call` and discards only when the value is effectful; the lifted-lambda boundary resets the new depth)
+- [x] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-13 14:36; the first attempt bound the whole conditional and moved a place arm (`t = NULL`), caught by the batch-D impl pin `should_release_a_discarded_transfer_temporary_after_the_statement` and redesigned to per-arm guard materialization; spec 54/54 plain and under `RDC_ASAN=1`, impl 15/15, `call_value_integrity_impl` 61/61, `make check` exit 0 — 64 binaries, 1867 tests)
 
 ### Step 4.3: Impl Tests & Review
 

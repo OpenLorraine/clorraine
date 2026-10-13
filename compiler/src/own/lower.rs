@@ -243,7 +243,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // `take` move-out inside an arm must wait for that path.
                 self.defer_move_outs += 1;
                 let then_value = self.lower_value(then_value);
+                let then_value = self.defer_discarded_arm(then_value);
                 let else_value = self.lower_value(else_value);
+                let else_value = self.defer_discarded_arm(else_value);
                 self.defer_move_outs -= 1;
                 ValueKind::Conditional {
                     condition: Box::new(condition),
@@ -731,6 +733,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_derivation_mismatch = self.return_derivation_mismatch;
         let saved_view_array_depth = self.view_array_literal_depth;
         let saved_view_destination = self.view_destination_adopts;
+        let saved_discard_conditional = self.discard_conditional_depth;
         self.next_registration = 0;
         self.next_owned_temp = 0;
         self.defer_anchor = None;
@@ -748,6 +751,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A lifted lambda body is a function of its own, so its local
         // destinations may adopt their view backings again.
         self.view_destination_adopts = true;
+        self.discard_conditional_depth = 0;
 
         let body_span = match body {
             LambdaBody::Expr(value) => value.span,
@@ -866,6 +870,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.return_derivation_mismatch = saved_derivation_mismatch;
         self.view_array_literal_depth = saved_view_array_depth;
         self.view_destination_adopts = saved_view_destination;
+        self.discard_conditional_depth = saved_discard_conditional;
     }
 
     /// Declares one lambda parameter in the lifted function.
@@ -955,12 +960,86 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// is lowered and emitted as a discard, which preserves the short-circuit
     /// behavior of `&&`, `||`, and `?:` instead of running an embedded effect
     /// ahead of its guard. A value with no side effect lowers to nothing.
+    ///
+    /// A conditional lowers with discard-aware arms: either arm's fresh owning
+    /// result materializes into a statement temporary the guard fills on that
+    /// arm's path, so the statement's release frees exactly the arm that ran.
     pub(super) fn lower_discarded(&mut self, expr: &'a Expr) {
+        let conditional = matches!(&expr.kind, ExprKind::Conditional { .. });
+        if conditional {
+            self.discard_conditional_depth += 1;
+        }
         let value = self.lower_value(expr);
+        if conditional {
+            self.discard_conditional_depth -= 1;
+        }
         if is_pure_value(&value) {
             return;
         }
         self.emit(Statement::Discard { value });
+    }
+
+    /// Defers a discarded conditional arm's fresh owning result.
+    ///
+    /// A conditional statement discards whichever arm it selects, so a fresh
+    /// result the arm allocated must bind to a statement temporary the guard
+    /// fills on that arm's path; the temporary joins the statement's release
+    /// set and is freed exactly once. A place-derived or already bound arm
+    /// keeps reading its storage instead of moving it, because the discard
+    /// never takes ownership of the arm's value.
+    fn defer_discarded_arm(&mut self, value: Value) -> Value {
+        if self.discard_conditional_depth == 0
+            || !self.discard_binds_owner(&value.ty)
+            || !matches!(
+                &value.kind,
+                ValueKind::Call { .. }
+                    | ValueKind::ClosureCall { .. }
+                    | ValueKind::StructLit { .. }
+            )
+        {
+            return value;
+        }
+        let ty = value.ty.clone();
+        let temp = self.new_temp(ty.clone());
+        self.register_pending_release(temp, &ty);
+        Value::new(
+            ty,
+            ValueKind::Materialize {
+                temp,
+                value: Box::new(value),
+                move_outs: Vec::new(),
+                adopting: false,
+            },
+        )
+    }
+
+    /// True when a discarded result needs a statement temporary to release.
+    ///
+    /// An owned or maybe-owning result keeps storage alive past its
+    /// expression, so the statement needs a destination the pending release
+    /// can free; a duplicable result owns nothing, and a fixed-array result
+    /// already releases through the discard path's own destination.
+    pub(super) fn discard_binds_owner(&self, ty: &Ty) -> bool {
+        !ty.is_unknown()
+            && !ty.is_fixed_array()
+            && (self.owns_drop(ty) || self.maybe_owns(ty))
+    }
+
+    /// Binds a discarded owning result to a declared statement temporary.
+    ///
+    /// The result assigns into the temporary and the pending release runs at
+    /// the statement's end, so a discarded expression's storage is freed
+    /// exactly once on every path the statement reaches.
+    pub(super) fn bind_discarded_owner(&mut self, value: Value) {
+        let ty = value.ty.clone();
+        let temp = self.new_temp(ty.clone());
+        self.register_pending_release(temp, &ty);
+        let target = Place {
+            base: ir::PlaceBase::Temp(temp),
+            projections: Vec::new(),
+            ty,
+        };
+        self.emit(Statement::Assign { target, value });
     }
 
     /// Defers a side-effecting guarded operand into a temporary, evaluated once.
@@ -3118,7 +3197,8 @@ fn apply_conditional_steps(mut value: Value, steps: &[ConditionalProjectionStep]
 /// A call, an intrinsic, or a template can allocate, read, or write, so it is
 /// not safe to re-evaluate; every other shape is a read of a place or a pure
 /// operator over pure operands.
-fn is_pure_value(value: &Value) -> bool {
+/// True when a value has no side effect worth running when discarded.
+pub(super) fn is_pure_value(value: &Value) -> bool {
     match &value.kind {
         ValueKind::Call { .. }
         | ValueKind::Intrinsic { .. }
