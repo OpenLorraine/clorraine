@@ -374,8 +374,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         // A view-element array target binds its elements as views: the
         // elements stay in place while the literal lowers, so the store loans
-        // or adopts each element's backing instead of moving it out.
-        let view_elements = is_view_like(ty) && matches!(&value.kind, ExprKind::ArrayLiteral { .. });
+        // or adopts each element's backing instead of moving it out. A
+        // destination that outlives this frame keeps the derived element in
+        // place instead, because a backing owned here would die while the
+        // destination still reads it.
+        let view_elements = self.view_destination_adopts
+            && is_view_like(ty)
+            && matches!(&value.kind, ExprKind::ArrayLiteral { .. });
         if view_elements {
             self.view_array_literal_depth += 1;
         }
@@ -467,7 +472,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // both arms. Such a shape keeps its unreleased backing. A view-element
         // array binds every element the same way, so a temporary element's
         // backing adopts a scoped owner while a place element keeps its loan.
-        let lowered = if is_view_like(ty) && !self.projects_from_place(&lowered) {
+        let lowered = if (is_view(ty) || (self.view_destination_adopts && is_view_like(ty)))
+            && !self.projects_from_place(&lowered)
+        {
             self.bind_view_projection_root(lowered)
         } else {
             lowered

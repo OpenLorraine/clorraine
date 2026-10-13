@@ -717,18 +717,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 loans.extend(self.view_loans(else_value));
                 loans
             }
-            // A view array's elements each contribute their loans: the
-            // binding shares every loan its element views already carry.
-            ExprKind::ArrayLiteral { elements, fill } => {
-                let mut loans = BTreeSet::new();
-                for element in elements {
-                    loans.extend(self.view_loans(element));
-                }
-                if let Some(fill) = fill {
-                    loans.extend(self.view_loans(fill));
-                }
-                loans
-            }
             _ => BTreeSet::new(),
         }
     }
@@ -1017,10 +1005,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// True when a value expression is a loan that would escape if stored.
     ///
-    /// Only a view value carries a loan; a scalar or owner read from a place
-    /// copies or moves and never stores a reference to that place.
+    /// Only a view-like value carries a loan: a view, or a fixed array whose
+    /// element is a view. A scalar or owner read from a place copies or moves
+    /// and never stores a reference to that place.
     pub(super) fn is_loan_value(&self, expr: &Expr) -> bool {
-        if !is_view(&self.ty(expr)) {
+        if !is_view_like(&self.ty(expr)) {
             return false;
         }
         matches!(

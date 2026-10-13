@@ -1851,3 +1851,72 @@ func main(): i32 {
 "#;
     compile_rejects("elisiontemp", source, "E10036", 1);
 }
+
+// ---------------------------------------------------------------------------
+// viewarraymixed: a view array whose elements derive from different owners.
+//
+// Every element records its own loan, so an element list that mixes a view
+// carrying an existing loan with a fresh place projection protects both
+// owners: moving either backing while the array is live reports the
+// move-while-borrowed error. A shared-loan shortcut that reads only one
+// element's loan would leave the other owner movable and dangling.
+// ---------------------------------------------------------------------------
+
+/// Moving a view array's second element's backing reports the move error.
+///
+/// The first element is a view that already carries a loan of its own; the
+/// second is a fresh projection of another place. Both owners are borrowed,
+/// so moving the second owner reports one `E10022` at the move.
+#[test]
+fn should_report_the_mixed_view_arrays_place_backing_move() {
+    let source = r#"module spec.cpi.viewarraymixed;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("ww") };
+    let b: Box = Box { v: stringOf("bb"), w: stringOf("xx") };
+    let v: str = a.v;
+    let vs: str[2] = [v, b.w];
+    let c: Box = b;
+    return i32(len(vs[1])) + i32(len(c.w)) - 4;
+}
+"#;
+    compile_rejects("viewarraymixed", source, "E10022", 1);
+}
+
+// ---------------------------------------------------------------------------
+// viewarrayfield: a view array stored in a struct field escapes.
+//
+// Storing a view in a field leaves a reference behind when the backing's
+// scope ends, so a struct literal whose field value carries a loan reports
+// the escape at that field instead of leaving the aggregate dangling.
+// ---------------------------------------------------------------------------
+
+/// A temporary-backed view array stored in a returned struct field reports.
+#[test]
+fn should_reject_a_view_arrays_escape_into_a_struct_field() {
+    let source = r#"module spec.cpi.viewarrayfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct H { names: str[1]; }
+
+func mk(): Box {
+    return Box { v: stringOf("ab") };
+}
+
+func make(): H {
+    let vs: str[1] = [mk().v];
+    return H { names: vs };
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    compile_rejects("viewarrayfield", source, "E10033", 1);
+}

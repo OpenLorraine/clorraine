@@ -454,6 +454,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for field in fields {
                     self.eval(&field.value);
                     self.consume_owned_place(&field.value, field.value.span);
+                    // A view-like field value stored in a struct field is
+                    // storage in a field: the loan would escape its origin,
+                    // so it reports here instead of dangling once the
+                    // backing's scope ends.
+                    if self.is_loan_value(&field.value) {
+                        self.error(
+                            "E10033",
+                            format!("borrow of '{}' escapes its scope", field.name),
+                            "derive the view from a parameter or take ownership",
+                            field.value.span,
+                        );
+                    }
                     // An owned conditional field is an owning destination: the
                     // chosen arm moves into the field, so every owned place arm
                     // counts as maybe-moved afterwards; a maybe-owning field
@@ -705,8 +717,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
                 // A view-element array target binds its elements as views, so
-                // the evaluation must not consume an owned element source.
-                let view_elements = is_view_like(&target_ty)
+                // the evaluation must not consume an owned element source —
+                // but only when the destination is a local of this frame: a
+                // borrowed slot or a projected target can outlive the
+                // element's backing, so it keeps the derived element in place.
+                let saved_adopts = self.view_destination_adopts;
+                self.view_destination_adopts = self.bindings[id].kind == BindingKind::Local
+                    && projections.is_empty();
+                let view_elements = self.view_destination_adopts
+                    && is_view_like(&target_ty)
                     && matches!(&value.kind, ExprKind::ArrayLiteral { .. });
                 if view_elements {
                     self.view_array_literal_depth += 1;
@@ -773,8 +792,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if projections.is_empty() {
                     self.bind_value(id, &target_ty, value, lowered.as_ref(), target.span);
                 }
+                self.view_destination_adopts = saved_adopts;
             }
             Some(PlaceTarget::Global(id, projections)) => {
+                // A global outlives this frame, so a view-element array stored
+                // here never adopts a backing owned by this function: the
+                // derived element stays in place instead.
+                let saved_adopts = self.view_destination_adopts;
+                self.view_destination_adopts = false;
                 let is_const = self
                     .program
                     .globals
@@ -819,6 +844,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         let _ = self.emit_assigned(place, &target_ty, value, compound);
                     }
                 }
+                self.view_destination_adopts = saved_adopts;
             }
             None => {
                 // A fixed array's structural `.len` reads no storage, so it is

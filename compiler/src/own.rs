@@ -295,6 +295,12 @@ struct FunctionChecker<'a, 'd> {
     /// view binding loans or adopts each element's backing instead of moving
     /// it out.
     view_array_literal_depth: u32,
+    /// True when the current store destination is a local binding of this
+    /// function frame, so a view-element array may adopt an element backing in
+    /// this scope. A destination that outlives the frame — a global, a
+    /// borrowed parameter slot, or a projected target — keeps the derived
+    /// element in place instead.
+    view_destination_adopts: bool,
     /// The control-flow graph being built.
     builder: Builder,
     /// Type of each compiler-created temporary, by creation order.
@@ -497,6 +503,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             elision_candidate: None,
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
+            view_destination_adopts: true,
             builder: Builder::new(&decl.name, params, returns),
             temps: Vec::new(),
             current_span: Span::default(),

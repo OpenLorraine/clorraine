@@ -730,6 +730,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_elision_candidate = self.elision_candidate.clone();
         let saved_derivation_mismatch = self.return_derivation_mismatch;
         let saved_view_array_depth = self.view_array_literal_depth;
+        let saved_view_destination = self.view_destination_adopts;
         self.next_registration = 0;
         self.next_owned_temp = 0;
         self.defer_anchor = None;
@@ -744,6 +745,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // lifted lambda body; the body's own view returns must not decide it.
         self.return_derivation_mismatch = false;
         self.view_array_literal_depth = 0;
+        // A lifted lambda body is a function of its own, so its local
+        // destinations may adopt their view backings again.
+        self.view_destination_adopts = true;
 
         let body_span = match body {
             LambdaBody::Expr(value) => value.span,
@@ -861,6 +865,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.elision_candidate = saved_elision_candidate;
         self.return_derivation_mismatch = saved_derivation_mismatch;
         self.view_array_literal_depth = saved_view_array_depth;
+        self.view_destination_adopts = saved_view_destination;
     }
 
     /// Declares one lambda parameter in the lifted function.
