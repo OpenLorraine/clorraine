@@ -2272,12 +2272,17 @@ struct Holder { xs: String[1]; }
 
 func main(): i32 {
     let ok: bool = true;
+    let c: bool = true;
     let t: String = stringOf("ab");
     let u: String = stringOf("cde");
     ok ? Outer { inner: Box { v: t } } : Outer { inner: Box { v: u } };
-    let s: String = stringOf("ef");
-    let r: String = stringOf("gh");
-    ok ? Holder { xs: [s] } : Holder { xs: [r] };
+    let p: String = stringOf("ef");
+    let q: String = stringOf("gh");
+    let r: String = stringOf("ij");
+    ok ? Outer { inner: c ? Box { v: p } : Box { v: q } } : Outer { inner: Box { v: r } };
+    let s: String = stringOf("kl");
+    let w: String = stringOf("mn");
+    ok ? Holder { xs: [s] } : Holder { xs: [w] };
     return 0;
 }
 "#;
