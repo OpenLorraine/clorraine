@@ -158,8 +158,51 @@ regression sweep, the suites) and filed RV-303, fixed directly.
 
 ## Phase 4 — Statement-path discards
 
-_(to be filled by the Phase 4 review: correctness + memory-safety + emission-integrity verdicts,
-the fix round, filed rows)_
+**Baseline**: `66026bfdbe2ddc72b95135d261927e3a4c56a5ca` (Phase 3's final commit tree at `a51c508`). **Lenses**:
+correctness, memory-safety, emission-integrity, all dispatched on the phase diff in parallel; the one
+re-review round and the targeted confirmations were scoped to the fix diffs.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 critical (introduced by the fix round), 2 minor | RV-401 (the first gate missed aliasing struct-literal fields), RV-404 (the intrinsic route is wider than the named dot-call), RV-405 (a duplicated purity doc line); every spec and impl case verified, the red base reproduced (plain 53/54, ASan 51/54, impl 17/21) |
+| memory-safety | 1 critical (the same RV-401 independently), no other in-scope | the four direct reproducers and the clean-shape matrix (closure, conditional, dot-call, path edges) verified; the aliasing struct arm double-freed at head where base was clean |
+| emission-integrity | 1 critical (the same class, reached through a nested aggregate), 1 minor, 2 pre-existing | EA-401 = the nested aliasing spelling; EA-402 (M1: nested value-position conditionals also materialize — benign, accepted); the corpus is byte-identical base vs head; every unit builds strictly |
+
+### Findings and rulings
+
+| Finding | Severity | Area | Ruling |
+|---------|----------|------|--------|
+| RV-401 = SA-401 | 🔴 critical | `own/lower.rs` (`defer_discarded_arm`) | **Fixed** (`cea27ac`): a struct-literal arm materializes only when every owning field is a fresh result; an aliasing field keeps the literal inline |
+| RV-402 = EA-401 | 🔴 critical | `own/lower.rs` (`field_aliases_owned_storage`) | **Fixed** (`5481108`): the aliasing predicate descends nested struct/array-literal fields; the regression case gains the nested and array-field programs |
+| RV-403 | 🔴 critical | `own/lower.rs` (the conditional arm) | **Fixed** (`deb6cef`, pinned by `04f6ca4`): a conditional field counts when either arm aliases, because the chosen arm supplies its value |
+| RV-404 | 🟡 minor | `own/statements.rs` (the intrinsic route) | **Accepted** (report-only): the route covers every compiler-known intrinsic, not only `len`; the wider reading fixes the same "intrinsic the C build cannot resolve" class and the emission audit classified the `slice` spelling as intended |
+| RV-405 | 🟡 minor | `own/lower.rs` (the purity doc) | **Fixed** directly: the duplicate summary folded into the existing block |
+| SA coverage gap | 🟡 minor | the struct-literal arm had no sanitizer probe | **Fixed**: the `conddiscardstruct` case covers the fresh, place, nested, array-field, and conditional-field spellings |
+| EA-402 (M1) | 🟡 minor | nested value-position conditionals inside a discarded expression | **Accepted**: narrowing the depth flag would reintroduce leaks for conditionals nested in a discarded expression; the extra materialization is memory-clean and the escape spellings are rejected by the checker |
+| RV-406 | 🟡 minor | the `field_aliases_owned_storage` doc did not name conditional fields | **Fixed** in the close-out (doc touch) |
+
+### Fix rounds and confirmation
+
+The first fix round (`b8aa766`) closed the three filed defects; the review round found RV-401/SA-401
+(the aliasing struct arm), fixed by the gate (`cea27ac`). The scoped re-review found RV-402/EA-401 (the
+nested spelling), fixed by the recursive predicate (`5481108`). The first confirmation found RV-403
+(the conditional spelling), fixed by the conditional arm (`deb6cef`) and pinned (`04f6ca4`). The final
+confirmation returned **PASS** on all five items (the conditional reproducer, the owning-capable
+field-kind sweep, the full reproducer set, the test integrity, and the no-re-regression checks) with
+no findings.
+
+**Verification after the fix rounds**: spec 55/55 plain and under `RDC_ASAN=1`; impl 21/21;
+`make check` exit 0 (64 binaries, 1874 tests).
+
+### Pre-existing findings (filed as DEF-270 – DEF-272)
+
+| Row | Severity | Shape |
+|-----|----------|-------|
+| DEF-270 | 🟡 minor | A discarded struct-literal arm mixing a fresh and a place-derived owning field keeps the literal inline, so the fresh field leaks (base == head, equal size) |
+| DEF-271 | 🟡 minor | A discarded conditional whose fresh arm is a projection over an ownerless fresh receiver (`c ? mk().v : t;`) reads the member and leaks the receiver's storage (base == head) |
+| DEF-272 | 🟠 major | A conditional of fixed-array call arms (and a literal with a fixed-array owning field) is accepted and emits C that fails the strict build (base == head, byte-identical) |
 
 ## Phase 5 — Emission spellings
 

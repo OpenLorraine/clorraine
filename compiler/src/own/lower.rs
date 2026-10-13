@@ -1033,9 +1033,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// of either is copied by the aggregate store, so releasing the
     /// materialized aggregate would free storage the source still owns. An
     /// aggregate built from such fields is covered too, because the same copy
-    /// reaches them through the field's own store; a fresh call or a literal
-    /// of fresh results aliases nothing. A duplicable field carries no
-    /// storage, so it never counts.
+    /// reaches them through the field's own store; a conditional field counts
+    /// when either arm does, because the chosen arm supplies its value; a
+    /// fresh call or a literal of fresh results aliases nothing. A duplicable
+    /// field carries no storage, so it never counts.
     fn field_aliases_owned_storage(&self, value: &Value) -> bool {
         if !(self.owns_drop(&value.ty) || self.maybe_owns(&value.ty)) {
             return false;

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 14:39
-> **Progress**: 23/33 tasks (70%)
+> **Last Updated**: 2026-10-13 15:20
+> **Progress**: 24/33 tasks (73%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -139,7 +139,7 @@ task-size criteria: each task is independently testable and reviewable).
 ### Step 4.3: Impl Tests & Review
 
 - [x] 4.3.1 Write the phase implementation pins (the statement temporaries, the call spelling, the byte-identity controls) — `compiler/tests/conditional_projection_integrity_impl_test.rs` ✅ (completed: 2026-10-13 14:39; six new pins: the owning and duplicable closure instances, the guard-materialized conditional arms with their releases, the place arm staying a read, the folded dot-call with its bound fresh receiver and release, the value-position byte-identity control, and the untouched-shape byte-identity control; an `after` helper mirrored from the sibling suite)
-- [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses
+- [x] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the three lenses ✅ (completed: 2026-10-13 15:20; correctness + memory-safety + emission-integrity found RV-401/SA-401 (aliasing struct-literal arm, critical, fixed by the gate), the scoped re-review found RV-402/EA-401 (the nested spelling, critical, fixed by the recursive predicate), the first confirmation found RV-403 (the conditional spelling, critical, fixed and pinned), the final confirmation returned PASS on all five items with no findings; RV-404 accepted, RV-405/RV-406 fixed; DEF-270 – DEF-272 filed; spec 55/55 plain and ASan, impl 21/21, `make check` exit 0)
 
 **Verify**: `make -C docker exec CMD="cargo test --test conditional_projection_integrity_spec_test --test conditional_projection_integrity_impl_test"`; `make check`
 
