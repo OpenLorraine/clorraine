@@ -924,6 +924,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // read path is unchanged.
         if let Some(pointer_expr) = raw_deref_target(target) {
             self.check_deref_raw(pointer_expr, target.span);
+            // The store reads the pointer's value, so the binding that names
+            // it counts as used and its own state checks run exactly once.
+            self.eval(pointer_expr);
             let pin = super::lower::contains_update(value);
             let element_ty = target_ty.clone();
             let pointer = self.lower_value(pointer_expr);
@@ -932,6 +935,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 pointer
             };
+            // The store target's own type decides whether the replaced pointee
+            // is released, so the pointer is spelled as the pointee's address
+            // exactly as the indexed store's element address is: the address of
+            // the dereferenced place rather than the raw pointer value.
+            let pointee = Value::new(
+                element_ty.clone(),
+                ValueKind::Unary {
+                    op: UnaryOp::Deref,
+                    operand: Box::new(pointer),
+                },
+            );
+            let pointer = Value::new(
+                element_ty.clone(),
+                ValueKind::Unary {
+                    op: UnaryOp::AddressOf,
+                    operand: Box::new(pointee),
+                },
+            );
             let stored = match compound {
                 Some(binary) => {
                     // A compound store reads the pointee before the side runs,

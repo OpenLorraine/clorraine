@@ -146,10 +146,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // The receiver is the call's argument position zero, and the
                 // field designator reads it. A receiver whose own rendering
                 // nests an arm's fill into the designator settles into a
-                // temporary, so its evaluation — a conditional's selected arm,
-                // a fresh result — becomes a fill the designator reads. A
-                // place, a temporary, and a value the deferred fill already
-                // bound keep their spelling: the call reads them directly.
+                // temporary, so its evaluation — a fresh result, or a
+                // conditional of fresh results — becomes a fill the designator
+                // reads. A place, a temporary, and a value the deferred fill
+                // already bound keep their spelling, and a conditional whose
+                // reachable arms borrow places stays inline: settling it would
+                // move the chosen arm out of the place it borrows, while the
+                // call only reads the callable field.
                 let settled = match &base.kind {
                     ValueKind::Place(_)
                     | ValueKind::Temp(_)
@@ -161,6 +164,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 };
                 let base = if settled {
                     base
+                } else if self.conditional_borrows_place(&base) {
+                    // A receiver conditional that borrows a place keeps the
+                    // place a read. Outside a loop condition each ownerless arm
+                    // binds its own temporary the statement releases, so the
+                    // fresh result does not leak and the designator reads the
+                    // selected arm. A loop condition keeps its deferred
+                    // spelling: the condition's own per-iteration placement
+                    // owns those fills, and no statement can be hoisted out of
+                    // it.
+                    if self.in_loop_condition {
+                        base
+                    } else {
+                        self.hoist_ownerless_conditional_arms(base)
+                    }
                 } else {
                     self.materialize_guard_operand(base)
                 };

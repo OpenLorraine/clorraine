@@ -4570,9 +4570,16 @@ fn should_settle_a_mixed_arm_receiver_at_argument_position_zero() {
         &emitted,
         "cl_spec_cprimpl_implrecvsettle_looped(bool c, ClH a, i32 k)\n{",
     );
-    assert_contains(tag, looped, "(__cl_tmp1 = ");
-    assert_contains(tag, looped, "((__cl_tmp1.call)(5)");
-    assert_absent(tag, looped, ": a).call)(5)");
+    // A loop condition's fills live in the condition's own per-iteration
+    // placement, so the borrowing receiver keeps its deferred spelling: the
+    // fresh arm binds its own temporary and the place arm stays a read.
+    assert_contains(
+        tag,
+        looped,
+        "(__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH())",
+    );
+    assert_contains(tag, looped, " : a).call)(5)");
+    assert_absent(tag, looped, "(__cl_tmp1 = ");
     let eager = function_body(
         tag,
         &emitted,
@@ -4581,15 +4588,15 @@ fn should_settle_a_mixed_arm_receiver_at_argument_position_zero() {
     assert_contains(
         tag,
         eager,
-        "__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH();",
+        "__cl_tmp1 = cl_spec_cprimpl_implrecvsettle_mkH();",
     );
-    assert_contains(tag, eager, "(__cl_tmp0.call)(5)");
-    assert_absent(tag, eager, ": a).call)(5)");
+    assert_contains(tag, eager, "(__cl_tmp0 ? __cl_tmp1 : a).call)(5)");
+    assert_absent(tag, &emitted, "cl_zero(&a)");
     assert_release_after(
         tag,
         eager,
-        "(__cl_tmp0.call)(5)",
-        "if (__cl_tmp0.s) { FreeString(__cl_tmp0.s); }",
+        "(__cl_tmp0 ? __cl_tmp1 : a)",
+        "if (__cl_tmp1.s) { FreeString(__cl_tmp1.s); }",
     );
 }
 
@@ -4749,8 +4756,8 @@ fn should_lower_a_bare_raw_deref_store() {
     let tag = "implrawstore";
     let (_scratch, emitted) = emit_host(tag, RAW_STORE_SOURCE);
     let body = function_body(tag, &emitted, "cl_spec_cprimpl_implrawstore_main(void)\n{");
-    assert_contains(tag, body, "*(q) = 9;");
-    assert_follows(tag, body, "__cl_tmp0 = (i)++;", "*(r) = __cl_tmp0;");
+    assert_contains(tag, body, "*(&(*(q))) = 9;");
+    assert_follows(tag, body, "__cl_tmp0 = (i)++;", "*(&(*(r))) = __cl_tmp0;");
     assert_absent(tag, body, "*(r) = (i)++;");
     assert_contains(tag, body, "v = *(q);");
     assert_contains(tag, body, "p->v = 7;");
@@ -4761,8 +4768,12 @@ fn should_lower_a_bare_raw_deref_store() {
 #[test]
 fn should_re_emit_the_settled_receiver_and_raw_store_programs_byte_identically() {
     for (tag, source, shape) in [
-        ("implrecvsettle", SETTLED_RECEIVER_SOURCE, "((__cl_tmp1.call)(5)"),
-        ("implrawstore", RAW_STORE_SOURCE, "*(q) = 9;"),
+        (
+            "implrecvsettle",
+            SETTLED_RECEIVER_SOURCE,
+            "(__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH())",
+        ),
+        ("implrawstore", RAW_STORE_SOURCE, "*(&(*(q))) = 9;"),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert!(

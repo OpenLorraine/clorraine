@@ -3868,7 +3868,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Every non-conditional leaf is judged by the same predicate that tells a
     /// place projection from a fresh value, so a nested conditional is covered
     /// at any depth.
-    fn conditional_borrows_place(&self, value: &Value) -> bool {
+    pub(super) fn conditional_borrows_place(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Conditional {
                 then_value,

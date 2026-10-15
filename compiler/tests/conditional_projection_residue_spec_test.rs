@@ -9719,3 +9719,130 @@ func main(): i32 {
     assert_no_asan("rawderefstore", &output);
     assert_exit("rawderefstore", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// looprecvplace: a mixed-arm receiver whose place arm is selected again.
+//
+// A receiver conditional that borrows a place must keep the place a read: the
+// call only reads the callable field, so the place stays usable after the
+// call and across a re-executed loop condition. The first program selects the
+// place arm twice (`k = 2`) and reads its bytes after the loop, the second
+// selects the fresh arm, the third spells the eager read beside a later read
+// of the same place, and the fourth replaces an owning pointee through a raw
+// store, which must release the old value exactly once.
+// ---------------------------------------------------------------------------
+
+/// A borrowed receiver place stays readable after the call.
+#[test]
+fn should_keep_a_borrowed_receiver_place_readable_after_the_call() {
+    let looped = r#"module spec.cpr.looprecvplace;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addTen(x: i32): i32 { return x + 10; }
+func mkH(): H { return H { call: addTen, s: stringOf("mk") }; }
+
+func use(c: bool, take a: H, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k && (c ? mkH() : a).call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n + i32(len(a.s)) - (k + 2);
+}
+
+func main(): i32 {
+    let a1: H = H { call: addTen, s: stringOf("aa") };
+    let n: i32 = use(false, a1, 2);
+    let a2: H = H { call: addTen, s: stringOf("bb") };
+    let m: i32 = use(true, a2, 1);
+    return n + m;
+}
+"#;
+    let output = run_memory("looprecvplace", looped);
+    assert_no_asan("looprecvplace", &output);
+    assert_exit("looprecvplace", &output, 0);
+
+    let eager = r#"module spec.cpr.eagerborrowrecv;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addTen(x: i32): i32 { return x + 10; }
+func mkH(): H { return H { call: addTen, s: stringOf("mk") }; }
+
+func use(c: bool, take a: H): i32 {
+    return (c ? mkH() : a).call(5) - 15;
+}
+
+func main(): i32 {
+    let a1: H = H { call: addTen, s: stringOf("aa") };
+    let n: i32 = use(false, a1);
+    let a2: H = H { call: addTen, s: stringOf("bb") };
+    let m: i32 = use(true, a2);
+    return n + m;
+}
+"#;
+    let output = run_memory("eagerborrowrecv", eager);
+    assert_no_asan("eagerborrowrecv", &output);
+    assert_exit("eagerborrowrecv", &output, 0);
+
+    let later = r#"module spec.cpr.laterreadrecv;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addTen(x: i32): i32 { return x + 10; }
+func mkH(): H { return H { call: addTen, s: stringOf("mk") }; }
+
+func use(c: bool, take a: H): i32 {
+    let r: i32 = (c ? mkH() : a).call(5) - 15;
+    return r + i32(len(a.s)) - 2;
+}
+
+func main(): i32 {
+    let a1: H = H { call: addTen, s: stringOf("aa") };
+    let n: i32 = use(false, a1);
+    let a2: H = H { call: addTen, s: stringOf("bb") };
+    let m: i32 = use(true, a2);
+    return n + m;
+}
+"#;
+    let output = run_memory("laterreadrecv", later);
+    assert_no_asan("laterreadrecv", &output);
+    assert_exit("laterreadrecv", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// rawreplace: an owning pointee replaced through a raw store.
+//
+// `unsafe { *p = stringOf("cd"); }` replaces the pointee's value: the new
+// value lands, the read-back proves it, and the replaced value is released
+// exactly once, so the run is memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A raw store releases the replaced owning pointee exactly once.
+#[test]
+fn should_release_the_replaced_owning_pointee_of_a_raw_store() {
+    let replaced = r#"module spec.cpr.rawreplace;
+
+import { String, stringOf, bytes } from std.text;
+
+func use(): i32 {
+    let s: String = stringOf("ab");
+    let p: raw String = unsafe &s;
+    unsafe { *p = stringOf("cd"); }
+    return i32(bytes(s)[0]) - 99 + (i32(len(s)) - 2);
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("rawreplace", replaced);
+    assert_no_asan("rawreplace", &output);
+    assert_exit("rawreplace", &output, 0);
+}
