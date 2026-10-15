@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-15 06:52
-> **Progress**: 7/39 tasks (18%)
+> **Last Updated**: 2026-10-15 07:52
+> **Progress**: 8/39 tasks (21%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -71,13 +71,13 @@ as the green control.
 ### Step 1.3: Impl Tests & Review
 
 - [x] 1.3.1 Write the phase implementation pins (the carrier/binding shapes, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 06:36; seven pins on seven tests — the per-instance arm move, the residual-owning fresh root, the literal projection arm (a green control: base-identical), the guarded take carrier fill/empty, the receiver-field root inside the guard (the adopting-carrier drop skip), the direct spellings (a green control), and the re-emission determinism pin; 7/7 green in the container and against the full `make check`; the author measured four of the seven failing at the pre-fix compiler `744674b` on exactly the fix-only markers — the phase review re-checks two of them)
-- [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
+- [x] 1.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses ✅ (completed: 2026-10-15 07:52; correctness and memory-safety dispatched on the phase diff plus three targeted confirmation rounds; six in-diff findings resolved in the round — the adopting-carrier hoist the deferred-field route made reachable, the fixed-array exclusion and gate parity across the new carrying branches, the per-instance take/return move-out consistency, and the literal-source moves including their nested recursion — and the pre-existing spelling families completed rather than refiled; `DEF-281` filed; the final re-probe confirmed clean; the full record is in `05-findings.md`)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-1, ST-2, ST-4, ST-5 red then green; ST-3 and ST-6 green controls (the incidental closure — AR-23 — and the direct spellings)
-- [ ] All verification passing
+- [x] ST-1, ST-2, ST-4, ST-5 red then green (plus the review-round regression cases recorded in the findings ledger); ST-3 and ST-6 green controls (the incidental closure — AR-23 — and the direct spellings)
+- [x] All verification passing: the ownership cases under `RDC_ASAN=1`; the batch-H suites (61/61, 27/27), `residual_defect_hardening` (50/0, 26/0), the callable-release oracle (52/0), and `./spec/check.sh` (27 files, 110 compile-fail tests) green; `make check` at the round's end fails only the four declared phase-2 reds (Step 2.1)
 
 ---
 

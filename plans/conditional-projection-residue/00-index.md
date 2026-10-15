@@ -79,6 +79,7 @@ decision, AR-2); any new diagnostic code (AR-2 and the reserved-decision rule).
 | 03-04 | [Guarded and discarded literal positions](03-04-guarded-literal-positions.md) | P4 design (DEF-262, 270, 271) |
 | 03-05 | [Fixed-array conditional arms and projections](03-05-fixed-array-arms.md) | P5 design (DEF-272, 275) |
 | 03-06 | [Update order completion](03-06-update-order.md)                          | P6 design (DEF-273, 274, 277, 278) |
+| 05  | [Findings Ledger](05-findings.md)                                          | Phase-review verdicts, fix rounds, and filed rows |
 | 07  | [Testing Strategy](07-testing-strategy.md)                                 | ST cases and verification                   |
 | 99  | [Execution Plan](99-execution-plan.md)                                     | Phases, sessions, and task checklist        |
 

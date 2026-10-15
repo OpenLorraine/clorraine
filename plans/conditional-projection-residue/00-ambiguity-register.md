@@ -53,6 +53,7 @@ reproductions.
 | 24 | Verification | P6's red-phase basis | A) re-base the red on the missing site/emission pins for the literal shapes and make ST-26's `g` order-observing; B) keep a claimed host-only red for all cases | **A, corrected** — the pinned container (GCC 12.2 / clang 14) rejects ST-23/ST-25's sequence shapes under the suite's own strict flags, so their strict-build reds reproduce; ST-24's literal shapes build and are ordered left-to-right, so its red is the missing site/emission pins, and ST-26 is its own red | ✅ Resolved (delegated) |
 | 25 | Verification | `DEF-268`'s disagreeing conditional return at HEAD | A) keep the `E10036` rejection and re-pin the batch-H suite; B) close the row as incidentally fixed | **B** — the row's reproduction is fixed at HEAD: the emitted C converts the owned arm on its own path (`return (c ? x : cl_string_view(h.v));`), builds under `cc -std=c99 -Wall -Wextra -Werror` and under `-fsanitize=address`, and runs exit 0 leak-free; the batch-H per-arm conversion covers both arm orders, so the suggested rejection is unnecessary. ST-10 becomes the reversed-order green control | ✅ Resolved (re-decided 2026-10-15) |
 | 26 | Behavior | `DEF-279`'s duplicate escape report | A) suppress the generated-owner report; B) keep both; C) withhold the local-owner report where the generated-owner escape fires | **C** — one report per site: at a return whose mixed conditional's other arm is a fresh owning expression whose lowered view reads a compiler-generated root or a statement temporary, the local-owner `E10035` is withheld and the escape `E10030` carries the rejection, so the immutable pin (exactly one `E10030`) holds; local-only/local-plus-parameter/raw-sibling shapes keep exactly one `E10035`; the parameter variant keeps `E10036` + `E10030` | ✅ Resolved (re-decided 2026-10-15) |
+| 27 | Review scope | The phase-1 fix-round extensions | A) extend the phase's rows across their spelling families with the review evidence; B) file every spelling family as a new row | **A** — the blast-radius rule covers a construct's parallel paths, and the families belong to the phase's own rows (the defer-free store family, the take carrier, the literal fields); only `DEF-281` — a distinct duplicable-residual defect — is filed, and `DEF-263`'s neighborhood stays untouched | ✅ Resolved (runtime, delegated) |
 
 ### Resolution Notes
 
@@ -143,3 +144,16 @@ with a local `b` and a parameter `a`, `return [k]`, `bytes(h.name)` — keep exa
 non-dying sibling (for example a raw-pointer view arm) keeps its `E10035`, so no acceptance hole
 opens. Observation: the parameter variant `return (c ? a : mkBox()).v` with `a: Box` a parameter
 reports `E10036` + `E10030` — two different judgments; it is left unchanged.
+
+**AR-27:** The phase-1 review round (the correctness and memory-safety lenses, plus targeted
+confirmations) extended the phase's rows across their spelling families, per the blast-radius
+rule: the adopting-carrier drop hoist that the phase's own deferred-field route made reachable (a
+regression, fixed by skipping the hoist for an adopting carrier, matching the sibling sites); the
+fixed-array exclusion and the gate parity across the new carrying branches; the per-instance
+take/return move-out consistency (the lowering now moves where the checker's duty marks, so the
+new `E10020` rejection agrees with the emission); and the literal-source moves in the eager,
+guarded, and deferred routes, including the nested-literal and array-literal field spellings. The
+pre-existing spelling families this completed — the guarded/deferred/store spellings, the nested
+and generic takes, and the unconsumable positions — are recorded in the findings ledger rather
+than refiled. One new row was filed: `DEF-281` (a duplicable projection's residual leak in the
+take and return positions; base == head).
