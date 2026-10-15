@@ -41,9 +41,9 @@ Batch H built and reviewed the conditional/projection machinery this batch's row
 | `compiler/src/own/lower.rs` | Arm binders, carriers, discards, fixed-array root, update pin | Per-instance duty, fresh-root bindings, guarded carrier, literal roots, pin triggers |
 | `compiler/src/own/place.rs` | Provenance and the owner walk | The call-wrapped owner walk (every arm) |
 | `compiler/src/own/call_check.rs` | Argument owners | The call-wrapped argument owner |
-| `compiler/src/own/statements.rs` | Store preparation and the return judgment | The per-destination store judgment; the `str[N]` return guard; the fixed-array arm route |
+| `compiler/src/own/statements.rs` | Store preparation and the return judgment | The per-destination store judgment; the `str[N]` return guard; the one-report mixed-return suppression; the fixed-array arm route |
 | `compiler/src/own/expr.rs` | Element-store and mutability judgments | The scoped element-store acceptance and the widening gate |
-| `compiler/src/own/liveness.rs` | The escape report | Unchanged (`DEF-279` parked — AR-2) |
+| `compiler/src/own/liveness.rs` | The escape report | Unchanged (the generated-owner `E10030` stays the pinned report — AR-26) |
 | `compiler/src/codegen/*` | The fixed-array destination shape, arm spellings | The conditional-arm destination and the `for`-iterable projection |
 | `compiler/tests/conditional_projection_residue_*.rs` | New suites | Created by this plan |
 
@@ -69,8 +69,8 @@ the site. The batches' road-map rows carry the reproductions; this table is the 
 | `DEF-261` | `bytes((c ? b : d).v)` (parameter/parameter) records no owner and the two-arm spelling collects only the first arm → use-after-free; the local-arm spelling already reports `E10031` | The call path recurses through the view-returning call's argument and collects *every* arm's owners, like the direct walk | `place.rs` `collect_view_owners`/`call_provenance` |
 | `DEF-266` | `use([mk().v])` and `Holder { names: [mk().v] }` leak 11 B per element | The argument and field positions bind or retain the element backings | `lower.rs` view-element lowering, `own/expr.rs` the field check |
 | `DEF-267` | `func f(s: String): str[1] { return [s]; }` reports a false `E10034`; `return [h.v]` gains an extra `E10036` | The return spelling runs through the view-element lowering (single-view parity) | `statements.rs` `check_return` |
-| `DEF-268` *(parked — AR-2)* | `return c ? x : h.v;` (disagreeing arms, both parameters) is accepted | Parked: the batch-H suite pins the conditional twin accepted, so whether the disagreement must report `E10036` needs a ruling | `statements.rs` `check_return`, `place.rs` `view_provenance` |
-| `DEF-279` *(parked — AR-2)* | The same return reports `E10035` and `E10030` at one span | Parked: the oracle pins exactly one `E10030` for a shape with a local arm; the dedupe needs a ruling | `liveness.rs:350`, the return's loan record |
+| `DEF-268` *(incidentally closed — AR-25)* | `return c ? x : h.v;` (the owned arm second) is accepted and the batch-H per-arm conversion covers both arm orders | Green at HEAD: the emitted C converts the owned arm on its own path (`return (c ? x : cl_string_view(h.v));`), strict-builds, and runs ASan-clean; ST-10 pins the reversed order as a green control | `statements.rs` `check_return`, `place.rs` `view_provenance` |
+| `DEF-279` *(re-scoped — AR-26)* | The mixed return (`let a: Box = …; return (c ? a : mkBox()).v;`) reports `E10035` and `E10030` at one span | One report per site: withhold the local-owner `E10035` where the other arm's lowered view reads a compiler-generated root or a statement temporary — the escape `E10030` carries the rejection; local-only/local-plus-parameter/raw-sibling shapes keep exactly one `E10035`; the parameter variant keeps `E10036` + `E10030` | the return's local-provenance judgment (`statements.rs` `check_return`), `liveness.rs:350` |
 
 ### P3 — Escaping stores and their spellings
 

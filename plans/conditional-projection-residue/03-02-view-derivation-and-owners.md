@@ -5,13 +5,14 @@
 
 ## Overview
 
-Three in-scope rows in the view machinery: the owner walk through a view-returning call (the
+Four in-scope rows in the view machinery: the owner walk through a view-returning call (the
 call-wrapped conditional's every arm), the view-element array in argument and field positions,
-and the `str[N]` return spelling's false judgment. Two further rows (`DEF-268`, `DEF-279`) are
-parked for rulings and stay at current behavior (AR-2). The operative rules are the single-view
-parity (a `str[N]` repeats the borrows of the single `str`; pinned by the batch-H suites and
-`spec/16-borrow-rules.md:150,193`) and the derivation rule (a view return must name the single
-view-like lend candidate — BR-7/EL-2).
+the `str[N]` return spelling's false judgment, and the one-report mixed conditional return
+(`DEF-279`). `DEF-268`'s reversed arm order is incidentally closed: the batch-H per-arm conversion
+covers both orders, and ST-10 pins the reversed order as a green control (AR-25). The operative
+rules are the single-view parity (a `str[N]` repeats the borrows of the single `str`; pinned by the
+batch-H suites and `spec/16-borrow-rules.md:150,193`) and the derivation rule (a view return must
+name the single view-like lend candidate — BR-7/EL-2).
 
 ## Design
 
@@ -53,19 +54,41 @@ single-view twin's judgment (accepted where the twin is accepted; the same repor
 reports). The single-view parity is pinned by the batch-H suites and
 `spec/16-borrow-rules.md:150,193`.
 
-### Parked rows (`DEF-268`, `DEF-279`, AR-2)
+### 4. The reversed arm order (`DEF-268`, incidentally closed — AR-25)
 
-`DEF-268`'s disagreeing conditional return and `DEF-279`'s duplicate escape report stay at current
-behavior: each fix would require re-pinning an immutable batch-H suite pin through a user ruling
-(`conditional_projection_integrity_spec_test.rs:2313-2333` pins the conditional twin accepted;
-`callable_release_integrity_spec_test.rs:1772-1802` pins exactly one `E10030` for a shape with a
-local arm). The rows' roadmap entries return to Backlog with the ruling notes (AR-2).
+`func pick(x: str, h: Box, c: bool): str { return c ? x : h.v; }` is fixed at HEAD: the batch-H
+per-arm conditional-view conversion covers both arm orders, and the emitted C converts the owned
+arm on its own path (`return (c ? x : cl_string_view(h.v));`), builds under the suite's strict
+flags and under `-fsanitize=address`, and runs exit 0 leak-free. No rejection is added — the
+suggested `E10036` would contradict the batch-H pin
+(`conditional_projection_integrity_spec_test.rs:2313-2333`). ST-10 becomes the reversed-order
+green control so the conversion cannot regress.
+
+### 5. One report for the mixed local/generated return (`DEF-279`, AR-26)
+
+`return (c ? a : mkBox()).v;` with a local `a: Box` reports both `E10035` (`cannot return a view of
+local 'a'`) and `E10030` (`borrow of a compiler-generated owner does not live long enough`) at the
+same return. The generated-owner report is the one the immutable oracle pins
+(`callable_release_integrity_spec_test::should_reject_a_mixed_conditional_view_return` asserts
+exactly one `E10030`), so the local-provenance judgment withholds the local-owner `E10035` at a
+return whose mixed conditional has, on the other arm, a fresh owning expression whose lowered view
+reads a compiler-generated root or a statement temporary — the case the liveness rule reports as
+`E10030`. The escape report then carries the rejection, so one report per site and the pin both
+hold.
+
+The shapes where the local backing is the only escape keep exactly one `E10035`: `return (c ? b.v :
+a)` (a local `b` and a parameter `a`), `return [k]`, and `bytes(h.name)`. A non-dying sibling (for
+example a raw-pointer view arm) also keeps its `E10035`, so no acceptance hole opens. The
+parameter variant `return (c ? a : mkBox()).v` with a parameter `a: Box` keeps its two judgments
+(`E10036` + `E10030`) — different rules, left unchanged.
 
 ## Integration Points
 
 - `own/place.rs`: `view_provenance` (:605), `collect_view_owners` (:826), `call_provenance` (:966).
 - `own/call_check.rs`: `argument_owner` (:680).
-- `own/statements.rs`: `check_return` (:1163) and its loan record.
+- `own/statements.rs`: `check_return` (:1163) and its loan record — the local-provenance judgment
+  that withholds `E10035` at the one-report site.
+- `own/liveness.rs`: the generated-owner escape report (`E10030`) — the pinned report at that site.
 - `own/lower.rs`: the view-element lowering.
 
 ## Error Handling
@@ -73,8 +96,9 @@ local arm). The rows' roadmap entries return to Backlog with the ruling notes (A
 | Error Case | Handling Strategy | AR Ref |
 |------------|-------------------|--------|
 | A call-wrapped conditional argument | Every arm's owners are recorded; the loan covers the selected arm | AR-19 |
-| A disagreeing conditional return | Parked: current behavior unchanged pending a ruling | AR-2, AR-7 |
-| A local-backed arm at a return | Parked: current behavior unchanged pending a ruling | AR-2, AR-8 |
+| A disagreeing conditional return (the reversed arm order) | Accepted; the per-arm conversion emits `(c ? x : cl_string_view(h.v))`; ST-10 pins the green control | AR-25 |
+| A mixed local/generated return | Exactly one report: the generated-owner escape `E10030`; the local-owner `E10035` is withheld at that site | AR-26 |
+| A local-only or local-plus-parameter backing at a return | Exactly one `E10035` (unchanged) | AR-26 |
 | A view-element argument/field with a fresh element | The element's backing adopts a scoped owner (or the element retains its place) | AR-6-adjacent |
 | The `str[N]` return whose twin is accepted | Accepted, judgment-identical to the twin | — |
 
@@ -82,7 +106,8 @@ local arm). The rows' roadmap entries return to Backlog with the ruling notes (A
 
 - Spec: the call-wrapped owner case (the parameter/parameter and two-arm spellings; the view used
   beside a writable alias; ASan), the view-element argument/field cases (ASan), the `str[N]` return
-  cases (accepted and rejected twins), and the chained view-returning callee twin; the parked rows'
-  shapes are not authored; the oracle suites stay green.
-- Impl: the owner-record shapes, the element-owner bindings, the report counts and spans, and the
-  re-emission determinism pins.
+  cases (accepted and rejected twins), the chained view-returning callee twin, the reversed-order
+  green control (ST-10), and the one-report mixed return (ST-11) with the local-only and
+  local-plus-parameter controls; the oracle suites stay green.
+- Impl: the owner-record shapes, the element-owner bindings, the report counts and spans (one
+  report at the mixed return), and the re-emission determinism pins.

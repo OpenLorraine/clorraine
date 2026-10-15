@@ -2,18 +2,18 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-13 23:48
+> **Last Updated**: 2026-10-15 06:28
 > **Progress**: 4/39 tasks (10%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
 
-Handle the 23 batch-H residue rows — 20 implemented closes, the incidental `DEF-259`, and the two
-parked rows (`DEF-268`, `DEF-279`, AR-2) — in six phases (arm roots and per-instance duty; view
-derivation and owners; escaping stores; guarded and discarded literal positions; fixed-array arms;
-update order completion) and a close-out. Every fix extends the batch-H machinery; every phase
-follows the specification-first ordering (spec tests → red → implement → green → impl pins →
-review).
+Handle the 23 batch-H residue rows — 21 implemented closes and two incidental closures (`DEF-259`
+at the planning baseline, `DEF-268` by the batch-H emission work; AR-23, AR-25) — in six phases
+(arm roots and per-instance duty; view derivation and owners; escaping stores; guarded and
+discarded literal positions; fixed-array arms; update order completion) and a close-out. Every fix
+extends the batch-H machinery; every phase follows the specification-first ordering (spec tests →
+red → implement → green → impl pins → review).
 
 **🚨 Update this document after EACH completed task!**
 
@@ -89,16 +89,17 @@ as the green control.
 
 ### Step 2.1: Specification Tests
 
-**Reference**: [03-02](03-02-view-derivation-and-owners.md) · [07](07-testing-strategy.md) ST-7..ST-9, ST-28, ST-29 · AR-19 (ST-10/ST-11 parked — AR-2)
+**Reference**: [03-02](03-02-view-derivation-and-owners.md) · [07](07-testing-strategy.md) ST-7..ST-11, ST-28, ST-29 · AR-19, AR-25, AR-26
 **Objective**: Pin the call-wrapped owner (every arm and the chained callee), the element
-positions, and the `str[N]` return; the parked rows are not authored.
+positions, the `str[N]` return, the one-report mixed return (ST-11), and the reversed-order green
+control (ST-10).
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (callwrappedowner, elementpositions, arrayreturn, ownertwins)
+- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (callwrappedowner, elementpositions, arrayreturn, onereport, reverseorder, ownertwins)
 - [ ] 2.1.2 Run the suite and record the red phase
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Extend the owner walk through a view-returning call (every arm and the chained callee), the element positions, and the return's view-element lowering — `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
+- [ ] 2.2.1 Extend the owner walk through a view-returning call (every arm and the chained callee), the element positions, and the return's view-element lowering; suppress the local-owner `E10035` at a mixed return whose other arm's lowered view reads a compiler-generated root or a statement temporary (the one-report rule) — `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
 - [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
 
 ### Step 2.3: Impl Tests & Review
@@ -109,7 +110,7 @@ positions, and the `str[N]` return; the parked rows are not authored.
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-7..ST-9, ST-28, ST-29 red then green; ST-10/ST-11 stay parked at current behavior (AR-2)
+- [ ] ST-7, ST-8, ST-9, ST-11, ST-28, ST-29 red then green; ST-10 a green control (the reversed order — AR-25)
 - [ ] The batch-H suites and the `callable_release_integrity` oracle stay green
 
 ---
@@ -256,13 +257,13 @@ literal, dot-receiver, loop-condition, and owning-argument order cases.
 ### Step 7.1: Verification and Sync
 
 - [ ] 7.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence
-- [ ] 7.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows: 20 Done with per-row evidence, `DEF-259` closed with the incidental note, and `DEF-268`/`DEF-279` returned to Backlog with their ruling notes
+- [ ] 7.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows: 21 Done with per-row evidence and `DEF-259`/`DEF-268` closed with their incidental notes; the six older parked rows stay open (AR-2)
 - [ ] 7.1.3 Record the close-out section in the findings ledger and mark the plan Complete in `00-index.md`
 
 **Verify**: `make check`; `make verify`
 
 **Deliverables**:
-- [ ] The 23 handled rows accounted for: 20 Done with evidence; `DEF-259` closed as incidental; `DEF-268`/`DEF-279` parked in Backlog; the eight parked rows stay open with their rulings listed (AR-2)
+- [ ] The 23 handled rows accounted for: 21 Done with evidence; `DEF-259` and `DEF-268` closed with their incidental notes; the six older parked rows stay open with their rulings listed (AR-2)
 - [ ] The plan marked Complete
 
 ---

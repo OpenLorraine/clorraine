@@ -45,8 +45,8 @@
 | ST-7 | `bytes((c ? b : d).v)` with `borrow` parameters (both selections); the view used beside a writable alias of the selected arm's backing | Rejected with the plain twin's judgment (`E10031` at the mutation; one report; the head accepts and reads freed storage) | R2, AR-19 |
 | ST-8 | `use([mk().v])` (an argument) and `Holder { names: [mk().v] }` (a field) | Accepted; run exit 0; ASan-clean (no leak) | R2 |
 | ST-9 | `func f(s: String): str[1] { return [s]; }` and `return [h.v]` | Accepted (the single-view twin `return s` is accepted); the `[h.v]` spelling reports its twin's exact judgment (no false `E10034`, no extra `E10036`) | R2 |
-| ST-10 | *(parked — AR-2, AR-7)* `func pick(x: str, h: Box, c: bool): str { return c ? x : h.v; }` | Not authored: the rejection requires re-pinning an immutable suite pin (the conditional twin is pinned accepted); current behavior unchanged pending a ruling | R2, AR-7, AR-2 |
-| ST-11 | *(parked — AR-2, AR-8)* `return (c ? a : mkBox()).v;` (a local-backed arm beside a generated-owner arm) | Not authored: the oracle pins exactly one `E10030` for a shape with a local arm; the dedupe needs a ruling | R2, AR-8, AR-2 |
+| ST-10 | **Green control (incidental closure):** `func pick(x: str, h: Box, c: bool): str { return c ? x : h.v; }` — the owned arm second, the reverse of the batch-H pin's order | Accepted; strict build; run exit 0; ASan-clean (the per-arm conversion covers both orders) | R2, AR-25 |
+| ST-11 | `let a: Box = …; return (c ? a : mkBox()).v;` (a local-backed arm beside a generated-owner arm); the controls `return (c ? b.v : a)` (a local `b`, a parameter `a`) and a local-only backing | Rejected with exactly one error total, carrying `E10030`; each control keeps exactly one `E10035` | R2, AR-26 |
 | ST-28 | The chained view-returning callee: `let s: str = peek((c ? b : d).v);` through a `peek(x: str): str` callee; the view used beside a writable alias of the selected arm's backing | Rejected like the direct twin (`E10031` at the mutation; one report; the head accepts and reads freed storage) | R2, AR-19 |
 | ST-29 | The two-arm owner walk: `bytes(c ? b.v : d.v)`; the view used beside a writable alias of the **second** arm's backing | Rejected like the first-arm twin (`E10031` at the mutation; one report; the head records only the first arm) | R2, AR-19 |
 
@@ -105,7 +105,7 @@
 
 | Test File | ST Cases Covered | Component |
 | --------- | ---------------- | --------- |
-| `compiler/tests/conditional_projection_residue_spec_test.rs` | ST-1 – ST-35 (ST-3 green control; ST-10/ST-11 parked, not authored) | All phases |
+| `compiler/tests/conditional_projection_residue_spec_test.rs` | ST-1 – ST-35 (ST-3 and ST-10 green controls) | All phases |
 | `compiler/tests/conditional_projection_integrity_*_test.rs` (existing) | Controls | Regression oracle |
 
 ### Implementation Tests

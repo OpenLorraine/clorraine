@@ -11,6 +11,12 @@
 > **Verdict (pre-fix)**: ❌ BLOCKED — 2 critical, 12 major findings unresolved
 > **Verdict (post-fix)**: ✅ PASSED WITH NOTES — all critical/major resolved (2 rows parked for
 > rulings by the reserved-decision rule), all minors/observations fixed or recorded
+>
+> **Superseded (2026-10-15)**: the two rows parked by PF-001/PF-002 (`DEF-279`, `DEF-268`) were
+> re-decided with fresh evidence after this scan — `DEF-268` is incidentally fixed by the batch-H
+> per-arm conversion and `DEF-279` is implemented as the one-report rule (see the register's
+> AR-25/AR-26). The scan-time texts below are the audit record; the six older parked rows are
+> unchanged (AR-2).
 
 ## Cluster returns
 
@@ -63,7 +69,11 @@ two parked rows are ruling-gated per the register's reserved-decision rule).
 | `DEF-268` | Whether the disagreeing conditional return reports `E10036` (and the batch-H spec pin `should_build_a_view_typed_conditional_over_an_owned_member` is re-pinned), or stays accepted | The plan's rejection contradicts an immutable spec-suite pin; amending it is a specification decision |
 | `DEF-279` | Whether one escape report (the local `E10035`) replaces the generated-owner `E10030` at the same site (re-pinning `should_reject_a_mixed_conditional_view_return`), or both reports stay | Same: the pin asserts exactly one `E10030` for a shape that has a local arm |
 
-Also still parked from the register (unchanged): `DEF-167`, `DEF-169`, `DEF-171`, `DEF-190`,
+The `DEF-268` and `DEF-279` rows were re-decided with fresh evidence on 2026-10-15 (AR-25/AR-26)
+and are no longer parked: `DEF-268` is incidentally fixed by the batch-H per-arm conversion and
+`DEF-279` is implemented as the one-report rule.
+
+Still parked from the register (unchanged): `DEF-167`, `DEF-169`, `DEF-171`, `DEF-190`,
 `DEF-191`, `DEF-263`.
 
 ## Iteration-2 verification
@@ -82,8 +92,8 @@ review budget's final confirmation):
 | V-6 | `03-02` §1's "collects only the first arm" was imprecise | Reworded: the local-backed arm is the only one the current provenance rule preserves |
 
 **Final verdict: ✅ PASSED WITH NOTES** — all critical/major findings resolved (two rows parked
-for rulings by the reserved-decision rule), all minors fixed. The two rulings needed are
-`DEF-268` and `DEF-279` (see the reserved-decisions table).
+for rulings by the reserved-decision rule at scan time; both re-decided with fresh evidence on
+2026-10-15 — AR-25/AR-26), all minors fixed.
 
 ## Notes
 
@@ -93,7 +103,9 @@ for rulings by the reserved-decision rule), all minors fixed. The two rulings ne
   judges any of them a separate defect, the executor files a roadmap row with the base==head
   evidence (the batch convention).
 - **Roadmap state**: the `DEF-268` and `DEF-279` rows were returned to `Backlog` (⬜) with their
-  ruling notes when this report was applied; the close-out task verifies the eight parked rows stay
-  open and closes `DEF-259` as incidentally fixed with the probe evidence.
+  ruling notes when this report was applied and were re-scoped back to `Executing` (🔄) on
+  2026-10-15 with the decision notes (AR-25/AR-26); the close-out task verifies the six older
+  parked rows stay open and closes `DEF-259` and `DEF-268` as incidentally fixed with the probe
+  evidence.
 - The verification pass for this report is a scoped iteration-2 re-review of the fixed plan
   against the findings above.

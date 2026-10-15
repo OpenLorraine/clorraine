@@ -5,10 +5,11 @@
 
 ## Feature Overview
 
-Handle the 23 defect rows batch H filed and did not close: 20 implemented closes, one incidentally
-closed at the planning baseline (`DEF-259`, kept as a green control), and two parked for rulings
-(`DEF-268`, `DEF-279`). Each implemented row is a spelling or position the batch-H fixes did not
-reach, with a reproduction and base == head evidence in the roadmap. Every requirement below is
+Handle the 23 defect rows batch H filed and did not close: 21 implemented closes and two incidental
+closures (`DEF-259`, kept as a green control; `DEF-268`, fixed by the batch-H emission work and
+pinned by a reversed-order control). No batch row is parked. Each implemented row is a spelling or
+position the batch-H fixes did not reach, with a reproduction and base == head evidence in the
+roadmap. Every requirement below is
 conformance to the frozen specification: the fix makes an accepted program build and run with the
 language's semantics, or makes a rejected program report the judgment its twin spelling already
 reports.
@@ -24,12 +25,15 @@ reports.
   the eager carrier; a struct-literal field whose value projects an ownerless root binds that root
   in guarded positions too. (`DEF-259`'s struct-literal arm root is incidentally closed at the
   planning baseline and stays a green control — AR-23.)
-- [ ] **R2 — View derivation and owners** (`DEF-261`, `DEF-266`, `DEF-267`; `DEF-268`/`DEF-279`
-  parked): a view-returning call records its argument derivation — a call-wrapped conditional's
-  *every* arm and a chained view-returning callee included; a view-element array in an argument or
-  field position binds or retains each temporary element's backing; the `str[N]` return spelling
-  reports exactly its single-view twin's judgment. (`DEF-268`'s disagreeing conditional return and
-  `DEF-279`'s duplicate escape report stay at current behavior pending rulings — AR-2.)
+- [ ] **R2 — View derivation and owners** (`DEF-261`, `DEF-266`, `DEF-267`, `DEF-279`; `DEF-268`
+  incidentally closed): a view-returning call records its argument derivation — a call-wrapped
+  conditional's *every* arm and a chained view-returning callee included; a view-element array in
+  an argument or field position binds or retains each temporary element's backing; the `str[N]`
+  return spelling reports exactly its single-view twin's judgment. A mixed conditional view return
+  reports exactly one diagnostic — the generated-owner escape `E10030` — while a local-only
+  backing keeps exactly one `E10035`; the reversed-order conditional view return is accepted,
+  strict-builds, and runs clean. (`DEF-268`, incidentally fixed by the batch-H emission work —
+  AR-25; the one-report rule — AR-26.)
 - [ ] **R3 — Escaping stores** (`DEF-265`, `DEF-269`, `DEF-276`, `DEF-280`): a view stored where
   it outlives its backing is rejected per destination kind — a global or field accepts module-level
   static owners only (`E10033`; a parameter-backed store stays rejected), a `borrow T?` out-slot
@@ -65,10 +69,6 @@ reports.
 - `DEF-191` — the `unsafe` exemption's consistency with the conversion rule: ruling needed.
 - `DEF-263` — whether a folded fixed-array `.len` receiver evaluates its operand: spec ruling
   needed.
-- `DEF-268` — whether the disagreeing conditional return reports `E10036`: the batch-H spec suite
-  pins the conditional twin accepted, so re-pinning it is a specification decision (AR-2).
-- `DEF-279` — whether the local escape report replaces the generated-owner report at one site: the
-  oracle pins exactly one `E10030` for a shape with a local arm (AR-2).
 - `DEF-211`, `DEF-214`, `DEF-233` — other residues' ruling-gated rows: the fixed-array `sizeof`
   measurement, the diagnostic code for a call of a non-callable callee (shared with `DEF-167`), and
   the value-form enum member rule.
@@ -93,8 +93,8 @@ reports.
 
 | Decision | Options Considered | Chosen | Rationale | AR Ref |
 | -------- | ------------------ | ------ | --------- | ------ |
-| Batch scope | H residue (23 handled) / E residue (8 unblocked) / G residue (13 majors) | H residue | Most majors (15; 14 implemented after the preflight parked one), one machinery, fresh reproductions | AR-1 |
-| Ruling-gated rows | include and pause / park | park | Reserved decisions are not touched; the two preflight parks conflict with immutable suite pins | AR-2, AR-7, AR-8 |
+| Batch scope | H residue (23 handled) / E residue (8 unblocked) / G residue (13 majors) | H residue | Most majors (15; 14 implemented, one — `DEF-268` — incidentally closed), one machinery, fresh reproductions | AR-1 |
+| Ruling-gated rows | include and pause / park | park | Reserved decisions are not touched; the six older rows stay parked, and the two preflight parks were re-decided with fresh evidence (AR-25/AR-26) | AR-2, AR-25, AR-26 |
 | Escaping view stores | reject per destination (`E10033` fields/globals, `E10030` out-slots) / accept and adopt | reject | The frozen BR-8 rule rejects storage that outlives the backing; the destination kind decides which owners survive | AR-5, AR-20 |
 | Local element stores | accept (scoped to the backing's scope, with the loan recorded) / keep rejecting | accept | A local array dies with the frame; the rejection was over-strict, and the loan keeps loop/nested backings rejected | AR-6, AR-21 |
 | Update pins | trigger extensions / a new pass | extensions | The pin machinery already exists; the rows are trigger gaps | AR-9 |
@@ -106,14 +106,14 @@ reports.
 ## Acceptance Criteria
 
 1. [ ] Every implemented row is closed with a reproduction that flips (red before, green after)
-   and a suite pin that fails without the fix; `DEF-259` closes incidentally with its probe
-   evidence (a green control), and the two parked rows stay at current behavior.
+   and a suite pin that fails without the fix; `DEF-259` and `DEF-268` close incidentally with
+   their probe evidence (green controls).
 2. [ ] Every ownership fix is ASan-clean on the host (plain and `RDC_ASAN=1`), with loop and
    early-exit variants where the shape is re-executed.
 3. [ ] The strict build passes for every accepted shape in scope; the corpus differential shows
    only intended deltas.
 4. [ ] No behavior change outside the in-scope rows; the batch-H suites stay green.
 5. [ ] `make check` green on every phase; `make verify` green at close-out.
-6. [ ] The roadmap's 23 handled rows are accounted for: 20 close as Done with their evidence,
-   `DEF-259` closes with the incidental note, and `DEF-268`/`DEF-279` return to Backlog parked;
-   the eight parked rows stay open with their rulings collected (AR-2).
+6. [ ] The roadmap's 23 handled rows are accounted for: 21 close as Done with their evidence and
+   `DEF-259`/`DEF-268` close with their incidental notes; the six older parked rows stay open with
+   their rulings collected (AR-2).
