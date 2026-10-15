@@ -941,15 +941,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 pointer
             };
-            // A compound store reads and writes the same address, so an impure
-            // pointer expression is bound once, exactly as a shared element
-            // target binds its base and index: the read and the store then
-            // share one evaluated address instead of running it twice.
-            let pointer = if compound.is_some() {
-                self.materialize_operand(pointer)
-            } else {
-                pointer
-            };
+            // The pointer is bound once whenever it is not a trivial place: the
+            // target spelling, the release, and the clear all read the same
+            // binding, so an impure pointer expression evaluates exactly once
+            // and every use names the same address. A named place keeps its
+            // spelling.
+            let pointer = self.materialize_operand(pointer);
             // The store target's own type decides whether the replaced pointee
             // is released, so the pointer is spelled as the pointee's address
             // exactly as the indexed store's element address is: the address of

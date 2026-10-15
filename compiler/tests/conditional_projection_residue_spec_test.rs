@@ -10040,3 +10040,95 @@ func main(): i32 { return use(); }
 "#;
     compile_rejects("placemovestoreuse", place_use, "E10020", 1);
 }
+
+// ---------------------------------------------------------------------------
+// rawcalltarget: an impure raw store pointer evaluates exactly once.
+//
+// `unsafe { *alt(p, q) = v; }` names a call as the store target, so the
+// pointer expression must run once and every use — the release of the
+// replaced value, the clear, and the store — must read that one result. The
+// counter proves the single evaluation, the first result's pointee receives
+// the value, and the replaced value is released exactly once. The simple
+// place spelling and the compound spelling with an impure pointer run under
+// the same rule.
+// ---------------------------------------------------------------------------
+
+/// An impure raw store pointer runs once and every use reads its result.
+#[test]
+fn should_evaluate_an_impure_raw_store_pointer_once() {
+    let plain = r#"module spec.cpr.rawcalltarget;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt(s: raw String, t: raw String): raw String {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func use(): i32 {
+    let s: String = stringOf("aa");
+    let t: String = stringOf("bb");
+    let v: String = stringOf("zzzz");
+    let p: raw String = unsafe &s;
+    let q: raw String = unsafe &t;
+    unsafe {
+        *alt(p, q) = v;
+    }
+    return i32(len(s)) - 4 + i32(len(t)) - 2 + (calls - 1) * 10;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("rawcalltarget", plain);
+    assert_no_asan("rawcalltarget", &output);
+    assert_exit("rawcalltarget", &output, 0);
+
+    let simple = r#"module spec.cpr.rawplainstore;
+
+func use(): i32 {
+    let a: i32 = 0;
+    let p: raw i32 = unsafe &a;
+    unsafe {
+        *p = 9;
+    }
+    return a - 9;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("rawplainstore", simple);
+    assert_no_asan("rawplainstore", &output);
+    assert_exit("rawplainstore", &output, 0);
+
+    let compound = r#"module spec.cpr.rawcallcompound;
+
+let calls: i32 = 0;
+
+func alt(s: raw i32, t: raw i32): raw i32 {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func use(): i32 {
+    let a: i32 = 5;
+    let b: i32 = 7;
+    let p: raw i32 = unsafe &a;
+    let q: raw i32 = unsafe &b;
+    unsafe {
+        *alt(p, q) += 3;
+    }
+    return (a - 8) + (b - 7) + (calls - 1) * 10;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("rawcallcompound", compound);
+    assert_no_asan("rawcallcompound", &output);
+    assert_exit("rawcallcompound", &output, 0);
+}
