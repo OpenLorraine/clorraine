@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 09:52
-> **Progress**: 20/39 tasks (51%)
+> **Progress**: 24/39 tasks (62%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -166,13 +166,13 @@ positions, the discarded mixed-field literal, and the discarded fresh projection
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Reuse the direct-literal per-arm binding for the loop-condition walk; make the discard decision per field (the place fields stay reads); bind the discarded arm's projection root — `compiler/src/own/lower.rs`
-- [ ] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 4.2.1 Reuse the direct-literal per-arm binding for the loop-condition walk; make the discard decision per field (the place fields stay reads); bind the discarded arm's projection root ✅ (completed: 2026-10-15 12:45; the loop-condition walk's `Materialize` arm ignores a wholesale operand (`materialize_stores_wholesale`), so a literal/call/array/conditional arm stores straight into the carrier without a second owner; the discarded-conditional flag makes a literal field/element a read while the fresh fields materialize for release (`defer_discarded_arm` + `materialize_discarded_field`); a projection arm binds its ownerless root via `bind_guarded_projection_root`; an extra acceptance (`litfieldproj`) was fixed in the same pass; one base-equal candidate (a non-owning selected type over an owning root) was filed as `DEF-293`) — `compiler/src/own/lower.rs`
+- [x] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-15 12:45; residue spec 59/59 plain and under `RDC_ASAN=1`; exactly four emission and two diagnostic deltas base-to-head, all intended; batch-H, callable-release, and `make check` green with no warnings; parent-verified 59/59 plain + ASan)
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the per-field shapes, the root binding, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
-- [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
+- [x] 4.3.1 Write the phase implementation pins (the per-field shapes, the root binding, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 13:40; four pins added (39 tests total, additions only) — the loop-condition walk's wholesale store, the discarded mixed-field per-fresh-owner materialization, the discarded projection root binding, and re-emission determinism; each fails at `f853ef9` for the intended reason (the per-field temp copied into the carrier and released twice; the `E10020` moves; the unbound root); 39/39 green and `make check` exit 0)
+- [x] 4.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses ✅ (completed: 2026-10-15 13:40; correctness and memory-safety dispatched plus three targeted confirmations; the corrections: the discarded aggregate-field recursion (P4R-1/F-1), the discarded-array-literal-arm flag scoping (P4R-2), and the discarded-field projection read redirect (MEM-1, closing `DEF-296`); rows filed: `DEF-294`..`DEF-297` plus the phase-5 candidate note; the closing verification: the residue spec 63/63 plain and ASan, the impl pins 39/39, the batch-H and callable-release suites green, `make check` exit 0 with no warnings)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 

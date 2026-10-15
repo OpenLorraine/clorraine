@@ -64,6 +64,9 @@ memory-safety (SA), dispatched on the phase diff in parallel.
   field expression (`g && len(Holder { names: [mk().v] }.names[0]) > 0` fails `-Werror=missing-field-initializers`
   / `missing-braces` at head and base) and the conditional carrier literal's taken-arm leak (now filed as
   `DEF-292`).
+- The phase-4 correctness review added the discarded all-fresh fixed-array literal spelling
+  (`c ? [stringOf("x")] : [stringOf("y")];` accepted with invalid C at both refs — PE-3, the `DEF-272` family)
+  to the phase-5 candidates.
 - SA-101/SA-102's correction (the literal-source moves and the fixed-array exclusions) landed
   uncommitted with the round; the final targeted confirmation is in progress.
 
@@ -168,3 +171,33 @@ a caller read; the global twins keep one `E10033`; the take twin keeps one `E100
 fresh-init leak), `DEF-288` (a container escape with frame-backed element loans), `DEF-289` (the direct-return parameter-backed literal — fixed by the follow-up), `DEF-290`
 (a stale literal-carrier loan), `DEF-291` (an all-null composite); `DEF-282` extended with the PC-4/PC-5 diagnostic-count instances; the pre-existing emission notes map to
 `DEF-171` (the `E10213`/embed case) and `DEF-189` (the freestanding stack alignment); the fixed-array-in-literal invalid C stays recorded for phase 4/5.
+
+## Phase 4 — Guarded and discarded literal positions
+
+**Reviewed implementation**: the working tree over `f853ef9` plus the review-driven correction rounds. **Lenses**: correctness (P4R/P4C) and memory-safety (F/MEM-1), dispatched in parallel on the phase diff.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 blocker (P4R-1 the discarded aggregate's fresh leaves unmaterialized) + P4R-2 (the discarded fixed-array literal arm accepted into invalid C), PE-1..PE-4 pre-existing | The blast-radius table (the walk's wholesale rule, the flag lifecycle, the discard materialization, the projection-root binder); test integrity (the four cases red at `f853ef9`); the corpus differential (1763 embedded programs, 8 intended deltas; 138 repo files, 0 deltas); `make check` green |
+| memory-safety | FINDINGS — 1 in-diff (F-1 = P4R-1) + a pre-existing emitter note | 49 probes plus variants: the fixed shapes clean, no double-free/UAF introduced, the do-not-fix set unchanged |
+
+### Fix rounds
+
+| Item | Severity | Outcome |
+|------|----------|---------|
+| P4R-1/F-1 | 🟠 | **Fixed**: `materialize_discarded_field` recurses into nested literal fields and array elements, materializing each fresh owning leaf into its own released statement temporary (the fixed-array leaf element-wise); spec cases `discardnested`/`discardfixed` |
+| P4R-2 | 🟠 | **Fixed**: the discarded-conditional element read skip is gated on the new `discarded_literal_field` flag, so a discarded array-literal arm rejects like its direct twin; spec case `discardarray` |
+| MEM-1 | 🔴 (base-equal; the phase rule widened its reach) | **Fixed**: the discarded literal field's conditional projection stays a read (redirected to the root binder with `discard_conditional_depth > 0`); closes `DEF-296`; spec cases `discardprojfield`/`discardprojmixed` |
+
+### Confirmations
+
+| Lens | Result | Detail |
+|------|--------|--------|
+| correctness | PASS — 0 blockers | The corrections verified across 87 probes and 1904 corpus/spec programs; the three observations (P4C-1..3) informational/pre-existing |
+| memory-safety | CONFIRMED CLEAN | The corrections plus the MEM-1 fix (37-probe set + an 11-probe hunt: no leak/UAF/DF; the base-equal records unchanged, C byte-identical) |
+
+### Filed rows
+
+`DEF-294` (a loop-condition receiver with mixed arms emits sequence-point C), `DEF-295` (a loop-condition member projection double-frees), `DEF-296` (the discarded-field projection — fixed and closed with the phase), `DEF-297` (a bare discarded all-fresh literal statement leaks); the discarded all-fresh fixed-array literal spelling (PE-3) joined the phase-5 candidates note; PE-1/PE-2 recorded above with base evidence.
