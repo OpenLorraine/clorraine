@@ -62,3 +62,58 @@ memory-safety (SA), dispatched on the phase diff in parallel.
   the phase-5 fixed-array scope; pin them there if they belong to its rows, else file.
 - SA-101/SA-102's correction (the literal-source moves and the fixed-array exclusions) landed
   uncommitted with the round; the final targeted confirmation is in progress.
+
+## Phase 2 — View derivation and owners
+
+**Reviewed implementation**: `14aea8a` (fix-tree base `c148fc5`), pins `f15cbd0`; the review-round
+fixes on top (uncommitted). **Lenses**: correctness (P2R), semantics (P2S), memory-safety (M),
+dispatched in parallel.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 2 blockers (P2R-1 critical = the carrier escape below; P2R-2 major = the deferred contract), 1 minor (P2R-3 baseline hash) | The blast-radius table shows the `call_view_source` refactor identity-preserving and the gates verified; test-integrity green (the pinned reds red at `f8b04f4`); `make check` green |
+| semantics | 2 blockers (P2S-2 = the carrier escape; P2S-1 = the conditional store's eager element), 2 minors (P2S-3 aggregate argument; P2S-4 the reborrow report code), 4 pre-existing records (PE-1..PE-4) | The five questions answered with spec citations; the one-report relationship defensible (`spec/14:18-20`) with the right control boundary and no acceptance hole; PE-2..PE-4 noted below |
+| memory-safety | 2 criticals (M-1 = the carrier escape; M-2 = the inner-block store), 1 pre-existing minor, 1 coverage gap | 49 head / 33 base probes; the coverage gap: the cases read only the view's length, so a silent UAF hid — the fix-round cases read the backing's bytes |
+
+### Fix round (working tree)
+
+| Finding | Severity | Ruling |
+|---------|----------|--------|
+| M-1/P2R-1/P2S-2 | 🔴 | **Fixed**: a flow-sensitive carried-owner set (`own/flow.rs`, joins/pruning in `own.rs`, accessors in `own/place.rs`) with the `carried_view_owners` walk at a return — one `E10030` for a generated/temp backing, one `E10035` for a local-only view; the direct-literal and lambda spellings become rejections; in-frame uses stay accepted |
+| M-2 | 🔴 | **Fixed**: `adopt_view_backings` moves each generated owner to the function body scope, so a destination in an enclosing block keeps its backing |
+| P2R-2/P2S-1 | 🟠 | **Fixed**: the field adoption gated on `!deferred`; the argument adoption on `defer_move_outs == 0`; a guarded view-element array argument defers its fill |
+| P2S-3 | 🟡 | **Fixed**: the aggregate argument adoption (through the carrier change and the body-scope owner) |
+| P2S-4 | 🟡 | **Fixed**: `view_is_mixed` looks through a view-returning call's single source (one `E10030` like the direct spelling) |
+| PE-1 | pre-existing 🟠 | **Fixed by the round** for the skipped path; the taken path is the C2 correction below |
+| PE-3/PE-4 | pre-existing 🟡 | **Filed**: `DEF-282` (the two-message dedupe), `DEF-283` (the deferred spelling's phrase) |
+| P-2/CF-3 (p13) | pre-existing 🟡 | Recorded for phase 4: the conditional carrier field's taken path leaks |
+| PE-2 (p6) | pre-existing 🟡 | Recorded for phase 4/5: the guarded fixed-array field spelling fails the strict build |
+
+### Confirmation of the fix round
+
+| Lens | Result | Detail |
+|------|--------|--------|
+| semantics | PASS WITH MINORS — 0 blockers | The six confirmations hold (the probes, the suite, no over-rejection, the corpus sweeps); CF-1 (the guarded struct-literal argument still runs the skipped call), CF-2 (the deferred guarded array argument leaks on the taken path), CF-3 (p13, phase 4), CF-4 (coverage) |
+| memory-safety | FINDINGS — 4 | F-1 (critical, in-scope: the view-like `Call` branch misses a `StructLit` descent, so an escaped adopted backing reads freed); P-1 (= CF-2); P-2, P-3 |
+
+### Correction round (fixed)
+
+| Item | Severity | Outcome |
+|------|----------|---------|
+| C1/F-1 | 🔴 | **Fixed**: the carrier walk descends the view call's lend-source argument (the lowered collectors stop at a struct literal, so the walk reaches the adopted owner the field holds); `n7`/`x1uaf` reject with one `E10030`; the control `n4` unchanged; a spec case added |
+| C2/P-1/CF-2 | 🟠 | **Fixed**: `adopt_guarded_view_backings` materializes the deferred argument's view-element owners inside the guard; both paths run one call per evaluation, values correct, ASan-clean; taken-path assertions added |
+| C3/CF-1 | 🟠 | **Fixed**: the guard deferral accepts view-carrying aggregate arguments and the guards emitter fills struct-literal fields field-by-field; skipped calls 0, taken 1; both-path assertions added |
+| C4/CF-4 | 🟡 | **Fixed**: `view_is_mixed` descends array literals; the chained and array spellings report one `E10030` like their single-view twins; a spec case added |
+| E-1 | 🟠 (in-diff, found by the final memory confirmation) | **Fixed**: `array_assign_expr` recurses through `struct_assign_expr` for a struct element, so a nested guarded aggregate stores field by field (the strict build passes and the stored view keeps its length); a spec case added; the `unused variable` warning cleaned |
+| M-1 | 🟡 pre-existing | **Filed as `DEF-284`**: a guarded element wrapping a fresh call root leaks its residual and runs the skipped call (base-equal); its fix stays out of the round |
+
+### Final confirmation
+
+The memory lens confirmed the F-1/P-1/CF-1 corrections (no head UAF/DF/leak where the
+base was clean; the taken/skipped call counts and values correct; the deeper F-1 chains reject) and
+found E-1 in its hunt (fixed above). The phase's closing verification: the residue spec 36/36 plain
+and under `RDC_ASAN=1`; the impl pins 22/22; the batch-H oracles, `callable_release_integrity`, and
+`make check` (66 suites) green with no warnings; the 236-probe corpus differential shows every
+delta as leak/UAF → rejection or clean, or eager → lazy.

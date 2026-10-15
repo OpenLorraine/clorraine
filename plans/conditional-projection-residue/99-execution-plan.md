@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-15 08:26
-> **Progress**: 11/39 tasks (28%)
+> **Last Updated**: 2026-10-15 10:05
+> **Progress**: 12/39 tasks (31%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -83,7 +83,7 @@ as the green control.
 
 ## Phase 2: View derivation and owners
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `c148fc5` (the phase's fix-tree base; recorded 2026-10-15)
 > **Lenses**: correctness + semantics + memory-safety
 > **Reasoning**: high — the derivation and owner rules are frozen; the fixes extend their walk
 
@@ -105,13 +105,13 @@ control (ST-10).
 ### Step 2.3: Impl Tests & Review
 
 - [x] 2.3.1 Write the phase implementation pins (the owner shapes, the element bindings, the report counts and spans) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 08:26; five pins added (22 tests total, additions only) for the call-wrapped owner walk and its two-arm/chained spellings (one `E10031` each, plus the accepted safe twin's inline shape), the element adoption (`ClBox __cl_owned0` in the argument and field positions), the `str[N]` return (the accepted emission, no false consume), the one-report rule (one `E10030` where withheld, one `E10035` for the controls), and re-emission determinism; each fails at `c148fc5` for the intended reason (recorded in the report); 22/22 green and `make check` exit 0)
-- [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
+- [x] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses ✅ (completed: 2026-10-15 10:05; correctness, semantics, and memory-safety dispatched on the phase diff plus two correction rounds and the final confirmation — the carrier-return escape (a flow-sensitive carried-owner set with the return walk; one `E10030` for a generated/temp backing and one `E10035` for a local-only view), the enclosing-block store adoption (the owner binds at the function body scope), the deferred guard contract (both guarded argument paths materialize on the taken path and run nothing on the skipped path), the aggregate argument adoption, the reborrow report alignment, and the nested guard-store recursion (E-1, found by the final confirmation in the guards emitter); two pre-existing diagnostics rows filed (`DEF-282`, `DEF-283`) and one pre-existing leak row filed (`DEF-284`); the full record is in `05-findings.md`; the closing verification: the residue spec 36/36 plain and under ASan, the impl pins 22/22, the batch-H and callable-release oracles green, `make check` exit 0, and the 236-probe corpus differential with no base-clean program defective)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-7, ST-8, ST-9, ST-11, ST-28, ST-29 red then green; ST-10 a green control (the reversed order — AR-25)
-- [ ] The batch-H suites and the `callable_release_integrity` oracle stay green
+- [x] ST-7, ST-8, ST-9, ST-11, ST-28, ST-29 red then green (plus the review-round regression cases); ST-10 a green control (the reversed order — AR-25)
+- [x] The batch-H suites and the `callable_release_integrity` oracle stay green
 
 ---
 
