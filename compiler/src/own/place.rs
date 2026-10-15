@@ -689,6 +689,28 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The adopted view backings a binding's stored value carries.
+    ///
+    /// The set is empty for a binding whose value reads no adopted backing,
+    /// and holds every generated owner or statement temporary a view-like
+    /// position of the value reads.
+    pub(super) fn binding_carried_owners(&self, id: usize) -> BTreeSet<LoanOwner> {
+        self.state
+            .carried_owners
+            .get(&id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Replaces the adopted view backings a binding's stored value carries.
+    pub(super) fn set_binding_carried_owners(&mut self, id: usize, owners: BTreeSet<LoanOwner>) {
+        if owners.is_empty() {
+            self.state.carried_owners.remove(&id);
+        } else {
+            self.state.carried_owners.insert(id, owners);
+        }
+    }
+
     /// The loans a view value carries at this point.
     ///
     /// Mirrors [`Self::view_provenance`] over the loan chain: a name or a
@@ -985,6 +1007,49 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(ViewCallSource::Expr(source)) => self.view_provenance(source),
             Some(ViewCallSource::Receiver(provenance)) => provenance,
             None => Provenance::None,
+        }
+    }
+
+    /// True when a view expression derives from a conditional whose arms
+    /// disagree.
+    ///
+    /// The provenance rule keeps a local-backed arm's provenance when the
+    /// other arm differs, so the return's local-owner judgment would name the
+    /// local even though the value may read the other arm's freshly derived
+    /// storage. A value that derives from a single local — a projection of a
+    /// carrier binding, a plain local view, or a call that reborrows one — is
+    /// not mixed and keeps the local-owner report.
+    pub(super) fn view_is_mixed(&self, expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.view_provenance(then_value) != self.view_provenance(else_value)
+                    || self.view_is_mixed(then_value)
+                    || self.view_is_mixed(else_value)
+            }
+            ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+                self.view_is_mixed(base)
+            }
+            // A view array repeats the borrows of the single view it names, so
+            // a mixed element makes the array spelling mixed too.
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements.iter().any(|element| self.view_is_mixed(element))
+                    || fill.as_deref().is_some_and(|fill| self.view_is_mixed(fill))
+            }
+            ExprKind::Unsafe(inner) => self.view_is_mixed(inner),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.view_is_mixed(value)
+            }
+            // A view-returning call reborrows its single lend source, so a
+            // chain through the call is as mixed as the source itself.
+            ExprKind::Call { callee, args, .. } => match self.call_view_source(callee, args) {
+                Some(ViewCallSource::Expr(source)) => self.view_is_mixed(source),
+                _ => false,
+            },
+            _ => false,
         }
     }
 

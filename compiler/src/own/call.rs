@@ -237,11 +237,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A view-element array argument adopts each temporary element's
             // backing in this frame, exactly as a view binding does: the
             // elements are views of their sources, so a temporary element's
-            // backing must live until the call has read the array.
-            let value = if matches!(value.kind, ValueKind::ArrayLit { .. })
+            // backing must live until the call has read the array. A
+            // conditionally evaluated argument keeps its element sources in
+            // place instead: the backing's call must run only on the path the
+            // guard reaches, so nothing is adopted before the guard.
+            let value = if self.defer_move_outs == 0
+                && matches!(value.kind, ValueKind::ArrayLit { .. })
                 && is_view_like(&value.ty)
             {
-                self.bind_view_projection_root(value)
+                self.adopt_view_backings(value)
             } else {
                 value
             };

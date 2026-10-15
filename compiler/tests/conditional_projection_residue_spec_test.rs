@@ -1844,3 +1844,904 @@ func main(): i32 {
     assert_no_asan("nestedliteralmove", &output);
     assert_exit("nestedliteralmove", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// carrierescape: an aggregate that carries views must not leave the frame.
+//
+// A struct whose view-like field names storage the frame adopted cannot be
+// returned to the caller: the backing is released with the frame, so the
+// caller would read freed storage. The carrier mirrors the view-typed twins:
+// one `E10030` when the backing is compiler-generated, and one `E10035` when
+// the carrier's view derives from a named local. The same-frame spellings
+// stay accepted and memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A returned carrier whose adopted backing dies with the frame reports one
+/// generated-owner escape.
+///
+/// `Holder { names: [mk().v] }` adopts the fresh `mk()` root for the frame;
+/// returning the carrier hands the caller views of storage the return
+/// releases, so the let, the assign, and the direct literal spellings each
+/// report exactly one `E10030` and emit no translation unit. Each caller
+/// reads the backing's bytes, so an accepted program would surface the read
+/// of freed storage under AddressSanitizer.
+#[test]
+fn should_reject_a_returned_carrier_whose_backing_dies_with_the_frame() {
+    let let_carrier = r#"module spec.cpr.carrierretlet;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func f(): Holder {
+    let h: Holder = Holder { names: [mk().v] };
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = f();
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    compile_rejects("carrierretlet", let_carrier, "E10030", 1);
+
+    let assign_carrier = r#"module spec.cpr.carrierretassign;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func f(): Holder {
+    let h: Holder = Holder { names: ["zz"] };
+    h = Holder { names: [mk().v] };
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = f();
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    compile_rejects("carrierretassign", assign_carrier, "E10030", 1);
+
+    let literal_carrier = r#"module spec.cpr.carrierretlit;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func f(): Holder {
+    return Holder { names: [mk().v] };
+}
+
+func main(): i32 {
+    let h: Holder = f();
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    compile_rejects("carrierretlit", literal_carrier, "E10030", 1);
+}
+
+/// A carrier return whose view derives from a named local keeps the
+/// local-owner report, exactly as the view-typed twin does.
+///
+/// `let names: str[1] = [mk().v]; return names;` reports one `E10035` for
+/// the local view binding, and a view array read out of a local carrier
+/// (`h.names`) reports the same single local-owner judgment. Neither emits
+/// a translation unit.
+#[test]
+fn should_keep_the_local_owner_report_of_a_carrier_return() {
+    let view_twin = r#"module spec.cpr.carrierviewtwin;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func f(): str[1] {
+    let names: str[1] = [mk().v];
+    return names;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("carrierviewtwin", view_twin, "E10035", 1);
+
+    let local_carrier = r#"module spec.cpr.carrierlocaltwin;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[1]; }
+
+func f(): str[1] {
+    let h: Holder = Holder { names: ["zz"] };
+    let names: str[1] = h.names;
+    return names;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("carrierlocaltwin", local_carrier, "E10035", 1);
+}
+
+/// A carrier stored into a destination that outlives the statement's block
+/// keeps its backing alive to the destination's use.
+///
+/// The block, `if`, and loop spellings all assign a fresh-backed carrier to a
+/// binding declared in an enclosing block; the adopted backing binds to the
+/// function frame, so the read after the block is valid and the runs exit 0
+/// with no memory report.
+#[test]
+fn should_store_a_carrier_backing_into_the_destination_frame() {
+    let block_store = r#"module spec.cpr.blockcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["ab"] };
+    {
+        h = Holder { names: [mk().v] };
+    }
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    let output = run_memory("blockcarrier", block_store);
+    assert_no_asan("blockcarrier", &output);
+    assert_exit("blockcarrier", &output, 0);
+
+    let if_store = r#"module spec.cpr.ifcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func main(): i32 {
+    let c: bool = true;
+    let h: Holder = Holder { names: ["ab"] };
+    if (c) {
+        h = Holder { names: [mk().v] };
+    } else {
+        h = Holder { names: ["zz"] };
+    }
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    let output = run_memory("ifcarrier", if_store);
+    assert_no_asan("ifcarrier", &output);
+    assert_exit("ifcarrier", &output, 0);
+
+    let loop_store = r#"module spec.cpr.loopcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func main(): i32 {
+    let h: Holder = Holder { names: ["ab"] };
+    let i: i32 = 0;
+    while (i < 2) {
+        h = Holder { names: [mk().v] };
+        i = i + 1;
+    }
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    let output = run_memory("loopcarrier", loop_store);
+    assert_no_asan("loopcarrier", &output);
+    assert_exit("loopcarrier", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardedelement: a conditionally evaluated element source keeps its call on
+// the evaluated path.
+//
+// The element's call counts its runs; the guarded programs select the arm
+// that never runs it, so the count stays zero (and the loop condition's
+// short circuit keeps the count at one per iteration). An eager materialize
+// would run the call before the guard and the count would expose it.
+// ---------------------------------------------------------------------------
+
+/// A carrier field whose element source sits under a `?:` arm keeps its call
+/// on the selected path.
+///
+/// `g ? Holder { names: [mk().v] } : Holder { names: ["zz"] }` with `g` false
+/// returns the static arm, so `mk()` never runs and the count stays zero.
+#[test]
+fn should_not_run_a_conditional_carrier_element_before_its_guard() {
+    let source = r#"module spec.cpr.condfieldcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func f(g: bool): i32 {
+    let h: Holder = g ? Holder { names: [mk().v] } : Holder { names: ["zz"] };
+    return i32(len(h.names[0])) - 2;
+}
+
+func main(): i32 {
+    let r: i32 = f(false);
+    return calls * 10 + r;
+}
+"#;
+    let output = run_memory("condfieldcall", source);
+    assert_no_asan("condfieldcall", &output);
+    assert_exit("condfieldcall", &output, 0);
+}
+
+/// A view-element array argument keeps its call on the guarded path.
+///
+/// The `&&`, `?:`, and loop-condition spellings all short-circuit around the
+/// argument with the counter false or exhausted, so `mk()` runs zero times
+/// (three times for the loop's three taken iterations) and the programs exit
+/// with the expected count.
+#[test]
+fn should_not_run_a_guarded_array_argument_before_its_guard() {
+    let and_argument = r#"module spec.cpr.guardargcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(names: str[1]): i32 { return i32(len(names[0])); }
+
+func f(g: bool): i32 {
+    if (g && use([mk().v]) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let r: i32 = f(false);
+    return calls * 10 + r;
+}
+"#;
+    let output = run_memory("guardargcall", and_argument);
+    assert_no_asan("guardargcall", &output);
+    assert_exit("guardargcall", &output, 0);
+
+    let cond_argument = r#"module spec.cpr.condargcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(names: str[1]): i32 { return i32(len(names[0])); }
+
+func f(g: bool): i32 {
+    return g ? use([mk().v]) : 0;
+}
+
+func main(): i32 {
+    let r: i32 = f(false);
+    return calls * 10 + r;
+}
+"#;
+    let output = run_memory("condargcall", cond_argument);
+    assert_no_asan("condargcall", &output);
+    assert_exit("condargcall", &output, 0);
+
+    let loop_argument = r#"module spec.cpr.loopargcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(names: str[1]): i32 { return i32(len(names[0])); }
+
+func h(k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k && use([mk().v]) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let r: i32 = h(3);
+    return calls * 10 + r - 3;
+}
+"#;
+    let output = run_memory("loopargcall", loop_argument);
+    assert_no_asan("loopargcall", &output);
+    assert_exit("loopargcall", &output, 30);
+}
+
+/// A struct-literal argument whose view-like field derives from a call keeps
+/// its backing alive for the call.
+///
+/// `use(Holder { names: [mk().v] })` passes the literal containing the view
+/// array; its temporary element's backing adopts for the frame, so the callee
+/// reads live storage and the run exits 0 with no memory report.
+#[test]
+fn should_adopt_a_view_element_field_of_a_struct_literal_argument() {
+    let source = r#"module spec.cpr.holderargcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(h: Holder): i32 { return i32(h.names[0][0]); }
+
+func main(): i32 {
+    return use(Holder { names: [mk().v] }) - 97;
+}
+"#;
+    let output = run_memory("holderargcall", source);
+    assert_no_asan("holderargcall", &output);
+    assert_exit("holderargcall", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// carrierviacall: a returned carrier whose field projects through a
+// view-returning call.
+//
+// The call's result reborrows the storage of its argument, so a carrier built
+// from `first(Holder { names: [mk().v] }.names)` holds views into the inner
+// literal's adopted backing exactly as the direct projection does. The return
+// must report the generated-owner escape once; the direct-projection twin is
+// the control.
+// ---------------------------------------------------------------------------
+
+/// A carrier returned through a view-returning call reports the same
+/// generated-owner escape as its direct-projection twin.
+///
+/// `first(...)` reborrows the argument's single view-element field, whose
+/// temporary root the frame adopted; returning the carrier hands the caller
+/// views of storage the return releases, so the program reports exactly one
+/// `E10030` and emits no translation unit.
+#[test]
+fn should_reject_a_returned_carrier_through_a_view_call() {
+    let source = r#"module spec.cpr.carrierretcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func first(a: str[1]): str { return a[0]; }
+
+func f(): Holder {
+    let h: Holder = Holder { names: [first(Holder { names: [mk().v] }.names)] };
+    return h;
+}
+
+func main(): i32 {
+    let h: Holder = f();
+    return i32(h.names[0][0]) - 97;
+}
+"#;
+    compile_rejects("carrierretcall", source, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// guardedelementtaken: the taken path of a guarded element source.
+//
+// A guarded array argument defers its fill to the evaluated path; the taken
+// path must still release the element's backing exactly once, and the count
+// folds into the exit code so an eager or an absent run both fail.
+// ---------------------------------------------------------------------------
+
+/// A guarded array argument releases its element backing on the taken path.
+///
+/// With the guard true each spelling runs the element's call once, uses the
+/// view, and releases the backing when the statement ends: the `&&` and `?:`
+/// programs exit 0 with the call counted once and no memory report.
+#[test]
+fn should_release_a_guarded_array_argument_on_its_taken_path() {
+    let and_taken = r#"module spec.cpr.guardargtaken;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(names: str[1]): i32 { return i32(len(names[0])); }
+
+func f(g: bool): i32 {
+    if (g && use([mk().v]) > 0) {
+        return calls;
+    }
+    return calls;
+}
+
+func main(): i32 {
+    return f(true) - 1;
+}
+"#;
+    let output = run_memory("guardargtaken", and_taken);
+    assert_no_asan("guardargtaken", &output);
+    assert_exit("guardargtaken", &output, 0);
+
+    let cond_taken = r#"module spec.cpr.condargtaken;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(names: str[1]): i32 { return i32(len(names[0])); }
+
+func f(g: bool): i32 {
+    let r: i32 = g ? use([mk().v]) : 0;
+    return calls * 10 + r;
+}
+
+func main(): i32 {
+    return f(true) - 12;
+}
+"#;
+    let output = run_memory("condargtaken", cond_taken);
+    assert_no_asan("condargtaken", &output);
+    assert_exit("condargtaken", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardedelementagg: the guarded struct-literal argument.
+//
+// A struct-literal argument containing a view-element field runs its element's
+// call only on the guard's path and releases the backing when the statement
+// ends. The skipped spellings count zero calls; the taken spellings count one
+// and read the correct byte.
+// ---------------------------------------------------------------------------
+
+/// A guarded struct-literal argument runs its field's call only on the
+/// evaluated path, once, and releases the backing.
+///
+/// `g && use(Holder { names: [mk().v] })`, the `?:` spelling, and the `||`
+/// spelling each skip the call when their guard short-circuits and run it
+/// exactly once on the taken path. The taken programs also read the backing's
+/// byte, so a lost or leaked backing fails the exit code or the memory report.
+#[test]
+fn should_not_run_a_guarded_struct_literal_argument_before_its_guard() {
+    let and_skipped = r#"module spec.cpr.guardaggandskipped;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(h.names[0][0]); }
+
+func f(g: bool): i32 {
+    if (g && use(Holder { names: [mk().v] }) > 0) {
+        return calls;
+    }
+    return calls;
+}
+
+func main(): i32 {
+    return f(false);
+}
+"#;
+    let output = run_memory("guardaggandskipped", and_skipped);
+    assert_no_asan("guardaggandskipped", &output);
+    assert_exit("guardaggandskipped", &output, 0);
+
+    let and_taken = r#"module spec.cpr.guardaggtaken;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(h.names[0][0]); }
+
+func f(g: bool): i32 {
+    if (g && use(Holder { names: [mk().v] }) > 0) {
+        return calls;
+    }
+    return calls;
+}
+
+func main(): i32 {
+    return f(true) - 1;
+}
+"#;
+    let output = run_memory("guardaggtaken", and_taken);
+    assert_no_asan("guardaggtaken", &output);
+    assert_exit("guardaggtaken", &output, 0);
+
+    let cond_skipped = r#"module spec.cpr.guardaggcondskipped;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(h.names[0][0]); }
+
+func f(g: bool): i32 {
+    let v: i32 = g ? use(Holder { names: [mk().v] }) : 0;
+    return calls * 10 + v;
+}
+
+func main(): i32 {
+    return f(false);
+}
+"#;
+    let output = run_memory("guardaggcondskipped", cond_skipped);
+    assert_no_asan("guardaggcondskipped", &output);
+    assert_exit("guardaggcondskipped", &output, 0);
+
+    let cond_taken = r#"module spec.cpr.guardaggcondtaken;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(h.names[0][0]); }
+
+func f(g: bool): i32 {
+    let v: i32 = g ? use(Holder { names: [mk().v] }) : 0;
+    return calls * 10 + v;
+}
+
+func main(): i32 {
+    return f(true) - 107;
+}
+"#;
+    let output = run_memory("guardaggcondtaken", cond_taken);
+    assert_no_asan("guardaggcondtaken", &output);
+    assert_exit("guardaggcondtaken", &output, 0);
+
+    let or_skipped = r#"module spec.cpr.guardaggorskipped;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(h.names[0][0]); }
+
+func f(g: bool): i32 {
+    if (g || use(Holder { names: [mk().v] }) > 0) {
+        return calls;
+    }
+    return calls;
+}
+
+func main(): i32 {
+    return f(true);
+}
+"#;
+    let output = run_memory("guardaggorskipped", or_skipped);
+    assert_no_asan("guardaggorskipped", &output);
+    assert_exit("guardaggorskipped", &output, 0);
+
+    let or_taken = r#"module spec.cpr.guardaggortaken;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(h.names[0][0]); }
+
+func f(g: bool): i32 {
+    if (g || use(Holder { names: [mk().v] }) > 0) {
+        return calls;
+    }
+    return calls;
+}
+
+func main(): i32 {
+    return f(false) - 1;
+}
+"#;
+    let output = run_memory("guardaggortaken", or_taken);
+    assert_no_asan("guardaggortaken", &output);
+    assert_exit("guardaggortaken", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// chainonereport: a the reborrow chain of a mixed conditional view return.
+//
+// The direct spelling `(c ? a : mkBox()).v` reports one generated-owner
+// escape. A returned view through a reborrow callee (or the `bytes` view
+// builder) derives from the same conditional, so it reports the same single
+// `E10030`.
+// ---------------------------------------------------------------------------
+
+/// A reborrow-chained mixed conditional view return reports one `E10030`,
+/// like its direct spelling.
+///
+/// `peek((c ? a : mkBox()).v)` and `bytes((c ? a : mkBox()).v)` both reborrow
+/// the conditional's selected storage; each reports exactly one
+/// generated-owner escape and emits no translation unit.
+#[test]
+fn should_report_the_chained_reborrow_view_return_once() {
+    let chained = r#"module spec.cpr.chainonereport;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+
+func peek(x: str): str { return x; }
+
+func f(c: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    return peek((c ? a : mkBox()).v);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("chainonereport", chained, "E10030", 1);
+
+    let bytes = r#"module spec.cpr.chainonereportbytes;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+
+func f(c: bool): u8[] {
+    let a: Box = Box { v: stringOf("cd") };
+    return bytes((c ? a : mkBox()).v);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("chainonereportbytes", bytes, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// guardednestkit: a guarded aggregate whose fixed-array field holds a struct
+// literal that names its own view-element field.
+//
+// The nested literal must store field by field at every depth: a compound
+// initializer would brace-elide the inner element's own fixed-array field,
+// which fails the strict build and drops the stored view's length. The taken
+// paths fold the read byte into the exit code; the skipped paths keep the
+// element call at zero.
+// ---------------------------------------------------------------------------
+
+/// A guarded nested aggregate stores its inner view-element field field by
+/// field on the taken path and skips it on the skipped path.
+///
+/// `Kit { parts: [Part { name: [mk().v] }] }` nests a fixed-array-of-struct
+/// field inside a struct-literal element. Under `?:` and `&&` the taken path
+/// runs the element's call once, reads the backing's byte (folded into the
+/// exit code), and is memory-clean; the skipped path runs it zero times.
+#[test]
+fn should_store_a_nested_guarded_aggregate_field_by_field() {
+    let cond_taken = r#"module spec.cpr.kitcondtaken;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Part { name: str[1]; }
+struct Kit { parts: Part[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(k: Kit): i32 { return i32(k.parts[0].name[0][0]); }
+
+func f(g: bool): i32 {
+    let r: i32 = g ? use(Kit { parts: [Part { name: [mk().v] }] }) : 0;
+    return calls * 10 + r;
+}
+
+func main(): i32 {
+    return f(true) - 107;
+}
+"#;
+    let output = run_memory("kitcondtaken", cond_taken);
+    assert_no_asan("kitcondtaken", &output);
+    assert_exit("kitcondtaken", &output, 0);
+
+    let cond_skipped = r#"module spec.cpr.kitcondskipped;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Part { name: str[1]; }
+struct Kit { parts: Part[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(k: Kit): i32 { return i32(k.parts[0].name[0][0]); }
+
+func f(g: bool): i32 {
+    let r: i32 = g ? use(Kit { parts: [Part { name: [mk().v] }] }) : 0;
+    return calls * 10 + r;
+}
+
+func main(): i32 {
+    return f(false);
+}
+"#;
+    let output = run_memory("kitcondskipped", cond_skipped);
+    assert_no_asan("kitcondskipped", &output);
+    assert_exit("kitcondskipped", &output, 0);
+
+    let and_taken = r#"module spec.cpr.kitandtaken;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Part { name: str[1]; }
+struct Kit { parts: Part[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(k: Kit): i32 { return i32(k.parts[0].name[0][0]); }
+
+func f(g: bool): i32 {
+    if (g && use(Kit { parts: [Part { name: [mk().v] }] }) > 0) {
+        return calls;
+    }
+    return calls;
+}
+
+func main(): i32 {
+    return f(true) - 1;
+}
+"#;
+    let output = run_memory("kitandtaken", and_taken);
+    assert_no_asan("kitandtaken", &output);
+    assert_exit("kitandtaken", &output, 0);
+
+    let and_skipped = r#"module spec.cpr.kitandskipped;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Part { name: str[1]; }
+struct Kit { parts: Part[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(k: Kit): i32 { return i32(k.parts[0].name[0][0]); }
+
+func f(g: bool): i32 {
+    if (g && use(Kit { parts: [Part { name: [mk().v] }] }) > 0) {
+        return calls;
+    }
+    return calls;
+}
+
+func main(): i32 {
+    return f(false);
+}
+"#;
+    let output = run_memory("kitandskipped", and_skipped);
+    assert_no_asan("kitandskipped", &output);
+    assert_exit("kitandskipped", &output, 0);
+}

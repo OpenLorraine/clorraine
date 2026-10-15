@@ -328,6 +328,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
             self.set_place(id, init);
             self.apply_binding_effect(id, effect, decl.span);
+            // A carrier binding keeps the backings its view-like positions
+            // read, so a later escape of the binding — a return to the caller —
+            // can report them. A view-like target records its owners as view
+            // loans instead, through the binding effect above.
+            if !is_view_like(&target) {
+                if let Some(lowered) = prepared.lowered() {
+                    let owners = self.carried_view_owners(lowered, false);
+                    self.set_binding_carried_owners(id, owners);
+                }
+            }
             let place = self.binding_place(id);
             self.emit_prepared_store(place, prepared);
         } else {
@@ -571,6 +581,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             },
         );
         self.apply_binding_effect(id, effect, decl.span);
+        // A carrier binding keeps the backings its view-like positions read,
+        // exactly as in `check_let`.
+        if !is_view_like(&target) {
+            if let Some(lowered) = prepared.lowered() {
+                let owners = self.carried_view_owners(lowered, false);
+                self.set_binding_carried_owners(id, owners);
+            }
+        }
         let place = self.binding_place(id);
         self.emit_prepared_store(place, prepared);
     }
@@ -774,7 +792,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// iteration. The loan request and the loan itself are recorded as events
     /// only on the reporting pass; whether the request conflicts with a live
     /// loan is decided by the liveness post-pass.
-    fn record_view_loan(&mut self, owner: LoanOwner, kind: LoanKind, span: Span) -> Option<LoanId> {
+    pub(super) fn record_view_loan(
+        &mut self,
+        owner: LoanOwner,
+        kind: LoanKind,
+        span: Span,
+    ) -> Option<LoanId> {
         let loan = self.intern_loan(LoanOrigin::new(owner, kind, span));
         if let LoanOwner::Binding(owner) = owner {
             if self.report_diagnostics
@@ -1211,15 +1234,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     _ => {}
                 }
             }
-            // A return hands the value to the caller, so its destination is
-            // not a local of this frame: a view-element array backing inside
-            // the value must not adopt a scope owner that dies before the
-            // caller reads the views. The returned view itself is bound by
-            // the view-return handling below, which reports the escape.
-            let saved_adopts = self.view_destination_adopts;
-            self.view_destination_adopts = false;
+            // A return hands the value to the caller, and the value may carry
+            // views through its view-like positions: each position's backing
+            // adopts a scope owner that dies before the caller reads it, and
+            // the escape rule below reports the loans.
             let lowered = self.lower_value(value);
-            self.view_destination_adopts = saved_adopts;
             let lowered = self.bind_member_receiver(lowered);
             // A returned projection of a mixed conditional moves the selected
             // member out of each arm's root, so the returned value has exactly
@@ -1250,8 +1269,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A view read of a projection over a mixed conditional owns each
             // ownerless arm's root in the return's scope, so the escape rule
             // sees the fresh arm's release before the caller reads the view.
+            // A view-returning call reborrows its single source argument, so
+            // that source is bound exactly as a direct derivation would be.
             let lowered = if is_view_like(&returns) {
-                self.bind_view_projection_root(lowered)
+                let lowered = self.bind_view_projection_root(lowered);
+                self.bind_view_call_argument(lowered)
             } else {
                 lowered
             };
@@ -1303,25 +1325,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 lowered
             };
-            // A view derived from a statement temporary or a compiler-
-            // generated owner binding cannot leave the function: the caller's
-            // use lies after the release of either. The loans are created at
-            // the return, the releases follow, and the use is recorded last,
-            // so the liveness rule reports `E10030`.
-            let temp_loans: Vec<LoanId> = if is_view_like(&returns) {
-                let mut loans: Vec<LoanId> = self
-                    .lowered_temp_owners(&lowered)
-                    .into_iter()
-                    .filter_map(|temp| {
-                        self.record_view_loan(LoanOwner::Temp(temp), LoanKind::Shared, span)
-                    })
-                    .collect();
-                loans.extend(self.lowered_owner_bindings(&lowered).into_iter().filter_map(
-                    |id| self.record_view_loan(LoanOwner::Binding(id), LoanKind::Shared, span),
-                ));
-                loans
-            } else {
+            // A view return reads its owners' storage directly; an aggregate
+            // return reads it through its view-like positions. Either way the
+            // loans are created at the return, the releases follow, and the use
+            // is recorded last, so the liveness rule reports the escape
+            // (`E10030`) once per adopted backing. A plain local-derived view
+            // keeps the local-owner judgment instead: only a mixed conditional
+            // leaves its fresh arm unreportable by that judgment.
+            let local_only = local_view_owner.is_some() && !self.view_is_mixed(value);
+            let temp_loans: Vec<LoanId> = if local_only {
                 Vec::new()
+            } else {
+                self.carried_view_owners(&lowered, is_view_like(&returns))
+                    .into_iter()
+                    .filter_map(|owner| self.record_view_loan(owner, LoanKind::Shared, span))
+                    .collect()
             };
             // The local-owner judgment reports only when the lowered return
             // derives from no compiler-generated root and no statement

@@ -610,24 +610,7 @@ impl<'a> Emitter<'a> {
                 parts.push(self.array_row_expr(&sub, element_ty, value)?);
                 continue;
             }
-            let mut guards: Vec<String> = Vec::new();
-            self.guard_expressions(value, &mut guards);
-            let lowered = self.store_text(value, element);
-            let mut store = format!("{sub} = {lowered}");
-            // An owned element source is a move: the store leaves the element
-            // owning, so the source is emptied in the same comma expression.
-            if self.needs_drop(element) && arm_has_storage_root(value) {
-                let source = self.value(value);
-                store = format!(
-                    "({store}, {})",
-                    self.move_zero_text_expr(&source, element)
-                );
-            }
-            parts.push(if guards.is_empty() {
-                store
-            } else {
-                format!("(({}), {})", guards.join(", "), store)
-            });
+            parts.push(self.array_element_store(&sub, element, value)?);
         }
         let Some(fill) = fill else {
             return if parts.is_empty() {
@@ -677,6 +660,168 @@ impl<'a> Emitter<'a> {
         } else {
             parts.join(", ")
         })
+    }
+
+    /// Stores one array element inside a guard.
+    ///
+    /// A struct-typed element that is a literal stores field by field through
+    /// [`Self::struct_assign_expr`]: the compound spelling would brace-elide the
+    /// element's own nested fixed-array field, which the strict build rejects
+    /// and which loses the nested view's length. Every other element keeps the
+    /// plain store with its own guards and its owned-source move.
+    fn array_element_store(&self, sub: &str, element: &Ty, value: &Value) -> Option<String> {
+        if matches!(element.kind, TyKind::Struct(..)) {
+            if let ValueKind::StructLit { name, fields } = &value.kind {
+                if let Some(stored) = self.struct_assign_expr(sub, element, name, fields) {
+                    return Some(stored);
+                }
+            }
+        }
+        let mut guards: Vec<String> = Vec::new();
+        self.guard_expressions(value, &mut guards);
+        let lowered = self.store_text(value, element);
+        let mut store = format!("{sub} = {lowered}");
+        // An owned element source is a move: the store leaves the element
+        // owning, so the source is emptied in the same comma expression.
+        if self.needs_drop(element) && arm_has_storage_root(value) {
+            let source = self.value(value);
+            store = format!(
+                "({store}, {})",
+                self.move_zero_text_expr(&source, element)
+            );
+        }
+        Some(if guards.is_empty() {
+            store
+        } else {
+            format!("(({}), {})", guards.join(", "), store)
+        })
+    }
+
+    /// True when a struct literal needs field-by-field stores inside a guard.
+    ///
+    /// Only a fixed-array field whose element is itself an aggregate forces the
+    /// per-field form: a C compound literal would brace-elide its initializer
+    /// into the element's first member, which the strict build rejects, and a
+    /// nested literal that names one has no initializer form either. Every
+    /// other literal keeps its compound spelling, so an emission that names no
+    /// such field stays unchanged.
+    fn struct_literal_needs_guard_stores(&self, ty: &Ty, fields: &[(String, Value)]) -> bool {
+        fields.iter().any(|(field, value)| {
+            let field_ty = self.field_type(ty, field);
+            let field_ty = if field_ty.is_unknown() {
+                value.ty.clone()
+            } else {
+                field_ty
+            };
+            if field_ty.is_fixed_array() {
+                let element = field_ty.iterated_element();
+                if matches!(
+                    element.kind,
+                    TyKind::Struct(..) | TyKind::Str | TyKind::StaticStr
+                ) {
+                    return true;
+                }
+            }
+            if let ValueKind::StructLit {
+                fields: inner_fields,
+                ..
+            } = &value.kind
+            {
+                if matches!(field_ty.kind, TyKind::Struct(..)) {
+                    return self.struct_literal_needs_guard_stores(&field_ty, inner_fields);
+                }
+            }
+            false
+        })
+    }
+
+    /// Renders a struct literal as field-by-field stores inside a guard.
+    ///
+    /// A struct literal whose view-array field would take a brace-elided
+    /// initializer cannot materialize as one compound literal under the strict
+    /// build, and a field whose value carries its own guards must be evaluated
+    /// where the guard reaches it. Each declared field is therefore stored in a
+    /// comma sequence: a fixed-array field assigns element by element, a nested
+    /// literal recurses, and every other field stores its value with its own
+    /// guards first. A field the literal omits takes its empty state. Returns
+    /// `None` when the type names no declared fields, so the caller keeps the
+    /// compound-literal spelling.
+    fn struct_assign_expr(
+        &self,
+        target_c: &str,
+        ty: &Ty,
+        name: &str,
+        fields: &[(String, Value)],
+    ) -> Option<String> {
+        if !matches!(ty.kind, TyKind::Struct(..)) {
+            return None;
+        }
+        let declared = self
+            .sema
+            .table
+            .struct_fields(name)
+            .map(<[(String, Ty)]>::to_vec)
+            .unwrap_or_default();
+        if declared.is_empty() {
+            return None;
+        }
+        let mut parts: Vec<String> = Vec::new();
+        for (field, _) in &declared {
+            let field_ty = self.field_type(ty, field);
+            let sub = format!("{target_c}.{field}");
+            let Some((_, value)) = fields.iter().find(|(written, _)| written == field) else {
+                // C cannot assign an array, so an omitted fixed-array field is
+                // zeroed through its address; every other omitted field takes
+                // its empty state as a store.
+                if field_ty.is_fixed_array() {
+                    parts.push(format!("cl_zero(&{sub})"));
+                } else {
+                    parts.push(format!("{sub} = {}", self.empty_state(&field_ty)));
+                }
+                continue;
+            };
+            if field_ty.is_fixed_array() {
+                if let ValueKind::ArrayLit { elements, fill } = &value.kind {
+                    if let Some(stored) = self.array_assign_expr(&sub, &field_ty, elements, fill) {
+                        parts.push(stored);
+                        continue;
+                    }
+                }
+            }
+            if matches!(field_ty.kind, TyKind::Struct(..)) {
+                if let ValueKind::StructLit {
+                    name: inner,
+                    fields: inner_fields,
+                } = &value.kind
+                {
+                    if let Some(stored) =
+                        self.struct_assign_expr(&sub, &field_ty, inner, inner_fields)
+                    {
+                        parts.push(stored);
+                        continue;
+                    }
+                }
+            }
+            let mut guards: Vec<String> = Vec::new();
+            self.guard_expressions(value, &mut guards);
+            let lowered = self.store_text(value, &field_ty);
+            let mut store = format!("{sub} = {lowered}");
+            // An owned field source is a move: the store leaves the field
+            // owning, so the source is emptied in the same comma expression.
+            if self.needs_drop(&field_ty) && arm_has_storage_root(value) {
+                let source = self.value(value);
+                store = format!(
+                    "({store}, {})",
+                    self.move_zero_text_expr(&source, &field_ty)
+                );
+            }
+            parts.push(if guards.is_empty() {
+                store
+            } else {
+                format!("(({}), {})", guards.join(", "), store)
+            });
+        }
+        Some(parts.join(", "))
     }
 
     /// Collects the guard expressions of a value's always-evaluated part.
@@ -812,16 +957,25 @@ impl<'a> Emitter<'a> {
                         else_value,
                     ));
                 } else {
-                    // A deferred literal embeds each element's own guards in
-                    // its store, so walking the literal here would materialize
-                    // a side-effecting element twice and empty a `take` source
-                    // before the second evaluation. The previous temporary is
-                    // dropped before the element stores run, unless the carrier
-                    // is adopting: its consumer owns the value, so a re-fill
-                    // must not release what the consumer stored.
+                    // A deferred literal embeds each element's or field's own
+                    // guards in its store, so walking the literal here would
+                    // materialize a side-effecting element twice and empty a
+                    // `take` source before the second evaluation. The previous
+                    // temporary is dropped before the element stores run,
+                    // unless the carrier is adopting: its consumer owns the
+                    // value, so a re-fill must not release what the consumer
+                    // stored.
                     let literal_stores = inner_ty.is_fixed_array()
                         && matches!(&inner.kind, ValueKind::ArrayLit { .. });
-                    if !literal_stores {
+                    let struct_store = match &inner.kind {
+                        ValueKind::StructLit { name, fields }
+                            if self.struct_literal_needs_guard_stores(&inner_ty, fields) =>
+                        {
+                            self.struct_assign_expr(&destination, &inner_ty, name, fields)
+                        }
+                        _ => None,
+                    };
+                    if !literal_stores && struct_store.is_none() {
                         self.guard_expressions(inner, out);
                     }
                     if !*adopting && self.needs_drop(&inner_ty) {
@@ -829,36 +983,44 @@ impl<'a> Emitter<'a> {
                             out.push(drop);
                         }
                     }
-                    let stored = match &inner.kind {
-                        ValueKind::Call {
-                            callee,
-                            type_args,
-                            args,
-                            receiver,
-                        } if inner_ty.is_fixed_array() => self.call_with_destination(
-                            callee,
-                            type_args,
-                            args,
-                            receiver.as_deref(),
-                            &destination,
-                        ),
-                        // A fixed-array closure call in a conditionally
-                        // evaluated operand also writes through its hidden
-                        // destination, taken after the environment and the
-                        // lambda's own arguments.
-                        ValueKind::ClosureCall { callable, args } if inner_ty.is_fixed_array() => {
-                            self.closure_call_with_destination(
-                                callable,
+                    let stored = match struct_store {
+                        Some(stored) => stored,
+                        None => match &inner.kind {
+                            ValueKind::Call {
+                                callee,
+                                type_args,
                                 args,
-                                Some(&destination),
-                            )
-                        }
-                        ValueKind::ArrayLit { elements, fill } if inner_ty.is_fixed_array() => self
-                            .array_assign_expr(&destination, &inner_ty, elements, fill)
-                            .unwrap_or_else(|| {
-                                format!("(__cl_tmp{temp} = {})", self.value(inner))
-                            }),
-                        _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
+                                receiver,
+                            } if inner_ty.is_fixed_array() => self.call_with_destination(
+                                callee,
+                                type_args,
+                                args,
+                                receiver.as_deref(),
+                                &destination,
+                            ),
+                            // A fixed-array closure call in a conditionally
+                            // evaluated operand also writes through its hidden
+                            // destination, taken after the environment and the
+                            // lambda's own arguments.
+                            ValueKind::ClosureCall { callable, args }
+                                if inner_ty.is_fixed_array() =>
+                            {
+                                self.closure_call_with_destination(
+                                    callable,
+                                    args,
+                                    Some(&destination),
+                                )
+                            }
+                            ValueKind::ArrayLit { elements, fill }
+                                if inner_ty.is_fixed_array() =>
+                            {
+                                self.array_assign_expr(&destination, &inner_ty, elements, fill)
+                                    .unwrap_or_else(|| {
+                                        format!("(__cl_tmp{temp} = {})", self.value(inner))
+                                    })
+                            }
+                            _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
+                        },
                     };
                     out.push(stored);
                 }

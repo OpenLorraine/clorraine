@@ -905,6 +905,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if projections.is_empty() {
                     self.bind_value(id, &target_ty, value, lowered.as_ref(), target.span);
                 }
+                // A carrier binding keeps the backings its view-like positions
+                // read. A whole store replaces the set; a projected store adds
+                // to it, because the binding's other positions still hold their
+                // own views. A view-like target records its owners as view
+                // loans through `bind_value` instead.
+                if !is_view_like(&target_ty) && self.bindings[id].kind == BindingKind::Local {
+                    if let Some(lowered) = &lowered {
+                        let mut owners = if projections.is_empty() {
+                            BTreeSet::new()
+                        } else {
+                            self.binding_carried_owners(id)
+                        };
+                        owners.extend(self.carried_view_owners(lowered, false));
+                        self.set_binding_carried_owners(id, owners);
+                    }
+                }
                 self.view_destination_adopts = saved_adopts;
             }
             Some(PlaceTarget::Global(id, projections)) => {

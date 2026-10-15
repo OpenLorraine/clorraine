@@ -1295,7 +1295,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             loans.entry(*id).or_default().extend(set.iter().copied());
         }
         loans.retain(|_, set| !set.is_empty());
-        FlowState { places, loans }
+        let mut carried_owners: BTreeMap<usize, BTreeSet<liveness::LoanOwner>> = BTreeMap::new();
+        for (id, set) in first
+            .carried_owners
+            .iter()
+            .chain(second.carried_owners.iter())
+        {
+            carried_owners.entry(*id).or_default().extend(set.iter().cloned());
+        }
+        carried_owners.retain(|_, set| !set.is_empty());
+        FlowState {
+            places,
+            loans,
+            carried_owners,
+        }
     }
 
     // -- IR emission ---------------------------------------------------------

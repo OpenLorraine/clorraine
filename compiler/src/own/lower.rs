@@ -294,16 +294,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // defers the fill to the guarded expression and adopts the
                     // carried value, because the field's own cleanup is the
                     // sole release.
-                    let value = if matches!(value.kind, ValueKind::ArrayLit { .. })
+                    let value = if !deferred
+                        && matches!(value.kind, ValueKind::ArrayLit { .. })
                         && is_view_like(&value.ty)
                         && self.view_destination_adopts
                     {
-                        // A view-element array field adopts each temporary
-                        // element's backing in this frame, exactly as a view
-                        // binding does: the elements are views of their
-                        // sources, so a temporary element's backing must live
-                        // at least as long as the literal storing the views.
-                        self.bind_view_projection_root(value)
+                        self.adopt_view_backings(value)
                     } else if self.consume_needs_conditional_arms(&value)
                         && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
                         && !is_view(&value.ty)
@@ -891,23 +887,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // past the rule that rejects its block-bodied spelling.
                 self.eval(value);
                 self.judge_return_moves(value, value.span);
-                // The body's value goes to the closure's caller, so its
-                // destination is not a local of this frame: a view-element
-                // array backing inside it must not adopt a scope owner that
-                // dies before the caller reads the views.
-                let saved_adopts = self.view_destination_adopts;
-                self.view_destination_adopts = false;
                 let returned = self.lower_value(value);
-                self.view_destination_adopts = saved_adopts;
                 if !self.is_terminated() {
                     // Mirror `Stmt::Return`: the scope cleanup becomes a
-                    // cleanup ladder the emitter runs after the returned
-                    // value has been read. Running the cleanup before the
-                    // terminator would release the temporary the returned
-                    // expression still reads.
+                    // cleanup ladder the emitter runs after the returned value
+                    // has been read. Running the cleanup before the terminator
+                    // would release the temporary the returned expression still
+                    // reads. The value's view-like positions may read storage
+                    // this body releases, so their loans are created at the
+                    // return and used after the cleanup: the liveness rule
+                    // reports the escape.
+                    let temp_loans: Vec<LoanId> = self
+                        .carried_view_owners(&returned, is_view_like(&self.returns))
+                        .into_iter()
+                        .filter_map(|owner| {
+                            self.record_view_loan(owner, LoanKind::Shared, value.span)
+                        })
+                        .collect();
                     self.emit_return_cleanup();
                     let releases = self.pending_release_copies();
                     self.record_release_events(&releases);
+                    for loan in temp_loans {
+                        self.record_event(LoanEventKind::Used { loan }, value.span);
+                    }
                     self.terminate(Terminator::Return {
                         value: Some(returned),
                         releases,
@@ -2199,6 +2201,178 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         owners
     }
 
+    /// The adopted view backings a value's view-like positions read.
+    ///
+    /// `view_position` marks whether the value itself is a position a view
+    /// reads: the declared view type of a return, or a field the aggregate
+    /// gates below admitted. A projection, a cast, or a conditional keeps the
+    /// mark, so a chain that roots at an owner counts that owner, while an
+    /// owning position's projection of the same owner does not. An aggregate
+    /// gates each of its positions by the declared field or element type, and
+    /// a place contributes its generated-owner identity together with the
+    /// backings its binding carries.
+    pub(super) fn carried_view_owners(
+        &self,
+        value: &Value,
+        view_position: bool,
+    ) -> BTreeSet<LoanOwner> {
+        let mut owners = BTreeSet::new();
+        self.collect_carried_view_owners(value, view_position, &mut owners);
+        owners
+    }
+
+    /// Collects one value's carried view backings into `owners`.
+    fn collect_carried_view_owners(
+        &self,
+        value: &Value,
+        view_position: bool,
+        owners: &mut BTreeSet<LoanOwner>,
+    ) {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.collect_carried_view_owners(base, view_position, owners);
+            }
+            ValueKind::Cast { value: inner, .. } => {
+                self.collect_carried_view_owners(inner, view_position, owners);
+            }
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_carried_view_owners(then_value, view_position, owners);
+                self.collect_carried_view_owners(else_value, view_position, owners);
+            }
+            ValueKind::StructLit { name, fields } => {
+                let declared = self.instance_fields(&value.ty, name);
+                for (field_name, field_value) in fields {
+                    let position = declared
+                        .iter()
+                        .find(|(declared, _)| declared == field_name)
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or_else(|| field_value.ty.clone());
+                    if self.may_carry_view(&position) {
+                        self.collect_carried_view_owners(field_value, true, owners);
+                    }
+                }
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                // The declared element type decides whether the position can
+                // carry a view: an element whose own recorded type is an owner
+                // converted to a view still reads the position's storage.
+                if self.may_carry_view(&value.ty.iterated_element()) {
+                    for element in elements {
+                        self.collect_carried_view_owners(element, true, owners);
+                    }
+                    if let Some(fill) = fill {
+                        self.collect_carried_view_owners(fill, true, owners);
+                    }
+                }
+            }
+            ValueKind::Place(place) => {
+                if let ir::PlaceBase::Local(name) = &place.base {
+                    if let Some(id) = self
+                        .bindings
+                        .iter()
+                        .position(|binding| binding.ir_name == *name)
+                    {
+                        if view_position && self.bindings[id].generated && self.bindings[id].needs_drop
+                        {
+                            owners.insert(LoanOwner::Binding(id));
+                        }
+                        owners.extend(self.binding_carried_owners(id));
+                    }
+                }
+            }
+            ValueKind::Call { callee, args, .. } => {
+                // An aggregate call result may copy any argument's view-like
+                // positions into its result — a pass-through or borrowing
+                // callee hands back views of its arguments' storage — so every
+                // argument that can carry a view contributes its backings.
+                if !is_view_like(&value.ty) && self.may_carry_view(&value.ty) {
+                    for arg in args {
+                        if self.may_carry_view(&arg.ty) {
+                            self.collect_carried_view_owners(arg, true, owners);
+                        }
+                    }
+                } else if view_position && is_view_like(&value.ty) {
+                    // A view-like result reads the storage of the call's
+                    // single lend source, so that source is walked directly:
+                    // the lowered collectors below stop at a struct literal,
+                    // while the walk reaches the adopted owner a view-element
+                    // field holds. The collectors still cover a derivation
+                    // with no single source, such as an intrinsic.
+                    if let Some(source) = self
+                        .lowered_lend_source(callee)
+                        .and_then(|index| args.get(index))
+                    {
+                        self.collect_carried_view_owners(source, true, owners);
+                    }
+                    for temp in self.lowered_temp_owners(value) {
+                        owners.insert(LoanOwner::Temp(temp));
+                    }
+                    for id in self.lowered_owner_bindings(value) {
+                        owners.insert(LoanOwner::Binding(id));
+                    }
+                }
+            }
+            _ => {
+                if view_position && is_view_like(&value.ty) {
+                    for temp in self.lowered_temp_owners(value) {
+                        owners.insert(LoanOwner::Temp(temp));
+                    }
+                    for id in self.lowered_owner_bindings(value) {
+                        owners.insert(LoanOwner::Binding(id));
+                    }
+                }
+            }
+        }
+    }
+
+    /// True when a type can hold a view in one of its positions.
+    ///
+    /// A view-like type holds storage a view reads directly; a struct or array
+    /// holds views when any field or element can. Every other type — a scalar,
+    /// a handle, or a raw pointer — owns or reaches its value without carrying
+    /// a view into frame storage.
+    fn may_carry_view(&self, ty: &Ty) -> bool {
+        if is_view_like(ty) {
+            return true;
+        }
+        match &ty.kind {
+            TyKind::Struct(name, _) => self
+                .instance_fields(ty, name)
+                .iter()
+                .any(|(_, field_ty)| self.may_carry_view(field_ty)),
+            TyKind::Array { element, .. } => self.may_carry_view(element),
+            _ => false,
+        }
+    }
+
+    /// The declared fields of a struct type with the instance's type arguments
+    /// substituted.
+    ///
+    /// The list is empty when the type is not a known struct, so a caller can
+    /// treat an unresolvable type as carrying nothing.
+    fn instance_fields(&self, ty: &Ty, name: &str) -> Vec<(String, Ty)> {
+        let TyKind::Struct(_, args) = &ty.kind else {
+            return Vec::new();
+        };
+        let Some(fields) = self.sema.table.struct_fields(name) else {
+            return Vec::new();
+        };
+        let params = self.sema.table.struct_type_params(name).unwrap_or(&[]);
+        fields
+            .iter()
+            .map(|(field, field_ty)| {
+                (
+                    field.clone(),
+                    crate::types::substitute_instance(field_ty, params, args),
+                )
+            })
+            .collect()
+    }
+
     /// The binding id whose IR spelling names a generated owner.
     ///
     /// A place names its base by IR spelling, so the generated-owner check
@@ -2599,6 +2773,132 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => value,
         }
+    }
+
+    /// Adopts the view backings of a view-element array value in this frame.
+    ///
+    /// The elements are views of their sources, so a temporary element's
+    /// backing must live at least as long as the value that stores the views:
+    /// each element binds exactly as a view binding's storage does. The owner
+    /// is placed in the function body scope, so it also outlives a destination
+    /// binding declared outside the statement's own block. Callers of this
+    /// helper must not be conditionally evaluated: an eager binding would run
+    /// the backing's call before its guard.
+    pub(super) fn adopt_view_backings(&mut self, value: Value) -> Value {
+        let value = self.bind_view_projection_root(value);
+        for id in self.lowered_owner_bindings(&value) {
+            self.move_binding_to_body_scope(id);
+        }
+        value
+    }
+
+    /// Binds the view-like positions of an aggregate for a guarded operand.
+    ///
+    /// Mirrors [`Self::adopt_view_backings`] for a conditionally evaluated
+    /// operand: each view-like position's ownerless root binds through the
+    /// deferred materialization, so its fill runs only where the guard reaches
+    /// it and the statement's release frees it on that path. A position that
+    /// already names storage keeps its spelling, and an owning position stays
+    /// untouched because its value travels with the aggregate.
+    fn adopt_guarded_view_backings(&mut self, value: Value) -> Value {
+        // Every caller establishes that the position can carry a view, so the
+        // value's own recorded type is not consulted here: a position typed
+        // `str` may hold an owner converted to a view, whose value type is the
+        // owner.
+        let Value { ty, kind } = value;
+        match kind {
+            ValueKind::StructLit { name, fields } => {
+                let declared = self.instance_fields(&ty, &name);
+                let fields = fields
+                    .into_iter()
+                    .map(|(field_name, field_value)| {
+                        let position = declared
+                            .iter()
+                            .find(|(declared, _)| declared == &field_name)
+                            .map(|(_, ty)| ty.clone())
+                            .unwrap_or_else(|| field_value.ty.clone());
+                        let field_value = if self.may_carry_view(&position) {
+                            self.adopt_guarded_view_backings(field_value)
+                        } else {
+                            field_value
+                        };
+                        (field_name, field_value)
+                    })
+                    .collect();
+                Value::new(ty, ValueKind::StructLit { name, fields })
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                let view_like = self.may_carry_view(&ty.iterated_element());
+                let elements = elements
+                    .into_iter()
+                    .map(|element| {
+                        if view_like {
+                            self.adopt_guarded_view_backings(element)
+                        } else {
+                            element
+                        }
+                    })
+                    .collect();
+                let fill = fill.map(|fill| {
+                    Box::new(if view_like {
+                        self.adopt_guarded_view_backings(*fill)
+                    } else {
+                        *fill
+                    })
+                });
+                Value::new(ty, ValueKind::ArrayLit { elements, fill })
+            }
+            other => self.bind_guarded_projection_root(Value::new(ty, other)),
+        }
+    }
+
+    /// Binds the backing of a view-returning call's reborrowed argument.
+    ///
+    /// The result of a view-returning call reads the storage its single lend
+    /// source derives from, so a returned view through the call must own the
+    /// source's backing exactly as a direct derivation does. Binding the
+    /// source lets the return's escape rule report a backing that dies with
+    /// the frame rather than leaving the caller's view pointed at it. A call
+    /// with no single lend source, or with a receiver, keeps its spelling.
+    pub(super) fn bind_view_call_argument(&mut self, value: Value) -> Value {
+        let Value { ty, kind } = value;
+        let ValueKind::Call {
+            callee,
+            type_args,
+            args,
+            receiver,
+        } = kind
+        else {
+            return Value::new(ty, kind);
+        };
+        if receiver.is_none() {
+            if let Some(index) = self.lowered_lend_source(&callee) {
+                let mut args = args;
+                if let Some(arg) = args.get_mut(index) {
+                    let pending =
+                        std::mem::replace(arg, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                    *arg = self.bind_view_projection_root(pending);
+                }
+                return Value::new(
+                    ty,
+                    ValueKind::Call {
+                        callee,
+                        type_args,
+                        args,
+                        receiver,
+                    },
+                );
+            }
+        }
+        Value::new(
+            ty,
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            },
+        )
     }
 
     /// Binds a consumed projection's call root for a conditionally evaluated
@@ -3523,6 +3823,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             || value.ty.is_unknown()
         {
             return value;
+        }
+        // A guarded view-carrying aggregate argument keeps its fill and each
+        // view-like position's call on the evaluated path: a named temporary
+        // assigned here would run them on the path the guard skips. Each
+        // ownerless root binds through the deferred materialization, so the
+        // statement's release frees the backing on the path that evaluated it.
+        if self.defer_move_outs > 0
+            && self.may_carry_view(&value.ty)
+            && matches!(
+                value.kind,
+                ValueKind::ArrayLit { .. } | ValueKind::StructLit { .. }
+            )
+        {
+            let value = self.adopt_guarded_view_backings(value);
+            let ty = self.materialized_ty(&value);
+            let temp = self.new_temp(ty.clone());
+            self.mark_destination_temp(temp);
+            self.register_pending_release(temp, &ty);
+            return Value::new(
+                ty,
+                ValueKind::Materialize {
+                    temp,
+                    value: Box::new(value),
+                    move_outs: Vec::new(),
+                    adopting: false,
+                },
+            );
         }
         let name = format!("__cl_owned{}", self.next_owned_temp);
         self.next_owned_temp += 1;

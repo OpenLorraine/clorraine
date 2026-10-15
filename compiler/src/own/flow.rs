@@ -15,7 +15,7 @@ use crate::ir::{self, BlockId};
 use crate::span::Span;
 use crate::types::Ty;
 
-use super::liveness::LoanId;
+use super::liveness::{LoanId, LoanOwner};
 
 /// What a binding is: a local, a parameter, or a `borrow T?` out-parameter.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -141,6 +141,15 @@ pub(super) struct FlowState {
     /// carries both loans after the join, and a use reaches both regions. The
     /// set is empty or absent for a binding that carries no loan.
     pub(super) loans: BTreeMap<usize, BTreeSet<LoanId>>,
+    /// The adopted view backings each binding's value carries.
+    ///
+    /// A carrier binding — a struct or array that holds views in its view-like
+    /// positions — keeps the generated-owner and temporary backings those
+    /// positions read, so a later return of the binding records their loans at
+    /// the return and the escape rule reports them. The map is flow-sensitive
+    /// the same way the view loans are: a branch that stores a carrier and one
+    /// that does not join to the union.
+    pub(super) carried_owners: BTreeMap<usize, BTreeSet<LoanOwner>>,
 }
 
 impl FlowState {
@@ -158,6 +167,7 @@ impl FlowState {
     pub(super) fn drop_bindings_from(&mut self, floor: usize) {
         self.places.retain(|id, _| *id < floor);
         self.loans.retain(|id, _| *id < floor);
+        self.carried_owners.retain(|id, _| *id < floor);
     }
 }
 
