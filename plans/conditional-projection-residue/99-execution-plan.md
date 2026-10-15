@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-15 09:52
-> **Progress**: 32/39 tasks (82%)
+> **Last Updated**: 2026-10-15 19:00
+> **Progress**: 36/39 tasks (92%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -232,19 +232,19 @@ literal, dot-receiver, loop-condition, and owning-argument order cases.
 
 ### Step 6.2: Implementation
 
-- [ ] 6.2.1 Extend the pin to the assignment targets (the update-containing right-hand side included), the literal fields/elements, the dot receiver, the loop condition (a per-iteration `Materialize` fill), and the owning argument — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/control.rs`
-- [ ] 6.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 6.2.1 Extend the pin to the assignment targets (the update-containing right-hand side included), the literal fields/elements, the dot receiver, the loop condition (a per-iteration `Materialize` fill), and the owning argument — the touched files: `compiler/src/own/lower.rs`, `own/call.rs`, `own/expr.rs`, `own/statements.rs` (the loop route reuses the existing guard/`Materialize` emission; `own/loops.rs` and `codegen/control.rs` needed no change) ✅ (completed: 2026-10-15 17:40; the assignment RHS pins into a statement temporary before the store and the compound read pins before the pinned RHS; the index chain pins its location before the side; a literal pins each update-containing operand at its source position; the dot receiver pins at argument position zero; the loop condition routes through a per-iteration `Materialize` fill; an owning argument binds its temporary at its own position; the whole-repo sweep shows exactly the six phase-6 emission deltas) — `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/control.rs`
+- [x] 6.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-15 17:40; residue spec 83/83 plain and under `RDC_ASAN=1`; the strict-build legs pass on the pinned container; the batch-H, callable-release, and hardening suites green; `make check` exit 0; the controls byte-identical; the guarded-operand residual filed as `DEF-308`; parent-verified 83/83 plain + ASan)
 
 ### Step 6.3: Impl Tests & Review
 
-- [ ] 6.3.1 Write the phase implementation pins (the pin positions, the owning-argument shape, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
-- [ ] 6.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
+- [x] 6.3.1 Write the phase implementation pins (the pin positions, the owning-argument shape, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 18:00; six pins added (52 tests total, additions only) — the assignment target/RHS pins (all three spellings), the literal operands in source order, the dot receiver before its arguments, the per-iteration loop fill, the owning argument before the update, and re-emission determinism (an identity control); five of six fail at `a32222e` on their first assertion for the intended reasons; 52/52 green and `make check` exit 0)
+- [x] 6.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses ✅ (completed: 2026-10-15 19:30; three lenses dispatched (correctness, semantics, emission-integrity) plus three targeted confirmations; the corrections: the target-location pin settling the deferred index, the receiver/func-field callee at position zero with the eager binding gated, the literal owning-operand transfer temporary, and the loop-condition receiver/argument pins through the per-iteration fill (the P6F-1 regression fixed); rows filed: `DEF-308` extended (its loop-condition sibling fixed), `DEF-309`, `DEF-310`; `DEF-278` completes with the phase; the closing verification: the residue spec 88/88 plain and ASan, the impl pins 52/52 (one re-pinned with the corrected emission, recorded), the batch-H and callable-release suites green, `make check` exit 0 with no warnings)
 
 **Verify**: `make check`
 
 **Deliverables**:
-- [ ] ST-23..ST-27 red (the site/emission pins and the order-observing case — AR-24) then green
-- [ ] The batch-H update pins stay green
+- [x] ST-23..ST-27 red (the site/emission pins and the order-observing case — AR-24) then green (plus the review-round regression cases)
+- [x] The batch-H update pins stay green
 
 ---
 

@@ -234,3 +234,38 @@ fresh-init leak), `DEF-288` (a container escape with frame-backed element loans)
 ### Filed rows
 
 `DEF-301` (closed with the phase), `DEF-302` (a conditional of call-filled literals), `DEF-303` (the `String[2]` conditional-root return segfault), `DEF-304` (the guarded/deferred expression-path fallback), `DEF-305` (the array-literal element descent), `DEF-306` (the nested-arm projection — partially fixed; the element-read position remains), `DEF-307` (the stale iterable move marker); `DEF-281` extended with the read-position leak instances. The candidate shapes `DEF-298`..`DEF-300` stay filed.
+
+## Phase 6 — Update order completion
+
+**Reviewed implementation**: the working tree over `a32222e` plus four correction rounds. **Lenses**: correctness (P6R), semantics (P6S/P6F), emission-integrity, dispatched in parallel.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 blocker (P6R-001 the receiver hoisting) + P6R-002 (the loop-condition call arguments), P6R-003 (the plan file list/stamp), P6R-004 (a pre-existing raw-deref store dropped) | The blast-radius table (the pin machinery's call sites); test integrity (the four reds at `a32222e`); 1950-program differential with only the intended deltas; `make check` green |
+| semantics | 2 blockers (P6S-1 the impure target location after the RHS; P6S-2 = the receiver hoisting) + P6S-3 (the literal owning-field order), P6S-4..6 pre-existing | The five answers with spec/04 §3 citations; the probes are the spelling matrix |
+| emission-integrity | FINDINGS — 1 critical (EM-1 = P6S-1) + pre-existing records | 3374-program differential; strict builds; the ordering read structurally |
+
+### Fix rounds
+
+| Item | Severity | Outcome |
+|------|----------|---------|
+| P6S-1/EM-1 | 🔴 | **Fixed**: `pin_operand_location` settles a deferred element fill and binds every index at the value's position; the target index pins before the RHS pin (the probes base-correct) |
+| P6S-2/P6R-001 | 🔴 | **Fixed**: the func-field callee and the dot receiver settle at position zero (the take receiver binds eagerly); the owning lend receiver closes (`DEF-278` complete) |
+| P6S-3 | 🟠 | **Fixed**: `pin_literal_operand` gives an owning fresh literal operand a transfer temporary (no double-free) at its source position |
+| P6F-1 | 🟠 (regression in the correction) | **Fixed**: the receiver/argument pins run under loop conditions through the deferred per-iteration fill (only the eager ownership binding is gated); the loop dot receiver and the loop call arguments are strict-OK |
+| P6R-003 | 🟡 | **Fixed**: the plan file list and stamp corrected |
+| P6R-004 | 🟠 pre-existing | **Filed as `DEF-310`**: a bare raw-deref store is accepted and silently dropped |
+| P6S-5/P6S-6 | 🟡 pre-existing | `DEF-309` filed (the array fill re-evaluation); `DEF-308` extended then the loop-call-argument sibling fixed; the guarded operands remain |
+
+### Confirmations
+
+| Lens | Result | Detail |
+|------|--------|--------|
+| semantics | FAIL — 1 blocker (P6F-1), then fixed and confirmed | The three corrections verified (the probes base-correct); the regression fixed (the while/do-while/for probes strict-OK); the owning receiver fixed |
+| emission-integrity | CONFIRMED — 0 open findings (state B) | 17 intended deltas; no head-only strict failure; the ordering, determinism, and both profiles verified; the state-A major resolved by the follow-up |
+
+### Filed rows
+
+`DEF-308` (extended; the loop-condition sibling fixed), `DEF-309` (the array fill), `DEF-310` (the raw-deref store); `DEF-278` completes with the phase (the written arguments and the owning receiver).
