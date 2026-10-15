@@ -608,3 +608,389 @@ func main(): i32 {
     assert_no_asan("armcontrols", &output);
     assert_exit("armcontrols", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// callwrappedowner: the owner walk through a view-returning call.
+//
+// A call such as `bytes(...)` returns a view into storage its argument still
+// owns, so binding the result records the argument's owners as loans. When the
+// argument is a conditional over two lender parameters, every arm names an
+// owner the view may read: whichever arm the call selects, a write to that
+// arm's backing while the view is live is the plain spelling's mutation error.
+// ---------------------------------------------------------------------------
+
+/// A call-wrapped conditional view records every arm's owner, so a write to
+/// either parameter backing reports the plain twin's mutation error.
+///
+/// `bytes(b.v)` reports `E10031` at the mutation because its view is a loan of
+/// `b`. The call-wrapped conditional `(c ? b : d).v` must match on both
+/// selections: each program writes the backing of the arm its call selects at
+/// run time, and each reports exactly one `E10031` at the mutation and emits
+/// no translation unit.
+#[test]
+fn should_record_every_arm_owner_of_a_call_wrapped_conditional_view() {
+    let first = r#"module spec.cpr.callwrappedownerfirst;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: u8[] = bytes((c ? b : d).v);
+    b.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, true);
+}
+"#;
+    compile_rejects("callwrappedownerfirst", first, "E10031", 1);
+
+    let second = r#"module spec.cpr.callwrappedownersecond;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: u8[] = bytes((c ? b : d).v);
+    d.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, false);
+}
+"#;
+    compile_rejects("callwrappedownersecond", second, "E10031", 1);
+
+    let twin = r#"module spec.cpr.callwrappedownertwin;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, c: bool): i32 {
+    let s: u8[] = bytes(b.v);
+    b.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("callwrappedownertwin", twin, "E10031", 1);
+}
+
+// ---------------------------------------------------------------------------
+// elementpositions: view-array literals in argument and field positions.
+//
+// A view array whose element derives from a call temporary adopts the
+// element's backing for the surrounding scope, exactly as the direct binding
+// `let vs: str[1] = [mk().v];` does. The argument and struct-literal field
+// positions must adopt the same backing; otherwise the temporary is never
+// released and its storage leaks while the view stays readable.
+// ---------------------------------------------------------------------------
+
+/// A view-array literal in an argument or field position adopts its temporary
+/// element backing, so the run is memory-clean.
+///
+/// `use([mk().v])` passes the array literal as an argument, and
+/// `Holder { names: [mk().v] }` initializes a field of a local. Each element
+/// derives from a call temporary, so each backing must be released after the
+/// view's last use. Both programs are accepted, exit 0, and are clean.
+#[test]
+fn should_adopt_the_element_backing_of_view_arrays_in_argument_and_field_positions() {
+    let argument = r#"module spec.cpr.elementpositionsarg;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(names: str[1]): i32 { return i32(len(names[0])); }
+
+func main(): i32 {
+    return use([mk().v]) - 2;
+}
+"#;
+    let output = run_memory("elementpositionsarg", argument);
+    assert_no_asan("elementpositionsarg", &output);
+    assert_exit("elementpositionsarg", &output, 0);
+
+    let field = r#"module spec.cpr.elementpositionsfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func main(): i32 {
+    let h: Holder = Holder { names: [mk().v] };
+    return i32(len(h.names[0])) - 2;
+}
+"#;
+    let output = run_memory("elementpositionsfield", field);
+    assert_no_asan("elementpositionsfield", &output);
+    assert_exit("elementpositionsfield", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// arrayreturn: the `str[N]` return spelling.
+//
+// A `str[1]` return of one view element must be judged exactly like the
+// single-view return of the same derivation. A view derived from a handle
+// parameter is accepted by the single spelling, so the array spelling is
+// accepted too; a derivation that reports for the single spelling reports the
+// same code once for the array.
+// ---------------------------------------------------------------------------
+
+/// A `str[1]` return matches its single-view twin's judgment.
+///
+/// `return [s]` derives its element from the by-value `String` parameter `s`,
+/// exactly as the accepted `return s` derives the single view, so the program
+/// is accepted, exits 0, and is clean. `return [h.v]` derives from the
+/// parameter `h`, whose twin `return h.v` reports one `E10036` (zero view-like
+/// lend candidates); the array spelling keeps exactly that one report and
+/// adds no release-borrowed `E10034`.
+#[test]
+fn should_treat_a_view_array_return_like_its_single_view_twin() {
+    let view = r#"module spec.cpr.arrayreturnparam;
+
+import { String, stringOf } from std.text;
+
+func f(s: String): str[1] { return [s]; }
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let a: str[1] = f(s);
+    return i32(len(a[0])) - 2;
+}
+"#;
+    let output = run_memory("arrayreturnparam", view);
+    assert_no_asan("arrayreturnparam", &output);
+    assert_exit("arrayreturnparam", &output, 0);
+
+    let twin = r#"module spec.cpr.arrayreturnmembertwin;
+
+import { String } from std.text;
+
+struct Box { v: String; }
+
+func f(h: Box): str { return h.v; }
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("arrayreturnmembertwin", twin, "E10036", 1);
+
+    let member = r#"module spec.cpr.arrayreturnmember;
+
+import { String } from std.text;
+
+struct Box { v: String; }
+
+func f(h: Box): str[1] { return [h.v]; }
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("arrayreturnmember", member, "E10036", 1);
+}
+
+// ---------------------------------------------------------------------------
+// onereport: one report for the mixed local/generated view return.
+//
+// A return whose mixed conditional has a local-backed arm beside a
+// generated-owner arm reports both the local-owner `E10035` and the
+// generated-owner escape `E10030` at one site. The site keeps exactly one
+// report: the local-owner judgment is withheld and the escape carries the
+// rejection. A conditional whose local backing is the only escape (local plus
+// parameter, or local arms alone) keeps its single `E10035`.
+// ---------------------------------------------------------------------------
+
+/// A mixed local/generated view return reports exactly one error: the
+/// generated-owner escape.
+///
+/// `return (c ? a : mkBox()).v` returns a view of the local `a` on one path
+/// and of the fresh `mkBox()` root on the other. The fresh root's release
+/// makes the escape `E10030`; the local-owner `E10035` is withheld at that
+/// site, so the program reports exactly one error. The controls
+/// `return (c ? b.v : a)` (a local `b` and a parameter `a`) and the two-local
+/// conditional keep their single `E10035`.
+#[test]
+fn should_report_once_at_a_mixed_local_and_generated_view_return() {
+    let mixed = r#"module spec.cpr.onereportmixed;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+
+func f(c: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    return (c ? a : mkBox()).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("onereportmixed", mixed, "E10030", 1);
+
+    let localparam = r#"module spec.cpr.onereportlocalparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f(c: bool, a: str): str {
+    let b: Box = Box { v: stringOf("cd") };
+    return (c ? b.v : a);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("onereportlocalparam", localparam, "E10035", 1);
+
+    let localonly = r#"module spec.cpr.onereportlocalonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f(c: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    let b: Box = Box { v: stringOf("ef") };
+    return (c ? a : b).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects("onereportlocalonly", localonly, "E10035", 1);
+}
+
+// ---------------------------------------------------------------------------
+// reverseorder: the reversed-order conditional view return (green control).
+//
+// The per-arm conversion emits the owned arm on its own path, and it covers
+// both arm orders, so a conditional whose owned member arm comes second
+// builds and runs. The control pins the order against a regression.
+// ---------------------------------------------------------------------------
+
+/// A conditional view return with the owned arm second stays accepted and
+/// memory-clean.
+///
+/// `return c ? x : h.v` converts the owned member arm `h.v` on its own path
+/// and returns the `str` parameter `x` on the other. The strict host build
+/// accepts the emitted C, the runs select each arm once, and the program exits
+/// 0 with no memory report.
+#[test]
+fn should_accept_the_reversed_order_of_a_conditional_view_return() {
+    let source = r#"module spec.cpr.reverseorder;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func pick(x: str, h: Box, c: bool): str {
+    return c ? x : h.v;
+}
+
+func main(): i32 {
+    let h: Box = Box { v: stringOf("abcd") };
+    return i32(len(pick("zz", h, true))) + i32(len(pick("xyzw", h, false))) - 6;
+}
+"#;
+    let output = run_memory("reverseorder", source);
+    assert_no_asan("reverseorder", &output);
+    assert_exit("reverseorder", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// ownertwins: chained view-returning callees and the two-arm member walk.
+//
+// A view-returning callee inherits its result's owners from the argument the
+// view derives from, and a conditional argument contributes every arm's
+// owner. The direct spelling `let s: str = (c ? b : d).v;` already loans both
+// parameter backings; the chained spelling `peek((c ? b : d).v)` and the
+// two-arm member spelling `bytes(c ? b.v : d.v)` must match it, so a write to
+// the selected arm's backing while the view is live reports `E10031` once.
+// ---------------------------------------------------------------------------
+
+/// A chained view-returning callee and a two-arm member walk record every
+/// arm's owner, so a write to the selected backing reports once.
+///
+/// The direct twin `let s: str = (c ? b : d).v;` reports the mutation; the
+/// chained call through `peek(x: str): str` must report the same judgment for
+/// the same write. The two-arm walk `bytes(c ? b.v : d.v)` writes the second
+/// arm's backing, which the first-arm-only walk misses. Each program reports
+/// exactly one `E10031` at the mutation and emits no translation unit.
+#[test]
+fn should_record_the_chained_and_two_arm_view_owners() {
+    let chained = r#"module spec.cpr.ownertwinschained;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func peek(x: str): str { return x; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: str = peek((c ? b : d).v);
+    d.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, false);
+}
+"#;
+    compile_rejects("ownertwinschained", chained, "E10031", 1);
+
+    let twoarm = r#"module spec.cpr.ownertwinstwoarm;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: u8[] = bytes(c ? b.v : d.v);
+    d.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, false);
+}
+"#;
+    compile_rejects("ownertwinstwoarm", twoarm, "E10031", 1);
+
+    let direct = r#"module spec.cpr.ownertwinsdirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: str = (c ? b : d).v;
+    d.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, false);
+}
+"#;
+    compile_rejects("ownertwinsdirect", direct, "E10031", 1);
+}

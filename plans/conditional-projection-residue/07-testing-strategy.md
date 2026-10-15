@@ -48,7 +48,7 @@
 | ST-10 | **Green control (incidental closure):** `func pick(x: str, h: Box, c: bool): str { return c ? x : h.v; }` — the owned arm second, the reverse of the batch-H pin's order | Accepted; strict build; run exit 0; ASan-clean (the per-arm conversion covers both orders) | R2, AR-25 |
 | ST-11 | `let a: Box = …; return (c ? a : mkBox()).v;` (a local-backed arm beside a generated-owner arm); the controls `return (c ? b.v : a)` (a local `b`, a parameter `a`) and a local-only backing | Rejected with exactly one error total, carrying `E10030`; each control keeps exactly one `E10035` | R2, AR-26 |
 | ST-28 | The chained view-returning callee: `let s: str = peek((c ? b : d).v);` through a `peek(x: str): str` callee; the view used beside a writable alias of the selected arm's backing | Rejected like the direct twin (`E10031` at the mutation; one report; the head accepts and reads freed storage) | R2, AR-19 |
-| ST-29 | The two-arm owner walk: `bytes(c ? b.v : d.v)`; the view used beside a writable alias of the **second** arm's backing | Rejected like the first-arm twin (`E10031` at the mutation; one report; the head records only the first arm) | R2, AR-19 |
+| ST-29 | The two-arm owner walk: `bytes(c ? b.v : d.v)`; the view used beside a writable alias of the **second** arm's backing | Rejected like the first-arm twin (`E10031` at the mutation; one report; the head records no arm's owner, so both aliases are accepted) | R2, AR-19 |
 
 ### P3 — Escaping stores (`03-03`)
 

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-15 06:28
-> **Progress**: 4/39 tasks (10%)
+> **Last Updated**: 2026-10-15 06:52
+> **Progress**: 7/39 tasks (18%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -70,7 +70,7 @@ as the green control.
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the carrier/binding shapes, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [x] 1.3.1 Write the phase implementation pins (the carrier/binding shapes, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 06:36; seven pins on seven tests — the per-instance arm move, the residual-owning fresh root, the literal projection arm (a green control: base-identical), the guarded take carrier fill/empty, the receiver-field root inside the guard (the adopting-carrier drop skip), the direct spellings (a green control), and the re-emission determinism pin; 7/7 green in the container and against the full `make check`; the author measured four of the seven failing at the pre-fix compiler `744674b` on exactly the fix-only markers — the phase review re-checks two of them)
 - [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
@@ -94,8 +94,8 @@ as the green control.
 positions, the `str[N]` return, the one-report mixed return (ST-11), and the reversed-order green
 control (ST-10).
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (callwrappedowner, elementpositions, arrayreturn, onereport, reverseorder, ownertwins)
-- [ ] 2.1.2 Run the suite and record the red phase
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (callwrappedowner, elementpositions, arrayreturn, onereport, reverseorder, ownertwins) ✅ (completed: 2026-10-15 06:48; six tests appended, additions-only — the call-wrapped owner (first/second/twin), the element positions (argument/field), the `str[N]` return (parameter/member-twin/member), the one-report case (mixed/local-parameter/local-only), the reversed-order green control, and the owner twins (chained/two-arm/direct); the committed phase-1 oracle and helpers are untouched; the author measured two design-word inaccuracies (recorded: `[h.v]` reports `E10034` + `E10036`; the two-arm walk records no arm's owner), and both design texts were corrected)
+- [x] 2.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-15 06:52; plain 10 passed / 4 failed and ASan 9 passed / 5 failed — callwrappedowner and the owner twins accepted-then-freed, the one-report case reporting two errors (`E10035` + `E10030`), the `str[N]` parameter case falsely rejected with `E10034`, and the element positions leaking 11 B per element under ASan; the reversed-order control and all ten program-level controls green — `E10031`/`E10036`/`E10035` counts as designed; parent-verified)
 
 ### Step 2.2: Implementation
 

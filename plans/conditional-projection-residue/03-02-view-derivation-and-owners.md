@@ -45,8 +45,8 @@ binding spelling does; the direct binding and the single-view twins keep their p
 ### 3. The `str[N]` return spelling (`DEF-267`)
 
 `func f(s: String): str[1] { return [s]; }` reports a false `E10034` (the element consume marks the
-source as a released borrow) and `return [h.v]` gains an extra `E10036` where the single-view twin
-(`return s`) is accepted.
+source as a released borrow) and `return [h.v]` reports `E10034` + `E10036` where its single-view twin
+(`return h.v`) reports one `E10036`.
 
 Run the return spelling through the same view-element lowering as the binding: the return's array
 literal evaluates its elements with the view-element guard, so the array reports exactly its
