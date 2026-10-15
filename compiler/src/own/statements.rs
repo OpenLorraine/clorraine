@@ -586,6 +586,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let lowered = self.bind_fixed_array_root(lowered);
             return PreparedStore::Assign { value: lowered };
         }
+        // A fixed-array destination's conditional has the same gap when an arm
+        // projects out of a fresh result (`c ? a.row : mkBox().row`): the arm
+        // names no lvalue to copy from. The projection distributes into the
+        // arms and each ownerless arm's root binds, so the per-arm copy always
+        // reads a place. An owned instance reaches this branch too, because the
+        // owned-conditional paths above only cover arms that root at a
+        // conditional or at a place.
+        if ty.is_fixed_array()
+            && matches!(lowered.kind, ValueKind::Conditional { .. })
+            && self.conditional_has_ownerless_projection_arm(&lowered)
+        {
+            let lowered = self.bind_fixed_array_root(lowered);
+            return PreparedStore::Assign { value: lowered };
+        }
         // A view bound to a projection of fresh ownerless storage — a call
         // result, a struct literal, or a conditional whose value is such an
         // aggregate — binds the backing to a local in the view's scope, so the

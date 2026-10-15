@@ -263,13 +263,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } => {
                 let condition = self.lower_value(condition);
                 // Each arm runs only when the condition selects it, so a
-                // `take` move-out inside an arm must wait for that path.
+                // `take` move-out inside an arm must wait for that path. An
+                // arm reached from an eager context keeps that context: the
+                // enclosing store emits the arm's fields, so a literal inside
+                // the arm is not materialized on its own.
+                let eager_arm = self.defer_move_outs == 0 || self.eager_conditional_arm;
+                let saved_eager_arm = self.eager_conditional_arm;
+                self.eager_conditional_arm = eager_arm;
                 self.defer_move_outs += 1;
                 let then_value = self.lower_value(then_value);
                 let then_value = self.defer_discarded_arm(then_value);
                 let else_value = self.lower_value(else_value);
                 let else_value = self.defer_discarded_arm(else_value);
                 self.defer_move_outs -= 1;
+                self.eager_conditional_arm = saved_eager_arm;
                 ValueKind::Conditional {
                     condition: Box::new(condition),
                     then_value: Box::new(then_value),
@@ -367,6 +374,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // un-moved fields release while the statement-form
                         // store still moves the chosen member into the field.
                         self.hoist_ownerless_conditional_arms(value)
+                    } else if value.ty.is_fixed_array()
+                        && self.roots_in_conditional(&value)
+                        && (matches!(
+                            value.kind,
+                            ValueKind::Member { .. } | ValueKind::Index { .. }
+                        ) || self.arms_project_through_conditional(&value)
+                            || self.conditional_has_ownerless_projection_arm(&value))
+                    {
+                        // A chain that roots at a conditional has no C lvalue
+                        // to copy from, and an arm that projects out of a fresh
+                        // result has none either: the projection distributes
+                        // into the arms and each ownerless arm's root binds,
+                        // exactly as the whole-array store spelling does.
+                        self.bind_fixed_array_root(value)
                     } else {
                         self.consume_place(value)
                     };
@@ -377,10 +398,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     };
                     lowered.push((field.name.clone(), value));
                 }
-                ValueKind::StructLit {
-                    name: name.segments.last().cloned().unwrap_or_default(),
-                    fields: lowered,
+                let literal = Value::new(
+                    ty.clone(),
+                    ValueKind::StructLit {
+                        name: name.segments.last().cloned().unwrap_or_default(),
+                        fields: lowered,
+                    },
+                );
+                // A conditionally evaluated literal whose field only a store
+                // can fill materializes into a destination the guard emitter
+                // fills where the operand is actually evaluated: the C
+                // compound literal has no form for such a field, and the
+                // fill's release frees the fresh roots the fields bound.
+                if deferred
+                    && !self.eager_conditional_arm
+                    && self.literal_fields_need_stores(&literal)
+                {
+                    return self.materialize_guard_literal(literal);
                 }
+                return literal;
             }
             ExprKind::ArrayLiteral { elements, fill } => {
                 let pin_elements = elements.iter().any(contains_update);
@@ -399,8 +435,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .iter()
                         .map(|element| {
                             let value = self.lower_value(element);
-                            let value = if self.view_array_literal_depth > 0 || is_view_like(&ty) {
+                            let value = if self.view_array_literal_depth > 0 {
                                 value
+                            } else if is_view_like(&ty) {
+                                // A view array's element stays a view of its
+                                // source. Inside a conditionally evaluated
+                                // operand an element that reads fresh storage
+                                // binds its root through the deferred fill: the
+                                // fill runs only where the operand is
+                                // evaluated, the element store spells the
+                                // widening, and the statement's release frees
+                                // the root a skipped path never ran.
+                                if self.defer_move_outs > 0
+                                    && self.view_element_needs_binding(&value)
+                                {
+                                    self.bind_guarded_projection_root(value)
+                                } else {
+                                    value
+                                }
                             } else if self.defer_move_outs > 0
                                 && matches!(value.kind, ValueKind::Conditional { .. })
                                 && (!self.sema.table.duplicable(&value.ty)
@@ -944,6 +996,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // it.
         self.defer_move_outs = 0;
         self.in_loop_condition = false;
+        self.eager_conditional_arm = false;
         self.returns = ret.clone();
         // The elision judgment belongs to the enclosing function, not to a
         // lifted lambda body; the body's own view returns must not decide it.
@@ -1541,14 +1594,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_pure_value(&value) || value.ty.is_closure() {
             return value;
         }
-        if matches!(
+        let fixed_array = matches!(
             &value.ty.kind,
             TyKind::Array { extents, .. } if extents.iter().all(Option::is_some)
-        ) && !matches!(
+        );
+        // A fixed-array call writes into the temporary through its hidden
+        // out-parameter, so no array assignment is emitted. A fixed-array
+        // conditional whose arm is such a call (or a fresh projection) has no
+        // C expression form either, so it fills the temporary through the
+        // per-arm store. Every other fixed-array value keeps its array-decay
+        // spelling.
+        let constructor = matches!(
             value.kind,
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
-        )
-        {
+        ) || (matches!(value.kind, ValueKind::Conditional { .. })
+            && (self.arms_project_through_conditional(&value)
+                || self.conditional_has_ownerless_projection_arm(&value)
+                || self.conditional_needs_arm_fill(&value)));
+        if fixed_array && !constructor {
             return value;
         }
         // A type that mentions a generic parameter materializes like any
@@ -1559,6 +1622,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // that reaches it, so a statement emitted now would run it even when
         // the left operand short-circuits.
         let ty = self.materialized_ty(&value);
+        let temp = self.new_temp(ty.clone());
+        self.mark_destination_temp(temp);
+        self.register_pending_release(temp, &ty);
+        Value::new(
+            ty,
+            ValueKind::Materialize {
+                temp,
+                value: Box::new(value),
+                move_outs: Vec::new(),
+                adopting: false,
+            },
+        )
+    }
+
+    /// Materializes a conditionally evaluated literal whose fields only a
+    /// store can fill.
+    ///
+    /// Unlike [`Self::materialize_guard_operand`] the literal is judged by its
+    /// fields, not by purity: a literal of pure operands can still carry a
+    /// fixed-array field no C brace list can spell, so it fills a destination
+    /// temporary on the path that evaluates it. The fill's release frees the
+    /// fresh roots the field values bound.
+    fn materialize_guard_literal(&mut self, value: Value) -> Value {
+        let ty = value.ty.clone();
         let temp = self.new_temp(ty.clone());
         self.mark_destination_temp(temp);
         self.register_pending_release(temp, &ty);
@@ -1730,7 +1817,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             && (matches!(
                 value.kind,
                 ValueKind::Member { .. } | ValueKind::Index { .. }
-            ) || self.arms_project_through_conditional(&value))
+            ) || self.arms_project_through_conditional(&value)
+                || self.conditional_has_ownerless_projection_arm(&value))
         {
             if let Some(distributed) = self.distribute_conditional_projection(&value) {
                 return self.own_ownerless_conditional_arms(distributed);
@@ -3166,6 +3254,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         }
         let ty = self.materialized_ty(&value);
+        // A conditional whose arms project through a deeper conditional has no
+        // C lvalue to copy from: the projection distributes into the arms
+        // (`c ? (d ? b1.ys : b2.ys) : b3.ys`), so the element reads name the
+        // selected arm's own storage instead of a member of a struct
+        // conditional's temporary.
+        if self.arms_project_through_conditional(&value) {
+            value = self.bind_fixed_array_root(value);
+        }
         // An array literal inside a conditionally evaluated operand must not be
         // filled while the enclosing expression is lowered: the guard emitter
         // stores it where the operand is actually evaluated, so a short circuit
@@ -4281,7 +4377,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// The arm's value is a selected member or element, so binding the arm
     /// value alone would copy the selected part and leave the root's other
     /// owning fields unowned. Such an arm binds its root instead.
-    fn conditional_has_ownerless_projection_arm(&self, value: &Value) -> bool {
+    pub(super) fn conditional_has_ownerless_projection_arm(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Conditional {
                 then_value,
@@ -4304,6 +4400,74 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ValueKind::Conditional { .. } => self.conditional_has_ownerless_projection_arm(value),
             _ => false,
         }
+    }
+
+    /// True when a literal holds a field only a store can fill.
+    ///
+    /// A fixed array has no C initializer form unless the field is itself a
+    /// brace list: a conditional, a call that writes through the hidden
+    /// fixed-array destination, and a projection of storage with no C lvalue
+    /// each need a statement. A view-array field additionally needs the
+    /// element-wise store when an element reads fresh storage, because a brace
+    /// list would carry the owned source where the view belongs and the fresh
+    /// root would have no owner. A nested literal recurses, so a literal inside
+    /// an array element or a nested struct counts too.
+    fn literal_fields_need_stores(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::StructLit { fields, .. } => fields
+                .iter()
+                .any(|(_, field)| self.literal_field_needs_stores(field)),
+            ValueKind::ArrayLit { elements, fill } => {
+                let element = value.ty.iterated_element();
+                let needs = |inner: &Value| {
+                    if is_view_like(&element) {
+                        self.view_element_needs_binding(inner)
+                    } else {
+                        self.literal_fields_need_stores(inner)
+                    }
+                };
+                elements.iter().any(needs) || fill.as_deref().is_some_and(needs)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when one literal field only a store can fill.
+    ///
+    /// A view-array field keeps the guard machinery's element route: the view
+    /// binder owns its element roots, so it is not judged here.
+    fn literal_field_needs_stores(&self, field: &Value) -> bool {
+        if field.ty.is_fixed_array() {
+            if is_view_like(&field.ty.iterated_element()) {
+                return false;
+            }
+            let ValueKind::ArrayLit { elements, fill } = &field.kind else {
+                return true;
+            };
+            let needs = |inner: &Value| self.literal_fields_need_stores(inner);
+            return elements.iter().any(needs) || fill.as_deref().is_some_and(needs);
+        }
+        self.literal_fields_need_stores(field)
+    }
+
+    /// True when a view element of a view array has no complete C value of the
+    /// view type.
+    ///
+    /// An element that reads a view slot of a view-typed base is already a
+    /// complete view value, and a constant renders as one. Every other member
+    /// or element must widen an owned handle through the store, and an owned
+    /// source needs the store for the same reason, so both take the
+    /// element-wise store form instead of the brace list.
+    fn view_element_needs_binding(&self, element: &Value) -> bool {
+        if is_view(&element.ty) {
+            return match &element.kind {
+                ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                    !(is_view(&base.ty) || is_view_like(&base.ty))
+                }
+                _ => false,
+            };
+        }
+        !self.sema.table.duplicable(&element.ty) || self.maybe_owns(&element.ty)
     }
 
     /// True when a conditional arm's ownerless projection root still owns

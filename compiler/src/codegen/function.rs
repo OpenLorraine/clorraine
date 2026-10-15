@@ -1566,8 +1566,39 @@ impl<'a> Emitter<'a> {
             if let ValueKind::StructLit { fields, .. } = &field.kind {
                 return self.fixed_array_field_needs_stores(fields);
             }
+            // An array-literal element that carries a call-filled field takes
+            // the same statement-form store route: the brace list would call
+            // the function without its hidden fixed-array destination.
+            if let ValueKind::ArrayLit { elements, fill } = &field.kind {
+                return elements
+                    .iter()
+                    .any(|element| self.array_element_needs_stores(element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.array_element_needs_stores(fill));
+            }
             false
         })
+    }
+
+    /// True when an array element carries a literal whose fields need stores.
+    ///
+    /// The element is judged as a literal at its own position, so a nested
+    /// literal and each arm of an element conditional are searched the same
+    /// way.
+    fn array_element_needs_stores(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::StructLit { fields, .. } => self.fixed_array_field_needs_stores(fields),
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.array_element_needs_stores(then_value)
+                    || self.array_element_needs_stores(else_value)
+            }
+            _ => false,
+        }
     }
 
     /// True when a struct literal needs the per-field store form.
@@ -2129,14 +2160,28 @@ impl<'a> Emitter<'a> {
             // the same storage, so the element and the arm would both release
             // it. The fill form cannot reach this: a non-duplicable fill value
             // is rejected when the literal is checked.
-            if self.needs_drop(element) {
-                if let ValueKind::Conditional {
-                    condition,
-                    then_value,
-                    else_value,
-                } = &value.kind
-                {
+            if let ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } = &value.kind
+            {
+                if self.needs_drop(element) {
                     self.emit_conditional_move_assign(
+                        &sub.text,
+                        element,
+                        condition,
+                        then_value,
+                        else_value,
+                    );
+                    continue;
+                }
+                // A duplicable element conditional whose arm is a literal that
+                // needs stores takes the per-arm store form too: the C `?:`
+                // would carry the literal whose fixed-array field has no
+                // initializer form, so each arm stores on its own path.
+                if self.conditional_struct_needs_stores(element, then_value, else_value) {
+                    self.emit_struct_conditional_assign(
                         &sub.text,
                         element,
                         condition,

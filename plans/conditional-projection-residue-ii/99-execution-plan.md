@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 14/33 tasks (42%) — Executing Phase 3
+> **Progress**: 16/33 tasks (48%) — Phase 3 implementation done, pins+review next
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -153,15 +153,15 @@ landed controls.
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Route the conditional field values and conditional-root field projections through
+- [x] 3.2.1 Route the conditional field values and conditional-root field projections through
       the per-arm destination store; use the array-elements initializer for the guarded
       view-array field; fill the conditional-of-literals per arm; bind each arm in the
       fixed-array return emitter (the critical); route the guarded expression fallback through
       the per-arm store; extend `fixed_array_field_needs_stores` to `ArrayLit` elements;
       distribute the nested-arm read base — `compiler/src/codegen/function.rs`,
       `compiler/src/codegen/guards.rs`, `compiler/src/codegen/cleanup.rs`,
-      `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs`
-- [ ] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/lower.rs`, `compiler/src/own/statements.rs` ✅ (completed: 2026-10-16 05:20; the field branch routes a fixed-array conditional/projection field through the per-arm root binding and the store twin follows; a guarded literal field without an initializer form materializes; the guarded view element binds through the deferred fill with the widened array-literal element spelling; the fixed-array field stores through the row core so a call field passes the hidden destination; the fixed-array return copies Temp/Materialize arms per arm through the store core (the critical); the expression-path fallback uses the row core; an element conditional of store-needing literals stores per arm with the gate descending array-literal elements; the read base distributes nested conditional arms; the guarded direct-field spellings are covered by the same mechanism; an `eager_conditional_arm` flag keeps eager conditional-arm literals on the previous path so no pin was invalidated)
+- [x] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 05:20; the residue spec 124/124 plain and under `RDC_ASAN=1`; the batch-H, callable-release, and related suites green; `make check` exit 0; the differential shows 27 intended emit-diffs and no accept/reject change; parent-verified 124/124 plain + ASan)
 
 ### Step 3.3: Impl Tests & Review
 

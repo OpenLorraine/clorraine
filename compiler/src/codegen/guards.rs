@@ -173,7 +173,22 @@ impl<'a> Emitter<'a> {
                     }
                 } else {
                     let destination = format!("__cl_tmp{temp}");
-                    match &inner.kind {
+                    // A literal whose fixed-array or view-array field has no C
+                    // initializer form stores its fields through the same core
+                    // the direct spelling uses, on the path that evaluates the
+                    // operand: the call-filled field passes the destination and
+                    // a view element reads the root the deferred fill bound.
+                    let literal_stored = match &inner.kind {
+                        ValueKind::StructLit { fields, .. }
+                            if self.struct_literal_needs_guard_stores(&inner_ty, fields) =>
+                        {
+                            self.emit_struct_literal_fields(&destination, &inner_ty, fields);
+                            true
+                        }
+                        _ => false,
+                    };
+                    if !literal_stored {
+                        match &inner.kind {
                         ValueKind::Call {
                             callee,
                             type_args,
@@ -218,6 +233,7 @@ impl<'a> Emitter<'a> {
                             ));
                         }
                         _ => self.push(&format!("    {destination} = {};", self.value(inner))),
+                        }
                     }
                 }
                 // The call's `take` arguments and a consume carrier's source
@@ -731,6 +747,13 @@ impl<'a> Emitter<'a> {
                 ) {
                     return true;
                 }
+                // A fixed-array field whose value is not itself a brace list
+                // has no C initializer form: a conditional, a call that writes
+                // through the hidden destination, and a projection of storage
+                // with no C lvalue all need the store.
+                if !matches!(value.kind, ValueKind::ArrayLit { .. }) {
+                    return true;
+                }
             }
             if let ValueKind::StructLit {
                 fields: inner_fields,
@@ -796,6 +819,13 @@ impl<'a> Emitter<'a> {
                         parts.push(stored);
                         continue;
                     }
+                }
+                // Every other fixed-array value stores through the row core:
+                // a conditional fills per arm, a call writes through the hidden
+                // destination, and a place source copies its bytes and empties.
+                if let Some(stored) = self.array_row_expr(&sub, &field_ty, value) {
+                    parts.push(stored);
+                    continue;
                 }
             }
             if matches!(field_ty.kind, TyKind::Struct(..)) {
@@ -975,8 +1005,17 @@ impl<'a> Emitter<'a> {
                     // unless the carrier is adopting: its consumer owns the
                     // value, so a re-fill must not release what the consumer
                     // stored.
+                    // A fixed-array value that is not a call embeds its own
+                    // guards in its store text: the row core renders each
+                    // arm's and each element's guards where the value is
+                    // evaluated, so walking the value here would run them a
+                    // second time. A call keeps the walk because its
+                    // arguments' guards are not part of the call text.
                     let literal_stores = inner_ty.is_fixed_array()
-                        && matches!(&inner.kind, ValueKind::ArrayLit { .. });
+                        && !matches!(
+                            &inner.kind,
+                            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+                        );
                     let struct_store = match &inner.kind {
                         ValueKind::StructLit { name, fields }
                             if self.struct_literal_needs_guard_stores(&inner_ty, fields) =>
@@ -1029,6 +1068,17 @@ impl<'a> Emitter<'a> {
                                         format!("(__cl_tmp{temp} = {})", self.value(inner))
                                     })
                             }
+                            // A fixed-array value with no simpler expression
+                            // form — a conditional of places or calls, or a
+                            // place projection — fills the destination through
+                            // the row core: each arm copies on its own path, a
+                            // call arm passes the hidden destination, and a
+                            // place source empties once the bytes travel.
+                            _ if inner_ty.is_fixed_array() => self
+                                .array_row_expr(&destination, &inner_ty, inner)
+                                .unwrap_or_else(|| {
+                                    format!("(__cl_tmp{temp} = {})", self.value(inner))
+                                }),
                             _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
                         },
                     };

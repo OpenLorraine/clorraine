@@ -404,6 +404,15 @@ struct FunctionChecker<'a, 'd> {
     /// plumbing, so the member-receiver bind must not also fire there: the
     /// condition machinery already binds the calls it contains.
     in_loop_condition: bool,
+    /// True while an arm of a conditional that was lowered in an eager context
+    /// is being lowered.
+    ///
+    /// The arm's value travels into a store the enclosing construct emits, so
+    /// the store fills the arm's fields itself: a literal inside the arm must
+    /// not materialize into its own destination the way a guard operand does.
+    /// The flag stays set through nested conditionals, because their arms are
+    /// stored by the same construct.
+    eager_conditional_arm: bool,
     /// Which temporaries are destinations the compiler releases at the
     /// statement's end, parallel to `temps`.
     ///
@@ -550,6 +559,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             pending_releases: Vec::new(),
             defer_move_outs: 0,
             in_loop_condition: false,
+            eager_conditional_arm: false,
             destination_temps: Vec::new(),
             materialize_owned_temporaries: true,
             speculative_lowering: false,

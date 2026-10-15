@@ -99,7 +99,7 @@ impl<'a> Emitter<'a> {
             ValueKind::StructLit { name, fields } => {
                 self.struct_literal(&self.substitute(&value.ty), name, fields)
             }
-            ValueKind::ArrayLit { elements, fill } => self.array_literal(elements, fill),
+            ValueKind::ArrayLit { elements, fill } => self.array_literal(&self.substitute(&value.ty), elements, fill), // BISECT
             ValueKind::Template(pieces) => self.template(pieces),
             ValueKind::Intrinsic {
                 name,
@@ -1009,13 +1009,22 @@ impl<'a> Emitter<'a> {
     }
 
     /// Renders an array literal as a compound initializer.
-    pub(super) fn array_literal(&self, elements: &[Value], fill: &Option<Box<Value>>) -> String {
+    /// Renders an array literal as a C brace list.
+    ///
+    /// Each element renders through its store spelling, so a view element
+    /// widens an owned source exactly as a store does and its owner keeps the
+    /// single release; a literal element keeps its own brace list.
+    pub(super) fn array_literal(&self, ty: &Ty, elements: &[Value], fill: &Option<Box<Value>>) -> String {
+        let element_ty = ty.iterated_element();
         if elements.is_empty() {
             if let Some(fill) = fill {
-                return format!("{{ {} }}", self.value(fill));
+                return format!("{{ {} }}", self.store_text(fill, &element_ty));
             }
         }
-        let items: Vec<String> = elements.iter().map(|element| self.value(element)).collect();
+        let items: Vec<String> = elements
+            .iter()
+            .map(|element| self.store_text(element, &element_ty))
+            .collect();
         format!("{{ {} }}", items.join(", "))
     }
 

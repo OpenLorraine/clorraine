@@ -1524,7 +1524,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// a qualified receiver — which names a place rather than an expression —
     /// yields its provenance. Every other call yields none: without a single
     /// reborrowed source there is no storage a view could derive from.
-    fn call_view_source<'e>(&self, callee: &'e Expr, args: &'e [Arg]) -> Option<ViewCallSource<'e>> {
+    pub(super) fn call_view_source<'e>(&self, callee: &'e Expr, args: &'e [Arg]) -> Option<ViewCallSource<'e>> {
         let name = self.callee_name(callee)?;
         let is_dot = self.is_dot_call(callee);
         let source = |index: usize| -> Option<ViewCallSource<'e>> {
@@ -1910,7 +1910,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 /// A written argument or a `Member` receiver keeps its expression, so a walk
 /// can descend into it arm by arm; a qualified receiver names a place rather
 /// than a written expression, so its provenance is carried instead.
-enum ViewCallSource<'e> {
+pub(super) enum ViewCallSource<'e> {
     /// A written argument or a `Member` receiver's base expression.
     Expr(&'e Expr),
     /// A qualified receiver's place provenance.

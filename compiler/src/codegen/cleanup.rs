@@ -771,14 +771,21 @@ impl<'a> Emitter<'a> {
                 );
                 self.emit_array_assign_to(&destination, &ty, elements, fill);
             }
-            ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. } => {
+            ValueKind::Place(_)
+            | ValueKind::Member { .. }
+            | ValueKind::Index { .. }
+            | ValueKind::Temp(_)
+            | ValueKind::Materialize { .. } => {
                 // The statement store core already copies every extent by
                 // bytes, releases the (empty) destination first when the type
                 // owns elements, and empties the source once. A projected row
                 // (`m()[i]`) takes the same path: the source address is the
                 // projected element and the arm walk empties exactly that row.
-                // The caller's destination is the hidden out-parameter, never
-                // the source, so `reads_target` is fixed false.
+                // A resolved conditional arm is a temporary (or a deferred
+                // carrier), and C cannot assign an array, so the same copy core
+                // fills the hidden out-parameter from its bytes. The caller's
+                // destination is the hidden out-parameter, never the source, so
+                // `reads_target` is fixed false.
                 let destination = super::function::ArrayTarget::parameter(
                     "__cl_ret",
                     self.array_param_bytes("__cl_ret", &ty),
