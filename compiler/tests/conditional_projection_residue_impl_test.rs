@@ -4523,3 +4523,252 @@ fn should_re_emit_the_fixed_array_emission_programs_byte_identically() {
         assert_contains(tag, &first, shape);
     }
 }
+
+/// A mixed-arm func-field receiver in a loop condition and in an eager read.
+const SETTLED_RECEIVER_SOURCE: &str = r#"module spec.cprimpl.implrecvsettle;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addTen(x: i32): i32 { return x + 10; }
+func neg(x: i32): i32 { return 0 - x; }
+func mkH(): H { return H { call: addTen, s: stringOf("mk") }; }
+
+func looped(c: bool, take a: H, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k && (c ? mkH() : a).call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func eager(c: bool, a: H): i32 {
+    return (c ? mkH() : a).call(5) - 15;
+}
+
+func main(): i32 {
+    let a1: H = H { call: neg, s: stringOf("aa") };
+    let n: i32 = looped(true, a1, 1) - 1;
+    let a2: H = H { call: neg, s: stringOf("bb") };
+    return n + eager(true, a2);
+}
+"#;
+
+/// The receiver is the call's argument position zero, so a receiver that is
+/// not a place settles into a deferred temporary the designator reads: the
+/// loop condition fills it per iteration and the eager read fills it before
+/// the call, so no arm's evaluation nests inside the designator.
+#[test]
+fn should_settle_a_mixed_arm_receiver_at_argument_position_zero() {
+    let tag = "implrecvsettle";
+    let (_scratch, emitted) = emit_host(tag, SETTLED_RECEIVER_SOURCE);
+    let looped = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implrecvsettle_looped(bool c, ClH a, i32 k)\n{",
+    );
+    assert_contains(tag, looped, "(__cl_tmp1 = ");
+    assert_contains(tag, looped, "((__cl_tmp1.call)(5)");
+    assert_absent(tag, looped, ": a).call)(5)");
+    let eager = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implrecvsettle_eager(bool c, ClH a)\n{",
+    );
+    assert_contains(
+        tag,
+        eager,
+        "__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH();",
+    );
+    assert_contains(tag, eager, "(__cl_tmp0.call)(5)");
+    assert_absent(tag, eager, ": a).call)(5)");
+    assert_release_after(
+        tag,
+        eager,
+        "(__cl_tmp0.call)(5)",
+        "if (__cl_tmp0.s) { FreeString(__cl_tmp0.s); }",
+    );
+}
+
+/// A guarded operand whose updating part must settle inside the guard.
+const GUARD_UPDATE_SOURCE: &str = r#"module spec.cprimpl.implguardsettle;
+
+let calls: i32 = 0;
+
+func f(a: i32, b: i32): i32 {
+    calls = calls + 1;
+    return a * 10 + b;
+}
+
+func guardAnd(g: bool): i32 {
+    let i: i32 = 3;
+    let ok: bool = g && f(i++, i) == 34;
+    return (ok ? 0 : 1) + (i - 4);
+}
+
+func ternary(c: bool): i32 {
+    let i: i32 = 3;
+    let r: i32 = c ? f(i++, i) : 0;
+    return r - (c ? 34 : 0) + i - (c ? 4 : 3);
+}
+
+func plain(): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (f(i++, i) < 30) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let n: i32 = guardAnd(true) + ternary(true) + plain() - 3;
+    return n + (calls - 5) * 10;
+}
+"#;
+
+/// The guarded operand's updating part fills a deferred temporary inside the
+/// guard, and the call reads that temporary beside the settled `i`, so the
+/// argument values stay left-to-right on the evaluated path only. The plain
+/// loop condition keeps its per-iteration argument fills.
+#[test]
+fn should_settle_the_guarded_operands_updating_parts() {
+    let tag = "implguardsettle";
+    let (_scratch, emitted) = emit_host(tag, GUARD_UPDATE_SOURCE);
+    let guard_and = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implguardsettle_guardAnd(bool g)\n{",
+    );
+    assert_on_line_of(tag, guard_and, "(g &&", "__cl_tmp0 = (i)++");
+    assert_on_line_of(
+        tag,
+        guard_and,
+        "(g &&",
+        "cl_spec_cprimpl_implguardsettle_f(__cl_tmp0, i)",
+    );
+    assert_absent(tag, guard_and, "_f((i)++, i)");
+    let ternary = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implguardsettle_ternary(bool c)\n{",
+    );
+    assert_on_line_of(tag, ternary, "(c ?", "__cl_tmp0 = (i)++");
+    assert_on_line_of(
+        tag,
+        ternary,
+        "(c ?",
+        "cl_spec_cprimpl_implguardsettle_f(__cl_tmp0, i)",
+    );
+    assert_absent(tag, ternary, "_f((i)++, i)");
+    let plain = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implguardsettle_plain(void)\n{",
+    );
+    assert_contains(
+        tag,
+        plain,
+        "cl_spec_cprimpl_implguardsettle_f(__cl_tmp0, __cl_tmp1)",
+    );
+}
+
+/// An update-bearing array fill and the element-list control.
+const FILL_PIN_SOURCE: &str = r#"module spec.cprimpl.implfillpin;
+
+func fillOnce(): i32 {
+    let i: i32 = 7;
+    let xs: i32[3] = [; i++];
+    return xs[0] + xs[1] + xs[2] - 21 + (i - 8);
+}
+
+func elementList(): i32 {
+    let i: i32 = 0;
+    let b: i32[3] = [i++, i++, i++];
+    return b[0] + b[1] + b[2] - 3 + (i - 3);
+}
+
+func main(): i32 { return fillOnce() + elementList(); }
+"#;
+
+/// The fill's value copies to every remaining element, so an updating fill
+/// pins once at its own position and the element stores read the temporary;
+/// the element list keeps its own per-element updates.
+#[test]
+fn should_pin_an_array_fill_once_before_the_element_stores() {
+    let tag = "implfillpin";
+    let (_scratch, emitted) = emit_host(tag, FILL_PIN_SOURCE);
+    let filled = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implfillpin_fillOnce(void)\n{",
+    );
+    assert_follows(tag, filled, "__cl_tmp0 = (i)++;", "xs[0] = __cl_tmp0;");
+    assert_contains(tag, filled, "xs[1] = __cl_tmp0;");
+    assert_contains(tag, filled, "xs[2] = __cl_tmp0;");
+    assert_absent(tag, filled, "xs[0] = (i)++;");
+    let listed = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implfillpin_elementList(void)\n{",
+    );
+    assert_contains(tag, listed, "b[0] = __cl_tmp0;");
+    assert_contains(tag, listed, "b[1] = __cl_tmp1;");
+    assert_contains(tag, listed, "b[2] = __cl_tmp2;");
+}
+
+/// A bare raw-deref store with its update twin and its working controls.
+const RAW_STORE_SOURCE: &str = r#"module spec.cprimpl.implrawstore;
+
+struct S { v: i32; w: i32; }
+
+func main(): i32 {
+    let a: i32 = 0;
+    let q: raw i32 = unsafe &a;
+    unsafe { *q = 9; }
+    let v: i32 = unsafe *q;
+    let i: i32 = 0;
+    let b: i32 = 0;
+    let r: raw i32 = unsafe &b;
+    unsafe { *r = i++; }
+    let s: S = S { v: 0, w: 0 };
+    let p: raw S = unsafe &s;
+    unsafe { p.v = 7; }
+    return (a - 9) + (v - 9) + b + (i - 1) + (s.v - 7);
+}
+"#;
+
+/// A dereferenced raw pointer stores through the pointer value, and an
+/// updating right-hand side pins at its position before that store. The bare
+/// deref read and the field write through a raw keep their shapes.
+#[test]
+fn should_lower_a_bare_raw_deref_store() {
+    let tag = "implrawstore";
+    let (_scratch, emitted) = emit_host(tag, RAW_STORE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implrawstore_main(void)\n{");
+    assert_contains(tag, body, "*(q) = 9;");
+    assert_follows(tag, body, "__cl_tmp0 = (i)++;", "*(r) = __cl_tmp0;");
+    assert_absent(tag, body, "*(r) = (i)++;");
+    assert_contains(tag, body, "v = *(q);");
+    assert_contains(tag, body, "p->v = 7;");
+}
+
+/// The settled-receiver and raw-deref programs re-emit byte-identically, and
+/// the re-emitted text carries the repaired shape.
+#[test]
+fn should_re_emit_the_settled_receiver_and_raw_store_programs_byte_identically() {
+    for (tag, source, shape) in [
+        ("implrecvsettle", SETTLED_RECEIVER_SOURCE, "((__cl_tmp1.call)(5)"),
+        ("implrawstore", RAW_STORE_SOURCE, "*(q) = 9;"),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+        assert_contains(tag, &first, shape);
+    }
+}

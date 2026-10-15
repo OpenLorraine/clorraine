@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 22/33 tasks (67%) — Phase 4 implementation done, pins+review next
+> **Progress**: 23/33 tasks (70%) — Phase 4 in review
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -211,9 +211,9 @@ evaluation, and the bare raw-deref store.
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the receiver pin shape, the loop root binding,
+- [x] 4.3.1 Write the phase implementation pins (the receiver pin shape, the loop root binding,
       the guarded fill positions, the fill pin, the deref store statement, the re-emission
-      determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+      determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 08:10; five pins added (79 tests total, additions only) — the settled receiver at argument position zero (loop and eager), the settled guarded operand parts, the single array-fill pin, the lowered raw-deref store with its update pin, and a discriminating re-emission determinism pin; all five fail at `50b91d9` for the intended reason; 79/79 green and `make check` exit 0)
 - [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; record the `DEF-294` closure (fixed or control) in the ledger
 
