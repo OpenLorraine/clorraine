@@ -14,7 +14,7 @@
 > `308`, `309`, `310`), and the diagnostics and marks (`DEF-282`, `283`, `307`). No batch row is
 > parked; the six older ruling-gated rows (`DEF-167`, `169`, `171`, `190`, `191`, `263`) stay
 > out (AR-2).
-> **Status**: Planning
+> **Status**: ✅ Complete (2026-10-16) — 33/33 tasks; all 27 rows fixed; see `05-findings.md` (Close-out)
 > **Created**: 2026-10-15
 > **Implements**: DEF-281, DEF-282, DEF-283, DEF-284, DEF-285, DEF-286, DEF-287, DEF-288,
 > DEF-290, DEF-291, DEF-292, DEF-293, DEF-294, DEF-295, DEF-297, DEF-298, DEF-299, DEF-300,

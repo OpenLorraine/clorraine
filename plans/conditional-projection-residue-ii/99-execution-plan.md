@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 30/33 tasks (91%) — Phase 5 complete; close-out next
+> **Progress**: 33/33 tasks (100%) — ✅ Complete
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -276,12 +276,12 @@ the generated-owner phrase, and the conditional-iterable move mark.
 
 ### Step 6.1: Verification and Sync
 
-- [ ] 6.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and
-      the ASan suites; record the evidence
-- [ ] 6.1.2 Update the roadmap rows: the 27 rows move to Done with per-row evidence; the six
-      older parked rows stay open (AR-2); the batch-I rows already closed stay untouched
-- [ ] 6.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
-      `00-index.md`
+- [x] 6.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and
+      the ASan suites; record the evidence ✅ (completed: 2026-10-16 16:10; `make check` exit 0; **`make verify` all legs passed** — the hosted-amiga cross-toolchain builds and the six runtime-fault programs match; the residue spec 145/145 plain and under `RDC_ASAN=1`; the impl pins 85/85; `cargo build --workspace` no new warnings; the log under `/tmp/opencode/j-verify.log`)
+- [x] 6.1.2 Update the roadmap rows: the 27 rows move to Done with per-row evidence; the six
+      older parked rows stay open (AR-2); the batch-I rows already closed stay untouched ✅ (completed: 2026-10-16 15:00; the 27 rows moved to Done with per-row evidence (the phase and the commit); `DEF-294` per AR-10, `DEF-295` incidental; the six older parked rows stay open (AR-2); the closed `DEF-278`/`289`/`296`/`301` untouched; `DEF-331` (boundary), `DEF-332` (fixed) and `DEF-333` (incidentally fixed) closed among the 24 filed rows)
+- [x] 6.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
+      `00-index.md` ✅ (completed: 2026-10-16 15:00; the close-out section written in `05-findings.md` (the scope, the result, the filed rows, the review record, the test surface, the verification); `00-index.md` marked Complete)
 
 **Verify**: `make check`; `make verify`
 

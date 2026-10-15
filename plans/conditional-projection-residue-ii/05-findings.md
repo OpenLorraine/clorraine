@@ -291,3 +291,32 @@ correctness (J5R) and semantics (J5S), plus a bounded semantics confirmation (J5
 `DEF-331` (the mismatch consequence — closed as a boundary: an independent cause, not a consequence), `DEF-332`
 (fixed), `DEF-333` (incidentally fixed by C1 — the parent re-measured the shape rejecting `E10035`),
 `DEF-334` (the rolled-back id subject).
+
+## Close-out
+
+**Scope**: the 27 follow-on rows of the closed `conditional-projection-residue` batch (the open
+`DEF-281`–`DEF-310` subset), severity-first: the only open critical (`DEF-303`) plus its machinery
+siblings. Five phases; 33 tasks.
+
+**Result**: all 27 rows fixed — 25 implemented and 2 incidental (`DEF-295` via the batch-J phase-2
+residual gate; `DEF-294` closed per AR-10 with the host false-positive residue filed as `DEF-327`).
+The previously closed `DEF-278`/`289`/`296`/`301` were re-verified as controls. The six older parked
+rows (`DEF-167`, `169`, `171`, `190`, `191`, `263`) stayed out of scope pending user rulings (AR-2).
+
+**Filed rows**: `DEF-311`–`DEF-334` (24). Closed among them: `DEF-331` (a boundary, per the phase-5
+semantics review), `DEF-332` (fixed in the phase-5 correction), `DEF-333` (incidentally fixed by the
+same correction). The remaining 21 stay in Backlog for the following batches.
+
+**Review record**: every phase ran the specification-first loop (spec cases red → implement → green
+→ pins with base-fail evidence), then the phase lenses — correctness and memory-safety throughout,
+plus emission-integrity (phases 2–4) and semantics (phase 5) — with correction rounds and targeted
+confirmations. Across the batch: 12 correction rounds and 8 confirmations. Each phase section above
+carries its verdicts, fix rounds, and confirmations.
+
+**Test surface**: the batch reused the `conditional_projection_residue_{spec,impl}_test.rs` pair,
+grown 88 → 145 spec tests and 52 → 85 impl pins, additions-only throughout (the one red-phase case
+arithmetic corrected per an explicit ruling, recorded in the register).
+
+**Verification**: `make check` exit 0; `make verify` all legs passed (the hosted-amiga
+cross-toolchain legs and the runtime-fault programs); the residue spec suite 145/145 plain and under
+`RDC_ASAN=1`; the impl pins 85/85; `cargo build --workspace` no new warnings.
