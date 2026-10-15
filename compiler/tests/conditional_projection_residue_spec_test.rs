@@ -8498,3 +8498,795 @@ func main(): i32 {
     assert_no_asan("condcarrierfill", &output);
     assert_exit("condcarrierfill", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// condfield: a conditional value in a fixed-array literal field.
+//
+// A struct literal whose field is a fixed array cannot name a conditional
+// value in a C initializer, because neither the selected field nor a call
+// has an initializer form. The selected value must fill the literal's own
+// field per arm, on that arm's path: the plain spelling stores the literal
+// into a local, and the guarded spelling builds the same literal inside a
+// `&&` operand, so only the taken path evaluates it. The direct field
+// spellings (a place field and a call-filled field) stay accepted controls.
+// ---------------------------------------------------------------------------
+
+/// A literal's fixed-array field fills per arm from a conditional value.
+///
+/// `Holder { row: c ? a.row : mkBox().row }` copies the selected `Box`
+/// field's rows into the holder: `a`'s rows on the true selection and the
+/// fresh `mkBox()`'s rows on the false one, so each program reads four
+/// bytes and exits 0. The guarded spelling builds the same literal behind
+/// `g && ...` and evaluates it on the taken path only. The direct field
+/// spellings keep their acceptance and read back.
+#[test]
+fn should_fill_a_conditional_fixed_array_field_per_arm() {
+    let plain = r#"module spec.cpr.condfieldplain;
+
+import { String, stringOf } from std.text;
+
+struct Box { row: String[2]; }
+struct Holder { row: String[2]; tag: i32; }
+
+func mkBox(): Box { return Box { row: [stringOf("ab"), stringOf("cd")] }; }
+
+func use(c: bool, take a: Box): i32 {
+    let h: Holder = Holder { row: c ? a.row : mkBox().row, tag: 2 };
+    return h.tag - 2 + i32(len(h.row[0])) + i32(len(h.row[1])) - 4;
+}
+
+func main(): i32 {
+    let a1: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let n: i32 = use(true, a1);
+    let a2: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    return n + use(false, a2);
+}
+"#;
+    let output = run_memory("condfieldplain", plain);
+    assert_no_asan("condfieldplain", &output);
+    assert_exit("condfieldplain", &output, 0);
+
+    let guarded = r#"module spec.cpr.condfieldguard;
+
+import { String, stringOf } from std.text;
+
+struct Box { row: String[2]; }
+struct Holder { row: String[2]; tag: i32; }
+
+func mkBox(): Box { return Box { row: [stringOf("ab"), stringOf("cd")] }; }
+
+func use(c: bool, take a: Box, g: bool): i32 {
+    if (g && i32(len(Holder { row: c ? a.row : mkBox().row, tag: 1 }.row[0])) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a1: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let n: i32 = use(true, a1, true);
+    let a2: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let m: i32 = use(false, a2, true);
+    let a3: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let s: i32 = use(true, a3, false);
+    return n + m + s - 2;
+}
+"#;
+    let output = run_memory("condfieldguard", guarded);
+    assert_no_asan("condfieldguard", &output);
+    assert_exit("condfieldguard", &output, 0);
+
+    let direct = r#"module spec.cpr.condfielddirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { row: String[2]; }
+struct Holder { row: String[2]; tag: i32; }
+
+func mkBox(): Box { return Box { row: [stringOf("ab"), stringOf("cd")] }; }
+
+func use(take a: Box): i32 {
+    let h: Holder = Holder { row: a.row, tag: 2 };
+    let k: Holder = Holder { row: mkBox().row, tag: 3 };
+    return h.tag - 2 + k.tag - 3 + i32(len(h.row[0])) + i32(len(k.row[1])) - 4;
+}
+
+func main(): i32 {
+    let a: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    return use(a);
+}
+"#;
+    let output = run_memory("condfielddirect", direct);
+    assert_no_asan("condfielddirect", &output);
+    assert_exit("condfielddirect", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// condrootfield: a conditional root projected into a fixed-array literal
+// field.
+//
+// `Holder { row: (c ? a : b).row }` selects the root first and projects its
+// fixed-array field into the literal's field. A conditional is not an
+// lvalue, so the initializer cannot address a member of the conditional
+// value: each arm must contribute its own root's field on its path, the
+// same per-arm copy the store and return spellings already use. The store
+// spelling of the same projection is the accepted control.
+// ---------------------------------------------------------------------------
+
+/// A conditional root's field copies into a literal field per arm.
+///
+/// `Holder { row: (c ? a : b).row, tag: 4 }` copies `a`'s rows on the true
+/// selection and `b`'s on the false one, so both selections read four bytes
+/// and exit 0; the tag proves the whole literal was built. The store
+/// spelling `let r: String[2] = (c ? a : b).row;` keeps its acceptance.
+#[test]
+fn should_copy_a_conditional_root_into_a_literal_fixed_array_field() {
+    let field = r#"module spec.cpr.condrootfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { row: String[2]; }
+struct Holder { row: String[2]; tag: i32; }
+
+func use(c: bool, take a: Box, take b: Box): i32 {
+    let h: Holder = Holder { row: (c ? a : b).row, tag: 4 };
+    return h.tag - 4 + i32(len(h.row[0])) + i32(len(h.row[1])) - 4;
+}
+
+func main(): i32 {
+    let a1: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let b1: Box = Box { row: [stringOf("pp"), stringOf("qq")] };
+    let n: i32 = use(true, a1, b1);
+    let a2: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let b2: Box = Box { row: [stringOf("pp"), stringOf("qq")] };
+    return n + use(false, a2, b2);
+}
+"#;
+    let output = run_memory("condrootfield", field);
+    assert_no_asan("condrootfield", &output);
+    assert_exit("condrootfield", &output, 0);
+
+    let stored = r#"module spec.cpr.condrootfieldstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { row: String[2]; }
+
+func use(c: bool, take a: Box, take b: Box): i32 {
+    let r: String[2] = (c ? a : b).row;
+    return i32(len(r[0])) + i32(len(r[1])) - 4;
+}
+
+func main(): i32 {
+    let a1: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let b1: Box = Box { row: [stringOf("pp"), stringOf("qq")] };
+    let n: i32 = use(true, a1, b1);
+    let a2: Box = Box { row: [stringOf("xx"), stringOf("yy")] };
+    let b2: Box = Box { row: [stringOf("pp"), stringOf("qq")] };
+    return n + use(false, a2, b2);
+}
+"#;
+    let output = run_memory("condrootfieldstore", stored);
+    assert_no_asan("condrootfieldstore", &output);
+    assert_exit("condrootfieldstore", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardviewfield: a literal view-array field inside a guarded operand.
+//
+// `g && len(Holder { names: [mk().v] }.names[0]) > 0` builds a literal whose
+// view-array field holds a view of a fresh result. The field must be
+// initialized completely (every element, including the array's full
+// extent), because a partially initialized view array is rejected by the
+// strict build, and the fresh root must release once per taken evaluation.
+// The unguarded spelling of the same literal is the accepted control.
+// ---------------------------------------------------------------------------
+
+/// A guarded literal's view-array field initializes completely.
+///
+/// `Holder { names: [mk().v] }` fills its one-element view array with a view
+/// of the fresh `mk()` result; the guarded spelling evaluates the literal
+/// only when `g` holds, so the taken path returns 1 and the skipped path 0.
+/// The unguarded spelling builds the local and reads the view's length back.
+#[test]
+fn should_fill_a_guarded_literal_view_array_field_completely() {
+    let guarded = r#"module spec.cpr.guardviewfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(g: bool): i32 {
+    if (g && i32(len(Holder { names: [mk().v] }.names[0])) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) - 1 + use(false);
+}
+"#;
+    let output = run_memory("guardviewfield", guarded);
+    assert_no_asan("guardviewfield", &output);
+    assert_exit("guardviewfield", &output, 0);
+
+    let plain = r#"module spec.cpr.guardviewfieldplain;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(): i32 {
+    let h: Holder = Holder { names: [mk().v] };
+    return i32(len(h.names[0])) - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("guardviewfieldplain", plain);
+    assert_no_asan("guardviewfieldplain", &output);
+    assert_exit("guardviewfieldplain", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// condcallliteral: a conditional of call-filled fixed-array literals.
+//
+// `ok ? Mixed { names: n1(), tag: stringOf("x") } : Mixed { names: n2(), ... }`
+// selects one literal whose fixed-array field is filled by a call. The call
+// writes through the field's hidden destination, so each arm's literal must
+// build with its own field store and the conditional's destination must
+// fill on the selected path. The single-literal spelling of the same
+// call-filled field is the accepted control.
+// ---------------------------------------------------------------------------
+
+/// A conditional of call-filled literals runs each arm's call once on its
+/// path.
+///
+/// The selected `Mixed` literal fills `names` with the selected arm's call
+/// (`n1` on true, `n2` on false); the counters prove each call ran exactly
+/// once across the two selections and the fields were built. The discarded
+/// single-literal spelling fills its call-filled field through the same
+/// destination ABI and stays accepted.
+#[test]
+fn should_run_each_arm_of_a_conditional_of_call_filled_literals() {
+    let conditional = r#"module spec.cpr.condcallliteral;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let left: i32 = 0;
+let right: i32 = 0;
+
+func n1(): str[2] {
+    left = left + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    right = right + 1;
+    return ["CC", "DD"];
+}
+
+func use(ok: bool): i32 {
+    ok ? Mixed { names: n1(), tag: stringOf("x") } : Mixed { names: n2(), tag: stringOf("y") };
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = use(true) + use(false);
+    return n + left * 10 + right - 11;
+}
+"#;
+    let output = run_memory("condcallliteral", conditional);
+    assert_no_asan("condcallliteral", &output);
+    assert_exit("condcallliteral", &output, 0);
+
+    let single = r#"module spec.cpr.condcallliteralsingle;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func use(): i32 {
+    Mixed { names: n1(), tag: stringOf("x") };
+    return calls - 1;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("condcallliteralsingle", single);
+    assert_no_asan("condcallliteralsingle", &output);
+    assert_exit("condcallliteralsingle", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// condrowreturn: a `String[2]` conditional-root return by value.
+//
+// `return (c ? b1 : b2).xs;` selects one root and returns its fixed-array
+// field by value through the hidden destination parameter. A `?:` cannot
+// pass the hidden out-parameter a fixed-array field needs, so each arm must
+// copy into the destination on its own path. The caller reads the returned
+// rows' bytes, so a dropped or wrong copy is visible as a wrong value or a
+// crash. The store spelling and the direct conditional-free return are the
+// accepted controls.
+// ---------------------------------------------------------------------------
+
+/// A `String[2]` conditional-root return copies per arm into the caller.
+///
+/// `pick(true)` returns `b1`'s rows and `pick(false)` returns `b2`'s; the
+/// caller reads the first byte of each returned row (`a`/`b`, `c`/`d`) and
+/// cancels them with the byte sum, so the run exits 0 only when both
+/// selections copied the right bytes. The store spelling moves the same
+/// rows into a local and the direct return copies a single root's field;
+/// both controls exit 0 and run clean.
+#[test]
+fn should_copy_a_string_array_conditional_root_return_per_arm() {
+    let returned = r#"module spec.cpr.condrowreturn;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { xs: String[2]; }
+
+func pick(c: bool): String[2] {
+    let b1: Box = Box { xs: [stringOf("aa"), stringOf("bb")] };
+    let b2: Box = Box { xs: [stringOf("cc"), stringOf("dd")] };
+    return (c ? b1 : b2).xs;
+}
+
+func main(): i32 {
+    let a: String[2] = pick(true);
+    let b: String[2] = pick(false);
+    let s: i32 = i32(bytes(a[0])[0]) + i32(bytes(a[1])[1]);
+    s = s + i32(bytes(b[0])[0]) + i32(bytes(b[1])[1]);
+    return s - (97 + 98 + 99 + 100);
+}
+"#;
+    let output = run_memory("condrowreturn", returned);
+    assert_no_asan("condrowreturn", &output);
+    assert_exit("condrowreturn", &output, 0);
+
+    let stored = r#"module spec.cpr.condrowreturnstore;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { xs: String[2]; }
+
+func use(c: bool): i32 {
+    let b1: Box = Box { xs: [stringOf("aa"), stringOf("bb")] };
+    let b2: Box = Box { xs: [stringOf("cc"), stringOf("dd")] };
+    let a: String[2] = (c ? b1 : b2).xs;
+    let s: i32 = i32(bytes(a[0])[0]) + i32(bytes(a[1])[1]);
+    return s - (c ? (97 + 98) : (99 + 100));
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    let output = run_memory("condrowreturnstore", stored);
+    assert_no_asan("condrowreturnstore", &output);
+    assert_exit("condrowreturnstore", &output, 0);
+
+    let direct = r#"module spec.cpr.condrowreturndirect;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { xs: String[2]; }
+
+func pick(c: bool): String[2] {
+    let b: Box = Box { xs: [stringOf("aa"), stringOf("bb")] };
+    if (c) {
+        return b.xs;
+    }
+    let d: Box = Box { xs: [stringOf("cc"), stringOf("dd")] };
+    return d.xs;
+}
+
+func main(): i32 {
+    let a: String[2] = pick(true);
+    let b: String[2] = pick(false);
+    let s: i32 = i32(bytes(a[0])[0]) + i32(bytes(a[1])[1]);
+    s = s + i32(bytes(b[0])[0]) + i32(bytes(b[1])[1]);
+    return s - (97 + 98 + 99 + 100);
+}
+"#;
+    let output = run_memory("condrowreturndirect", direct);
+    assert_no_asan("condrowreturndirect", &output);
+    assert_exit("condrowreturndirect", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardfallback: a fixed-array constructor behind a short-circuit operand.
+//
+// `g && consume((c ? b1 : b2).names)` and `g && consume(ok ? mk1() : mk2())`
+// pass a fixed-array conditional to a `take` parameter. The argument has no
+// C value expression — the projection is not an addressable member of a
+// conditional value, and a call arm cannot pass its hidden out-parameter
+// through `?:` — so the operand must route through the per-arm destination
+// store, exactly like the statement path, while `g` keeps the operand lazy:
+// a skipped path runs no call and consumes nothing. The unguarded call
+// spellings of the same arguments are the accepted controls.
+// ---------------------------------------------------------------------------
+
+/// A guarded fixed-array consume fills its destination per arm and stays
+/// lazy.
+///
+/// The projection spelling consumes the selected root's rows (the bytes
+/// prove the value arrived), and the call spelling consumes the selected
+/// arm's fresh rows; both selections read back and exit 0. The call
+/// counters prove each call ran once on its path and the skipped evaluation
+/// ran nothing. The unguarded spellings keep their acceptance.
+#[test]
+fn should_route_a_guarded_fixed_array_consume_through_its_destination() {
+    let projection = r#"module spec.cpr.guardfallbackproj;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { names: String[2]; }
+
+let calls: i32 = 0;
+
+func consume(take names: String[2]): i32 {
+    calls = calls + 1;
+    return i32(bytes(names[0])[0]) + i32(bytes(names[1])[1]);
+}
+
+func use(g: bool, c: bool, want: i32): i32 {
+    let b1: Box = Box { names: [stringOf("xa"), stringOf("yb")] };
+    let b2: Box = Box { names: [stringOf("pc"), stringOf("qd")] };
+    if (g && consume((c ? b1 : b2).names) == want) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = use(true, true, 120 + 98) - 1;
+    n = n + use(true, false, 112 + 100) - 1;
+    n = n + use(false, true, 120 + 98);
+    return n + (calls - 2) * 10;
+}
+"#;
+    let output = run_memory("guardfallbackproj", projection);
+    assert_no_asan("guardfallbackproj", &output);
+    assert_exit("guardfallbackproj", &output, 0);
+
+    let calls = r#"module spec.cpr.guardfallbackcond;
+
+import { String, stringOf, bytes } from std.text;
+
+let calls: i32 = 0;
+
+func mk1(): String[2] {
+    calls = calls + 1;
+    return [stringOf("AA"), stringOf("BB")];
+}
+
+func mk2(): String[2] {
+    calls = calls + 1;
+    return [stringOf("CC"), stringOf("DD")];
+}
+
+func consume(take names: String[2]): i32 {
+    return i32(bytes(names[0])[0]) + i32(bytes(names[1])[1]);
+}
+
+func use(g: bool, ok: bool, want: i32): i32 {
+    if (g && consume(ok ? mk1() : mk2()) == want) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = use(true, true, 65 + 66) - 1;
+    n = n + use(true, false, 67 + 68) - 1;
+    n = n + use(false, true, 65 + 66);
+    return n + (calls - 2) * 10;
+}
+"#;
+    let output = run_memory("guardfallbackcond", calls);
+    assert_no_asan("guardfallbackcond", &output);
+    assert_exit("guardfallbackcond", &output, 0);
+
+    let control = r#"module spec.cpr.guardfallbackctrlproj;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { names: String[2]; }
+
+let calls: i32 = 0;
+
+func consume(take names: String[2]): i32 {
+    calls = calls + 1;
+    return i32(bytes(names[0])[0]) + i32(bytes(names[1])[1]);
+}
+
+func use(c: bool, want: i32): i32 {
+    let b1: Box = Box { names: [stringOf("xa"), stringOf("yb")] };
+    let b2: Box = Box { names: [stringOf("pc"), stringOf("qd")] };
+    return consume((c ? b1 : b2).names) - want;
+}
+
+func main(): i32 {
+    let n: i32 = use(true, 120 + 98) + use(false, 112 + 100);
+    return n + (calls - 2) * 10;
+}
+"#;
+    let output = run_memory("guardfallbackctrlproj", control);
+    assert_no_asan("guardfallbackctrlproj", &output);
+    assert_exit("guardfallbackctrlproj", &output, 0);
+
+    let control_calls = r#"module spec.cpr.guardfallbackctrlcond;
+
+import { String, stringOf, bytes } from std.text;
+
+let calls: i32 = 0;
+
+func mk1(): String[2] {
+    calls = calls + 1;
+    return [stringOf("AA"), stringOf("BB")];
+}
+
+func mk2(): String[2] {
+    calls = calls + 1;
+    return [stringOf("CC"), stringOf("DD")];
+}
+
+func consume(take names: String[2]): i32 {
+    return i32(bytes(names[0])[0]) + i32(bytes(names[1])[1]);
+}
+
+func use(ok: bool, want: i32): i32 {
+    return consume(ok ? mk1() : mk2()) - want;
+}
+
+func main(): i32 {
+    let n: i32 = use(true, 65 + 66) + use(false, 67 + 68);
+    return n + (calls - 2) * 10;
+}
+"#;
+    let output = run_memory("guardfallbackctrlcond", control_calls);
+    assert_no_asan("guardfallbackctrlcond", &output);
+    assert_exit("guardfallbackctrlcond", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// arrayelement: a call-filled fixed-array field inside an array literal
+// element.
+//
+// `Outer { items: [Inner { row: n1() }, ...] }` nests a struct literal in an
+// array literal. An element whose struct carries a call-filled fixed-array
+// field can only be built through the field's hidden destination, so the
+// array literal must descend into its elements when it decides between the
+// initializer and the per-field store form; otherwise the emitted element
+// renders the call as a value and drops its destination. The discarded
+// direct-element spelling and the direct struct field are the controls.
+// ---------------------------------------------------------------------------
+
+/// An array element's call-filled field fills through its destination and
+/// reads back.
+///
+/// The kept spelling selects one element conditional and reads the selected
+/// element's first byte back (`A` or `C`), so both selections exit 0 and the
+/// element's field provably holds the call's rows; the counters prove each
+/// element's call ran once. The discarded direct-element spelling and the
+/// direct `Inner { row: n1() }` field keep their acceptance.
+#[test]
+fn should_read_back_a_call_filled_field_of_an_array_element() {
+    let kept = r#"module spec.cpr.arrayelement;
+
+struct Inner { row: str[2]; }
+struct Outer { items: Inner[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    calls = calls + 1;
+    return ["CC", "DD"];
+}
+
+func use(ok: bool): i32 {
+    let o: Outer = Outer { items: [ok ? Inner { row: n1() } : Inner { row: n2() }, Inner { row: ["zz", "ww"] }] };
+    return i32(o.items[0].row[0][0]) - (ok ? 65 : 67);
+}
+
+func main(): i32 {
+    return use(true) + use(false) + (calls - 2) * 10;
+}
+"#;
+    let output = run_memory("arrayelement", kept);
+    assert_no_asan("arrayelement", &output);
+    assert_exit("arrayelement", &output, 0);
+
+    let discarded = r#"module spec.cpr.arrayelementdiscard;
+
+struct Inner { row: str[2]; }
+struct Outer { items: Inner[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    calls = calls + 1;
+    return ["CC", "DD"];
+}
+
+func use(): i32 {
+    Outer { items: [Inner { row: n1() }, Inner { row: n2() }] };
+    return calls - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("arrayelementdiscard", discarded);
+    assert_no_asan("arrayelementdiscard", &output);
+    assert_exit("arrayelementdiscard", &output, 0);
+
+    let field = r#"module spec.cpr.arrayelementfield;
+
+struct Inner { row: str[2]; }
+
+let calls: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    calls = calls + 1;
+    return ["CC", "DD"];
+}
+
+func use(): i32 {
+    let i: Inner = Inner { row: n1() };
+    let k: Inner = Inner { row: n2() };
+    return i32(i.row[0][0]) + i32(k.row[1][1]) - (65 + 68) + calls - 2;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("arrayelementfield", field);
+    assert_no_asan("arrayelementfield", &output);
+    assert_exit("arrayelementfield", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// nestedread: the element-read base of a nested conditional arm.
+//
+// `(c ? (d ? b1 : b2).ys : b3.ys)[i]` selects a fixed-array field through a
+// nested conditional and reads one element. The outer conditional's arm is
+// itself a projection of a conditional, which is not an lvalue, so the read
+// base must distribute through the nested arms the same way the store,
+// return, and `for`-iterable gates already do: each leaf's own field is
+// addressed on its path. The store and iterable distributions are the
+// accepted controls.
+// ---------------------------------------------------------------------------
+
+/// A nested conditional arm reads its selected element on every path.
+///
+/// The read walks `(c ? (d ? b1 : b2).ys : b3.ys)[i]` over four elements,
+/// twice per call with the selection flipped, so all three leaves (`b1`,
+/// `b2`, `b3`) are read and the trailing constants cancel the sums. The
+/// store and `for`-iterable distributions of the same base keep their
+/// acceptance.
+#[test]
+fn should_read_a_nested_conditional_arms_fixed_array_element() {
+    let element = r#"module spec.cpr.nestedread;
+
+struct Box { ys: u8[4]; }
+
+func read(c0: bool, d: bool): i32 {
+    let b1: Box = Box { ys: [1, 2, 3, 4] };
+    let b2: Box = Box { ys: [5, 6, 7, 8] };
+    let b3: Box = Box { ys: [9, 10, 11, 12] };
+    let c: bool = c0;
+    let s: i32 = 0;
+    let k: i32 = 0;
+    while (k < 2) {
+        let i: i32 = 0;
+        while (i < 4) {
+            s = s + i32((c ? (d ? b1 : b2).ys : b3.ys)[i]);
+            i = i + 1;
+        }
+        c = !c;
+        k = k + 1;
+    }
+    return s;
+}
+
+func main(): i32 {
+    let r: i32 = read(true, true) - 52;
+    r = r + read(true, false) - 68;
+    r = r + read(false, true) - 52;
+    return r;
+}
+"#;
+    let output = run_memory("nestedread", element);
+    assert_no_asan("nestedread", &output);
+    assert_exit("nestedread", &output, 0);
+
+    let stored = r#"module spec.cpr.nestedreadstore;
+
+struct Box { ys: u8[4]; }
+
+func use(c: bool, d: bool): i32 {
+    let b1: Box = Box { ys: [1, 2, 3, 4] };
+    let b2: Box = Box { ys: [5, 6, 7, 8] };
+    let b3: Box = Box { ys: [9, 10, 11, 12] };
+    let a: u8[4] = (c ? (d ? b1 : b2).ys : b3.ys);
+    return i32(a[0]) + i32(a[1]) + i32(a[2]) + i32(a[3]);
+}
+
+func main(): i32 {
+    let r: i32 = use(true, true) - 10;
+    r = r + use(true, false) - 26;
+    r = r + use(false, true) - 42;
+    r = r + use(false, false) - 42;
+    return r;
+}
+"#;
+    let output = run_memory("nestedreadstore", stored);
+    assert_no_asan("nestedreadstore", &output);
+    assert_exit("nestedreadstore", &output, 0);
+
+    let iterated = r#"module spec.cpr.nestedreaditerate;
+
+struct Box { ys: u8[4]; }
+
+func use(c: bool, d: bool): i32 {
+    let b1: Box = Box { ys: [1, 2, 3, 4] };
+    let b2: Box = Box { ys: [5, 6, 7, 8] };
+    let b3: Box = Box { ys: [9, 10, 11, 12] };
+    let s: i32 = 0;
+    for (y in (c ? (d ? b1 : b2).ys : b3.ys)) {
+        s = s + i32(y);
+    }
+    return s;
+}
+
+func main(): i32 {
+    let r: i32 = use(true, true) - 10;
+    r = r + use(true, false) - 26;
+    r = r + use(false, true) - 42;
+    r = r + use(false, false) - 42;
+    return r;
+}
+"#;
+    let output = run_memory("nestedreaditerate", iterated);
+    assert_no_asan("nestedreaditerate", &output);
+    assert_exit("nestedreaditerate", &output, 0);
+}

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 12/33 tasks (36%) — Phase 2 complete
+> **Progress**: 14/33 tasks (42%) — Executing Phase 3
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -147,8 +147,8 @@ of call-filled literals, the `String[2]` conditional-root return (critical), the
 guarded/deferred fallback, the array-literal element gate, and the nested-arm read base with its
 landed controls.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (condfield, condrootfield, guardviewfield, condcallliteral, condrowreturn, guardfallback, arrayelement, nestedread)
-- [ ] 3.1.2 Run the suite and record the red phase (the `DEF-306` store/iterable controls
+- [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (condfield, condrootfield, guardviewfield, condcallliteral, condrowreturn, guardfallback, arrayelement, nestedread) ✅ (completed: 2026-10-16 04:45; eight tests appended (+792 lines, additions only; 116 → 124 tests) with twelve controls; the reds re-derived: the conditional fixed-array field (plain `lvalue required` + guarded `int-conversion`), the conditional root into a literal field, the guarded view-array field (`missing-field-initializers`), the conditional of call-filled literals (`too few arguments`), the `String[2]` conditional-root return (segfault 139), the guarded fixed-array consume (`take`+owning; the skipped path runs an arm), the conditional element of an array element, and the nested-arm element read; `DEF-305`'s filed direct shape is green at the head (closed incidentally by the phase-2 commit) and stands as a control)
+- [x] 3.1.2 Run the suite and record the red phase (the `DEF-306` store/iterable controls ✅ (completed: 2026-10-16 04:45; plain 116 passed / 8 failed and ASan 116 passed / 8 failed — exactly the eight new tests; the twelve controls green; parent-verified)
       verified green first — AR-3)
 
 ### Step 3.2: Implementation
