@@ -4151,13 +4151,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A literal arm carries its view positions as fields or elements: a
             // position that reads a fresh result binds that root for the
             // destination's frame, exactly as a direct view projection does,
-            // while every other position keeps its spelling.
+            // while every other position keeps its spelling. An owning literal
+            // binds its view positions first: the whole-literal owner and the
+            // store's move-out copy the views, so every backing root must live
+            // in the same scope the owner does.
             ValueKind::StructLit { .. } | ValueKind::ArrayLit { .. } => {
                 let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                let value = if !is_view(&value.ty)
+                    && self.aggregate_has_ownerless_view_positions(&value)
+                {
+                    self.own_aggregate_view_positions(value)
+                } else {
+                    value
+                };
                 if owning && !is_view(&value.ty) {
                     self.materialize_scoped_owner(value)
-                } else if self.aggregate_has_ownerless_view_positions(&value) {
-                    self.own_aggregate_view_positions(value)
                 } else {
                     value
                 }

@@ -99,7 +99,7 @@ impl<'a> Emitter<'a> {
             ValueKind::StructLit { name, fields } => {
                 self.struct_literal(&self.substitute(&value.ty), name, fields)
             }
-            ValueKind::ArrayLit { elements, fill } => self.array_literal(&self.substitute(&value.ty), elements, fill), // BISECT
+            ValueKind::ArrayLit { elements, fill } => self.array_literal(&self.substitute(&value.ty), elements, fill),
             ValueKind::Template(pieces) => self.template(pieces),
             ValueKind::Intrinsic {
                 name,
@@ -1008,7 +1008,6 @@ impl<'a> Emitter<'a> {
         )
     }
 
-    /// Renders an array literal as a compound initializer.
     /// Renders an array literal as a C brace list.
     ///
     /// Each element renders through its store spelling, so a view element

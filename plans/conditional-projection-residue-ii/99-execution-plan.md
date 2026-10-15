@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 17/33 tasks (52%) — Phase 3 in review
+> **Progress**: 18/33 tasks (55%) — Phase 3 complete
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -49,7 +49,7 @@ controls.
 
 ## Phase 1: View owners, loans, and stores
 
-> **Phase baseline tree**: `a462084` (the planning baseline; re-recorded at phase start)
+> **Phase baseline tree**: `47306d2` **plus the two-line `place.rs` visibility hunk** (the committed `47306d2`/`cfb4c1a` trees do not compile — a staging miss; the repair landed in `6666a4d`, recorded in the ledger as J3R-4), recorded 2026-10-16
 > **Lenses**: correctness + memory-safety (AR-13) — dispatched via the project brief and the
 > read-only `memory-safety-auditor`
 > **Reasoning**: high — ownership and lifetime judgments in the freshly reviewed machinery
@@ -148,7 +148,7 @@ guarded/deferred fallback, the array-literal element gate, and the nested-arm re
 landed controls.
 
 - [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (condfield, condrootfield, guardviewfield, condcallliteral, condrowreturn, guardfallback, arrayelement, nestedread) ✅ (completed: 2026-10-16 04:45; eight tests appended (+792 lines, additions only; 116 → 124 tests) with twelve controls; the reds re-derived: the conditional fixed-array field (plain `lvalue required` + guarded `int-conversion`), the conditional root into a literal field, the guarded view-array field (`missing-field-initializers`), the conditional of call-filled literals (`too few arguments`), the `String[2]` conditional-root return (segfault 139), the guarded fixed-array consume (`take`+owning; the skipped path runs an arm), the conditional element of an array element, and the nested-arm element read; `DEF-305`'s filed direct shape is green at the head (closed incidentally by the phase-2 commit) and stands as a control)
-- [x] 3.1.2 Run the suite and record the red phase (the `DEF-306` store/iterable controls ✅ (completed: 2026-10-16 04:45; plain 116 passed / 8 failed and ASan 116 passed / 8 failed — exactly the eight new tests; the twelve controls green; parent-verified)
+- [x] 3.1.2 Run the suite and record the red phase (the `DEF-306` store/iterable controls ✅ (completed: 2026-10-16 04:45, corrected 2026-10-16 06:10 per J3R-3: the red ref is `47306d2` + the two-line `place.rs` visibility hunk (the committed tree alone does not compile); plain 116 passed / 8 failed and ASan 116 passed / 8 failed — exactly the eight new tests; the twelve controls green; parent-verified)
       verified green first — AR-3)
 
 ### Step 3.2: Implementation
@@ -168,8 +168,8 @@ landed controls.
 - [x] 3.3.1 Write the phase implementation pins (the per-arm destination shapes, the
       hidden-destination pass, the copy shapes, the arm rebuild, the re-emission determinism
       pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 05:45; six pins added (74 tests total, additions only) — the per-arm conditional fixed-array field store, the per-arm String[2] return copy (the critical), the guarded view-array field element fill, the hidden-destination call fields, the nested element read base, and the re-emission determinism pin (with a repaired-shape fragment so it discriminates); each fails at `47306d2` for the intended reason; 74/74 green and `make check` exit 0)
-- [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses plus the base/head emission differential
+- [x] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses plus the base/head emission differential ✅ (completed: 2026-10-16 06:55; both lenses dispatched plus one emission re-confirmation; the correction round fixed the kept view binding's statement-scoped root (the scope-owner path) and the guarded element-conditional double free (the per-arm move), plus the marker/doc cleanups and the baseline/red-ref corrections; rows filed: `DEF-322`..`DEF-324`; the phase-2 build gap (`cfb4c1a`/`47306d2` missing the two-line `place.rs` widening) is recorded in the ledger; the closing verification: the residue spec 126/126 plain and ASan, the impl pins 74/74, `make check` exit 0, the repros clean on the parent's re-run)
 
 **Verify**: `make check`; the emission differential; the ownership cases under `RDC_ASAN=1`
 

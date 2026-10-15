@@ -703,6 +703,26 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        // A conditional element moves the chosen arm into the element and
+        // empties that arm, exactly as the unguarded per-arm store does: each
+        // arm's own release then finds nothing to free, so the element stays
+        // the single owner of the moved fields.
+        if let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        {
+            if self.needs_drop(element) {
+                return Some(self.conditional_move_expr(
+                    sub,
+                    element,
+                    condition,
+                    then_value,
+                    else_value,
+                ));
+            }
+        }
         let mut guards: Vec<String> = Vec::new();
         self.guard_expressions(value, &mut guards);
         let lowered = self.store_text(value, element);

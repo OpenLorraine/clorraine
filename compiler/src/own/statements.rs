@@ -518,10 +518,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // (`g ? Holder { names: [mk().v] } : ...`) hands the destination views
         // of fresh results: each arm's root binds for the destination's frame,
         // so the carried views stay valid while the roots' remaining fields
-        // release at the scope's end. An owning arm keeps its own path: the
-        // destination owns the value, so the per-arm binding buys no release.
-        if !owning
-            && !is_view(ty)
+        // release at the scope's end. An owning arm binds its view positions
+        // the same way before the whole literal becomes the arm's owner: the
+        // destination keeps the views, and a statement-scoped fill would free
+        // their backing while the destination still reads it.
+        if !is_view(ty)
             && !ty.is_unknown()
             && matches!(lowered.kind, ValueKind::Conditional { .. })
             && self.conditional_has_ownerless_view_positions(&lowered)

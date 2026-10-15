@@ -189,3 +189,31 @@ module-initializer sibling), `DEF-319` (the direct literal return), `DEF-320` (t
 `DEF-321` (the view-typed `Index` receiver); `DEF-288` extended with the whole-carrier global-store
 hole. `DEF-295` is incidentally fixed by this phase's residual gate — phase 4 re-measures and can
 close it early.
+
+## Phase 3 — Fixed-array and literal emissions
+
+**Reviewed implementation**: `6666a4d`/`6e86ffa` plus one correction round. **Lenses**: correctness
+(J3R) and emission-integrity, dispatched on the phase diff.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | J3R-1 (a leftover `// BISECT` marker), J3R-2 (a stale doc line), J3R-3 (the red ref imprecision: the committed `47306d2` does not compile without the two-line `place.rs` widening), J3R-4 (the phase-2 build gap: `cfb4c1a`/`47306d2` were committed without that widening — a staging miss, repaired in `6666a4d`), J3R-5/J3R-6 (pre-existing, filed); 3,434-program strict differential with no unintended delta |
+| emission-integrity | FINDINGS — 2 (Finding 1 the kept view binding's statement-scoped root — a head-only UAF on the `o1_owning_arm` shape that leaked at base; Finding 2 the guarded element-conditional double free) + Finding 3 (= J3R-1) | 4,348-program differential (46 deltas, all in the intended classes); strict builds: no head-only failure; determinism; both profiles |
+
+### Fix round
+
+| Item | Outcome |
+|------|---------|
+| Finding 1 (critical) | **Fixed**: `own_view_arm`'s literal branch binds the ownerless view positions through the scope-owner path, and the conditional-of-literals store branch drops the `!owning` gate — the root and per-arm owners live in the binding's scope (`keptviewtag` case) |
+| Finding 2 (major) | **Fixed**: a guarded element conditional of a drop-needing element type moves per arm into the destination (`guardelemcond` cases) |
+| J3R-1/J3R-2 | **Fixed**: the marker and the stale doc line removed |
+| J3R-3/J3R-4 | **Recorded**: the baseline line names `47306d2` + the visibility hunk; the phase-2 build gap is noted here |
+| J3R-5/J3R-6 + the guarded spellings | **Filed**: `DEF-322` (the silently dropped element store through a conditional base), `DEF-323` (the guarded call-filled view-array literals), `DEF-324` (the guarded literal spellings keeping invalid C) |
+
+### Confirmation
+
+The emission re-probe: **CONFIRMED — 0 findings** — the 55-delta set is all intended, no accept/reject
+change, 2,433/2,433 re-emissions byte-identical, both alternate profiles parity, the strict-build
+inventory unchanged (39 pre-existing failures, none added).

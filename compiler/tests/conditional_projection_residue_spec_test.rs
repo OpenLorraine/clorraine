@@ -9290,3 +9290,116 @@ func main(): i32 {
     assert_no_asan("nestedreaditerate", &output);
     assert_exit("nestedreaditerate", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// keptviewtag: a kept binding whose element is a fresh call view.
+//
+// `Holder { names: [mk().v], tag: stringOf("t") }` stores a view of a fresh
+// result beside an owning sibling field. The destination keeps the view past
+// the statement that fills it, so the fresh root lives in the binding's own
+// scope: the binding reads the bytes in later statements, and the scope's
+// cleanup releases the root after that last read. The owning sibling's own
+// release follows the same scope, and both selections run.
+// ---------------------------------------------------------------------------
+
+/// A kept view binding releases its fresh root after the binding's last use.
+#[test]
+fn should_keep_a_fresh_view_root_until_the_bindings_scope_ends() {
+    let kept = r#"module spec.cpr.keptviewtag;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; tag: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func run(g: bool, want: i32): i32 {
+    let h: Holder = g ? Holder { names: [mk().v], tag: stringOf("t") } : Holder { names: ["zz"], tag: stringOf("q") };
+    let first: i32 = i32(h.names[0][0]);
+    let tag: i32 = i32(bytes(h.tag)[0]);
+    return first + tag - want;
+}
+
+func main(): i32 {
+    return run(true, 97 + 116) + run(false, 122 + 113);
+}
+"#;
+    let output = run_memory("keptviewtag", kept);
+    assert_no_asan("keptviewtag", &output);
+    assert_exit("keptviewtag", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardelemcond: a guarded element conditional of store-needing literals.
+//
+// `Outer { items: [ok ? Inner { row: a.row } : Inner { row: b.row }] }` inside
+// a `&&` operand stores the chosen element per arm: that arm moves into the
+// element and is emptied, so its own release finds nothing to free and the
+// element the guard reads is the single owner of the moved rows. The second
+// program keeps a following element, so the store order stays visible.
+// ---------------------------------------------------------------------------
+
+/// A guarded element conditional moves the chosen arm into the element.
+#[test]
+fn should_move_the_guarded_element_conditional_arm_into_its_destination() {
+    let moved = r#"module spec.cpr.guardelemcond;
+
+import { String, stringOf } from std.text;
+
+struct Inner { row: String[2]; }
+struct Outer { items: Inner[1]; }
+
+func use(ok: bool, g: bool, want: i32): i32 {
+    let a: Inner = Inner { row: [stringOf("ab"), stringOf("cd")] };
+    let b: Inner = Inner { row: [stringOf("ef"), stringOf("gh")] };
+    if (g && i32(len(Outer { items: [ok ? Inner { row: a.row } : Inner { row: b.row }] }.items[0].row[0])) > 0) {
+        return 1;
+    }
+    return want;
+}
+
+func main(): i32 {
+    let r: i32 = use(true, true, 0) - 1;
+    let s: i32 = use(false, true, 0) - 1;
+    let t: i32 = use(true, false, 2) - 2;
+    return r + s + t;
+}
+"#;
+    let output = run_memory("guardelemcond", moved);
+    assert_no_asan("guardelemcond", &output);
+    assert_exit("guardelemcond", &output, 0);
+
+    let with_second = r#"module spec.cpr.guardelemcondsecond;
+
+import { String, stringOf } from std.text;
+
+struct Box { row: String[2]; }
+struct Inner { row: String[2]; }
+struct Outer { items: Inner[2]; }
+
+func mkBox(x: u8): Box {
+    if (x == 0) { return Box { row: [stringOf("ab"), stringOf("cd")] }; }
+    return Box { row: [stringOf("ef"), stringOf("gh")] };
+}
+
+func use(ok: bool, g: bool, want: i32): i32 {
+    let a: Box = mkBox(0);
+    let b: Box = mkBox(1);
+    if (g && i32(len(Outer { items: [ok ? Inner { row: a.row } : Inner { row: b.row }, Inner { row: [stringOf("zz"), stringOf("ww")] }] }.items[0].row[0])) > 0) {
+        return 1;
+    }
+    return want;
+}
+
+func main(): i32 {
+    let r: i32 = use(true, true, 0) - 1;
+    let s: i32 = use(false, true, 0) - 1;
+    let t: i32 = use(true, false, 0);
+    return r + s + t;
+}
+"#;
+    let output = run_memory("guardelemcondsecond", with_second);
+    assert_no_asan("guardelemcondsecond", &output);
+    assert_exit("guardelemcondsecond", &output, 0);
+}
