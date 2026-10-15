@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 18/33 tasks (55%) — Phase 3 complete
+> **Progress**: 20/33 tasks (61%) — Executing Phase 4
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -194,8 +194,8 @@ ST-20..ST-24 · AR-3, AR-10
 projection, the guarded update spellings with their landed loop-condition control, the fill
 evaluation, and the bare raw-deref store.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (loopreceiver, loopmember, guardupdate, arrayfill, rawderefstore)
-- [ ] 4.1.2 Run the suite and record the red phase (the plain loop-condition and fill-free
+- [x] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (loopreceiver, loopmember, guardupdate, arrayfill, rawderefstore) ✅ (completed: 2026-10-16 07:20; five tests appended (+308 lines, additions only; 126 → 131 tests) — the mixed-arm receiver in a loop condition (the dual-toolchain case per AR-10: the container leg green, the host leg `-Werror=sequence-point`), the loop-condition member projection as a green control (DEF-295 is incidentally fixed by the phase-2 residual gate — the re-measurement confirmed), the guarded spread operand (the sequence-point reds), the array fill evaluated once, and the bare raw-deref store; the eager top-level receiver read's 11 B leak was observed and excluded (recorded for assessment))
+- [x] 4.1.2 Run the suite and record the red phase (the plain loop-condition and fill-free ✅ (completed: 2026-10-16 07:20; plain 128 passed / 3 failed and ASan 128 passed / 3 failed — exactly the three reds; the two new green cases and all 126 committed cases pass; parent-verified)
       controls verified green first; the `DEF-294` dual-toolchain measurement recorded — AR-10)
 
 ### Step 4.2: Implementation

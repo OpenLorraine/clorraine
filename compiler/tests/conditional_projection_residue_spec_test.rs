@@ -9403,3 +9403,311 @@ func main(): i32 {
     assert_no_asan("guardelemcondsecond", &output);
     assert_exit("guardelemcondsecond", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// loopreceiver: the mixed-arm receiver of a loop condition.
+//
+// `while (i < k && (c ? mkH() : a).call(5) > 0)` reads the callable field
+// from a conditional receiver and calls it. The receiver's fresh arm builds a
+// value that owns a string, so the receiver position must settle the arm's
+// parts before the field is read: the current emission nests the fresh arm's
+// release and fill in a comma expression that the pinned container toolchain
+// accepts and the host GCC 15 rejects with `-Werror=sequence-point`. The case
+// pins the run values and the strict build in the suite's own environment.
+// The direct receiver and the plain loop condition are the controls.
+// ---------------------------------------------------------------------------
+
+/// The mixed-arm receiver of a loop condition settles per iteration and runs
+/// the selected arm's callable.
+///
+/// `mkH()` carries `addTen`, so the fresh arm's `call(5)` is `15` and the
+/// loop runs its `k` iterations; the place arm carries `neg`, so its
+/// `call(5)` is `-5` and the loop runs zero times. The two runs prove both
+/// selections and their values. The direct receiver and the plain loop
+/// condition keep their acceptance and values.
+#[test]
+fn should_settle_a_mixed_arm_receiver_in_a_loop_condition() {
+    let source = r#"module spec.cpr.loopreceiver;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addTen(x: i32): i32 { return x + 10; }
+func neg(x: i32): i32 { return 0 - x; }
+
+func mkH(): H { return H { call: addTen, s: stringOf("mk") }; }
+
+func use(c: bool, take a: H, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k && (c ? mkH() : a).call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func usePlain(k: i32): i32 {
+    let a: H = H { call: addTen, s: stringOf("pa") };
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k && a.call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func useDirect(): i32 {
+    let a: H = H { call: addTen, s: stringOf("pa") };
+    return a.call(5) - 15;
+}
+
+func main(): i32 {
+    let a1: H = H { call: neg, s: stringOf("aa") };
+    let n: i32 = use(true, a1, 1) - 1;
+    let a2: H = H { call: neg, s: stringOf("bb") };
+    n = n + use(false, a2, 1);
+    return n + usePlain(2) - 2 + useDirect();
+}
+"#;
+    let output = run_memory("loopreceiver", source);
+    assert_no_asan("loopreceiver", &output);
+    assert_exit("loopreceiver", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// loopmember: the loop-condition member projection.
+//
+// `while (i < k && i32(len(mkH().s)) > 0)` projects a member of a fresh
+// result inside the loop condition. The projection's root must bind once per
+// evaluation and release exactly once, so the single-shot and the re-executed
+// loop run without freeing the same storage twice and the run is
+// memory-clean. The store and argument twins of the same projection are the
+// controls.
+// ---------------------------------------------------------------------------
+
+/// A loop-condition member projection releases its fresh root once per
+/// evaluation.
+///
+/// The single-shot (`k = 1`) and re-executed (`k = 3`) loops each evaluate
+/// `mkH().s` once per iteration, count their taken iterations, and exit 0
+/// with no memory report; the store twin `let s: String = mkH().s;` and the
+/// argument twin `consume(mkH().s)` keep their acceptance and values.
+#[test]
+fn should_release_a_loop_condition_member_projection_once() {
+    let source = r#"module spec.cpr.loopmember;
+
+import { String, stringOf } from std.text;
+
+struct H { s: String; tag: String; }
+
+func mkH(): H { return H { s: stringOf("ab"), tag: stringOf("cd") }; }
+
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func use(k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k && i32(len(mkH().s)) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func storeTwin(): i32 {
+    let s: String = mkH().s;
+    return i32(len(s)) - 2;
+}
+
+func takeTwin(): i32 {
+    return consume(mkH().s) - 2;
+}
+
+func main(): i32 {
+    let a: i32 = use(1) - 1;
+    let b: i32 = use(3) - 3;
+    let c: i32 = storeTwin();
+    let d: i32 = takeTwin();
+    return a + b + c + d;
+}
+"#;
+    let output = run_memory("loopmember", source);
+    assert_no_asan("loopmember", &output);
+    assert_exit("loopmember", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardupdate: the updating parts of a guarded operand.
+//
+// `g && f(i++, i) == 34`, `g || f(i++, i) == 34`, and
+// `c ? f(i++, i) : 0` keep the deferred spelling, which reads the update and
+// the use in one unsequenced C expression and fails the strict build
+// (`-Werror=sequence-point` on the pinned container and the host alike). The
+// guarded operand's updating parts must settle inside the guard path, the way
+// the loop-condition call arguments already settle, so the update completes
+// at its source position on the evaluated path only. The plain loop condition
+// `while (f(i++, i) < 30)` is the landed control.
+// ---------------------------------------------------------------------------
+
+/// A guarded or conditional operand with an update settles its parts on the
+/// evaluated path only.
+///
+/// Each spelling leaves `i` at `4` on the evaluated path (the call sees the
+/// old `i` left-to-right and the increment lands once) and at `3` on the
+/// skipped path, and the call counter proves the skipped path ran nothing.
+/// The recorded call arguments (`3` and `4`) and the ternary's value (`34`)
+/// prove the left-to-right order. The plain loop condition counts its three
+/// taken iterations and its four calls.
+#[test]
+fn should_settle_the_updating_parts_of_a_guarded_operand() {
+    let source = r#"module spec.cpr.guardupdate;
+
+let calls: i32 = 0;
+let last_a: i32 = 0;
+let last_b: i32 = 0;
+
+func f(a: i32, b: i32): i32 {
+    calls = calls + 1;
+    last_a = a;
+    last_b = b;
+    return a * 10 + b;
+}
+
+func guardAnd(g: bool): i32 {
+    let i: i32 = 3;
+    let ok: bool = g && f(i++, i) == 34;
+    if (g) {
+        return (ok ? 0 : 1) + (i - 4);
+    }
+    return (ok ? 0 : 1) + (i - 3);
+}
+
+func guardOr(g: bool): i32 {
+    let i: i32 = 3;
+    let ok: bool = g || f(i++, i) == 34;
+    if (g) {
+        return (ok ? 0 : 1) + (i - 3);
+    }
+    return (ok ? 0 : 1) + (i - 4);
+}
+
+func ternary(c: bool): i32 {
+    let i: i32 = 3;
+    let r: i32 = c ? f(i++, i) : 0;
+    return r - (c ? 34 : 0) + i - (c ? 4 : 3);
+}
+
+func plain(): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (f(i++, i) < 30) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let n: i32 = guardAnd(true) + guardAnd(false) + guardOr(true) + guardOr(false);
+    n = n + ternary(true) + ternary(false);
+    n = n + plain() - 3;
+    n = n + (calls - 7) * 10;
+    return n + (last_a - 3) + (last_b - 4);
+}
+"#;
+    let output = run_memory("guardupdate", source);
+    assert_no_asan("guardupdate", &output);
+    assert_exit("guardupdate", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// arrayfill: the array fill form's single evaluation.
+//
+// `let xs: i32[3] = [; i++];` evaluates the fill expression once and copies
+// the value to every element (Ch 04 §3). The observing counter and the
+// element values prove the single evaluation: a per-element evaluation would
+// count three increments and leave three distinct values. The fill-free
+// literal and the element-list literal are the controls.
+// ---------------------------------------------------------------------------
+
+/// An array fill expression evaluates once and copies to every element.
+///
+/// `[; i++]` with `i = 7` gives every element `7` and leaves `i = 8`; the sum
+/// and the counter fold into the exit code, so a per-element fill fails the
+/// read-back. The fill-free `[1, 2, 3]` and the element-list `[i++, i++, i++]`
+/// controls keep their element-wise semantics.
+#[test]
+fn should_evaluate_an_array_fill_expression_once() {
+    let source = r#"module spec.cpr.arrayfill;
+
+func fillOnce(): i32 {
+    let i: i32 = 7;
+    let xs: i32[3] = [; i++];
+    let n: i32 = xs[0] + xs[1] + xs[2];
+    return n - 21 + (i - 8);
+}
+
+func fillFree(): i32 {
+    let a: i32[3] = [1, 2, 3];
+    return a[0] + a[1] + a[2] - 6;
+}
+
+func elementList(): i32 {
+    let i: i32 = 0;
+    let b: i32[3] = [i++, i++, i++];
+    let n: i32 = b[0] + b[1] + b[2];
+    return n - 3 + (i - 3);
+}
+
+func main(): i32 {
+    return fillOnce() + fillFree() + elementList();
+}
+"#;
+    let output = run_memory("arrayfill", source);
+    assert_no_asan("arrayfill", &output);
+    assert_exit("arrayfill", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// rawderefstore: the bare raw-deref store.
+//
+// `unsafe { *q = 9; }` and `unsafe { *q = i++; }` name a dereferenced raw
+// pointer as the assignment target, which Ch 04 §7 accepts. The store must
+// lower to a write through the address (the indexed path's store shape) and
+// an updating right-hand side must settle before the store; the field write
+// through a raw and the bare deref read are the working controls.
+// ---------------------------------------------------------------------------
+
+/// A bare raw-deref store writes through the address and reads back.
+///
+/// `unsafe { *q = 9; }` leaves `a = 9`, and the deref read returns it; the
+/// update twin `unsafe { *r = i++; }` stores the pre-increment value
+/// (`b = 0`) and lands the increment once (`i = 1`). The field write through
+/// a raw (`p.v = 7`) keeps working.
+#[test]
+fn should_lower_a_bare_raw_deref_store() {
+    let source = r#"module spec.cpr.rawderefstore;
+
+struct S { v: i32; w: i32; }
+
+func main(): i32 {
+    let a: i32 = 0;
+    let q: raw i32 = unsafe &a;
+    unsafe { *q = 9; }
+    let v: i32 = unsafe *q;
+    let i: i32 = 0;
+    let b: i32 = 0;
+    let r: raw i32 = unsafe &b;
+    unsafe { *r = i++; }
+    let s: S = S { v: 0, w: 0 };
+    let p: raw S = unsafe &s;
+    unsafe { p.v = 7; }
+    return (a - 9) + (v - 9) + b + (i - 1) + (s.v - 7);
+}
+"#;
+    let output = run_memory("rawderefstore", source);
+    assert_no_asan("rawderefstore", &output);
+    assert_exit("rawderefstore", &output, 0);
+}
