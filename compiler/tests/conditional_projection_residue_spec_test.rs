@@ -5532,3 +5532,260 @@ func main(): i32 {
     assert_no_asan("nestedarmiterelse", &output);
     assert_exit("nestedarmiterelse", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// assigntarget: an assignment target and an updating right-hand side.
+//
+// `arr[i] = i++;`, `i = i++;`, and `i += i++;` share one place between the
+// target's location and the right-hand side's update. The language orders the
+// target's location first, then the right-hand side, and completes the update
+// before the store: the target index reads the old value, the postfix yields
+// the old value, and the store writes after the increment. A plain C expression
+// leaves that order unspecified, so the emitted C must pin the target's
+// location parts and the update-containing right-hand side. The program is
+// accepted, builds under the strict flags, and exits 0.
+// ---------------------------------------------------------------------------
+
+/// An assignment target and an updating right-hand side evaluate in order.
+///
+/// `arr[i] = i++;` keeps `arr[0]` as the stored old value 0 while the old index
+/// 0 picks the slot and `i` becomes 1, so `arr[1]` and `arr[2]` keep 6 and 7.
+/// `i = i++;` completes the increment and then stores the yielded old value, so
+/// `i` stays 1. `i += i++;` reads the current value (1) before the right-hand
+/// side, adds the yielded 1, and stores 2. Each intermediate is checked against
+/// its own baseline, so the combined result cancels exactly when every order
+/// holds; the run exits 0 and is clean.
+#[test]
+fn should_pin_an_assignment_target_before_an_updating_right_hand_side() {
+    let source = r#"module spec.cpr.assigntarget;
+
+func main(): i32 {
+    let arr: i32[3] = [5, 6, 7];
+    let i: i32 = 0;
+    arr[i] = i++;
+    let a: i32 = arr[0] + (arr[1] - 6) + (arr[2] - 7) + (i - 1);
+    i = i++;
+    let b: i32 = i - 1;
+    i += i++;
+    let c: i32 = i - 2;
+    return a + b + c;
+}
+"#;
+    let output = run_memory("assigntarget", source);
+    assert_no_asan("assigntarget", &output);
+    assert_exit("assigntarget", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// literalorder: an update inside a literal field or element.
+//
+// `P { a: i++, b: i }` and `[i++, i]` share the value of `i` between an
+// update-containing operand and a plain read. The language evaluates struct
+// fields and array elements in source order, so the update-containing operand
+// yields the old value and increments, and the operand after it reads the
+// updated value. The struct literal's emitted initializer must pin the update
+// where it is written, because the C initializer order is unspecified. The
+// program is accepted, builds under the strict flags, and exits 0.
+// ---------------------------------------------------------------------------
+
+/// A literal's update-containing field and element evaluate in source order.
+///
+/// In `P { a: i++, b: i }` field `a` takes the old value 0 while field `b`
+/// reads the updated 1; in `[j++, j]` element 0 takes 0 and element 1 reads 1.
+/// Each value is checked against its source-order baseline, so the result
+/// cancels only when both literals evaluate left to right; the run exits 0 and
+/// is clean.
+#[test]
+fn should_evaluate_update_containing_literals_in_source_order() {
+    let source = r#"module spec.cpr.literalorder;
+
+struct P { a: i32; b: i32; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let p: P = P { a: i++, b: i };
+    let j: i32 = 0;
+    let xs: i32[2] = [j++, j];
+    return p.a + (p.b - 1) + xs[0] + (xs[1] - 1);
+}
+"#;
+    let output = run_memory("literalorder", source);
+    assert_no_asan("literalorder", &output);
+    assert_exit("literalorder", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// dotreceiver: the receiver of a dot-call with an update.
+//
+// `(i++).get(i)` resolves to the free function `get(i++, i)`: the receiver is
+// argument position zero, evaluated before the written arguments. The update
+// therefore yields the old value while the argument reads the incremented
+// value. A C call leaves its argument order unspecified, so the receiver must
+// pin where it is written — in a single-shot call and in a loop body that
+// re-executes the call alike. Both programs are accepted, build under the
+// strict flags, and exit 0.
+// ---------------------------------------------------------------------------
+
+/// A dot receiver with an update evaluates before the call's arguments.
+///
+/// The single-shot `r = (i++).get(i)` yields `get(0, 1)` = 1 while `i` becomes
+/// 1. The loop spelling adds `(i++).get(i)` per iteration: `get(0, 1)` = 1 then
+/// `get(1, 2)` = 12 while `i` becomes 2, and the loop condition reads the
+/// updated value. Both results check against their left-to-right baselines, so
+/// each run exits 0; both are clean.
+#[test]
+fn should_evaluate_an_updating_dot_receiver_before_its_arguments() {
+    let single = r#"module spec.cpr.dotreceiver;
+
+func get(a: i32, b: i32): i32 { return a * 10 + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let r: i32 = (i++).get(i);
+    return r + i - 2;
+}
+"#;
+    let output = run_memory("dotreceiver", single);
+    assert_no_asan("dotreceiver", &output);
+    assert_exit("dotreceiver", &output, 0);
+
+    let looped = r#"module spec.cpr.dotreceiverloop;
+
+func get(a: i32, b: i32): i32 { return a * 10 + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let s: i32 = 0;
+    while (i < 2) {
+        s = s + (i++).get(i);
+    }
+    return s + i - 15;
+}
+"#;
+    let output = run_memory("dotreceiverloop", looped);
+    assert_no_asan("dotreceiverloop", &output);
+    assert_exit("dotreceiverloop", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// loopcondupdate: an update inside a loop condition.
+//
+// `while (i + id(i++) < 3)` shares `i` between the left operand's read and the
+// right operand's update. A loop condition is re-evaluated every iteration, so
+// the update runs each time: the left operand reads the value at the test, the
+// postfix yields that value and increments, and the test advances through 0, 1,
+// then 2 before it stops. The pin must live inside the per-iteration test; a
+// statement pin before the loop would run the update once and leave the
+// condition constant. The program is accepted, builds under the strict flags,
+// and exits 0 with the loop's own count.
+// ---------------------------------------------------------------------------
+
+/// A loop condition with an update evaluates the update every iteration.
+///
+/// The test `i + id(i++) < 3` compares twice the current `i` against 3, so the
+/// body runs for `i` = 0 and `i` = 1 while the third test increments `i` to 3
+/// before it fails. The body counts 2 iterations and the final `i` is 3, so
+/// `n + i - 5` cancels; the run exits 0 and is clean.
+#[test]
+fn should_pin_an_update_in_a_loop_condition_per_iteration() {
+    let source = r#"module spec.cpr.loopcondupdate;
+
+func id(x: i32): i32 { return x; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i + id(i++) < 3) {
+        n++;
+    }
+    return n + i - 5;
+}
+"#;
+    let output = run_memory("loopcondupdate", source);
+    assert_no_asan("loopcondupdate", &output);
+    assert_exit("loopcondupdate", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// owningarg: an owning argument before a later update.
+//
+// `f(g(), i++)` passes a fresh owning result as the first argument and an
+// update as the second. Evaluation is strictly left to right, so `g()` must run
+// before the update — its result encodes what it saw. A naive update pin runs
+// before the call and therefore before the owning argument's binding, so the
+// binding must move to the argument's own position while the ownership still
+// transfers exactly once. The program is accepted, builds under the strict
+// flags, and exits 0.
+// ---------------------------------------------------------------------------
+
+/// An owning argument binds before a later argument's update.
+///
+/// `g()` reports whether it saw the update: it records 0 while the global `i`
+/// is still 0 and 1 once it changed. With the left-to-right order `g()` runs
+/// first, so the result is 0 and `i` becomes 1; the call's value
+/// `seen * 10 + n` is 0 and `r + i - 1` cancels. Under the reversed argument
+/// order the observation fails and the run exits 10. The owning result's string
+/// field transfers into the callee and releases once, so the run is clean.
+#[test]
+fn should_evaluate_an_owning_argument_before_a_later_update() {
+    let source = r#"module spec.cpr.owningarg;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; seen: i32; }
+
+let i: i32 = 0;
+
+func g(): Box {
+    if (i == 0) {
+        return Box { v: stringOf("ax"), seen: 0 };
+    }
+    return Box { v: stringOf("ax"), seen: 1 };
+}
+
+func f(take b: Box, n: i32): i32 {
+    return b.seen * 10 + n;
+}
+
+func main(): i32 {
+    let r: i32 = f(g(), i++);
+    return r + i - 1;
+}
+"#;
+    let output = run_memory("owningarg", source);
+    assert_no_asan("owningarg", &output);
+    assert_exit("owningarg", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// updatecontrols: the shared-update spellings that must not change.
+//
+// `i++ + i`, `f(i++, i)`, and the standalone `i++` already pin their updates
+// and the reads the updates can affect into temporaries, so their order is
+// defined and their behavior is fixed. They stay accepted, build under the
+// strict flags, run in the left-to-right order, and remain memory-clean.
+// ---------------------------------------------------------------------------
+
+/// The already-pinned update spellings stay accepted and ordered.
+///
+/// `j = i++ + i` takes the yielded 0 and the read 1; `k = f(i++, i)` passes 1
+/// and 2; the standalone `i++` leaves 3. The checks cancel against those
+/// values, so the run exits 0 and is clean.
+#[test]
+fn should_keep_the_shared_update_spellings_accepted() {
+    let source = r#"module spec.cpr.updatecontrols;
+
+func f(a: i32, b: i32): i32 { return a * 10 + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let j: i32 = i++ + i;
+    let k: i32 = f(i++, i);
+    i++;
+    return j + k + i - 16;
+}
+"#;
+    let output = run_memory("updatecontrols", source);
+    assert_no_asan("updatecontrols", &output);
+    assert_exit("updatecontrols", &output, 0);
+}

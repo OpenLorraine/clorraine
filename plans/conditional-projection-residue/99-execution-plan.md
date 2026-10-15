@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 09:52
-> **Progress**: 30/39 tasks (77%)
+> **Progress**: 32/39 tasks (82%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -227,8 +227,8 @@ conditional-root (a move-only root included)/`for`-iterable projections.
 **Objective**: Pin the assignment-target (the update-containing right-hand side included),
 literal, dot-receiver, loop-condition, and owning-argument order cases.
 
-- [ ] 6.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (assigntarget, literalorder, dotreceiver, loopcondupdate, owningarg)
-- [ ] 6.1.2 Run the suite and record the red phase (the strict-build failures on the pinned container, the site/emission pins, and the order-observing case — AR-24)
+- [x] 6.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (assigntarget, literalorder, dotreceiver, loopcondupdate, owningarg) ✅ (completed: 2026-10-15 17:10; six tests appended (+257 lines, additions only) — the assignment targets with their update-containing right-hand sides (each spelling with a non-cancelling baseline), the source-order literal fields/elements, the updating dot receiver single-shot and in a loop body, the per-iteration loop-condition update, the owning argument before a later update, and the shared-update controls; the AR-24 host nuance was re-measured (the host GCC 15.2 also rejects the sequence shapes under the suite flags — the reds reproduce on both toolchains))
+- [x] 6.1.2 Run the suite and record the red phase (the strict-build failures on the pinned container, the site/emission pins, and the order-observing case — AR-24) ✅ (completed: 2026-10-15 17:10; plain 79 passed / 4 failed and the same under `RDC_ASAN=1` — the sequence-point strict-build failures on the assignment-target, dot-receiver, and loop-condition spellings, plus the owning-argument run-order failure (exit 10: `g` observed the update); `literalorder` is green at the run level (its red is the emission pin) and the controls are green; parent-verified)
 
 ### Step 6.2: Implementation
 
