@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 26/33 tasks (79%) — Executing Phase 5
+> **Progress**: 28/33 tasks (85%) — Phase 5 implementation done, pins+review next
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -243,12 +243,12 @@ the generated-owner phrase, and the conditional-iterable move mark.
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Dedupe the reports at one span and withhold the consequence report per AR-7; route
+- [x] 5.2.1 Dedupe the reports at one span and withhold the consequence report per AR-7; route
       the deferred owner display through the generated-owner phrase; align
       `mark_read_conditional_move` with the in-place conditional iterable —
       `compiler/src/own/liveness.rs`, `compiler/src/own/statements.rs`,
-      `compiler/src/own/place.rs`, `compiler/src/own/expr.rs`
-- [ ] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/place.rs`, `compiler/src/own/expr.rs` ✅ (completed: 2026-10-16 12:05; the escape report loop keeps a per-span set (a nested mixed view return reports once — the file, the pair and the global-field spellings) and the destination consequence report is withheld where the callee own judgment stands; the deferred generated owner renders with the same phrase as the direct spelling (the reserved binding spelling recognized); the stale move mark on a materialized whole-array conditional iterable is removed, keeping the in-place loop emission; two reported residuals left for filing (the one-candidate mismatch caller case and the older quoted-spelling phrase fallback))
+- [x] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 12:05; the residue spec 141/141 plain and under `RDC_ASAN=1`; the pinned oracles green; `make check` exit 0; the differential shows exactly the three diagnostic dedupes and the one intended acceptance; parent-verified 141/141 plain + ASan)
 
 ### Step 5.3: Impl Tests & Review
 

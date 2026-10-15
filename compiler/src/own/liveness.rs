@@ -331,15 +331,23 @@ impl Analysis {
                 _ => {}
             }
         }
+        let mut reported: BTreeSet<(u32, u32)> = BTreeSet::new();
         for (loan, owner) in &self.owners {
             if !self.escapes_owner(loan, *owner) {
                 continue;
             }
             let span = self.spans.get(loan).copied().unwrap_or_default();
+            // One expression carries one report: two generated owners that
+            // back the same return, or two owners whose loans escape at one
+            // site, are one judgment, so the first report stands and the
+            // rest are withheld.
+            if !reported.insert((span.start, span.end)) {
+                continue;
+            }
             let subject = match owner {
                 // A borrowed generated owner is the compiler's own binding, so
                 // its phrase reads without the quotes a source name carries.
-                LoanOwner::Binding(id) if generated.contains(id) => {
+                LoanOwner::Binding(_) if is_generated(*owner, names, generated) => {
                     display(*owner, names, generated)
                 }
                 LoanOwner::Binding(_) => format!("'{}'", display(*owner, names, generated)),
@@ -586,6 +594,29 @@ fn closure_avoiding(
     seen
 }
 
+/// True when a loan owner is a compiler-generated binding.
+///
+/// The generated set names the owners the current pass declared. A deferred
+/// body's per-edge copy re-declares its bindings, so a copy's identity is not
+/// in the set while its reserved spelling still names a generated owner: a
+/// source name can never begin with the compiler's owner prefix, so the
+/// spelling is the same evidence the identity carries.
+fn is_generated(
+    owner: LoanOwner,
+    names: &BTreeMap<usize, String>,
+    generated: &BTreeSet<usize>,
+) -> bool {
+    match owner {
+        LoanOwner::Binding(id) => {
+            generated.contains(&id)
+                || names
+                    .get(&id)
+                    .is_some_and(|name| name.starts_with("__cl_owned"))
+        }
+        LoanOwner::Temp(_) => false,
+    }
+}
+
 /// The written name of an owner, for a diagnostic message.
 ///
 /// A compiler-generated owner (`__cl_ownedN`) has no source name a reader
@@ -593,7 +624,7 @@ fn closure_avoiding(
 /// every named owner keeps its written name.
 fn display(owner: LoanOwner, names: &BTreeMap<usize, String>, generated: &BTreeSet<usize>) -> String {
     match owner {
-        LoanOwner::Binding(id) if generated.contains(&id) => {
+        LoanOwner::Binding(_) if is_generated(owner, names, generated) => {
             String::from("a compiler-generated owner")
         }
         LoanOwner::Binding(id) => names

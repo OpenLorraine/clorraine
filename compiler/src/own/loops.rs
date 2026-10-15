@@ -560,11 +560,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let index_value = Value::new(Ty::usize_ty(), ValueKind::Temp(index_temp));
         let iterable = self.lower_value(&decl.iterable);
-        // A materialized ownerless conditional iterable moves the owned arm
-        // the condition selects, so that arm becomes maybe-moved.
-        if self.place_target(&decl.iterable).is_none() {
-            self.mark_read_conditional_move(&decl.iterable);
-        }
+        // A whole-array conditional iterable reads the selected arm in place
+        // (an exclusive element view per iteration), so no arm becomes
+        // maybe-moved: a later use of either array stays accepted. The
+        // element and projection spellings keep their own marks where the
+        // emission moves the selected storage.
         let iterable = self.materialize_for_in_iterable(&decl.iterable, iterable);
         self.emit(Statement::Assign {
             target: index_place.clone(),

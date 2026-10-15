@@ -1431,6 +1431,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if !is_view_like(target_ty) && !is_view_like(&self.ty(value)) {
             return;
         }
+        // The callee's own view-return judgment already rejects the value when
+        // its return elides no single parameter, so the destination's
+        // consequence report is withheld: one site carries the rejection.
+        if self.callee_view_return_rejected(value) {
+            return;
+        }
         // The empty view names no storage, so it cannot escape.
         if matches!(value.kind, ExprKind::Null) {
             return;
@@ -1492,6 +1498,44 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Provenance::Param(id) => !global && self.bindings[*id].mode != Mode::Take,
             _ => false,
         }
+    }
+
+    /// True when a call value's callee already rejects its view return.
+    ///
+    /// A view return that elides no single parameter reports its own judgment
+    /// at the declaration, so every destination of that result would otherwise
+    /// repeat it as a consequence report. The predicate measures the callee's
+    /// declaration exactly as the declaration's own postlude does: a return
+    /// that is not an elided view, or whose lend candidates are not exactly
+    /// one, carries the rejection.
+    fn callee_view_return_rejected(&self, value: &Expr) -> bool {
+        let ExprKind::Call { callee, .. } = &value.kind else {
+            return false;
+        };
+        let Some(name) = self.callee_name(callee) else {
+            return false;
+        };
+        let Some(Callee::User(decl)) = self.program.callee(&name) else {
+            return false;
+        };
+        let declared: Vec<String> = decl
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
+        let returns = self.resolve_with(&decl.returns, &declared);
+        if !is_elided_view(&returns) {
+            return false;
+        }
+        let candidates = decl
+            .params
+            .iter()
+            .filter(|param| {
+                param.mode != Mode::Take
+                    && is_lend_candidate(&self.resolve_with(&param.ty, &declared))
+            })
+            .count();
+        candidates != 1
     }
 
     /// True when a write to the binding reaches storage the caller keeps.
