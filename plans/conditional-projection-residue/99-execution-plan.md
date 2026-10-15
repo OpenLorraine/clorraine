@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-15 07:52
-> **Progress**: 8/39 tasks (21%)
+> **Last Updated**: 2026-10-15 08:13
+> **Progress**: 10/39 tasks (26%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -99,8 +99,8 @@ control (ST-10).
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Extend the owner walk through a view-returning call (every arm and the chained callee), the element positions, and the return's view-element lowering; suppress the local-owner `E10035` at a mixed return whose other arm's lowered view reads a compiler-generated root or a statement temporary (the one-report rule) — `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs`
-- [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 2.2.1 Extend the owner walk through a view-returning call (every arm and the chained callee), the element positions, and the return's view-element lowering; suppress the local-owner `E10035` at a mixed return whose other arm's lowered view reads a compiler-generated root or a statement temporary (the one-report rule) — `compiler/src/own/place.rs`, `compiler/src/own/call_check.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/lower.rs` ✅ (completed: 2026-10-15 08:13; the call path now descends into the view-returning call's single reborrowed source through the new `call_view_source`/`ViewCallSource`, so every arm contributes owners and the chained callee inherits them; the view-element type condition keeps the element sources in place in every position with the argument and struct-field positions adopting the backing for the destination's frame and a destination guard for returns; the return's array literal runs the view-element treatment; the local-owner `E10035` is withheld exactly where the lowered return reads a compiler-generated root or statement temporary (`temp_loans` empty signal; the controls keep one `E10035`, the parameter variant keeps `E10036` + `E10030`); deviations: `own/expr.rs` and `own/call.rs` were touched for the element guard and the argument adoption, and `own/call_check.rs::argument_owner` needed no change (no pinned case routes through it))
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-15 08:13; residue spec 25/25 plain and under `RDC_ASAN=1`; `make check` exit 0 — 66 suites, no failures; the batch-H, callable-release, stage, compile-fail, and unit suites stay green; a flagged residual (a non-view struct carrying adopted views returned by value) is under review with its exact reproduction)
 
 ### Step 2.3: Impl Tests & Review
 

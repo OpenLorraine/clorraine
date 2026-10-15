@@ -294,7 +294,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // defers the fill to the guarded expression and adopts the
                     // carried value, because the field's own cleanup is the
                     // sole release.
-                    let value = if self.consume_needs_conditional_arms(&value)
+                    let value = if matches!(value.kind, ValueKind::ArrayLit { .. })
+                        && is_view_like(&value.ty)
+                        && self.view_destination_adopts
+                    {
+                        // A view-element array field adopts each temporary
+                        // element's backing in this frame, exactly as a view
+                        // binding does: the elements are views of their
+                        // sources, so a temporary element's backing must live
+                        // at least as long as the literal storing the views.
+                        self.bind_view_projection_root(value)
+                    } else if self.consume_needs_conditional_arms(&value)
                         && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
                         && !is_view(&value.ty)
                         && !value.ty.is_unknown()
@@ -357,12 +367,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // source and empties it. A view-element array keeps its
                 // sources in place too: an element is a view of its source,
                 // so the binding loans or adopts the backing rather than
-                // moving it out of the source.
+                // moving it out of the source. An element list whose own
+                // type is view-like is such an array in every position, so
+                // the element sources stay in place here too.
                 elements: elements
                     .iter()
                     .map(|element| {
                         let value = self.lower_value(element);
-                        if self.view_array_literal_depth > 0 {
+                        if self.view_array_literal_depth > 0 || is_view_like(&ty) {
                             value
                         } else if self.defer_move_outs > 0
                             && matches!(value.kind, ValueKind::Conditional { .. })
@@ -879,7 +891,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // past the rule that rejects its block-bodied spelling.
                 self.eval(value);
                 self.judge_return_moves(value, value.span);
+                // The body's value goes to the closure's caller, so its
+                // destination is not a local of this frame: a view-element
+                // array backing inside it must not adopt a scope owner that
+                // dies before the caller reads the views.
+                let saved_adopts = self.view_destination_adopts;
+                self.view_destination_adopts = false;
                 let returned = self.lower_value(value);
+                self.view_destination_adopts = saved_adopts;
                 if !self.is_terminated() {
                     // Mirror `Stmt::Return`: the scope cleanup becomes a
                     // cleanup ladder the emitter runs after the returned

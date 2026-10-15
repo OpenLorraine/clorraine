@@ -1162,23 +1162,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// other paths.
     pub(super) fn check_return(&mut self, value: Option<&'a Expr>, span: Span) {
         if let Some(value) = value {
+            // A view-element array return binds its elements as views, so the
+            // evaluation must not consume an owned element source: each
+            // element is a read of the source the returned view names,
+            // exactly as a view binding's initializer reads its sources.
+            let view_elements = is_view_like(&self.returns)
+                && matches!(&value.kind, ExprKind::ArrayLiteral { .. });
+            if view_elements {
+                self.view_array_literal_depth += 1;
+            }
             self.eval(value);
+            if view_elements {
+                self.view_array_literal_depth -= 1;
+            }
             let returns = self.returns.clone();
             self.check_value_into(value, &returns, span);
             self.judge_return_moves(value, span);
             let maybe_owning = self.maybe_owns(&returns);
+            // The local-owner report is withheld when the lowered return
+            // derives on another conditional arm from a compiler-generated
+            // root or a statement temporary: the escape rule (`E10030`) is
+            // the report that rejects the site, so emitting the local-owner
+            // judgment too would double-report one site.
+            let mut local_view_owner: Option<usize> = None;
             if is_view_like(&returns) {
                 let provenance = self.view_provenance(value);
                 match provenance {
                     Provenance::Local(id) => {
-                        let name = self.bindings[id].name.clone();
-                        self.error(
-                            "E10035",
-                            format!("cannot return a view of local '{name}'"),
-                            "return an owned value or a view of a parameter",
-                            span,
-                        );
                         self.suppress_elision = true;
+                        local_view_owner = Some(id);
                     }
                     Provenance::Static => self.suppress_elision = true,
                     // A view return must derive from the single view-like
@@ -1199,7 +1211,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     _ => {}
                 }
             }
+            // A return hands the value to the caller, so its destination is
+            // not a local of this frame: a view-element array backing inside
+            // the value must not adopt a scope owner that dies before the
+            // caller reads the views. The returned view itself is bound by
+            // the view-return handling below, which reports the escape.
+            let saved_adopts = self.view_destination_adopts;
+            self.view_destination_adopts = false;
             let lowered = self.lower_value(value);
+            self.view_destination_adopts = saved_adopts;
             let lowered = self.bind_member_receiver(lowered);
             // A returned projection of a mixed conditional moves the selected
             // member out of each arm's root, so the returned value has exactly
@@ -1303,6 +1323,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 Vec::new()
             };
+            // The local-owner judgment reports only when the lowered return
+            // derives from no compiler-generated root and no statement
+            // temporary; otherwise the loans above reject the site with the
+            // escape rule, so this report is withheld to keep one error per
+            // site.
+            if let Some(id) = local_view_owner {
+                if temp_loans.is_empty() {
+                    let name = self.bindings[id].name.clone();
+                    self.error(
+                        "E10035",
+                        format!("cannot return a view of local '{name}'"),
+                        "return an owned value or a view of a parameter",
+                        span,
+                    );
+                }
+            }
             self.emit_return_cleanup();
             let releases = self.pending_release_copies();
             self.record_release_events(&releases);

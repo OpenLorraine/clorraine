@@ -234,6 +234,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .any(|arg| super::lower::contains_update(&arg.value));
         for arg in args {
             let value = self.lower_value(&arg.value);
+            // A view-element array argument adopts each temporary element's
+            // backing in this frame, exactly as a view binding does: the
+            // elements are views of their sources, so a temporary element's
+            // backing must live until the call has read the array.
+            let value = if matches!(value.kind, ValueKind::ArrayLit { .. })
+                && is_view_like(&value.ty)
+            {
+                self.bind_view_projection_root(value)
+            } else {
+                value
+            };
             let value = self.bind_member_receiver(value);
             let position = values.len();
             let take = modes

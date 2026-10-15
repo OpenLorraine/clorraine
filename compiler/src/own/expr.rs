@@ -587,8 +587,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // A view-element array binds its elements as views, so each
                 // element is a read of the source the view names, never a
                 // move out of it; the consuming marks stay for an owned
-                // element list only.
-                let view_elements = self.view_array_literal_depth > 0;
+                // element list only. An element list whose own type is
+                // view-like is such an array in every position — a binding,
+                // an argument, a field, or a return — so the element sources
+                // are never consumed, whatever the surrounding expression is.
+                let view_elements = self.view_array_literal_depth > 0 || is_view_like(&ty);
                 for element in elements {
                     self.eval(element);
                     if view_elements {

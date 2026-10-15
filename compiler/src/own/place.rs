@@ -836,6 +836,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
                 self.collect_view_owners(base, owners);
             }
+            // A view-returning call reborrows the storage of the single lend
+            // candidate it elides, so the walk descends into that argument
+            // exactly as a direct derivation does: a conditional argument
+            // contributes every arm's owners. A call with no single candidate
+            // contributes none.
+            ExprKind::Call { callee, args, .. } => {
+                match self.call_view_source(callee, args) {
+                    Some(ViewCallSource::Expr(source)) => {
+                        self.collect_view_owners(source, owners);
+                    }
+                    Some(ViewCallSource::Receiver(provenance)) => {
+                        if let Some(owner) = owner_of(&provenance) {
+                            owners.insert(owner);
+                        }
+                    }
+                    None => {}
+                }
+            }
             ExprKind::Unsafe(inner) => self.collect_view_owners(inner, owners),
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
                 self.collect_view_owners(value, owners);
@@ -960,23 +978,41 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// The provenance of a view produced by a call.
     ///
-    /// A dot-call's receiver is its first parameter but is not a written
-    /// argument, so the parameter index mapping accounts for it: index zero is
-    /// the receiver and every later index is one past the written argument.
+    /// The call resolves its single reborrowed source through
+    /// [`Self::call_view_source`]; the view's provenance is that source's.
     pub(super) fn call_provenance(&self, callee: &Expr, args: &[Arg]) -> Provenance {
-        let Some(name) = self.callee_name(callee) else {
-            return Provenance::None;
-        };
+        match self.call_view_source(callee, args) {
+            Some(ViewCallSource::Expr(source)) => self.view_provenance(source),
+            Some(ViewCallSource::Receiver(provenance)) => provenance,
+            None => Provenance::None,
+        }
+    }
+
+    /// The source a view-returning call reborrows, when it elides exactly one.
+    ///
+    /// A user callee with exactly one view-like lend parameter reborrows that
+    /// argument; a standard-library `ViewOf` effect names its source argument
+    /// directly. A dot call's receiver is its first parameter but is not a
+    /// written argument, so a `Member` receiver yields its base expression and
+    /// a qualified receiver — which names a place rather than an expression —
+    /// yields its provenance. Every other call yields none: without a single
+    /// reborrowed source there is no storage a view could derive from.
+    fn call_view_source<'e>(&self, callee: &'e Expr, args: &'e [Arg]) -> Option<ViewCallSource<'e>> {
+        let name = self.callee_name(callee)?;
         let is_dot = self.is_dot_call(callee);
-        // The provenance of the source at a parameter index.
-        let source_provenance = |index: usize| -> Provenance {
+        let source = |index: usize| -> Option<ViewCallSource<'e>> {
             if is_dot && index == 0 {
-                return self.dot_receiver_provenance(callee);
+                return match &callee.kind {
+                    ExprKind::Member { base, .. } => Some(ViewCallSource::Expr(base)),
+                    ExprKind::Qualified(_) => Some(ViewCallSource::Receiver(
+                        self.dot_receiver_provenance(callee),
+                    )),
+                    _ => None,
+                };
             }
             let written_index = if is_dot { index - 1 } else { index };
             args.get(written_index)
-                .map(|arg| self.view_provenance(&arg.value))
-                .unwrap_or(Provenance::None)
+                .map(|arg| ViewCallSource::Expr(&arg.value))
         };
         match self.program.callee(&name) {
             Some(Callee::User(decl)) => {
@@ -984,7 +1020,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     decl.type_params.iter().map(|p| p.name.clone()).collect();
                 let returns = self.resolve_with(&decl.returns, &type_params);
                 if !is_elided_view(&returns) {
-                    return Provenance::None;
+                    return None;
                 }
                 let candidates: Vec<usize> = decl
                     .params
@@ -997,15 +1033,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .map(|(index, _)| index)
                     .collect();
                 if candidates.len() == 1 {
-                    return source_provenance(candidates[0]);
+                    source(candidates[0])
+                } else {
+                    None
                 }
-                Provenance::None
             }
             Some(Callee::Stdlib {
                 effect: StdlibEffect::ViewOf { arg, .. },
                 ..
-            }) => source_provenance(arg),
-            _ => Provenance::None,
+            }) => source(arg),
+            _ => None,
         }
     }
 
@@ -1327,6 +1364,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.diagnostics
             .push(Diagnostic::warning(code, message, span));
     }
+}
+
+/// The source expression a view-returning call reborrows.
+///
+/// A written argument or a `Member` receiver keeps its expression, so a walk
+/// can descend into it arm by arm; a qualified receiver names a place rather
+/// than a written expression, so its provenance is carried instead.
+enum ViewCallSource<'e> {
+    /// A written argument or a `Member` receiver's base expression.
+    Expr(&'e Expr),
+    /// A qualified receiver's place provenance.
+    Receiver(Provenance),
 }
 
 /// The constant index of an element expression, when it is a literal.
