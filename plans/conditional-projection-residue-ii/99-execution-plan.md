@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 23/33 tasks (70%) — Phase 4 in review
+> **Progress**: 24/33 tasks (73%) — Phase 4 complete
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -214,8 +214,8 @@ evaluation, and the bare raw-deref store.
 - [x] 4.3.1 Write the phase implementation pins (the receiver pin shape, the loop root binding,
       the guarded fill positions, the fill pin, the deref store statement, the re-emission
       determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 08:10; five pins added (79 tests total, additions only) — the settled receiver at argument position zero (loop and eager), the settled guarded operand parts, the single array-fill pin, the lowered raw-deref store with its update pin, and a discriminating re-emission determinism pin; all five fail at `50b91d9` for the intended reason; 79/79 green and `make check` exit 0)
-- [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses; record the `DEF-294` closure (fixed or control) in the ledger
+- [x] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses; record the `DEF-294` closure (fixed or control) in the ledger \u2705 (completed: 2026-10-16 11:00; all three lenses dispatched plus three targeted confirmations; five correction rounds closed J4R-1..4, F1..F3, and FINAL-1 (the borrowed receiver arm, the raw-store pointee drop, the compound store, the nullable check, the named-destination order, the single pointer bind, the moved deref source); FINAL-2 ruled the AR-18 unsafe boundary; the red-phase case arithmetic corrected per the ruling; six rows filed (`DEF-325`..`DEF-330`); `DEF-294` closed per AR-10 and `DEF-295` closed incidentally; the closing verification: the residue spec 138/138 plain and ASan, the impl pins 79/79, `make check` exit 0)
 
 **Verify**: `make check`; the strict builds on both toolchains; the batch-H update pins
 

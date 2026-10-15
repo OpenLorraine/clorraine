@@ -217,3 +217,45 @@ close it early.
 The emission re-probe: **CONFIRMED — 0 findings** — the 55-delta set is all intended, no accept/reject
 change, 2,433/2,433 re-emissions byte-identical, both alternate profiles parity, the strict-build
 inventory unchanged (39 pre-existing failures, none added).
+
+## Phase 4 — Loop conditions, update order, and store lowering
+
+**Reviewed implementation**: `0666f70`/`e2ab4b6` plus five correction rounds (`7697ecd`, `240c83b`,
+`1749655`, `0947475`, `5f2a78b`). **Lenses**: correctness (J4R), emission-integrity, and
+memory-safety (F/R/FINAL), dispatched on the phase diff.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 4 blockers | J4R-1 (the receiver settle consumes a place arm = the memory F1), J4R-2 (the compound raw store re-lowers its target), J4R-3 (the owning pointee leak = the memory F2), J4R-4 (the nullable check skipped — an unintended acceptance); J4R-5 (the member-over-deref family) and J4R-6 (the deferred fill) pre-existing and filed; the corrected case's discrimination verified by mutations |
+| emission-integrity | no accept/reject deltas; no head-only strict failures on either toolchain; the run oracle independently reproduced the F1 regression (a02, p30, p3, looprecv) | the differential over 3,886 programs; the delta classes; determinism |
+| memory-safety | FINDINGS — 2 (F1 the receiver place-arm consumption: SEGV/double-free; F2 the raw-store pointee leak) | the probe set with the base comparison |
+
+### Correction rounds
+
+| Round | Item | Outcome |
+|-------|------|---------|
+| 1 (`7697ecd`) | F1/J4R-1 + F2/J4R-3 + the pointer warning | **Fixed**: a borrowed-place receiver keeps the place a read (the loop deferred spelling, the eager per-arm temporary with the reading designator); the raw store spells the pointee address so the drop decision sees the pointee type; the pointer evaluates once (`W10000` gone) |
+| 2 (`240c83b`) | J4R-2 + J4R-4 | **Fixed**: the compound raw store reads and stores through one address (the shared-target pattern); the raw store requires a non-null pointer (one `E10010`, matching the read twin) |
+| 3 (`1749655`) | the raw self-store/move-in hazards (found while characterizing `rawown`) | **Fixed**: the store orders release → clear → store like a named destination and consumes an owned value like a named destination; the two shared-store shape pins re-pinned (recorded) |
+| 4 (`0947475`) | F3 (the re-probe's critical: the impure raw-store pointer evaluated four times) | **Fixed**: the non-trivial pointer binds once for the plain path; the compound path re-checked consistent |
+| 5 (`5f2a78b`) | FINAL-1 (the owned raw-deref read used as a store value duplicated the owner) | **Fixed**: the source pointee empties through its own address like a named source; FINAL-2 (`*q = *q` then a later owner read) ruled the documented `unsafe` boundary (AR-18) |
+
+### Confirmations
+
+| Probe | Result |
+|-------|--------|
+| the memory re-probe of round 1 | F1/F2 clean (7 + 4 repros); F3 critical found; determinism identical; the do-not-fix set intact |
+| the final re-probe of rounds 2–3 | F3 fixed (single evaluation in the emitted C); the named-destination parity; FINAL-1/FINAL-2 found; the container strict 26/26 and the host strict 24/26 (the two are DEF-327) |
+| the parent's re-run of round 5 | `rawdistinct_read` clean; `rawself` clean; `rawmove_use` one `E10020`; `rawself_use` the AR-18 boundary (accepted, SEGV on the emptied owner's later read); the suites 138/138 plain and ASan, the pins 79/79 |
+
+### Filed rows
+
+`DEF-325` (the call fill per element), `DEF-326` (the deferred-arm fill per element), `DEF-327` (the
+host sequence-point false positive for the place-borrowing loop receiver — the read-only receiver
+carrier noted as the follow-up), `DEF-328` (the member-over-deref family), `DEF-329` (the owned raw
+deref read creates a second owner), `DEF-330` (the spurious unused-local warning on a raw source
+pointer). `DEF-294` closes per AR-10 (the spec case asserts its environment's leg — the container —
+and the host false positive for the place-borrowing spelling is `DEF-327`); `DEF-295` closed
+incidentally (the phase-2 residual gate; pinned as the green control `loopmember`).
