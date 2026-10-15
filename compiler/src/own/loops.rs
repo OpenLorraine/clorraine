@@ -648,16 +648,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// An ownerless value — a call result, a literal, or a conditional — has
     /// no storage of its own, and the loop reads its length and its elements,
     /// so leaving it inline would evaluate it once per iteration and render an
-    /// invalid element expression. The value is stored once into a temporary
-    /// before the loop, and the temporary is released after the loop
-    /// statement. A type that mentions a generic parameter materializes like
-    /// any other candidate: the temporary is declared with the substituted
-    /// type per instance and a maybe-owning release is a no-op for a
-    /// duplicable one.
+    /// invalid element expression. A fixed-array projection of a conditional
+    /// keeps its arms in place instead: the conditional of the arms' own
+    /// fields decays to the element pointer in C, so a place arm's storage is
+    /// only read — never copied or moved — and each ownerless arm's root binds
+    /// at its own path and releases with the loop's statement. Every other
+    /// ownerless projection root binds first, exactly as the store and return
+    /// spellings do, because the value copy takes the projection's address.
+    /// The value is stored once into a temporary before the loop, and the
+    /// temporary is released after the loop statement. A type that mentions a
+    /// generic parameter materializes like any other candidate: the temporary
+    /// is declared with the substituted type per instance and a maybe-owning
+    /// release is a no-op for a duplicable one.
     fn materialize_for_in_iterable(&mut self, expr: &Expr, value: Value) -> Value {
         if self.place_target(expr).is_some() {
             return value;
         }
+        if value.ty.is_fixed_array() && self.roots_in_conditional(&value) {
+            return self.hoist_fixed_array_conditional_root(value);
+        }
+        let value = if value.ty.is_fixed_array()
+            && matches!(
+                value.kind,
+                ValueKind::Member { .. } | ValueKind::Index { .. }
+            )
+            && !self.projects_from_place(&value)
+        {
+            self.bind_fixed_array_root(value)
+        } else {
+            value
+        };
         let ty = self.materialized_ty(&value);
         self.materialize_value_type(value, ty)
     }

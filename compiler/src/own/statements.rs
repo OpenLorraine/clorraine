@@ -526,14 +526,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // binds to a local first, so the copy names an addressable value. An
         // owning root is bound above; this branch covers a root that owns
         // nothing to release, and a chain that already roots in storage keeps
-        // its spelling.
+        // its spelling. A chain that roots at a conditional binds per arm
+        // instead: the conditional itself has no lvalue. A bare conditional
+        // whose arm projects through a nested conditional distributes the same
+        // way, because its arm would otherwise name a member of a struct
+        // conditional's temporary.
         if !owning
             && ty.is_fixed_array()
-            && matches!(
+            && (matches!(
                 lowered.kind,
                 ValueKind::Member { .. } | ValueKind::Index { .. }
-            )
-            && !self.projects_from_place(&lowered)
+            ) || self.arms_project_through_conditional(&lowered))
+            && (!self.projects_from_place(&lowered) || self.roots_in_conditional(&lowered))
         {
             let lowered = self.bind_fixed_array_root(lowered);
             return PreparedStore::Assign { value: lowered };
@@ -1373,13 +1377,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // name the address of a member of a call result: an ownerless
             // projection root binds to a local first. An owning root is bound
             // above; this branch covers a root that owns nothing to release,
-            // and a chain that already roots in storage keeps its spelling.
+            // and a chain that already roots in storage keeps its spelling. A
+            // chain that roots at a conditional binds per arm instead: the
+            // conditional itself has no lvalue. A bare conditional whose arm
+            // projects through a nested conditional distributes the same way.
             let lowered = if returns.is_fixed_array()
-                && matches!(
+                && (matches!(
                     lowered.kind,
                     ValueKind::Member { .. } | ValueKind::Index { .. }
-                )
-                && !self.projects_from_place(&lowered)
+                ) || self.arms_project_through_conditional(&lowered))
+                && (!self.projects_from_place(&lowered) || self.roots_in_conditional(&lowered))
             {
                 self.bind_fixed_array_root(lowered)
             } else {

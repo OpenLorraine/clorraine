@@ -2506,3 +2506,360 @@ fn should_re_emit_the_guarded_and_discarded_programs_byte_identically() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Fixed-array conditional arms and projections: a discarded fixed-array
+// conditional fills one statement destination per arm (a call arm passes the
+// hidden out-parameter), a discarded literal builds its store-only
+// fixed-array field per field, a conditional root copies each arm's own field
+// on its path, and a `for` iterable binds its ownerless root before the copy.
+// ---------------------------------------------------------------------------
+
+/// A discarded conditional of fixed-array calls.
+const FIXED_ARM_DISCARD_SOURCE: &str = r#"module spec.cprimpl.fixedarmdiscard;
+
+let left: i32 = 0;
+let right: i32 = 0;
+
+func a(): u8[2] {
+    left = left + 1;
+    return [1, 2];
+}
+
+func b(): u8[2] {
+    right = right + 1;
+    return [3, 4];
+}
+
+func use(c: bool): i32 {
+    c ? a() : b();
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false) + left * 10 + right - 11;
+}
+"#;
+
+/// A discarded conditional of fixed-array calls whose elements own storage.
+const FIXED_ARM_OWNED_SOURCE: &str = r#"module spec.cprimpl.fixedarmowned;
+
+import { String, stringOf } from std.text;
+
+let left: i32 = 0;
+let right: i32 = 0;
+
+func a(): String[2] {
+    left = left + 1;
+    return [stringOf("aa"), stringOf("bb")];
+}
+
+func b(): String[2] {
+    right = right + 1;
+    return [stringOf("cc"), stringOf("dd")];
+}
+
+func use(c: bool): i32 {
+    c ? a() : b();
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false) + left * 10 + right - 11;
+}
+"#;
+
+/// A discarded literal whose fixed-array field is a conditional of calls.
+const FIXED_FIELD_SOURCE: &str = r#"module spec.cprimpl.fixedfield;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let left: i32 = 0;
+let right: i32 = 0;
+
+func n1(): str[2] {
+    left = left + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    right = right + 1;
+    return ["CC", "DD"];
+}
+
+func use(ok: bool): i32 {
+    Mixed { names: ok ? n1() : n2(), tag: stringOf("x") };
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false) + left * 10 + right - 11;
+}
+"#;
+
+/// A fixed-array projection of a conditional root, stored.
+const FIXED_ROOT_SOURCE: &str = r#"module spec.cprimpl.fixedroot;
+
+struct Box { xs: u8[4]; }
+
+func use(c: bool, b1: Box, b2: Box): i32 {
+    let a: u8[4] = (c ? b1 : b2).xs;
+    return i32(a[0]) + i32(a[1]) + i32(a[2]) + i32(a[3]);
+}
+
+func main(): i32 {
+    let b1: Box = Box { xs: [1, 2, 3, 4] };
+    let b2: Box = Box { xs: [5, 6, 7, 8] };
+    return use(true, b1, b2) + use(false, b1, b2) - 36;
+}
+"#;
+
+/// A fixed-array projection of a conditional root, returned.
+const FIXED_ROOT_RETURN_SOURCE: &str = r#"module spec.cprimpl.fixedrootreturn;
+
+struct Box { xs: u8[4]; }
+
+func pick(c: bool, b1: Box, b2: Box): u8[4] {
+    return (c ? b1 : b2).xs;
+}
+
+func sum(a: u8[4]): i32 {
+    return i32(a[0]) + i32(a[1]) + i32(a[2]) + i32(a[3]);
+}
+
+func main(): i32 {
+    let b1: Box = Box { xs: [1, 2, 3, 4] };
+    let b2: Box = Box { xs: [5, 6, 7, 8] };
+    return sum(pick(true, b1, b2)) + sum(pick(false, b1, b2)) - 36;
+}
+"#;
+
+/// A `for` loop over a call result's fixed-array field.
+const FIXED_FOR_SOURCE: &str = r#"module spec.cprimpl.fixedfor;
+
+struct Box { xs: u8[4]; }
+
+func mk(): Box { return Box { xs: [1, 2, 3, 4] }; }
+
+func use(): i32 {
+    let s: i32 = 0;
+    for (x in mk().xs) {
+        s = s + i32(x);
+    }
+    return s;
+}
+
+func main(): i32 {
+    return use() - 10;
+}
+"#;
+
+/// A discarded fixed-array conditional fills one statement destination per
+/// arm.
+///
+/// The fixed-array return ABI passes a hidden out-parameter, so `c ? a() :
+/// b();` has no C value expression: the statement declares `__cl_discard_1`,
+/// each arm's call writes into its own temporary and copies the bytes into the
+/// destination, and no bare call ever stands beside the value `?:` spelling.
+#[test]
+fn should_fill_a_discarded_fixed_array_conditional_per_arm() {
+    let tag = "fixedarmdiscard";
+    let (_scratch, emitted) = emit_host(tag, FIXED_ARM_DISCARD_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_fixedarmdiscard_use(bool c)\n{",
+    );
+    assert_contains(tag, body, "u8 __cl_discard_1[2] = {0};");
+    assert_contains(tag, body, "if (c) {");
+    assert_contains(tag, body, "cl_spec_cprimpl_fixedarmdiscard_a(__cl_arm_2);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1), &(__cl_arm_2), sizeof(__cl_discard_1));",
+    );
+    assert_contains(tag, body, "cl_spec_cprimpl_fixedarmdiscard_b(__cl_arm_3);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1), &(__cl_arm_3), sizeof(__cl_discard_1));",
+    );
+    let fills = body
+        .matches("memcpy(&(__cl_discard_1), &(__cl_arm_")
+        .count();
+    assert_eq!(
+        fills, 2,
+        "{tag}: each arm must fill the destination exactly once; body:\n{body}"
+    );
+    assert_absent(tag, body, "(void)((c ?");
+}
+
+/// A discarded owning fixed-array conditional releases its destination.
+///
+/// `c ? a() : b();` with `String` elements fills the same per-arm destination
+/// and then releases both slots, because the statement owns the chosen call's
+/// elements; the empty save the store core copies releases nothing.
+#[test]
+fn should_release_a_discarded_fixed_array_conditional_destination() {
+    let tag = "fixedarmowned";
+    let (_scratch, emitted) = emit_host(tag, FIXED_ARM_OWNED_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_fixedarmowned_use(bool c)\n{",
+    );
+    assert_contains(tag, body, "ClString __cl_discard_1[2] = {0};");
+    assert_contains(tag, body, "cl_spec_cprimpl_fixedarmowned_a(__cl_arm_2);");
+    assert_contains(tag, body, "cl_spec_cprimpl_fixedarmowned_b(__cl_arm_3);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1), &(__cl_arm_2), sizeof(__cl_discard_1));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1), &(__cl_arm_3), sizeof(__cl_discard_1));",
+    );
+    assert_release_after(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1), &(__cl_arm_3)",
+        "if (__cl_discard_1[0]) { FreeString(__cl_discard_1[0]); }",
+    );
+    assert_release_after(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1), &(__cl_arm_3)",
+        "if (__cl_discard_1[1]) { FreeString(__cl_discard_1[1]); }",
+    );
+    assert_absent(tag, body, "(void)((c ?");
+}
+
+/// A discarded literal builds its call-filled fixed-array field per field.
+///
+/// `Mixed { names: ok ? n1() : n2(), tag: stringOf("x") };` drops the
+/// literal, so the statement declares `__cl_discard_1`, the field's
+/// conditional fills `__cl_discard_1.names` per arm through the hidden
+/// out-parameter, the fresh `tag` stores into the same local, and the
+/// statement releases the tag afterwards. The base's compound-literal
+/// spelling with the bare call arms must not come back.
+#[test]
+fn should_build_a_discarded_call_filled_literal_per_field() {
+    let tag = "fixedfield";
+    let (_scratch, emitted) = emit_host(tag, FIXED_FIELD_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_fixedfield_use(bool ok)\n{");
+    assert_contains(tag, body, "ClMixed __cl_discard_1 = {0};");
+    assert_contains(tag, body, "cl_spec_cprimpl_fixedfield_n1(__cl_arm_2);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1.names), &(__cl_arm_2), sizeof(__cl_discard_1.names));",
+    );
+    assert_contains(tag, body, "cl_spec_cprimpl_fixedfield_n2(__cl_arm_3);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(&(__cl_discard_1.names), &(__cl_arm_3), sizeof(__cl_discard_1.names));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "__cl_discard_1.tag = cl_std_text_stringOf(cl_str(\"x\"));",
+    );
+    assert_release_after(
+        tag,
+        body,
+        "if (ok) {",
+        "if (__cl_discard_1.tag) { FreeString(__cl_discard_1.tag); }",
+    );
+    assert_absent(tag, body, "(void)((ClMixed){");
+}
+
+/// A fixed-array projection of a conditional root copies per arm.
+///
+/// `let a: u8[4] = (c ? b1 : b2).xs;` cannot take the address of a member of
+/// the conditional value, so the store branches per arm and copies from each
+/// arm's own root. No temporary holds a copy of either root, and the base's
+/// single `&((c ? b1 : b2).xs)` spelling must not come back.
+#[test]
+fn should_copy_a_conditional_fixed_array_root_per_arm() {
+    let tag = "fixedroot";
+    let (_scratch, emitted) = emit_host(tag, FIXED_ROOT_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_fixedroot_use(bool c, ClBox b1, ClBox b2)\n{",
+    );
+    assert_contains(tag, body, "if (c) {");
+    assert_contains(tag, body, "memcpy(&(a), &(b1.xs), sizeof(a));");
+    assert_contains(tag, body, "memcpy(&(a), &(b2.xs), sizeof(a));");
+    assert_absent(tag, body, "(c ? b1 : b2)");
+    assert_absent(tag, body, "__cl_tmp");
+}
+
+/// A fixed-array projection of a conditional root returns per arm.
+///
+/// `return (c ? b1 : b2).xs;` copies into the hidden `__cl_ret` destination
+/// one arm at a time, exactly as the store spelling does, so the conditional
+/// value is never addressed.
+#[test]
+fn should_copy_a_conditional_fixed_array_return_per_arm() {
+    let tag = "fixedrootreturn";
+    let (_scratch, emitted) = emit_host(tag, FIXED_ROOT_RETURN_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_fixedrootreturn_pick(bool c, ClBox b1, ClBox b2, u8 __cl_ret[4])\n{",
+    );
+    assert_contains(tag, body, "if (c) {");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(__cl_ret, &(b1.xs), (sizeof(__cl_ret[0]) * 4));",
+    );
+    assert_contains(
+        tag,
+        body,
+        "memcpy(__cl_ret, &(b2.xs), (sizeof(__cl_ret[0]) * 4));",
+    );
+    assert_absent(tag, body, "(c ? b1 : b2)");
+}
+
+/// A `for` iterable binds its ownerless fixed-array root before the copy.
+///
+/// `for (x in mk().xs)` copies the projected field by address, and C cannot
+/// name the address of a member of a call result, so the statement stores the
+/// call into a local first and the copy names that local. The base's
+/// `&(cl_..._mk().xs)` spelling must not come back.
+#[test]
+fn should_bind_a_for_iterable_fixed_array_root() {
+    let tag = "fixedfor";
+    let (_scratch, emitted) = emit_host(tag, FIXED_FOR_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_fixedfor_use(void)\n{");
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp2 = cl_spec_cprimpl_fixedfor_mk();",
+        "memcpy(&(__cl_tmp3), &(__cl_tmp2.xs), sizeof(__cl_tmp3));",
+    );
+    assert_absent(tag, body, "cl_spec_cprimpl_fixedfor_mk().xs");
+}
+
+/// The fixed-arm and fixed-root programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_fixed_array_programs_byte_identically() {
+    let cases: [(&str, &str); 2] = [
+        ("fixedarmdiscard", FIXED_ARM_DISCARD_SOURCE),
+        ("fixedroot", FIXED_ROOT_SOURCE),
+    ];
+    for (tag, source) in cases {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}

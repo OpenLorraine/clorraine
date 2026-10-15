@@ -1472,11 +1472,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A fixed-array copy takes its source's address, and C cannot take the
     /// address of a member of a function call. A projection whose root is a
     /// fresh call, a closure call, or a struct literal binds the root to a
-    /// local first, so the copy names an addressable value. A root that owns
-    /// storage registers its release through the ordinary argument binding; a
-    /// root that owns nothing only provides the address. A chain that roots in
-    /// existing storage is returned unchanged.
+    /// local first, so the copy names an addressable value. A projection whose
+    /// root is a conditional has no single lvalue either: it distributes into
+    /// the arms, each arm's own root supplies the address, and an ownerless
+    /// arm's root binds first so its owned fields release with the statement.
+    /// An arm that projects through a nested conditional distributes the same
+    /// way, so no chain names a member of a struct conditional's temporary.
+    /// A root that owns storage registers its release through the ordinary
+    /// argument binding; a root that owns nothing only provides the address.
+    /// A chain that roots in existing storage is returned unchanged.
     pub(super) fn bind_fixed_array_root(&mut self, value: Value) -> Value {
+        // A projection chain rooted at a conditional, and a conditional whose
+        // arm projects through a nested conditional, have no single C lvalue:
+        // the projection distributes into the arms so each names its own
+        // field. An ownerless arm's root binds first, so a fresh literal's or
+        // call's owned fields release with the statement instead of leaking
+        // beside the copy; a place arm keeps its storage.
+        if self.roots_in_conditional(&value)
+            && (matches!(
+                value.kind,
+                ValueKind::Member { .. } | ValueKind::Index { .. }
+            ) || self.arms_project_through_conditional(&value))
+        {
+            if let Some(distributed) = self.distribute_conditional_projection(&value) {
+                return self.own_ownerless_conditional_arms(distributed);
+            }
+        }
         match value.kind {
             ValueKind::Member { base, name } => {
                 let base = self.bind_fixed_array_root(*base);
@@ -1515,6 +1536,247 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             _ => value,
+        }
+    }
+
+    /// Rewrites a fixed-array projection of a conditional into a per-arm form.
+    ///
+    /// A C conditional has no lvalue, so `&((c ? b1 : b2).xs)` cannot be
+    /// emitted. The projection steps between the value and the conditional
+    /// root are collected and rebuilt on each arm, so the result selects
+    /// between the arms' own projections (`c ? b1.xs : b2.xs`) and the
+    /// per-arm fixed-array store copies from the selected arm's root. A nested
+    /// conditional arm distributes the same way, so a chain never survives as
+    /// a member of a struct rvalue (`c ? (d ? b1 : b2).ys` becomes
+    /// `c ? (d ? b1.ys : b2.ys)`). No value copy of the root is made, so a
+    /// move-only root stays owned by its binding until its own cleanup.
+    /// Returns `None` when the chain does not root at a conditional.
+    fn distribute_conditional_projection(&self, value: &Value) -> Option<Value> {
+        let mut steps: Vec<ConditionalProjectionStep> = Vec::new();
+        let mut cursor = value;
+        let (condition, then_value, else_value) = loop {
+            match &cursor.kind {
+                ValueKind::Member { base, name } => {
+                    steps.push(ConditionalProjectionStep::Field {
+                        name: name.clone(),
+                        ty: cursor.ty.clone(),
+                    });
+                    cursor = base;
+                }
+                ValueKind::Index { base, index } => {
+                    steps.push(ConditionalProjectionStep::Index {
+                        index: (**index).clone(),
+                        ty: cursor.ty.clone(),
+                    });
+                    cursor = base;
+                }
+                ValueKind::Conditional {
+                    condition,
+                    then_value,
+                    else_value,
+                } => {
+                    break (
+                        (**condition).clone(),
+                        (**then_value).clone(),
+                        (**else_value).clone(),
+                    )
+                }
+                _ => return None,
+            }
+        };
+        Some(Value::new(
+            value.ty.clone(),
+            ValueKind::Conditional {
+                condition: Box::new(condition),
+                then_value: Box::new(self.distribute_conditional_arm(then_value, &steps)),
+                else_value: Box::new(self.distribute_conditional_arm(else_value, &steps)),
+            },
+        ))
+    }
+
+    /// Applies a distributed projection's steps to one arm.
+    ///
+    /// A conditional arm takes the steps at every leaf, so an arm that selects
+    /// between two roots projects each of them (`c ? (d ? b1 : b2).ys` becomes
+    /// `c ? (d ? b1.ys : b2.ys)`). An arm that itself projects through a
+    /// conditional distributes its own chain the same way, so no nested
+    /// conditional root survives under a member or element projection. Every
+    /// other arm is rebuilt by applying the steps to it.
+    fn distribute_conditional_arm(
+        &self,
+        arm: Value,
+        steps: &[ConditionalProjectionStep],
+    ) -> Value {
+        let ty = arm.ty.clone();
+        match arm.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => Value::new(
+                ty,
+                ValueKind::Conditional {
+                    condition,
+                    then_value: Box::new(self.distribute_conditional_arm(*then_value, steps)),
+                    else_value: Box::new(self.distribute_conditional_arm(*else_value, steps)),
+                },
+            ),
+            ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                let projected = apply_conditional_steps(Value::new(ty, arm.kind), steps);
+                self.distribute_conditional_projection(&projected)
+                    .unwrap_or(projected)
+            }
+            other => apply_conditional_steps(Value::new(ty, other), steps),
+        }
+    }
+
+    /// True when a projection chain roots at a conditional.
+    ///
+    /// A chain through a conditional has no single C lvalue even when both
+    /// arms name existing storage, so the fixed-array store and return paths
+    /// distribute it into the arms rather than take an address of the whole
+    /// chain.
+    pub(super) fn roots_in_conditional(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.roots_in_conditional(base)
+            }
+            ValueKind::Conditional { .. } => true,
+            _ => false,
+        }
+    }
+
+    /// True when a conditional's arm projects through a nested conditional.
+    ///
+    /// Such an arm renders as a member of a struct conditional's C temporary,
+    /// which cannot be addressed and does not outlive the expression, so the
+    /// value must distribute before it is stored or returned. A plain
+    /// conditional — every arm a place, a projection of a place, or an
+    /// ownerless root — stores directly. A nested conditional recurses, so the
+    /// predicate holds at any depth.
+    pub(super) fn arms_project_through_conditional(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => [then_value, else_value].iter().any(|arm| {
+                (matches!(
+                    arm.kind,
+                    ValueKind::Member { .. } | ValueKind::Index { .. }
+                ) && self.roots_in_conditional(arm))
+                    || self.arms_project_through_conditional(arm)
+            }),
+            _ => false,
+        }
+    }
+
+    /// Prepares a fixed-array projection of a conditional for in-place reads.
+    ///
+    /// A loop iterates the selected arm's storage directly, so the projection
+    /// distributes into the arms: a place arm keeps its storage untouched and
+    /// an ownerless arm's root binds at its own path through the eager arm
+    /// binding, so its owned fields release with the enclosing statement. The
+    /// result — a conditional of the arms' own fields — decays to the element
+    /// pointer in C, so the element reads name the selected storage and never
+    /// copy or move the iterable. The condition is stored once, because the
+    /// element reads re-render the selection.
+    pub(super) fn hoist_fixed_array_conditional_root(&mut self, value: Value) -> Value {
+        let distributed = self
+            .distribute_conditional_projection(&value)
+            .unwrap_or(value);
+        if self.projects_from_place(&distributed) {
+            return self.pin_conditional_condition(distributed, None);
+        }
+        self.hoist_ownerless_conditional_arms(distributed)
+    }
+
+    /// Stores a conditional's conditions once for reads that re-render them.
+    ///
+    /// A loop's element reads render the iterable expression once per element,
+    /// so every condition must be evaluated once, before the loop, and every
+    /// read must see that value. A nested conditional's condition is stored
+    /// under its ancestors' guard, so it is evaluated only on the path that
+    /// reaches it, exactly as the source evaluates it; the outermost condition
+    /// has no guard and is stored directly. `guard` names the conjunction of
+    /// the ancestor conditions (or their negation) that must hold for this
+    /// condition to be evaluated.
+    fn pin_conditional_condition(&mut self, value: Value, guard: Option<Value>) -> Value {
+        match value.kind {
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let cond_ty = condition.ty.clone();
+                let id = self.new_temp(cond_ty.clone());
+                let place = Place {
+                    base: ir::PlaceBase::Temp(id),
+                    projections: Vec::new(),
+                    ty: cond_ty.clone(),
+                };
+                let assign = match &guard {
+                    Some(guard) => Value::new(
+                        cond_ty.clone(),
+                        ValueKind::Conditional {
+                            condition: Box::new(guard.clone()),
+                            then_value: condition,
+                            else_value: Box::new(Value::new(
+                                cond_ty.clone(),
+                                ValueKind::Bool(false),
+                            )),
+                        },
+                    ),
+                    None => *condition,
+                };
+                self.emit(Statement::Assign {
+                    target: place.clone(),
+                    value: assign,
+                });
+                let read = Value::new(cond_ty.clone(), ValueKind::Place(place));
+                let then_guard = self.and_guard(guard.as_ref(), &read);
+                let negated = Value::new(
+                    cond_ty.clone(),
+                    ValueKind::Unary {
+                        op: UnaryOp::Not,
+                        operand: Box::new(read.clone()),
+                    },
+                );
+                let else_guard = self.and_guard(guard.as_ref(), &negated);
+                Value::new(
+                    value.ty,
+                    ValueKind::Conditional {
+                        condition: Box::new(read),
+                        then_value: Box::new(
+                            self.pin_conditional_condition(*then_value, then_guard),
+                        ),
+                        else_value: Box::new(
+                            self.pin_conditional_condition(*else_value, else_guard),
+                        ),
+                    },
+                )
+            }
+            other => Value::new(value.ty, other),
+        }
+    }
+
+    /// Conjoins an ancestor guard with the branch's own condition.
+    ///
+    /// A nested condition is evaluated only when its ancestors' conditions
+    /// select its path, so the stored value is guarded by their conjunction;
+    /// with no ancestor guard the branch condition is the guard itself. The
+    /// conjunction reads only stored conditions, so it has no side effect.
+    fn and_guard(&self, guard: Option<&Value>, branch: &Value) -> Option<Value> {
+        match guard {
+            None => Some(branch.clone()),
+            Some(guard) => Some(Value::new(
+                Ty::boolean(),
+                ValueKind::Binary {
+                    op: BinaryOp::LogicalAnd,
+                    left: Box::new(guard.clone()),
+                    right: Box::new(branch.clone()),
+                },
+            )),
         }
     }
 

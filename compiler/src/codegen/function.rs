@@ -562,12 +562,36 @@ impl<'a> Emitter<'a> {
             }
             Statement::Discard { value } => {
                 self.emit_line_directive(span);
-                self.emit_guards(value);
-                // A discarded fixed-array closure call has no C expression
-                // result, so it writes into a statement-local destination that
-                // the cleanup releases when the elements own storage.
+                // A discarded literal with a fixed-array field that only a
+                // store can fill has no C initializer form: the literal is
+                // built in a statement-local destination and released.
+                if let ValueKind::StructLit { fields, .. } = &value.kind {
+                    if self.fixed_array_field_needs_stores(fields) {
+                        let ty = self.substitute(&value.ty);
+                        let dest = self.unique_local("__cl_discard");
+                        self.push("    {");
+                        self.push(&format!(
+                            "        {} = {};",
+                            declarator(&ty, &dest, &self.sema.table),
+                            self.empty_state(&ty)
+                        ));
+                        self.emit_struct_literal_fields(&dest, &ty, fields);
+                        if self.needs_drop(&ty) {
+                            self.emit_drop_expr(&dest, &ty);
+                        }
+                        self.push("    }");
+                        return;
+                    }
+                }
+                // A discarded fixed-array value with no C expression result
+                // writes into a statement-local destination that the cleanup
+                // releases when the elements own storage: a closure call
+                // through its hidden out-parameter, and a conditional per
+                // arm, because a `?:` cannot pass the hidden out-parameter a
+                // fixed-array call arm needs.
                 if value.ty.is_fixed_array() {
                     if let ValueKind::ClosureCall { callable, args } = &value.kind {
+                        self.emit_guards(value);
                         let ty = self.substitute(&value.ty);
                         let dest = self.unique_local("__cl_discard");
                         self.push("    {");
@@ -585,7 +609,36 @@ impl<'a> Emitter<'a> {
                         self.push("    }");
                         return;
                     }
+                    if let ValueKind::Conditional {
+                        condition,
+                        then_value,
+                        else_value,
+                    } = &value.kind
+                    {
+                        let ty = self.substitute(&value.ty);
+                        let dest = self.unique_local("__cl_discard");
+                        self.push("    {");
+                        self.push(&format!(
+                            "        {} = {};",
+                            declarator(&ty, &dest, &self.sema.table),
+                            self.empty_state(&ty)
+                        ));
+                        let target = ArrayTarget::object(&dest);
+                        self.emit_fixed_array_conditional_assign(
+                            &target,
+                            &ty,
+                            condition,
+                            then_value,
+                            else_value,
+                        );
+                        if self.needs_drop(&ty) {
+                            self.emit_drop_expr(&dest, &ty);
+                        }
+                        self.push("    }");
+                        return;
+                    }
                 }
+                self.emit_guards(value);
                 let value_c = self.value(value);
                 self.push(&format!("    (void)({value_c});"));
             }
@@ -1240,7 +1293,7 @@ impl<'a> Emitter<'a> {
     /// destination saves its old value first: it stays alive while the chosen
     /// arm is stored, an arm that names the target copies the saved value
     /// back, and the saved value is released once afterwards.
-    fn emit_fixed_array_conditional_assign(
+    pub(super) fn emit_fixed_array_conditional_assign(
         &mut self,
         target: &ArrayTarget,
         ty: &Ty,
@@ -1476,6 +1529,34 @@ impl<'a> Emitter<'a> {
         self.emit_guards(arm);
         let arm_c = self.store_text(arm, ty);
         self.push(&format!("        {target_c} = {arm_c};"));
+    }
+
+    /// True when a literal holds a fixed-array field with no C initializer form.
+    ///
+    /// A C aggregate initializer cannot name the result of a call that writes
+    /// through the fixed-array hidden out-parameter, and a fixed-array
+    /// conditional needs one store per path. A literal with such a field takes
+    /// the per-field store form, exactly as the direct store spelling does. A
+    /// nested literal renders inside the same initializer, so its own fields
+    /// are searched too.
+    fn fixed_array_field_needs_stores(&self, fields: &[(String, Value)]) -> bool {
+        fields.iter().any(|(_, field)| {
+            let field_ty = self.substitute(&field.ty);
+            if field_ty.is_fixed_array()
+                && matches!(
+                    field.kind,
+                    ValueKind::Call { .. }
+                        | ValueKind::ClosureCall { .. }
+                        | ValueKind::Conditional { .. }
+                )
+            {
+                return true;
+            }
+            if let ValueKind::StructLit { fields, .. } = &field.kind {
+                return self.fixed_array_field_needs_stores(fields);
+            }
+            false
+        })
     }
 
     /// True when a struct literal needs the per-field store form.

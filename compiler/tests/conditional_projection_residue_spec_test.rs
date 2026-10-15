@@ -4869,6 +4869,77 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
+// mixedliteralrest: the same discarded literal with a directly called field
+// and a discarded all-fresh fixed-array conditional.
+//
+// `Mixed { names: n1(), tag: stringOf("x") };` fills its fixed-array field
+// with a plain call, which also passes the hidden out-parameter ABI through
+// the field's own destination. A discarded conditional whose arms are array
+// literals (`ok ? [stringOf("x")] : [stringOf("y")];`) fills one destination
+// element-wise on each path and releases the selected element when the
+// statement ends. Both programs are accepted, build under the strict flags,
+// and exit 0 with no memory report.
+// ---------------------------------------------------------------------------
+
+/// A discarded literal with a directly called fixed-array field builds and
+/// releases its fresh string field.
+///
+/// `Mixed { names: n1(), tag: stringOf("x") };` drops the literal: the call
+/// fills the `str[2]` field through the field's destination and the fresh
+/// `tag` releases when the statement ends. The program is accepted, builds
+/// under the strict flags, and exits 0 with no memory report.
+#[test]
+fn should_discard_a_direct_call_filled_fixed_array_field() {
+    let source = r#"module spec.cpr.discardcallfield;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+func n1(): str[2] { return ["AA", "BB"]; }
+
+func use(): i32 {
+    Mixed { names: n1(), tag: stringOf("x") };
+    return 0;
+}
+
+func main(): i32 {
+    return use();
+}
+"#;
+    let output = run_memory("discardcallfield", source);
+    assert_no_asan("discardcallfield", &output);
+    assert_exit("discardcallfield", &output, 0);
+}
+
+/// A discarded all-fresh fixed-array conditional builds and releases the
+/// selected element.
+///
+/// `ok ? [stringOf("x")] : [stringOf("y")];` selects one array literal and
+/// fills one destination element-wise on that path; the fresh element
+/// releases when the statement ends, so both selections run clean. The
+/// program is accepted, builds under the strict flags, and exits 0.
+#[test]
+fn should_discard_a_fresh_fixed_array_conditional() {
+    let source = r#"module spec.cpr.discardfresharray;
+
+import { String, stringOf } from std.text;
+
+func use(ok: bool): i32 {
+    ok ? [stringOf("x")] : [stringOf("y")];
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    let output = run_memory("discardfresharray", source);
+    assert_no_asan("discardfresharray", &output);
+    assert_exit("discardfresharray", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
 // condroot: projecting a fixed-array field of a conditional root.
 //
 // `(c ? b1 : b2).xs` selects the root first and projects its fixed-array
@@ -5078,4 +5149,386 @@ func main(): i32 {
     let output = run_memory("fixedownedroot", owned);
     assert_no_asan("fixedownedroot", &output);
     assert_exit("fixedownedroot", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// fixediterowned: iterating a conditional root's owned fixed-array field.
+//
+// `for (borrow x in (c ? b1 : b2).xs)` selects the root once and iterates the
+// selected field in place: a place arm's storage is only read, never copied or
+// moved, so the field stays readable after the loop. The row spelling iterates
+// a struct row's elements, the re-executed spelling runs the loop once per
+// outer iteration, and the nested spelling reaches a two-step field chain.
+// Every program is accepted, builds under the strict flags, exits 0, and is
+// free of memory reports; the field read-back after each loop proves the
+// iterable did not take the caller's storage.
+// ---------------------------------------------------------------------------
+
+/// A conditional root's owned field iterates in place on both selections.
+///
+/// `for (borrow x in (c ? b1 : b2).xs)` sums the selected field's string
+/// lengths and the trailing read-back sums `b1`'s own lengths, so a move of
+/// either field would change the result or crash; with `b1` = "AA"/"BB" and
+/// `b2` = "CC"/"DD" each`use` returns 0. The row spelling iterates a struct
+/// row's `v` fields and reads `b1.rows[0].v` back the same way. Both programs
+/// build under the strict flags, exit 0, and report no memory error.
+#[test]
+fn should_iterate_a_conditional_roots_owned_field_in_place() {
+    let owned = r#"module spec.cpr.fixediterowned;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: String[2]; }
+
+func use(c: bool): i32 {
+    let b1: Box = Box { xs: [stringOf("AA"), stringOf("BB")] };
+    let b2: Box = Box { xs: [stringOf("CC"), stringOf("DD")] };
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2).xs) {
+        s = s + i32(len(x));
+    }
+    return s + i32(len(b1.xs[0])) + i32(len(b1.xs[1])) - 8;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    let output = run_memory("fixediterowned", owned);
+    assert_no_asan("fixediterowned", &output);
+    assert_exit("fixediterowned", &output, 0);
+
+    let rows = r#"module spec.cpr.fixediterrows;
+
+import { String, stringOf } from std.text;
+
+struct Row { v: String; }
+struct Box { rows: Row[2]; tag: String; }
+
+func use(c: bool): i32 {
+    let b1: Box = Box { rows: [Row { v: stringOf("AA") }, Row { v: stringOf("BB") }], tag: stringOf("p") };
+    let b2: Box = Box { rows: [Row { v: stringOf("CC") }, Row { v: stringOf("DD") }], tag: stringOf("q") };
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2).rows) {
+        s = s + i32(len(x.v));
+    }
+    return s + i32(len(b1.rows[0].v)) - 6;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    let output = run_memory("fixediterrows", rows);
+    assert_no_asan("fixediterrows", &output);
+    assert_exit("fixediterrows", &output, 0);
+}
+
+/// A re-executed loop over a conditional root's field keeps the field.
+///
+/// The inner loop runs once per outer iteration over `(c ? b1 : b2).xs`; the
+/// trailing read-back of `b1.xs[0]` proves every execution read the selected
+/// field in place. The nested spelling iterates `(c ? b1 : b2).p.a` — a
+/// two-step field chain — and reads `b1.p.a[1]` back. Both programs build
+/// under the strict flags, exit 0, and report no memory error.
+#[test]
+fn should_keep_a_conditional_roots_field_across_a_re_executed_loop() {
+    let looped = r#"module spec.cpr.fixediterloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: String[2]; tag: String; }
+
+func use(c: bool, k: i32): i32 {
+    let b1: Box = Box { xs: [stringOf("AA"), stringOf("BB")], tag: stringOf("p") };
+    let b2: Box = Box { xs: [stringOf("CC"), stringOf("DD")], tag: stringOf("q") };
+    let s: i32 = 0;
+    let i: i32 = 0;
+    while (i < k) {
+        for (borrow x in (c ? b1 : b2).xs) {
+            s = s + i32(len(x));
+        }
+        i = i + 1;
+    }
+    return s + i32(len(b1.xs[0])) - 6;
+}
+
+func main(): i32 {
+    return use(true, 2) + use(false, 2) - 8;
+}
+"#;
+    let output = run_memory("fixediterloop", looped);
+    assert_no_asan("fixediterloop", &output);
+    assert_exit("fixediterloop", &output, 0);
+
+    let nested = r#"module spec.cpr.fixediternested;
+
+import { String, stringOf } from std.text;
+
+struct Pair { a: String[2]; }
+struct Box { p: Pair; tag: String; }
+
+func use(c: bool): i32 {
+    let b1: Box = Box { p: Pair { a: [stringOf("AA"), stringOf("BB")] }, tag: stringOf("p") };
+    let b2: Box = Box { p: Pair { a: [stringOf("CC"), stringOf("DD")] }, tag: stringOf("q") };
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2).p.a) {
+        s = s + i32(len(x));
+    }
+    return s + i32(len(b1.p.a[1])) - 6;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    let output = run_memory("fixediternested", nested);
+    assert_no_asan("fixediternested", &output);
+    assert_exit("fixediternested", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// fixedstorelit: a conditional root's ownerless arm binds before its field is
+// copied.
+//
+// `(c ? Box { ... } : b2).xs` in a consuming position cannot leave the literal
+// arm inline: the literal is an lvalue there, but its fresh owned fields must
+// release with the statement. Each ownerless arm's root binds on its own path
+// — the literal spelling and the call spelling alike — while a place arm keeps
+// its storage. The store, the `for` iterable, and the return spellings each
+// accept, build under the strict flags, exit 0, and report no memory error.
+// ---------------------------------------------------------------------------
+
+/// A conditional root's literal or call arm binds its root in the store.
+///
+/// `let a: u8[4] = (c ? Box { xs: [...], tag: stringOf("fresh") } : b2).xs;`
+/// copies the selected arm's field and releases the literal's fresh `tag` when
+/// the statement ends, while `b2.xs` stays readable on the place path. The
+/// call spelling `(c ? mk() : b2).xs` binds the call root first, so the copy
+/// names `mk()`'s field through a local. Both programs exit 0.
+#[test]
+fn should_bind_an_ownerless_arm_of_a_conditional_root_store() {
+    let literal = r#"module spec.cpr.fixedstorelit;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: u8[4]; tag: String; }
+
+func use(c: bool): i32 {
+    let b2: Box = Box { xs: [5, 6, 7, 8], tag: stringOf("pp") };
+    let a: u8[4] = (c ? Box { xs: [1, 2, 3, 4], tag: stringOf("fresh") } : b2).xs;
+    return i32(a[0]) + i32(b2.xs[0]) - 6;
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 4;
+}
+"#;
+    let output = run_memory("fixedstorelit", literal);
+    assert_no_asan("fixedstorelit", &output);
+    assert_exit("fixedstorelit", &output, 0);
+
+    let call = r#"module spec.cpr.fixedstorecall;
+
+struct Box { xs: u8[4]; }
+
+func mk(): Box { return Box { xs: [1, 2, 3, 4] }; }
+
+func use(c: bool, b2: Box): i32 {
+    let a: u8[4] = (c ? mk() : b2).xs;
+    return i32(a[0]) + i32(a[3]);
+}
+
+func main(): i32 {
+    let b2: Box = Box { xs: [5, 6, 7, 8] };
+    return use(true, b2) + use(false, b2) - 18;
+}
+"#;
+    let output = run_memory("fixedstorecall", call);
+    assert_no_asan("fixedstorecall", &output);
+    assert_exit("fixedstorecall", &output, 0);
+}
+
+/// A conditional root's ownerless arm binds in the iterable and return too.
+///
+/// `for (x in (c ? Box { xs: [...], tag: stringOf("fresh") } : b2).xs)` reads
+/// the selected arm's field in place and releases the literal's fresh `tag`
+/// with the loop's statement, so the summed elements and the release do not
+/// collide. The return spelling `return (c ? Box { ... } : b2).xs;` binds the
+/// literal arm's root before the field copy, so the fresh `tag` releases with
+/// the return's cleanup. Both programs exit 0 with no memory report.
+#[test]
+fn should_bind_an_ownerless_arm_of_a_conditional_root_iterable_and_return() {
+    let iterable = r#"module spec.cpr.fixediterlit;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: u8[4]; tag: String; }
+
+func use(c: bool): i32 {
+    let b2: Box = Box { xs: [5, 6, 7, 8], tag: stringOf("pp") };
+    let s: i32 = 0;
+    for (x in (c ? Box { xs: [1, 2, 3, 4], tag: stringOf("fresh") } : b2).xs) {
+        s = s + i32(x);
+    }
+    return s;
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 36;
+}
+"#;
+    let output = run_memory("fixediterlit", iterable);
+    assert_no_asan("fixediterlit", &output);
+    assert_exit("fixediterlit", &output, 0);
+
+    let returned = r#"module spec.cpr.fixedreturnlit;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: u8[4]; tag: String; }
+
+func pick(c: bool, b2: Box): u8[4] {
+    return (c ? Box { xs: [1, 2, 3, 4], tag: stringOf("fresh") } : b2).xs;
+}
+
+func sum(a: u8[4]): i32 {
+    return i32(a[0]) + i32(a[3]);
+}
+
+func main(): i32 {
+    let b2: Box = Box { xs: [5, 6, 7, 8], tag: stringOf("pp") };
+    return sum(pick(true, b2)) + sum(pick(false, b2)) - 18;
+}
+"#;
+    let output = run_memory("fixedreturnlit", returned);
+    assert_no_asan("fixedreturnlit", &output);
+    assert_exit("fixedreturnlit", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// nestedarm: a conditional whose arm projects through a nested conditional.
+//
+// `(c ? (d ? b1 : b2).ys : b3.ys)` selects the outer root first and then the
+// inner one. The projection must distribute into the nested arms, so the
+// emission selects between the arms' own fields (`c ? (d ? b1.ys : b2.ys) :
+// b3.ys`) — an array of real storage. Leaving the nested arm inline would
+// name a member of a struct conditional's C temporary, which cannot be
+// addressed and does not outlive the expression. The store spelling and the
+// borrow iterable (including the element-index and else-arm spellings) are
+// accepted, build under the strict flags, exit 0, and report no memory error.
+// ---------------------------------------------------------------------------
+
+/// A nested-arm projection stores the selected root's own field.
+///
+/// `let a: u8[4] = (c ? (d ? b1 : b2).ys : b3.ys);` copies `b1.ys`, `b2.ys`,
+/// or `b3.ys` according to the two conditions; the reads of `a` are 0, 16, and
+/// 8 for the three selections, so the trailing constant cancels them. The
+/// program is accepted, builds under the strict flags, and exits 0.
+#[test]
+fn should_store_a_conditional_arm_projecting_through_a_nested_conditional() {
+    let source = r#"module spec.cpr.nestedarmstore;
+
+struct Box { ys: u8[4]; }
+struct Other { ys: u8[4]; }
+
+func use(c: bool, d: bool, b1: Box, b2: Box, b3: Other): i32 {
+    let a: u8[4] = (c ? (d ? b1 : b2).ys : b3.ys);
+    return i32(a[0]) + i32(a[3]) - 5;
+}
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3, 4] };
+    let b2: Box = Box { ys: [5, 6, 7, 8] };
+    let b3: Other = Other { ys: [9, 10, 11, 12] };
+    return use(true, true, b1, b2, b3) + use(false, true, b1, b2, b3) + use(true, false, b1, b2, b3) - 24;
+}
+"#;
+    let output = run_memory("nestedarmstore", source);
+    assert_no_asan("nestedarmstore", &output);
+    assert_exit("nestedarmstore", &output, 0);
+}
+
+/// A nested-arm projection iterates the selected root's own field in place.
+///
+/// `for (borrow x in (c ? (d ? b1 : b2).ys : b3.ys))` sums the selected
+/// field: 10, 42, and 26 for the three selections of the then-arm spelling;
+/// the element-index spelling `(c ? (d ? b1 : b2).grid[0] : b3.grid[0])`
+/// selects a row the same way (6, 42, 24), and the else-arm spelling
+/// `(c ? b3.ys : (d ? b1 : b2).ys)` selects from the other side (42, 10, 26).
+/// Every program is accepted, builds under the strict flags, exits 0, and
+/// reports no memory error.
+#[test]
+fn should_iterate_a_conditional_arm_projecting_through_a_nested_conditional() {
+    let arm = r#"module spec.cpr.nestedarmiter;
+
+struct Box { ys: u8[4]; }
+struct Other { ys: u8[4]; }
+
+func use(c: bool, d: bool, b1: Box, b2: Box, b3: Other): i32 {
+    let s: i32 = 0;
+    for (borrow x in (c ? (d ? b1 : b2).ys : b3.ys)) {
+        s = s + i32(x);
+    }
+    return s;
+}
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3, 4] };
+    let b2: Box = Box { ys: [5, 6, 7, 8] };
+    let b3: Other = Other { ys: [9, 10, 11, 12] };
+    return use(true, true, b1, b2, b3) + use(false, true, b1, b2, b3) + use(true, false, b1, b2, b3) - 78;
+}
+"#;
+    let output = run_memory("nestedarmiter", arm);
+    assert_no_asan("nestedarmiter", &output);
+    assert_exit("nestedarmiter", &output, 0);
+
+    let indexed = r#"module spec.cpr.nestedarmiterindex;
+
+struct Box { grid: u8[2][3]; }
+struct Other { grid: u8[2][3]; }
+
+func use(c: bool, d: bool, b1: Box, b2: Box, b3: Other): i32 {
+    let s: i32 = 0;
+    for (borrow x in (c ? (d ? b1 : b2).grid[0] : b3.grid[0])) {
+        s = s + i32(x);
+    }
+    return s;
+}
+
+func main(): i32 {
+    let b1: Box = Box { grid: [[1, 2, 3], [4, 5, 6]] };
+    let b2: Box = Box { grid: [[7, 8, 9], [10, 11, 12]] };
+    let b3: Other = Other { grid: [[13, 14, 15], [16, 17, 18]] };
+    return use(true, true, b1, b2, b3) + use(false, true, b1, b2, b3) + use(true, false, b1, b2, b3) - 72;
+}
+"#;
+    let output = run_memory("nestedarmiterindex", indexed);
+    assert_no_asan("nestedarmiterindex", &output);
+    assert_exit("nestedarmiterindex", &output, 0);
+
+    let else_arm = r#"module spec.cpr.nestedarmiterelse;
+
+struct Box { ys: u8[4]; }
+struct Other { ys: u8[4]; }
+
+func use(c: bool, d: bool, b1: Box, b2: Box, b3: Other): i32 {
+    let s: i32 = 0;
+    for (borrow x in (c ? b3.ys : (d ? b1 : b2).ys)) {
+        s = s + i32(x);
+    }
+    return s;
+}
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3, 4] };
+    let b2: Box = Box { ys: [5, 6, 7, 8] };
+    let b3: Other = Other { ys: [9, 10, 11, 12] };
+    return use(true, true, b1, b2, b3) + use(false, true, b1, b2, b3) + use(false, false, b1, b2, b3) - 78;
+}
+"#;
+    let output = run_memory("nestedarmiterelse", else_arm);
+    assert_no_asan("nestedarmiterelse", &output);
+    assert_exit("nestedarmiterelse", &output, 0);
 }

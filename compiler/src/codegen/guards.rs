@@ -131,10 +131,20 @@ impl<'a> Emitter<'a> {
                     // A deferred conditional operand fills the temporary
                     // through the owned branch store, so the chosen arm moves
                     // and the skipped arm is never evaluated. A fixed-array
-                    // conditional has no expression form; the fallback keeps
-                    // the renderer total.
+                    // conditional has no C value expression — a call arm
+                    // cannot pass its hidden out-parameter through `?:` — so
+                    // each arm fills the temporary on its own path instead.
                     let ty = self.substitute(&inner.ty);
-                    if !ty.is_fixed_array() && self.needs_drop(&ty) {
+                    if ty.is_fixed_array() {
+                        let destination = ArrayTarget::object(&format!("__cl_tmp{temp}"));
+                        self.emit_fixed_array_conditional_assign(
+                            &destination,
+                            &ty,
+                            condition,
+                            then_value,
+                            else_value,
+                        );
+                    } else if self.needs_drop(&ty) {
                         let destination = format!("__cl_tmp{temp}");
                         self.emit_conditional_move_assign(
                             &destination,
