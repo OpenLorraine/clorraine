@@ -478,7 +478,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         let Some(failing) = failing else { return };
         let subject = match failing {
-            Some(id) => format!("'{}'", self.bindings[id].name),
+            Some(id) => super::liveness::owner_subject(
+                &self.bindings[id].name,
+                self.bindings[id].generated,
+            ),
             None => "a statement temporary".to_owned(),
         };
         self.error(

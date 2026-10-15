@@ -382,6 +382,15 @@ struct FunctionChecker<'a, 'd> {
     /// Next name suffix for a compiler-owned temporary local that takes an
     /// unnamed owned call result so the scope cleanup can release it.
     next_owned_temp: u32,
+    /// Generated-owner ids whose bindings a rolled-back deferred pass removed.
+    ///
+    /// A deferred block is checked once per exit edge against a discarded
+    /// graph and its binding table range is rolled back afterwards, while the
+    /// loan events it recorded stay for the liveness report. The generated
+    /// owners it declared are therefore remembered here so the report can
+    /// still render their phrase; an id a later binding has since taken is
+    /// dropped from the report's set by comparing it against the live table.
+    rolled_back_generated: BTreeSet<usize>,
     /// Destination temporaries of the statement currently being checked, in
     /// creation order.
     ///
@@ -556,6 +565,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             defer_anchor: None,
             next_registration: 0,
             next_owned_temp: 0,
+            rolled_back_generated: BTreeSet::new(),
             pending_releases: Vec::new(),
             defer_move_outs: 0,
             in_loop_condition: false,
@@ -877,6 +887,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.defer_anchor = saved_anchor;
         self.builder = saved_builder;
+        // A generated owner the deferred body declared is a copy this rollback
+        // removes; the events recorded for it are judged later against the
+        // shortened table, so its id is remembered for the liveness report.
+        for id in saved_bindings..self.bindings.len() {
+            if self.bindings[id].generated {
+                self.rolled_back_generated.insert(id);
+            }
+        }
         self.bindings.truncate(saved_bindings);
         self.scopes = saved_scopes;
         self.defer_entries.truncate(saved_defers);
@@ -1016,14 +1034,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A generated owner has no source name a reader could recognize, so the
     /// liveness report renders it as a display phrase and needs the
-    /// generated bindings' identities to do so.
+    /// generated bindings' identities to do so. A deferred body's copy is
+    /// declared, recorded in an event, and then rolled back with its binding
+    /// table range, so its id is reported from the remembered set; an id a
+    /// later binding has since taken belongs to that binding instead.
     fn generated_owner_ids(&self) -> BTreeSet<usize> {
-        self.bindings
+        let mut ids: BTreeSet<usize> = self
+            .bindings
             .iter()
             .enumerate()
             .filter(|(_, binding)| binding.generated)
             .map(|(id, _)| id)
-            .collect()
+            .collect();
+        ids.extend(
+            self.rolled_back_generated
+                .iter()
+                .filter(|id| **id >= self.bindings.len()),
+        );
+        ids
     }
 
     /// Declares a function parameter.

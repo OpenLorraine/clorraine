@@ -345,12 +345,10 @@ impl Analysis {
                 continue;
             }
             let subject = match owner {
-                // A borrowed generated owner is the compiler's own binding, so
-                // its phrase reads without the quotes a source name carries.
-                LoanOwner::Binding(_) if is_generated(*owner, names, generated) => {
-                    display(*owner, names, generated)
-                }
-                LoanOwner::Binding(_) => format!("'{}'", display(*owner, names, generated)),
+                LoanOwner::Binding(id) => owner_subject(
+                    names.get(id).map(String::as_str).unwrap_or("?"),
+                    generated.contains(id),
+                ),
                 LoanOwner::Temp(_) => "a statement temporary".to_owned(),
             };
             push(
@@ -594,26 +592,19 @@ fn closure_avoiding(
     seen
 }
 
-/// True when a loan owner is a compiler-generated binding.
+/// The message subject of a loan owner.
 ///
-/// The generated set names the owners the current pass declared. A deferred
-/// body's per-edge copy re-declares its bindings, so a copy's identity is not
-/// in the set while its reserved spelling still names a generated owner: a
-/// source name can never begin with the compiler's owner prefix, so the
-/// spelling is the same evidence the identity carries.
-fn is_generated(
-    owner: LoanOwner,
-    names: &BTreeMap<usize, String>,
-    generated: &BTreeSet<usize>,
-) -> bool {
-    match owner {
-        LoanOwner::Binding(id) => {
-            generated.contains(&id)
-                || names
-                    .get(&id)
-                    .is_some_and(|name| name.starts_with("__cl_owned"))
-        }
-        LoanOwner::Temp(_) => false,
+/// A compiler-generated owner (`__cl_ownedN`) has no source name a reader
+/// could place, so every escape report renders it as the same phrase, the way
+/// a statement temporary reads; every named owner renders as its written name
+/// in quotes. The ownership walks in the call and store judgments share the
+/// helper, so a generated owner reads the same wherever its escape is
+/// reported.
+pub(super) fn owner_subject(name: &str, generated: bool) -> String {
+    if generated {
+        String::from("a compiler-generated owner")
+    } else {
+        format!("'{name}'")
     }
 }
 
@@ -624,7 +615,7 @@ fn is_generated(
 /// every named owner keeps its written name.
 fn display(owner: LoanOwner, names: &BTreeMap<usize, String>, generated: &BTreeSet<usize>) -> String {
     match owner {
-        LoanOwner::Binding(_) if is_generated(owner, names, generated) => {
+        LoanOwner::Binding(id) if generated.contains(&id) => {
             String::from("a compiler-generated owner")
         }
         LoanOwner::Binding(id) => names

@@ -1359,6 +1359,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             self.return_derivation_mismatch = true;
                         }
                     }
+                    // An array literal stores every element, so its composite
+                    // keeps a local component beside the others. A returned
+                    // array that stores a frame-backed view hands the caller
+                    // storage that dies with this frame, so the site takes the
+                    // local-owner judgment even when the whole value would fit
+                    // every caller through its other components. The judgment
+                    // is the site's one report, exactly as the single-view
+                    // local spelling reports at its return.
+                    Provenance::Composite(atoms) => {
+                        if let Some(Provenance::Local(id)) = atoms
+                            .iter()
+                            .find(|atom| matches!(atom, Provenance::Local(_)))
+                        {
+                            self.suppress_elision = true;
+                            local_view_owner = Some(*id);
+                        }
+                    }
                     _ => {}
                 }
                 // A container binding's element loans name the storage its

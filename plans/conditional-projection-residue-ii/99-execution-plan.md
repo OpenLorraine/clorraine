@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 29/33 tasks (88%) — Phase 5 in review
+> **Progress**: 30/33 tasks (91%) — Phase 5 complete; close-out next
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -255,9 +255,9 @@ the generated-owner phrase, and the conditional-iterable move mark.
 - [x] 5.3.1 Write the phase implementation pins (the counts and spans, the displayed phrase,
       the mark shape, the re-emission determinism pins) —
       `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 12:30; six pins added (85 tests total, additions only) plus a one-report helper — the dedupe at the nested and pair returns (the pair owner unpinned), the withheld global-field consequence, the deferred phrase, the in-place iterable on owned and duplicable elements, the element/projection regression guard, and a discriminating re-emission pin; all six fail at `d0f9558` for the intended reason; 85/85 green and `make check` exit 0)
-- [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
+- [x] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; run the pinned oracles (`callable_release_integrity`,
-      `checker_conformance`)
+      `checker_conformance`) ✅ (completed: 2026-10-16 14:00; both lenses dispatched plus one correction round: J5R-1/J5S-2 (the suppressed callee arm now reports the frame-backed component — the `Composite` arm in the return judgment) and J5S-1 (the withholding resolves the callee through the call precedence, so a callable value keeps its own report) fixed; J5R-2 (the shared subject helper) and J5S-3 (the generated-id tracking replacing the spelling heuristic) fixed; J5R-3 closed as a boundary per the semantics review; four spec cases added (145 total); rows filed: `DEF-331` (closed boundary), `DEF-332`, `DEF-333`; the closing verification: the residue spec 145/145 plain and ASan, the impl pins 85/85, `make check` exit 0, no head-only acceptance, no emission diff)
 
 **Verify**: `make check`; the oracle suites
 

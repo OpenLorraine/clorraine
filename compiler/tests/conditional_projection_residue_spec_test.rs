@@ -10573,3 +10573,447 @@ func main(): i32 {
     assert_no_asan("iterablearku8", &output);
     assert_exit("iterablearku8", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// localfitarm: a frame-backed element of a returned array literal reports at
+// its own return.
+//
+// An array literal stores every element, so its storage provenance keeps a
+// local component beside the others and the declaration's count judgment is
+// not reached for it. A return that carries a frame-backed element hands the
+// caller storage that dies with the frame, so the site reports the
+// local-owner judgment (`E10035`) whether a sibling return fits every caller
+// (a literal), the store is an out-slot, the declaration counts one lend
+// candidate, or the fitting arm is deferred. The all-fitting callee spellings
+// — the deferred literal arm and the static return beside a lend candidate —
+// stay accepted and memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A returned array literal's frame-backed element reports its own `E10035`.
+///
+/// `return [l.v, "zw"]` stores a view of the local `l`, so the return reports
+/// exactly one `E10035` however the caller stores the result: behind a
+/// literal arm, into an out-slot, beside the single lend candidate `a`, and
+/// behind a deferred literal arm. The out-slot spelling lends a duplicable
+/// array, so the compiler also warns `W10001` there; its assertion pins the
+/// single `E10035` by count. The two all-fitting spellings stay accepted,
+/// build under the strict flags, and exit 0.
+#[test]
+fn should_reject_a_frame_backed_element_of_a_returned_array_literal() {
+    let literal_arm = r#"module spec.cpr.localfitarm;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+let g: str[2] = ["AA", "BB"];
+
+func row(c: bool): str[2] {
+    if (c) {
+        return ["xy", "zw"];
+    }
+    let l: Box = Box { v: stringOf("ll") };
+    return [l.v, "zw"];
+}
+
+func store(c: bool): void { g = row(c); }
+
+func main(): i32 {
+    store(false);
+    return i32(g[0][0]) - 108;
+}
+"#;
+    compile_rejects_once_at(
+        "localfitarm",
+        literal_arm,
+        "E10035",
+        14,
+        5,
+        &["cannot return a view of local 'l'"],
+        &[],
+    );
+
+    let out_slot = r#"module spec.cpr.localslot;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func row(c: bool): str[2] {
+    if (c) {
+        return ["xy", "zw"];
+    }
+    let l: Box = Box { v: stringOf("ll") };
+    return [l.v, "zw"];
+}
+
+func outer(borrow slot: str[2], c: bool): void { slot = row(c); }
+
+func main(): i32 {
+    let out: str[2] = ["AA", "BB"];
+    outer(borrow out, false);
+    return i32(out[0][0]) - 108;
+}
+"#;
+    compile_rejects("localslot", out_slot, "E10035", 1);
+
+    let single_candidate = r#"module spec.cpr.localcandidate;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func row(a: str): str[2] {
+    let l: Box = Box { v: stringOf("ll") };
+    return [l.v, a];
+}
+
+func store(): void { g.names = row("xy"); }
+
+func main(): i32 { store(); return i32(len(g.names[1])) - 2; }
+"#;
+    compile_rejects_once_at(
+        "localcandidate",
+        single_candidate,
+        "E10035",
+        12,
+        5,
+        &["cannot return a view of local 'l'"],
+        &[],
+    );
+
+    let deferred = r#"module spec.cpr.localdefer;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+let g: str[2] = ["AA", "BB"];
+
+func row(c: bool): str[2] {
+    defer {
+        if (c) {
+            return ["xy", "zw"];
+        }
+    }
+    let l: Box = Box { v: stringOf("ll") };
+    return [l.v, "zw"];
+}
+
+func store(c: bool): void { g = row(c); }
+
+func main(): i32 {
+    store(false);
+    return i32(g[0][0]) - 108;
+}
+"#;
+    compile_rejects_once_at(
+        "localdefer",
+        deferred,
+        "E10035",
+        16,
+        5,
+        &["cannot return a view of local 'l'"],
+        &[],
+    );
+
+    let deferred_fit = r#"module spec.cpr.localfitcontrol;
+
+let s: str = "ab";
+let t: str = "cd";
+
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func row(): str[2] {
+    defer { return [s, t]; }
+    return ["xy", "zw"];
+}
+
+func store(): void { g.names = row(); }
+
+func main(): i32 { store(); return i32(len(g.names[1])) - 2; }
+"#;
+    let output = run_memory("localfitcontrol", deferred_fit);
+    assert_no_asan("localfitcontrol", &output);
+    assert_exit("localfitcontrol", &output, 0);
+
+    let static_fit = r#"module spec.cpr.localstaticcontrol;
+
+let s: str = "ab";
+let t: str = "cd";
+
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func row(a: str): str[2] { return [s, t]; }
+
+func store(): void { g.names = row("xy"); }
+
+func main(): i32 { store(); return i32(len(g.names[1])) - 2; }
+"#;
+    let output = run_memory("localstaticcontrol", static_fit);
+    assert_no_asan("localstaticcontrol", &output);
+    assert_exit("localstaticcontrol", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// funcval: an escaping store through a callable value keeps its own report.
+//
+// A call through a `func`-typed binding, parameter, field, or capture is not
+// the module function its name may share, so the declaration's elision
+// judgment is never reached through it and the destination keeps the
+// escaping-store report (`E10033`) when the value views a frame local. The
+// parameter-backed callable spelling is the run control: its result views the
+// caller's parameter, so it stays accepted, builds under the strict flags,
+// and exits 0.
+// ---------------------------------------------------------------------------
+
+/// An escaping store through a callable value reports exactly one `E10033`.
+///
+/// The local binding, the parameter, the callable field, and the capture all
+/// name a `func`-typed value, so the store of the local-backed result into
+/// the module binding `g` reports one `E10033` at its own site. The
+/// parameter-backed callable call is accepted and exits 0.
+#[test]
+fn should_keep_the_escaping_store_report_through_a_callable_value() {
+    let local_value = r#"module spec.cpr.funclocal;
+
+import { String, stringOf } from std.text;
+
+let g: str = "gg";
+
+func give(): str { return "mod"; }
+
+func target(l: str): str { return l; }
+
+func store(): void {
+    let s: String = stringOf("ll");
+    let l: str = s;
+    let give: func(str): str = target;
+    g = give(l);
+}
+
+func main(): i32 {
+    store();
+    return i32(g[0]) - 108;
+}
+"#;
+    compile_rejects_once_at(
+        "funclocal",
+        local_value,
+        "E10033",
+        15,
+        5,
+        &["borrow of 'g' escapes its scope"],
+        &[],
+    );
+
+    let parameter = r#"module spec.cpr.funcparam;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func give(): str { return "mod"; }
+
+func target(l: str): str { return l; }
+
+func store(give: func(str): str): void {
+    let s: String = stringOf("ll");
+    let l: str = s;
+    g.names[0] = give(l);
+}
+
+func main(): i32 {
+    store(target);
+    return i32(g.names[0][0]) - 108;
+}
+"#;
+    compile_rejects_once_at(
+        "funcparam",
+        parameter,
+        "E10033",
+        16,
+        5,
+        &["borrow of 'g' escapes its scope"],
+        &[],
+    );
+
+    let field = r#"module spec.cpr.funcfield;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func give(): str { return "mod"; }
+
+func target(l: str): str { return l; }
+
+struct FnHolder { give: func(str): str; }
+
+func store(): void {
+    let s: String = stringOf("ll");
+    let l: str = s;
+    let h: FnHolder = FnHolder { give: target };
+    g.names[0] = h.give(l);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects_once_at(
+        "funcfield",
+        field,
+        "E10033",
+        19,
+        5,
+        &["borrow of 'g' escapes its scope"],
+        &[],
+    );
+
+    let capture = r#"module spec.cpr.funccap;
+
+import { String, stringOf } from std.text;
+
+let g: str = "gg";
+
+func give(): str { return "mod"; }
+
+func target(l: str): str { return l; }
+
+func store(): void {
+    let s: String = stringOf("ll");
+    let l: str = s;
+    let give: func(str): str = target;
+    ([give, l] () => {
+        g = give(l);
+    })();
+}
+
+func main(): i32 {
+    store();
+    return i32(g[0]) - 108;
+}
+"#;
+    compile_rejects_once_at(
+        "funccap",
+        capture,
+        "E10033",
+        16,
+        9,
+        &["borrow of 'g' escapes its scope"],
+        &[],
+    );
+
+    let run_control = r#"module spec.cpr.funcrun;
+
+import { String, stringOf } from std.text;
+
+func target(l: str): str { return l; }
+
+func use(p: str): i32 {
+    let f: func(str): str = target;
+    let s: str = f(p);
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    return use(s) - 4;
+}
+"#;
+    let output = run_memory("funcrun", run_control);
+    assert_no_asan("funcrun", &output);
+    assert_exit("funcrun", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// rowlit: a static callee's view return stores into a global field.
+//
+// `rowlit()` returns an array literal, so its storage fits every caller and
+// the declaration adds no return judgment; the store takes the value without
+// a consequence report. The direct twin stores the same literal at the
+// destination. Both are accepted, build under the strict flags, and exit 0.
+// ---------------------------------------------------------------------------
+
+/// A static callee's view-returning call stores into a global field and runs.
+#[test]
+fn should_accept_the_static_callee_store_without_a_consequence_report() {
+    let callee = r#"module spec.cpr.rowlitaccept;
+
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func rowlit(): str[2] { return ["AB", "CD"]; }
+
+func store(): void { g.names = rowlit(); }
+
+func main(): i32 { return i32(len(g.names[1])) - 2; }
+"#;
+    let output = run_memory("rowlitaccept", callee);
+    assert_no_asan("rowlitaccept", &output);
+    assert_exit("rowlitaccept", &output, 0);
+
+    let direct = r#"module spec.cpr.rowlitdirect;
+
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func store(): void { g.names = ["AB", "CD"]; }
+
+func main(): i32 { return i32(len(g.names[1])) - 2; }
+"#;
+    let output = run_memory("rowlitdirect", direct);
+    assert_no_asan("rowlitdirect", &output);
+    assert_exit("rowlitdirect", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// usergenname: a user binding named like a generated owner keeps its name.
+//
+// The compiler's generated owners carry internal spellings (`__cl_ownedN`)
+// that a source program may also use. A view of such a user binding escapes
+// its scope at the binding's last use, and the report must name the binding
+// the reader wrote (`'__cl_owned1'`) rather than the generated-owner phrase.
+// ---------------------------------------------------------------------------
+
+/// A user binding named like a generated owner renders its own written name.
+#[test]
+fn should_keep_the_written_name_of_a_binding_named_like_a_generated_owner() {
+    let source = r#"module spec.cpr.usergenname;
+
+import { String, stringOf } from std.text;
+
+func use(s: str): i32 { return i32(len(s)); }
+
+func main(): i32 {
+    let out: str = "zz";
+    {
+        let __cl_owned1: String = stringOf("ab");
+        let v: str = __cl_owned1;
+        out = v;
+    }
+    return use(out) - 2;
+}
+"#;
+    compile_rejects_once_at(
+        "usergenname",
+        source,
+        "E10030",
+        11,
+        9,
+        &["borrow of '__cl_owned1'", "does not live long enough"],
+        &["a compiler-generated owner"],
+    );
+}

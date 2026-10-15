@@ -1432,9 +1432,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         // The callee's own view-return judgment already rejects the value when
-        // its return elides no single parameter, so the destination's
+        // its declaration elides no single parameter, so the destination's
         // consequence report is withheld: one site carries the rejection.
-        if self.callee_view_return_rejected(value) {
+        if self.callee_elides_no_single_parameter(value) {
             return;
         }
         // The empty view names no storage, so it cannot escape.
@@ -1455,7 +1455,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let subject = match failing {
             Some(atom) => Some(match &atom {
                 Provenance::Local(owner) | Provenance::Param(owner) => {
-                    format!("'{}'", self.bindings[*owner].name)
+                    super::liveness::owner_subject(
+                        &self.bindings[*owner].name,
+                        self.bindings[*owner].generated,
+                    )
                 }
                 _ => "a statement temporary".to_owned(),
             }),
@@ -1464,7 +1467,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .into_iter()
                 .next()
                 .map(|owner| match owner {
-                    LoanOwner::Binding(id) => format!("'{}'", self.bindings[id].name),
+                    LoanOwner::Binding(id) => super::liveness::owner_subject(
+                        &self.bindings[id].name,
+                        self.bindings[id].generated,
+                    ),
                     LoanOwner::Temp(_) => "a statement temporary".to_owned(),
                 }),
         };
@@ -1500,22 +1506,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// True when a call value's callee already rejects its view return.
+    /// True when a call's callee elides no single lend parameter.
     ///
-    /// A view return that elides no single parameter reports its own judgment
-    /// at the declaration, so every destination of that result would otherwise
-    /// repeat it as a consequence report. The predicate measures the callee's
-    /// declaration exactly as the declaration's own postlude does: a return
-    /// that is not an elided view, or whose lend candidates are not exactly
-    /// one, carries the rejection.
-    fn callee_view_return_rejected(&self, value: &Expr) -> bool {
+    /// A view return whose declaration names zero or several lend parameters
+    /// carries the return judgment at its own postlude, so every destination
+    /// of that result would otherwise repeat it as a consequence report: the
+    /// destination withholds and the declaration's cause stands alone. A
+    /// callable field, a call-returned func, a func-typed binding, or a
+    /// module-global func value is not the named function its spelling may
+    /// share, so no declaration judgment is reached through it and the
+    /// destination keeps its own report. The callable spellings are resolved
+    /// in the same order as the call check, so exactly the calls that reach
+    /// the declaration take the withholding.
+    fn callee_elides_no_single_parameter(&self, value: &Expr) -> bool {
         let ExprKind::Call { callee, .. } = &value.kind else {
             return false;
         };
+        if let Some(field_ty) = self.callee_field_type(callee) {
+            if self.callable_signature(&field_ty).is_some() {
+                return false;
+            }
+        }
+        if matches!(callee.kind, ExprKind::Call { .. })
+            && self.callable_signature(&self.ty(callee)).is_some()
+        {
+            return false;
+        }
+        if let Some(id) = self.func_binding_callee(callee) {
+            if self.callable_signature(&self.bindings[id].ty).is_some() {
+                return false;
+            }
+        }
         let Some(name) = self.callee_name(callee) else {
             return false;
         };
-        let Some(Callee::User(decl)) = self.program.callee(&name) else {
+        // A bare name can also name a module-level func-typed global, whose
+        // value is the callable rather than a declaration to judge; anything
+        // unresolved reaches no postlude either.
+        let Some(resolved) = self.program.callee(&name) else {
+            return false;
+        };
+        let Callee::User(decl) = resolved else {
             return false;
         };
         let declared: Vec<String> = decl

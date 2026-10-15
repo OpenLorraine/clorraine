@@ -991,6 +991,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let saved_loop_condition = self.in_loop_condition;
         let saved_registration = self.next_registration;
         let saved_owned_temp = self.next_owned_temp;
+        let saved_parked = std::mem::take(&mut self.rolled_back_generated);
         let saved_returns = self.returns.clone();
         let saved_current_span = self.current_span;
         let saved_elision_candidate = self.elision_candidate.clone();
@@ -1151,6 +1152,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.in_loop_condition = saved_loop_condition;
         self.next_registration = saved_registration;
         self.next_owned_temp = saved_owned_temp;
+        self.rolled_back_generated = saved_parked;
         self.returns = saved_returns;
         self.current_span = saved_current_span;
         self.elision_candidate = saved_elision_candidate;
