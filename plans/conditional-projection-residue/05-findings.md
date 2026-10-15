@@ -269,3 +269,25 @@ fresh-init leak), `DEF-288` (a container escape with frame-backed element loans)
 ### Filed rows
 
 `DEF-308` (extended; the loop-condition sibling fixed), `DEF-309` (the array fill), `DEF-310` (the raw-deref store); `DEF-278` completes with the phase (the written arguments and the owning receiver).
+
+## Close-out (Phase 7)
+
+**Verification**: `make check` exit 0 (`spec check: OK` — 27 files, 110 compile-fail tests; 66 Rust
+suites, 0 failures); `make verify` **all legs passed** (the hosted-amiga cross-toolchain builds and
+runs and the six runtime-fault programs); the residue spec 88/88 plain and under `RDC_ASAN=1`; the
+impl pins 52/52; the batch-H, callable-release, hardening, and related suites green;
+`cargo build --workspace` with no new warnings.
+
+**Rows**: the 23 handled rows = **21 implemented** (`DEF-257`..`DEF-280` minus the two incidental)
++ **2 incidentally closed** (`DEF-259`, `DEF-268`); **30 follow-on rows filed** during the review
+rounds (`DEF-281`..`DEF-310`), of which `DEF-289`, `DEF-296`, and `DEF-301` were fixed in phase
+follow-ups and closed with the phase, `DEF-278` completed, and the remainder stay in the backlog
+with their base/head evidence. The six older parked rows (`DEF-167`, `DEF-169`, `DEF-171`,
+`DEF-190`, `DEF-191`, `DEF-263`) stay open for user rulings.
+
+**Code**: six phase commits with their red, implementation, and review-record commits; every phase
+followed the specification-first loop (spec cases committed red, implementation green, impl pins,
+3-4 review lenses, targeted confirmations), with all review findings either fixed in-round or filed
+as rows.
+
+**Plan**: Complete.

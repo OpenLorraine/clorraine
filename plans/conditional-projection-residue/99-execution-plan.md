@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 19:00
-> **Progress**: 36/39 tasks (92%)
+> **Progress**: 39/39 tasks (100%) — Complete
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -256,9 +256,9 @@ literal, dot-receiver, loop-condition, and owning-argument order cases.
 
 ### Step 7.1: Verification and Sync
 
-- [ ] 7.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence
-- [ ] 7.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows: 21 Done with per-row evidence and `DEF-259`/`DEF-268` closed with their incidental notes; the six older parked rows stay open (AR-2)
-- [ ] 7.1.3 Record the close-out section in the findings ledger and mark the plan Complete in `00-index.md`
+- [x] 7.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and the ASan suite; record the evidence ✅ (completed: 2026-10-15 20:00; `make check` exit 0 (`spec check: OK`, 66 Rust suites, 0 failures); `make verify` **all legs passed** (the hosted-amiga cross-toolchain builds and runs and the six runtime-fault programs); the residue spec 88/88 plain and under `RDC_ASAN=1`; the impl pins 52/52; the strict builds clean; the review corpora differentials confirmed by the lenses)
+- [x] 7.1.2 Update `AGENTS.md` (test naming map with the new suites) and sync the roadmap rows: 21 Done with per-row evidence and `DEF-259`/`DEF-268` closed with their incidental notes; the six older parked rows stay open (AR-2) ✅ (completed: 2026-10-15 20:00; the `AGENTS.md` test map gained the residue suite pair; the roadmap's 26 batch rows moved to Done with their notes (the 20 implemented + `DEF-259`/`DEF-268` incidental + `DEF-279` + `DEF-278` + the follow-up-closed `DEF-289`/`DEF-296`/`DEF-301`); the six older parked rows unchanged; the follow-on rows `DEF-281`..`DEF-310` keep their statuses (`DEF-306`/`DEF-308` stay open as partially fixed))
+- [x] 7.1.3 Record the close-out section in the findings ledger and mark the plan Complete in `00-index.md` ✅ (completed: 2026-10-15 20:00; the close-out section records the verification, the row accounting (21 implemented + 2 incidental + 30 follow-on rows), and the code record; the index marks the plan Complete)
 
 **Verify**: `make check`; `make verify`
 

@@ -285,6 +285,16 @@ in `CMD`).
   guarded fills and loans, the view-array element owners, the statement
   temporaries and the call spelling, the update pins, the bound fixed-array
   root, and the byte-identity pins).
+- `compiler/tests/conditional_projection_residue_spec_test.rs` holds the
+  **specification tests** for the conditional/projection/update residue rows
+  (the arm-root duty and the guarded carriers; the view-owner derivation and
+  the one-report rule; the escaping-store destinations and the element loans;
+  the guarded and discarded literal positions; the fixed-array arms and
+  projections; the update order), and
+  `compiler/tests/conditional_projection_residue_impl_test.rs` holds their
+  **implementation tests** (the emitted carrier/binding/destination shapes,
+  the per-arm copies and pins, the report counts and spans, and the
+  byte-identical re-emission pins).
 - `#[cfg(test)] mod tests` blocks inside a `compiler/src/` module hold focused
   **unit tests** for that module's internals.
 - `tools/demo/test/*.spec.test.ts` are **specification tests** for the demo

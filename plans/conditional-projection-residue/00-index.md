@@ -13,7 +13,7 @@
 > arguments) — and two incidental closures (`DEF-259`, kept as a green control; `DEF-268`, fixed
 > by the batch-H emission work, with the reversed-order ST-10 as its green control). No batch row
 > is parked.
-> **Status**: Planning Complete
+> **Status**: Complete (2026-10-15 — the six phases and the close-out; `make check` and `make verify` all legs passed)
 > **Created**: 2026-10-13 20:40
 > **Implements**: DEF-257, DEF-258, DEF-259, DEF-260, DEF-261, DEF-262, DEF-264, DEF-265, DEF-266,
 > DEF-267, DEF-268, DEF-269, DEF-270, DEF-271, DEF-272, DEF-273, DEF-274, DEF-275, DEF-276, DEF-277,
