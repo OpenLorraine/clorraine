@@ -179,3 +179,5 @@ and reviewed by the phase's lenses.
 - The six parked rows' rulings (AR-2) are still due; they stay out of this batch.
 - `DEF-286`'s stop condition (AR-6) may return a parked row with fresh evidence.
 - `DEF-294`'s final classification (AR-10) is recorded in the findings ledger either way.
+
+**AR-16 (runtime):** The phase-1 red phase re-derives three filed reds: `DEF-285`'s mutation reports already fire at the head (the landable reds are the owner stranding and the accepted fresh-backed loop store), `DEF-287`'s direct `stringOf` spelling is already clean (the member-projection spelling is the red), and `DEF-286`'s non-nullable `borrow slot: str` chain is a dead write, not a use-after-free (the nullable `str?` spelling is the red). The cases pin the observed reds; the fix directions are unchanged.

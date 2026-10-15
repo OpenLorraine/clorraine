@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 0/33 tasks (0%) — Planning
+> **Progress**: 2/33 tasks (6%) — Executing Phase 1
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -63,9 +63,8 @@ ST-1..ST-7 · AR-3, AR-5, AR-6
 the cross-frame out-slot rule (stop-gated), the module-global fresh init, the container-escape
 element loans, the stale literal-carrier loan, and the all-null composite store.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (dupresidual, runtimestore, crossframe, modulefresh, containerescape, staleloan, allnull)
-- [ ] 1.1.2 Run the suite and record the red phase (the probe-verified reds re-measured; the
-      landed-twin controls green first — AR-3)
+- [x] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (dupresidual, runtimestore, crossframe, modulefresh, containerescape, staleloan, allnull) ✅ (completed: 2026-10-15 21:05; seven tests appended (+867 lines, additions only; 88 → 95 tests) — the residual-owning duplicable projection read twins (in loops, 12 B per read), the runtime-index element store with the constant-index parity controls, the cross-frame out-slot pass-through (the param/same-frame controls; the non-nullable `borrow slot: str` chain is a dead write and excluded), the module-global fresh-owner retention (the direct `stringOf` spelling is already clean; the member-projection spelling is the red), the container escapes (element/alias/global) against the single-view twin, the stale carrier loans against the live-loan control, and the all-null composite with its mix controls; every accepted program folds a read-back into its exit code per the preflight)
+- [x] 1.1.2 Run the suite and record the red phase (the probe-verified reds re-measured; the landed-twin controls green first — AR-3) ✅ (completed: 2026-10-15 21:05; plain 90 passed / 5 failed and ASan 88 passed / 7 failed — the seven new tests are the failures (ST-1/ST-4 are leak-only plain greens); the reds re-derived at the head: the duplicable-projection reads leak 66–96 B, the runtime-index fresh store leaks 11 B and the loop spelling 33 B with no `E10030` (its mutation reports already fire — green controls), the cross-frame spellings are accepted with heap-use-after-free (local/temp/str-twin/array), the module member spelling leaks 11 B, the container escapes are accepted with use-after-free (element/alias 143/219) or leak (global `E10033` missing), the stale carrier loans falsely report `E10031`, and the all-null stores falsely report `E10030`/`E10033`; parent-verified)
 
 ### Step 1.2: Implementation
 

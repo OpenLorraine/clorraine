@@ -6011,3 +6011,870 @@ func main(): i32 {
     assert_no_asan("updatecontrols", &output);
     assert_exit("updatecontrols", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// dupresidual: a duplicable projection over a residual-owning fresh root.
+//
+// `c ? a.n : mkBox().n` copies the duplicable `n` member, so the carrying
+// gates treat the result as a plain value and never bind the fresh `mkBox()`
+// root for the release of its un-moved sibling field: each fresh evaluation
+// leaks that field. The take and return positions and the element-read twins
+// `(c ? mk() : b).ys[i]` and `mk().ys[i]` carry the same rule. The fresh root
+// must bind for its residual release while the selected value stays a copy;
+// the place-arm selection and the concrete `String`-member twin already bind
+// their roots and are the controls.
+// ---------------------------------------------------------------------------
+
+/// A duplicable projection's fresh root releases its residual storage.
+///
+/// `holdNum(c ? a.n : mkBox(7).n)` and the return twin copy the selected
+/// `i32`; the fresh arm's root still owns its `String` field, which must
+/// release once per evaluation. The read positions `(c ? mk() : b).ys[i]`
+/// and `mk().ys[i]` copy an element the same way. Every selection is read
+/// back through the exit code (the place arm contributes 3, the fresh arm 7,
+/// and the element values 1..4 and 9..12), so a dropped or misread value
+/// fails the run. The place-arm selection and the concrete `String`-member
+/// twin bind their roots and stay clean.
+#[test]
+fn should_release_the_residual_root_of_a_duplicable_projection() {
+    let place_control = r#"module spec.cpr.dupresidualplace;
+
+import { String, stringOf } from std.text;
+
+struct Box { n: i32; v: String; }
+
+func mkBox(k: i32): Box { return Box { n: k, v: stringOf("ab") }; }
+func holdNum(take n: i32): i32 { return n; }
+
+func use(c: bool, take a: Box): i32 {
+    return holdNum(c ? a.n : mkBox(7).n);
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let a: Box = Box { n: 3, v: stringOf("xx") };
+        n = n + use(true, a);
+        i = i + 1;
+    }
+    return n - 9;
+}
+"#;
+    let output = run_memory("dupresidualplace", place_control);
+    assert_no_asan("dupresidualplace", &output);
+    assert_exit("dupresidualplace", &output, 0);
+
+    let member_control = r#"module spec.cpr.dupresidualmember;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("abc"), w: stringOf("cd") }; }
+func holdStr(take s: String): i32 { return i32(len(s)); }
+
+func takePos(c: bool, take a: Box): i32 {
+    return holdStr(c ? a.v : mkBox().v);
+}
+
+func retPos(c: bool, take a: Box): i32 {
+    return i32(len(c ? a.v : mkBox().v));
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let a1: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+        n = n + takePos(true, a1);
+        let a2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+        n = n + takePos(false, a2);
+        let a3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+        n = n + retPos(true, a3);
+        let a4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+        n = n + retPos(false, a4);
+        i = i + 1;
+    }
+    return n - 30;
+}
+"#;
+    let output = run_memory("dupresidualmember", member_control);
+    assert_no_asan("dupresidualmember", &output);
+    assert_exit("dupresidualmember", &output, 0);
+
+    let take_and_return = r#"module spec.cpr.dupresidual;
+
+import { String, stringOf } from std.text;
+
+struct Box { n: i32; v: String; }
+
+func mkBox(k: i32): Box { return Box { n: k, v: stringOf("ab") }; }
+func holdNum(take n: i32): i32 { return n; }
+
+func takePos(c: bool, take a: Box): i32 {
+    return holdNum(c ? a.n : mkBox(7).n);
+}
+
+func retPos(c: bool, take a: Box): i32 {
+    return (c ? a.n : mkBox(7).n);
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let a1: Box = Box { n: 3, v: stringOf("xx") };
+        n = n + takePos(true, a1);
+        let a2: Box = Box { n: 3, v: stringOf("xx") };
+        n = n + takePos(false, a2);
+        let a3: Box = Box { n: 3, v: stringOf("xx") };
+        n = n + retPos(true, a3);
+        let a4: Box = Box { n: 3, v: stringOf("xx") };
+        n = n + retPos(false, a4);
+        i = i + 1;
+    }
+    return n - 60;
+}
+"#;
+    let output = run_memory("dupresidual", take_and_return);
+    assert_no_asan("dupresidual", &output);
+    assert_exit("dupresidual", &output, 0);
+
+    let reads = r#"module spec.cpr.dupresidualread;
+
+import { String, stringOf } from std.text;
+
+struct Box { tag: String; ys: u8[4]; }
+
+func mk(): Box { return Box { tag: stringOf("one"), ys: [1, 2, 3, 4] }; }
+
+func readCond(c: bool, b: Box): i32 {
+    let s: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        s = s + i32((c ? mk() : b).ys[i]);
+        i = i + 1;
+    }
+    return s;
+}
+
+func readDirect(): i32 {
+    let s: i32 = 0;
+    let i: i32 = 0;
+    while (i < 4) {
+        s = s + i32(mk().ys[i]);
+        i = i + 1;
+    }
+    return s;
+}
+
+func main(): i32 {
+    let b: Box = Box { tag: stringOf("p"), ys: [9, 10, 11, 12] };
+    let r: i32 = readCond(true, b);
+    let b2: Box = Box { tag: stringOf("p"), ys: [9, 10, 11, 12] };
+    r = r + readCond(false, b2);
+    r = r + readDirect();
+    return r - 62;
+}
+"#;
+    let output = run_memory("dupresidualread", reads);
+    assert_no_asan("dupresidualread", &output);
+    assert_exit("dupresidualread", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// runtimestore: a runtime-index element store of a view.
+//
+// `xs[j] = b.v;` must copy the view and keep the backing's ownership where it
+// is, exactly as the constant index does: the owner releases once at its own
+// scope and the element loan is recorded, so a later write to the backing
+// reports like the constant-index twin while the array still reads `b`'s
+// bytes. The re-executed `while { xs[j] = mk().v; }` must reject like the
+// constant-index loop store, because the fresh call result dies before the
+// caller reads the element.
+// ---------------------------------------------------------------------------
+
+/// A runtime-index element store releases its owner and records its loan.
+///
+/// `xs[k] = b.v;` copies the view of the local `b`'s member into the element
+/// slot: `b` keeps owning the storage and releases it once at the frame's
+/// end, and the read of `xs[k]` returns the stored byte. A later write to
+/// `b.v` reports the shared-borrow error once, exactly as the constant-index
+/// spelling `xs[1] = b.v;` does. The re-executed `while { xs[k] = mk().v; }`
+/// rejects with one `E10030`, the constant-index loop twin's judgment, and
+/// emits no translation unit.
+#[test]
+fn should_release_and_loan_a_runtime_index_view_element_store() {
+    let constant = r#"module spec.cpr.runtimestoreconst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = b.v;
+    return i32(xs[1][0]) - 120;
+}
+
+func main(): i32 { return pick(); }
+"#;
+    let output = run_memory("runtimestoreconst", constant);
+    assert_no_asan("runtimestoreconst", &output);
+    assert_exit("runtimestoreconst", &output, 0);
+
+    let mutation = r#"module spec.cpr.runtimemut;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(k: i32): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = b.v;
+    b.v = stringOf("qq");
+    return i32(xs[k][0]) - 120;
+}
+
+func main(): i32 { return pick(1); }
+"#;
+    compile_rejects("runtimemut", mutation, "E10031", 1);
+
+    let constant_mutation = r#"module spec.cpr.runtimemutconst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = b.v;
+    b.v = stringOf("qq");
+    return i32(xs[1][0]) - 120;
+}
+
+func main(): i32 { return pick(); }
+"#;
+    compile_rejects("runtimemutconst", constant_mutation, "E10031", 1);
+
+    let store = r#"module spec.cpr.runtimestore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(k: i32): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = b.v;
+    return i32(xs[k][0]) - 120;
+}
+
+func main(): i32 { return pick(1); }
+"#;
+    let output = run_memory("runtimestore", store);
+    assert_no_asan("runtimestore", &output);
+    assert_exit("runtimestore", &output, 0);
+
+    let loop_store = r#"module spec.cpr.runtimestoreloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+func run(k: i32): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let i: i32 = 0;
+    while (i < 3) {
+        xs[k] = mk().v;
+        i = i + 1;
+    }
+    return i32(xs[k][0]);
+}
+
+func main(): i32 { return run(1) - 120; }
+"#;
+    compile_rejects("runtimestoreloop", loop_store, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// crossframe: an out-slot pass-through across an intermediate frame.
+//
+// `outer(borrow slot: str?) { let b = ...; fill(b.v, borrow slot); }` lets the
+// callee store a view of `outer`'s frame local into a slot in `outer`'s
+// caller's frame. The callee cannot see the frame relation, so the judgment
+// belongs at the call site: a view argument whose backing is a frame local of
+// the caller, passed to a lend parameter that may write a further-out
+// out-slot, rejects like its direct twin with one `E10030`. The fresh
+// argument, the `str`-valued argument, and the array-literal spellings carry
+// the same judgment. The parameter-backed chain and the same-frame call keep
+// their acceptance.
+// ---------------------------------------------------------------------------
+
+/// A cross-frame out-slot pass-through rejects like its direct twin.
+///
+/// `outer`'s local `b` dies with its frame while the caller's slot still
+/// reads the view, so `fill(b.v, borrow slot)` reports exactly one `E10030`
+/// and emits no translation unit; the fresh-argument spelling inside `outer`
+/// and the `middle` chain (`fill(borrow out2, mk().v)`) report the same one
+/// error, and the array literal `slot = [p, q]` filled with fresh members
+/// across frames reports it once as well. The parameter-backed chain
+/// (`outer(p: Box, borrow slot) { fill(p.v, borrow slot); }`) keeps its
+/// backing in the caller's frame and the same-frame call keeps the slot in
+/// the backing's frame: both are accepted, exit 0, and are memory-clean.
+#[test]
+fn should_reject_a_cross_frame_out_slot_pass_through() {
+    let parameter = r#"module spec.cpr.crossframeparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void { fill(p.v, borrow slot); }
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("crossframeparam", parameter);
+    assert_no_asan("crossframeparam", &output);
+    assert_exit("crossframeparam", &output, 0);
+
+    let same_frame = r#"module spec.cpr.crossframesame;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func demo(): i32 {
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    let out: str? = null;
+    fill(b.v, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+
+func main(): i32 { return demo(); }
+"#;
+    let output = run_memory("crossframesame", same_frame);
+    assert_no_asan("crossframesame", &output);
+    assert_exit("crossframesame", &output, 0);
+
+    let local = r#"module spec.cpr.crossframelocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    fill(b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("crossframelocal", local, "E10030", 1);
+
+    let fresh = r#"module spec.cpr.crossframetemp;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void { fill(mk().v, borrow slot); }
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("crossframetemp", fresh, "E10030", 1);
+
+    let str_twin = r#"module spec.cpr.crossframestrtwin;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+func fill(borrow slot: str?, p: str): void { slot = p; }
+
+func middle(borrow out2: str?): void { fill(borrow out2, mk().v); }
+
+func main(): i32 {
+    let out: str? = null;
+    middle(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("crossframestrtwin", str_twin, "E10030", 1);
+
+    let array = r#"module spec.cpr.crossframearray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zw") }; }
+
+func fill(p: str, q: str, borrow slot: str[2]): void { slot = [p, q]; }
+
+func middle(borrow out2: str[2]): void { fill(mk().v, mk().w, borrow out2); }
+
+func run(): i32 {
+    let out: str[2] = ["AA", "BB"];
+    middle(borrow out);
+    return i32(out[0][0]) - 120;
+}
+
+func main(): i32 { return run(); }
+"#;
+    compile_rejects("crossframearray", array, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// modulefresh: a module view binding over a fresh owner.
+//
+// A module binding initialized from a fresh call holds a view of storage that
+// nothing releases: `let g: str = mk().v;` leaks the call result's residual
+// field at every program start. The view destination must retain the fresh
+// owner for the module's storage, like the direct `stringOf` destination that
+// is already clean, so the post-init read-back stays valid and the run is
+// memory-clean. The static binding stays accepted as the control.
+// ---------------------------------------------------------------------------
+
+/// A module view destination retains the fresh owner of its binding.
+///
+/// `let g: str = mk().v;` stores a view of the call result's member; the
+/// result's remaining field must release at the module's initialization while
+/// the member stays owned for the module's lifetime, so `g` keeps reading
+/// `xy` after the initializers run. `let g: str = stringOf("xy");` is the
+/// direct destination that already retains its fresh owner, and the static
+/// binding `let g: str = s;` is the control. Each read-back folds the stored
+/// byte into the exit code, and each run is memory-clean.
+#[test]
+fn should_retain_the_fresh_owner_of_a_module_view_binding() {
+    let direct = r#"module spec.cpr.modulefresh;
+
+import { String, stringOf } from std.text;
+
+let g: str = stringOf("xy");
+
+func main(): i32 {
+    return i32(g[0]) - 120;
+}
+"#;
+    let output = run_memory("modulefresh", direct);
+    assert_no_asan("modulefresh", &output);
+    assert_exit("modulefresh", &output, 0);
+
+    let control = r#"module spec.cpr.modulestatic;
+
+let s: str = "st";
+let g: str = s;
+
+func main(): i32 {
+    return i32(g[0]) + i32(s[1]) - 231;
+}
+"#;
+    let output = run_memory("modulestatic", control);
+    assert_no_asan("modulestatic", &output);
+    assert_exit("modulestatic", &output, 0);
+
+    let member = r#"module spec.cpr.modulefreshmember;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+let g: str = mk().v;
+
+func main(): i32 {
+    return i32(g[0]) - 120;
+}
+"#;
+    let output = run_memory("modulefreshmember", member);
+    assert_no_asan("modulefreshmember", &output);
+    assert_exit("modulefreshmember", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// containerescape: a view-carrying container escapes with a frame-backed
+// element loan.
+//
+// `xs[1] = b.v; return xs;` hands the caller an array whose element views the
+// frame local `b`; the return must consult the binding's element loans and
+// report the local-owner escape once, exactly as the single-view twin
+// `let s: str = b.v; return s;` reports `E10035`. The alias-written spelling
+// (`for (borrow e in xs) { e = b.v; }`) takes the same judgment, and the
+// global destination reports its `E10033`. The parameter-backed return and
+// the single-view twin stay as the controls: the parameter's storage is the
+// caller's frame, so the returned array stays readable.
+// ---------------------------------------------------------------------------
+
+/// A container escape with a frame-backed element loan rejects per
+/// destination.
+///
+/// `xs[1] = b.v; return xs;` returns a view of the local `b`, which dies with
+/// the frame while the caller reads the element; the return reports exactly
+/// one `E10035` and emits no translation unit. The alias spelling
+/// `for (borrow e in xs) { e = b.v; } return xs;` reports the same one error,
+/// and the global store `xs[1] = b.v; g = xs;` reports exactly one `E10033`.
+/// The single-view twin `let s: str = b.v; return s;` keeps its one `E10035`,
+/// and `xs[1] = p; return xs;` with a `str` parameter keeps its acceptance
+/// and stays memory-clean.
+#[test]
+fn should_reject_a_container_escape_with_frame_backed_element_loans() {
+    let view_twin = r#"module spec.cpr.viewreturntwin;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): str {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let s: str = b.v;
+    return s;
+}
+
+func main(): i32 { return i32(run()[0]) - 120; }
+"#;
+    compile_rejects("viewreturntwin", view_twin, "E10035", 1);
+
+    let parameter_twin = r#"module spec.cpr.returnparam;
+
+import { String, stringOf } from std.text;
+
+func run(p: str): str[2] {
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = p;
+    return xs;
+}
+
+func main(): i32 {
+    let s: String = stringOf("xy");
+    return i32(run(s)[1][0]) - 120;
+}
+"#;
+    let output = run_memory("returnparam", parameter_twin);
+    assert_no_asan("returnparam", &output);
+    assert_exit("returnparam", &output, 0);
+
+    let element_return = r#"module spec.cpr.returningelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): str[2] {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    xs[1] = b.v;
+    return xs;
+}
+
+func main(): i32 { return i32(run()[1][0]) - 120; }
+"#;
+    compile_rejects("returningelem", element_return, "E10035", 1);
+
+    let alias_return = r#"module spec.cpr.returningalias;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): str[2] {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    for (borrow e in xs) {
+        e = b.v;
+    }
+    return xs;
+}
+
+func main(): i32 { return i32(run()[0][0]) - 120; }
+"#;
+    compile_rejects("returningalias", alias_return, "E10035", 1);
+
+    let global_store = r#"module spec.cpr.globalelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let g: str[2] = ["AA", "BB"];
+
+func store(): void {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    xs[1] = b.v;
+    g = xs;
+}
+
+func main(): i32 { store(); return i32(g[1][0]) - 120; }
+"#;
+    compile_rejects("globalelem", global_store, "E10033", 1);
+}
+
+// ---------------------------------------------------------------------------
+// staleloan: an overwritten literal carrier drops its stale loan.
+//
+// `let h = Holder { names: [b.v] }; h.names = ["AA"];` replaces the stored
+// view, so the carrier's loan on `b` has no live view to protect and must
+// drop; the write `b.v = ...` then compiles and the run reads the replaced
+// element. The whole-carrier reassignment drops the loans the same way. The
+// element twin `xs[1] = b.v; xs[1] = "zz";` already replaces its loan
+// cleanly, while a still-live view keeps its loan and the write reports one
+// `E10031`.
+// ---------------------------------------------------------------------------
+
+/// An overwritten literal carrier drops its stale loans, a live view keeps
+/// its own.
+///
+/// `h.names = ["AA"]` and the whole reassignment `h = Holder { names: ["AA"] }`
+/// both replace the view that read `b.v`, so the following `b.v = ...` is
+/// accepted and the run reads the replaced `AA` element; the same rule
+/// already holds for the element twin `xs[1] = b.v; xs[1] = "zz";`. When no
+/// overwrite replaces the view, the loan is live: the write reports exactly
+/// one `E10031` and no translation unit is emitted.
+#[test]
+fn should_drop_the_stale_loans_of_an_overwritten_literal_carrier() {
+    let element_twin = r#"module spec.cpr.elementtwin;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = b.v;
+    xs[1] = "zz";
+    b.v = stringOf("qq");
+    return i32(xs[1][0]) - 122;
+}
+
+func main(): i32 { return pick(); }
+"#;
+    let output = run_memory("elementtwin", element_twin);
+    assert_no_asan("elementtwin", &output);
+    assert_exit("elementtwin", &output, 0);
+
+    let live_loan = r#"module spec.cpr.liveloan;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    b.v = stringOf("qq");
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 { return pick(); }
+"#;
+    compile_rejects("liveloan", live_loan, "E10031", 1);
+
+    let field_overwrite = r#"module spec.cpr.stalefield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    h.names = ["AA"];
+    b.v = stringOf("qq");
+    return i32(h.names[0][0]) - 65;
+}
+
+func main(): i32 { return pick(); }
+"#;
+    let output = run_memory("stalefield", field_overwrite);
+    assert_no_asan("stalefield", &output);
+    assert_exit("stalefield", &output, 0);
+
+    let whole_reassignment = r#"module spec.cpr.stalewhole;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    h = Holder { names: ["AA"] };
+    b.v = stringOf("qq");
+    return i32(h.names[0][0]) - 65;
+}
+
+func main(): i32 { return pick(); }
+"#;
+    let output = run_memory("stalewhole", whole_reassignment);
+    assert_no_asan("stalewhole", &output);
+    assert_exit("stalewhole", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// allnull: an all-null composite store into a view destination.
+//
+// `slot = c ? null : null;` composes two null arms, so the value names no
+// storage and cannot escape: the store is accepted and the emitted view stays
+// null, exactly like the scalar `slot = null;` case. The global twin
+// `g = c ? null : null;` is accepted for the same reason. The null-arm mixes
+// keep their judgments: an arm that names a local backing still reports
+// `E10030`, while a parameter-backed arm stays accepted.
+// ---------------------------------------------------------------------------
+
+/// An all-null composite store is accepted like the scalar null store.
+///
+/// `slot = c ? null : null;` into a `borrow str?` out-slot names no storage,
+/// so nothing escapes and the caller's `null` view is preserved; the global
+/// twin takes the same judgment. The controls keep their pinned behavior:
+/// `slot = null;` is accepted, the mix `slot = c ? b.v : null;` with a
+/// frame-local arm reports exactly one `E10030`, and the mix
+/// `slot = c ? p.v : null;` with a parameter-backed arm is accepted and reads
+/// the written view.
+#[test]
+fn should_accept_an_all_null_composite_view_store() {
+    let single_null = r#"module spec.cpr.singlenull;
+
+func fill(borrow slot: str?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    if (out == null) {
+        return 0;
+    }
+    return 9;
+}
+"#;
+    let output = run_memory("singlenull", single_null);
+    assert_no_asan("singlenull", &output);
+    assert_exit("singlenull", &output, 0);
+
+    let parameter_mix = r#"module spec.cpr.nullmixparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(c: bool, p: Box, borrow slot: str?): void {
+    slot = c ? p.v : null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    fill(true, b, borrow out);
+    if (out == null) {
+        return 9;
+    }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("nullmixparam", parameter_mix);
+    assert_no_asan("nullmixparam", &output);
+    assert_exit("nullmixparam", &output, 0);
+
+    let local_mix = r#"module spec.cpr.nullmixlocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(c: bool, borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    slot = c ? b.v : null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(false, borrow out);
+    if (out == null) {
+        return 0;
+    }
+    return 9;
+}
+"#;
+    compile_rejects("nullmixlocal", local_mix, "E10030", 1);
+
+    let slot = r#"module spec.cpr.allnullslot;
+
+func fill(c: bool, borrow slot: str?): void {
+    slot = c ? null : null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(true, borrow out);
+    if (out == null) {
+        return 0;
+    }
+    return 9;
+}
+"#;
+    let output = run_memory("allnullslot", slot);
+    assert_no_asan("allnullslot", &output);
+    assert_exit("allnullslot", &output, 0);
+
+    let global = r#"module spec.cpr.allnullglobal;
+
+let g: str? = null;
+
+func store(c: bool): void {
+    g = c ? null : null;
+}
+
+func main(): i32 {
+    store(true);
+    if (g == null) {
+        return 0;
+    }
+    return 9;
+}
+"#;
+    let output = run_memory("allnullglobal", global);
+    assert_no_asan("allnullglobal", &output);
+    assert_exit("allnullglobal", &output, 0);
+}
