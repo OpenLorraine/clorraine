@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 6/33 tasks (18%) — Phase 1 complete
+> **Progress**: 8/33 tasks (24%) — Executing Phase 2
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -105,8 +105,8 @@ ST-8..ST-11
 **Objective**: Pin the deferred call-wrapped element root, the conditional carrier literal's
 taken arm, the discarded residual-owning root, and the bare discarded literal.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (guardcallroot, carrierliteral, discardresidual, barediscard)
-- [ ] 2.1.2 Run the suite and record the red phase
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (guardcallroot, carrierliteral, discardresidual, barediscard) ✅ (completed: 2026-10-16 01:55; four tests appended (+382 lines, additions only; 107 → 111 tests) — the guarded call-wrapped element root with the call-count folded into the exit code and the direct unguarded control, the conditional carrier literal with the loop-condition and guarded-literal controls, the discarded non-owning arm with the residual sibling field against the sole-field and owned-type controls, and the bare discarded literal with the conditional-discard control; two shape adjustments recorded: the ST-11 place-leaf spelling is `DEF-253` territory (the conditional spelling serves as the control) and the ST-9 loop-condition literal spelling is phase-3 emission territory (the guarded spelling serves as the control))
+- [x] 2.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-16 01:55; plain 109 passed / 2 failed and ASan 107 passed / 4 failed — exactly the four new tests (the two leak-only reds are plain greens); the reds: the guarded call runs on the skipped path (exit 30) and leaks 66 B/6, the taken carrier arm leaks 22 B/2, the discarded residual leaks 11 B/1, and the bare discard fails the strict build (`expected ';'`, `(void)({ __cl_tmp1 });`); the five controls green; parent-verified)
 
 ### Step 2.2: Implementation
 

@@ -7750,3 +7750,385 @@ func main(): i32 {
     assert_no_asan("xfecondplaces", &output);
     assert_exit("xfecondplaces", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// guardcallroot: a guarded call whose view element wraps a fresh root.
+//
+// `g ? use(Holder { names: [id(mk().v)] }) : 0` must evaluate the call only
+// where the guard holds. The element argument reads a member of the fresh
+// `mk()` result while that root still owns its sibling field, so the taken
+// path must bind the root for the residual's release and the skipped path
+// must run nothing. The direct, unguarded element position already binds its
+// root per evaluation and is the control.
+// ---------------------------------------------------------------------------
+
+/// A guarded call's fresh element root releases on the taken path only.
+///
+/// `use(Holder { names: [id(mk().v)] })` runs once per taken evaluation: the
+/// call-wrapped element's fresh root binds for the release of its remaining
+/// field, and the skipped path runs nothing. The `calls` counter and the
+/// call's lengths are folded into the exit code (three taken evaluations
+/// each contribute a length of 2 and one call; the skipped run adds none),
+/// so a call running on the skipped path or a dropped value fails the run.
+/// The direct element position stays accepted and memory-clean.
+#[test]
+fn should_release_a_guarded_call_wrapped_element_root_on_the_taken_path() {
+    let guarded = r#"module spec.cpr.guardcallroot;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func id(x: str): str { return x; }
+
+func use(h: Holder): i32 { return i32(len(h.names[0])); }
+
+func run(g: bool, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k) {
+        n = n + (g ? use(Holder { names: [id(mk().v)] }) : 0);
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32 = run(true, 3);
+    let taken_calls: i32 = calls;
+    let b: i32 = run(false, 3);
+    let all_calls: i32 = calls;
+    return a + b + (taken_calls - 3) * 10 + (all_calls - 3) * 10 - 6;
+}
+"#;
+    let output = run_memory("guardcallroot", guarded);
+    assert_no_asan("guardcallroot", &output);
+    assert_exit("guardcallroot", &output, 0);
+
+    let direct = r#"module spec.cpr.guardcalldirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func id(x: str): str { return x; }
+
+func use(h: Holder): i32 { return i32(len(h.names[0])); }
+
+func run(k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k) {
+        n = n + use(Holder { names: [id(mk().v)] });
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32 = run(3);
+    let c: i32 = calls;
+    return a + (c - 3) - 6;
+}
+"#;
+    let output = run_memory("guardcalldirect", direct);
+    assert_no_asan("guardcalldirect", &output);
+    assert_exit("guardcalldirect", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// carrierliteral: a conditional carrier literal's taken arm.
+//
+// `let h: Holder = g ? Holder { names: [mk().v] } : Holder { names: ["zz"] };`
+// carries a view of a fresh `mk()` member on the taken arm. The root still
+// owns its sibling field, so the local's frame must bind the root for the
+// release while the carried view stays valid; the skipped literal arm names
+// no fresh storage. The loop-condition and guarded-literal positions of the
+// same fresh element already bind their roots per evaluation and are the
+// controls.
+// ---------------------------------------------------------------------------
+
+/// The taken arm of a conditional carrier literal binds its fresh element
+/// root.
+///
+/// `g` selects which element the local reads: the taken arm carries a view
+/// of `mk()`'s member, whose root's remaining field releases once for the
+/// local's frame, while the skipped arm keeps its own literal. Each
+/// selection reads its first byte back (`a` on the taken path, `z` on the
+/// skipped), so a wrong arm or a dropped value fails the run. The
+/// loop-condition and guarded-literal spellings keep their acceptance,
+/// release their roots per evaluation, and stay memory-clean.
+#[test]
+fn should_release_the_taken_arm_root_of_a_conditional_carrier_literal() {
+    let carrier = r#"module spec.cpr.carrierliteral;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func run(g: bool, want: i32): i32 {
+    let h: Holder = g ? Holder { names: [mk().v] } : Holder { names: ["zz"] };
+    return i32(h.names[0][0]) - want;
+}
+
+func main(): i32 {
+    return run(true, 97) + run(false, 122);
+}
+"#;
+    let output = run_memory("carrierliteral", carrier);
+    assert_no_asan("carrierliteral", &output);
+    assert_exit("carrierliteral", &output, 0);
+
+    let loop_control = r#"module spec.cpr.carrierloopcond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(len(h.names[0])); }
+
+func run(c: bool, k: i32): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < k && (c ? use(Holder { names: [mk().v] }) : 0) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32 = run(true, 3);
+    let taken_calls: i32 = calls;
+    let b: i32 = run(false, 3);
+    let all_calls: i32 = calls;
+    return a + b + (taken_calls - 3) * 10 + (all_calls - 3) * 10 - 3;
+}
+"#;
+    let output = run_memory("carrierloopcond", loop_control);
+    assert_no_asan("carrierloopcond", &output);
+    assert_exit("carrierloopcond", &output, 0);
+
+    let guard_control = r#"module spec.cpr.carrierguardlit;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func use(h: Holder): i32 { return i32(len(h.names[0])); }
+
+func run(g: bool): i32 {
+    if (g && use(Holder { names: [mk().v] }) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32 = run(true);
+    let taken_calls: i32 = calls;
+    let b: i32 = run(false);
+    let all_calls: i32 = calls;
+    return a + b + (taken_calls - 1) * 10 + (all_calls - 1) * 10 - 1;
+}
+"#;
+    let output = run_memory("carrierguardlit", guard_control);
+    assert_no_asan("carrierguardlit", &output);
+    assert_exit("carrierguardlit", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// discardresidual: a discarded non-owning arm over a residual-owning root.
+//
+// `c ? i32(mk().v.len()) : t;` selects an `i32` that owns nothing, so the
+// discard gate never binds the fresh `mk()` root even though the root still
+// owns its sibling field: each taken evaluation leaks that field. The arm's
+// release need is judged by the root's residual ownership, not by the
+// selected type. A sole-field root needs no release and stays clean, and the
+// discarded conditional with an owned selected type already releases its
+// root, so both are the controls.
+// ---------------------------------------------------------------------------
+
+/// A discarded arm releases the residual of a non-owning root.
+///
+/// `c ? i32(mk().v.len()) : t;` reads the fresh member's length and discards
+/// the value; the fresh root's remaining `w` field releases when the
+/// statement ends, while the place arm keeps `t` readable (the read-back
+/// subtracts 5). The sole-field twin needs no release, and the discarded
+/// conditional selecting an owned `Box` binds its root and frees it once;
+/// both controls stay clean and readable.
+#[test]
+fn should_release_the_residual_of_a_discarded_non_owning_arm() {
+    let residual = r#"module spec.cpr.discardresidual;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool, t: i32): i32 {
+    c ? i32(mk().v.len()) : t;
+    return t - 5;
+}
+
+func main(): i32 {
+    return use(true, 5) + use(false, 5);
+}
+"#;
+    let output = run_memory("discardresidual", residual);
+    assert_no_asan("discardresidual", &output);
+    assert_exit("discardresidual", &output, 0);
+
+    let sole_control = r#"module spec.cpr.discardsole;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mk(): Box { return Box { v: stringOf("ab") }; }
+
+func use(c: bool, t: i32): i32 {
+    c ? i32(mk().v.len()) : t;
+    return t - 5;
+}
+
+func main(): i32 {
+    return use(true, 5) + use(false, 5);
+}
+"#;
+    let output = run_memory("discardsole", sole_control);
+    assert_no_asan("discardsole", &output);
+    assert_exit("discardsole", &output, 0);
+
+    let owned_control = r#"module spec.cpr.discardowned;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool, b: Box): i32 {
+    c ? mk() : b;
+    return i32(len(b.v)) - 2;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    return use(true, b) + use(false, b);
+}
+"#;
+    let output = run_memory("discardowned", owned_control);
+    assert_no_asan("discardowned", &output);
+    assert_exit("discardowned", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// barediscard: a bare discarded all-fresh literal statement.
+//
+// `[mk().v];` as a bare statement materializes nothing, so the fresh
+// element's storage and the root's residual never release and the emitted
+// discard is not valid C. The discarded-literal materialization must reach
+// the bare statement spelling: each fresh owning leaf binds to its own
+// released statement temporary on every execution, while a place leaf stays
+// a read. The conditional discard spelling with its place fields already
+// does this and is the control.
+// ---------------------------------------------------------------------------
+
+/// A bare discarded all-fresh literal releases its fresh leaves.
+///
+/// `[mk().v];` and the looped `[mk().w];` drop a literal whose element reads
+/// a fresh root's member; each fresh leaf binds to its own statement
+/// temporary and releases when the statement ends, once per execution, so
+/// the run exits 0 with no memory report. The conditional discard spelling
+/// keeps its per-field materialization: the fresh fields release while the
+/// place fields `t` and `u` stay readable and stay reads.
+#[test]
+fn should_materialize_a_bare_discarded_literal_statement() {
+    let bare = r#"module spec.cpr.barediscard;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("hello"), w: stringOf("world") }; }
+
+func use(): i32 {
+    [mk().v];
+    return 0;
+}
+
+func looped(k: i32): i32 {
+    let i: i32 = 0;
+    while (i < k) {
+        [mk().w];
+        i = i + 1;
+    }
+    return i - k;
+}
+
+func main(): i32 {
+    return use() + looped(3);
+}
+"#;
+    let output = run_memory("barediscard", bare);
+    assert_no_asan("barediscard", &output);
+    assert_exit("barediscard", &output, 0);
+
+    let conditional_control = r#"module spec.cpr.barediscardcond;
+
+import { String, stringOf } from std.text;
+
+struct Pair { a: String; b: String; }
+
+func literal(ok: bool): i32 {
+    let t: String = stringOf("tt");
+    let u: String = stringOf("uu");
+    ok ? Pair { a: stringOf("x"), b: t } : Pair { a: stringOf("y"), b: u };
+    return i32(len(t)) + i32(len(u)) - 4;
+}
+
+func main(): i32 {
+    return literal(true) + literal(false);
+}
+"#;
+    let output = run_memory("barediscardcond", conditional_control);
+    assert_no_asan("barediscardcond", &output);
+    assert_exit("barediscardcond", &output, 0);
+}
