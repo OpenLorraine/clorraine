@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-15 08:13
-> **Progress**: 10/39 tasks (26%)
+> **Last Updated**: 2026-10-15 08:26
+> **Progress**: 11/39 tasks (28%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -104,7 +104,7 @@ control (ST-10).
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the owner shapes, the element bindings, the report counts and spans) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [x] 2.3.1 Write the phase implementation pins (the owner shapes, the element bindings, the report counts and spans) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 08:26; five pins added (22 tests total, additions only) for the call-wrapped owner walk and its two-arm/chained spellings (one `E10031` each, plus the accepted safe twin's inline shape), the element adoption (`ClBox __cl_owned0` in the argument and field positions), the `str[N]` return (the accepted emission, no false consume), the one-report rule (one `E10030` where withheld, one `E10035` for the controls), and re-emission determinism; each fails at `c148fc5` for the intended reason (recorded in the report); 22/22 green and `make check` exit 0)
 - [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`

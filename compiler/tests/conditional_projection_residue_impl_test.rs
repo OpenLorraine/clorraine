@@ -183,6 +183,52 @@ fn emit_twice(tag: &str, source: &str) -> (String, String) {
     (first, second)
 }
 
+/// Compiles `source` and asserts the front end rejected it with exactly
+/// `count` error reports, each carrying `code`, and wrote no translation unit.
+///
+/// The owner and return judgments reject before code generation, so their pins
+/// run through the front end: the exact count keeps a fix from passing by
+/// adding an unrelated report, and the missing translation unit proves the
+/// rejection happened before emission.
+fn assert_rejected(tag: &str, source: &str, code: &str, count: usize) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = write_source(tag, &scratch, source);
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        count,
+        "{tag}: expected {count} error(s), saw {}; stderr:\n{stderr}",
+        errors.len()
+    );
+    for line in &errors {
+        assert!(
+            line.contains(code),
+            "{tag}: expected the {code} report; saw `{line}`; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 /// A `T`-typed member selected between a `take` pair and a freshly built pair.
 const ARM_DUTY_SOURCE: &str = r#"module spec.cpr.armduty;
 import { String, stringOf } from std.text;
@@ -1180,4 +1226,305 @@ fn should_move_a_nested_literals_field_sources() {
     );
     assert_on_line_of(tag, body, "if ((g && ((", "(__cl_tmp0 = b.w), (b.w = NULL)");
     assert_contains(tag, body, "{ __cl_tmp0, cl_std_text_stringOf(cl_str(\"q\")) }");
+}
+
+// ---------------------------------------------------------------------------
+// The call-wrapped owner walk, the view-element argument and field positions,
+// the `str[1]` return, and the mixed-return one-report rule. A rejected
+// program pins its front-end judgment; an accepted program pins the emitted
+// adoption shape and re-emits byte-identically.
+// ---------------------------------------------------------------------------
+
+/// A call-wrapped conditional view used while both parameter backings live.
+///
+/// The accepted safe twin keeps the call inline over both arms; only a write
+/// to an arm's backing while the view is live reports.
+const WRAP_SAFE_SOURCE: &str = r#"module spec.cpr.wrapsafe;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: u8[] = bytes((c ? b : d).v);
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, true);
+}
+"#;
+
+/// A call-wrapped conditional view whose first arm's backing is written.
+const OWNER_FIRST_SOURCE: &str = r#"module spec.cpr.ownerfirst;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: u8[] = bytes((c ? b : d).v);
+    b.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, true);
+}
+"#;
+
+/// The two-arm spelling `bytes(c ? b.v : d.v)` whose second arm is written.
+const OWNER_TWOARM_SOURCE: &str = r#"module spec.cpr.ownertwoarm;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Box { v: String; w: String; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: u8[] = bytes(c ? b.v : d.v);
+    d.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, false);
+}
+"#;
+
+/// A chained view-returning callee whose second arm's backing is written.
+const OWNER_CHAINED_SOURCE: &str = r#"module spec.cpr.ownerchained;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func peek(x: str): str { return x; }
+
+func f(borrow b: Box, borrow d: Box, c: bool): i32 {
+    let s: str = peek((c ? b : d).v);
+    d.v = stringOf("zz");
+    return i32(s[0]);
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    let d: Box = Box { v: stringOf("ef"), w: stringOf("gh") };
+    return f(b, d, false);
+}
+"#;
+
+/// A view-element array passed as an argument.
+const ELEM_ARG_SOURCE: &str = r#"module spec.cpr.elemarg;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(names: str[1]): i32 { return i32(len(names[0])); }
+
+func main(): i32 {
+    return use([mk().v]) - 2;
+}
+"#;
+
+/// A view-element array stored into a struct-literal field.
+const ELEM_FIELD_SOURCE: &str = r#"module spec.cpr.elemfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func main(): i32 {
+    let h: Holder = Holder { names: [mk().v] };
+    return i32(len(h.names[0])) - 2;
+}
+"#;
+
+/// A `str[1]` return whose element derives from a by-value `String` parameter.
+const ARRAY_RETURN_SOURCE: &str = r#"module spec.cpr.arrayreturn;
+
+import { String, stringOf } from std.text;
+
+func f(s: String): str[1] { return [s]; }
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    let a: str[1] = f(s);
+    return i32(len(a[0])) - 2;
+}
+"#;
+
+/// The same `str[1]` return deriving from a parameter member.
+const ARRAY_RETURN_MEMBER_SOURCE: &str = r#"module spec.cpr.arrayreturnmember;
+
+import { String } from std.text;
+
+struct Box { v: String; }
+
+func f(h: Box): str[1] { return [h.v]; }
+
+func main(): i32 { return 0; }
+"#;
+
+/// A mixed conditional view return over a local and a fresh root.
+const ONE_REPORT_MIXED_SOURCE: &str = r#"module spec.cpr.onereportmixed;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+
+func f(c: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    return (c ? a : mkBox()).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A conditional view return over a local and a parameter.
+const ONE_REPORT_LOCALPARAM_SOURCE: &str = r#"module spec.cpr.onereportlocalparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f(c: bool, a: str): str {
+    let b: Box = Box { v: stringOf("cd") };
+    return (c ? b.v : a);
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A conditional view return over two locals.
+const ONE_REPORT_LOCALONLY_SOURCE: &str = r#"module spec.cpr.onereportlocalonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f(c: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    let b: Box = Box { v: stringOf("ef") };
+    return (c ? a : b).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A write to either arm's backing while a call-wrapped conditional view is
+/// live reports the plain twin's mutation error exactly once.
+///
+/// `bytes(b.v)` reports one `E10031` at the write because the view loans `b`.
+/// The call-wrapped conditional must record every arm's owner, so each of the
+/// three programs reports exactly that one error at its mutation and emits no
+/// translation unit; the accepted safe twin keeps its inline call over both
+/// arms.
+#[test]
+fn should_reject_a_call_wrapped_conditional_view_mutation() {
+    let tag = "wrapsafe";
+    let (_scratch, emitted) = emit_host(tag, WRAP_SAFE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cpr_wrapsafe_f(ClBox *b, ClBox *d, bool c)\n{");
+    assert_contains(tag, body, "s = cl_std_text_bytes((c ? (*b) : (*d)).v);");
+
+    assert_rejected("ownerfirst", OWNER_FIRST_SOURCE, "E10031", 1);
+    assert_rejected("ownertwoarm", OWNER_TWOARM_SOURCE, "E10031", 1);
+    assert_rejected("ownerchained", OWNER_CHAINED_SOURCE, "E10031", 1);
+}
+
+/// A view-element array in an argument or field position adopts its temporary
+/// element's backing in the destination frame.
+///
+/// The fresh `mk()` root binds as one owned local, the element view is built
+/// from that local's member, and the local's fields release at the frame's
+/// end, so no moved-string temporary is left unreleased.
+#[test]
+fn should_adopt_the_backing_of_a_view_element_array_in_argument_and_field_positions() {
+    let tag = "elemarg";
+    let (_scratch, emitted) = emit_host(tag, ELEM_ARG_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cpr_elemarg_main(void)\n{");
+    assert_contains(tag, body, "ClBox __cl_owned0 = {0};");
+    assert_contains(tag, body, "__cl_owned0 = cl_spec_cpr_elemarg_mk();");
+    assert_contains(tag, body, "__cl_owned1[0] = cl_string_view(__cl_owned0.v);");
+    assert_release_after(
+        tag,
+        body,
+        "__cl_owned1[0] = cl_string_view(__cl_owned0.v);",
+        "if (__cl_owned0.w) { FreeString(__cl_owned0.w); }",
+    );
+    assert_absent(tag, body, "ClString __cl_tmp1 = NULL;");
+
+    let tag = "elemfield";
+    let (_scratch, emitted) = emit_host(tag, ELEM_FIELD_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cpr_elemfield_main(void)\n{");
+    assert_contains(tag, body, "ClBox __cl_owned0 = {0};");
+    assert_contains(tag, body, "__cl_owned0 = cl_spec_cpr_elemfield_mk();");
+    assert_contains(tag, body, "h.names[0] = cl_string_view(__cl_owned0.v);");
+    assert_release_after(
+        tag,
+        body,
+        "h.names[0] = cl_string_view(__cl_owned0.v);",
+        "if (__cl_owned0.w) { FreeString(__cl_owned0.w); }",
+    );
+    assert_absent(tag, body, "ClString __cl_tmp1 = NULL;");
+}
+
+/// A `str[1]` return matches its single-view twin: the accepted parameter
+/// spelling returns the view without consuming the source, and the member
+/// spelling reports the twin's single `E10036`.
+#[test]
+fn should_return_a_view_element_array_without_consuming_its_source() {
+    let tag = "arrayreturn";
+    let (_scratch, emitted) = emit_host(tag, ARRAY_RETURN_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cpr_arrayreturn_f(ClString s, ClStr __cl_ret[1])\n{",
+    );
+    assert_contains(tag, body, "__cl_ret[0] = cl_string_view(s);");
+    assert_absent(tag, body, "s = NULL;");
+    assert_absent(tag, body, "FreeString(s)");
+
+    assert_rejected("arrayreturnmember", ARRAY_RETURN_MEMBER_SOURCE, "E10036", 1);
+}
+
+/// A mixed local/generated view return reports exactly one error — the
+/// generated-owner escape — while a local-only backing keeps one local-owner
+/// report.
+#[test]
+fn should_report_the_mixed_view_return_once() {
+    assert_rejected("onereportmixed", ONE_REPORT_MIXED_SOURCE, "E10030", 1);
+    assert_rejected("onereportlocalparam", ONE_REPORT_LOCALPARAM_SOURCE, "E10035", 1);
+    assert_rejected("onereportlocalonly", ONE_REPORT_LOCALONLY_SOURCE, "E10035", 1);
+}
+
+/// The new view-element programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_new_view_element_programs_byte_identically() {
+    let cases: [(&str, &str); 4] = [
+        ("wrapsafe", WRAP_SAFE_SOURCE),
+        ("elemarg", ELEM_ARG_SOURCE),
+        ("elemfield", ELEM_FIELD_SOURCE),
+        ("arrayreturn", ARRAY_RETURN_SOURCE),
+    ];
+    for (tag, source) in cases {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
 }
