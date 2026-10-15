@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 09:52
-> **Progress**: 14/39 tasks (36%)
+> **Progress**: 18/39 tasks (46%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -133,19 +133,19 @@ capture spellings, and the scoped local element acceptance.
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Judge the stored view's provenance per destination kind (globals/fields `E10033`, out-slots `E10030`); lower the field store and the capture; scope the element-store loan to backings whose scope covers the array's — `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`, `compiler/src/codegen/*`
-- [ ] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 3.2.1 Judge the stored view's provenance per destination kind (globals/fields `E10033`, out-slots `E10030`); lower the field store and the capture; scope the element-store loan to backings whose scope covers the array's — `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`, `compiler/src/own/place.rs`, `compiler/src/codegen/*` ✅ (completed: 2026-10-15 10:2x; the per-destination judgment (a new `check_escaping_view_store`: global/field destinations accept static/module-global owners only; caller slots accept static/parameter/global and report `E10030` otherwise), the element-wise judgment for the array spellings, the local element loan record with the per-scope rejection, and the store/capture spellings (the global field's projected type routes the fixed-array element-wise store; the environment literal initializes a fixed-array capture element-wise); deviations: `own.rs` and `codegen/expr.rs` were the actual sites; two in-round regressions were fixed (a `for (borrow e in xs)` alias is frame storage, and `slot = null` is skipped); five accepted programs changed emission (the previously invalid C) and no diagnostics changed beyond the intended ones)
+- [x] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-15 10:2x; residue spec 44/44 plain and under `RDC_ASAN=1`; the batch-H, callable-release, borrow-generic, and impl suites green; `make check` exit 0 with no warnings; the 40-probe corpus shows the intended rejections/acceptances and the five emission deltas)
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the report spans, the store/capture shapes, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
-- [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
+- [x] 3.3.1 Write the phase implementation pins (the report spans, the store/capture shapes, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 11:45; seven pins added (35 tests total, additions only) — the rejection shapes with store-line spans, the element-wise global-field store, the capture initializer, the accepted local element store, and re-emission determinism; red-phase wording corrected per the confirmation: eight of the nine new spec cases and three of the six new pins are red at `acee2cb`, the remainder are proven by single-mechanism mutation trees, and the alias-shape pin is an identity control (its emission is byte-identical base-to-head); 35/35 green and `make check` exit 0)
+- [x] 3.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses ✅ (completed: 2026-10-15 12:0x; four lenses dispatched (correctness, semantics, memory-safety, emission-integrity) plus four targeted confirmations; the review round's one merged class (the over-rejection), the take class, the `for`-alias class, the literal parity, the one-report boundary, the stale marks/loans, and the hygiene items all fixed; the post-confirmation PC-1/SC-1 follow-up accepts the parameter-backed carrier literals (`LiteralViews`); seven rows filed (`DEF-285`..`DEF-291`, `DEF-282` extended); the full record is in `05-findings.md`; the closing verification: the residue spec 55/55 plain and ASan, the impl pins 35/35, the batch-H/callable-release suites green, `make check` exit 0 with no warnings)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-12..ST-15, ST-30..ST-33 red then green
-- [ ] No accepted safe program newly rejected without a frozen-rule citation
+- [x] ST-12..ST-15, ST-30..ST-33 red then green (plus the review-round regression cases)
+- [x] No accepted safe program newly rejected without a frozen-rule citation (the confirmation's over-rejection families were fixed; the remaining rejections carry the frozen-text citations)
 
 ---
 

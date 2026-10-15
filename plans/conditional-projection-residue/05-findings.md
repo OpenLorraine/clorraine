@@ -117,3 +117,50 @@ found E-1 in its hunt (fixed above). The phase's closing verification: the resid
 and under `RDC_ASAN=1`; the impl pins 22/22; the batch-H oracles, `callable_release_integrity`, and
 `make check` (66 suites) green with no warnings; the 236-probe corpus differential shows every
 delta as leak/UAF → rejection or clean, or eager → lazy.
+
+## Phase 3 — Escaping stores
+
+**Reviewed implementation**: the working tree over `acee2cb` (later extended by the review round's fixes and the follow-up below); pins written mid-round. **Lenses**: correctness (P3R), semantics (P3S), memory-safety (F/M/O), emission-integrity, dispatched in parallel.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 blocker (P3R-1 the merged-provenance over-rejection), P3R-2 (take destinations), P3R-3 (extra reports), P3R-4 (dead branches), P3R-5 (dot-receiver asymmetry) | The blast-radius table; test integrity (eight of nine new spec cases and three of six new pins red at `acee2cb`, the rest proven by mutation trees); the corpus differential; `make check` green |
+| semantics | 1 blocker (P3S-1 the take-owned caller slot), P3S-2 (the merged-provenance class), P3S-3 (the `for` alias), P3S-4 (literal parity), P3S-5 (view-mark moves), PE-1..PE-4 | The frozen-text citations (EL-4/OW-14 for module storage; BR-1 for the take rejection); the six confirmations |
+| memory-safety | **CONFIRMED CLEAN — 0 in-diff**; pre-existing F1 (the cross-frame out-slot, = semantics PE-1), F2 (the runtime-index element store, = correctness PX-1), F3 (the `for`-alias UAF, fixed in the round); over-rejections O1/O2 | The exhaustive base/head acceptance diff over 74 probes; every newly accepted shape strict-built and ASan/LSan clean |
+| emission-integrity | **CONFIRMED — 0** (7 intended deltas, no head-only strict failure, no invalid C, determinism holds, both cross-profiles build); its F1 = the over-rejection class | 843-program differential; 408 accepted strict builds; the declaration and dead-instance checks |
+
+### Fix round
+
+| Finding | Severity | Ruling |
+|---------|----------|--------|
+| P3R-1/P3S-2/O1/emission-F1 | 🟠 | **Fixed**: `view_provenance` returns per-component storage atoms (`Composite`, `storage_atoms`; a `null` arm skipped; a `static str` call → `Static`) and the store judgment accepts when every component fits the destination's set, reporting once naming the first failing component |
+| P3S-1/P3R-2 | 🔴/🟡 | **Fixed**: a take-owned view at a real caller slot reports one `E10030` naming the parameter; the caller-slot classification is `OutSlot`/borrow-parameter/env field, so a take parameter is a frame destination |
+| P3S-3/F3 | 🟠 | **Fixed**: the `for (borrow e in xs)` alias resolves its iterable container (`alias_root`, `resolve_alias_container`) for the judgment and the container loans; the alias UAF probes reject |
+| P3S-4 | 🟡 | **Fixed**: the literal-field checks use the per-component destination treatment (parity with the assignment) |
+| P3S-5/O2/P3R-3 | 🟡 | **Fixed**: view stores mark nothing as moved; the element loan is replaced on overwrite while the others keep; an already-rejected write keeps one report |
+| P3R-4/P3R-5 | 🟡 | **Fixed**: the dead branches removed (and `is_loan_value` retired); the qualified-head dot receiver resolves the module binding |
+| Extra | — | **Fixed**: the two-step carrier return records the carrier binding's loans (one `E10030`; the static/param twins accepted) |
+
+### Confirmations
+
+| Lens | Result | Detail |
+|------|--------|--------|
+| correctness | PASS WITH MINORS — 0 blockers | PC-1 (the parameter-backed carrier literals, fixed in the follow-up), PC-2..PC-5 (filed/extended); five confirmations pass; no base-clean program defective |
+| semantics | PASS WITH MINORS — 0 blockers | SC-1 (= PC-1), SC-2 (filed as `DEF-288`), SC-3 (a sound consequence); the six confirmations pass |
+| memory-safety | CONFIRMED CLEAN — 0 in-diff | The alias class closed; F1/F2 unchanged and filed |
+| emission-integrity | FINDINGS — 1 | The re-accepted cross-frame spelling resolves to `DEF-286` (base == head, byte-identical C); no other emission work |
+
+### Post-confirmation fix (PC-1/SC-1)
+
+A `LiteralViews { Frame, Return, Escaping }` destination treatment: a non-`take` parameter-backed view field in a returned carrier literal is accepted
+(the caller's frame outlives the return) while the loan stays for module destinations; the take and frame-local twins still reject. The two literal twins accept with
+a caller read; the global twins keep one `E10033`; the take twin keeps one `E10030`. The spec suite is at 55 tests.
+
+### Filed rows
+
+`DEF-285` (the runtime-index element store), `DEF-286` (the cross-frame out-slot pass-through, extended with the fresh-argument spellings), `DEF-287` (the module-global
+fresh-init leak), `DEF-288` (a container escape with frame-backed element loans), `DEF-289` (the direct-return parameter-backed literal — fixed by the follow-up), `DEF-290`
+(a stale literal-carrier loan), `DEF-291` (an all-null composite); `DEF-282` extended with the PC-4/PC-5 diagnostic-count instances; the pre-existing emission notes map to
+`DEF-171` (the `E10213`/embed case) and `DEF-189` (the freestanding stack alignment); the fixed-array-in-literal invalid C stays recorded for phase 4/5.
