@@ -595,11 +595,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     };
                     if !view_backings.is_empty() {
                         match self.literal_views {
-                            LiteralViews::Frame => {
-                                for id in view_backings {
-                                    self.pending_literal_owners.insert(LoanOwner::Binding(id));
-                                }
-                            }
+                            // A frame literal's accepted view fields are the
+                            // destination binding's storage positions; the
+                            // store records their loans under each position's
+                            // own path.
+                            LiteralViews::Frame => {}
                             LiteralViews::Return => {
                                 // A parameter's storage belongs to the caller
                                 // and survives the return; a local or a taken
@@ -940,7 +940,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // global container, and every non-literal value keep the
                 // field-escape report.
                 let saved_literal_views = self.literal_views;
-                let saved_pending = std::mem::take(&mut self.pending_literal_owners);
                 self.literal_views = if alias_root.is_none()
                     && !caller_slot
                     && Self::is_frame_literal(value)
@@ -960,8 +959,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.view_array_literal_depth -= 1;
                 }
                 self.literal_views = saved_literal_views;
-                let pending_literal_owners =
-                    std::mem::replace(&mut self.pending_literal_owners, saved_pending);
                 self.check_lend_target_store(id, &projections, value, target.span);
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026
@@ -1043,8 +1040,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 self.write_place(id, &projections, target.span);
                 let lowered = if has_runtime_element(&projections) {
-                    self.emit_indexed_store(target, value, compound);
-                    None
+                    self.emit_indexed_store(target, value, compound)
                 } else {
                     if let Some(guards) = self.guard_statement_for_store_target(target) {
                         self.emit(guards);
@@ -1101,16 +1097,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         );
                     }
                 }
-                // A struct literal's accepted view fields follow the
-                // destination binding exactly as a projected element store's
-                // backings do: the loans protect every later read of it.
-                if !is_view_like(&target_ty) && !pending_literal_owners.is_empty() {
-                    self.record_literal_view_loans(
-                        id,
-                        &projections,
-                        pending_literal_owners,
-                        target.span,
-                    );
+                // A literal carrier's accepted view positions follow the
+                // destination binding: each position's loan records under its
+                // own path, so a later overwrite replaces exactly the
+                // positions it replaced. The store drops every record under
+                // its target path first — a whole store therefore drops them
+                // all — and the new value's positions record after.
+                if !is_view_like(&target_ty) {
+                    self.replace_element_loans(id, &projections, BTreeSet::new());
+                    let positions = self.literal_view_loan_positions(value);
+                    if !positions.is_empty() {
+                        self.record_literal_view_positions(
+                            id,
+                            &projections,
+                            &positions,
+                            target.span,
+                        );
+                    }
                 }
                 self.view_destination_adopts = saved_adopts;
             }
@@ -1306,7 +1309,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let failing = Self::storage_atoms(&self.view_provenance(value))
             .into_iter()
             .find(|atom| !self.provenance_fits_destination(atom, global));
-        let Some(atom) = failing else { return };
+        // The storage component the destination cannot keep supplies the
+        // report. A container binding's element loans name the storage its
+        // view positions read, exactly as a carrier's loans do, and the
+        // binding's recorded provenance describes the value that first filled
+        // it, which a later element store does not update — so a frame-dying
+        // element backing reports even when every recorded component fits.
+        let subject = match failing {
+            Some(atom) => Some(match &atom {
+                Provenance::Local(owner) | Provenance::Param(owner) => {
+                    format!("'{}'", self.bindings[*owner].name)
+                }
+                _ => "a statement temporary".to_owned(),
+            }),
+            None => self
+                .view_frame_loan_owners(value)
+                .into_iter()
+                .next()
+                .map(|owner| format!("'{}'", self.bindings[owner].name)),
+        };
+        let Some(subject) = subject else { return };
         if global {
             self.error(
                 "E10033",
@@ -1316,12 +1338,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             );
             return;
         }
-        let subject = match &atom {
-            Provenance::Local(owner) | Provenance::Param(owner) => {
-                format!("'{}'", self.bindings[*owner].name)
-            }
-            _ => "a statement temporary".to_owned(),
-        };
         self.error(
             "E10030",
             format!("borrow of {subject} does not live long enough"),
@@ -1407,6 +1423,124 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         self.replace_element_loans(id, projections, loans);
+    }
+
+    /// The view positions a value carries, with the path that reaches each one.
+    ///
+    /// A carrier's view-like positions are its storage: each one records a loan
+    /// under its own path, so a later overwrite replaces exactly the positions
+    /// it replaced. An aggregate descends position by position — a struct
+    /// field, an array element, and either arm of a conditional — and a leaf
+    /// whose declared position is a view contributes the bindings and
+    /// temporaries its storage derives from. The declared position decides, not
+    /// the leaf's own type, because an owned value widens to the view the
+    /// position holds. Only real owners matter here, so a literal or a module
+    /// binding contributes nothing.
+    pub(super) fn literal_view_loan_positions(
+        &self,
+        expr: &Expr,
+    ) -> Vec<(Vec<ir::Projection>, LoanOwner)> {
+        let mut positions = Vec::new();
+        let position = self.ty(expr);
+        self.collect_literal_view_positions(expr, &position, &mut Vec::new(), &mut positions);
+        positions
+    }
+
+    /// Collects one value's view-position owners into `positions`.
+    fn collect_literal_view_positions(
+        &self,
+        expr: &Expr,
+        position: &Ty,
+        path: &mut Vec<ir::Projection>,
+        positions: &mut Vec<(Vec<ir::Projection>, LoanOwner)>,
+    ) {
+        match &expr.kind {
+            ExprKind::StructLiteral { name, fields, .. } => {
+                let struct_name = name.segments.last().cloned().unwrap_or_default();
+                let mut declared = self.instance_fields(position, &struct_name);
+                if declared.is_empty() {
+                    declared = self.instance_fields(&self.ty(expr), &struct_name);
+                }
+                for field in fields {
+                    let field_ty = declared
+                        .iter()
+                        .find(|(declared, _)| declared == &field.name)
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or_else(|| self.ty(&field.value));
+                    path.push(ir::Projection::Field(field.name.clone()));
+                    self.collect_literal_view_positions(&field.value, &field_ty, path, positions);
+                    path.pop();
+                }
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let element = position.iterated_element();
+                for (index, element_value) in elements.iter().enumerate() {
+                    path.push(ir::Projection::Element(Some(index)));
+                    self.collect_literal_view_positions(element_value, &element, path, positions);
+                    path.pop();
+                }
+                // A fill value stands for every remaining element, so it
+                // covers the aggregate's own position.
+                if let Some(fill) = fill {
+                    self.collect_literal_view_positions(fill, &element, path, positions);
+                }
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.collect_literal_view_positions(then_value, position, path, positions);
+                self.collect_literal_view_positions(else_value, position, path, positions);
+            }
+            ExprKind::Unsafe(inner) => {
+                self.collect_literal_view_positions(inner, position, path, positions);
+            }
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.collect_literal_view_positions(value, position, path, positions);
+            }
+            _ => {
+                if !is_view_like(position) && !is_view_like(&self.ty(expr)) {
+                    return;
+                }
+                for atom in Self::storage_atoms(&self.view_provenance(expr)) {
+                    if let Provenance::Local(owner) | Provenance::Param(owner) = atom {
+                        positions.push((path.clone(), LoanOwner::Binding(owner)));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Records the loans a value's view positions give a carrier binding.
+    ///
+    /// Each position's owners record under the path that reaches it, prefixed
+    /// by the destination's own path, so a later overwrite of one position
+    /// replaces that position's loan and leaves the others live. The caller
+    /// drops the destination's previous records first, because the store
+    /// replaced every position under its target path.
+    pub(super) fn record_literal_view_positions(
+        &mut self,
+        id: usize,
+        base: &[ir::Projection],
+        positions: &[(Vec<ir::Projection>, LoanOwner)],
+        span: Span,
+    ) {
+        let mut by_path: BTreeMap<Vec<ir::Projection>, BTreeSet<LoanOwner>> = BTreeMap::new();
+        for (path, owner) in positions {
+            let mut full = base.to_vec();
+            full.extend(path.iter().cloned());
+            by_path.entry(full).or_default().insert(*owner);
+        }
+        for (path, owners) in by_path {
+            let mut loans = BTreeSet::new();
+            for owner in owners {
+                if let Some(loan) = self.record_view_loan(owner, LoanKind::Shared, span) {
+                    loans.insert(loan);
+                }
+            }
+            self.replace_element_loans(id, &path, loans);
+        }
     }
 
     /// True when a value is a struct literal the current frame materializes.
@@ -1904,7 +2038,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Lowers an indexed assignment, plain or compound.
-    fn emit_indexed_store(&mut self, target: &'a Expr, value: &'a Expr, compound: Option<BinaryOp>) {
+    ///
+    /// The returned value is the prepared right-hand side when the store
+    /// copies a view: the caller records the element loans from it, exactly as
+    /// the constant-index store does. Every other store returns none — an
+    /// owned value is moved into the element and nothing remains to record.
+    fn emit_indexed_store(
+        &mut self,
+        target: &'a Expr,
+        value: &'a Expr,
+        compound: Option<BinaryOp>,
+    ) -> Option<Value> {
         // The target's location evaluates before the right-hand side, so an
         // updating side pins the location parts first; the side's own update
         // then pins at its position, before the store.
@@ -1912,8 +2056,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let Some((element, pointer, element_ty)) =
             self.indexed_target(target, compound.is_some(), pin)
         else {
-            return;
+            return None;
         };
+        let mut prepared_view = None;
         let stored = match compound {
             Some(binary) => {
                 // The element's current value is read before the side runs, so
@@ -1927,10 +2072,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let right = if pin { self.pin_update_value(right) } else { right };
                 self.combine(binary, element, right, &element_ty)
             }
-            // An owned value stored into an element is a move, exactly as it is
-            // for a named destination: the checker consumed the source, so the
-            // lowering empties it and the element keeps the value. Without this
-            // both the source and the element release the same storage.
+            // A view element store copies the view and leaves the backing where
+            // it is, exactly as the constant-index spelling does: the element
+            // reads the backing's storage while the backing's owner releases it
+            // at its own scope. A view derived from fresh ownerless storage
+            // binds its root first, so the root releases in the view's scope
+            // and an escape reports instead of dangling. An owned value stored
+            // into an element is a move, exactly as it is for a named
+            // destination: the checker consumed the source, so the lowering
+            // empties it and the element keeps the value. Without this both the
+            // source and the element release the same storage.
             None => {
                 let lowered = self.lower_value(value);
                 let lowered = if pin {
@@ -1938,13 +2089,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     lowered
                 };
-                self.consume_place(lowered)
+                if is_view(&element_ty)
+                    || (self.view_destination_adopts && is_view_like(&element_ty))
+                {
+                    let lowered = if self.projects_from_place(&lowered) {
+                        lowered
+                    } else {
+                        self.bind_view_projection_root(lowered)
+                    };
+                    prepared_view = Some(lowered.clone());
+                    lowered
+                } else {
+                    self.consume_place(lowered)
+                }
             }
         };
         self.emit(Statement::StorePointer {
             pointer,
             value: stored,
         });
+        prepared_view
     }
 
     /// Lowers an indexed increment or decrement as a read-modify-write.

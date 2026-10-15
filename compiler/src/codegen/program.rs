@@ -1040,6 +1040,13 @@ impl<'a> Emitter<'a> {
         // operand it checks is evaluated, so evaluation order and per-branch
         // laziness match the function path.
         let lowered = self.materialize_init_value(&lowered, None);
+        // A view destination retains the storage its view points into, but a
+        // member projection of a fresh owned root reads only one position: the
+        // root binds into an init local the release pass empties, so its other
+        // fields free at the initializer's end, and the read member is emptied
+        // right after the store — the view keeps the member's storage for the
+        // program's lifetime while nothing frees it.
+        let (lowered, member_move_out) = self.retain_view_member_root(&lowered);
         // A view destination takes an owned `String` value through the view
         // constructor, exactly as the function path's store does; without the
         // wrapper the handle cannot assign to the view.
@@ -1053,6 +1060,53 @@ impl<'a> Emitter<'a> {
             _ => self.value(&lowered),
         };
         self.push(&format!("    {target} = {rendered};"));
+        if let Some(move_out) = member_move_out {
+            self.push(&format!("    {move_out};"));
+        }
+    }
+
+    /// Binds the fresh owned root of a retained view-member projection.
+    ///
+    /// A view destination keeps the storage its view points into, so an
+    /// initializer's owned results are otherwise left inline and retained
+    /// whole. A member projection reads one position of a fresh root, though:
+    /// binding the root registers it with the release pass, so its remaining
+    /// fields free at the initializer's end, and the read member empties right
+    /// after the store so the release leaves the view's storage alone. Returns
+    /// the rebound value and the move-out statement, or the value unchanged
+    /// when it is not such a projection.
+    fn retain_view_member_root(&mut self, value: &Value) -> (Value, Option<String>) {
+        if !self.init_retain_owners || self.init_skip_owner_binding {
+            return (value.clone(), None);
+        }
+        let ValueKind::Member { base, name } = &value.kind else {
+            return (value.clone(), None);
+        };
+        if !matches!(
+            base.kind,
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
+        ) || !self.needs_drop(&base.ty)
+            // Only an owning member moves out of the root; a view member
+            // reads storage the root never owned.
+            || !self.needs_drop(&value.ty)
+        {
+            return (value.clone(), None);
+        }
+        let zero = self.empty_state(&base.ty);
+        // The root's fields free at the initializer's end: the release
+        // registration must see the local even under a retaining destination.
+        let retaining = std::mem::replace(&mut self.init_retain_owners, false);
+        let (local, root) = self.materialize_init_local(base, None, &zero);
+        self.init_retain_owners = retaining;
+        let read = Value::new(
+            value.ty.clone(),
+            ValueKind::Member {
+                base: Box::new(root),
+                name: name.clone(),
+            },
+        );
+        let empty = self.empty_state(&value.ty);
+        (read, Some(format!("{local}.{name} = {empty}")))
     }
 
     /// Fills a fixed-array global element-wise.

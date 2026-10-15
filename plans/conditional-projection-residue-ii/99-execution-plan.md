@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 2/33 tasks (6%) — Executing Phase 1
+> **Progress**: 5/33 tasks (15%) — Phase 1 in review
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -68,21 +68,19 @@ element loans, the stale literal-carrier loan, and the all-null composite store.
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Bind the residual-owning fresh root for duplicable projections; route the
+- [x] 1.2.1 Bind the residual-owning fresh root for duplicable projections; route the
       runtime-index element store through the copy/loan path; implement the cross-frame
       call-site rule (or stop and park per AR-6); release/adopt the module-global fresh owner;
       consult the container escape's element loans; drop the overwritten literal-carrier loans;
       accept the all-null composite store — `compiler/src/own/lower.rs`,
       `compiler/src/own/place.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/expr.rs`,
       `compiler/src/own/call_check.rs`, `compiler/src/own/program.rs`,
-      `compiler/src/own.rs`
-- [ ] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own.rs` ✅ (completed: 2026-10-15 21:35; the actual touched files: `own/lower.rs`, `own/place.rs`, `own/statements.rs`, `own/expr.rs`, `own/call_check.rs`, `own.rs`, `codegen/program.rs`, `codegen/function.rs`; the residual-owning root binds through a lower-value tail hook and the gates accept a root that needs a fill even when the selected member is duplicable; the runtime index copies a view element and returns the prepared view for the loan record; the cross-frame rule is a contained call-site check (AR-6 outcome: no park — the accepted parameter/same-frame twins are preserved; boundary: a read-only out-slot callee with a this-frame view argument still rejects); the module-global root is retained for release with the read member emptied; the container escapes consult the frame loan owners at the return and the global store; the literal-carrier loans are per-position with a prefix replacement; the all-null merge yields an empty composite while the plain `None` sentinel keeps its rejection)
+- [x] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-15 21:35; the residue spec 95/95 plain and under `RDC_ASAN=1`; the batch-H, callable-release, module-initializer, and checker-conformance suites green; `make check` exit 0 with no new warnings; parent-verified 95/95 plain + ASan)
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the binding gates, the loan record/replace
-      shapes, the report counts and spans, the re-emission determinism pins) —
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [x] 1.3.1 Write the phase implementation pins (the binding gates, the loan record/replace shapes, the report counts and spans, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 21:35; seven pins added (59 tests total, additions only); every pin fails at `bf394e5` on its first assertion with the controls (`liveloan`, `nullmixlocal`) holding; 59/59 green)
 - [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses (correctness + memory-safety; the reviewer packet includes the
       blast-radius step and the test-integrity step)

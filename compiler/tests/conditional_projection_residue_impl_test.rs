@@ -3108,3 +3108,641 @@ fn should_re_emit_the_update_order_programs_byte_identically() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// View owners, loans, and stores (phase 1).
+//
+// The pins cover the residual-root binding of duplicable projections, the
+// runtime-index view store's copy path, the cross-frame pass-through report,
+// the module view's retained member, the container escape's per-destination
+// reports, the replaced literal-carrier loans, and the all-null composite
+// store's emitted null view.
+// ---------------------------------------------------------------------------
+
+/// A take and a return position of a duplicable member over a fresh root.
+const DUP_RESIDUAL_SOURCE: &str = r#"module spec.cprimpl.impldupres;
+
+import { String, stringOf } from std.text;
+
+struct Box { n: i32; v: String; }
+
+func mkBox(k: i32): Box { return Box { n: k, v: stringOf("ab") }; }
+func holdNum(take n: i32): i32 { return n; }
+
+func takePos(c: bool, take a: Box): i32 {
+    return holdNum(c ? a.n : mkBox(7).n);
+}
+
+func retPos(c: bool, take a: Box): i32 {
+    return (c ? a.n : mkBox(7).n);
+}
+
+func main(): i32 { return takePos(true, mkBox(3)) + retPos(false, mkBox(3)) - 10; }
+"#;
+
+/// The read positions of a duplicable element over a fresh root.
+const DUP_RESIDUAL_READ_SOURCE: &str = r#"module spec.cprimpl.impldupresread;
+
+import { String, stringOf } from std.text;
+
+struct Box { tag: String; ys: u8[4]; }
+
+func mk(): Box { return Box { tag: stringOf("one"), ys: [1, 2, 3, 4] }; }
+
+func readDirect(): i32 {
+    let s: i32 = 0;
+    s = s + i32(mk().ys[2]);
+    return s;
+}
+
+func readCond(c: bool, b: Box): i32 {
+    let s: i32 = 0;
+    s = s + i32((c ? mk() : b).ys[1]);
+    return s;
+}
+
+func main(): i32 {
+    let b: Box = Box { tag: stringOf("p"), ys: [9, 10, 11, 12] };
+    return readCond(true, b) + readDirect() - 13;
+}
+"#;
+
+/// A duplicable projection's fresh root binds for its residual release.
+///
+/// `takePos` and `retPos` fill a branch temporary with `mkBox(7)` on the fresh
+/// arm and read `__cl_tmp1.n`, and the release frees the root's `v` after the
+/// use; the inline `mkBox(7).n` spelling is gone. The read positions bind the
+/// same way: a direct `mk().ys[i]` reads through a generated owner and the
+/// conditional read copies `ys` out of the branch-filled root.
+#[test]
+fn should_bind_the_residual_root_of_a_duplicable_projection() {
+    let tag = "impldupres";
+    let (_scratch, emitted) = emit_host(tag, DUP_RESIDUAL_SOURCE);
+    let take = function_body(tag, &emitted, "cl_spec_cprimpl_impldupres_takePos(bool c, ClBox a)\n{");
+    assert_contains(tag, take, "cl_spec_cprimpl_impldupres_mkBox(7);");
+    assert_contains(tag, take, "(__cl_tmp0 ? a.n : __cl_tmp1.n)");
+    assert_release_after(
+        tag,
+        take,
+        "holdNum((__cl_tmp0 ? a.n : __cl_tmp1.n));",
+        "if (__cl_tmp1.v) { FreeString(__cl_tmp1.v); }",
+    );
+    assert_absent(tag, take, "? a.n : cl_spec_cprimpl_impldupres_mkBox(7).n)");
+    let ret = function_body(tag, &emitted, "cl_spec_cprimpl_impldupres_retPos(bool c, ClBox a)\n{");
+    assert_contains(tag, ret, "(__cl_tmp0 ? a.n : __cl_tmp1.n)");
+    assert_release_after(
+        tag,
+        ret,
+        "__cl_ret = (__cl_tmp0 ? a.n : __cl_tmp1.n);",
+        "if (__cl_tmp1.v) { FreeString(__cl_tmp1.v); }",
+    );
+
+    let tag = "impldupresread";
+    let (_scratch, emitted) = emit_host(tag, DUP_RESIDUAL_READ_SOURCE);
+    let direct =
+        function_body(tag, &emitted, "cl_spec_cprimpl_impldupresread_readDirect(void)\n{");
+    assert_follows(
+        tag,
+        direct,
+        "__cl_owned0 = cl_spec_cprimpl_impldupresread_mk();",
+        "s = (i32)((u32)s + (u32)(i32)(__cl_owned0.ys[2]));",
+    );
+    assert_release_after(
+        tag,
+        direct,
+        "__cl_owned0.ys[2]",
+        "if (__cl_owned0.tag) { FreeString(__cl_owned0.tag); }",
+    );
+    assert_absent(tag, direct, "mk().ys[2]");
+    let cond = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_impldupresread_readCond(bool c, ClBox b)\n{",
+    );
+    assert_contains(tag, cond, "__cl_tmp1 = cl_spec_cprimpl_impldupresread_mk();");
+    assert_contains(tag, cond, "&(__cl_tmp1.ys)");
+    assert_release_after(
+        tag,
+        cond,
+        "memcpy(&(__cl_tmp2), &(__cl_tmp1.ys), sizeof(__cl_tmp2));",
+        "if (__cl_tmp1.tag) { FreeString(__cl_tmp1.tag); }",
+    );
+}
+
+/// A runtime-index view element store copies the view and loans the backing.
+const RUNTIME_STORE_SOURCE: &str = r#"module spec.cprimpl.implruntimestore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(k: i32): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = b.v;
+    return i32(xs[k][0]) - 120;
+}
+
+func main(): i32 { return pick(1); }
+"#;
+
+/// The re-executed runtime-index store over a fresh call result.
+const RUNTIME_STORE_LOOP_SOURCE: &str = r#"module spec.cprimpl.implruntimeloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+func run(k: i32): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let i: i32 = 0;
+    while (i < 3) {
+        xs[k] = mk().v;
+        i = i + 1;
+    }
+    return i32(xs[k][0]);
+}
+
+func main(): i32 { return run(1) - 120; }
+"#;
+
+/// The mutation of a runtime-index stored backing reports once.
+const RUNTIME_STORE_MUTATION_SOURCE: &str = r#"module spec.cprimpl.implruntimemut;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(k: i32): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = b.v;
+    b.v = stringOf("qq");
+    return i32(xs[k][0]) - 120;
+}
+
+func main(): i32 { return pick(1); }
+"#;
+
+/// A runtime-index element store copies its view like the constant index.
+///
+/// The store writes `cl_string_view(b.v)` through the element pointer and
+/// leaves `b`'s member in place — no move-out temporary strands the owner —
+/// so `b`'s cleanup releases it. The re-executed fresh store rejects with one
+/// `E10030` like the constant-index twin, and the later backing write reports
+/// one `E10031` at its own line.
+#[test]
+fn should_copy_a_runtime_index_view_element_store() {
+    let tag = "implruntimestore";
+    let (_scratch, emitted) = emit_host(tag, RUNTIME_STORE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implruntimestore_pick(i32 k)\n{");
+    assert_contains(tag, body, "*(&(xs[k])) = cl_string_view(b.v);");
+    assert_absent(tag, body, "= b.v;");
+    assert_rejected(tag, RUNTIME_STORE_LOOP_SOURCE, "E10030", 1);
+    assert_rejected_at_line(tag, RUNTIME_STORE_MUTATION_SOURCE, "E10031", 1, 11);
+}
+
+/// The cross-frame pass-through spellings and the accepted twins.
+const CROSS_FRAME_LOCAL_SOURCE: &str = r#"module spec.cprimpl.implxflocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    fill(b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+
+/// The fresh-argument spelling of the cross-frame pass-through.
+const CROSS_FRAME_FRESH_SOURCE: &str = r#"module spec.cprimpl.implxftemp;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zw") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void { fill(mk().v, borrow slot); }
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+
+/// The array-literal spelling of the cross-frame pass-through.
+const CROSS_FRAME_ARRAY_SOURCE: &str = r#"module spec.cprimpl.implxfarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zw") }; }
+
+func fill(p: str, q: str, borrow slot: str[2]): void { slot = [p, q]; }
+
+func middle(borrow out2: str[2]): void { fill(mk().v, mk().w, borrow out2); }
+
+func main(): i32 {
+    let out: str[2] = ["AA", "BB"];
+    middle(borrow out);
+    return i32(out[0][0]) - 120;
+}
+"#;
+
+/// The parameter-backed and same-frame twins keep their acceptance.
+const CROSS_FRAME_PARAM_SOURCE: &str = r#"module spec.cprimpl.implxfparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void { fill(p.v, borrow slot); }
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+
+const CROSS_FRAME_SAME_SOURCE: &str = r#"module spec.cprimpl.implxfsame;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func demo(): i32 {
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    let out: str? = null;
+    fill(b.v, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+
+func main(): i32 { return demo(); }
+"#;
+
+/// A cross-frame pass-through reports once at the call, the twins stay clean.
+///
+/// The local, fresh, and array spellings each report exactly one `E10030` at
+/// the call's own line, and no translation unit is written. The
+/// parameter-backed chain and the same-frame call are accepted and re-emit
+/// byte-identically.
+#[test]
+fn should_reject_a_cross_frame_pass_through_once() {
+    let tag = "implxflocal";
+    assert_rejected_at_line(tag, CROSS_FRAME_LOCAL_SOURCE, "E10030", 1, 11);
+    assert_rejected(tag, CROSS_FRAME_FRESH_SOURCE, "E10030", 1);
+    assert_rejected(tag, CROSS_FRAME_ARRAY_SOURCE, "E10030", 1);
+    let (first, second) = emit_twice("implxfparam", CROSS_FRAME_PARAM_SOURCE);
+    assert!(
+        first == second,
+        "implxfparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+    let (first, second) = emit_twice("implxfsame", CROSS_FRAME_SAME_SOURCE);
+    assert!(
+        first == second,
+        "implxfsame: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
+
+/// A module view of a fresh call's member retains the member's storage.
+const MODULE_FRESH_SOURCE: &str = r#"module spec.cprimpl.implmodfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+let g: str = mk().v;
+
+func main(): i32 {
+    return i32(g[0]) - 120;
+}
+"#;
+
+/// The module initializer binds the root, empties the member, frees the rest.
+///
+/// The initializer stores the view through the bound root
+/// (`__cl_itmp0.v`), then empties that member so the release pass frees only
+/// the root's remaining field; the view keeps the member's storage for the
+/// program's lifetime. The two emissions are byte-identical.
+#[test]
+fn should_retain_a_module_views_member_while_the_root_releases() {
+    let tag = "implmodfresh";
+    let (scratch, emitted) = emit_host(tag, MODULE_FRESH_SOURCE);
+    let init = function_body(
+        tag,
+        &emitted,
+        "static void cl_init_spec_cprimpl_implmodfresh(void)\n{",
+    );
+    assert_follows(
+        tag,
+        init,
+        "ClBox __cl_itmp0 = cl_spec_cprimpl_implmodfresh_mk();",
+        "cl_spec_cprimpl_implmodfresh_g = cl_string_view(__cl_itmp0.v);",
+    );
+    assert_follows(
+        tag,
+        init,
+        "cl_spec_cprimpl_implmodfresh_g = cl_string_view(__cl_itmp0.v);",
+        "__cl_itmp0.v = NULL;",
+    );
+    assert_release_after(
+        tag,
+        init,
+        "__cl_itmp0.v = NULL;",
+        "if (__cl_itmp0.w) { FreeString(__cl_itmp0.w); }",
+    );
+    let source_path = scratch.path().join("main.clo");
+    let second = emit_at(tag, &source_path, &scratch.path().join("out2.c"));
+    assert!(
+        emitted == second,
+        "{tag}: the two emissions differ; first:\n{emitted}\nsecond:\n{second}"
+    );
+}
+
+/// The container-escape spellings and their controls.
+const CONTAINER_ESCAPE_RETURN_SOURCE: &str = r#"module spec.cprimpl.implreturnelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): str[2] {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    xs[1] = b.v;
+    return xs;
+}
+
+func main(): i32 { return i32(run()[1][0]) - 120; }
+"#;
+
+const CONTAINER_ESCAPE_ALIAS_SOURCE: &str = r#"module spec.cprimpl.implreturnalias;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): str[2] {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    for (borrow e in xs) {
+        e = b.v;
+    }
+    return xs;
+}
+
+func main(): i32 { return i32(run()[0][0]) - 120; }
+"#;
+
+const CONTAINER_ESCAPE_GLOBAL_SOURCE: &str = r#"module spec.cprimpl.implglobalelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let g: str[2] = ["AA", "BB"];
+
+func store(): void {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    xs[1] = b.v;
+    g = xs;
+}
+
+func main(): i32 { store(); return i32(g[1][0]) - 120; }
+"#;
+
+const CONTAINER_ESCAPE_PARAM_SOURCE: &str = r#"module spec.cprimpl.implreturnparam;
+
+import { String, stringOf } from std.text;
+
+func run(p: str): str[2] {
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = p;
+    return xs;
+}
+
+func main(): i32 {
+    let s: String = stringOf("xy");
+    return i32(run(s)[1][0]) - 120;
+}
+"#;
+
+/// A container escape reports once per destination, the parameter twin stays
+/// accepted.
+///
+/// The element return reports one `E10035` at the return line and the alias
+/// spelling the same; the global store reports one `E10033` at its line. The
+/// parameter-backed return is accepted and re-emits byte-identically.
+#[test]
+fn should_reject_a_container_escape_once_per_destination() {
+    let tag = "implreturnelem";
+    assert_rejected_at_line(tag, CONTAINER_ESCAPE_RETURN_SOURCE, "E10035", 1, 11);
+    assert_rejected_at_line(tag, CONTAINER_ESCAPE_ALIAS_SOURCE, "E10035", 1, 13);
+    assert_rejected_at_line(tag, CONTAINER_ESCAPE_GLOBAL_SOURCE, "E10033", 1, 13);
+    let (first, second) = emit_twice("implreturnparam", CONTAINER_ESCAPE_PARAM_SOURCE);
+    assert!(
+        first == second,
+        "implreturnparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}
+
+/// The stale-loan spellings and the live-loan control.
+const STALE_LOAN_FIELD_SOURCE: &str = r#"module spec.cprimpl.implstalefield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    h.names = ["AA"];
+    b.v = stringOf("qq");
+    return i32(h.names[0][0]) - 65;
+}
+
+func main(): i32 { return pick(); }
+"#;
+
+const STALE_LOAN_WHOLE_SOURCE: &str = r#"module spec.cprimpl.implstalewhole;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    h = Holder { names: ["AA"] };
+    b.v = stringOf("qq");
+    return i32(h.names[0][0]) - 65;
+}
+
+func main(): i32 { return pick(); }
+"#;
+
+const STALE_LOAN_LIVE_SOURCE: &str = r#"module spec.cprimpl.implstalelive;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func pick(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    b.v = stringOf("qq");
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 { return pick(); }
+"#;
+
+/// An overwritten literal carrier drops its stale loans; a live view keeps
+/// its own.
+///
+/// The field overwrite and the whole reassignment both replace the stored
+/// view, so the later backing write is accepted and re-emits identically;
+/// without an overwrite the live loan reports exactly one `E10031` at the
+/// write line.
+#[test]
+fn should_replace_the_loans_of_an_overwritten_literal_carrier() {
+    for (tag, source) in [
+        ("implstalefield", STALE_LOAN_FIELD_SOURCE),
+        ("implstalewhole", STALE_LOAN_WHOLE_SOURCE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+    assert_rejected_at_line("implstalelive", STALE_LOAN_LIVE_SOURCE, "E10031", 1, 11);
+}
+
+/// The all-null composite store emits the destination's empty view.
+const ALL_NULL_SOURCE: &str = r#"module spec.cprimpl.implallnull;
+
+func fill(c: bool, borrow slot: str?): void {
+    slot = c ? null : null;
+}
+
+let h: str? = null;
+
+func store(c: bool): void {
+    h = c ? null : null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(true, borrow out);
+    store(true);
+    if (out == null && h == null) {
+        return 0;
+    }
+    return 9;
+}
+"#;
+
+const ALL_NULL_MIX_LOCAL_SOURCE: &str = r#"module spec.cprimpl.implnullmix;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(c: bool, borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    slot = c ? b.v : null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(false, borrow out);
+    return 0;
+}
+"#;
+
+const ALL_NULL_MIX_PARAM_SOURCE: &str = r#"module spec.cprimpl.implnullparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(c: bool, p: Box, borrow slot: str?): void {
+    slot = c ? p.v : null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    fill(true, b, borrow out);
+    if (out == null) {
+        return 9;
+    }
+    return i32(out[0]) - 120;
+}
+"#;
+
+/// An all-null composite store renders the empty view, the mixes keep theirs.
+///
+/// Both destinations render `cl_zero_ClStr()` for the null arms instead of a
+/// bare `NULL`, so the view struct assignment is valid C; the frame-local
+/// mix still reports one `E10030` at its store line while the parameter mix
+/// is accepted and re-emits byte-identically.
+#[test]
+fn should_emit_the_null_view_of_an_all_null_composite() {
+    let tag = "implallnull";
+    let (_scratch, emitted) = emit_host(tag, ALL_NULL_SOURCE);
+    let fill = function_body(
+        tag,
+        &emitted,
+        "static void cl_spec_cprimpl_implallnull_fill(bool c, ClStr *slot)\n{",
+    );
+    assert_contains(tag, fill, "(*slot) = (c ? cl_zero_ClStr() : cl_zero_ClStr());");
+    assert_absent(tag, fill, "= (c ? NULL : NULL);");
+    let store = function_body(
+        tag,
+        &emitted,
+        "static void cl_spec_cprimpl_implallnull_store(bool c)\n{",
+    );
+    assert_contains(
+        tag,
+        store,
+        "cl_spec_cprimpl_implallnull_h = (c ? cl_zero_ClStr() : cl_zero_ClStr());",
+    );
+    assert_rejected_at_line("implnullmix", ALL_NULL_MIX_LOCAL_SOURCE, "E10030", 1, 9);
+    let (first, second) = emit_twice("implnullparam", ALL_NULL_MIX_PARAM_SOURCE);
+    assert!(
+        first == second,
+        "implnullparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+    );
+}

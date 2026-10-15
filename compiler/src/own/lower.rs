@@ -514,7 +514,58 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => ValueKind::Aggregate,
         };
-        Value { ty, kind }
+        let value = Value { ty, kind };
+        // A duplicable projection whose chain roots at ownerless storage binds
+        // the root, so the root's remaining storage releases at the statement
+        // end: the copied value transfers nothing, so no owning gate covers
+        // this read. A chain that runs through a conditional distributes over
+        // its arms first, so each arm's root binds at its own branch. A view
+        // keeps its own binder, and a guarded or loop-condition operand keeps
+        // its deferred form.
+        if self.defer_move_outs == 0
+            && !self.in_loop_condition
+            && !self.speculative_lowering
+            && self.materialize_owned_temporaries
+            && !is_view_like(&value.ty)
+            && self.sema.table.duplicable(&value.ty)
+            && !self.maybe_owns(&value.ty)
+            && matches!(value.kind, ValueKind::Member { .. } | ValueKind::Index { .. })
+            && !self.projects_from_place(&value)
+            && self.projection_chain_needs_root_fill(&value)
+        {
+            let value = self
+                .distribute_conditional_projection(&value)
+                .unwrap_or(value);
+            return if matches!(value.kind, ValueKind::Conditional { .. }) {
+                self.hoist_ownerless_conditional_arms(value)
+            } else {
+                self.bind_ownerless_projection_root(value)
+            };
+        }
+        value
+    }
+
+    /// True when a projection chain roots at storage that needs a scope owner.
+    ///
+    /// The chain is walked to its root: an ownerless root that owns storage —
+    /// a fresh call result or a struct literal with owning fields — needs a
+    /// fill, while a place, a temporary, and a root that owns nothing do not.
+    /// A conditional in the chain is distributed over its arms first, so each
+    /// arm's root is judged on its own; a conditional whose arms all root at
+    /// places needs no fill.
+    fn projection_chain_needs_root_fill(&self, value: &Value) -> bool {
+        let mut cursor = value;
+        loop {
+            match &cursor.kind {
+                ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => cursor = base,
+                ValueKind::Conditional { .. } => {
+                    return self.distribute_conditional_projection(value).is_some_and(
+                        |distributed| self.conditional_needs_arm_fill(&distributed),
+                    );
+                }
+                _ => return self.arm_needs_fill(cursor),
+            }
+        }
     }
 
     /// Lowers a lambda expression to its lifted function and closure value.
@@ -923,13 +974,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // returned struct literal hands its view fields to the
                 // caller, exactly as the block-bodied spelling does.
                 let saved_literal_views = self.literal_views;
-                let saved_pending = std::mem::take(&mut self.pending_literal_owners);
                 if Self::is_frame_literal(value) {
                     self.literal_views = LiteralViews::Return;
                 }
                 self.eval(value);
                 self.literal_views = saved_literal_views;
-                let _ = std::mem::replace(&mut self.pending_literal_owners, saved_pending);
                 self.judge_return_moves(value, value.span);
                 let returned = self.lower_value(value);
                 if !self.is_terminated() {
@@ -2867,7 +2916,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The list is empty when the type is not a known struct, so a caller can
     /// treat an unresolvable type as carrying nothing.
-    fn instance_fields(&self, ty: &Ty, name: &str) -> Vec<(String, Ty)> {
+    pub(super) fn instance_fields(&self, ty: &Ty, name: &str) -> Vec<(String, Ty)> {
         let TyKind::Struct(_, args) = &ty.kind else {
             return Vec::new();
         };
@@ -3872,7 +3921,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A place-rooted arm stays an inline read; every other arm — a fresh call
     /// result, a literal, or a nested conditional of either — needs its own
     /// evaluated temporary.
-    fn conditional_needs_arm_fill(&self, value: &Value) -> bool {
+    pub(super) fn conditional_needs_arm_fill(&self, value: &Value) -> bool {
         match &value.kind {
             ValueKind::Conditional {
                 then_value,
@@ -4220,14 +4269,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             // A conditional of projections whose arm roots own residual
             // storage binds each fresh root, so the chosen member transfers to
-            // the callee while the root releases only its un-moved fields.
+            // the callee while the root releases only its un-moved fields. The
+            // same binding covers a duplicable selected member: the member
+            // copies to the callee and the root releases its remaining fields
+            // at the statement end.
             let value = if self.defer_move_outs == 0
                 && matches!(value.kind, ValueKind::Conditional { .. })
-                && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
                 && !is_view(&value.ty)
                 && !value.ty.is_unknown()
                 && !value.ty.is_fixed_array()
                 && self.conditional_projection_root_owns_residual(&value)
+                && ((!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
+                    || self.conditional_needs_arm_fill(&value))
             {
                 self.hoist_ownerless_conditional_arms(value)
             } else {

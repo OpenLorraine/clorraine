@@ -320,12 +320,6 @@ struct FunctionChecker<'a, 'd> {
     /// arm keeps the ordinary element rules, exactly as the direct statement
     /// spelling does.
     discarded_literal_field: bool,
-    /// The backings the accepted struct-literal view fields named.
-    ///
-    /// The enclosing store records them as loans on its destination, exactly
-    /// as a projected element store records its backings, so a later read of
-    /// the destination reaches the backing's scope.
-    pending_literal_owners: BTreeSet<LoanOwner>,
     /// Number of enclosing discarded conditionals: their arms materialize a
     /// fresh owning result into a statement temporary the guard fills on the
     /// arm's own path, so the statement's release frees exactly the arm that
@@ -537,7 +531,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             literal_views: LiteralViews::Escaping,
             discarded_conditional: false,
             discarded_literal_field: false,
-            pending_literal_owners: BTreeSet::new(),
             discard_conditional_depth: 0,
             builder: Builder::new(&decl.name, params, returns),
             temps: Vec::new(),

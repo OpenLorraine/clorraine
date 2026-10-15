@@ -380,7 +380,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         args: &'a [Arg],
         params: &[(Mode, Ty)],
         effective: &[Ty],
-        _span: Span,
+        span: Span,
         lent: &mut BTreeSet<usize>,
     ) {
         for (index, arg) in args.iter().enumerate() {
@@ -400,6 +400,112 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 &arg_ty,
                 lent,
             );
+        }
+        self.check_cross_frame_pass_through(args, params, span);
+    }
+
+    /// Judges a view pass-through into a slot that lives further out.
+    ///
+    /// The callee cannot see the frame relation between one of its lend
+    /// parameters and the caller's frame: `fill(b.v, borrow slot)` hands a
+    /// view of the caller's local into a slot that belongs to the caller's
+    /// caller, and the local dies before that slot's reader runs. The call
+    /// site sees both argument relations, so it judges the pass-through
+    /// exactly like the direct store: a view whose backing dies with this
+    /// frame, at a call that also passes a borrow slot rooted in a further-out
+    /// frame, reports one `E10030`. A parameter-backed view and a same-frame
+    /// slot keep their acceptance.
+    fn check_cross_frame_pass_through(
+        &mut self,
+        args: &'a [Arg],
+        params: &[(Mode, Ty)],
+        span: Span,
+    ) {
+        // A borrow parameter of a view-like type is a slot the callee may
+        // write a view into. The slot's own root decides where it lives: a
+        // parameter's storage belongs to this function's caller — a
+        // further-out frame — while a local's dies with this frame.
+        let mut slot_lives_further_out = false;
+        for (index, arg) in args.iter().enumerate() {
+            let Some((mode, param_ty)) = params.get(index) else {
+                continue;
+            };
+            if *mode != Mode::Borrow || !is_view_like(param_ty) {
+                continue;
+            }
+            if let Some(PlaceTarget::Local(id, _)) = self.place_target(&arg.value) {
+                if matches!(
+                    self.bindings[id].kind,
+                    BindingKind::Param | BindingKind::OutSlot
+                ) {
+                    slot_lives_further_out = true;
+                    break;
+                }
+            }
+        }
+        if !slot_lives_further_out {
+            return;
+        }
+        // One report per call site: the first view argument whose backing
+        // dies with this frame names the escape.
+        let mut failing: Option<Option<usize>> = None;
+        for (index, arg) in args.iter().enumerate() {
+            // An owned value widens to the view its parameter declares, so the
+            // parameter type decides too: `b.v: String` passed as `str` hands
+            // the callee a view of `b`'s storage exactly as a `str` argument
+            // would.
+            let view_parameter = params
+                .get(index)
+                .is_some_and(|(_, param_ty)| is_view_like(param_ty));
+            if !view_parameter && !is_view_like(&self.ty(&arg.value)) {
+                continue;
+            }
+            match self.view_provenance(&arg.value) {
+                Provenance::Local(id) if self.bindings[id].kind == BindingKind::Local => {
+                    failing = Some(Some(id));
+                    break;
+                }
+                // A view of fresh statement storage reads a call result that
+                // dies when the statement ends; its chain roots at the call.
+                Provenance::None if self.view_reads_fresh_root(&arg.value) => {
+                    failing = Some(None);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let Some(failing) = failing else { return };
+        let subject = match failing {
+            Some(id) => format!("'{}'", self.bindings[id].name),
+            None => "a statement temporary".to_owned(),
+        };
+        self.error(
+            "E10030",
+            format!("borrow of {subject} does not live long enough"),
+            "finish the use before the owner's scope ends",
+            span,
+        );
+    }
+
+    /// True when a view expression reads into a fresh owned call result.
+    ///
+    /// A projection chain that roots at a call whose result owns storage reads
+    /// storage the statement owns: `mk().v` names the member of a result that
+    /// dies when the statement ends. A chain rooted at a place, a literal, or
+    /// a call that owns nothing names no statement storage here.
+    fn view_reads_fresh_root(&self, expr: &Expr) -> bool {
+        let mut cursor = expr;
+        loop {
+            match &cursor.kind {
+                ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => cursor = base,
+                ExprKind::Unsafe(inner) => cursor = inner,
+                ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => cursor = value,
+                ExprKind::Call { .. } => {
+                    let ty = self.ty(cursor);
+                    return self.owns_drop(&ty) || self.maybe_owns(&ty);
+                }
+                _ => return false,
+            }
         }
     }
 

@@ -302,7 +302,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // frame storage, so a frame- or caller-backed view field is accepted
         // here and its loan follows the binding below.
         let saved_literal_views = self.literal_views;
-        let saved_pending = std::mem::take(&mut self.pending_literal_owners);
         self.literal_views = if decl
             .value
             .as_ref()
@@ -320,8 +319,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.view_array_literal_depth -= 1;
         }
         self.literal_views = saved_literal_views;
-        let pending_literal_owners =
-            std::mem::replace(&mut self.pending_literal_owners, saved_pending);
+        // A literal carrier's view positions are captured before the binding
+        // is declared, so a name the initializer reads resolves to the outer
+        // binding the declaration may shadow.
+        let literal_positions = decl
+            .value
+            .as_ref()
+            .map(|value| self.literal_view_loan_positions(value))
+            .unwrap_or_default();
         let target = declared
             .clone()
             .or(value_ty)
@@ -363,11 +368,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     let owners = self.carried_view_owners(lowered, false);
                     self.set_binding_carried_owners(id, owners);
                 }
-                // A struct literal's accepted view fields follow the binding
-                // exactly as a projected element store's backings do: the
-                // loans protect every later read of the binding.
-                if !pending_literal_owners.is_empty() {
-                    self.record_literal_view_loans(id, &[], pending_literal_owners, decl.span);
+                // A literal carrier's accepted view positions follow the
+                // binding: each records its loan under its own path, so a
+                // later overwrite replaces exactly the positions it replaced.
+                if !literal_positions.is_empty() {
+                    self.record_literal_view_positions(id, &[], &literal_positions, decl.span);
                 }
             }
             let place = self.binding_place(id);
@@ -487,13 +492,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // machinery, so the fresh root's un-moved fields release at the
         // statement end and the chosen member still transfers to the
         // destination through the ordinary owned-conditional store. A
-        // condition whose arms already root at a conditional is covered
-        // above.
-        if owning
-            && !is_view(ty)
+        // duplicable selected member takes the same binding: the member copies
+        // and the root releases its remaining fields. A condition whose arms
+        // already root at a conditional is covered above.
+        if !is_view(ty)
             && !ty.is_unknown()
             && matches!(lowered.kind, ValueKind::Conditional { .. })
             && self.conditional_projection_root_owns_residual(&lowered)
+            && (owning || self.conditional_needs_arm_fill(&lowered))
         {
             let lowered = self.hoist_ownerless_conditional_arms(lowered);
             return PreparedStore::Assign { value: lowered };
@@ -601,7 +607,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // frame storage, so a frame- or caller-backed view field is accepted
         // here and its loan follows the binding below.
         let saved_literal_views = self.literal_views;
-        let saved_pending = std::mem::take(&mut self.pending_literal_owners);
         self.literal_views = if FunctionChecker::is_frame_literal(&decl.value) {
             LiteralViews::Frame
         } else {
@@ -624,8 +629,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             value_ty
         };
         self.literal_views = saved_literal_views;
-        let pending_literal_owners =
-            std::mem::replace(&mut self.pending_literal_owners, saved_pending);
+        // A literal carrier's view positions are captured before the binding
+        // is declared, exactly as in `check_let`.
+        let literal_positions = self.literal_view_loan_positions(&decl.value);
         let target = declared.or(Some(value_ty)).unwrap_or_else(Ty::unknown);
         // As in `check_let`, the store, the ownership effect, and the null
         // check resolve before the binding is declared, so the initializer's
@@ -650,10 +656,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let owners = self.carried_view_owners(lowered, false);
                 self.set_binding_carried_owners(id, owners);
             }
-            // A struct literal's accepted view fields follow the binding,
+            // A literal carrier's accepted view positions follow the binding,
             // exactly as in `check_let`.
-            if !pending_literal_owners.is_empty() {
-                self.record_literal_view_loans(id, &[], pending_literal_owners, decl.span);
+            if !literal_positions.is_empty() {
+                self.record_literal_view_positions(id, &[], &literal_positions, decl.span);
             }
         }
         let place = self.binding_place(id);
@@ -1265,13 +1271,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // the caller's parameter storage survives the return while this
             // frame's does not.
             let saved_literal_views = self.literal_views;
-            let saved_pending = std::mem::take(&mut self.pending_literal_owners);
             if FunctionChecker::is_frame_literal(value) {
                 self.literal_views = LiteralViews::Return;
             }
             self.eval(value);
             self.literal_views = saved_literal_views;
-            let _ = std::mem::replace(&mut self.pending_literal_owners, saved_pending);
             if view_elements {
                 self.view_array_literal_depth -= 1;
             }
@@ -1310,6 +1314,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                     _ => {}
                 }
+                // A container binding's element loans name the storage its
+                // view positions read, exactly as a carrier's loans do. The
+                // binding's recorded provenance describes the value that first
+                // filled it, which a later element store does not update, so a
+                // frame-dying element backing makes the return a local-view
+                // escape even when the provenance names static storage.
+                if local_view_owner.is_none() {
+                    local_view_owner = self.view_frame_loan_owners(value).into_iter().next();
+                }
             }
             // A return hands the value to the caller, and the value may carry
             // views through its view-like positions: each position's backing
@@ -1331,13 +1344,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
             // A conditional of projections binds each fresh arm's root before
             // the return, so the root releases only its un-moved fields while
-            // the chosen member transfers to the return slot.
-            let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
-                && !is_view(&returns)
+            // the chosen member transfers to the return slot. A duplicable
+            // returned member takes the same binding: the member copies to the
+            // caller and the root releases its remaining fields.
+            let lowered = if !is_view(&returns)
                 && !returns.is_unknown()
                 && !returns.is_fixed_array()
                 && matches!(lowered.kind, ValueKind::Conditional { .. })
                 && self.conditional_projection_root_owns_residual(&lowered)
+                && ((!self.sema.table.duplicable(&returns) || maybe_owning)
+                    || self.conditional_needs_arm_fill(&lowered))
             {
                 self.hoist_ownerless_conditional_arms(lowered)
             } else {

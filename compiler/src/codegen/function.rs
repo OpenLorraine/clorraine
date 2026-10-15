@@ -17,7 +17,7 @@ use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::render::escape_c_string;
-use super::types::{declarator, function_declarator};
+use super::types::{declarator, function_declarator, is_struct_view};
 use super::{
     is_pointer_param, sanitize_identifier, substitute_in, type_param_names, Emitter, FuncInfo,
 };
@@ -2013,6 +2013,16 @@ impl<'a> Emitter<'a> {
         // destination needs its zero struct rather than a null pointer.
         if matches!(value.kind, ValueKind::Null) {
             return self.null_value(ty);
+        }
+        // A conditional whose arms are all null carries the null literal's
+        // unknown type, so its empty spelling must come from the destination
+        // too: rendering it from its own type would store the bare null
+        // pointer where a view struct is expected.
+        if matches!(value.kind, ValueKind::Conditional { .. })
+            && self.substitute(&value.ty).is_unknown()
+            && is_struct_view(&self.substitute(ty))
+        {
+            return self.conditional_arm(value, ty);
         }
         let text = self.value(value);
         let text = self.widen_text_view(text, &self.substitute(&value.ty), ty);

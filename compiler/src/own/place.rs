@@ -696,7 +696,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A plain provenance is its own single component; a composite contributes
     /// each of its components, so a destination can judge every arm or element
-    /// on its own.
+    /// on its own. An empty composite names no storage at all — the scalar
+    /// `null` and a composite whose arms are all null — so it contributes no
+    /// component: a destination cannot keep storage that does not exist, and
+    /// every judgment that walks the components accepts it.
     pub(super) fn storage_atoms(provenance: &Provenance) -> Vec<Provenance> {
         match provenance {
             Provenance::Composite(atoms) => atoms
@@ -787,6 +790,77 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The frame-dying owners a view value's binding loans name.
+    ///
+    /// A container binding's element loans name the storage its view positions
+    /// read, exactly as a carrier's loans do. The binding's recorded
+    /// provenance describes the value that first filled it, which a later
+    /// element store does not update, so a destination that hands the value's
+    /// views out — a return or an escaping store — consults the loans as well.
+    /// Only storage that dies with this frame makes the escape dangle; a
+    /// parameter-backed element keeps its backing in the caller's frame.
+    pub(super) fn view_frame_loan_owners(&self, expr: &Expr) -> BTreeSet<usize> {
+        let mut owners = BTreeSet::new();
+        let mut roots = BTreeSet::new();
+        self.expr_view_roots(expr, &mut roots);
+        for id in roots {
+            for owner in self.binding_loan_owners(id) {
+                if let LoanOwner::Binding(owner_id) = owner {
+                    if self.owner_dies_with_frame(owner) {
+                        owners.insert(owner_id);
+                    }
+                }
+            }
+        }
+        owners
+    }
+
+    /// The bindings a view expression's projection chain roots at.
+    ///
+    /// Mirrors [`Self::lowered_root_bindings`] over the source expression: a
+    /// name or a qualified head names its binding, a projection or a cast
+    /// names its base's, and a conditional or an array contributes every arm
+    /// or element. A chain that roots at anything else — a call result, a
+    /// literal, or module storage — names no binding here.
+    fn expr_view_roots(&self, expr: &Expr, roots: &mut BTreeSet<usize>) {
+        match &expr.kind {
+            ExprKind::Name(name) => {
+                if let Some(id) = self.lookup(name) {
+                    roots.insert(id);
+                }
+            }
+            ExprKind::Qualified(name) => {
+                if let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) {
+                    roots.insert(id);
+                }
+            }
+            ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
+                self.expr_view_roots(base, roots);
+            }
+            ExprKind::Unsafe(inner) => self.expr_view_roots(inner, roots),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.expr_view_roots(value, roots);
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.expr_view_roots(then_value, roots);
+                self.expr_view_roots(else_value, roots);
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                for element in elements {
+                    self.expr_view_roots(element, roots);
+                }
+                if let Some(fill) = fill {
+                    self.expr_view_roots(fill, roots);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Replaces the loans a binding carries.
     ///
     /// A whole-binding store replaces every element the binding held, so the
@@ -799,10 +873,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Replaces the loans one element path contributes to a container.
     ///
     /// Overwriting an element drops the loans of the value it replaced, so a
-    /// stale backing stops blocking its owner's writes. A loan another element
-    /// path also carries stays, because that element still reads it. A path
-    /// with a run-time index cannot name the element it overwrote, so it keeps
-    /// the union and only adds.
+    /// stale backing stops blocking its owner's writes. The overwrite replaces
+    /// the value at the path *and* everything below it: a field's view
+    /// positions record under their own field path, so a field overwrite drops
+    /// every position the field held. A loan another element path also carries
+    /// stays, because that element still reads it. A path with a run-time index
+    /// cannot name the element it overwrote, so it keeps the union and only
+    /// adds.
     pub(super) fn replace_element_loans(
         &mut self,
         id: usize,
@@ -822,21 +899,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         let path = projections.to_vec();
-        let previous = self
-            .state
-            .element_loans
-            .get_mut(&id)
-            .and_then(|paths| paths.remove(&path));
+        let previous: Vec<BTreeSet<LoanId>> = match self.state.element_loans.get_mut(&id) {
+            Some(paths) => {
+                let replaced: Vec<Vec<ir::Projection>> = paths
+                    .keys()
+                    .filter(|key| key.starts_with(&path))
+                    .cloned()
+                    .collect();
+                replaced
+                    .into_iter()
+                    .filter_map(|key| paths.remove(&key))
+                    .collect()
+            }
+            None => Vec::new(),
+        };
         let mut union = self.binding_loans(id);
-        if let Some(previous) = previous {
-            for loan in previous {
+        for replaced in &previous {
+            for loan in replaced {
                 let shared = self
                     .state
                     .element_loans
                     .get(&id)
-                    .is_some_and(|paths| paths.values().any(|set| set.contains(&loan)));
+                    .is_some_and(|paths| paths.values().any(|set| set.contains(loan)));
                 if !shared {
-                    union.remove(&loan);
+                    union.remove(loan);
                 }
             }
         }
@@ -1698,7 +1784,11 @@ fn merge_view_provenances(atoms: Vec<Provenance>, prefer_local: bool) -> Provena
         }
     }
     match unique.len() {
-        0 => Provenance::None,
+        // An aggregate whose every arm or element is null names no storage at
+        // all. The empty composite says so apart from the plain `None`
+        // sentinel, which every other consumer reads as "storage the walk
+        // cannot name" — an ownerless call result, for instance.
+        0 => Provenance::Composite(Vec::new()),
         1 => unique.pop().expect("one component"),
         _ => {
             if prefer_local {
