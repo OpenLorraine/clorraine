@@ -19,6 +19,10 @@ spelling.
 `(void)((c ? cl_a() : cl_b()));`, but the fixed-array return ABI passes a hidden out-parameter
 (`static void a(u8 __cl_ret[2])`, the compiler contract of `spec/17-codegen.md:59-84`), so the
 strict build fails (`too few arguments`). A literal mixing a `str[2]` field with a `String` field
+
+> **Measured note (2026-10-15):** the static-`str[2]`-field spelling of this claim does not
+> reproduce (it is accepted and ASan-clean at the phase base and head); the red the phase pins is the
+> **call-filled** field spelling (`Mixed { names: ok ? n1() : n2(), tag: … }`, `too few arguments`).
 fails the same way. The deferred fill falls back to a value expression for a fixed-array
 conditional (`codegen/guards.rs`), which cannot pass the hidden destination.
 

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 09:52
-> **Progress**: 24/39 tasks (62%)
+> **Progress**: 26/39 tasks (67%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -194,8 +194,8 @@ positions, the discarded mixed-field literal, and the discarded fresh projection
 **Objective**: Pin the fixed-array conditional arm, the mixed literal field, and the
 conditional-root (a move-only root included)/`for`-iterable projections.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (condarmfixed, mixedliteral, condroot, foriterable, moveonlyroot)
-- [ ] 5.1.2 Run the suite and record the red phase
+- [x] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (condarmfixed, mixedliteral, condroot, foriterable, moveonlyroot) ✅ (completed: 2026-10-15 14:20; six tests appended (+356 lines, additions only) — the fixed-array conditional's discard and consuming store with per-arm counters, the mixed fixed-array/String literal (the call-filled field and the literal-arm spelling), the conditional root's store and return projections, the `for` iterable, the move-only root, and the direct controls; three candidate shapes were filed (`DEF-298`..`DEF-300`), two more (the discarded all-fresh fixed-array literal and the direct call-filled field) are handled with the implementation, and the design's static-field claim was noted as not reproducing)
+- [x] 5.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-15 14:20; plain 64 passed / 5 failed and the same under `RDC_ASAN=1` (all strict-build failures) — the discarded conditional's call arms emit `too few arguments`, the mixed literal's call field likewise, and the conditional-root store/return plus the `for` iterable emit `lvalue required as unary '&'`; the store spelling, the literal-arm mixed literal, and the three direct controls are green; parent-verified)
 
 ### Step 5.2: Implementation
 

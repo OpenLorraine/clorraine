@@ -4723,3 +4723,359 @@ func main(): i32 {
     assert_no_asan("discardprojmixed", &output);
     assert_exit("discardprojmixed", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// condarmfixed: a fixed-array conditional fills one destination per path.
+//
+// The fixed-array return ABI passes the result through a hidden out-parameter,
+// so a conditional whose arms are fixed-array call results cannot be rendered
+// as one C value expression. Each arm must fill the conditional's destination
+// on its own path — the call arm passes the hidden destination — and the
+// consumer reads that destination. The discarded spelling and the consuming
+// store each select both arms once.
+// ---------------------------------------------------------------------------
+
+/// A fixed-array conditional of call results builds and runs through the
+/// discarded and the consuming-store spellings.
+///
+/// `c ? a() : b();` discards the selected call result; the calls count their
+/// runs, so the true and the false selection each run exactly one arm. The
+/// store `let m: u8[2] = c ? a() : b();` keeps the selected result: `a` fills
+/// [1, 2] and `b` fills [3, 4], so the two selections sum to 10 and the
+/// trailing constant cancels them. Both programs build under the strict flags
+/// and run with no memory report.
+#[test]
+fn should_route_a_fixed_array_conditional_through_its_destination() {
+    let discarded = r#"module spec.cpr.condarmfixed;
+
+let left: i32 = 0;
+let right: i32 = 0;
+
+func a(): u8[2] {
+    left = left + 1;
+    return [1, 2];
+}
+
+func b(): u8[2] {
+    right = right + 1;
+    return [3, 4];
+}
+
+func use(c: bool): i32 {
+    c ? a() : b();
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false) + left * 10 + right - 11;
+}
+"#;
+    let output = run_memory("condarmfixed", discarded);
+    assert_no_asan("condarmfixed", &output);
+    assert_exit("condarmfixed", &output, 0);
+
+    let stored = r#"module spec.cpr.condarmfixedstore;
+
+func a(): u8[2] { return [1, 2]; }
+func b(): u8[2] { return [3, 4]; }
+
+func use(c: bool): i32 {
+    let m: u8[2] = c ? a() : b();
+    return i32(m[0]) + i32(m[1]);
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 10;
+}
+"#;
+    let output = run_memory("condarmfixedstore", stored);
+    assert_no_asan("condarmfixedstore", &output);
+    assert_exit("condarmfixedstore", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// mixedliteral: a discarded literal's fixed-array call field and fresh String.
+//
+// A literal mixing a `str[2]` field with a `String` field is discarded. When
+// the fixed-array field is filled by a conditional of fixed-array call
+// results, each arm must fill that field's destination on its path (the
+// hidden out-parameter ABI); a value-expression fallback leaves a bare call in
+// the emitted C and fails the strict build. The fresh `String` field releases
+// when the statement ends. The literal-arm spelling of the same discard
+// releases the selected literal's fresh field as well.
+// ---------------------------------------------------------------------------
+
+/// A discarded mixed-field literal fills its fixed-array field per path and
+/// releases its fresh string field.
+///
+/// `Mixed { names: ok ? n1() : n2(), tag: stringOf("x") };` drops the literal;
+/// the selected call fills the `str[2]` field (each call counts its runs, so
+/// the two selections run one arm each) and the fresh `tag` releases when the
+/// statement ends. The literal-arm twin `ok ? Mixed { ... } : Mixed { ... };`
+/// drops the selected literal with the same release. Both programs are
+/// accepted, build under the strict flags, and exit 0 with no memory report.
+#[test]
+fn should_discard_a_mixed_fixed_array_and_string_literal() {
+    let callfield = r#"module spec.cpr.mixedliteral;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let left: i32 = 0;
+let right: i32 = 0;
+
+func n1(): str[2] {
+    left = left + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    right = right + 1;
+    return ["CC", "DD"];
+}
+
+func use(ok: bool): i32 {
+    Mixed { names: ok ? n1() : n2(), tag: stringOf("x") };
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false) + left * 10 + right - 11;
+}
+"#;
+    let output = run_memory("mixedliteral", callfield);
+    assert_no_asan("mixedliteral", &output);
+    assert_exit("mixedliteral", &output, 0);
+
+    let arms = r#"module spec.cpr.mixedliteralarms;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+func use(ok: bool): i32 {
+    ok ? Mixed { names: ["AA", "BB"], tag: stringOf("x") } : Mixed { names: ["CC", "DD"], tag: stringOf("y") };
+    return 0;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    let output = run_memory("mixedliteralarms", arms);
+    assert_no_asan("mixedliteralarms", &output);
+    assert_exit("mixedliteralarms", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// condroot: projecting a fixed-array field of a conditional root.
+//
+// `(c ? b1 : b2).xs` selects the root first and projects its fixed-array
+// field. A conditional is not an lvalue, so the projection cannot take the
+// address of a member of the conditional value; each arm must contribute its
+// own root's address on its path. The store and the return spelling consume
+// the selected field, and the `for` iterable over a call result's field
+// follows the same root preparation.
+// ---------------------------------------------------------------------------
+
+/// A fixed-array projection of a conditional root builds and runs through the
+/// store and the return spelling.
+///
+/// `let a: u8[4] = (c ? b1 : b2).xs;` copies the selected root's field into
+/// `a`; with `b1` = [1, 2, 3, 4] and `b2` = [5, 6, 7, 8] the two selections
+/// sum to 10 and 26, so the trailing constant cancels them. The return
+/// spelling `return (c ? b1 : b2).xs;` produces the same fields through a
+/// callee whose result the caller consumes. Both programs build under the
+/// strict flags and exit 0.
+#[test]
+fn should_project_a_fixed_array_field_of_a_conditional_root() {
+    let stored = r#"module spec.cpr.condroot;
+
+struct Box { xs: u8[4]; }
+
+func use(c: bool, b1: Box, b2: Box): i32 {
+    let a: u8[4] = (c ? b1 : b2).xs;
+    return i32(a[0]) + i32(a[1]) + i32(a[2]) + i32(a[3]);
+}
+
+func main(): i32 {
+    let b1: Box = Box { xs: [1, 2, 3, 4] };
+    let b2: Box = Box { xs: [5, 6, 7, 8] };
+    return use(true, b1, b2) + use(false, b1, b2) - 36;
+}
+"#;
+    let output = run_memory("condroot", stored);
+    assert_no_asan("condroot", &output);
+    assert_exit("condroot", &output, 0);
+
+    let returned = r#"module spec.cpr.condrootreturn;
+
+struct Box { xs: u8[4]; }
+
+func pick(c: bool, b1: Box, b2: Box): u8[4] {
+    return (c ? b1 : b2).xs;
+}
+
+func sum(a: u8[4]): i32 {
+    return i32(a[0]) + i32(a[1]) + i32(a[2]) + i32(a[3]);
+}
+
+func main(): i32 {
+    let b1: Box = Box { xs: [1, 2, 3, 4] };
+    let b2: Box = Box { xs: [5, 6, 7, 8] };
+    return sum(pick(true, b1, b2)) + sum(pick(false, b1, b2)) - 36;
+}
+"#;
+    let output = run_memory("condrootreturn", &returned);
+    assert_no_asan("condrootreturn", &output);
+    assert_exit("condrootreturn", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// foriterable: iterating a fixed-array projection of a call result.
+//
+// `for (x in mk().xs)` takes the fixed-array field of a call result as the
+// loop's iterable. The call's result must bind to a place before the
+// projection takes the field's address — the same preparation the store and
+// return spellings use — so the loop walks the field's four elements.
+// ---------------------------------------------------------------------------
+
+/// A `for` loop over a call result's fixed-array field builds and runs.
+///
+/// `mk()` returns `Box { xs: [1, 2, 3, 4] }` and the loop sums the field's
+/// elements, so the total is 10 and the trailing constant cancels it. The
+/// program is accepted, builds under the strict flags, and exits 0.
+#[test]
+fn should_iterate_a_call_results_fixed_array_field() {
+    let source = r#"module spec.cpr.foriterable;
+
+struct Box { xs: u8[4]; }
+
+func mk(): Box { return Box { xs: [1, 2, 3, 4] }; }
+
+func use(): i32 {
+    let s: i32 = 0;
+    for (x in mk().xs) {
+        s = s + i32(x);
+    }
+    return s;
+}
+
+func main(): i32 {
+    return use() - 10;
+}
+"#;
+    let output = run_memory("foriterable", source);
+    assert_no_asan("foriterable", &output);
+    assert_exit("foriterable", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// moveonlyroot: a move-only conditional root's fixed-array projection.
+//
+// The root struct owns a `String` field, so the conditional's selected root
+// cannot be copied into a temporary value. The projection must therefore take
+// each arm's own address on its path instead of materializing the conditional
+// as a value. Both selections run, and the roots' owned fields release with
+// their bindings at the frame's end.
+// ---------------------------------------------------------------------------
+
+/// A fixed-array projection of a move-only conditional root builds and runs
+/// on both selections.
+///
+/// `let a: u8[4] = (c ? b1 : b2).xs;` with `b1` and `b2` each owning a
+/// `String` field takes no value copy of the selected root: each arm
+/// contributes its own field's address, the two selections sum to 10 and 26,
+/// and the trailing constant cancels them. The owned `tag` fields release
+/// with their bindings, so the run reports no memory error.
+#[test]
+fn should_project_a_move_only_conditional_roots_fixed_array_field() {
+    let source = r#"module spec.cpr.moveonlyroot;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: u8[4]; tag: String; }
+
+func use(c: bool): i32 {
+    let b1: Box = Box { xs: [1, 2, 3, 4], tag: stringOf("pp") };
+    let b2: Box = Box { xs: [5, 6, 7, 8], tag: stringOf("qq") };
+    let a: u8[4] = (c ? b1 : b2).xs;
+    return i32(a[0]) + i32(a[1]) + i32(a[2]) + i32(a[3]);
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 36;
+}
+"#;
+    let output = run_memory("moveonlyroot", source);
+    assert_no_asan("moveonlyroot", &output);
+    assert_exit("moveonlyroot", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// fixedcontrols: the direct fixed-array spellings that must not change.
+//
+// The direct call discard `a();`, the direct call store, the direct
+// projection `let a: u8[4] = mk().xs;`, and the owned-field root (a call
+// result that carries an owned field) already build and run; the conditional
+// spellings extend their destination and root shapes, so these stay accepted
+// controls.
+// ---------------------------------------------------------------------------
+
+/// The direct fixed-array call and projection spellings stay accepted.
+///
+/// `a();` and `let m: u8[2] = a();` use the call's hidden destination
+/// directly; `let a: u8[4] = mk().xs;` copies the projected field of a call
+/// result; and the owned-field root keeps its `v` field released while the
+/// projection reads `xs`. Each program exits 0.
+#[test]
+fn should_keep_the_direct_fixed_array_spellings() {
+    let direct = r#"module spec.cpr.fixeddirect;
+
+func a(): u8[2] { return [1, 2]; }
+
+func main(): i32 {
+    a();
+    let m: u8[2] = a();
+    return i32(m[0]) + i32(m[1]) - 3;
+}
+"#;
+    let output = run_memory("fixeddirect", direct);
+    assert_no_asan("fixeddirect", &output);
+    assert_exit("fixeddirect", &output, 0);
+
+    let projected = r#"module spec.cpr.fixedprojbind;
+
+struct Box { xs: u8[4]; }
+
+func mk(): Box { return Box { xs: [1, 2, 3, 4] }; }
+
+func main(): i32 {
+    let a: u8[4] = mk().xs;
+    return i32(a[0]) - 1;
+}
+"#;
+    let output = run_memory("fixedprojbind", projected);
+    assert_no_asan("fixedprojbind", &output);
+    assert_exit("fixedprojbind", &output, 0);
+
+    let owned = r#"module spec.cpr.fixedownedroot;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: u8[4]; v: String; }
+
+func mk(): Box { return Box { xs: [5, 6, 7, 8], v: stringOf("x") }; }
+
+func main(): i32 {
+    let a: u8[4] = mk().xs;
+    let b: Box = mk();
+    let c: u8[4] = b.xs;
+    return i32(a[0]) + i32(c[1]) - 11;
+}
+"#;
+    let output = run_memory("fixedownedroot", owned);
+    assert_no_asan("fixedownedroot", &output);
+    assert_exit("fixedownedroot", &output, 0);
+}
