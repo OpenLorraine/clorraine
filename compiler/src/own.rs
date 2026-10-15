@@ -52,7 +52,7 @@ mod place;
 mod statements;
 
 use flow::{
-    Binding, BindingKind, DeferEntry, ExitFrame, FlowState, PlaceState, PlaceTarget,
+    Binding, BindingKind, DeferEntry, ExitFrame, FlowState, LiteralViews, PlaceState, PlaceTarget,
     Scope,
 };
 use liveness::{AccessKind, LoanEvent, LoanEventKind, LoanId, LoanOrigin, LoanOwner, Position};
@@ -301,6 +301,17 @@ struct FunctionChecker<'a, 'd> {
     /// borrowed parameter slot, or a projected target — keeps the derived
     /// element in place instead.
     view_destination_adopts: bool,
+    /// Where the struct literal currently being evaluated lands, which
+    /// decides whether a caller-backed view field may remain: a frame
+    /// destination and a return keep it, every other destination keeps
+    /// module storage alone.
+    literal_views: LiteralViews,
+    /// The backings the accepted struct-literal view fields named.
+    ///
+    /// The enclosing store records them as loans on its destination, exactly
+    /// as a projected element store records its backings, so a later read of
+    /// the destination reaches the backing's scope.
+    pending_literal_owners: BTreeSet<LoanOwner>,
     /// Number of enclosing discarded conditionals: their arms materialize a
     /// fresh owning result into a statement temporary the guard fills on the
     /// arm's own path, so the statement's release frees exactly the arm that
@@ -509,6 +520,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return_derivation_mismatch: false,
             view_array_literal_depth: 0,
             view_destination_adopts: true,
+            literal_views: LiteralViews::Escaping,
+            pending_literal_owners: BTreeSet::new(),
             discard_conditional_depth: 0,
             builder: Builder::new(&decl.name, params, returns),
             temps: Vec::new(),
@@ -1063,6 +1076,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             registration,
             provenance,
             base: None,
+            alias_root: None,
             generated: false,
         });
         if let Some(scope) = self.scopes.last_mut() {
@@ -1178,20 +1192,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .program
                     .globals
                     .get(id)
-                    .map(|global| global.ty.clone())
+                    .map(|global| self.projected_ty(global.ty.clone(), projections))
                     .unwrap_or_else(Ty::unknown),
             },
         }
     }
 
-    /// The type a projection chain reaches from a local binding.
+    /// The type a projection chain reaches from a base type.
     ///
     /// An element projection removes the outermost extent but keeps the
     /// remaining ones, so indexing a `T[M][N]` reaches `T[N]`, not the base
     /// scalar. Keeping the array type matters for a store: an assignment to a
     /// row is a whole-array copy, not a scalar assignment.
-    fn projected_type(&self, id: usize, projections: &[ir::Projection]) -> Ty {
-        let mut ty = self.bindings[id].ty.clone();
+    fn projected_ty(&self, ty: Ty, projections: &[ir::Projection]) -> Ty {
+        let mut ty = ty;
         for projection in projections {
             ty = match projection {
                 ir::Projection::Field(field) => self.member_type(&ty, field),
@@ -1207,6 +1221,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             };
         }
         ty
+    }
+
+    /// The type a projection chain reaches from a local binding.
+    fn projected_type(&self, id: usize, projections: &[ir::Projection]) -> Ty {
+        self.projected_ty(self.bindings[id].ty.clone(), projections)
     }
 
     // -- flow state ----------------------------------------------------------
@@ -1233,6 +1252,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             for id in &scope.order {
                 state.places.remove(id);
                 state.loans.remove(id);
+                state.element_loans.remove(id);
             }
         }
         state
@@ -1295,6 +1315,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             loans.entry(*id).or_default().extend(set.iter().copied());
         }
         loans.retain(|_, set| !set.is_empty());
+        // A path either branch still carries keeps its loans after the join,
+        // because the join's value may be the one that path stored.
+        let mut element_loans: BTreeMap<usize, BTreeMap<Vec<ir::Projection>, BTreeSet<LoanId>>> =
+            BTreeMap::new();
+        for (id, paths) in first.element_loans.iter().chain(second.element_loans.iter()) {
+            let entry = element_loans.entry(*id).or_default();
+            for (path, set) in paths {
+                entry.entry(path.clone()).or_default().extend(set.iter().copied());
+            }
+        }
+        element_loans.retain(|_, paths| {
+            paths.retain(|_, set| !set.is_empty());
+            !paths.is_empty()
+        });
         let mut carried_owners: BTreeMap<usize, BTreeSet<liveness::LoanOwner>> = BTreeMap::new();
         for (id, set) in first
             .carried_owners
@@ -1307,6 +1341,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         FlowState {
             places,
             loans,
+            element_loans,
             carried_owners,
         }
     }

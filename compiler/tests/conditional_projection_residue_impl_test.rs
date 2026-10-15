@@ -229,6 +229,77 @@ fn assert_rejected(tag: &str, source: &str, code: &str, count: usize) {
     );
 }
 
+/// Compiles `source` and asserts the front end rejected it with exactly
+/// `count` error reports at `line`, each carrying `code`, and wrote no
+/// translation unit.
+///
+/// The judgment site is the store expression itself, so the reported line
+/// pins the store's own source line rather than a derived declaration or a
+/// later use. A diagnostic renders its location on the line after its
+/// message, so pairing each error line with the next location line keeps a
+/// warning's location out of the comparison.
+fn assert_rejected_at_line(tag: &str, source: &str, code: &str, count: usize, line: usize) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = write_source(tag, &scratch, source);
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        count,
+        "{tag}: expected {count} error(s), saw {}; stderr:\n{stderr}",
+        errors.len()
+    );
+    for error in &errors {
+        assert!(
+            error.contains(code),
+            "{tag}: expected the {code} report; saw `{error}`; stderr:\n{stderr}"
+        );
+    }
+    let mut locations: Vec<usize> = Vec::new();
+    let mut lines = stderr.lines();
+    while let Some(current) = lines.next() {
+        if !current.starts_with("error ") {
+            continue;
+        }
+        let Some(location) = lines.next() else { continue };
+        let Some(rest) = location.trim_start().strip_prefix("-->") else {
+            continue;
+        };
+        let reported = rest
+            .trim()
+            .rsplit(':')
+            .nth(1)
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        locations.push(reported);
+    }
+    assert_eq!(
+        locations,
+        vec![line; count],
+        "{tag}: expected every report at line {line}; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 /// A `T`-typed member selected between a `take` pair and a freshly built pair.
 const ARM_DUTY_SOURCE: &str = r#"module spec.cpr.armduty;
 import { String, stringOf } from std.text;
@@ -1519,6 +1590,722 @@ fn should_re_emit_the_new_view_element_programs_byte_identically() {
         ("elemarg", ELEM_ARG_SOURCE),
         ("elemfield", ELEM_FIELD_SOURCE),
         ("arrayreturn", ARRAY_RETURN_SOURCE),
+    ];
+    for (tag, source) in cases {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The escaping-store judgment: a view stored where its backing dies first is
+// rejected per destination kind, and the accepted spellings store view arrays
+// element by element. A global or a field accepts only module-level storage,
+// a writable parameter slot accepts module-level and parameter storage, and a
+// local container element records the backing's loans so the liveness rule
+// judges a backing whose scope ends first.
+// ---------------------------------------------------------------------------
+
+/// A fresh view stored into a global binding is rejected at the store.
+const STORE_GLOBAL_SOURCE: &str = r#"module spec.cprimpl.storeglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str = "start";
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func store(): void { names = mk().v; }
+
+func main(): i32 {
+    store();
+    return i32(len(names)) - 2;
+}
+"#;
+
+/// A fresh view element stored into a global view array is rejected.
+const STORE_GLOBAL_ARRAY_SOURCE: &str = r#"module spec.cprimpl.storeglobalarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str[1] = ["start"];
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func store(): void { names = [mk().v]; }
+
+func main(): i32 {
+    store();
+    return i32(len(names[0])) - 2;
+}
+"#;
+
+/// A parameter-backed view stored into a global binding is rejected too: a
+/// parameter does not outlive the global.
+const STORE_GLOBAL_PARAM_SOURCE: &str = r#"module spec.cprimpl.storeglobalparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str = "start";
+
+func store(p: Box): void { names = p.v; }
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    store(b);
+    return i32(len(names)) - 2;
+}
+"#;
+
+/// A fresh view element stored into a global struct field is rejected.
+const STORE_FIELD_SOURCE: &str = r#"module spec.cprimpl.storefield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func store(): void { g.names = [mk().v]; }
+
+func main(): i32 {
+    store();
+    return i32(len(g.names[0])) - 2;
+}
+"#;
+
+/// A local `String` member widened into a global `str?` is rejected.
+const STORE_WIDE_GLOBAL_SOURCE: &str = r#"module spec.cprimpl.storewideglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str? = null;
+
+func store(): void {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    names = b.v;
+}
+
+func main(): i32 {
+    store();
+    if (names == null) {
+        return 9;
+    }
+    return i32(names[0]) - 97;
+}
+"#;
+
+/// A fresh view stored through a writable parameter slot is rejected.
+const STORE_SLOT_FRESH_SOURCE: &str = r#"module spec.cprimpl.storeslotfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func fill(borrow slot: str): void { slot = mk().v; }
+
+func main(): i32 {
+    let out: str = "aa";
+    fill(borrow out);
+    return i32(len(out)) - 2;
+}
+"#;
+
+/// A view of the callee's local stored through a slot is rejected.
+const STORE_SLOT_LOCAL_SOURCE: &str = r#"module spec.cprimpl.storeslotlocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(borrow slot: str): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    slot = b.v;
+}
+
+func main(): i32 {
+    let out: str = "aa";
+    fill(borrow out);
+    return i32(len(out)) - 2;
+}
+"#;
+
+/// A fresh view element stored through a view-array slot is rejected.
+const STORE_SLOT_ARRAY_SOURCE: &str = r#"module spec.cprimpl.storeslotarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func fill(borrow slot: str[1]): void { slot = [mk().v]; }
+
+func main(): i32 {
+    let out: str[1] = ["AA"];
+    fill(borrow out);
+    return i32(len(out[0])) - 2;
+}
+"#;
+
+/// A local `String` member widened into a nullable parameter slot is rejected.
+const STORE_WIDE_SLOT_SOURCE: &str = r#"module spec.cprimpl.storewideslot;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    slot = b.v;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    return 0;
+}
+"#;
+
+/// A loop-iteration backing stored into a local element is rejected.
+const STORE_LOOP_ELEM_SOURCE: &str = r#"module spec.cprimpl.storeloopelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let i: i32 = 0;
+    while (i < 3) {
+        xs[1] = mk().v;
+        i = i + 1;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 {
+    return run() - 97;
+}
+"#;
+
+/// A nested-block backing stored into a local element is rejected.
+const STORE_NESTED_ELEM_SOURCE: &str = r#"module spec.cprimpl.storenestedelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        xs[1] = b.v;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 {
+    return run() - 120;
+}
+"#;
+
+/// A module-level static view element stored into a global struct field.
+const STORE_STATIC_SOURCE: &str = r#"module spec.cprimpl.storestatic;
+
+let s: str = "st";
+
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func store(): void { g.names = [s]; }
+
+func main(): i32 {
+    store();
+    return i32(g.names[0][0]) - 115;
+}
+"#;
+
+/// A lambda capturing a `str[1]` local.
+const CAPTURE_VIEW_ARRAY_SOURCE: &str = r#"module spec.cprimpl.captureviewarray;
+
+func main(): i32 {
+    let names: str[1] = ["abc"];
+    return ([names] () => i32(names[0][0]))() - 97;
+}
+"#;
+
+/// A local element store whose backing is a same-frame local and a parameter.
+const LOCAL_ELEM_SOURCE: &str = r#"module spec.cprimpl.localelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(c: bool, a: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = c ? b.v : a;
+    return i32(xs[1][0]);
+}
+
+func main(): i32 {
+    return pick(true, "ppp") + pick(false, "qqqq") - 233;
+}
+"#;
+
+/// A view stored where the destination outlives its backing reports one
+/// escape error at the store.
+///
+/// A global binding and a global field keep reading the stored view for the
+/// whole program, so the fresh derivations (`mk().v`, `[mk().v]`) and the
+/// parameter-backed spelling each report one `E10033` at the store line; the
+/// widened `String` member is judged by the same rule.
+#[test]
+fn should_reject_a_view_stored_into_a_global_or_a_field() {
+    assert_rejected_at_line("storeglobal", STORE_GLOBAL_SOURCE, "E10033", 1, 11);
+    assert_rejected_at_line(
+        "storeglobalarray",
+        STORE_GLOBAL_ARRAY_SOURCE,
+        "E10033",
+        1,
+        11,
+    );
+    assert_rejected_at_line(
+        "storeglobalparam",
+        STORE_GLOBAL_PARAM_SOURCE,
+        "E10033",
+        1,
+        9,
+    );
+    assert_rejected_at_line("storefield", STORE_FIELD_SOURCE, "E10033", 1, 12);
+    assert_rejected_at_line(
+        "storewideglobal",
+        STORE_WIDE_GLOBAL_SOURCE,
+        "E10033",
+        1,
+        11,
+    );
+}
+
+/// A view stored through a writable parameter slot is judged against the
+/// caller's frame and reports one loan-outlives error at the store.
+///
+/// The slot's storage is the caller's, so a fresh call result, the callee's
+/// local, a fresh array element, and the widened local member each report one
+/// `E10030`; the parameter-backed twin stays accepted in the spec suite.
+#[test]
+fn should_reject_a_view_stored_through_a_parameter_slot() {
+    assert_rejected_at_line(
+        "storeslotfresh",
+        STORE_SLOT_FRESH_SOURCE,
+        "E10030",
+        1,
+        9,
+    );
+    assert_rejected_at_line(
+        "storeslotlocal",
+        STORE_SLOT_LOCAL_SOURCE,
+        "E10030",
+        1,
+        9,
+    );
+    assert_rejected_at_line(
+        "storeslotarray",
+        STORE_SLOT_ARRAY_SOURCE,
+        "E10030",
+        1,
+        9,
+    );
+    assert_rejected_at_line(
+        "storewideslot",
+        STORE_WIDE_SLOT_SOURCE,
+        "E10030",
+        1,
+        9,
+    );
+}
+
+/// A backing whose scope ends before the array's reports one loan-outlives
+/// error at the element store.
+///
+/// The loop iteration's call result and the nested block's local both die
+/// before the array's later read, so each store reports one `E10030` at the
+/// store line; the same-frame spellings stay accepted in the spec suite.
+#[test]
+fn should_reject_a_short_lived_backing_stored_into_a_local_array_element() {
+    assert_rejected_at_line(
+        "storeloopelem",
+        STORE_LOOP_ELEM_SOURCE,
+        "E10030",
+        1,
+        13,
+    );
+    assert_rejected_at_line(
+        "storenestedelem",
+        STORE_NESTED_ELEM_SOURCE,
+        "E10030",
+        1,
+        11,
+    );
+}
+
+/// A global field's view array stores element by element.
+///
+/// C cannot assign an array, and a view element has no initializer-list form,
+/// so the module-level static element assigns into its own index instead of a
+/// compound initializer the strict build would reject.
+#[test]
+fn should_store_a_global_field_view_element_by_element() {
+    let tag = "storestatic";
+    let (_scratch, emitted) = emit_host(tag, STORE_STATIC_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_storestatic_store(void)\n{");
+    assert_contains(
+        tag,
+        body,
+        ".names[0] = cl_spec_cprimpl_storestatic_s;",
+    );
+    assert_absent(tag, body, ".names = {");
+}
+
+/// A captured view array initializes its environment field element by
+/// element.
+///
+/// The environment field carries the array's own C shape, so the capture
+/// literal names each element instead of handing the array's pointer to the
+/// field's first member.
+#[test]
+fn should_initialize_a_captured_view_array_element_by_element() {
+    let tag = "captureviewarray";
+    let (_scratch, emitted) = emit_host(tag, CAPTURE_VIEW_ARRAY_SOURCE);
+    assert_contains(tag, &emitted, "(struct ClEnv_0){ { names[0] } }");
+    assert_absent(tag, &emitted, "(struct ClEnv_0){ names }");
+}
+
+/// A local element store whose backing covers the array stays ownerless and
+/// leaves the backing to its own scope cleanup.
+///
+/// The store reads the local member through the view conversion and binds no
+/// generated owner: the local's cleanup already follows the element read, so
+/// the array stays valid for its own last use.
+#[test]
+fn should_accept_a_local_view_element_store_borrow_checked() {
+    let tag = "localelem";
+    let (_scratch, emitted) = emit_host(tag, LOCAL_ELEM_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_localelem_pick(bool c, ClStr a)\n{",
+    );
+    assert_contains(tag, body, "xs[1] = (c ? cl_string_view(b.v) : a);");
+    assert_absent(tag, body, "__cl_owned");
+    assert_release_after(
+        tag,
+        body,
+        "xs[1] = (c ? cl_string_view(b.v) : a);",
+        "if (b.v) { FreeString(b.v); }",
+    );
+}
+
+/// The accepted store and capture programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_view_store_programs_byte_identically() {
+    let cases: [(&str, &str); 3] = [
+        ("storestatic", STORE_STATIC_SOURCE),
+        ("captureviewarray", CAPTURE_VIEW_ARRAY_SOURCE),
+        ("localelem", LOCAL_ELEM_SOURCE),
+    ];
+    for (tag, source) in cases {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The per-component judgment and the frame destinations: a store names one
+// storage per arm or element, so each is judged on its own; a `for (borrow e
+// in xs)` alias writes its iterable element; a `take` parameter owns this
+// frame's storage; and a struct literal's view field shares its destination's
+// frame.
+// ---------------------------------------------------------------------------
+
+/// A mixed-source slot store names a module view and a fresh call result.
+const MERGE_FAIL_FRESH_SOURCE: &str = r#"module spec.cprimpl.mergefailfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let s1: str = "ab";
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func fill(c: bool, borrow slot: str): void { slot = c ? s1 : mk().v; }
+
+func main(): i32 { return 0; }
+"#;
+
+/// A mixed-source global store names a module view and a local member.
+const MERGE_FAIL_LOCAL_SOURCE: &str = r#"module spec.cprimpl.mergefaillocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let s1: str = "ab";
+let g: Holder = Holder { names: ["AA"] };
+
+func store(c: bool): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    g.names = [c ? s1 : b.v];
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A view of the callee's `take` parameter stored into the caller's slot.
+const TAKE_OUT_SOURCE: &str = r#"module spec.cprimpl.takeout;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(take p: Box, borrow slot: str?): void { slot = p.v; }
+
+func main(): i32 { return 0; }
+"#;
+
+/// A per-iteration fresh backing written through the element alias.
+const ALIAS_FRESH_SOURCE: &str = r#"module spec.cprimpl.aliasfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    for (borrow e in xs) {
+        e = mk().v;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 { return run() - 97; }
+"#;
+
+/// A view store through an immutable module binding.
+const CONST_STORE_SOURCE: &str = r#"module spec.cprimpl.constwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+const names: str = "start";
+
+func store(): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    names = b.v;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A whole-value view store through a read-only parameter.
+const READONLY_STORE_SOURCE: &str = r#"module spec.cprimpl.readonlystore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    p = b.v;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A same-frame backing written through the element alias.
+const ALIAS_LOCAL_SOURCE: &str = r#"module spec.cprimpl.aliaslocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    for (borrow e in xs) {
+        e = b.v;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 { return run() - 120; }
+"#;
+
+/// A frame-local struct literal and its field-assignment twin.
+const LITERAL_PAIR_SOURCE: &str = r#"module spec.cprimpl.literalpair;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func literal(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    return i32(h.names[0][0]);
+}
+
+func assigned(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: ["AA"] };
+    h.names = [b.v];
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 {
+    return literal() + assigned() - 240;
+}
+"#;
+
+/// A same-frame backing stored into a `take` parameter.
+const TAKE_FRAME_SOURCE: &str = r#"module spec.cprimpl.takeframe;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(take t: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    t = b.v;
+    return i32(t[0]);
+}
+
+func main(): i32 {
+    let out: str = "aa";
+    return fill(take out) - 120;
+}
+"#;
+
+/// Each component of a mixed-source store is judged on its own, so the first
+/// component the destination cannot keep names one report at the store.
+///
+/// The module view beside the fresh call result reports `E10030`; the module
+/// view beside the local member reports `E10033`; the `take` parameter's
+/// stored view reports `E10030`; and the element alias's per-iteration fresh
+/// backing reports `E10030`. Each store keeps exactly one error.
+#[test]
+fn should_judge_each_storage_component_of_a_view_store() {
+    assert_rejected_at_line(
+        "mergefailfresh",
+        MERGE_FAIL_FRESH_SOURCE,
+        "E10030",
+        1,
+        11,
+    );
+    assert_rejected_at_line(
+        "mergefaillocal",
+        MERGE_FAIL_LOCAL_SOURCE,
+        "E10033",
+        1,
+        13,
+    );
+    assert_rejected_at_line("takeout", TAKE_OUT_SOURCE, "E10030", 1, 7);
+    assert_rejected_at_line("aliasfresh", ALIAS_FRESH_SOURCE, "E10030", 1, 12);
+}
+
+/// An already-rejected write keeps its own one report.
+///
+/// The immutable module binding reports `E10023` and the read-only parameter
+/// reports `E10024`; the view-store judgment adds no second error at either
+/// site.
+#[test]
+fn should_report_once_at_an_already_rejected_view_store() {
+    assert_rejected_at_line("constwrite", CONST_STORE_SOURCE, "E10023", 1, 11);
+    assert_rejected_at_line(
+        "readonlystore",
+        READONLY_STORE_SOURCE,
+        "E10024",
+        1,
+        9,
+    );
+}
+
+/// The alias store writes the iterable element through its address binding.
+///
+/// The element's address is refreshed at the top of every iteration and the
+/// store reaches the iterable through it, so the container the alias names
+/// receives the view value.
+#[test]
+fn should_write_a_for_alias_element_through_its_iterable_address() {
+    let tag = "aliaslocal";
+    let (_scratch, emitted) = emit_host(tag, ALIAS_LOCAL_SOURCE);
+    assert_contains(tag, &emitted, "(*__cl_tmp1) = cl_string_view(b.v);");
+    assert_contains(tag, &emitted, "__cl_tmp1 = &(xs[__cl_tmp0]);");
+}
+
+/// A struct literal's view field and its assignment twin store element by
+/// element.
+///
+/// Both spellings read the local member through the view conversion and keep
+/// the carrier's own C shape, so the field is filled element by element
+/// exactly as the accepted field assignment fills it.
+#[test]
+fn should_store_a_frame_backed_literal_field_element_by_element() {
+    let tag = "literalpair";
+    let (_scratch, emitted) = emit_host(tag, LITERAL_PAIR_SOURCE);
+    let stores = emitted
+        .matches("h.names[0] = cl_string_view(b.v);")
+        .count();
+    assert_eq!(
+        stores, 2,
+        "{tag}: expected the literal and the assignment to store the same element shape; emitted:\n{emitted}"
+    );
+}
+
+/// A same-frame backing stored into a `take` parameter fills the parameter
+/// in place.
+#[test]
+fn should_store_a_same_frame_backing_into_a_take_parameter() {
+    let tag = "takeframe";
+    let (_scratch, emitted) = emit_host(tag, TAKE_FRAME_SOURCE);
+    assert_contains(tag, &emitted, "t = cl_string_view(b.v);");
+}
+
+/// The alias, literal, and take-destination programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_frame_destination_programs_byte_identically() {
+    let cases: [(&str, &str); 3] = [
+        ("aliaslocal", ALIAS_LOCAL_SOURCE),
+        ("literalpair", LITERAL_PAIR_SOURCE),
+        ("takeframe", TAKE_FRAME_SOURCE),
     ];
     for (tag, source) in cases {
         let (first, second) = emit_twice(tag, source);

@@ -289,6 +289,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .value
                 .as_ref()
                 .is_some_and(|value| matches!(&value.kind, ExprKind::ArrayLiteral { .. }));
+        // A struct literal materializes its fields in this new binding's own
+        // frame storage, so a frame- or caller-backed view field is accepted
+        // here and its loan follows the binding below.
+        let saved_literal_views = self.literal_views;
+        let saved_pending = std::mem::take(&mut self.pending_literal_owners);
+        self.literal_views = if decl
+            .value
+            .as_ref()
+            .is_some_and(FunctionChecker::is_frame_literal)
+        {
+            LiteralViews::Frame
+        } else {
+            LiteralViews::Escaping
+        };
         if view_elements {
             self.view_array_literal_depth += 1;
         }
@@ -296,6 +310,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if view_elements {
             self.view_array_literal_depth -= 1;
         }
+        self.literal_views = saved_literal_views;
+        let pending_literal_owners =
+            std::mem::replace(&mut self.pending_literal_owners, saved_pending);
         let target = declared
             .clone()
             .or(value_ty)
@@ -336,6 +353,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if let Some(lowered) = prepared.lowered() {
                     let owners = self.carried_view_owners(lowered, false);
                     self.set_binding_carried_owners(id, owners);
+                }
+                // A struct literal's accepted view fields follow the binding
+                // exactly as a projected element store's backings do: the
+                // loans protect every later read of the binding.
+                if !pending_literal_owners.is_empty() {
+                    self.record_literal_view_loans(id, &[], pending_literal_owners, decl.span);
                 }
             }
             let place = self.binding_place(id);
@@ -548,6 +571,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if let Some(ty) = &declared {
             self.check_nullable_decl(ty, decl.span);
         }
+        // A struct literal materializes its fields in this new binding's own
+        // frame storage, so a frame- or caller-backed view field is accepted
+        // here and its loan follows the binding below.
+        let saved_literal_views = self.literal_views;
+        let saved_pending = std::mem::take(&mut self.pending_literal_owners);
+        self.literal_views = if FunctionChecker::is_frame_literal(&decl.value) {
+            LiteralViews::Frame
+        } else {
+            LiteralViews::Escaping
+        };
         let value_ty = {
             // A view-element array initializer binds its elements as views,
             // so the evaluation must not consume an owned element source.
@@ -564,6 +597,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             value_ty
         };
+        self.literal_views = saved_literal_views;
+        let pending_literal_owners =
+            std::mem::replace(&mut self.pending_literal_owners, saved_pending);
         let target = declared.or(Some(value_ty)).unwrap_or_else(Ty::unknown);
         // As in `check_let`, the store, the ownership effect, and the null
         // check resolve before the binding is declared, so the initializer's
@@ -587,6 +623,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if let Some(lowered) = prepared.lowered() {
                 let owners = self.carried_view_owners(lowered, false);
                 self.set_binding_carried_owners(id, owners);
+            }
+            // A struct literal's accepted view fields follow the binding,
+            // exactly as in `check_let`.
+            if !pending_literal_owners.is_empty() {
+                self.record_literal_view_loans(id, &[], pending_literal_owners, decl.span);
             }
         }
         let place = self.binding_place(id);
@@ -1194,7 +1235,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if view_elements {
                 self.view_array_literal_depth += 1;
             }
+            // A returned struct literal hands its view fields to the caller:
+            // the caller's parameter storage survives the return while this
+            // frame's does not.
+            let saved_literal_views = self.literal_views;
+            let saved_pending = std::mem::take(&mut self.pending_literal_owners);
+            if FunctionChecker::is_frame_literal(value) {
+                self.literal_views = LiteralViews::Return;
+            }
             self.eval(value);
+            self.literal_views = saved_literal_views;
+            let _ = std::mem::replace(&mut self.pending_literal_owners, saved_pending);
             if view_elements {
                 self.view_array_literal_depth -= 1;
             }
@@ -1336,7 +1387,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let temp_loans: Vec<LoanId> = if local_only {
                 Vec::new()
             } else {
-                self.carried_view_owners(&lowered, is_view_like(&returns))
+                let mut owners = self.carried_view_owners(&lowered, is_view_like(&returns));
+                owners.extend(self.carrier_return_owners(&lowered, &returns));
+                owners
                     .into_iter()
                     .filter_map(|owner| self.record_view_loan(owner, LoanKind::Shared, span))
                     .collect()

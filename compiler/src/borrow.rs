@@ -44,6 +44,14 @@ pub enum Provenance {
     /// until the statement ends, so a view that reads through it may not be
     /// used later.
     Temp(crate::ir::TempId),
+    /// The value may point into any of several storages.
+    ///
+    /// A conditional picks one component at run time and a view array stores
+    /// every element, so each component must be safe at a destination on its
+    /// own. The list never holds a plain local: a local-backed component
+    /// selects that local directly, because the chosen frame relation is what
+    /// the escape and loan rules judge.
+    Composite(Vec<Provenance>),
 }
 
 /// True for a type that is a view over other storage.

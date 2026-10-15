@@ -604,16 +604,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Where a view value's storage comes from.
     pub(super) fn view_provenance(&self, expr: &Expr) -> Provenance {
         match &expr.kind {
-            ExprKind::Name(name) => self
-                .lookup(name)
-                .map(|id| self.place_provenance(id))
-                .unwrap_or(Provenance::None),
-            ExprKind::Qualified(name) => name
-                .segments
-                .first()
-                .and_then(|first| self.lookup(first))
-                .map(|id| self.place_provenance(id))
-                .unwrap_or(Provenance::None),
+            ExprKind::Name(name) => match self.lookup(name) {
+                Some(id) => self.place_provenance(id),
+                // A name that resolves to a module-level binding is storage
+                // that outlives every frame, exactly like a literal.
+                None => crate::init_graph::resolve_name_global(self.loaded, self.module, name)
+                    .map(|global| Provenance::Global(global.name))
+                    .unwrap_or(Provenance::None),
+            },
+            ExprKind::Qualified(name) => {
+                if let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) {
+                    return self.place_provenance(id);
+                }
+                crate::init_graph::resolve_global(self.loaded, self.module, name)
+                    .map(|global| Provenance::Global(global.name))
+                    .unwrap_or(Provenance::None)
+            }
             ExprKind::Str(_) => Provenance::Static,
             ExprKind::Unsafe(inner) => self.view_provenance(inner),
             // A raw or scalar cast keeps the storage of its operand, so a view
@@ -621,53 +627,83 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
                 self.view_provenance(value)
             }
-            ExprKind::Call { callee, args, .. } => self.call_provenance(callee, args),
+            ExprKind::Call { callee, args, .. } => {
+                let provenance = self.call_provenance(callee, args);
+                // A call whose declared result is `static str` names static
+                // storage, which outlives every frame exactly like a literal;
+                // the result has no lend source to reborrow, so the call
+                // provenance alone cannot see it.
+                if provenance == Provenance::None
+                    && matches!(self.ty(expr).kind, TyKind::StaticStr)
+                {
+                    Provenance::Static
+                } else {
+                    provenance
+                }
+            }
             // A projection points into the same storage as its base, so the
             // provenance of `h.f` or `xs[0]` is the provenance of `h` or `xs`.
             ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
                 self.view_provenance(base)
             }
-            // A conditional's storage is the chosen arm's storage, so the
-            // provenance is shared only when both arms agree. A local-backed
+            // A conditional's storage is the chosen arm's storage. An arm
+            // that names no storage (`null`) contributes nothing; a local
             // arm keeps its provenance even when the other arm differs,
             // because the chosen value then points into a frame that dies at
             // the return, exactly as a plain local view does; naming the
             // local lets the escape and loan rules judge the mixed spelling.
+            // Every other mix keeps its components, so a destination judges
+            // each arm against its own accept set.
             ExprKind::Conditional {
                 then_value,
                 else_value,
                 ..
             } => {
-                let then = self.view_provenance(then_value);
-                let otherwise = self.view_provenance(else_value);
-                if then == otherwise {
-                    then
-                } else if let Provenance::Local(id) = then {
-                    Provenance::Local(id)
-                } else if let Provenance::Local(id) = otherwise {
-                    Provenance::Local(id)
-                } else {
-                    Provenance::None
+                let mut atoms = Vec::new();
+                for arm in [then_value, else_value] {
+                    if matches!(arm.kind, ExprKind::Null) {
+                        continue;
+                    }
+                    atoms.push(self.view_provenance(arm));
                 }
+                merge_view_provenances(atoms, true)
             }
             // An array literal's storage is its elements' storage, so the
             // result is a view of the elements' common source; a mixed or
-            // ownerless element list has no single source. The fill form's
-            // value is every remaining element's storage.
+            // ownerless element list keeps every component, so a destination
+            // judges each element. The fill form's value is every remaining
+            // element's storage.
             ExprKind::ArrayLiteral { elements, fill } => {
-                let mut provenance: Option<Provenance> = None;
-                let values = elements.iter().chain(fill.iter().map(|fill| fill.as_ref()));
-                for element in values {
-                    let current = self.view_provenance(element);
-                    match &provenance {
-                        None => provenance = Some(current),
-                        Some(known) if *known == current => {}
-                        Some(_) => return Provenance::None,
+                let mut atoms = Vec::new();
+                for element in elements {
+                    if matches!(element.kind, ExprKind::Null) {
+                        continue;
+                    }
+                    atoms.push(self.view_provenance(element));
+                }
+                if let Some(fill) = fill {
+                    if !matches!(fill.kind, ExprKind::Null) {
+                        atoms.push(self.view_provenance(fill));
                     }
                 }
-                provenance.unwrap_or(Provenance::None)
+                merge_view_provenances(atoms, false)
             }
             _ => Provenance::None,
+        }
+    }
+
+    /// The storage components a provenance stands for.
+    ///
+    /// A plain provenance is its own single component; a composite contributes
+    /// each of its components, so a destination can judge every arm or element
+    /// on its own.
+    pub(super) fn storage_atoms(provenance: &Provenance) -> Vec<Provenance> {
+        match provenance {
+            Provenance::Composite(atoms) => atoms
+                .iter()
+                .flat_map(|atom| Self::storage_atoms(atom))
+                .collect(),
+            atom => vec![atom.clone()],
         }
     }
 
@@ -680,8 +716,152 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         self.state.loans.get(&id).cloned().unwrap_or_default()
     }
 
+    /// The owners of the loans a binding carries.
+    ///
+    /// A carrier binding's loans are exactly the backings its view-like
+    /// positions read, so the owners name every storage an escape of the
+    /// binding would hand out.
+    pub(super) fn binding_loan_owners(&self, id: usize) -> BTreeSet<LoanOwner> {
+        let mut owners = BTreeSet::new();
+        for loan in self.binding_loans(id) {
+            for (origin, candidate) in &self.loan_ids {
+                if *candidate == loan {
+                    owners.insert(origin.owner);
+                }
+            }
+        }
+        owners
+    }
+
+    /// The owners a returned carrier's view positions read that die with the
+    /// callee frame.
+    ///
+    /// A carrier binding's loans name every backing its view-like positions
+    /// read, so returning the binding hands those views to the caller exactly
+    /// as a direct view return does and the loans are created at the return.
+    /// Only an owner whose storage dies with this frame makes that return
+    /// dangle: a plain or `borrow` parameter's storage belongs to the caller,
+    /// which outlives the return (EL-2), so its loan stays on the binding for
+    /// a module destination without rejecting the return. A view-like return
+    /// keeps its own rule, and a value that carries no views contributes
+    /// nothing.
+    pub(super) fn carrier_return_owners(
+        &self,
+        lowered: &Value,
+        returns: &Ty,
+    ) -> BTreeSet<LoanOwner> {
+        let mut owners = BTreeSet::new();
+        if is_view_like(returns) || !self.may_carry_view(returns) {
+            return owners;
+        }
+        let mut roots = BTreeSet::new();
+        self.lowered_root_bindings(lowered, &mut roots);
+        for id in roots {
+            for owner in self.binding_loan_owners(id) {
+                if self.owner_dies_with_frame(owner) {
+                    owners.insert(owner);
+                }
+            }
+        }
+        owners
+    }
+
+    /// True when a loaned owner's storage dies with the callee frame.
+    ///
+    /// A local's storage (including a compiler-generated owner) dies with the
+    /// frame, and a `take` parameter's storage is this frame's too. A plain,
+    /// `borrow`, or out-slot parameter names the caller's storage, which the
+    /// return leaves alive. A statement temporary dies at the end of its
+    /// statement, well before the caller reads a returned view.
+    pub(super) fn owner_dies_with_frame(&self, owner: LoanOwner) -> bool {
+        match owner {
+            LoanOwner::Binding(id) => {
+                let binding = &self.bindings[id];
+                match binding.kind {
+                    BindingKind::Local => true,
+                    BindingKind::Param => binding.mode == Mode::Take,
+                    BindingKind::OutSlot => false,
+                }
+            }
+            LoanOwner::Temp(_) => true,
+        }
+    }
+
     /// Replaces the loans a binding carries.
+    ///
+    /// A whole-binding store replaces every element the binding held, so the
+    /// per-element record is dropped with the union it fed.
     pub(super) fn set_binding_loans(&mut self, id: usize, loans: BTreeSet<LoanId>) {
+        self.state.element_loans.remove(&id);
+        self.set_binding_loan_union(id, loans);
+    }
+
+    /// Replaces the loans one element path contributes to a container.
+    ///
+    /// Overwriting an element drops the loans of the value it replaced, so a
+    /// stale backing stops blocking its owner's writes. A loan another element
+    /// path also carries stays, because that element still reads it. A path
+    /// with a run-time index cannot name the element it overwrote, so it keeps
+    /// the union and only adds.
+    pub(super) fn replace_element_loans(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        loans: BTreeSet<LoanId>,
+    ) {
+        let constant = projections.iter().all(|projection| {
+            !matches!(
+                projection,
+                ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
+            )
+        });
+        if !constant {
+            let mut union = self.binding_loans(id);
+            union.extend(loans.iter().copied());
+            self.set_binding_loan_union(id, union);
+            return;
+        }
+        let path = projections.to_vec();
+        let previous = self
+            .state
+            .element_loans
+            .get_mut(&id)
+            .and_then(|paths| paths.remove(&path));
+        let mut union = self.binding_loans(id);
+        if let Some(previous) = previous {
+            for loan in previous {
+                let shared = self
+                    .state
+                    .element_loans
+                    .get(&id)
+                    .is_some_and(|paths| paths.values().any(|set| set.contains(&loan)));
+                if !shared {
+                    union.remove(&loan);
+                }
+            }
+        }
+        union.extend(loans.iter().copied());
+        if loans.is_empty() {
+            let empty = self
+                .state
+                .element_loans
+                .get(&id)
+                .is_some_and(|paths| paths.is_empty());
+            if empty {
+                self.state.element_loans.remove(&id);
+            }
+        } else {
+            self.state
+                .element_loans
+                .entry(id)
+                .or_default()
+                .insert(path, loans);
+        }
+        self.set_binding_loan_union(id, union);
+    }
+
+    /// Writes the union of loans a binding carries.
+    fn set_binding_loan_union(&mut self, id: usize, loans: BTreeSet<LoanId>) {
         if loans.is_empty() {
             self.state.loans.remove(&id);
         } else {
@@ -891,8 +1071,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
             }
             _ => {
-                if let Some(owner) = owner_of(&self.view_provenance(expr)) {
-                    owners.insert(owner);
+                // A mixed value contributes every component's owner, so a
+                // frame binding among module-level or literal components
+                // still carries its loan.
+                for atom in FunctionChecker::storage_atoms(&self.view_provenance(expr)) {
+                    if let Some(owner) = owner_of(&atom) {
+                        owners.insert(owner);
+                    }
                 }
             }
         }
@@ -1115,33 +1300,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// A `Member` receiver is read back through [`Self::view_provenance`]; a
     /// qualified receiver names the head binding, so its own place provenance
-    /// is used.
+    /// is used, and a head that resolves to module storage names that storage.
     fn dot_receiver_provenance(&self, callee: &Expr) -> Provenance {
         match &callee.kind {
             ExprKind::Member { base, .. } => self.view_provenance(base),
-            ExprKind::Qualified(name) if name.segments.len() >= 2 => name
-                .segments
-                .first()
-                .and_then(|first| self.lookup(first))
-                .map(|id| self.place_provenance(id))
-                .unwrap_or(Provenance::None),
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                if let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) {
+                    return self.place_provenance(id);
+                }
+                crate::init_graph::resolve_global(self.loaded, self.module, name)
+                    .map(|global| Provenance::Global(global.name))
+                    .unwrap_or(Provenance::None)
+            }
             _ => Provenance::None,
         }
-    }
-
-    /// True when a value expression is a loan that would escape if stored.
-    ///
-    /// Only a view-like value carries a loan: a view, or a fixed array whose
-    /// element is a view. A scalar or owner read from a place copies or moves
-    /// and never stores a reference to that place.
-    pub(super) fn is_loan_value(&self, expr: &Expr) -> bool {
-        if !is_view_like(&self.ty(expr)) {
-            return false;
-        }
-        matches!(
-            self.view_provenance(expr),
-            Provenance::Local(_) | Provenance::Param(_) | Provenance::Global(_)
-        )
     }
 
     /// The base binding and projections of a place expression.
@@ -1203,6 +1375,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ExprKind::Unsafe(inner) => self.place_target(inner),
             _ => None,
+        }
+    }
+
+    /// The storage a place ultimately reaches when it may name an element
+    /// alias.
+    ///
+    /// A `for (borrow e in xs)` binding has no storage of its own: a place
+    /// that names it reaches the iterable element. The alias root is resolved
+    /// when the alias is bound, so one step suffices here; the place's own
+    /// projections follow the root's, because the root's projections select
+    /// the storage the place continues into.
+    pub(super) fn resolve_alias_container(&self, target: PlaceTarget) -> PlaceTarget {
+        match target {
+            PlaceTarget::Local(id, projections) => match self.bindings[id].alias_root.clone() {
+                Some(PlaceTarget::Local(root_id, mut root_projections)) => {
+                    root_projections.extend(projections);
+                    PlaceTarget::Local(root_id, root_projections)
+                }
+                Some(PlaceTarget::Global(global, mut root_projections)) => {
+                    root_projections.extend(projections);
+                    PlaceTarget::Global(global, root_projections)
+                }
+                None => PlaceTarget::Local(id, projections),
+            },
+            PlaceTarget::Global(global, projections) => PlaceTarget::Global(global, projections),
         }
     }
 
@@ -1480,5 +1677,39 @@ fn owner_of(provenance: &Provenance) -> Option<LoanOwner> {
         Provenance::Local(id) | Provenance::Param(id) => Some(LoanOwner::Binding(*id)),
         Provenance::Temp(temp) => Some(LoanOwner::Temp(*temp)),
         _ => None,
+    }
+}
+
+/// Merges the storage provenances a conditional or an array literal names.
+///
+/// Components that agree collapse to their single provenance, because the
+/// value's storage is then unambiguous. A conditional with `prefer_local` set
+/// keeps the old rule: a local component wins over every other one, so the
+/// chosen arm's frame relation stays what the escape and loan rules judge. An
+/// array literal passes `false`, because every element is stored rather than
+/// chosen, and a local component stays one component of the composite.
+fn merge_view_provenances(atoms: Vec<Provenance>, prefer_local: bool) -> Provenance {
+    let mut unique: Vec<Provenance> = Vec::new();
+    for atom in atoms {
+        for part in FunctionChecker::storage_atoms(&atom) {
+            if !unique.contains(&part) {
+                unique.push(part);
+            }
+        }
+    }
+    match unique.len() {
+        0 => Provenance::None,
+        1 => unique.pop().expect("one component"),
+        _ => {
+            if prefer_local {
+                if let Some(local) = unique
+                    .iter()
+                    .find(|atom| matches!(atom, Provenance::Local(_)))
+                {
+                    return local.clone();
+                }
+            }
+            Provenance::Composite(unique)
+        }
     }
 }

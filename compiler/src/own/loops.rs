@@ -436,6 +436,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp: address_temp,
                 ty: element.clone(),
             });
+            // The alias writes the iterable element. Its container may be a
+            // nested alias itself, so the chain is resolved once here and the
+            // stored root names the outermost storage.
+            if let Some(target) = self.place_target(&decl.iterable) {
+                let root = self.resolve_alias_container(target);
+                self.bindings[id].alias_root = Some(root);
+            }
             // The binding is the element itself, so the iterable keeps owning
             // the value even when the body never touches the binding; mark it
             // used so an unused element alias is not reported as a dead local.

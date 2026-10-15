@@ -556,16 +556,63 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.eval(&field.value);
                     self.consume_owned_place(&field.value, field.value.span);
                     // A view-like field value stored in a struct field is
-                    // storage in a field: the loan would escape its origin,
-                    // so it reports here instead of dangling once the
-                    // backing's scope ends.
-                    if self.is_loan_value(&field.value) {
-                        self.error(
-                            "E10033",
-                            format!("borrow of '{}' escapes its scope", field.name),
-                            "derive the view from a parameter or take ownership",
-                            field.value.span,
-                        );
+                    // storage in a field: a backing whose storage dies before
+                    // the destination would leave the field dangling, so the
+                    // field reports here instead. Every component is judged
+                    // on its own, so a mixed array of frame-backed views is
+                    // caught exactly as the field assignment's per-element
+                    // rule catches it.
+                    //
+                    // The destination decides which backings survive: a frame
+                    // destination keeps this frame's and the caller's storage,
+                    // and a returned value keeps the caller's parameters,
+                    // whose storage belongs to the caller's frame (EL-2); a
+                    // global, a field, or an argument keeps module storage
+                    // alone. A frame destination also hands the backings to
+                    // the destination's binding as loans below.
+                    let view_backings: Vec<usize> = if is_view_like(&self.ty(&field.value)) {
+                        Self::storage_atoms(&self.view_provenance(&field.value))
+                            .into_iter()
+                            .filter_map(|atom| match atom {
+                                Provenance::Local(id) | Provenance::Param(id) => Some(id),
+                                _ => None,
+                            })
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    if !view_backings.is_empty() {
+                        match self.literal_views {
+                            LiteralViews::Frame => {
+                                for id in view_backings {
+                                    self.pending_literal_owners.insert(LoanOwner::Binding(id));
+                                }
+                            }
+                            LiteralViews::Return => {
+                                // A parameter's storage belongs to the caller
+                                // and survives the return; a local or a taken
+                                // parameter dies with this frame.
+                                let escapes = view_backings.iter().any(|id| {
+                                    self.owner_dies_with_frame(LoanOwner::Binding(*id))
+                                });
+                                if escapes {
+                                    self.error(
+                                        "E10033",
+                                        format!("borrow of '{}' escapes its scope", field.name),
+                                        "derive the view from a parameter or take ownership",
+                                        field.value.span,
+                                    );
+                                }
+                            }
+                            LiteralViews::Escaping => {
+                                self.error(
+                                    "E10033",
+                                    format!("borrow of '{}' escapes its scope", field.name),
+                                    "derive the view from a parameter or take ownership",
+                                    field.value.span,
+                                );
+                            }
+                        }
                     }
                     // An owned conditional field is an owning destination: the
                     // chosen arm moves into the field, so every owned place arm
@@ -833,6 +880,34 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // shares the frame, so it may adopt too.
                 self.view_destination_adopts = self.bindings[id].kind == BindingKind::Local
                     && self.bindings[id].base.is_none();
+                // A view-typed store is judged against the frame its storage
+                // lives in: a slot the caller keeps carries the escape, while
+                // this frame's own container element records the backing's
+                // loans below. A `for (borrow e in xs)` element alias has no
+                // storage of its own: the store writes the iterable element,
+                // so the judgment and the element loan both root at the
+                // container the alias names.
+                let alias_root = self.bindings[id].alias_root.clone();
+                let caller_slot = match &alias_root {
+                    Some(PlaceTarget::Local(root_id, _)) => self.is_caller_slot(*root_id),
+                    Some(PlaceTarget::Global(_, _)) => false,
+                    None => self.is_caller_slot(id),
+                };
+                // A struct literal materializes its fields in this frame, so
+                // a frame destination accepts a same-frame or caller backing
+                // and the loans follow the destination below. A caller slot, a
+                // global container, and every non-literal value keep the
+                // field-escape report.
+                let saved_literal_views = self.literal_views;
+                let saved_pending = std::mem::take(&mut self.pending_literal_owners);
+                self.literal_views = if alias_root.is_none()
+                    && !caller_slot
+                    && Self::is_frame_literal(value)
+                {
+                    LiteralViews::Frame
+                } else {
+                    LiteralViews::Escaping
+                };
                 let view_elements = self.view_destination_adopts
                     && is_view_like(&target_ty)
                     && matches!(&value.kind, ExprKind::ArrayLiteral { .. });
@@ -843,6 +918,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if view_elements {
                     self.view_array_literal_depth -= 1;
                 }
+                self.literal_views = saved_literal_views;
+                let pending_literal_owners =
+                    std::mem::replace(&mut self.pending_literal_owners, saved_pending);
                 self.check_lend_target_store(id, &projections, value, target.span);
                 // A projected target consumes a non-duplicable element value:
                 // a place-rooted element is a partial move and reports E10026
@@ -850,7 +928,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // is reported by the store preparation. A conditional moves
                 // whichever owned arm it selects, so every arm becomes
                 // maybe-moved except an arm that names the target path itself.
-                if !projections.is_empty() {
+                // A view-typed target stores a view, which moves nothing: the
+                // backing stays where it is and the container loans it, so a
+                // conditional or place source is not consumed.
+                if !projections.is_empty() && !is_view_like(&target_ty) {
                     if self.place_target(value).is_some() {
                         self.consume_owned_place(value, value.span);
                     } else {
@@ -882,14 +963,42 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if compound.is_some() {
                     self.read_place(id, &projections, target.span);
                 }
-                if !projections.is_empty() && self.is_loan_value(value) {
-                    let name = self.bindings[id].name.clone();
-                    self.error(
-                        "E10033",
-                        format!("borrow of '{name}' escapes its scope"),
-                        "derive the view from a parameter or take ownership",
-                        target.span,
-                    );
+                if is_view_like(&target_ty) || is_view_like(&self.ty(value)) {
+                    match &alias_root {
+                        // A global container outlives every frame, so the
+                        // stored view must derive from module-level storage.
+                        Some(PlaceTarget::Global(global, _)) => {
+                            let name = global.name.clone();
+                            self.check_escaping_view_store(
+                                value,
+                                &target_ty,
+                                &name,
+                                true,
+                                target.span,
+                            );
+                        }
+                        Some(PlaceTarget::Local(root_id, _)) if caller_slot => {
+                            let name = self.bindings[*root_id].name.clone();
+                            self.check_escaping_view_store(
+                                value,
+                                &target_ty,
+                                &name,
+                                false,
+                                target.span,
+                            );
+                        }
+                        _ if caller_slot => {
+                            let name = self.bindings[id].name.clone();
+                            self.check_escaping_view_store(
+                                value,
+                                &target_ty,
+                                &name,
+                                false,
+                                target.span,
+                            );
+                        }
+                        _ => {}
+                    }
                 }
                 self.write_place(id, &projections, target.span);
                 let lowered = if has_runtime_element(&projections) {
@@ -920,6 +1029,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         owners.extend(self.carried_view_owners(lowered, false));
                         self.set_binding_carried_owners(id, owners);
                     }
+                }
+                // A view stored into this frame's own container element carries
+                // the backing's loans on the container, so a later read of the
+                // element reaches the liveness rule when the backing ends first.
+                if !projections.is_empty() && !caller_slot && is_view_like(&target_ty) {
+                    self.record_element_view_loans(
+                        id,
+                        &projections,
+                        value,
+                        lowered.as_ref(),
+                        target.span,
+                    );
+                }
+                // An alias store writes the iterable's element, so the loan is
+                // recorded on the container: a later read of the iterable then
+                // reaches the backing's scope. The element is selected by the
+                // loop index, which the path records as a run-time index.
+                if let Some(PlaceTarget::Local(root_id, root_projections)) = &alias_root {
+                    if !caller_slot && (is_view_like(&target_ty) || is_view_like(&self.ty(value)))
+                    {
+                        let mut path = root_projections.clone();
+                        path.push(ir::Projection::Element(None));
+                        self.record_element_view_loans(
+                            *root_id,
+                            &path,
+                            value,
+                            lowered.as_ref(),
+                            target.span,
+                        );
+                    }
+                }
+                // A struct literal's accepted view fields follow the
+                // destination binding exactly as a projected element store's
+                // backings do: the loans protect every later read of it.
+                if !is_view_like(&target_ty) && !pending_literal_owners.is_empty() {
+                    self.record_literal_view_loans(
+                        id,
+                        &projections,
+                        pending_literal_owners,
+                        target.span,
+                    );
                 }
                 self.view_destination_adopts = saved_adopts;
             }
@@ -954,13 +1104,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !projections.is_empty() && self.place_target(value).is_some() {
                     self.consume_owned_place(value, value.span);
                 }
-                if self.is_loan_value(value) {
-                    self.error(
-                        "E10033",
-                        format!("borrow of '{}' escapes its scope", id.name),
-                        "derive the view from a parameter or take ownership",
-                        target.span,
-                    );
+                // A global or a field outlives every frame, so a stored view
+                // must derive from module-level storage. A write an earlier
+                // rule already rejected — an immutable `const` target or an
+                // immutable-view element — keeps its one diagnostic and
+                // skips the judgment below.
+                let rejected_write = (is_const && !through_pointer) || immutable_view_write;
+                let value_ty = self.ty(value);
+                if !rejected_write
+                    && (is_view_like(&target_ty) || is_view_like(&value_ty))
+                {
+                    let name = id.name.clone();
+                    self.check_escaping_view_store(value, &target_ty, &name, true, target.span);
+                } else if !rejected_write
+                    && !is_view_like(&target_ty)
+                    && !is_view_like(&value_ty)
+                    && self.may_carry_view(&target_ty)
+                {
+                    // A carrier value keeps the views of its view-like
+                    // positions, so a carrier binding read from this frame
+                    // stores them into the global exactly as a direct view
+                    // store would. Its loans name the backings those
+                    // positions read, and every one of them dies with a
+                    // frame.
+                    if let Some(PlaceTarget::Local(source_id, _)) = self.place_target(value) {
+                        if !self.binding_loan_owners(source_id).is_empty() {
+                            self.error(
+                                "E10033",
+                                format!("borrow of '{}' escapes its scope", id.name),
+                                "derive the view from a parameter or take ownership",
+                                target.span,
+                            );
+                        }
+                    }
                 }
                 if (!is_const || through_pointer) && !immutable_view_write {
                     if has_runtime_element(&projections) {
@@ -1053,6 +1229,167 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(PlaceTarget::Local(source_id, source_projections)) => {
                 source_id == id && source_projections == projections
             }
+            _ => false,
+        }
+    }
+
+    /// Reports a view store that escapes the frame its destination keeps.
+    ///
+    /// A view-typed destination stores view storage, so the judgment follows
+    /// the frame the destination holds. A global or a field lives for the
+    /// whole program: only module-level storage survives it, so a parameter-,
+    /// local-, fresh-, or `take`-derived view reports `E10033`. A writable
+    /// parameter slot holds the caller's frame: module-level and the caller's
+    /// parameter storage survive it, while a view of this frame's storage — or
+    /// of a temporary — reports the loan-outlives `E10030`.
+    ///
+    /// A conditional or an array names every storage component it may store,
+    /// so each component is judged on its own; the first component the
+    /// destination cannot keep supplies the report, so one store keeps one
+    /// diagnostic.
+    fn check_escaping_view_store(
+        &mut self,
+        value: &Expr,
+        target_ty: &Ty,
+        name: &str,
+        global: bool,
+        span: Span,
+    ) {
+        if !is_view_like(target_ty) && !is_view_like(&self.ty(value)) {
+            return;
+        }
+        // The empty view names no storage, so it cannot escape.
+        if matches!(value.kind, ExprKind::Null) {
+            return;
+        }
+        let failing = Self::storage_atoms(&self.view_provenance(value))
+            .into_iter()
+            .find(|atom| !self.provenance_fits_destination(atom, global));
+        let Some(atom) = failing else { return };
+        if global {
+            self.error(
+                "E10033",
+                format!("borrow of '{name}' escapes its scope"),
+                "derive the view from a parameter or take ownership",
+                span,
+            );
+            return;
+        }
+        let subject = match &atom {
+            Provenance::Local(owner) | Provenance::Param(owner) => {
+                format!("'{}'", self.bindings[*owner].name)
+            }
+            _ => "a statement temporary".to_owned(),
+        };
+        self.error(
+            "E10030",
+            format!("borrow of {subject} does not live long enough"),
+            "finish the use before the owner's scope ends",
+            span,
+        );
+    }
+
+    /// True when a storage component survives the destination's frame.
+    ///
+    /// Module-level storage and literals survive every frame, so a global
+    /// destination accepts them. A caller slot additionally keeps the caller's
+    /// own storage, so a parameter fits — unless it is a `take` parameter,
+    /// whose storage is this callee's frame and dies when the callee returns.
+    fn provenance_fits_destination(&self, provenance: &Provenance, global: bool) -> bool {
+        match provenance {
+            Provenance::Static | Provenance::Global(_) => true,
+            Provenance::Param(id) => !global && self.bindings[*id].mode != Mode::Take,
+            _ => false,
+        }
+    }
+
+    /// True when a write to the binding reaches storage the caller keeps.
+    ///
+    /// A writable lend and an out-slot name the caller's storage, and a
+    /// capture environment field is outside this frame too. A `take` parameter
+    /// owns its value in this frame, and a read-only lend rejects the write on
+    /// its own, so both take the frame path.
+    fn is_caller_slot(&self, id: usize) -> bool {
+        self.bindings[id].kind == BindingKind::OutSlot
+            || (self.bindings[id].kind == BindingKind::Param
+                && self.bindings[id].mode == Mode::Borrow)
+            || matches!(self.bindings[id].base, Some(ir::PlaceBase::EnvField { .. }))
+    }
+
+    /// Records the backing loans a view element store gives its container.
+    ///
+    /// A view stored into an element reads the backing's storage, so the
+    /// container carries one loan per backing owner exactly as a view binding
+    /// would. A later read of the element then reaches the liveness rule when
+    /// the backing's scope ends first: a backing from the same frame stays
+    /// accepted, while a loop-iteration or nested-block backing reports
+    /// `E10030`.
+    fn record_element_view_loans(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        value: &Expr,
+        lowered: Option<&Value>,
+        span: Span,
+    ) {
+        let mut owners = match lowered {
+            Some(lowered) => self.carried_view_owners(lowered, true),
+            None => BTreeSet::new(),
+        };
+        // Every storage component is judged on its own, so a component that
+        // names a frame binding contributes its loan even when the other
+        // components of a mixed value would not.
+        for atom in Self::storage_atoms(&self.view_provenance(value)) {
+            if let Provenance::Local(owner) = atom {
+                owners.insert(LoanOwner::Binding(owner));
+            }
+        }
+        self.record_literal_view_loans(id, projections, owners, span);
+    }
+
+    /// Records the shared loans a value's backings give a carrier binding.
+    ///
+    /// The loans replace what the carrier's element path held before, so an
+    /// overwritten backing stops blocking its owner's writes while a loan
+    /// another element still carries stays live.
+    pub(super) fn record_literal_view_loans(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        owners: BTreeSet<LoanOwner>,
+        span: Span,
+    ) {
+        let mut loans = BTreeSet::new();
+        for owner in owners {
+            if let Some(loan) = self.record_view_loan(owner, LoanKind::Shared, span) {
+                loans.insert(loan);
+            }
+        }
+        self.replace_element_loans(id, projections, loans);
+    }
+
+    /// True when a value is a struct literal the current frame materializes.
+    ///
+    /// The literal's fields live in the value's own frame storage, so a frame
+    /// destination accepts a same-frame field backing. A conditional or an
+    /// array of literals is materialized in the frame the same way; any other
+    /// value — a call, a place, or a mix — is not, and its fields keep the
+    /// escape report.
+    pub(super) fn is_frame_literal(expr: &Expr) -> bool {
+        match &expr.kind {
+            ExprKind::StructLiteral { .. } => true,
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => Self::is_frame_literal(then_value) && Self::is_frame_literal(else_value),
+            ExprKind::ArrayLiteral { elements, fill } => {
+                elements.iter().all(Self::is_frame_literal)
+                    && fill
+                        .as_deref()
+                        .is_none_or(Self::is_frame_literal)
+            }
+            ExprKind::Unsafe(inner) => Self::is_frame_literal(inner),
             _ => false,
         }
     }

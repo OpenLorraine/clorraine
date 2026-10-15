@@ -3317,3 +3317,910 @@ func main(): i32 {
     assert_no_asan("viewcapture", &output);
     assert_exit("viewcapture", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// mergesources: a store whose value names several storages is judged per
+// source.
+//
+// A conditional picks one arm at run time and a view array stores every
+// element, so each component is judged on its own against the destination's
+// accept set. A global keeps only module-level storage, so a component that
+// names a module binding or a literal is fine; a caller slot additionally
+// keeps the caller's parameters, and a `null` arm names no storage at all.
+// The first component the destination cannot keep supplies the one report.
+// ---------------------------------------------------------------------------
+
+/// A mixed-source store whose components are module-level or caller-backed is
+/// accepted, builds strictly, and runs clean.
+///
+/// `g.names = c ? [s1, s2] : [s3, s4]` stores a conditional of two
+/// module-backed arrays into a global field; the nested array `grid.m =
+/// [[s1, s2], [s3, s4]]` stores four module components, and the mixed element
+/// `[c ? s1 : "cd", s2]` pairs a module view with a literal. Every component
+/// survives the global's lifetime, so each store is accepted. The `let v =
+/// c ? [p, s1] : [q, "cd"]; slot = v;` spelling binds the conditional first,
+/// `slot = [p, q];` stores the caller's two parameters, and the scalar twin
+/// `out = c ? p : "cd"` pairs a parameter with a literal: every component is
+/// the caller's or module storage, so each slot store is accepted. The
+/// static-str call `lit()` names static storage and is accepted into the same
+/// global field. The `null` arm of `slot = c ? null : p` names no storage, so
+/// the caller-backed spelling is accepted.
+#[test]
+fn should_accept_a_mixed_source_whose_components_module_or_caller_storage_covers() {
+    let sources = r#"module spec.cpr.mergesources;
+
+let s1: str = "ab";
+let s2: str = "cd";
+let s3: str = "ef";
+let s4: str = "gh";
+
+struct Holder { names: str[2]; }
+struct Grid { m: str[2][2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+let grid: Grid = Grid { m: [["AA", "BB"], ["CC", "DD"]] };
+
+func store(c: bool): void {
+    g.names = c ? [s1, s2] : [s3, s4];
+    grid.m = [[s1, s2], [s3, s4]];
+    g.names = [c ? s1 : "cd", s2];
+}
+
+func main(): i32 {
+    store(true);
+    return i32(g.names[1][0]) - 99;
+}
+"#;
+    let output = run_memory("mergesources", sources);
+    assert_no_asan("mergesources", &output);
+    assert_exit("mergesources", &output, 0);
+
+    let slot = r#"module spec.cpr.mergeparam;
+
+let s1: str = "ab";
+
+func fill(c: bool, p: str, q: str, borrow slot: str[2]): void {
+    let v: str[2] = c ? [p, s1] : [q, "cd"];
+    slot = v;
+    slot = [p, q];
+}
+
+func pick(c: bool, p: str, borrow out: str): void { out = c ? p : "cd"; }
+
+func main(): i32 {
+    let out: str[2] = ["AA", "BB"];
+    fill(true, "xy", "zz", borrow out);
+    let whole: str = "aa";
+    pick(true, "xy", borrow whole);
+    return i32(out[0][0]) - 120;
+}
+"#;
+    let output = run_memory("mergeparam", slot);
+    assert_no_asan("mergeparam", &output);
+    assert_exit("mergeparam", &output, 0);
+
+    let staticfn = r#"module spec.cpr.staticfn;
+
+func lit(): static str { return "st"; }
+
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func store(c: bool): void { g.names = [c ? lit() : "zz"]; }
+
+func main(): i32 {
+    store(true);
+    return i32(g.names[0][0]) - 115;
+}
+"#;
+    let output = run_memory("staticfn", staticfn);
+    assert_no_asan("staticfn", &output);
+    assert_exit("staticfn", &output, 0);
+
+    let nullcond = r#"module spec.cpr.nullcond;
+
+func fill(c: bool, p: str, borrow slot: str?): void { slot = c ? null : p; }
+
+func main(): i32 {
+    let out: str? = null;
+    fill(false, "xy", borrow out);
+    if (out == null) {
+        return 9;
+    }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("nullcond", nullcond);
+    assert_no_asan("nullcond", &output);
+    assert_exit("nullcond", &output, 0);
+}
+
+/// A mixed-source store with one frame-only component reports once.
+///
+/// `slot = c ? "ab" : mk().v;` names a literal and a fresh call result: the
+/// chosen arm may read storage that dies at the end of the store statement,
+/// so the slot store reports one `E10030`. `names = [c ? s1 : b.v];` stores a
+/// module view beside the local `b`'s member: the global outlives the local,
+/// so the same store reports one `E10033`. Neither program emits a
+/// translation unit.
+#[test]
+fn should_reject_a_mixed_source_with_a_frame_only_component() {
+    let fresh = r#"module spec.cpr.mergefailfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let s1: str = "ab";
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func fill(c: bool, borrow slot: str): void { slot = c ? s1 : mk().v; }
+
+func main(): i32 {
+    let out: str = "aa";
+    fill(true, borrow out);
+    return i32(len(out)) - 2;
+}
+"#;
+    compile_rejects("mergefailfresh", fresh, "E10030", 1);
+
+    let local = r#"module spec.cpr.mergefaillocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let s1: str = "ab";
+let g: Holder = Holder { names: ["AA"] };
+
+func store(c: bool): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    g.names = [c ? s1 : b.v];
+}
+
+func main(): i32 {
+    store(true);
+    return 0;
+}
+"#;
+    compile_rejects("mergefaillocal", local, "E10033", 1);
+}
+
+// ---------------------------------------------------------------------------
+// takebacking: a `take` parameter's storage dies with the callee frame.
+//
+// A `take` parameter owns its value inside the callee, so a view derived from
+// it dies when the callee returns: storing it into a caller slot reports
+// `E10030`, exactly like a callee local. The same parameter as a *destination*
+// keeps its value in this frame, so a same-frame backing stored into it is
+// accepted, and only a backing whose scope ends first reports.
+// ---------------------------------------------------------------------------
+
+/// A `take`-backed view stored into the caller's slot reports once, and the
+/// same-frame destination twin is accepted and clean.
+///
+/// `fill(take p: Box, borrow slot: str?) { slot = p.v; }` stores a view of the
+/// callee's taken parameter into the caller's slot; the taken storage dies when
+/// the callee returns while the caller keeps reading the slot, so the store
+/// reports one `E10030`. The row spelling `slot = [p.v];` reports the same.
+/// The destination twin `func fill(take t: str) { let b = …; t = b.v; }`
+/// stores a same-frame backing into a parameter this frame owns: accepted,
+/// builds strictly, and runs clean. When the backing is declared in a nested
+/// block instead, the parameter is read after the block ends and the store
+/// reports one `E10030`.
+#[test]
+fn should_judge_a_take_parameter_as_the_callee_frame() {
+    let slot = r#"module spec.cpr.takeout;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(take p: Box, borrow slot: str?): void { slot = p.v; }
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    fill(take b, borrow out);
+    if (out == null) {
+        return 9;
+    }
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("takeout", slot, "E10030", 1);
+
+    let row = r#"module spec.cpr.takerow;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(take p: Box, borrow slot: str[1]): void { slot = [p.v]; }
+
+func main(): i32 {
+    let out: str[1] = ["AA"];
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    fill(take b, borrow out);
+    return i32(out[0][0]) - 120;
+}
+"#;
+    compile_rejects("takerow", row, "E10030", 1);
+
+    let frame = r#"module spec.cpr.takeframe;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(take t: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    t = b.v;
+    return i32(t[0]);
+}
+
+func main(): i32 {
+    let out: str = "aa";
+    return fill(take out) - 120;
+}
+"#;
+    let output = run_memory("takeframe", frame);
+    assert_no_asan("takeframe", &output);
+    assert_exit("takeframe", &output, 0);
+
+    let nested = r#"module spec.cpr.takenest;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(take t: str): i32 {
+    {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        t = b.v;
+    }
+    return i32(t[0]);
+}
+
+func main(): i32 {
+    let out: str = "aa";
+    return fill(take out) - 120;
+}
+"#;
+    compile_rejects("takenest", nested, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// aliasstore: a `for (borrow e in xs)` store writes the iterable element.
+//
+// The element alias has no storage of its own, so the store is judged where
+// the storage lives: the container's frame decides the escape and the backing's
+// loan belongs to the container. A same-frame backing is accepted and a later
+// read of the iterable stays clean; a fresh, loop-iteration, or nested-block
+// backing dies before the iterable's last read and reports `E10030` once.
+// ---------------------------------------------------------------------------
+
+/// A same-frame backing written through the alias is accepted, while a
+/// short-lived backing reports once.
+///
+/// `for (borrow e in xs) { e = b.v; }` writes the local `b`'s member through
+/// the alias; `b` and `xs` share the frame, so the store is accepted, builds
+/// strictly, and the later read of `xs` is clean. The fresh spelling `e =
+/// mk().v;` writes a call result that dies at the statement's end, the loop
+/// spelling writes a per-iteration local, and the nested-block spelling
+/// writes a local that dies at the block's end; each reports one `E10030` and
+/// emits no translation unit.
+#[test]
+fn should_judge_a_for_alias_store_at_its_iterable_container() {
+    let local = r#"module spec.cpr.aliaslocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    for (borrow e in xs) {
+        e = b.v;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 { return run() - 120; }
+"#;
+    let output = run_memory("aliaslocal", local);
+    assert_no_asan("aliaslocal", &output);
+    assert_exit("aliaslocal", &output, 0);
+
+    let fresh = r#"module spec.cpr.aliasfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    for (borrow e in xs) {
+        e = mk().v;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 { return run() - 97; }
+"#;
+    compile_rejects("aliasfresh", fresh, "E10030", 1);
+
+    let loop_store = r#"module spec.cpr.aliasloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let i: i32 = 0;
+    while (i < 2) {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        for (borrow e in xs) {
+            e = b.v;
+        }
+        i = i + 1;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 { return run() - 120; }
+"#;
+    compile_rejects("aliasloop", loop_store, "E10030", 1);
+
+    let nested = r#"module spec.cpr.aliasnest;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        for (borrow e in xs) {
+            e = b.v;
+        }
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 { return run() - 120; }
+"#;
+    compile_rejects("aliasnest", nested, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// literalfield: a struct literal's view field shares its destination's frame.
+//
+// The literal's own storage is materialized in the destination's frame, so a
+// frame- or caller-backed view field is accepted exactly as the field
+// assignment spelling is, and the backing's loan follows the binding. A
+// literal stored into a global keeps reading for the whole program, and a
+// returned literal hands the view to the caller, so both keep the escape
+// report. A backing declared in a nested block dies before the binding's read
+// and reports `E10030`.
+// ---------------------------------------------------------------------------
+
+/// A frame-backed view field in a local struct literal is accepted, while the
+/// escaping destinations and the nested backing keep their reports.
+///
+/// `let h: Holder = Holder { names: [b.v] };` and `h = Holder { names: [b.v]
+/// };` both store the local `b`'s member into a frame-local carrier: accepted,
+/// builds strictly, and the later read is clean. `g = Holder { names: [b.v] };`
+/// stores the same literal into a global and `return Holder { names: [b.v] };`
+/// hands it to the caller, so each reports one `E10033`. A literal built in an
+/// outer scope from a nested-block backing is read after that block ends and
+/// reports one `E10030`. Returning the carrier binding itself hands its view
+/// fields to the caller, so the binding spelling reports one `E10030` for the
+/// same reason the directly returned literal does.
+#[test]
+fn should_accept_a_frame_backed_view_field_in_a_struct_literal() {
+    let local = r#"module spec.cpr.literalpair;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func literal(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    return i32(h.names[0][0]);
+}
+
+func assigned(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: ["AA"] };
+    h.names = [b.v];
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 {
+    return literal() + assigned() - 240;
+}
+"#;
+    let output = run_memory("literalpair", local);
+    assert_no_asan("literalpair", &output);
+    assert_exit("literalpair", &output, 0);
+
+    let global = r#"module spec.cpr.literalglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func store(): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    g = Holder { names: [b.v] };
+}
+
+func main(): i32 {
+    store();
+    return 0;
+}
+"#;
+    compile_rejects("literalglobal", global, "E10033", 1);
+
+    let returned = r#"module spec.cpr.literalreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func make(): Holder {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    return Holder { names: [b.v] };
+}
+
+func main(): i32 {
+    return i32(make().names[0][0]) - 120;
+}
+"#;
+    compile_rejects("literalreturn", returned, "E10033", 1);
+
+    let nested = r#"module spec.cpr.literalnested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func pick(): i32 {
+    let h: Holder = Holder { names: ["AA"] };
+    {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        h = Holder { names: [b.v] };
+    }
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 { return pick() - 120; }
+"#;
+    compile_rejects("literalnested", nested, "E10030", 1);
+
+    let returned_binding = r#"module spec.cpr.literalreturnbind;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func make(): Holder {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: [b.v] };
+    return h;
+}
+
+func main(): i32 {
+    return i32(make().names[0][0]) - 120;
+}
+"#;
+    compile_rejects("literalreturnbind", returned_binding, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// carrierreturn: a returned carrier hands its view fields to the caller.
+//
+// A view field stored into a frame-local carrier reads the backing's storage;
+// returning the carrier hands that view to the caller while the backing dies
+// with the frame, so the return reports `E10030` exactly as the directly
+// returned literal does. A module- or parameter-backed field survives the
+// frame, so the same return is accepted and stays readable.
+// ---------------------------------------------------------------------------
+
+/// Returning a carrier whose view field reads this frame reports one
+/// `E10030`, while the module- and parameter-backed twins run clean.
+///
+/// `let h = Holder { names: ["AA"] }; h.names = [b.v]; return h;` stores the
+/// local `b`'s member into the field and hands it to the caller, so the
+/// return reports one `E10030`. The module-backed twin `h.names = [s];` and
+/// the parameter-backed twin `h.names = [p];` keep storage that survives the
+/// frame: both are accepted, build strictly, and run clean.
+#[test]
+fn should_reject_returning_a_carrier_whose_view_field_reads_the_frame() {
+    let local = r#"module spec.cpr.elementreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func make(): Holder {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h: Holder = Holder { names: ["AA"] };
+    h.names = [b.v];
+    return h;
+}
+
+func main(): i32 {
+    return i32(make().names[0][0]) - 120;
+}
+"#;
+    compile_rejects("elementreturn", local, "E10030", 1);
+
+    let static_backing = r#"module spec.cpr.carrierstatic;
+
+struct Holder { names: str[1]; }
+
+let s: str = "st";
+
+func make(): Holder {
+    let h: Holder = Holder { names: ["AA"] };
+    h.names = [s];
+    return h;
+}
+
+func main(): i32 {
+    return i32(make().names[0][0]) - 115;
+}
+"#;
+    let output = run_memory("carrierstatic", static_backing);
+    assert_no_asan("carrierstatic", &output);
+    assert_exit("carrierstatic", &output, 0);
+
+    let parameter = r#"module spec.cpr.carrierparam;
+
+struct Holder { names: str[1]; }
+
+func make(p: str): Holder {
+    let h: Holder = Holder { names: ["AA"] };
+    h.names = [p];
+    return h;
+}
+
+func main(): i32 {
+    return i32(make("st").names[0][0]) - 115;
+}
+"#;
+    let output = run_memory("carrierparam", parameter);
+    assert_no_asan("carrierparam", &output);
+    assert_exit("carrierparam", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// paramreturn: a caller-backed view field survives the carrier's return.
+//
+// A parameter's storage belongs to the caller's frame, which outlives the
+// callee's return (EL-2), so a carrier literal whose view field reads a plain
+// or `borrow` parameter is a legitimate view return and stays accepted in
+// both spellings: the binding form `let h = Holder { names: [p] }; return h;`
+// and the directly returned `return Holder { names: [p] };`. The caller's
+// read folds the byte into the exit code. A `take` parameter's storage is
+// this frame's, so the binding form still reports, and a global keeps only
+// module storage, so the parameter-backed literal stored into a global
+// reports `E10033` whether it is stored directly or through a binding.
+// ---------------------------------------------------------------------------
+
+/// A parameter-backed view field returned in a carrier literal is accepted
+/// and memory-clean.
+///
+/// `let h: Holder = Holder { names: [p] }; return h;` binds the literal in the
+/// callee frame and hands the view of `p` to the caller; the same value
+/// returned directly and the `borrow`-parameter member spelling (`[b.v]`)
+/// behave the same way. Each program builds strictly, runs its caller read
+/// without a memory report, and exits 0.
+#[test]
+fn should_accept_a_parameter_backed_view_field_returned_in_a_carrier_literal() {
+    let binding = r#"module spec.cpr.literalparamhold;
+
+struct Holder { names: str[1]; }
+
+func make(p: str): Holder {
+    let h: Holder = Holder { names: [p] };
+    return h;
+}
+
+func main(): i32 {
+    return i32(make("st").names[0][0]) - 115;
+}
+"#;
+    let output = run_memory("literalparamhold", binding);
+    assert_no_asan("literalparamhold", &output);
+    assert_exit("literalparamhold", &output, 0);
+
+    let direct = r#"module spec.cpr.literalparamdirect;
+
+struct Holder { names: str[1]; }
+
+func make(p: str): Holder {
+    return Holder { names: [p] };
+}
+
+func main(): i32 {
+    return i32(make("st").names[0][0]) - 115;
+}
+"#;
+    let output = run_memory("literalparamdirect", direct);
+    assert_no_asan("literalparamdirect", &output);
+    assert_exit("literalparamdirect", &output, 0);
+
+    let borrow = r#"module spec.cpr.literalparamborrow;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func build(borrow b: Box): Holder {
+    let h: Holder = Holder { names: [b.v] };
+    return h;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    return i32(build(b).names[0][0]) - 97;
+}
+"#;
+    let output = run_memory("literalparamborrow", borrow);
+    assert_no_asan("literalparamborrow", &output);
+    assert_exit("literalparamborrow", &output, 0);
+}
+
+/// A parameter-backed carrier literal stored where the caller cannot keep it
+/// reports once.
+///
+/// `g = Holder { names: [p] };` stores the literal into a global, which
+/// outlives the caller's frame, and reports one `E10033`; the two-step
+/// `let h = Holder { names: [p] }; g = h;` reports the same one error. A
+/// `take` parameter's literal binding is read by the caller after the taken
+/// storage dies, so `let h = Holder { names: [t.v] }; return h;` reports one
+/// `E10030`. None of the programs emits a translation unit.
+#[test]
+fn should_reject_a_parameter_backed_carrier_literal_at_an_escaping_destination() {
+    let global = r#"module spec.cpr.literalparamglobal;
+
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func store(p: str): void {
+    g = Holder { names: [p] };
+}
+
+func main(): i32 {
+    store("st");
+    return 0;
+}
+"#;
+    compile_rejects("literalparamglobal", global, "E10033", 1);
+
+    let bound = r#"module spec.cpr.literalparambound;
+
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func store(p: str): void {
+    let h: Holder = Holder { names: [p] };
+    g = h;
+}
+
+func main(): i32 {
+    store("st");
+    return 0;
+}
+"#;
+    compile_rejects("literalparambound", bound, "E10033", 1);
+
+    let taken = r#"module spec.cpr.literaltakereturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func make(take t: Box): Holder {
+    let h: Holder = Holder { names: [t.v] };
+    return h;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    compile_rejects("literaltakereturn", taken, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// rejectedwrite: an already-rejected view store keeps one diagnostic.
+//
+// The `const` report for an immutable global and the read-only-parameter
+// report for a lend already reject the write, so the view-store judgment steps
+// aside instead of adding a second error at the same site.
+// ---------------------------------------------------------------------------
+
+/// An immutable destination keeps its own one report.
+///
+/// `const names: str = "start"; names = b.v;` writes through an immutable
+/// binding, which reports one `E10023` and skips the view judgment. The
+/// read-only parameter twin `func fill(p: str) { p = b.v; }` reports one
+/// `E10024`. Neither program emits a translation unit.
+#[test]
+fn should_keep_one_report_at_an_already_rejected_view_store() {
+    let global = r#"module spec.cpr.conststore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+const names: str = "start";
+
+func store(): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    names = b.v;
+}
+
+func main(): i32 {
+    store();
+    return 0;
+}
+"#;
+    compile_rejects("conststore", global, "E10023", 1);
+
+    let parameter = r#"module spec.cpr.readonlystore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    p = b.v;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    compile_rejects("readonlystore", parameter, "E10024", 1);
+}
+
+// ---------------------------------------------------------------------------
+// elementloanreplace: overwriting an element replaces the loan it carried.
+//
+// A view element store loans its backing to the container. Overwriting that
+// same element with storage that names no owner drops the loan, so the old
+// backing stops blocking its owner's writes; a loan another element still
+// carries stays live.
+// ---------------------------------------------------------------------------
+
+/// A replaced element's loan is dropped, while another element's loan stays.
+///
+/// `xs[1] = c ? b.v : a; xs[1] = "zz"; b.v = stringOf("qq");` overwrites the
+/// element that read `b`, so the write to `b.v` is accepted, builds strictly,
+/// and the final read of `xs[1]` is clean. When `xs[0]` still reads `b`, the
+/// same overwrite leaves that loan live and the write reports one `E10031`.
+#[test]
+fn should_replace_a_replaced_element_loan_and_keep_the_others() {
+    let replaced = r#"module spec.cpr.elementreplace;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(c: bool, a: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = c ? b.v : a;
+    xs[1] = "zz";
+    b.v = stringOf("qq");
+    return i32(xs[1][0]);
+}
+
+func main(): i32 { return pick(true, "ppp") - 122; }
+"#;
+    let output = run_memory("elementreplace", replaced);
+    assert_no_asan("elementreplace", &output);
+    assert_exit("elementreplace", &output, 0);
+
+    let kept = r#"module spec.cpr.elementkeep;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(c: bool, a: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = b.v;
+    xs[1] = "zz";
+    b.v = stringOf("qq");
+    return i32(xs[0][0]);
+}
+
+func main(): i32 { return pick(true, "ppp") - 120; }
+"#;
+    compile_rejects("elementkeep", kept, "E10031", 1);
+}
+
+// ---------------------------------------------------------------------------
+// viewmovestate: a view element store moves nothing.
+//
+// The element store copies a view; the backing stays where it is and the
+// container loans it. A later read of the backing is therefore accepted, and a
+// later *move* of it is what the live loan blocks.
+// ---------------------------------------------------------------------------
+
+/// Reading the backing after a view element store is accepted, while moving it
+/// reports the move-while-borrowed error.
+///
+/// `xs[1] = c ? b.v : a; let n: usize = len(b.v);` reads `b.v` after the
+/// store: a view store moves nothing, so the read is accepted, builds
+/// strictly, and runs clean. The move twin `let m: String = b.v;` moves the
+/// member while the element's loan is live and reports one `E10022`.
+#[test]
+fn should_not_mark_a_view_element_store_as_a_move() {
+    let read = r#"module spec.cpr.viewread;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(c: bool, a: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = c ? b.v : a;
+    let n: usize = len(b.v);
+    return i32(xs[1][0]) + i32(n);
+}
+
+func main(): i32 { return pick(true, "ppp") - 122; }
+"#;
+    let output = run_memory("viewread", read);
+    assert_no_asan("viewread", &output);
+    assert_exit("viewread", &output, 0);
+
+    let moved = r#"module spec.cpr.viewmove;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(c: bool, a: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = c ? b.v : a;
+    let m: String = b.v;
+    return i32(xs[1][0]) + i32(len(m)) - 122;
+}
+
+func main(): i32 { return pick(true, "ppp"); }
+"#;
+    compile_rejects("viewmove", moved, "E10022", 1);
+}

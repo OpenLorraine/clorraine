@@ -884,8 +884,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // statement runs before its lowering: without it an owned
                 // value would escape without a source move, and a lend
                 // parameter stored or returned through the body would slip
-                // past the rule that rejects its block-bodied spelling.
+                // past the rule that rejects its block-bodied spelling. A
+                // returned struct literal hands its view fields to the
+                // caller, exactly as the block-bodied spelling does.
+                let saved_literal_views = self.literal_views;
+                let saved_pending = std::mem::take(&mut self.pending_literal_owners);
+                if Self::is_frame_literal(value) {
+                    self.literal_views = LiteralViews::Return;
+                }
                 self.eval(value);
+                self.literal_views = saved_literal_views;
+                let _ = std::mem::replace(&mut self.pending_literal_owners, saved_pending);
                 self.judge_return_moves(value, value.span);
                 let returned = self.lower_value(value);
                 if !self.is_terminated() {
@@ -897,8 +906,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // this body releases, so their loans are created at the
                     // return and used after the cleanup: the liveness rule
                     // reports the escape.
-                    let temp_loans: Vec<LoanId> = self
-                        .carried_view_owners(&returned, is_view_like(&self.returns))
+                    let mut owners =
+                        self.carried_view_owners(&returned, is_view_like(&self.returns));
+                    owners.extend(self.carrier_return_owners(&returned, &self.returns));
+                    let temp_loans: Vec<LoanId> = owners
                         .into_iter()
                         .filter_map(|owner| {
                             self.record_view_loan(owner, LoanKind::Shared, value.span)
@@ -1064,6 +1075,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 registration,
                 provenance: Provenance::None,
                 base: Some(base),
+                alias_root: None,
                 generated: false,
             });
             if let Some(scope) = self.scopes.last_mut() {
@@ -2335,7 +2347,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// holds views when any field or element can. Every other type — a scalar,
     /// a handle, or a raw pointer — owns or reaches its value without carrying
     /// a view into frame storage.
-    fn may_carry_view(&self, ty: &Ty) -> bool {
+    pub(super) fn may_carry_view(&self, ty: &Ty) -> bool {
         if is_view_like(ty) {
             return true;
         }

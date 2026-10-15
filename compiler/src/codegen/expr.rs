@@ -857,10 +857,53 @@ impl<'a> Emitter<'a> {
     }
 
     /// Renders an environment struct literal holding one capture per field.
+    ///
+    /// A fixed-array capture cannot initialize its array field from a
+    /// whole-array expression — C has no array assignment — so the field is
+    /// initialized element by element from the captured place. Every other
+    /// capture renders as one expression.
     fn environment_literal(&self, site: usize, captures: &[Value]) -> String {
-        let fields: Vec<String> = captures.iter().map(|capture| self.value(capture)).collect();
+        let fields: Vec<String> = captures
+            .iter()
+            .map(|capture| self.capture_initializer(capture))
+            .collect();
         let suffix = self.closure_instance_suffix(site);
         format!("((struct ClEnv_{site}{suffix}){{ {} }})", fields.join(", "))
+    }
+
+    /// Renders one capture value for the environment literal.
+    fn capture_initializer(&self, capture: &Value) -> String {
+        let ty = self.substitute(&capture.ty);
+        if ty.is_fixed_array() {
+            if let ValueKind::Place(place) = &capture.kind {
+                return self.array_elements_literal(&self.place(place), &ty);
+            }
+        }
+        self.value(capture)
+    }
+
+    /// Renders an array place as a brace-enclosed element list.
+    ///
+    /// A multi-extent array nests one brace per extent, so the emitted
+    /// initializer matches the field's own C shape.
+    fn array_elements_literal(&self, c_name: &str, ty: &Ty) -> String {
+        let TyKind::Array { element, extents } = &ty.kind else {
+            return c_name.to_owned();
+        };
+        let extent = extents.first().and_then(|size| *size).unwrap_or(0);
+        if extents.len() > 1 {
+            let nested = Ty::array((**element).clone(), extents[1..].to_vec());
+            let parts: Vec<String> = (0..extent)
+                .map(|index| {
+                    self.array_elements_literal(&format!("{c_name}[{index}]"), &nested)
+                })
+                .collect();
+            return format!("{{ {} }}", parts.join(", "));
+        }
+        let parts: Vec<String> = (0..extent)
+            .map(|index| format!("{c_name}[{index}]"))
+            .collect();
+        format!("{{ {} }}", parts.join(", "))
     }
 
     /// Renders a call to the compiler-known `text` conversion.

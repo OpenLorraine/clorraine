@@ -71,6 +71,14 @@ pub(super) struct Binding {
     /// rooted at the temporary that holds the element's address. Every other
     /// binding leaves this `None`.
     pub(super) base: Option<ir::PlaceBase>,
+    /// The storage a `for (borrow e in xs)` element alias writes.
+    ///
+    /// The alias has no place of its own: every read and write reaches the
+    /// iterable element, so a store through the binding is judged at this
+    /// container and its loan belongs to the container. The chain is resolved
+    /// when the alias is bound, so a nested alias names the outermost
+    /// container. A non-alias binding leaves this `None`.
+    pub(super) alias_root: Option<PlaceTarget>,
     /// True for a compiler-generated owner binding (`__cl_ownedN`).
     ///
     /// A generated owner belongs to the compiler, not to a source name: a view
@@ -141,6 +149,14 @@ pub(super) struct FlowState {
     /// carries both loans after the join, and a use reaches both regions. The
     /// set is empty or absent for a binding that carries no loan.
     pub(super) loans: BTreeMap<usize, BTreeSet<LoanId>>,
+    /// The element loans a container carries, keyed by the target path.
+    ///
+    /// A view element store gives the container one loan per backing, exactly
+    /// as a whole store does. Overwriting the element replaces that element's
+    /// loans, because the old view value is gone; keeping them would report a
+    /// stale conflict on the old backing. A path with a run-time index keeps
+    /// the union, because the overwritten element cannot be named.
+    pub(super) element_loans: BTreeMap<usize, BTreeMap<Vec<ir::Projection>, BTreeSet<LoanId>>>,
     /// The adopted view backings each binding's value carries.
     ///
     /// A carrier binding — a struct or array that holds views in its view-like
@@ -167,11 +183,30 @@ impl FlowState {
     pub(super) fn drop_bindings_from(&mut self, floor: usize) {
         self.places.retain(|id, _| *id < floor);
         self.loans.retain(|id, _| *id < floor);
+        self.element_loans.retain(|id, _| *id < floor);
         self.carried_owners.retain(|id, _| *id < floor);
     }
 }
 
+/// Where a struct literal's view fields land.
+///
+/// The literal's own storage is materialized in the destination's frame, so
+/// the destination decides which backings a view field may keep: a frame
+/// destination keeps this frame's and the caller's storage, a returned value
+/// keeps the caller's parameters while this frame dies, and every other
+/// destination keeps module storage alone.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum LiteralViews {
+    /// A destination this frame keeps: a local binding or element.
+    Frame,
+    /// The value returned to the caller.
+    Return,
+    /// Any other destination: a global, a field, or an argument.
+    Escaping,
+}
+
 /// The target of an assignment or a move.
+#[derive(Clone, Debug)]
 pub(super) enum PlaceTarget {
     /// A local or parameter with its projections.
     Local(usize, Vec<ir::Projection>),
