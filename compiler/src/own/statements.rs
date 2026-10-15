@@ -382,9 +382,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// A non-duplicable value that already names a place is an ownership
     /// transfer, so it lowers to a move that copies and then zeroes the
     /// source. Every other value lowers to an assign of the lowered value,
-    /// which covers duplicable copies and fresh call results.
+    /// which covers duplicable copies and fresh call results. An assignment's
+    /// right-hand side that contains an update pins into a statement temporary
+    /// at its own position, so the update completes before the store instead of
+    /// sharing one unsequenced C expression with the target's write.
     pub(super) fn emit_store(&mut self, target: Place, ty: &Ty, value: &'a Expr) -> Option<Value> {
         let prepared = self.prepare_store(ty, value);
+        let prepared = if super::lower::contains_update(value) {
+            match prepared {
+                PreparedStore::Assign { value } => PreparedStore::Assign {
+                    value: self.pin_update_value(value),
+                },
+                other => other,
+            }
+        } else {
+            prepared
+        };
         let lowered = prepared.lowered().cloned();
         self.emit_prepared_store(target, prepared);
         lowered

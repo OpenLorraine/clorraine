@@ -5668,6 +5668,43 @@ func main(): i32 {
 }
 
 // ---------------------------------------------------------------------------
+// dotreceivercond: a bare-update dot receiver inside a loop condition.
+//
+// `while ((i++).get(i) < 20)` evaluates its condition once per test: the
+// receiver's update yields the old value, the argument reads the updated one,
+// and the call's result decides the test. The condition's operands must pin
+// per iteration, because a statement before the loop would run the update once
+// and leave the test constant. The program is accepted, builds under the
+// strict flags, exits 0, and reports no memory error.
+// ---------------------------------------------------------------------------
+
+/// A bare-update dot receiver in a loop condition pins per iteration.
+///
+/// The test computes `get(i, i + 1)` = `11 * i + 1`, so the tests at `i` = 0
+/// and 1 pass (1 and 12) while `i` = 2 fails (23); the body counts 2
+/// iterations and the final `i` is 3, so `s + i - 5` cancels. The run exits 0
+/// and is clean.
+#[test]
+fn should_pin_a_loop_conditions_updating_dot_receiver_per_iteration() {
+    let source = r#"module spec.cpr.dotreceivercond;
+
+func get(a: i32, b: i32): i32 { return a * 10 + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let s: i32 = 0;
+    while ((i++).get(i) < 20) {
+        s = s + 1;
+    }
+    return s + i - 5;
+}
+"#;
+    let output = run_memory("dotreceivercond", source);
+    assert_no_asan("dotreceivercond", &output);
+    assert_exit("dotreceivercond", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
 // loopcondupdate: an update inside a loop condition.
 //
 // `while (i + id(i++) < 3)` shares `i` between the left operand's read and the
@@ -5755,6 +5792,191 @@ func main(): i32 {
     let output = run_memory("owningarg", source);
     assert_no_asan("owningarg", &output);
     assert_exit("owningarg", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// targetupd: a store whose target index and right-hand side both update.
+//
+// `arr[i++] = i++;` reads the target's location first: the index update
+// selects the slot, the side's update yields the stored value, and the store
+// follows both. The call-index spelling `arr[mark(i)] = i++;` orders the
+// target's call before the side, and the update-only spelling `arr[i++]++;`
+// reads and rewrites the slot the index update selected.
+// ---------------------------------------------------------------------------
+
+/// A target index and the right-hand side that both update a place.
+///
+/// `arr[i++] = i++;` stores the side's yielded 1 into `arr[0]` while the index
+/// update advances `i` to 2; `arr[mark(i)] = i++;` then marks index 2 and
+/// stores the yielded 2 there, so `arr` is `[1, 6, 2]` and the checks cancel.
+/// Both programs are accepted, build under the strict flags, and exit 0 with
+/// no memory report.
+#[test]
+fn should_store_a_target_index_that_updates_the_same_place() {
+    let source = r#"module spec.cpr.targetupd;
+
+let seen: i32 = 0;
+
+func mark(x: i32): i32 {
+    seen = seen * 10 + x;
+    return x;
+}
+
+func main(): i32 {
+    let arr: i32[3] = [5, 6, 7];
+    let i: i32 = 0;
+    arr[i++] = i++;
+    let a: i32 = (arr[0] - 1) + (arr[1] - 6) + (arr[2] - 7) + (i - 2);
+    arr[mark(i)] = i++;
+    let b: i32 = (seen - 2) + (arr[1] - 6) + (arr[2] - 2) + (i - 3);
+    return a + b;
+}
+"#;
+    let output = run_memory("targetupd", source);
+    assert_no_asan("targetupd", &output);
+    assert_exit("targetupd", &output, 0);
+}
+
+/// An increment through an updating element index.
+///
+/// `arr[i++]++` increments the slot the index update selected — `arr[0]`
+/// becomes 6 while `i` becomes 1 — and the checks cancel only when the read
+/// and the store share that index. The program is accepted, builds under the
+/// strict flags, and exits 0 with no memory report.
+#[test]
+fn should_update_an_element_through_an_updating_index() {
+    let source = r#"module spec.cpr.targetupdindex;
+
+func main(): i32 {
+    let arr: i32[3] = [5, 6, 7];
+    let i: i32 = 0;
+    arr[i++]++;
+    return (arr[0] - 6) + (arr[1] - 6) + (arr[2] - 7) + (i - 1);
+}
+"#;
+    let output = run_memory("targetupdindex", source);
+    assert_no_asan("targetupdindex", &output);
+    assert_exit("targetupdindex", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// receiverorder: a dot receiver with an updating index before its argument.
+//
+// `arr[i++].takeIt(i)` and `hs[i++].call(i)` read the receiver's location
+// first: the index update selects the receiver, the written argument then
+// reads the updated value, and the callee receives both in that order. The
+// borrow-receiver spelling `bs[i++].bump(i)` writes through the receiver's
+// storage after the same order.
+// ---------------------------------------------------------------------------
+
+/// An updating receiver index evaluates before the written argument.
+///
+/// The take receiver `arr[i++].takeIt(i)` selects `arr[0]` (v = 1) and passes
+/// the updated `i` = 1, so the callee computes 11; the func-field receiver
+/// `hs[i++].call(i)` selects the second-shaped first entry and passes 1, so
+/// `addOne` computes 2; the borrow receiver `bs[i++].bump(i)` writes `n` = 2
+/// through `bs[0]` and passes the updated 1. Every program is accepted,
+/// builds under the strict flags, exits 0, and reports no memory error.
+#[test]
+fn should_evaluate_an_updating_receiver_index_before_its_argument() {
+    let take_receiver = r#"module spec.cpr.receivertake;
+
+struct Box { v: i32; }
+
+func takeIt(take b: Box, n: i32): i32 { return b.v * 10 + n; }
+
+func main(): i32 {
+    let arr: Box[2] = [Box { v: 1 }, Box { v: 2 }];
+    let i: i32 = 0;
+    let r: i32 = arr[i++].takeIt(i);
+    return r + i - 12;
+}
+"#;
+    let output = run_memory("receivertake", take_receiver);
+    assert_no_asan("receivertake", &output);
+    assert_exit("receivertake", &output, 0);
+
+    let field_receiver = r#"module spec.cpr.receiverfield;
+
+func addOne(x: i32): i32 { return x + 1; }
+
+struct H { call: func(i32): i32; }
+
+func main(): i32 {
+    let hs: H[2] = [H { call: addOne }, H { call: addOne }];
+    let i: i32 = 0;
+    let r: i32 = hs[i++].call(i);
+    return r + i - 3;
+}
+"#;
+    let output = run_memory("receiverfield", field_receiver);
+    assert_no_asan("receiverfield", &output);
+    assert_exit("receiverfield", &output, 0);
+
+    let borrow_receiver = r#"module spec.cpr.receiverborrow;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; n: i32; }
+
+func bump(borrow b: Box, k: i32): i32 {
+    b.n = b.n + k;
+    return b.n;
+}
+
+func main(): i32 {
+    let bs: Box[2] = [Box { v: stringOf("a"), n: 1 }, Box { v: stringOf("b"), n: 2 }];
+    let i: i32 = 0;
+    let r: i32 = bs[i++].bump(i);
+    return r + bs[0].n + i - 5;
+}
+"#;
+    let output = run_memory("receiverborrow", borrow_receiver);
+    assert_no_asan("receiverborrow", &output);
+    assert_exit("receiverborrow", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// literalfieldorder: an owning update-containing field before a later call.
+//
+// `P { a: mk(i++), b: g() }` evaluates field `a` first: `mk` runs with the
+// yielded 0 and records that it ran; field `b`'s `g()` then observes the
+// recorded call. Pinning only the later field would hoist `g()` above `mk`,
+// so the owning field must bind at its own position too.
+// ---------------------------------------------------------------------------
+
+/// An owning literal field binds before a later field's call.
+///
+/// `mk(i++)` records `c` = 1 while the update yields 0, and `g()` then reads
+/// the recorded 1 into `p.b`, so the run exits 0 only when the owning field's
+/// call precedes the later field's. The program is accepted, builds under the
+/// strict flags, and reports no memory error.
+#[test]
+fn should_evaluate_an_owning_literal_field_before_a_later_field() {
+    let source = r#"module spec.cpr.literalfieldorder;
+
+import { String, stringOf } from std.text;
+
+let c: i32 = 0;
+
+struct P { a: String; b: i32; }
+
+func mk(x: i32): String {
+    c = c + 1;
+    return stringOf("ab");
+}
+
+func g(): i32 { return c; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let p: P = P { a: mk(i++), b: g() };
+    return p.b + i - 2;
+}
+"#;
+    let output = run_memory("literalfieldorder", source);
+    assert_no_asan("literalfieldorder", &output);
+    assert_exit("literalfieldorder", &output, 0);
 }
 
 // ---------------------------------------------------------------------------

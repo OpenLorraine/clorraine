@@ -2863,3 +2863,248 @@ fn should_re_emit_the_fixed_array_programs_byte_identically() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Update order completion: an update inside an assignment's parts, a literal
+// operand, a dot receiver, a loop condition, or a later argument pins at its
+// own source position, so the emitted C carries one defined left-to-right
+// order instead of an unsequenced expression.
+// ---------------------------------------------------------------------------
+
+/// An assignment whose target and side share an updating place.
+const ASSIGN_TARGET_SOURCE: &str = r#"module spec.cprimpl.implassigntarget;
+
+func main(): i32 {
+    let arr: i32[3] = [5, 6, 7];
+    let i: i32 = 0;
+    arr[i] = i++;
+    let a: i32 = arr[0] + (arr[1] - 6) + (arr[2] - 7) + (i - 1);
+    i = i++;
+    let b: i32 = i - 1;
+    i += i++;
+    let c: i32 = i - 2;
+    return a + b + c;
+}
+"#;
+
+/// Literals whose operands share an updating place.
+const LITERAL_ORDER_SOURCE: &str = r#"module spec.cprimpl.impliteralorder;
+
+struct P { a: i32; b: i32; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let p: P = P { a: i++, b: i };
+    let j: i32 = 0;
+    let xs: i32[2] = [j++, j];
+    return p.a + (p.b - 1) + xs[0] + (xs[1] - 1);
+}
+"#;
+
+/// A dot receiver that itself updates the argument's place.
+const DOT_RECEIVER_SOURCE: &str = r#"module spec.cprimpl.impldotreceiver;
+
+func get(a: i32, b: i32): i32 { return a * 10 + b; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let r: i32 = (i++).get(i);
+    return r + i - 2;
+}
+"#;
+
+/// A loop condition that updates a place it also reads.
+const LOOP_COND_UPDATE_SOURCE: &str = r#"module spec.cprimpl.implloopcond;
+
+func id(x: i32): i32 { return x; }
+
+func main(): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i + id(i++) < 3) {
+        n++;
+    }
+    return n + i - 5;
+}
+"#;
+
+/// A call whose first argument owns storage and whose second updates a place.
+const OWNING_ARG_SOURCE: &str = r#"module spec.cprimpl.implowningarg;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; seen: i32; }
+
+let i: i32 = 0;
+
+func g(): Box {
+    if (i == 0) {
+        return Box { v: stringOf("ax"), seen: 0 };
+    }
+    return Box { v: stringOf("ax"), seen: 1 };
+}
+
+func f(take b: Box, n: i32): i32 {
+    return b.seen * 10 + n;
+}
+
+func main(): i32 {
+    let r: i32 = f(g(), i++);
+    return r + i - 1;
+}
+"#;
+
+/// An assignment's target location and updating side pin in source order.
+///
+/// `arr[i] = i++;` materializes the target's old index before the side's
+/// update and the store names both temporaries, so the store reaches the slot
+/// the old value selected. `i = i++;` stores the yielded old value after the
+/// increment completes, and `i += i++;` reads the current value before the
+/// side's update and combines the two temporaries. The base emits each shape
+/// as one unsequenced expression, so these pins fail there.
+#[test]
+fn should_pin_an_assignment_target_and_its_updating_side() {
+    let tag = "implassigntarget";
+    let (_scratch, emitted) = emit_host(tag, ASSIGN_TARGET_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implassigntarget_main(void)\n{");
+    assert_follows(tag, body, "__cl_tmp0 = i;", "__cl_tmp1 = (i)++;");
+    assert_contains(tag, body, "*(&(arr[__cl_tmp0])) = __cl_tmp1;");
+    assert_follows(tag, body, "__cl_tmp2 = (i)++;", "i = __cl_tmp2;");
+    assert_follows(tag, body, "__cl_tmp3 = i;", "__cl_tmp4 = (i)++;");
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp4 = (i)++;",
+        "i = (i32)((u32)__cl_tmp3 + (u32)__cl_tmp4);",
+    );
+    assert_absent(tag, body, "*(&(arr[i])) = (i)++;");
+    assert_absent(tag, body, "i = (i32)((u32)i + (u32)(i)++);");
+}
+
+/// A literal's updating operands pin at their source position.
+///
+/// `P { a: i++, b: i }` binds both fields to temporaries in source order
+/// before the compound literal is built, and `[j++, j]` does the same for its
+/// elements, so the read after the update sees the updated value. The base
+/// renders the struct literal as `(ClP){ (i)++, i }`, whose C initializer
+/// order is unspecified.
+#[test]
+fn should_pin_update_containing_literal_operands_in_source_order() {
+    let tag = "impliteralorder";
+    let (_scratch, emitted) = emit_host(tag, LITERAL_ORDER_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_impliteralorder_main(void)\n{");
+    assert_follows(tag, body, "__cl_tmp0 = (i)++;", "__cl_tmp1 = i;");
+    assert_follows(tag, body, "__cl_tmp1 = i;", "p = (ClP){ __cl_tmp0, __cl_tmp1 };");
+    assert_follows(tag, body, "__cl_tmp2 = (j)++;", "__cl_tmp3 = j;");
+    assert_follows(tag, body, "__cl_tmp3 = j;", "xs[0] = __cl_tmp2;");
+    assert_contains(tag, body, "xs[1] = __cl_tmp3;");
+    assert_absent(tag, body, "p = (ClP){ (i)++, i };");
+}
+
+/// A dot receiver with an update pins at argument position zero.
+///
+/// `(i++).get(i)` passes the receiver before the written argument, so the
+/// receiver's update binds first and the argument's read second; the call
+/// then reads both temporaries. The base emits `get((i)++, i)` with both
+/// evaluations unordered.
+#[test]
+fn should_pin_an_updating_dot_receiver_before_its_arguments() {
+    let tag = "impldotreceiver";
+    let (_scratch, emitted) = emit_host(tag, DOT_RECEIVER_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_impldotreceiver_main(void)\n{");
+    assert_follows(tag, body, "__cl_tmp0 = (i)++;", "__cl_tmp1 = i;");
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp1 = i;",
+        "r = cl_spec_cprimpl_impldotreceiver_get(__cl_tmp0, __cl_tmp1);",
+    );
+    assert_absent(tag, body, "get((i)++, i)");
+}
+
+/// A loop condition's update fills per iteration inside the loop body.
+///
+/// `while (i + id(i++) < 3)` cannot pin before the loop: the condition
+/// re-evaluates every test. The loop instead prints an unconditional header
+/// and fills the condition's operands with the per-iteration guards, before
+/// the break test, so the update runs once per test. The base prints the
+/// whole condition in the header with both evaluations unordered.
+#[test]
+fn should_fill_an_updating_loop_condition_per_iteration() {
+    let tag = "implloopcond";
+    let (_scratch, emitted) = emit_host(tag, LOOP_COND_UPDATE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implloopcond_main(void)\n{");
+    assert_follows(tag, body, "while (1) {", "__cl_tmp0 = i;");
+    assert_follows(tag, body, "__cl_tmp0 = i;", "__cl_tmp1 = (i)++;");
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp1 = (i)++;",
+        "__cl_tmp2 = cl_spec_cprimpl_implloopcond_id(__cl_tmp1);",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp2 = cl_spec_cprimpl_implloopcond_id(__cl_tmp1);",
+        "__cl_tmp3 = (i32)((u32)__cl_tmp0 + (u32)__cl_tmp2);",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp3 = (i32)((u32)__cl_tmp0 + (u32)__cl_tmp2);",
+        "if (!((__cl_tmp3 < 3))) break;",
+    );
+    assert_absent(
+        tag,
+        body,
+        "while (((i32)((u32)i + (u32)cl_spec_cprimpl_implloopcond_id((i)++)) < 3))",
+    );
+}
+
+/// An owning argument binds before a later argument's update.
+///
+/// `f(g(), i++)` binds the owning result to `__cl_owned0` at argument
+/// position zero, then pins the second argument's update, then calls: the
+/// callee's `take` move-out empties `__cl_owned0` after the call, so the
+/// ownership transfers exactly once. The base pins the update first and binds
+/// the owning result after it, so the callee observes the update.
+#[test]
+fn should_bind_an_owning_argument_before_a_later_update() {
+    let tag = "implowningarg";
+    let (_scratch, emitted) = emit_host(tag, OWNING_ARG_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implowningarg_main(void)\n{");
+    assert_follows(
+        tag,
+        body,
+        "__cl_owned0 = cl_spec_cprimpl_implowningarg_g();",
+        "__cl_tmp0 = (cl_spec_cprimpl_implowningarg_i)++;",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp0 = (cl_spec_cprimpl_implowningarg_i)++;",
+        "__cl_tmp1 = cl_spec_cprimpl_implowningarg_f(__cl_owned0, __cl_tmp0);",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_tmp1 = cl_spec_cprimpl_implowningarg_f(__cl_owned0, __cl_tmp0);",
+        "cl_zero(&__cl_owned0);",
+    );
+}
+
+/// The assignment and loop-condition programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_update_order_programs_byte_identically() {
+    let cases: [(&str, &str); 2] = [
+        ("implassigntarget", ASSIGN_TARGET_SOURCE),
+        ("implloopcond", LOOP_COND_UPDATE_SOURCE),
+    ];
+    for (tag, source) in cases {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}

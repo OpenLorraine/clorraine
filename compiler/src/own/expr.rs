@@ -1608,7 +1608,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.emit(guards);
                     }
                     let place = self.target_place(&PlaceTarget::Local(id, projections));
-                    self.emit_compound_store(binary, place, &ty, one);
+                    let left = Value::place(place.clone());
+                    self.emit_compound_store(binary, place, &ty, left, one);
                 }
             }
             Some(PlaceTarget::Global(id, projections)) => {
@@ -1642,7 +1643,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         self.emit(guards);
                     }
                     let place = self.target_place(&PlaceTarget::Global(id, projections));
-                    self.emit_compound_store(binary, place, &ty, one);
+                    let left = Value::place(place.clone());
+                    self.emit_compound_store(binary, place, &ty, left, one);
                 }
             }
             None => {
@@ -1773,17 +1775,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ) -> Option<Value> {
         match compound {
             Some(binary) => {
+                // The current-value read runs before the right-hand side, and
+                // the side's update completes before the store. When the side
+                // contains an update, the read and the whole side travel
+                // through statement temporaries in that order, so the emitted
+                // C has one defined sequence instead of one unsequenced store
+                // expression.
+                let pin = super::lower::contains_update(value);
+                let left = Value::place(place.clone());
+                let left = if pin { self.pin_update_value(left) } else { left };
                 let right = self.lower_value(value);
-                self.emit_compound_store(binary, place, ty, right.clone());
+                let right = if pin { self.pin_update_value(right) } else { right };
+                self.emit_compound_store(binary, place, ty, left, right.clone());
                 Some(right)
             }
             None => self.emit_store(place, ty, value),
         }
     }
 
-    /// Emits a read-modify-write `place = place op right`.
-    fn emit_compound_store(&mut self, op: BinaryOp, place: Place, ty: &Ty, right: Value) {
-        let left = Value::place(place.clone());
+    /// Emits a read-modify-write `place = left op right`.
+    fn emit_compound_store(
+        &mut self,
+        op: BinaryOp,
+        place: Place,
+        ty: &Ty,
+        left: Value,
+        right: Value,
+    ) {
         let value = self.combine(op, left, right, ty);
         self.emit(Statement::Assign { target: place, value });
     }
@@ -1824,8 +1842,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// When `shared` is set the element value is used twice (read and address),
     /// so an impure operand is computed into a real temporary to keep its side
     /// effect to one run; a plain store passes `false` and leaves the operand
-    /// in its single guarded position.
-    fn indexed_target(&mut self, target: &'a Expr, shared: bool) -> Option<(Value, Value, Ty)> {
+    /// in its single guarded position. When `pin_location` is set the target's
+    /// element locations are materialized before the right-hand side is
+    /// lowered, because the target's location evaluates first and a later
+    /// update must not change the slot the store reaches.
+    fn indexed_target(
+        &mut self,
+        target: &'a Expr,
+        shared: bool,
+        pin_location: bool,
+    ) -> Option<(Value, Value, Ty)> {
         let target = match &target.kind {
             ExprKind::Unsafe(inner) => inner,
             _ => target,
@@ -1862,6 +1888,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 index: Box::new(index_value),
             },
         );
+        let element = if pin_location {
+            self.pin_operand_location(element)
+        } else {
+            element
+        };
         let pointer = Value::new(
             element_ty.clone(),
             ValueKind::Unary {
@@ -1874,13 +1905,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// Lowers an indexed assignment, plain or compound.
     fn emit_indexed_store(&mut self, target: &'a Expr, value: &'a Expr, compound: Option<BinaryOp>) {
-        let Some((element, pointer, element_ty)) = self.indexed_target(target, compound.is_some())
+        // The target's location evaluates before the right-hand side, so an
+        // updating side pins the location parts first; the side's own update
+        // then pins at its position, before the store.
+        let pin = super::lower::contains_update(value);
+        let Some((element, pointer, element_ty)) =
+            self.indexed_target(target, compound.is_some(), pin)
         else {
             return;
         };
         let stored = match compound {
             Some(binary) => {
+                // The element's current value is read before the side runs, so
+                // an updating side materializes it first.
+                let element = if pin {
+                    self.pin_update_value(element)
+                } else {
+                    element
+                };
                 let right = self.lower_value(value);
+                let right = if pin { self.pin_update_value(right) } else { right };
                 self.combine(binary, element, right, &element_ty)
             }
             // An owned value stored into an element is a move, exactly as it is
@@ -1889,6 +1933,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // both the source and the element release the same storage.
             None => {
                 let lowered = self.lower_value(value);
+                let lowered = if pin {
+                    self.pin_update_value(lowered)
+                } else {
+                    lowered
+                };
                 self.consume_place(lowered)
             }
         };
@@ -1899,8 +1948,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Lowers an indexed increment or decrement as a read-modify-write.
+    ///
+    /// The element's own location is materialized by the target lowering, so
+    /// an updating index (`arr[i++]`) runs before the read and the store; the
+    /// location pin is left off because the right-hand side here is the
+    /// constant one, which carries no update.
     fn emit_indexed_update(&mut self, target: &'a Expr, binary: BinaryOp, one: Value) {
-        let Some((element, pointer, element_ty)) = self.indexed_target(target, true) else {
+        let Some((element, pointer, element_ty)) = self.indexed_target(target, true, false) else {
             return;
         };
         let stored = self.combine(binary, element, one, &element_ty);

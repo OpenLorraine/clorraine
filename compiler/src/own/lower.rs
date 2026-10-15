@@ -283,6 +283,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // the source it moves. An eagerly emitted move would leave the
                 // skipped arm's value in an unreleased temporary.
                 let deferred = self.defer_move_outs > 0;
+                // A field that contains an update pins at its source position:
+                // C leaves an initializer list's order unspecified, while the
+                // language evaluates fields in source order, so the update and
+                // every later field's read of the same place must travel
+                // through temporaries.
+                let pin_fields = fields.iter().any(|field| contains_update(&field.value));
                 let mut lowered = Vec::with_capacity(fields.len());
                 for field in fields {
                     let value = self.lower_value(&field.value);
@@ -364,6 +370,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     } else {
                         self.consume_place(value)
                     };
+                    let value = if pin_fields {
+                        self.pin_literal_operand(value)
+                    } else {
+                        value
+                    };
                     lowered.push((field.name.clone(), value));
                 }
                 ValueKind::StructLit {
@@ -371,61 +382,71 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     fields: lowered,
                 }
             }
-            ExprKind::ArrayLiteral { elements, fill } => ValueKind::ArrayLit {
-                // As for a struct literal, a deferred operand leaves its
-                // element sources in place; the arm's store moves the chosen
-                // source and empties it. A view-element array keeps its
-                // sources in place too: an element is a view of its source,
-                // so the binding loans or adopts the backing rather than
-                // moving it out of the source. An element list whose own
-                // type is view-like is such an array in every position, so
-                // the element sources stay in place here too.
-                elements: elements
-                    .iter()
-                    .map(|element| {
-                        let value = self.lower_value(element);
-                        if self.view_array_literal_depth > 0 || is_view_like(&ty) {
-                            value
-                        } else if self.defer_move_outs > 0
-                            && matches!(value.kind, ValueKind::Conditional { .. })
-                            && (!self.sema.table.duplicable(&value.ty)
-                                || self.maybe_owns(&value.ty))
-                            && !is_view(&value.ty)
-                            && !value.ty.is_unknown()
-                            && !value.ty.is_fixed_array()
-                            && self.conditional_projection_root_owns_residual(&value)
-                        {
-                            // A deferred element's bare conditional fills one
-                            // carrier on the evaluated path: the chosen member
-                            // moves into the carrier and the fresh arm's root
-                            // releases only its un-moved fields, while the
-                            // element store copies the carrier the array owns.
-                            self.materialize_guarded_conditional_projection(value, true)
-                        } else if self.defer_move_outs > 0 {
-                            value
-                        } else if matches!(value.kind, ValueKind::Conditional { .. })
-                            && (!self.sema.table.duplicable(&value.ty)
-                                || self.maybe_owns(&value.ty))
-                            && !is_view(&value.ty)
-                            && !value.ty.is_unknown()
-                            && !value.ty.is_fixed_array()
-                            && self.conditional_projection_root_owns_residual(&value)
-                        {
-                            // A conditional of projections binds each fresh
-                            // arm's root before the literal is built, so the
-                            // root's un-moved fields release while the element
-                            // store still moves the chosen member into the
-                            // array.
-                            self.hoist_ownerless_conditional_arms(value)
-                        } else {
-                            self.consume_place(value)
-                        }
-                    })
-                    .collect(),
-                fill: fill
-                    .as_ref()
-                    .map(|fill| Box::new(self.lower_value(fill))),
-            },
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let pin_elements = elements.iter().any(contains_update);
+                ValueKind::ArrayLit {
+                    // As for a struct literal, a deferred operand leaves its
+                    // element sources in place; the arm's store moves the
+                    // chosen source and empties it. A view-element array keeps
+                    // its sources in place too: an element is a view of its
+                    // source, so the binding loans or adopts the backing rather
+                    // than moving it out of the source. An element list whose
+                    // own type is view-like is such an array in every position,
+                    // so the element sources stay in place here too. An
+                    // update-containing element pins at its source position,
+                    // because a C brace list's element order is unspecified.
+                    elements: elements
+                        .iter()
+                        .map(|element| {
+                            let value = self.lower_value(element);
+                            let value = if self.view_array_literal_depth > 0 || is_view_like(&ty) {
+                                value
+                            } else if self.defer_move_outs > 0
+                                && matches!(value.kind, ValueKind::Conditional { .. })
+                                && (!self.sema.table.duplicable(&value.ty)
+                                    || self.maybe_owns(&value.ty))
+                                && !is_view(&value.ty)
+                                && !value.ty.is_unknown()
+                                && !value.ty.is_fixed_array()
+                                && self.conditional_projection_root_owns_residual(&value)
+                            {
+                                // A deferred element's bare conditional fills one
+                                // carrier on the evaluated path: the chosen member
+                                // moves into the carrier and the fresh arm's root
+                                // releases only its un-moved fields, while the
+                                // element store copies the carrier the array owns.
+                                self.materialize_guarded_conditional_projection(value, true)
+                            } else if self.defer_move_outs > 0 {
+                                value
+                            } else if matches!(value.kind, ValueKind::Conditional { .. })
+                                && (!self.sema.table.duplicable(&value.ty)
+                                    || self.maybe_owns(&value.ty))
+                                && !is_view(&value.ty)
+                                && !value.ty.is_unknown()
+                                && !value.ty.is_fixed_array()
+                                && self.conditional_projection_root_owns_residual(&value)
+                            {
+                                // A conditional of projections binds each fresh
+                                // arm's root before the literal is built, so the
+                                // root's un-moved fields release while the element
+                                // store still moves the chosen member into the
+                                // array.
+                                self.hoist_ownerless_conditional_arms(value)
+                            } else {
+                                self.consume_place(value)
+                            };
+                            if pin_elements {
+                                self.pin_literal_operand(value)
+                            } else {
+                                value
+                            }
+                        })
+                        .collect(),
+                    fill: fill
+                        .as_ref()
+                        .map(|fill| Box::new(self.lower_value(fill))),
+                }
+            }
             ExprKind::Unsafe(inner) => return self.lower_value(inner),
             ExprKind::IntrinsicCall { name, args } => {
                 // A fixed array's `len` is its structural extent: the length is
@@ -1429,13 +1450,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// the temporaries and the emitted C has one defined order. Only a value
     /// whose copy carries no ownership is pinned — the update leaves and the
     /// reads they can affect are scalars — and a constant has no position to
-    /// lose. A guarded or loop-condition operand keeps its existing spelling,
-    /// because a statement emitted here would run on a path that may skip it.
+    /// lose. A guarded operand keeps its existing spelling, because a statement
+    /// emitted here would run on a path that may skip it. A loop condition
+    /// re-evaluates its operands every iteration, so its pin defers to a
+    /// per-iteration materialization instead of a statement before the loop.
     pub(super) fn pin_update_value(&mut self, value: Value) -> Value {
-        if self.defer_move_outs > 0
-            || self.in_loop_condition
-            || !(self.sema.table.duplicable(&value.ty)
-                || matches!(&value.kind, ValueKind::Unary { op, .. } if op.is_update()))
+        if self.defer_move_outs > 0 {
+            return value;
+        }
+        if self.in_loop_condition {
+            return self.materialize_loop_condition_operand(value);
+        }
+        if !(self.sema.table.duplicable(&value.ty)
+            || matches!(&value.kind, ValueKind::Unary { op, .. } if op.is_update()))
             || matches!(
                 value.kind,
                 ValueKind::Int(_)
@@ -1465,6 +1492,85 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         self.emit(Statement::Assign { target, value });
         Value::new(ty, ValueKind::Temp(temp))
+    }
+
+    /// Pins one literal operand at its source position when the literal
+    /// contains an update.
+    ///
+    /// A C initializer list leaves its operands' order unspecified, so every
+    /// operand of an update-containing literal binds where it stands. A
+    /// duplicable value or an update uses the plain statement temporary. An
+    /// owning value with no place of its own — a fresh call, a literal, or an
+    /// array literal — binds to a transfer temporary the literal copies: the
+    /// temporary carries no release, so the literal's own cleanup stays the
+    /// sole owner, and the binding runs at the operand's position, where a
+    /// later operand's pin cannot hoist above it. A value that already names a
+    /// place keeps its consuming move, and a guarded operand keeps its deferred
+    /// fill.
+    fn pin_literal_operand(&mut self, value: Value) -> Value {
+        if self.defer_move_outs > 0 || self.in_loop_condition {
+            return self.pin_update_value(value);
+        }
+        if self.sema.table.duplicable(&value.ty)
+            || matches!(&value.kind, ValueKind::Unary { op, .. } if op.is_update())
+        {
+            return self.pin_update_value(value);
+        }
+        if value.ty.is_unknown()
+            || !matches!(
+                value.kind,
+                ValueKind::Call { .. }
+                    | ValueKind::ClosureCall { .. }
+                    | ValueKind::StructLit { .. }
+                    | ValueKind::ArrayLit { .. }
+            )
+        {
+            return value;
+        }
+        self.materialize_value(value)
+    }
+
+    /// Defers a loop-condition operand to a per-iteration fill.
+    ///
+    /// A loop condition is re-evaluated every time the loop tests, so its pin
+    /// cannot be a statement before the loop, where it would run the update
+    /// once and leave the condition constant. The value binds through the
+    /// deferred materialization instead: its fill, its drop of the previous
+    /// value, and its release are emitted with the loop's per-iteration guards,
+    /// before every test, and the condition reads the filled temporary. A
+    /// constant, an already-filled temporary, and an ownership-carrying value
+    /// keep their existing spelling.
+    fn materialize_loop_condition_operand(&mut self, value: Value) -> Value {
+        if !(self.sema.table.duplicable(&value.ty)
+            || matches!(&value.kind, ValueKind::Unary { op, .. } if op.is_update()))
+            || matches!(
+                value.kind,
+                ValueKind::Int(_)
+                    | ValueKind::Float(_)
+                    | ValueKind::Char(_)
+                    | ValueKind::Str(_)
+                    | ValueKind::Bool(_)
+                    | ValueKind::Null
+                    | ValueKind::Aggregate
+                    | ValueKind::Temp(_)
+                    | ValueKind::Materialize { .. }
+            )
+        {
+            return value;
+        }
+        let ty = self.materialized_ty(&value);
+        let temp = self.new_temp(ty.clone());
+        self.mark_destination_temp(temp);
+        self.register_pending_release(temp, &ty);
+        Value::new(
+            ty,
+            ValueKind::Materialize {
+                temp,
+                value: Box::new(value),
+                move_outs: Vec::new(),
+                adopting: false,
+            },
+        )
     }
 
     /// Binds the ownerless root a fixed-array copy reads.
@@ -1829,6 +1935,50 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Value::new(value.ty, ValueKind::Temp(temp))
             }
             other => Value::new(value.ty, other),
+        }
+    }
+
+    /// Pins the element locations of a value at the position where it stands.
+    ///
+    /// Evaluation is strictly left-to-right, and C leaves the parts of one
+    /// expression unordered: an element index that a later operand updates must
+    /// be read first, and an index that arrives as a deferred materialization
+    /// would otherwise run with the consumer's guards — after a later operand's
+    /// pin. Each element selection therefore settles its deferred fill and
+    /// binds a pure index to a temporary here, where the value stands. Only the
+    /// element selections change: a member chain recurses, and the base — a
+    /// place or a value — keeps its spelling, because copying a base would
+    /// point a store or a move-out at the copy.
+    pub(super) fn pin_operand_location(&mut self, value: Value) -> Value {
+        let ty = value.ty.clone();
+        match value.kind {
+            ValueKind::Index { base, index } => {
+                let base = self.pin_operand_location(*base);
+                let index = self.settle_projection_base(*index);
+                let index = self.pin_update_value(index);
+                Value::new(
+                    ty,
+                    ValueKind::Index {
+                        base: Box::new(base),
+                        index: Box::new(index),
+                    },
+                )
+            }
+            ValueKind::Member { base, name } => {
+                let base = self.pin_operand_location(*base);
+                Value::new(
+                    ty,
+                    ValueKind::Member {
+                        base: Box::new(base),
+                        name,
+                    },
+                )
+            }
+            other => {
+                // A deferred base fill settles here too: the base runs before
+                // its index and before any later operand.
+                self.settle_projection_base(Value::new(ty, other))
+            }
         }
     }
 

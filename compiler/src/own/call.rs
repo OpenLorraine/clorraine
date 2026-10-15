@@ -194,23 +194,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             _ => self.callee_name(callee).unwrap_or_default(),
         };
         let receiver = self.func_field_receiver(callee);
+        // The dot receiver is the call's argument position zero, so its
+        // evaluation position matters exactly like a written argument's: an
+        // update in the receiver must run where it is written, and an update in
+        // any argument must follow the receiver's read.
+        let dot_receiver = match &callee.kind {
+            ExprKind::Member { base, .. } => Some(base.as_ref()),
+            _ => None,
+        };
+        let pin_updates = dot_receiver.is_some_and(super::lower::contains_update)
+            || args
+                .iter()
+                .any(|arg| super::lower::contains_update(&arg.value));
         let mut values: Vec<Value> = Vec::new();
         let mut arg_types: Vec<Ty> = Vec::new();
-        if receiver.is_none() {
-            if let Some(value) = self.lower_dot_receiver(callee) {
-                arg_types.push(value.ty.clone());
-                values.push(value);
-            }
-        }
-        // A call result the callee only borrows stays owned by the caller; an
-        // unnamed one is bound to a scope local so the cleanup drops it, since
-        // the callee never does. A `take` argument is skipped: the callee owns
-        // it, and the move-out empties the caller's binding. The modes come
-        // from the callable the call actually reaches: a `func`-typed field or
-        // call result, a `func`-typed or callable-bound local, parameter, or
-        // capture, a module-level func-typed global, or the declared function
-        // the name resolves to. A same-named module function's modes are never
-        // applied to a value callee.
+        // The modes come from the callable the call actually reaches: a
+        // `func`-typed field or call result, a `func`-typed or callable-bound
+        // local, parameter, or capture, a module-level func-typed global, or
+        // the declared function the name resolves to. A same-named module
+        // function's modes are never applied to a value callee.
         let modes: Option<Vec<Mode>> = if let Some(callable) = &receiver {
             self.callable_modes(&callable.ty)
         } else {
@@ -222,16 +224,68 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }),
             }
         };
+        // The callee expression of a func-field call is that call's position
+        // zero: its element locations settle before the written arguments, so
+        // a receiver index that updates a later argument's place runs first.
+        let receiver = match receiver {
+            Some(value) if pin_updates => Some(self.pin_operand_location(value)),
+            other => other,
+        };
+        if receiver.is_none() {
+            if let Some(value) = self.lower_dot_receiver(callee) {
+                // The dot receiver is the call's argument position zero: its
+                // element locations settle here, before any written argument,
+                // and an owning receiver binds at the same position exactly as
+                // a written argument does. A `take` receiver moves to the
+                // callee, so it keeps its place.
+                let value = if pin_updates {
+                    self.pin_operand_location(value)
+                } else {
+                    value
+                };
+                let take = modes
+                    .as_ref()
+                    .and_then(|modes| modes.first())
+                    .is_some_and(|mode| *mode == Mode::Take);
+                // A bare update receiver pins wherever it stands: a loop
+                // condition defers the pin to the per-iteration fill (no
+                // statement before the loop) and a guarded operand keeps its
+                // deferred spelling. The eager ownership binding has to be a
+                // statement, so it runs only where a statement has a position.
+                let eager_binding = self.defer_move_outs == 0 && !self.in_loop_condition;
+                let value = if pin_updates {
+                    if take {
+                        if eager_binding && modes.is_some() {
+                            self.materialize_owned_argument(value, true)
+                        } else {
+                            value
+                        }
+                    } else {
+                        let value = self.pin_update_value(value);
+                        if eager_binding && modes.is_some() {
+                            self.materialize_owned_argument(value, false)
+                        } else {
+                            value
+                        }
+                    }
+                } else {
+                    value
+                };
+                arg_types.push(value.ty.clone());
+                values.push(value);
+            }
+        }
         // An update inside an argument runs at its own position: evaluation
         // is strictly left-to-right, and C leaves the order of argument
         // evaluations unspecified. Each position-dependent argument binds to
         // a statement temporary where it is lowered, so a later argument's
-        // update never reorders an earlier argument. A `take` argument keeps
-        // its place — the post-call move-out empties caller storage, which a
-        // temporary would hide — and a constant has no position to lose.
-        let pin_updates = args
-            .iter()
-            .any(|arg| super::lower::contains_update(&arg.value));
+        // update never reorders an earlier argument. An owning argument binds
+        // through the ownership-safe binding at the same position, because
+        // the mode pass below would otherwise run its binding after a later
+        // argument's update; a plain copy would carry its storage, so the
+        // pin leaves it to that binding. A `take` argument keeps its place —
+        // the post-call move-out empties caller storage, which a temporary
+        // would hide — and a constant has no position to lose.
         for arg in args {
             let value = self.lower_value(&arg.value);
             // A view-element array argument adopts each temporary element's
@@ -250,13 +304,43 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 value
             };
             let value = self.bind_member_receiver(value);
+            // The argument's element locations settle at its own position, so
+            // an indexed place argument's index update runs before a later
+            // argument's pin instead of at the call's guards.
+            let value = if pin_updates {
+                self.pin_operand_location(value)
+            } else {
+                value
+            };
             let position = values.len();
             let take = modes
                 .as_ref()
                 .and_then(|modes| modes.get(position))
                 .is_some_and(|mode| *mode == Mode::Take);
-            let value = if pin_updates && !take {
-                self.pin_update_value(value)
+            // A guarded operand keeps its existing deferred binding path; an
+            // eager argument binds here, at its own position. The update pin
+            // runs for every update-bearing argument: under a loop condition it
+            // defers to the per-iteration fill.
+            let eager_binding = self.defer_move_outs == 0 && !self.in_loop_condition;
+            let value = if pin_updates {
+                if take {
+                    // A `take` argument moves to the callee, so the plain pin
+                    // would hide the caller's slot; its ownership-safe
+                    // binding (the move carrier or the argument temporary)
+                    // runs here instead, before a later argument's update.
+                    if eager_binding && modes.is_some() {
+                        self.materialize_owned_argument(value, true)
+                    } else {
+                        value
+                    }
+                } else {
+                    let value = self.pin_update_value(value);
+                    if eager_binding && modes.is_some() {
+                        self.materialize_owned_argument(value, false)
+                    } else {
+                        value
+                    }
+                }
             } else {
                 value
             };
