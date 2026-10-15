@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 09:52
-> **Progress**: 18/39 tasks (46%)
+> **Progress**: 20/39 tasks (51%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -161,8 +161,8 @@ capture spellings, and the scoped local element acceptance.
 **Objective**: Pin the loop-condition conditional literal (both literal forms), the `?:`/`||`
 positions, the discarded mixed-field literal, and the discarded fresh projection arm.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (loopcondliteral, literalpositions, discardmixed, discardprojection)
-- [ ] 4.1.2 Run the suite and record the red phase
+- [x] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (loopcondliteral, literalpositions, discardmixed, discardprojection) ✅ (completed: 2026-10-15 12:20; four tests appended (+265 lines, additions only) — the loop-condition conditional literal (single-shot and counted, both selections, plus the array-literal element variant), the receiver positions (`?:` and `||`, plus the loop-condition spelling of the `||` receiver), the discarded mixed-field literal with its direct control, and the discarded projection arm; the field/element spellings were chosen to keep the DEF-262 double-free reproducible; two design-uncovered probes were recorded — the conditional carrier literal's taken-arm leak (filed as `DEF-292`) and the guarded fixed-array field expression (added to the phase-5 candidates in the ledger))
+- [x] 4.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-15 12:20; plain 56 passed / 3 failed and ASan 55 passed / 4 failed — the double-free in the loop-condition literal and the `||` receiver's loop spelling, the discarded mixed-field literal's false `E10020` moves, and the discarded projection arm's 22 B leak; the standalone receiver-position spellings are pre-closed (green); the 55 pre-existing cases stay green; parent-verified)
 
 ### Step 4.2: Implementation
 

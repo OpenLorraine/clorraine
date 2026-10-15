@@ -60,6 +60,10 @@ memory-safety (SA), dispatched on the phase diff in parallel.
   (`Holder { row: c ? a.row : mkBox().row }` guarded; `Holder { row: (c ? a : b).row }`) whose
   emitted C fails the strict build at both the pre-round and head trees — candidate spellings for
   the phase-5 fixed-array scope; pin them there if they belong to its rows, else file.
+- Phase-4 spec authoring added two more phase-5 candidates to the same note: the guarded fixed-array
+  field expression (`g && len(Holder { names: [mk().v] }.names[0]) > 0` fails `-Werror=missing-field-initializers`
+  / `missing-braces` at head and base) and the conditional carrier literal's taken-arm leak (now filed as
+  `DEF-292`).
 - SA-101/SA-102's correction (the literal-source moves and the fixed-array exclusions) landed
   uncommitted with the round; the final targeted confirmation is in progress.
 

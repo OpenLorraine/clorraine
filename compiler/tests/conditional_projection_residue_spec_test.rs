@@ -4224,3 +4224,268 @@ func main(): i32 { return pick(true, "ppp"); }
 "#;
     compile_rejects("viewmove", moved, "E10022", 1);
 }
+
+// ---------------------------------------------------------------------------
+// loopcondliteral: a conditional literal receiver in a loop condition.
+//
+// The condition builds a fresh struct literal on its evaluated path, and the
+// literal's callable field owns a freshly built string. The loop-condition
+// walk must leave that field with exactly one owner — the literal temporary,
+// released when the loop leaves — so a second temporary over the same field
+// frees its storage twice. The single-shot and re-executing spellings and the
+// array-literal element variant are accepted and memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A conditional literal receiver in a loop condition releases its field
+/// storage once per evaluation.
+///
+/// `(c ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }).call(5)`
+/// builds a fresh literal on the evaluated path; the literal temporary owns
+/// its `s` field and releases it at the loop edge, and the callable-field call
+/// reads through it. The single-shot spelling runs the condition once, the
+/// counted spelling re-executes it per iteration, and the array-literal
+/// element spelling reaches the same field through an element. Every call
+/// returns 6, so the accumulated counts cancel the trailing constant, and the
+/// runs exit 0 with no memory report.
+#[test]
+fn should_release_a_conditional_literal_in_a_loop_condition() {
+    let single = r#"module spec.cpr.loopcondliteral;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func useOnce(c: bool): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < 1 && (c ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }).call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func useLoop(c: bool, k: i32): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < k && (c ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }).call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return useOnce(true) + useOnce(false) + useLoop(true, 3) + useLoop(false, 3) - 8;
+}
+"#;
+    let output = run_memory("loopcondliteral", single);
+    assert_no_asan("loopcondliteral", &output);
+    assert_exit("loopcondliteral", &output, 0);
+
+    let element = r#"module spec.cpr.loopcondelem;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(c: bool): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < 1 && [c ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }][0].call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 2;
+}
+"#;
+    let output = run_memory("loopcondelem", element);
+    assert_no_asan("loopcondelem", &output);
+    assert_exit("loopcondelem", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// literalpositions: the `?:` and `||` literal-receiver positions.
+//
+// A conditional selecting between two struct literals is itself a callable
+// receiver, and the `||` right side evaluates such a receiver only on the path
+// where the guard fails. Each literal's owned field keeps one owner in every
+// position — including the loop-condition spelling that re-executes the
+// guarded walk — so every path is accepted and memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A conditional literal receiver in the `?:` and `||` positions releases its
+/// field storage once per evaluation.
+///
+/// `(g ? H { ... } : H { ... }).call(5)` runs the call of the literal the
+/// conditional selects, and `g || (c ? H { ... } : H { ... }).call(5) > 0`
+/// evaluates the receiver only where `g` fails; the loop-condition spelling
+/// re-executes the guarded walk once per iteration. Every evaluated call
+/// returns 6 and every guarded result is 1, so the accumulated values cancel
+/// the trailing constants and the runs exit 0 with no memory report.
+#[test]
+fn should_release_conditional_literals_in_the_receiver_positions() {
+    let positions = r#"module spec.cpr.literalpositions;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func pick(g: bool): i32 {
+    let r: i32 = (g ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }).call(5);
+    return r;
+}
+
+func guard(c: bool, g: bool): i32 {
+    if (g || (c ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }).call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    return pick(true) + pick(false) + guard(true, true) + guard(true, false) + guard(false, false) - 15;
+}
+"#;
+    let output = run_memory("literalpositions", positions);
+    assert_no_asan("literalpositions", &output);
+    assert_exit("literalpositions", &output, 0);
+
+    let looped = r#"module spec.cpr.literalpositionsloop;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func guard(c: bool, g: bool): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < 1 && (g || (c ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }).call(5) > 0)) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return guard(true, true) + guard(true, false) + guard(false, false) - 3;
+}
+"#;
+    let output = run_memory("literalpositionsloop", looped);
+    assert_no_asan("literalpositionsloop", &output);
+    assert_exit("literalpositionsloop", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// discardmixed: a discarded struct-literal arm with fresh and place fields.
+//
+// The discard decides per field: a fresh owning field materializes into a
+// statement temporary that releases it when the statement ends, while a field
+// reading an existing owned binding stays inline and stays a read. The direct
+// `ok ? t : u;` control pins both of its arms as reads; the literal spelling
+// must keep its place fields readable the same way.
+// ---------------------------------------------------------------------------
+
+/// A discarded mixed-field literal releases its fresh field and reads the
+/// place fields.
+///
+/// `ok ? Pair { a: stringOf("x"), b: t } : Pair { a: stringOf("y"), b: u };`
+/// discards the selected literal. Its fresh `a` field must release when the
+/// statement ends, and its `b` field reads `t` or `u` without moving them, so
+/// both bindings stay readable afterwards — exactly the behavior of the
+/// direct `ok ? t : u;` control. Both programs exit 0 with no memory report.
+#[test]
+fn should_discard_a_mixed_field_literal_as_reads() {
+    let literal = r#"module spec.cpr.discardmixed;
+
+import { String, stringOf } from std.text;
+
+struct Pair { a: String; b: String; }
+
+func literal(ok: bool): i32 {
+    let t: String = stringOf("tt");
+    let u: String = stringOf("uu");
+    ok ? Pair { a: stringOf("x"), b: t } : Pair { a: stringOf("y"), b: u };
+    return i32(len(t)) + i32(len(u)) - 4;
+}
+
+func main(): i32 {
+    return literal(true) + literal(false);
+}
+"#;
+    let output = run_memory("discardmixed", literal);
+    assert_no_asan("discardmixed", &output);
+    assert_exit("discardmixed", &output, 0);
+
+    let direct = r#"module spec.cpr.discardmixeddirect;
+
+import { String, stringOf } from std.text;
+
+func control(ok: bool): i32 {
+    let t: String = stringOf("tt");
+    let u: String = stringOf("uu");
+    ok ? t : u;
+    return i32(len(t)) + i32(len(u)) - 4;
+}
+
+func main(): i32 {
+    return control(true) + control(false);
+}
+"#;
+    let output = run_memory("discardmixeddirect", direct);
+    assert_no_asan("discardmixeddirect", &output);
+    assert_exit("discardmixeddirect", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// discardprojection: a discarded conditional's fresh projection arm.
+//
+// The discarded conditional `c ? mk().v : t` has one arm projecting a fresh
+// root and one reading a named binding. The statement must bind the fresh root
+// so its storage releases after the statement, while the projected member
+// stays a read and the place arm stays readable.
+// ---------------------------------------------------------------------------
+
+/// A discarded conditional projection releases its fresh root.
+///
+/// `let t: String = stringOf("tt"); c ? mk().v : t;` evaluates a fresh root on
+/// one path; the statement binds that root and releases it once when the
+/// statement ends, and the projected member is a read. `t` stays readable on
+/// both selections, so the runs exit 0 with no memory report.
+#[test]
+fn should_release_the_discarded_projection_arm() {
+    let source = r#"module spec.cpr.discardprojection;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool): i32 {
+    let t: String = stringOf("tt");
+    c ? mk().v : t;
+    return i32(len(t));
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 4;
+}
+"#;
+    let output = run_memory("discardprojection", source);
+    assert_no_asan("discardprojection", &output);
+    assert_exit("discardprojection", &output, 0);
+}
+
