@@ -259,3 +259,35 @@ deref read creates a second owner), `DEF-330` (the spurious unused-local warning
 pointer). `DEF-294` closes per AR-10 (the spec case asserts its environment's leg — the container —
 and the host false positive for the place-borrowing spelling is `DEF-327`); `DEF-295` closed
 incidentally (the phase-2 residual gate; pinned as the green control `loopmember`).
+
+## Phase 5 — Diagnostics and marks
+
+**Reviewed implementation**: `9539e1f`/`3d91dc8` plus one correction round (`dece1c1`). **Lenses**:
+correctness (J5R) and semantics (J5S), plus a bounded semantics confirmation (J5C).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | J5R-1 (the withheld consequence on a proxy predicate: a suppressed callee report turned a base rejection into an accepted heap-use-after-free; causally revert-proven), J5R-2 (the phrase missed three sibling subject sites), J5R-3 (the mismatch consequence — closed as a boundary by the semantics review), J5R-4 (= `DEF-332`); the dedupe and the mark removal correct in every path probed; 2,137-program differential with no unintended corpus delta |
+| semantics | FAIL — 1 blocker | J5S-1 (the gate resolves the callee by written name only: a callable value named like a lender lost its `E10033` — an FN-6/OW-10 violation), J5S-2 (the suppressed-callee acceptance correct per EL-4 but unpinned; the predicate wording inaccurate), J5S-3 (= `DEF-332`); Q1 (the one-report dedupe) and Q4 (the iterable mark) conformant; Q5 closed J5R-3 as a boundary |
+
+### Fix round
+
+| Item | Outcome |
+|------|---------|
+| C1 (J5R-1/J5S-2) | **Fixed**: the return judgment's `Composite` arm reports the array literal's local component (`E10035`) and suppresses the count postlude — the cause reports and the caller's withholding is sound; the p17/p18/p19b/p20 probes switch from one `E10036` to one `E10035` (same single report, at the cause) |
+| C2 (J5S-1) | **Fixed**: `callee_elides_no_single_parameter` mirrors the call precedence (a callable field, a call-returned func, a func-typed binding, a module-global func value takes no withholding) — the callable spellings reject one `E10033` |
+| C3 (J5S-2) | **Fixed**: the predicate renamed to the structural condition; the static-callee acceptance pinned as a spec case |
+| C4 (J5R-2) | **Fixed**: one shared subject/display helper across the report and the three sibling sites |
+| C5 (J5S-3/`DEF-332`) | **Fixed**: the deferred copies' generated ids are tracked (the spelling heuristic removed) — the user binding keeps its name and the deferred phrase holds |
+
+### Confirmation
+
+**PASS WITH MINORS — 0 blockers**: the `E10035` switch confirmed (a view derived from a local owner is `E10035` — `spec/16` BR-6, `spec/06` FN-5, `spec/03` OW-17; the `E10036` was the count approximation); the composite arm covers every component kind (two locals, local+param+static, local+generated, two params, param/static and global/static controls); the precedence confirmed (the callable spellings reject; the module lender controls keep theirs; the `DEF-331` boundary stands); the id tracking confirmed (per-lambda isolation; the take/restore nested correctly); the wording matches the condition (J5C-2 corrected inline). J5C-1 (a rolled-back id re-taken by a later binding renders that binding's name — the site is always rejected, only the subject is wrong) filed as `DEF-334`.
+
+### Filed rows
+
+`DEF-331` (the mismatch consequence — closed as a boundary: an independent cause, not a consequence), `DEF-332`
+(fixed), `DEF-333` (incidentally fixed by C1 — the parent re-measured the shape rejecting `E10035`),
+`DEF-334` (the rolled-back id subject).

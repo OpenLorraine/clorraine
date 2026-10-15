@@ -1516,8 +1516,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// module-global func value is not the named function its spelling may
     /// share, so no declaration judgment is reached through it and the
     /// destination keeps its own report. The callable spellings are resolved
-    /// in the same order as the call check, so exactly the calls that reach
-    /// the declaration take the withholding.
+    /// in the same order as the call check, so a call reached through a
+    /// callable value never takes the withholding.
     fn callee_elides_no_single_parameter(&self, value: &Expr) -> bool {
         let ExprKind::Call { callee, .. } = &value.kind else {
             return false;
