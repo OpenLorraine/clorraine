@@ -804,10 +804,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// The bare deref target names no member, so the place walk never reaches
     /// it: the pointer's own type decides whether the store sits outside an
-    /// `unsafe` block, exactly as a field write through a raw does.
+    /// `unsafe` block, exactly as a field write through a raw does, and a
+    /// nullable pointer reports the same non-null requirement the read
+    /// spelling reports.
     pub(super) fn check_deref_raw(&mut self, pointer: &Expr, span: Span) {
-        if matches!(self.ty(pointer).kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
+        let pointer_ty = self.ty(pointer);
+        if matches!(pointer_ty.kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
             self.report_unsafe(UnsafeOp::Deref, span);
+        }
+        if pointer_ty.nullable {
+            self.check_nonnull_expr(pointer, span);
         }
     }
 
@@ -935,6 +941,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             } else {
                 pointer
             };
+            // A compound store reads and writes the same address, so an impure
+            // pointer expression is bound once, exactly as a shared element
+            // target binds its base and index: the read and the store then
+            // share one evaluated address instead of running it twice.
+            let pointer = if compound.is_some() {
+                self.materialize_operand(pointer)
+            } else {
+                pointer
+            };
             // The store target's own type decides whether the replaced pointee
             // is released, so the pointer is spelled as the pointee's address
             // exactly as the indexed store's element address is: the address of
@@ -950,14 +965,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 element_ty.clone(),
                 ValueKind::Unary {
                     op: UnaryOp::AddressOf,
-                    operand: Box::new(pointee),
+                    operand: Box::new(pointee.clone()),
                 },
             );
             let stored = match compound {
                 Some(binary) => {
-                    // A compound store reads the pointee before the side runs,
-                    // so an updating side materializes that read first.
-                    let element = self.lower_value(target);
+                    // The compound store reads the pointee through that same
+                    // address, before the side runs; an updating side
+                    // materializes the read first.
+                    let element = pointee;
                     let element = if pin {
                         self.pin_update_value(element)
                     } else {

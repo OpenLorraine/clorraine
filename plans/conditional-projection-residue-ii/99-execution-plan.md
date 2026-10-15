@@ -49,7 +49,7 @@ controls.
 
 ## Phase 1: View owners, loans, and stores
 
-> **Phase baseline tree**: `47306d2` **plus the two-line `place.rs` visibility hunk** (the committed `47306d2`/`cfb4c1a` trees do not compile — a staging miss; the repair landed in `6666a4d`, recorded in the ledger as J3R-4), recorded 2026-10-16
+> **Phase baseline tree**: `50b91d9` (the phase-4 red-phase commit; the five new cases red / the pins fail there), recorded 2026-10-16
 > **Lenses**: correctness + memory-safety (AR-13) — dispatched via the project brief and the
 > read-only `memory-safety-auditor`
 > **Reasoning**: high — ownership and lifetime judgments in the freshly reviewed machinery

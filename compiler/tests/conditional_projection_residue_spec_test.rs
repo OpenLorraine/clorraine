@@ -9846,3 +9846,109 @@ func main(): i32 { return use(); }
     assert_no_asan("rawreplace", &output);
     assert_exit("rawreplace", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// rawcompoundonce: a compound raw-deref store evaluates its pointer once.
+//
+// `unsafe { *mkq(&a) += 7; }` reads and writes the same address, so the
+// pointer expression runs a single time (the counter proves it) and the stored
+// value is correct. The update spelling `*(r + j++) += 7` runs the increment
+// once and reads and writes through that one address.
+// ---------------------------------------------------------------------------
+
+/// A compound raw store evaluates its pointer once and shares the address.
+#[test]
+fn should_evaluate_a_compound_raw_store_pointer_once() {
+    let impure = r#"module spec.cpr.rawcompoundonce;
+
+let pcalls: i32 = 0;
+
+func mkq(p: raw i32): raw i32 {
+    pcalls = pcalls + 1;
+    return p;
+}
+
+func main(): i32 {
+    let a: i32 = 5;
+    unsafe {
+        *mkq(&a) += 7;
+    }
+    return (a - 12) + (pcalls - 1) * 10;
+}
+"#;
+    let output = run_memory("rawcompoundonce", impure);
+    assert_no_asan("rawcompoundonce", &output);
+    assert_exit("rawcompoundonce", &output, 0);
+
+    let update = r#"module spec.cpr.rawarithstore;
+
+func main(): i32 {
+    let a: i32 = 4;
+    let q: raw i32 = unsafe &a;
+    let i: i32 = 0;
+    unsafe {
+        *(q + i++) = 9;
+    }
+    let n: i32 = (a - 9) + (i - 1);
+    let b: i32 = 3;
+    let r: raw i32 = unsafe &b;
+    let j: i32 = 0;
+    unsafe {
+        *(r + j++) += 7;
+    }
+    return n + (b - 10) + (j - 1);
+}
+"#;
+    let output = run_memory("rawarithstore", update);
+    assert_no_asan("rawarithstore", &output);
+    assert_exit("rawarithstore", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// rawnullablestore: the nullable raw store reports the non-null requirement.
+//
+// A dereferenced nullable raw pointer reports `E10010` whether it is read or
+// written, so the store spelling and its read twin each carry exactly one
+// report; a non-nullable pointer stores unchanged.
+// ---------------------------------------------------------------------------
+
+/// A nullable raw store reports one `E10010`, matching its read twin.
+#[test]
+fn should_reject_a_nullable_raw_store_like_its_read_twin() {
+    let stored = r#"module spec.cpr.rawnullablestore;
+
+func main(): i32 {
+    let p: raw i32? = null;
+    unsafe {
+        *p = 9;
+    }
+    return 0;
+}
+"#;
+    compile_rejects("rawnullablestore", stored, "E10010", 1);
+
+    let read = r#"module spec.cpr.rawnullableread;
+
+func main(): i32 {
+    let p: raw i32? = null;
+    let v: i32 = unsafe *p;
+    return v;
+}
+"#;
+    compile_rejects("rawnullableread", read, "E10010", 1);
+
+    let nonnull = r#"module spec.cpr.rawnonnullstore;
+
+func main(): i32 {
+    let a: i32 = 0;
+    let p: raw i32 = unsafe &a;
+    unsafe {
+        *p = 9;
+    }
+    return a - 9;
+}
+"#;
+    let output = run_memory("rawnonnullstore", nonnull);
+    assert_no_asan("rawnonnullstore", &output);
+    assert_exit("rawnonnullstore", &output, 0);
+}
