@@ -10132,3 +10132,72 @@ func main(): i32 { return use(); }
     assert_no_asan("rawcallcompound", &output);
     assert_exit("rawcallcompound", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// rawdistinct: an owned raw-deref read moves from its own pointee.
+//
+// `unsafe { *q = *r; }` with two distinct owning pointees moves the value: the
+// target's replaced value is released once, the source pointee is emptied, and
+// only the target owns the buffer, so the run is memory-clean and the value
+// lands once. A named source through a raw (`unsafe { *q = b; }`) consumes the
+// source exactly like the named twin, so a later use reports one moved-value
+// error for both spellings.
+// ---------------------------------------------------------------------------
+
+/// An owned raw-deref read used as a store value moves from its pointee.
+#[test]
+fn should_move_an_owned_pointee_read_used_as_a_store_value() {
+    let moved = r#"module spec.cpr.rawdistinct;
+
+import { String, stringOf } from std.text;
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let q: raw String = unsafe &a;
+    let r: raw String = unsafe &b;
+    unsafe {
+        *q = *r;
+    }
+    return i32(len(a)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("rawdistinct", moved);
+    assert_no_asan("rawdistinct", &output);
+    assert_exit("rawdistinct", &output, 0);
+
+    let raw_use = r#"module spec.cpr.rawdistinctuse;
+
+import { String, stringOf } from std.text;
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let q: raw String = unsafe &a;
+    unsafe {
+        *q = b;
+    }
+    return i32(len(b));
+}
+
+func main(): i32 { return use(); }
+"#;
+    compile_rejects("rawdistinctuse", raw_use, "E10020", 1);
+
+    let named_use = r#"module spec.cpr.nameddistinctuse;
+
+import { String, stringOf } from std.text;
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    a = b;
+    return i32(len(b));
+}
+
+func main(): i32 { return use(); }
+"#;
+    compile_rejects("nameddistinctuse", named_use, "E10020", 1);
+}

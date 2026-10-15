@@ -181,3 +181,12 @@ and reviewed by the phase's lenses.
 - `DEF-294`'s final classification (AR-10) is recorded in the findings ledger either way.
 
 **AR-16 (runtime):** The phase-1 red phase re-derives three filed reds: `DEF-285`'s mutation reports already fire at the head (the landable reds are the owner stranding and the accepted fresh-backed loop store), `DEF-287`'s direct `stringOf` spelling is already clean (the member-projection spelling is the red), and `DEF-286`'s non-nullable `borrow slot: str` chain is a dead write, not a use-after-free (the nullable `str?` spelling is the red). The cases pin the observed reds; the fix directions are unchanged.
+
+**AR-18 (runtime, auto-design):** The raw self-store boundary (the phase-4 final re-probe's
+FINAL-2). After a raw store empties a pointee through an alias (`*q = *q`), a later read of the
+pointee's owner (`len(a)`) is the raw author's responsibility: `raw`/`unsafe` is a greppable audit
+marker, not a provenance guarantee (Ch 03 \u00a78), and the checker does not track raw writes. The
+safe named twin (`a = a; len(a)`) reports one `E10020` and remains the pinned control. No
+enforcement is attempted without a points-to analysis; the accepted `*q = *q` spelling stays pinned
+(the release \u2192 clear \u2192 store order). FINAL-1 (the distinct-pointee store value) is fixed
+by the same round (the owned read is consumed like an ordinary move).

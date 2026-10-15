@@ -14,6 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece};
+use crate::ast::UnaryOp;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
 use super::render::escape_c_string;
@@ -1958,6 +1959,16 @@ impl<'a> Emitter<'a> {
             }
             ValueKind::Temp(_) | ValueKind::Materialize { .. } => {
                 let source = self.value(arm);
+                self.emit_move_zero(&source, ty);
+            }
+            // A raw-deref read used as a store value moves the pointee: the
+            // source is emptied through its own address, exactly as a named
+            // place source is emptied, so only the destination owns the value.
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } => {
+                let source = format!("*({})", self.value(operand));
                 self.emit_move_zero(&source, ty);
             }
             // A projection is a move source only when it roots at storage the
