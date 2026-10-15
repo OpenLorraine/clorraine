@@ -726,14 +726,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// binding would hand out.
     pub(super) fn binding_loan_owners(&self, id: usize) -> BTreeSet<LoanOwner> {
         let mut owners = BTreeSet::new();
-        for loan in self.binding_loans(id) {
+        self.loan_owners(&self.binding_loans(id), &mut owners);
+        owners
+    }
+
+    /// Adds the owners a loan set names.
+    fn loan_owners(&self, loans: &BTreeSet<LoanId>, owners: &mut BTreeSet<LoanOwner>) {
+        for loan in loans {
             for (origin, candidate) in &self.loan_ids {
-                if *candidate == loan {
+                if candidate == loan {
                     owners.insert(origin.owner);
                 }
             }
         }
-        owners
     }
 
     /// The owners a returned carrier's view positions read that die with the
@@ -815,23 +820,150 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         owners
     }
 
+    /// The owners a place's recorded view positions name.
+    ///
+    /// A store that reads a place reads the storage that place's positions
+    /// hold, so a destination that copies the value loans the same owners the
+    /// source position loans: a constant projection path judges the positions
+    /// it selects — the path itself, the positions below it, and a fill that
+    /// covers it — while a whole-binding or run-time-index read names no
+    /// single position and contributes every recorded one. `None` when the
+    /// place roots at no binding with recorded positions.
+    pub(super) fn place_recorded_position_owners(
+        &self,
+        expr: &Expr,
+    ) -> Option<BTreeSet<LoanOwner>> {
+        let PlaceTarget::Local(id, projections) = self.place_target(expr)? else {
+            return None;
+        };
+        let id = self.alias_resolved_root(id);
+        let paths = self.state.element_loans.get(&id)?;
+        let read = projections
+            .iter()
+            .all(|projection| {
+                !matches!(
+                    projection,
+                    ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
+                )
+            })
+            .then_some(projections);
+        let mut owners = BTreeSet::new();
+        match read {
+            Some(read) => {
+                for (path, loans) in paths {
+                    if path.starts_with(&read) || read.starts_with(path) {
+                        self.loan_owners(loans, &mut owners);
+                    }
+                }
+            }
+            None => {
+                for loans in paths.values() {
+                    self.loan_owners(loans, &mut owners);
+                }
+            }
+        }
+        Some(owners)
+    }
+
+    /// The loan owners a view value's binding reads that a destination cannot
+    /// keep.
+    ///
+    /// A caller slot keeps the caller's own parameter storage, so only a
+    /// frame-dying backing reports there; a global outlives every caller, so
+    /// every loaned owner reports. Static and module storage carry no loan, so
+    /// they never appear here.
+    pub(super) fn view_loan_destination_owners(
+        &self,
+        expr: &Expr,
+        global: bool,
+    ) -> BTreeSet<LoanOwner> {
+        let mut owners = BTreeSet::new();
+        let mut roots = BTreeSet::new();
+        self.expr_view_roots(expr, &mut roots);
+        for id in roots {
+            for owner in self.binding_loan_owners(id) {
+                if global || self.owner_dies_with_frame(owner) {
+                    owners.insert(owner);
+                }
+            }
+        }
+        owners
+    }
+
+    /// The frame-dying owners a view value's recorded positions name.
+    ///
+    /// A binding's recorded view positions name the storage its views read, so
+    /// the positions are authoritative where they exist: a constant projection
+    /// path judges exactly the positions it selects — the path itself, the
+    /// positions below it, and a fill that covers it — while a whole-binding
+    /// or run-time-index read names no single position and judges every
+    /// recorded one. A binding with no recorded position falls back to the
+    /// value's own provenance at the caller.
+    pub(super) fn recorded_position_frame_owners(
+        &self,
+        expr: &Expr,
+    ) -> Option<BTreeSet<LoanOwner>> {
+        let mut roots = BTreeSet::new();
+        self.expr_view_roots(expr, &mut roots);
+        let mut found = false;
+        let mut owners = BTreeSet::new();
+        for id in roots {
+            let Some(paths) = self.state.element_loans.get(&id) else {
+                continue;
+            };
+            found = true;
+            let read = match self.place_target(expr) {
+                Some(PlaceTarget::Local(root, projections)) if root == id => {
+                    let constant = projections.iter().all(|projection| {
+                        !matches!(
+                            projection,
+                            ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
+                        )
+                    });
+                    constant.then_some(projections)
+                }
+                _ => None,
+            };
+            let Some(read) = read else {
+                for loans in paths.values() {
+                    self.loan_owners(loans, &mut owners);
+                }
+                continue;
+            };
+            for (path, loans) in paths {
+                if path.starts_with(&read) || read.starts_with(path) {
+                    self.loan_owners(loans, &mut owners);
+                }
+            }
+        }
+        found.then(|| {
+            owners
+                .into_iter()
+                .filter(|owner| self.owner_dies_with_frame(*owner))
+                .collect()
+        })
+    }
+
     /// The bindings a view expression's projection chain roots at.
     ///
     /// Mirrors [`Self::lowered_root_bindings`] over the source expression: a
     /// name or a qualified head names its binding, a projection or a cast
     /// names its base's, and a conditional or an array contributes every arm
-    /// or element. A chain that roots at anything else — a call result, a
-    /// literal, or module storage — names no binding here.
+    /// or element. A `for (borrow e in xs)` alias has no storage of its own,
+    /// so its place reaches the iterable element and the walk follows it to
+    /// the container exactly as the element-loan records do. A chain that
+    /// roots at anything else — a call result, a literal, or module storage —
+    /// names no binding here.
     fn expr_view_roots(&self, expr: &Expr, roots: &mut BTreeSet<usize>) {
         match &expr.kind {
             ExprKind::Name(name) => {
                 if let Some(id) = self.lookup(name) {
-                    roots.insert(id);
+                    roots.insert(self.alias_resolved_root(id));
                 }
             }
             ExprKind::Qualified(name) => {
                 if let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) {
-                    roots.insert(id);
+                    roots.insert(self.alias_resolved_root(id));
                 }
             }
             ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => {
@@ -859,6 +991,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => {}
         }
+    }
+
+    /// The binding a root reaches when it is a `for` alias.
+    ///
+    /// An alias binding has no storage of its own: its place reaches the
+    /// iterable element, so every owner walk follows the alias chain to the
+    /// container exactly as the element-loan records do.
+    fn alias_resolved_root(&self, mut id: usize) -> usize {
+        while let Some(PlaceTarget::Local(root, _)) = self.bindings[id].alias_root {
+            if root == id {
+                break;
+            }
+            id = root;
+        }
+        id
+    }
+
+    /// The container binding an alias place reaches, when it is one.
+    ///
+    /// A `for (borrow e in xs)` alias has no storage of its own: its place
+    /// reaches the iterable element, so the storage its views read is the
+    /// container's.
+    pub(super) fn alias_container_binding(&self, expr: &Expr) -> Option<usize> {
+        let id = match &expr.kind {
+            ExprKind::Name(name) => self.lookup(name)?,
+            _ => return None,
+        };
+        let resolved = self.alias_resolved_root(id);
+        (resolved != id).then_some(resolved)
     }
 
     /// Replaces the loans a binding carries.
@@ -944,6 +1105,36 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .insert(path, loans);
         }
         self.set_binding_loan_union(id, union);
+    }
+
+    /// Moves a carrier's recorded view positions onto another binding.
+    ///
+    /// A carrier copy (`h2 = h1`) hands the destination the same views the
+    /// source holds, so every recorded position contributes its loans under
+    /// the destination's path: the copy's views read the same storage, and a
+    /// later escape reports through the destination exactly as through the
+    /// source. The destination's own record under `base` is replaced first —
+    /// the store replaced those positions — and a self-assignment keeps its
+    /// positions because the source's record is captured before the
+    /// replacement.
+    pub(super) fn move_element_loans(&mut self, from: usize, to: usize, base: &[ir::Projection]) {
+        let snapshot: Vec<(Vec<ir::Projection>, BTreeSet<LoanId>)> = self
+            .state
+            .element_loans
+            .get(&from)
+            .map(|paths| {
+                paths
+                    .iter()
+                    .map(|(path, loans)| (path.clone(), loans.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        self.replace_element_loans(to, base, BTreeSet::new());
+        for (path, loans) in snapshot {
+            let mut full = base.to_vec();
+            full.extend(path);
+            self.replace_element_loans(to, &full, loans);
+        }
     }
 
     /// Writes the union of loans a binding carries.

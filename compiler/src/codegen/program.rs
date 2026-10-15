@@ -16,7 +16,7 @@ use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, view_type
 use super::function::ArrayTarget;
 use super::types::{
     c_type, collect_slice_types, declarator, function_declarator, innermost_is_struct,
-    mangle_module, pointer_to_array_declarator, scalar_of, type_key,
+    mangle_module, pointer_to_array_declarator, scalar_of, type_key, zero_view_helper,
 };
 use super::{Emitter, FuncInfo};
 
@@ -1079,34 +1079,125 @@ impl<'a> Emitter<'a> {
         if !self.init_retain_owners || self.init_skip_owner_binding {
             return (value.clone(), None);
         }
-        let ValueKind::Member { base, name } = &value.kind else {
-            return (value.clone(), None);
-        };
-        if !matches!(
-            base.kind,
-            ValueKind::Call { .. } | ValueKind::ClosureCall { .. }
-        ) || !self.needs_drop(&base.ty)
-            // Only an owning member moves out of the root; a view member
-            // reads storage the root never owned.
-            || !self.needs_drop(&value.ty)
+        self.retain_fresh_projection_root(value)
+    }
+
+    /// Binds a fresh owning root under a projection chain and empties the read
+    /// position after the store.
+    ///
+    /// The chain walks down to the owning root; each step records its C
+    /// accessor so the move-out can empty the exact position the view reads.
+    /// A value with no projection step and a chain step that names no constant
+    /// position keep their inline form: the first is the destination's own
+    /// value, and the second has no position the move-out could empty ahead of
+    /// the release.
+    fn retain_fresh_projection_root(&mut self, value: &Value) -> (Value, Option<String>) {
+        let mut accessors: Vec<String> = Vec::new();
+        let mut cursor = value;
+        loop {
+            match &cursor.kind {
+                ValueKind::Member { base, name } => {
+                    accessors.push(format!(".{name}"));
+                    cursor = base;
+                }
+                ValueKind::Index { base, index } => {
+                    let ValueKind::Int(position) = index.kind else {
+                        return (value.clone(), None);
+                    };
+                    accessors.push(format!("[{position}]"));
+                    cursor = base;
+                }
+                _ => break,
+            }
+        }
+        if accessors.is_empty()
+            || !matches!(cursor.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
+            || !self.needs_drop(&cursor.ty)
+            // The read position itself need not own storage: a view position
+            // reads storage the root never owned, so the root still binds for
+            // its remaining fields and the view position empties like the
+            // owning ones.
+            || value.ty.is_fixed_array()
         {
             return (value.clone(), None);
         }
-        let zero = self.empty_state(&base.ty);
+        let zero = self.empty_state(&cursor.ty);
         // The root's fields free at the initializer's end: the release
         // registration must see the local even under a retaining destination.
         let retaining = std::mem::replace(&mut self.init_retain_owners, false);
-        let (local, root) = self.materialize_init_local(base, None, &zero);
+        let (local, root) = self.materialize_init_local(cursor, None, &zero);
         self.init_retain_owners = retaining;
-        let read = Value::new(
-            value.ty.clone(),
-            ValueKind::Member {
-                base: Box::new(root),
-                name: name.clone(),
-            },
-        );
-        let empty = self.empty_state(&value.ty);
-        (read, Some(format!("{local}.{name} = {empty}")))
+        accessors.reverse();
+        let read = Self::rebind_projection_root(value, root);
+        let empty = match zero_view_helper(&value.ty) {
+            // A struct-typed view position spells its empty state with the
+            // zero view helper, exactly as a store into it would.
+            Some(helper) => format!("{helper}()"),
+            None => self.empty_state(&value.ty),
+        };
+        (
+            read,
+            Some(format!("{local}{} = {empty}", accessors.concat())),
+        )
+    }
+
+    /// Binds every fresh member root a retained view array reads.
+    ///
+    /// A view array stores one view per element, so each element that projects
+    /// a member out of a fresh owning call binds its root and empties the read
+    /// position after the fills; the roots' remaining fields then free at the
+    /// initializer's end. Returns the rewritten array and the move-out
+    /// statements to emit after the element stores.
+    fn retain_view_array_roots(&mut self, value: &Value) -> (Value, Vec<String>) {
+        if !self.init_retain_owners || self.init_skip_owner_binding {
+            return (value.clone(), Vec::new());
+        }
+        let ValueKind::ArrayLit { elements, fill } = &value.kind else {
+            return (value.clone(), Vec::new());
+        };
+        let mut move_outs = Vec::new();
+        let elements = elements
+            .iter()
+            .map(|element| {
+                let (element, move_out) = self.retain_fresh_projection_root(element);
+                move_outs.extend(move_out);
+                element
+            })
+            .collect();
+        let fill = fill.as_ref().map(|fill| {
+            let (fill, move_out) = self.retain_fresh_projection_root(fill);
+            move_outs.extend(move_out);
+            Box::new(fill)
+        });
+        (
+            Value::new(value.ty.clone(), ValueKind::ArrayLit { elements, fill }),
+            move_outs,
+        )
+    }
+
+    /// Rebuilds a projection chain over a rebound root.
+    ///
+    /// The chain's own members and indexes stay, so the read reaches the same
+    /// position the source expression named, but it now reads through the
+    /// bound owner.
+    fn rebind_projection_root(value: &Value, root: Value) -> Value {
+        match &value.kind {
+            ValueKind::Member { base, name } => Value::new(
+                value.ty.clone(),
+                ValueKind::Member {
+                    base: Box::new(Self::rebind_projection_root(base, root)),
+                    name: name.clone(),
+                },
+            ),
+            ValueKind::Index { base, index } => Value::new(
+                value.ty.clone(),
+                ValueKind::Index {
+                    base: Box::new(Self::rebind_projection_root(base, root)),
+                    index: index.clone(),
+                },
+            ),
+            _ => root,
+        }
     }
 
     /// Fills a fixed-array global element-wise.
@@ -1119,11 +1210,59 @@ impl<'a> Emitter<'a> {
     /// from its rendered base, and a conditional value reads its chosen arm
     /// per element from a condition the preparation stored exactly once.
     fn emit_global_array_fill(&mut self, target: &str, ty: &Ty, value: &Value) {
+        // A view array of fresh members retains each member while its root's
+        // remaining fields release: a projection over a fresh owning root
+        // binds that root first, and every element's root binds into an init
+        // local, with the read positions emptied after the fills.
+        let value = self.retain_view_array_fill_root(value);
+        let (value, move_outs) = self.retain_view_array_roots(&value);
         // The value is prepared once, before any element store, so every
         // condition and run-time index is evaluated exactly once even though
         // the stores read the value once per element.
-        let prepared = self.prepare_fill_value(value, None);
+        let prepared = self.prepare_fill_value(&value, None);
         self.emit_filled_array(target, ty, &prepared);
+        for move_out in move_outs {
+            self.push(&format!("    {move_out};"));
+        }
+    }
+
+    /// Binds the fresh root under a retained fixed-array view fill.
+    ///
+    /// A fixed-array view destination keeps every element's storage, but the
+    /// elements of a member projection read the root's own field: the root
+    /// binds with its release registered, so its remaining owning fields free
+    /// at the initializer's end while the element views keep reading what they
+    /// name. Only a position whose elements own nothing binds this way — an
+    /// owning element would be freed while the destination still reads it —
+    /// and a value that is not a projection over a fresh owning call keeps its
+    /// form.
+    fn retain_view_array_fill_root(&mut self, value: &Value) -> Value {
+        if !self.init_retain_owners || self.needs_drop(&value.ty.iterated_element()) {
+            return value.clone();
+        }
+        let mut cursor = value;
+        loop {
+            match &cursor.kind {
+                ValueKind::Member { base, .. } => cursor = base,
+                ValueKind::Index { base, index } => {
+                    if !matches!(index.kind, ValueKind::Int(_)) {
+                        return value.clone();
+                    }
+                    cursor = base;
+                }
+                _ => break,
+            }
+        }
+        if !matches!(cursor.kind, ValueKind::Call { .. } | ValueKind::ClosureCall { .. })
+            || !self.needs_drop(&cursor.ty)
+        {
+            return value.clone();
+        }
+        let zero = self.empty_state(&cursor.ty);
+        let retaining = std::mem::replace(&mut self.init_retain_owners, false);
+        let (_, root) = self.materialize_init_local(cursor, None, &zero);
+        self.init_retain_owners = retaining;
+        Self::rebind_projection_root(value, root)
     }
 
     /// Writes the prepared element stores of a filled array.

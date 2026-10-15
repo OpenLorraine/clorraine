@@ -1102,17 +1102,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // own path, so a later overwrite replaces exactly the
                 // positions it replaced. The store drops every record under
                 // its target path first — a whole store therefore drops them
-                // all — and the new value's positions record after.
+                // all — and the new value's positions record after. A copy
+                // from a carrier place hands its positions over instead.
                 if !is_view_like(&target_ty) {
-                    self.replace_element_loans(id, &projections, BTreeSet::new());
-                    let positions = self.literal_view_loan_positions(value);
-                    if !positions.is_empty() {
-                        self.record_literal_view_positions(
-                            id,
-                            &projections,
-                            &positions,
-                            target.span,
-                        );
+                    match self.place_target(value) {
+                        Some(PlaceTarget::Local(source, source_projections))
+                            if source_projections.is_empty() =>
+                        {
+                            self.move_element_loans(source, id, &projections);
+                        }
+                        _ => {
+                            self.replace_element_loans(id, &projections, BTreeSet::new());
+                            let positions = self.literal_view_loan_positions(value);
+                            if !positions.is_empty() {
+                                self.record_literal_view_positions(
+                                    id,
+                                    &projections,
+                                    &positions,
+                                    target.span,
+                                );
+                            }
+                        }
                     }
                 }
                 self.view_destination_adopts = saved_adopts;
@@ -1313,8 +1323,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // report. A container binding's element loans name the storage its
         // view positions read, exactly as a carrier's loans do, and the
         // binding's recorded provenance describes the value that first filled
-        // it, which a later element store does not update — so a frame-dying
-        // element backing reports even when every recorded component fits.
+        // it, which a later element store does not update — so a loaned
+        // backing the destination cannot keep reports even when every recorded
+        // component fits: a frame-dying one at a caller slot, and every one at
+        // a global, which outlives the caller that owns it.
         let subject = match failing {
             Some(atom) => Some(match &atom {
                 Provenance::Local(owner) | Provenance::Param(owner) => {
@@ -1323,10 +1335,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 _ => "a statement temporary".to_owned(),
             }),
             None => self
-                .view_frame_loan_owners(value)
+                .view_loan_destination_owners(value, global)
                 .into_iter()
                 .next()
-                .map(|owner| format!("'{}'", self.bindings[owner].name)),
+                .map(|owner| match owner {
+                    LoanOwner::Binding(id) => format!("'{}'", self.bindings[id].name),
+                    LoanOwner::Temp(_) => "a statement temporary".to_owned(),
+                }),
         };
         let Some(subject) = subject else { return };
         if global {
@@ -1393,11 +1408,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Some(lowered) => self.carried_view_owners(lowered, true),
             None => BTreeSet::new(),
         };
+        // A store that reads a place reads the storage that place's recorded
+        // positions hold, so the destination's loan names them too: a copied
+        // element's loan follows the copy exactly as a carrier copy's loans do.
+        if let Some(position_owners) = self.place_recorded_position_owners(value) {
+            owners.extend(position_owners);
+        }
         // Every storage component is judged on its own, so a component that
-        // names a frame binding contributes its loan even when the other
-        // components of a mixed value would not.
+        // names a frame or caller backing contributes its loan even when the
+        // other components of a mixed value would not. `owner_dies_with_frame`
+        // keeps the caller-backed components' destinations accepted.
         for atom in Self::storage_atoms(&self.view_provenance(value)) {
-            if let Provenance::Local(owner) = atom {
+            if let Provenance::Local(owner) | Provenance::Param(owner) = atom {
                 owners.insert(LoanOwner::Binding(owner));
             }
         }

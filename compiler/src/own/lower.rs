@@ -4270,14 +4270,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // A conditional of projections whose arm roots own residual
             // storage binds each fresh root, so the chosen member transfers to
             // the callee while the root releases only its un-moved fields. The
-            // same binding covers a duplicable selected member: the member
-            // copies to the callee and the root releases its remaining fields
-            // at the statement end.
+            // same binding covers a duplicable selected member — a fixed-array
+            // member included, whose elements copy — so the root releases its
+            // remaining fields at the statement end.
             let value = if self.defer_move_outs == 0
                 && matches!(value.kind, ValueKind::Conditional { .. })
                 && !is_view(&value.ty)
                 && !value.ty.is_unknown()
-                && !value.ty.is_fixed_array()
                 && self.conditional_projection_root_owns_residual(&value)
                 && ((!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
                     || self.conditional_needs_arm_fill(&value))

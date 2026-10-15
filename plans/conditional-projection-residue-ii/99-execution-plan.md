@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 5/33 tasks (15%) — Phase 1 in review
+> **Progress**: 6/33 tasks (18%) — Phase 1 complete
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -81,9 +81,7 @@ element loans, the stale literal-carrier loan, and the all-null composite store.
 ### Step 1.3: Impl Tests & Review
 
 - [x] 1.3.1 Write the phase implementation pins (the binding gates, the loan record/replace shapes, the report counts and spans, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 21:35; seven pins added (59 tests total, additions only); every pin fails at `bf394e5` on its first assertion with the controls (`liveloan`, `nullmixlocal`) holding; 59/59 green)
-- [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses (correctness + memory-safety; the reviewer packet includes the
-      blast-radius step and the test-integrity step)
+- [x] 1.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses (correctness + memory-safety; the reviewer packet includes the blast-radius step and the test-integrity step) ✅ (completed: 2026-10-16 01:25; both lenses dispatched plus three targeted confirmations; the fix round (the owners-resolved cross-frame rule, the read-only boundary pin, F2/F4-deep/F5) and the correction round (C1 `Param` element loans, C2 the retain gate + array fill, C3 the two-level loan, C4 the mixed array-literal) closed every in-scope finding; the two fix-round claim gaps were caught by the confirmation and fixed; five rows filed (`DEF-311`..`DEF-315`); the frozen-revision verification: the residue spec 107/107 plain and ASan, the impl pins 63/63, `make check` exit 0 with no new warnings)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`; the strict-build probes
 

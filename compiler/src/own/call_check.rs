@@ -37,7 +37,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None);
                 return;
             }
         }
@@ -59,7 +59,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None);
                 return;
             }
         }
@@ -76,7 +76,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.check_marker_matches(&name, args, &params);
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None);
                 return;
             }
         }
@@ -101,7 +101,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let effective: Vec<Ty> = params.iter().map(|(_, ty)| ty.clone()).collect();
                 let mut lent: BTreeSet<usize> = BTreeSet::new();
-                self.check_arguments(args, &params, &effective, span, &mut lent);
+                self.check_arguments(args, &params, &effective, span, &mut lent, None);
                 return;
             }
             // The callee may be an intrinsic reached as a dot-call, such as
@@ -194,6 +194,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     &effective_params[skip..],
                     span,
                     &mut lent,
+                    if is_dot {
+                        params.first().map(|param| (callee, param))
+                    } else {
+                        None
+                    },
                 );
                 // A slot parameter whose declared type still mentions a type
                 // parameter may become a nullable out-slot only at the
@@ -382,6 +387,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         effective: &[Ty],
         span: Span,
         lent: &mut BTreeSet<usize>,
+        receiver: Option<(&'a Expr, &(Mode, Ty))>,
     ) {
         for (index, arg) in args.iter().enumerate() {
             let expected = params.get(index).map(|(_, ty)| ty.clone());
@@ -401,7 +407,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 lent,
             );
         }
-        self.check_cross_frame_pass_through(args, params, span);
+        self.check_cross_frame_pass_through(args, params, receiver, span);
     }
 
     /// Judges a view pass-through into a slot that lives further out.
@@ -413,33 +419,38 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// site sees both argument relations, so it judges the pass-through
     /// exactly like the direct store: a view whose backing dies with this
     /// frame, at a call that also passes a borrow slot rooted in a further-out
-    /// frame, reports one `E10030`. A parameter-backed view and a same-frame
+    /// frame, reports one `E10030`. The receiver is parameter zero, so a
+    /// dot-call's slot counts too. A parameter-backed view and a same-frame
     /// slot keep their acceptance.
     fn check_cross_frame_pass_through(
         &mut self,
         args: &'a [Arg],
         params: &[(Mode, Ty)],
+        receiver: Option<(&'a Expr, &(Mode, Ty))>,
         span: Span,
     ) {
-        // A borrow parameter of a view-like type is a slot the callee may
-        // write a view into. The slot's own root decides where it lives: a
-        // parameter's storage belongs to this function's caller — a
-        // further-out frame — while a local's dies with this frame.
+        // A borrow parameter whose type can hold a view is a slot the callee
+        // may write one into — a view-like slot directly, or a struct or
+        // array slot with a view-like position. The slot's own root decides
+        // where it lives: a parameter's storage belongs to this function's
+        // caller — a further-out frame — while a local's dies with this frame.
         let mut slot_lives_further_out = false;
         for (index, arg) in args.iter().enumerate() {
             let Some((mode, param_ty)) = params.get(index) else {
                 continue;
             };
-            if *mode != Mode::Borrow || !is_view_like(param_ty) {
+            if *mode != Mode::Borrow || !self.may_carry_view(param_ty) {
                 continue;
             }
-            if let Some(PlaceTarget::Local(id, _)) = self.place_target(&arg.value) {
-                if matches!(
-                    self.bindings[id].kind,
-                    BindingKind::Param | BindingKind::OutSlot
-                ) {
-                    slot_lives_further_out = true;
-                    break;
+            if self.place_roots_in_a_further_out_frame(&arg.value) {
+                slot_lives_further_out = true;
+                break;
+            }
+        }
+        if !slot_lives_further_out {
+            if let Some((callee, (mode, param_ty))) = receiver {
+                if *mode == Mode::Borrow && self.may_carry_view(param_ty) {
+                    slot_lives_further_out = self.receiver_roots_in_a_further_out_frame(callee);
                 }
             }
         }
@@ -460,18 +471,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             if !view_parameter && !is_view_like(&self.ty(&arg.value)) {
                 continue;
             }
-            match self.view_provenance(&arg.value) {
-                Provenance::Local(id) if self.bindings[id].kind == BindingKind::Local => {
-                    failing = Some(Some(id));
-                    break;
-                }
-                // A view of fresh statement storage reads a call result that
-                // dies when the statement ends; its chain roots at the call.
-                Provenance::None if self.view_reads_fresh_root(&arg.value) => {
-                    failing = Some(None);
-                    break;
-                }
-                _ => {}
+            if let Some(owner) = self.frame_owned_view_owner(&arg.value) {
+                failing = Some(owner);
+                break;
             }
         }
         let Some(failing) = failing else { return };
@@ -487,22 +489,145 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         );
     }
 
-    /// True when a view expression reads into a fresh owned call result.
+    /// True when a place's root binding is a parameter or an out-slot.
+    ///
+    /// Such a place lives in a further-out frame: a parameter's storage
+    /// belongs to this function's caller and an out-slot's to its caller —
+    /// either way the frame reading it outlives this one.
+    fn place_roots_in_a_further_out_frame(&self, expr: &Expr) -> bool {
+        match self.place_target(expr) {
+            Some(PlaceTarget::Local(id, _)) => matches!(
+                self.bindings[id].kind,
+                BindingKind::Param | BindingKind::OutSlot
+            ),
+            _ => false,
+        }
+    }
+
+    /// True when a dot call's receiver roots in a further-out frame.
+    ///
+    /// A member receiver is a place like any other; a qualified receiver names
+    /// its head binding, so that binding's kind decides.
+    fn receiver_roots_in_a_further_out_frame(&self, callee: &Expr) -> bool {
+        match &callee.kind {
+            ExprKind::Member { base, .. } => self.place_roots_in_a_further_out_frame(base),
+            ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+                let Some(id) = name.segments.first().and_then(|first| self.lookup(first)) else {
+                    return false;
+                };
+                matches!(
+                    self.bindings[id].kind,
+                    BindingKind::Param | BindingKind::OutSlot
+                )
+            }
+            _ => false,
+        }
+    }
+
+    /// The frame-owned storage a view argument reads, when it reads any.
+    ///
+    /// The view's owners are resolved in order: a binding's recorded view
+    /// positions are authoritative — the storage its views actually read — so
+    /// a position loaned to this frame's storage reports while one loaned to
+    /// the caller's parameters or module storage keeps the acceptance; a
+    /// binding without recorded positions is judged by its own provenance; and
+    /// an ownerless chain that roots at a fresh call result, a struct literal,
+    /// or a conditional or array of either reads statement storage, which dies
+    /// with the frame. `Some(None)` names statement storage, `Some(Some(id))`
+    /// a frame binding, and `None` no frame-owned storage at all.
+    fn frame_owned_view_owner(&self, expr: &Expr) -> Option<Option<usize>> {
+        if let Some(owners) = self.recorded_position_frame_owners(expr) {
+            return owners.into_iter().next().map(|owner| match owner {
+                LoanOwner::Binding(id) => Some(id),
+                LoanOwner::Temp(_) => None,
+            });
+        }
+        // An alias reads the iterable element, so its storage is the
+        // container's: the container binding's provenance names it.
+        let provenance = match self.alias_container_binding(expr) {
+            Some(container) => self.place_provenance(container),
+            None => self.view_provenance(expr),
+        };
+        for atom in Self::storage_atoms(&provenance) {
+            match atom {
+                Provenance::Local(id) | Provenance::Param(id) => {
+                    if self.owner_dies_with_frame(LoanOwner::Binding(id)) {
+                        return Some(Some(id));
+                    }
+                    // A caller-backed component survives this frame, but a
+                    // later component or the value's own fresh storage still
+                    // reports: the walk continues past it.
+                }
+                Provenance::Temp(_) => return Some(None),
+                _ => {}
+            }
+        }
+        if self.view_reads_fresh_root(expr) {
+            return Some(None);
+        }
+        None
+    }
+
+    /// True when a view expression reads into fresh statement storage.
     ///
     /// A projection chain that roots at a call whose result owns storage reads
     /// storage the statement owns: `mk().v` names the member of a result that
-    /// dies when the statement ends. A chain rooted at a place, a literal, or
-    /// a call that owns nothing names no statement storage here.
+    /// dies when the statement ends. A conditional or an array contributes
+    /// every arm or element, because either may be chosen or stored, and a
+    /// struct literal reads the selected position's own value — storing it
+    /// directly reads frame storage, while a view-typed position reads the
+    /// storage its initializer names. A chain rooted at a place or a call that
+    /// owns nothing names no statement storage here.
     fn view_reads_fresh_root(&self, expr: &Expr) -> bool {
         let mut cursor = expr;
+        let mut member: Option<&str> = None;
         loop {
             match &cursor.kind {
-                ExprKind::Member { base, .. } | ExprKind::Index { base, .. } => cursor = base,
+                ExprKind::Member { base, name } => {
+                    member = Some(name);
+                    cursor = base;
+                }
+                ExprKind::Index { base, .. } => {
+                    member = None;
+                    cursor = base;
+                }
                 ExprKind::Unsafe(inner) => cursor = inner,
                 ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => cursor = value,
+                ExprKind::Conditional {
+                    then_value,
+                    else_value,
+                    ..
+                } => {
+                    return self.view_reads_fresh_root(then_value)
+                        || self.view_reads_fresh_root(else_value);
+                }
+                ExprKind::ArrayLiteral { elements, fill } => {
+                    return elements.iter().any(|element| self.view_reads_fresh_root(element))
+                        || fill
+                            .as_deref()
+                            .is_some_and(|fill| self.view_reads_fresh_root(fill));
+                }
                 ExprKind::Call { .. } => {
                     let ty = self.ty(cursor);
                     return self.owns_drop(&ty) || self.maybe_owns(&ty);
+                }
+                ExprKind::StructLiteral { fields, .. } => {
+                    let selected = member.and_then(|name| {
+                        fields
+                            .iter()
+                            .find(|field| field.name == name)
+                            .map(|field| &field.value)
+                    });
+                    return match selected {
+                        // The selected position reads the storage its own
+                        // initializer names: a static or caller-backed value is
+                        // safe, while a fresh or local-backed one dies with the
+                        // frame.
+                        Some(value) => self.frame_owned_view_owner(value).is_some(),
+                        // A whole-literal or positional read names the
+                        // literal's own frame storage.
+                        None => true,
+                    };
                 }
                 _ => return false,
             }

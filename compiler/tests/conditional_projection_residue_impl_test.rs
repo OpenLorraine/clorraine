@@ -3746,3 +3746,255 @@ fn should_emit_the_null_view_of_an_all_null_composite() {
         "implnullparam: the two emissions differ; first:\n{first}\nsecond:\n{second}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Fix round: owners-resolved pass-through, carrier copies, deep/array module
+// views, and the fixed-array take root.
+// ---------------------------------------------------------------------------
+
+/// The caller-backed cross-frame spellings re-emit byte-identically.
+const OWNER_PASS_CARRIER_SOURCE: &str = r#"module spec.cprimpl.implxfcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { v: str[1]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void {
+    let h: Holder = Holder { v: [p.v] };
+    fill(h.v[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+
+const OWNER_PASS_LOCAL_SOURCE: &str = r#"module spec.cprimpl.implxfvialocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void {
+    let s: str = p.v;
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+
+/// The owner-resolved acceptance twins re-emit byte-identically.
+#[test]
+fn should_re_emit_the_owner_resolved_cross_frame_programs_byte_identically() {
+    for (tag, source) in [
+        ("implxfcarrier", OWNER_PASS_CARRIER_SOURCE),
+        ("implxfvialocal", OWNER_PASS_LOCAL_SOURCE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}
+
+/// A deep and an array member of a module view retain their fresh roots.
+const MODULE_DEEP_SOURCE: &str = r#"module spec.cprimpl.implxmoddeep;
+
+import { String, stringOf } from std.text;
+
+struct Inner { s: String; n: i32; }
+struct Outer { i: Inner; t: String; }
+
+func mkO(): Outer { return Outer { i: Inner { s: stringOf("xy"), n: 1 }, t: stringOf("zz") }; }
+
+let g: str = mkO().i.s;
+
+func main(): i32 {
+    return i32(g[0]) - 120;
+}
+"#;
+
+const MODULE_ARRAY_SOURCE: &str = r#"module spec.cprimpl.implxmodarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+let a: str[2] = [mk().v, mk().w];
+
+func main(): i32 {
+    return i32(a[0][0]) + i32(a[1][0]) - 242;
+}
+"#;
+
+/// A deep member empties its exact path; an array member empties per element.
+///
+/// The deep initializer binds `mkO()` and empties `__cl_itmp0.i.s` before the
+/// release frees the root's remaining field; the array initializer binds each
+/// element's root, stores both views, and empties `__cl_itmp0.v` and
+/// `__cl_itmp1.w` before the releases run.
+#[test]
+fn should_empty_the_read_position_of_a_deep_or_array_module_view() {
+    let tag = "implxmoddeep";
+    let (_scratch, emitted) = emit_host(tag, MODULE_DEEP_SOURCE);
+    let init = function_body(
+        tag,
+        &emitted,
+        "static void cl_init_spec_cprimpl_implxmoddeep(void)\n{",
+    );
+    assert_follows(
+        tag,
+        init,
+        "ClOuter __cl_itmp0 = cl_spec_cprimpl_implxmoddeep_mkO();",
+        "cl_spec_cprimpl_implxmoddeep_g = cl_string_view(__cl_itmp0.i.s);",
+    );
+    assert_follows(
+        tag,
+        init,
+        "cl_spec_cprimpl_implxmoddeep_g = cl_string_view(__cl_itmp0.i.s);",
+        "__cl_itmp0.i.s = NULL;",
+    );
+    assert_release_after(
+        tag,
+        init,
+        "__cl_itmp0.i.s = NULL;",
+        "if (__cl_itmp0.t) { FreeString(__cl_itmp0.t); }",
+    );
+
+    let tag = "implxmodarray";
+    let (_scratch, emitted) = emit_host(tag, MODULE_ARRAY_SOURCE);
+    let init = function_body(
+        tag,
+        &emitted,
+        "static void cl_init_spec_cprimpl_implxmodarray(void)\n{",
+    );
+    assert_follows(
+        tag,
+        init,
+        "ClBox __cl_itmp1 = cl_spec_cprimpl_implxmodarray_mk();",
+        "cl_spec_cprimpl_implxmodarray_a[0] = cl_string_view(__cl_itmp0.v);",
+    );
+    assert_follows(
+        tag,
+        init,
+        "cl_spec_cprimpl_implxmodarray_a[0] = cl_string_view(__cl_itmp0.v);",
+        "cl_spec_cprimpl_implxmodarray_a[1] = cl_string_view(__cl_itmp1.w);",
+    );
+    assert_follows(
+        tag,
+        init,
+        "cl_spec_cprimpl_implxmodarray_a[1] = cl_string_view(__cl_itmp1.w);",
+        "__cl_itmp0.v = NULL;",
+    );
+    assert_release_after(
+        tag,
+        init,
+        "__cl_itmp1.w = NULL;",
+        "if (__cl_itmp0.w) { FreeString(__cl_itmp0.w); }",
+    );
+}
+
+/// A fixed-array take projection binds its fresh root per branch.
+const FIXED_ARRAY_TAKE_SOURCE: &str = r#"module spec.cprimpl.implxfarrtake;
+
+import { String, stringOf } from std.text;
+
+struct Box { ys: u8[4]; v: String; }
+
+func mk(): Box { return Box { ys: [1, 2, 3, 4], v: stringOf("ab") }; }
+func holdArr(take a: u8[4]): i32 { return i32(a[0]); }
+
+func probe(c: bool, b: Box): i32 {
+    return holdArr(c ? b.ys : mk().ys);
+}
+
+func main(): i32 {
+    let b: Box = Box { ys: [9, 10, 11, 12], v: stringOf("xy") };
+    return probe(false, b) - 1;
+}
+"#;
+
+/// The fixed-array take arm fills the root, the release follows the call.
+#[test]
+fn should_bind_the_fixed_array_take_projection_root() {
+    let tag = "implxfarrtake";
+    let (_scratch, emitted) = emit_host(tag, FIXED_ARRAY_TAKE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implxfarrtake_probe(bool c, ClBox b)\n{");
+    assert_contains(tag, body, "__cl_tmp1 = cl_spec_cprimpl_implxfarrtake_mk();");
+    assert_contains(tag, body, "(__cl_tmp0 ? b.ys : __cl_tmp1.ys)");
+    assert_release_after(
+        tag,
+        body,
+        "holdArr((__cl_tmp0 ? b.ys : __cl_tmp1.ys));",
+        "if (__cl_tmp1.v) { FreeString(__cl_tmp1.v); }",
+    );
+}
+
+/// A module view of a fresh root's view element empties that element.
+const MODULE_VIEW_ELEMENT_SOURCE: &str = r#"module spec.cprimpl.implxfelemview;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[1]; k: String; }
+
+func mkH(): Holder { return Holder { names: ["xy"], k: stringOf("kk") }; }
+
+let g: str = mkH().names[0];
+
+func main(): i32 {
+    return i32(g[0]) - 120;
+}
+"#;
+
+/// The view element empties with the zero view helper before the release.
+///
+/// The initializer binds `mkH()`, stores the element view, and empties
+/// `__cl_itmp0.names[0]` with `cl_zero_ClStr()` — a view position takes the
+/// same move-out as an owning one — so the release frees the root's remaining
+/// field while the module view keeps reading the stored element.
+#[test]
+fn should_empty_the_view_element_of_a_module_root() {
+    let tag = "implxfelemview";
+    let (_scratch, emitted) = emit_host(tag, MODULE_VIEW_ELEMENT_SOURCE);
+    let init = function_body(
+        tag,
+        &emitted,
+        "static void cl_init_spec_cprimpl_implxfelemview(void)\n{",
+    );
+    assert_follows(
+        tag,
+        init,
+        "ClHolder __cl_itmp0 = cl_spec_cprimpl_implxfelemview_mkH();",
+        "cl_spec_cprimpl_implxfelemview_g = __cl_itmp0.names[0];",
+    );
+    assert_follows(
+        tag,
+        init,
+        "cl_spec_cprimpl_implxfelemview_g = __cl_itmp0.names[0];",
+        "__cl_itmp0.names[0] = cl_zero_ClStr();",
+    );
+    assert_release_after(
+        tag,
+        init,
+        "__cl_itmp0.names[0] = cl_zero_ClStr();",
+        "if (__cl_itmp0.k) { FreeString(__cl_itmp0.k); }",
+    );
+}

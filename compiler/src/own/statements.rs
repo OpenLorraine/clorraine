@@ -374,6 +374,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if !literal_positions.is_empty() {
                     self.record_literal_view_positions(id, &[], &literal_positions, decl.span);
                 }
+                // A carrier copy hands its view positions to the new binding:
+                // the destination's views read the same storage, so the
+                // source's element loans follow the copy.
+                if let Some(value) = &decl.value {
+                    if let Some(PlaceTarget::Local(source, projections)) = self.place_target(value) {
+                        if projections.is_empty() {
+                            self.move_element_loans(source, id, &[]);
+                        }
+                    }
+                }
             }
             let place = self.binding_place(id);
             self.emit_prepared_store(place, prepared);
@@ -660,6 +670,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // exactly as in `check_let`.
             if !literal_positions.is_empty() {
                 self.record_literal_view_positions(id, &[], &literal_positions, decl.span);
+            }
+            // A carrier copy hands its view positions to the new binding,
+            // exactly as in `check_let`.
+            if let Some(PlaceTarget::Local(source, projections)) = self.place_target(&decl.value) {
+                if projections.is_empty() {
+                    self.move_element_loans(source, id, &[]);
+                }
             }
         }
         let place = self.binding_place(id);

@@ -6878,3 +6878,875 @@ func main(): i32 {
     assert_no_asan("allnullglobal", &output);
     assert_exit("allnullglobal", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// xfowners: the cross-frame pass-through judged through the view's owners.
+//
+// The call site resolves what a view argument actually reads: a container's
+// element loans, a carrier's recorded positions, a take parameter's frame
+// storage, a fresh call result or struct literal, and a conditional or array
+// of either. Every this-frame backing rejects with one `E10030` at the call.
+// ---------------------------------------------------------------------------
+
+/// The owner-resolved cross-frame pass-through rejections.
+///
+/// Each spelling hands the callee a view that dies with this frame while a
+/// further-out slot waits to read it: an array element written from a local
+/// (constant and run-time index), an element of a mixed literal, an element
+/// written from a fresh call result, a struct literal's member, a take
+/// parameter's member, and a dot-call's receiver slot. Every one reports
+/// exactly one `E10030` and emits no translation unit.
+#[test]
+fn should_reject_the_owner_resolved_cross_frame_pass_through() {
+    let element_constant = r#"module spec.cpr.xfelemconst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    xs[1] = b.v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    compile_rejects("xfelemconst", element_constant, "E10030", 1);
+
+    let element_runtime = r#"module spec.cpr.xfelemrt;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(k: i32, borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    xs[1] = b.v;
+    fill(xs[k], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(1, borrow out);
+    return 0;
+}
+"#;
+    compile_rejects("xfelemrt", element_runtime, "E10030", 1);
+
+    let composite = r#"module spec.cpr.xfcomposite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", b.v];
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    compile_rejects("xfcomposite", composite, "E10030", 1);
+
+    let fresh_element = r#"module spec.cpr.xffreshelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = mk().v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    compile_rejects("xffreshelem", fresh_element, "E10030", 1);
+
+    let literal_root = r#"module spec.cpr.xfliteral;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    fill(Box { v: stringOf("xy"), w: stringOf("zz") }.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    return 0;
+}
+"#;
+    compile_rejects("xfliteral", literal_root, "E10030", 1);
+
+    let take_parameter = r#"module spec.cpr.xftake;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(take inp: Box, borrow slot: str?): void {
+    fill(inp.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    outer(b, borrow out);
+    return 0;
+}
+"#;
+    compile_rejects("xftake", take_parameter, "E10030", 1);
+
+    let receiver_slot = r#"module spec.cpr.xfreceiver;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Slot { own: String; s: str[1]; }
+
+func put(borrow self: Slot, p: str): void { self.s = [p]; }
+
+func outer(borrow slot: Slot): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    slot.put(b.v);
+}
+
+func main(): i32 {
+    let sl: Slot = Slot { own: stringOf("oo"), s: ["AA"] };
+    outer(borrow sl);
+    return 0;
+}
+"#;
+    compile_rejects("xfreceiver", receiver_slot, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// xfaccept: the accepted cross-frame spellings of the owner resolution.
+//
+// A view through a carrier literal whose position a caller parameter backs,
+// and a local view of a parameter, both read storage the caller keeps: the
+// callee may store them into a further-out slot and the caller still reads
+// what it wrote. Both are accepted, build strictly, exit 0, and stay
+// memory-clean.
+// ---------------------------------------------------------------------------
+
+/// The caller-backed cross-frame spellings keep their acceptance.
+#[test]
+fn should_accept_the_caller_backed_cross_frame_spellings() {
+    let carrier = r#"module spec.cpr.xfcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { v: str[1]; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void {
+    let h: Holder = Holder { v: [p.v] };
+    fill(h.v[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("xfcarrier", carrier);
+    assert_no_asan("xfcarrier", &output);
+    assert_exit("xfcarrier", &output, 0);
+
+    let via_local = r#"module spec.cpr.xfvialocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void {
+    let s: str = p.v;
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("xfvialocal", via_local);
+    assert_no_asan("xfvialocal", &output);
+    assert_exit("xfvialocal", &output, 0);
+
+    let via_alias = r#"module spec.cpr.xfviaalias;
+
+import { String, stringOf } from std.text;
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: str, borrow slot: str?): void {
+    let xs: str[2] = ["AA", p];
+    for (borrow e in xs) {
+        fill(e, borrow slot);
+    }
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let s: String = stringOf("xy");
+    outer(s, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("xfviaalias", via_alias);
+    assert_no_asan("xfviaalias", &output);
+    assert_exit("xfviaalias", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// xfreadonly: the conservative boundary of the cross-frame rule.
+//
+// The judgment reads the callee's signature, not its body: a callee that only
+// reads its slot still counts as one that may write it, so a this-frame view
+// passed to it with a further-out slot reports exactly one `E10030`. The
+// boundary is pinned so a later precision change is a deliberate decision.
+// ---------------------------------------------------------------------------
+
+/// A further-out slot rejects even when the callee only reads it.
+#[test]
+fn should_keep_the_read_only_callee_boundary_of_the_cross_frame_rule() {
+    let read_only = r#"module spec.cpr.xfreadonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func read(p: str, borrow slot: str?): i32 {
+    if (slot == null) {
+        return i32(p[0]);
+    }
+    return i32(slot[0]);
+}
+
+func outer(borrow slot: str?): i32 {
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    return read(b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    return outer(borrow out) - 120;
+}
+"#;
+    compile_rejects("xfreadonly", read_only, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// xfcopy: a copied carrier keeps the view positions it hands over.
+//
+// `let h2 = h1;` hands `h2` the same views `h1` holds, so the source's
+// position loans follow the copy: returning the copy reports the same escape
+// as returning the source, and a parameter-backed copy stays accepted.
+// ---------------------------------------------------------------------------
+
+/// A copied carrier's positions follow the copy.
+#[test]
+fn should_release_the_root_of_a_copied_carrier_position() {
+    let frame_backed = r#"module spec.cpr.xfcopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func make(): Holder {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let h1: Holder = Holder { names: [b.v] };
+    let h2: Holder = h1;
+    return h2;
+}
+
+func main(): i32 { return i32(make().names[0][0]) - 120; }
+"#;
+    compile_rejects("xfcopy", frame_backed, "E10030", 1);
+
+    let caller_backed = r#"module spec.cpr.xfcopyparam;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[1]; }
+
+func make(p: str): Holder {
+    let h1: Holder = Holder { names: [p] };
+    let h2: Holder = h1;
+    return h2;
+}
+
+func main(): i32 {
+    let s: String = stringOf("xy");
+    return i32(make(s).names[0][0]) - 120;
+}
+"#;
+    let output = run_memory("xfcopyparam", caller_backed);
+    assert_no_asan("xfcopyparam", &output);
+    assert_exit("xfcopyparam", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// xfarrtake: a fixed-array member over a fresh root releases the root.
+//
+// `holdArr(c ? b.ys : mk().ys)` copies the duplicable elements while the
+// fresh arm's root still owns its other fields; the arm binds its root, so
+// the residual releases at the statement end and the run is memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A fixed-array take projection releases its fresh root.
+#[test]
+fn should_release_the_root_of_a_fixed_array_take_projection() {
+    let source = r#"module spec.cpr.xfarrtake;
+
+import { String, stringOf } from std.text;
+
+struct Box { ys: u8[4]; v: String; }
+
+func mk(): Box { return Box { ys: [1, 2, 3, 4], v: stringOf("ab") }; }
+func holdArr(take a: u8[4]): i32 { return i32(a[0]); }
+
+func probe(c: bool, b: Box): i32 {
+    return holdArr(c ? b.ys : mk().ys);
+}
+
+func main(): i32 {
+    let b: Box = Box { ys: [9, 10, 11, 12], v: stringOf("xy") };
+    return probe(false, b) - 1;
+}
+"#;
+    let output = run_memory("xfarrtake", source);
+    assert_no_asan("xfarrtake", &output);
+    assert_exit("xfarrtake", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// xfmoddeep: a module view of a deep or array member retains the member.
+//
+// `let g: str = mkO().i.s;` and `let a: str[2] = [mk().v, mk().w];` read
+// members of fresh results: each root binds, the read position empties right
+// after the store, and the root's remaining fields release at the
+// initializer's end, so both stay readable and memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A deep member and an array member of a module view release their roots.
+#[test]
+fn should_retain_the_members_of_a_deep_or_array_module_view() {
+    let deep = r#"module spec.cpr.xfmoddeep;
+
+import { String, stringOf } from std.text;
+
+struct Inner { s: String; n: i32; }
+struct Outer { i: Inner; t: String; }
+
+func mkO(): Outer { return Outer { i: Inner { s: stringOf("xy"), n: 1 }, t: stringOf("zz") }; }
+
+let g: str = mkO().i.s;
+
+func main(): i32 {
+    return i32(g[0]) - 120;
+}
+"#;
+    let output = run_memory("xfmoddeep", deep);
+    assert_no_asan("xfmoddeep", &output);
+    assert_exit("xfmoddeep", &output, 0);
+
+    let array = r#"module spec.cpr.xfmodarray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+let a: str[2] = [mk().v, mk().w];
+
+func main(): i32 {
+    return i32(a[0][0]) + i32(a[1][0]) - 242;
+}
+"#;
+    let output = run_memory("xfmodarray", array);
+    assert_no_asan("xfmodarray", &output);
+    assert_exit("xfmodarray", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// xfelemowner: a view stored into an element loans its caller backing too.
+//
+// A view element store records the storage its view reads, and a caller
+// parameter's backing is such storage: a `take` parameter dies with this
+// frame, so the return, the mutation, the call, and the global spellings all
+// report; a plain parameter's backing dies with the caller, so only a global
+// destination, which outlives the caller, reports it.
+// ---------------------------------------------------------------------------
+
+/// The element stores of caller-backing views report per destination.
+///
+/// The `take`-parameter element return reports one `E10035`, its backing
+/// mutation one `E10031`, the call spelling one `E10030`, and the global
+/// store one `E10033`; the plain-parameter element stored into a global
+/// reports one `E10033` as well, and the take-parameter carrier field
+/// reports one `E10031` at its conflicting write.
+#[test]
+fn should_loan_the_caller_backing_of_an_element_view_store() {
+    let take_return = r#"module spec.cpr.xfetakereturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(k: i32, take b: Box): str[2] {
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = b.v;
+    return xs;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    return i32(run(1, b)[1][0]) - 120;
+}
+"#;
+    compile_rejects("xfetakereturn", take_return, "E10035", 1);
+
+    let take_mutation = r#"module spec.cpr.xfetakemut;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(k: i32, take b: Box): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = b.v;
+    b.v = stringOf("qq");
+    return i32(xs[k][0]) - 120;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    return pick(1, b);
+}
+"#;
+    compile_rejects("xfetakemut", take_mutation, "E10031", 1);
+
+    let take_call = r#"module spec.cpr.xfetakecall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(take b: Box, borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = b.v;
+    fill(xs[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("xfetakecall", take_call, "E10030", 1);
+
+    let take_global = r#"module spec.cpr.xfetakeglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let g: str[2] = ["AA", "BB"];
+
+func store(take b: Box): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = b.v;
+    g = xs;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    store(b);
+    return i32(g[1][0]) - 120;
+}
+"#;
+    compile_rejects("xfetakeglobal", take_global, "E10033", 1);
+
+    let borrow_global = r#"module spec.cpr.xfeborrowglobal;
+
+import { String, stringOf } from std.text;
+
+let g: str[2] = ["AA", "BB"];
+
+func store(p: str): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = p;
+    g = xs;
+}
+
+func f(): void {
+    let s: String = stringOf("xy");
+    store(s);
+}
+
+func main(): i32 {
+    f();
+    return i32(g[1][0]) - 120;
+}
+"#;
+    compile_rejects("xfeborrowglobal", borrow_global, "E10033", 1);
+
+    let take_field = r#"module spec.cpr.xfetakefield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func run(take p: Box): i32 {
+    let h: Holder = Holder { names: ["AA"] };
+    h.names = [p.v];
+    p.v = stringOf("qq");
+    return i32(h.names[0][0]) - 120;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    return run(b);
+}
+"#;
+    compile_rejects("xfetakefield", take_field, "E10031", 1);
+}
+
+// ---------------------------------------------------------------------------
+// xfetakefieldret: the take-parameter carrier field return reports once.
+//
+// `let h = Holder { names: ["AA"] }; h.names = [p.v]; return h;` hands the
+// caller a view of the take parameter, which dies with this frame: the
+// carrier return reports one `E10030`.
+// ---------------------------------------------------------------------------
+
+/// A returned carrier field of a take parameter reports one `E10030`.
+#[test]
+fn should_reject_a_returned_take_parameter_carrier_field() {
+    let source = r#"module spec.cpr.xfefieldret;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func run(take p: Box): Holder {
+    let h: Holder = Holder { names: ["AA"] };
+    h.names = [p.v];
+    return h;
+}
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    return i32(run(b).names[0][0]) - 120;
+}
+"#;
+    compile_rejects("xfefieldret", source, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// xfemodviewfield: a module view of a fresh root's view-array element.
+//
+// `let g: str = mkH().names[0];` reads an element of the fresh result's view
+// field: the root binds, the read element empties, and the root's remaining
+// field releases at the initializer's end, so the view stays readable and
+// the run is memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A module view of a fresh root's view element releases the root's fields.
+///
+/// `let g: str = mkH().names[0];` binds the fresh result, empties the read
+/// element, and frees the root's remaining field at the initializer's end;
+/// `let a: str[2] = mkH().names;` binds the same root for the whole-element
+/// fill and frees the same field. Both stay readable and memory-clean.
+#[test]
+fn should_release_the_root_of_a_module_view_element() {
+    let source = r#"module spec.cpr.xfemodview;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[1]; k: String; }
+
+func mkH(): Holder { return Holder { names: ["xy"], k: stringOf("kk") }; }
+
+let g: str = mkH().names[0];
+
+func main(): i32 {
+    return i32(g[0]) - 120;
+}
+"#;
+    let output = run_memory("xfemodview", source);
+    assert_no_asan("xfemodview", &output);
+    assert_exit("xfemodview", &output, 0);
+
+    let array = r#"module spec.cpr.xfemodviewarr;
+
+import { String, stringOf } from std.text;
+
+struct Holder { names: str[2]; k: String; }
+
+func mkH(): Holder { return Holder { names: ["xy", "zz"], k: stringOf("kk") }; }
+
+let g: str[2] = mkH().names;
+
+func main(): i32 {
+    return i32(g[0][0]) - 120;
+}
+"#;
+    let output = run_memory("xfemodviewarr", array);
+    assert_no_asan("xfemodviewarr", &output);
+    assert_exit("xfemodviewarr", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// xfetwolevel: an element copy loans the copied position's backing.
+//
+// `xs[0] = a.v; ys[1] = xs[0]; fill(ys[1], borrow slot);` copies an element
+// that already loans `a`: the copy loans the same storage, so the call
+// reports one `E10030` instead of handing the caller a freed view.
+// ---------------------------------------------------------------------------
+
+/// A copied element's loan follows the copy into its destination.
+#[test]
+fn should_reject_a_two_level_element_copy_into_a_further_out_slot() {
+    let source = r#"module spec.cpr.xfetwolevel;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = ["CC", "DD"];
+    ys[1] = xs[0];
+    fill(ys[1], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("xfetwolevel", source, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// xfemixedarg: a mixed array-literal argument scans every element.
+//
+// `fillArr([p.v, mk().v], borrow slot)` hands the callee two views, one
+// caller-backed and one read from a fresh result. The caller-side judgment
+// reads the signature, not the callee's body, so it counts the fresh element
+// exactly as the read-only boundary counts its slot: the call reports one
+// `E10030`. The two-place twin `fillArr([p.v, q.v], borrow slot)` names no
+// fresh storage and stays accepted.
+// ---------------------------------------------------------------------------
+
+/// A mixed array-literal argument reports one `E10030`, the places twin is
+/// accepted.
+#[test]
+fn should_reject_a_fresh_element_of_a_mixed_array_literal_argument() {
+    let fresh = r#"module spec.cpr.xfemixedarg;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fillArr(xs: str[2], borrow slot: str?): void { slot = xs[1]; }
+
+func mk(): Box { return Box { v: stringOf("xy"), w: stringOf("zz") }; }
+
+func outer(p: Box, borrow slot: str?): void {
+    fillArr([p.v, mk().v], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("xfemixedarg", fresh, "E10030", 1);
+
+    let places = r#"module spec.cpr.xfemixedplaces;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fillArr(xs: str[2], borrow slot: str?): void { slot = xs[0]; }
+
+func outer(p: Box, q: Box, borrow slot: str?): void {
+    fillArr([p.v, q.v], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let d: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    outer(b, d, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let output = run_memory("xfemixedplaces", places);
+    assert_no_asan("xfemixedplaces", &output);
+    assert_exit("xfemixedplaces", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// xfecondmix: a conditional of a place and a fresh view in a call argument.
+//
+// `fill(c ? p.v : freshText(), borrow slot)` hands the callee a view that is
+// either the caller's parameter or a fresh call result. The caller-side
+// judgment reads the signature, not the callee's body, so the fresh arm
+// counts in either arm order: each spelling reports one `E10030`. The
+// two-place twin `fill(c ? p.v : q.v, borrow slot)` names no fresh storage
+// and stays accepted.
+// ---------------------------------------------------------------------------
+
+/// A mixed place/fresh conditional argument reports once in either order; the
+/// places twin keeps its acceptance.
+///
+/// The fresh arm's result dies with the statement while the slot it may reach
+/// lives in the caller's caller, so both `c ? p.v : freshText()` and
+/// `c ? freshText() : p.v` report exactly one `E10030`. The twin
+/// `c ? p.v : q.v` reads two caller-backed parameters and accepts, exiting 0
+/// with the written view readable and no memory report.
+#[test]
+fn should_reject_a_mixed_place_and_fresh_conditional_argument() {
+    let fresh_then = r#"module spec.cpr.xfecondfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func freshText(): String { return stringOf("z"); }
+
+func outer(c: bool, p: Box, borrow slot: str?): void {
+    fill(c ? p.v : freshText(), borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("ww") };
+    outer(false, b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 122;
+}
+"#;
+    compile_rejects("xfecondfresh", fresh_then, "E10030", 1);
+
+    let fresh_else = r#"module spec.cpr.xfecondfreshelse;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func freshText(): String { return stringOf("z"); }
+
+func outer(c: bool, p: Box, borrow slot: str?): void {
+    fill(c ? freshText() : p.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("ww") };
+    outer(true, b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 122;
+}
+"#;
+    compile_rejects("xfecondfreshelse", fresh_else, "E10030", 1);
+
+    let places = r#"module spec.cpr.xfecondplaces;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, p: Box, q: Box, borrow slot: str?): void {
+    fill(c ? p.v : q.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("ww") };
+    let d: Box = Box { v: stringOf("pq"), w: stringOf("rr") };
+    outer(true, b, d, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("xfecondplaces", places);
+    assert_no_asan("xfecondplaces", &output);
+    assert_exit("xfecondplaces", &output, 0);
+}
