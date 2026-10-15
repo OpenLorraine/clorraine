@@ -10,6 +10,11 @@
 //! call, and the literal receiver field whose adopting carrier gets no
 //! reassigned-value release. The direct arm spellings are the untouched
 //! control, and every program must re-emit byte-identically.
+//!
+//! The fixed-array emission shapes are pinned the same way: the per-arm
+//! conditional field store, the hidden-destination return copy, the guarded
+//! view-array element fill, the call-filled literal destinations, and the
+//! distributed nested-arm read base.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -4235,5 +4240,286 @@ fn should_re_emit_the_guarded_and_discarded_phase_two_programs_byte_identically(
             first == second,
             "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
         );
+    }
+}
+
+/// A conditional fixed-array field in a struct-literal store.
+const CONDITIONAL_FIELD_SOURCE: &str = r#"module spec.cprimpl.implcondfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { row: String[2]; tag: i32; }
+struct Holder { row: String[2]; tag: i32; }
+
+func mkBox(): Box { return Box { row: [stringOf("ab"), stringOf("cd")], tag: 7 }; }
+
+func place(c: bool, take a: Box, take b: Box): i32 {
+    let h: Holder = Holder { row: c ? a.row : b.row, tag: 4 };
+    return h.tag - 4;
+}
+
+func fresh(c: bool, take a: Box): i32 {
+    let h: Holder = Holder { row: c ? a.row : mkBox().row, tag: 2 };
+    return h.tag - 2;
+}
+
+func rooted(c: bool, take a: Box, take b: Box): i32 {
+    let h: Holder = Holder { row: (c ? a : b).row, tag: 8 };
+    return h.tag - 8;
+}
+
+func main(): i32 {
+    let a1: Box = Box { row: [stringOf("xx"), stringOf("yy")], tag: 1 };
+    let b1: Box = Box { row: [stringOf("pp"), stringOf("qq")], tag: 2 };
+    let n: i32 = place(true, a1, b1);
+    let a2: Box = Box { row: [stringOf("xx"), stringOf("yy")], tag: 1 };
+    let b2: Box = Box { row: [stringOf("pp"), stringOf("qq")], tag: 2 };
+    let m: i32 = place(false, a2, b2);
+    let a3: Box = Box { row: [stringOf("xx"), stringOf("yy")], tag: 1 };
+    let o: i32 = fresh(false, a3);
+    let a4: Box = Box { row: [stringOf("xx"), stringOf("yy")], tag: 1 };
+    let b4: Box = Box { row: [stringOf("pp"), stringOf("qq")], tag: 2 };
+    let p: i32 = rooted(true, a4, b4);
+    return n + m + o + p;
+}
+"#;
+
+/// Each arm of a conditional fixed-array field fills the field on its own
+/// path, and an ownerless arm binds its root before the copy.
+#[test]
+fn should_store_a_conditional_fixed_array_field_per_arm() {
+    let tag = "implcondfield";
+    let (_scratch, emitted) = emit_host(tag, CONDITIONAL_FIELD_SOURCE);
+    let place = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implcondfield_place(bool c, ClBox a, ClBox b)\n{",
+    );
+    assert_contains(tag, place, "memcpy(&(h.row), &(a.row), sizeof(h.row));");
+    assert_contains(tag, place, "cl_zero(&a.row);");
+    assert_contains(tag, place, "memcpy(&(h.row), &(b.row), sizeof(h.row));");
+    assert_contains(tag, place, "cl_zero(&b.row);");
+    let fresh = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implcondfield_fresh(bool c, ClBox a)\n{",
+    );
+    assert_contains(
+        tag,
+        fresh,
+        "__cl_tmp0 = cl_spec_cprimpl_implcondfield_mkBox();",
+    );
+    assert_contains(tag, fresh, "memcpy(&(h.row), &(__cl_tmp0.row), sizeof(h.row));");
+    assert_contains(tag, fresh, "cl_zero(&__cl_tmp0.row);");
+    let rooted = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implcondfield_rooted(bool c, ClBox a, ClBox b)\n{",
+    );
+    assert_contains(tag, rooted, "memcpy(&(h.row), &(a.row), sizeof(h.row));");
+    assert_contains(tag, rooted, "memcpy(&(h.row), &(b.row), sizeof(h.row));");
+    assert_absent(tag, rooted, "&((c ? a : b).row)");
+    assert_absent(tag, rooted, "cl_zero(&(c ?");
+}
+
+/// A `String[2]` conditional-root return by value.
+const CONDITIONAL_RETURN_SOURCE: &str = r#"module spec.cprimpl.implcondreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { xs: String[2]; }
+
+func pick(c: bool): String[2] {
+    let b1: Box = Box { xs: [stringOf("aa"), stringOf("bb")] };
+    let b2: Box = Box { xs: [stringOf("cc"), stringOf("dd")] };
+    return (c ? b1 : b2).xs;
+}
+
+func main(): i32 {
+    let r: String[2] = pick(true);
+    return i32(len(r[0])) + i32(len(r[1])) - 4;
+}
+"#;
+
+/// The conditional root's return copies into the hidden destination per arm,
+/// because C cannot assign an array to the adjusted parameter.
+#[test]
+fn should_copy_a_conditional_string_array_return_per_arm() {
+    let tag = "implcondreturn";
+    let (_scratch, emitted) = emit_host(tag, CONDITIONAL_RETURN_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_implcondreturn_pick(bool c, ClString __cl_ret[2])\n{",
+    );
+    assert_contains(tag, body, "memcpy(&(__cl_tmp1), &(b1.xs), sizeof(__cl_tmp1));");
+    assert_contains(tag, body, "memcpy(&(__cl_tmp2), &(b2.xs), sizeof(__cl_tmp2));");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(__cl_ret, &(__cl_tmp1), (sizeof(__cl_ret[0]) * 2));",
+    );
+    assert_contains(tag, body, "cl_zero(&__cl_tmp1);");
+    assert_contains(
+        tag,
+        body,
+        "memcpy(__cl_ret, &(__cl_tmp2), (sizeof(__cl_ret[0]) * 2));",
+    );
+    assert_contains(tag, body, "cl_zero(&__cl_tmp2);");
+    assert_release_after(
+        tag,
+        body,
+        "if (__cl_ret[1]) { FreeString(__cl_ret[1]); }",
+        "memcpy(__cl_ret, &(__cl_tmp1)",
+    );
+    assert_absent(tag, body, "__cl_ret = __cl_tmp");
+}
+
+/// A literal view-array field inside a guarded operand.
+const GUARDED_VIEW_FIELD_SOURCE: &str = r#"module spec.cprimpl.implguardview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(g: bool): i32 {
+    if (g && i32(len(Holder { names: [mk().v] }.names[0])) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 { return use(true) + use(false) - 1; }
+"#;
+
+/// A guarded literal's view element binds its root through the deferred fill
+/// and stores the widened view, so the initializer carries a complete view.
+#[test]
+fn should_fill_a_guarded_view_array_field_element_wise() {
+    let tag = "implguardview";
+    let (_scratch, emitted) = emit_host(tag, GUARDED_VIEW_FIELD_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implguardview_use(bool g)\n{");
+    assert_contains(tag, body, "ClBox __cl_tmp0 = {0};");
+    assert_on_line_of(
+        tag,
+        body,
+        "(g &&",
+        "__cl_tmp0 = cl_spec_cprimpl_implguardview_mk()",
+    );
+    assert_on_line_of(tag, body, "(g &&", "cl_string_view(__cl_tmp0.v)");
+    assert_absent(tag, body, "{ { cl_spec_cprimpl_implguardview_mk().v } }");
+}
+
+/// Call-filled fixed-array fields of literal arms and array elements.
+const CALL_FILLED_FIELD_SOURCE: &str = r#"module spec.cprimpl.implcallfield;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+struct Inner { row: str[2]; }
+struct Outer { items: Inner[2]; }
+
+let left: i32 = 0;
+let right: i32 = 0;
+
+func n1(): str[2] { left = left + 1; return ["AA", "BB"]; }
+func n2(): str[2] { right = right + 1; return ["CC", "DD"]; }
+
+func use(ok: bool): i32 {
+    ok ? Mixed { names: n1(), tag: stringOf("x") } : Mixed { names: n2(), tag: stringOf("y") };
+    let o: Outer = Outer { items: [ok ? Inner { row: n1() } : Inner { row: n2() }, Inner { row: ["zz", "ww"] }] };
+    return i32(o.items[0].row[0][0]) + left + right - 66;
+}
+
+func main(): i32 { return use(true) + use(false); }
+"#;
+
+/// Every call-filled fixed-array field passes the call's hidden destination,
+/// per arm and per element.
+#[test]
+fn should_pass_the_hidden_destination_to_call_filled_literal_fields() {
+    let tag = "implcallfield";
+    let (_scratch, emitted) = emit_host(tag, CALL_FILLED_FIELD_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implcallfield_use(bool ok)\n{");
+    assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n1(__cl_tmp0.names)");
+    assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n2(__cl_tmp1.names)");
+    assert_absent(tag, body, ".names = cl_spec_cprimpl_implcallfield_n");
+    assert_contains(tag, body, "ClInner __cl_arm_");
+    assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n1(__cl_call_");
+    assert_contains(tag, body, "cl_spec_cprimpl_implcallfield_n2(__cl_call_");
+    assert_contains(tag, body, "o.items[0] = __cl_arm_");
+    assert_absent(tag, body, "(ok ? (ClInner)");
+}
+
+/// A nested conditional-arm fixed-array read base.
+const NESTED_READ_BASE_SOURCE: &str = r#"module spec.cprimpl.implnestedread;
+
+struct Box { ys: u8[4]; }
+
+func read(c0: bool, d: bool): i32 {
+    let b1: Box = Box { ys: [1, 2, 3, 4] };
+    let b2: Box = Box { ys: [5, 6, 7, 8] };
+    let b3: Box = Box { ys: [9, 10, 11, 12] };
+    let c: bool = c0;
+    let s: i32 = 0;
+    let k: i32 = 0;
+    while (k < 2) {
+        let i: i32 = 0;
+        while (i < 4) {
+            s = s + i32((c ? (d ? b1 : b2).ys : b3.ys)[i]);
+            i = i + 1;
+        }
+        c = !c;
+        k = k + 1;
+    }
+    return s;
+}
+
+func main(): i32 {
+    let r: i32 = read(true, true) - 52;
+    return r + read(true, false) - 68;
+}
+"#;
+
+/// The nested-arm read base distributes into its leaves, so each arm copies
+/// from its own storage and no member of a C `?:` is addressed.
+#[test]
+fn should_distribute_a_nested_element_read_base() {
+    let tag = "implnestedread";
+    let (_scratch, emitted) = emit_host(tag, NESTED_READ_BASE_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implnestedread_read(bool c0, bool d)\n{");
+    assert_contains(tag, body, "memcpy(&(__cl_tmp0), &(b1.ys), sizeof(__cl_tmp0));");
+    assert_contains(tag, body, "memcpy(&(__cl_tmp0), &(b2.ys), sizeof(__cl_tmp0));");
+    assert_contains(tag, body, "memcpy(&(__cl_tmp0), &(b3.ys), sizeof(__cl_tmp0));");
+    assert_contains(tag, body, "__cl_tmp0[i]");
+    assert_absent(tag, body, "(d ? b1 : b2).ys");
+    assert_follows(tag, body, "if (c) {", "if (d) {");
+}
+
+/// The fixed-array emission programs re-emit byte-identically, and the
+/// re-emitted text carries the repaired shape.
+#[test]
+fn should_re_emit_the_fixed_array_emission_programs_byte_identically() {
+    for (tag, source, shape) in [
+        (
+            "implcondreturn",
+            CONDITIONAL_RETURN_SOURCE,
+            "memcpy(__cl_ret, &(__cl_tmp",
+        ),
+        (
+            "implnestedread",
+            NESTED_READ_BASE_SOURCE,
+            "memcpy(&(__cl_tmp0), &(b1.ys)",
+        ),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+        assert_contains(tag, &first, shape);
     }
 }

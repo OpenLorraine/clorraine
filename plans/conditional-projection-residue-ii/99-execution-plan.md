@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 16/33 tasks (48%) — Phase 3 implementation done, pins+review next
+> **Progress**: 17/33 tasks (52%) — Phase 3 in review
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -165,9 +165,9 @@ landed controls.
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the per-arm destination shapes, the
+- [x] 3.3.1 Write the phase implementation pins (the per-arm destination shapes, the
       hidden-destination pass, the copy shapes, the arm rebuild, the re-emission determinism
-      pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
+      pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 05:45; six pins added (74 tests total, additions only) — the per-arm conditional fixed-array field store, the per-arm String[2] return copy (the critical), the guarded view-array field element fill, the hidden-destination call fields, the nested element read base, and the re-emission determinism pin (with a repaired-shape fragment so it discriminates); each fails at `47306d2` for the intended reason; 74/74 green and `make check` exit 0)
 - [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses plus the base/head emission differential
 
