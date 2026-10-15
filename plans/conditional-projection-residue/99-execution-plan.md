@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 09:52
-> **Progress**: 26/39 tasks (67%)
+> **Progress**: 30/39 tasks (77%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -177,8 +177,8 @@ positions, the discarded mixed-field literal, and the discarded fresh projection
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-16..ST-18, ST-34 red then green
-- [ ] The batch-H discard pins stay green
+- [x] ST-16..ST-18, ST-34 red then green (plus the review-round regression cases)
+- [x] The batch-H discard pins stay green
 
 ---
 
@@ -199,19 +199,19 @@ conditional-root (a move-only root included)/`for`-iterable projections.
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Route each fixed-array arm through the per-arm destination store; bind each arm's root and render the conditional root as the per-arm address form; route the `for` iterable through the projection preparation — `compiler/src/own/lower.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs`
-- [ ] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 5.2.1 Route each fixed-array arm through the per-arm destination store; bind each arm's root and render the conditional root as the per-arm address form; route the `for` iterable through the projection preparation ✅ (completed: 2026-10-15 15:10; the discarded fixed-array conditional and the call-filled literal field take a `__cl_discard` destination filled and released per arm (`codegen/function.rs`); the conditional root's projection distributes per arm in the store/return gates (`distribute_conditional_projection`, `roots_in_conditional`); the `for` iterable binds an ownerless projection root; the guards emitter fallback is replaced by the per-arm destination store; deviation: the design's sketch `(c ? &b1.xs : &b2.xs)` is realized as the existing per-arm store core (an if/else with one copy per arm — same semantics, no new C construct); the two folded shapes (x4, q5) are fixed with cases; three base-equal residuals were filed as `DEF-301`..`DEF-303`) — `compiler/src/own/lower.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen/guards.rs`, `compiler/src/codegen/function.rs`
+- [x] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-15 15:10; residue spec 71/71 plain and under `RDC_ASAN=1`; the batch-H, callable-release, and hardening suites green; `make check` exit 0; 18 of 43 probe programs changed emission, all in the intended classes, the direct controls byte-identical; parent-verified 71/71 plain + ASan)
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the per-arm destination shapes, the per-arm address form, the bound roots, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs`
-- [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses
+- [x] 5.3.1 Write the phase implementation pins (the per-arm destination shapes, the per-arm address form, the bound roots, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-15 15:35; seven pins added (46 tests total, additions only) — the discarded conditional's `__cl_discard` destination with its per-arm fills, the owning-element destination's releases, the call-filled literal field's per-field build, the conditional-root store and return copies (no root value copy), the `for`-iterable root binding, and re-emission determinism (an identity control, as in phase 3); six of seven fail at `91decc0` on their first assertion for the intended reasons; 46/46 green and `make check` exit 0)
+- [x] 5.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses ✅ (completed: 2026-10-15 16:35; three lenses dispatched (correctness, memory-safety, emission-integrity) plus four targeted confirmations; the corrections: the in-place conditional-root iterable (no materialization/move), the ownerless arm roots binding per arm (closing `DEF-301`), and the nested-arm distribution recursion with lazily-guarded pins (closing `DEF-306`'s store/return/iterable positions); rows filed: `DEF-301`..`DEF-307`, `DEF-281` extended, `DEF-298`..`DEF-300` stay filed; the closing verification: the residue spec 77/77 plain and ASan, the impl pins 46/46, the batch-H and callable-release suites green, `make check` exit 0 with no warnings)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
 **Deliverables**:
-- [ ] ST-19..ST-22, ST-35 red then green
-- [ ] The emission differential shows only intended deltas
+- [x] ST-19..ST-22, ST-35 red then green (plus the review-round regression cases)
+- [x] The emission differential shows only intended deltas (4559 programs: 39 deltas, all intended classes; no head-only strict failure; the deviation verified)
 
 ---
 

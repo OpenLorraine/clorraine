@@ -201,3 +201,36 @@ fresh-init leak), `DEF-288` (a container escape with frame-backed element loans)
 ### Filed rows
 
 `DEF-294` (a loop-condition receiver with mixed arms emits sequence-point C), `DEF-295` (a loop-condition member projection double-frees), `DEF-296` (the discarded-field projection — fixed and closed with the phase), `DEF-297` (a bare discarded all-fresh literal statement leaks); the discarded all-fresh fixed-array literal spelling (PE-3) joined the phase-5 candidates note; PE-1/PE-2 recorded above with base evidence.
+
+## Phase 5 — Fixed-array conditional arms and projections
+
+**Reviewed implementation**: the working tree over `91decc0` plus two correction rounds. **Lenses**: correctness (P5R/P5C), memory-safety (F/MEM), emission-integrity, dispatched in parallel.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | 1 blocker (P5R-1 the ownerless literal arm leak) + P5R-2..4 (the row wording; the unreached guards branch; the array-literal element descent) | The blast-radius table; test integrity (the five reds plus the folded shapes at `91decc0`); the deviation assessment (the per-arm store core is equivalent and stronger than the address sketch); 1781-program differential with only the intended deltas |
+| memory-safety | FINDINGS — 1 in-diff critical (the `for` iterable over a conditional root consumed the caller's field) | 65 probes + the implementer's 35; the do-not-fix set unchanged |
+| emission-integrity | FINDINGS — 1 minor (the `DEF-301` row's wording) | 4559-program differential: 39 deltas, all intended classes; no head-only strict failure; the deviation verified (one copy per path, no root value copy, correct lifetimes) |
+
+### Fix rounds
+
+| Item | Severity | Outcome |
+|------|----------|---------|
+| The iterable move-out | 🔴 | **Fixed**: the iterable returns the per-arm field and is never materialized; the conditional of the arms' fields decays to the element pointer; the condition is pinned once per entry |
+| P5R-1 + `DEF-301` | 🟠 | **Fixed**: `bind_fixed_array_root` runs the ownerless-arm hoist, so each arm's root binds per arm in the store/return/iterable gates; the literal-arm leak and the call-arm `lvalue required` close (`DEF-301` closed) |
+| F1 + `DEF-306` | 🟠 | **Fixed (store/return/iterable)**: the distribution rebuilds every arm through the steps at all its leaves (`c ? (d ? b1 : b2).ys` → `c ? (d ? b1.ys : b2.ys)`), and a nested condition is stored under its ancestors' guard (`__cl_tmp3 = (__cl_tmp2 ? d : 0)` — once, only on the reaching path); the element-read position remains open on `DEF-306` |
+| P5C-2 | 🟡 | **Filed as `DEF-307`**: the whole-array conditional iterable still marks its arms as moved |
+
+### Confirmations
+
+| Lens | Result | Detail |
+|------|--------|--------|
+| correctness | PASS WITH MINORS — 0 blockers | P5R-1 (store/return/iterable) and the call arm pass; no regressions; test integrity across 306 programs; P5C-1 (eager nested pins) fixed with the nested-arm round; P5C-2 filed |
+| memory-safety | CONFIRMED CLEAN (the nested-arm fix: 13 probes fixed, 11 unchanged, 0 regressions) | The pre-existing P-1 (the element-read position), P-2 (the read-position residual leak, added to `DEF-281`), and P-3 (`DEF-303`, filed) are base-equal, byte-identical |
+| emission-integrity | FINDINGS — 1 minor (the row wording, corrected) | No accepted program newly defected; no new invalid C |
+
+### Filed rows
+
+`DEF-301` (closed with the phase), `DEF-302` (a conditional of call-filled literals), `DEF-303` (the `String[2]` conditional-root return segfault), `DEF-304` (the guarded/deferred expression-path fallback), `DEF-305` (the array-literal element descent), `DEF-306` (the nested-arm projection — partially fixed; the element-read position remains), `DEF-307` (the stale iterable move marker); `DEF-281` extended with the read-position leak instances. The candidate shapes `DEF-298`..`DEF-300` stay filed.
