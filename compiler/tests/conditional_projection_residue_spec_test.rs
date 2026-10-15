@@ -9952,3 +9952,91 @@ func main(): i32 {
     assert_no_asan("rawnonnullstore", &output);
     assert_exit("rawnonnullstore", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// rawselfstore: the raw self-store follows the ordinary self-assignment.
+//
+// `unsafe { *q = *q; }` releases the replaced pointee and clears its storage
+// before the value is read, exactly as `a = a` does for a named destination:
+// the read then sees the emptied storage, so the replaced value is released
+// exactly once and the run is memory-clean. The move-in spelling stores a
+// named value and empties its source, like an ordinary owned assignment; a
+// later read of the source reports the moved-value error for the raw target
+// exactly as it does for the named one.
+// ---------------------------------------------------------------------------
+
+/// A raw self-store releases the replaced value once, like `a = a`.
+#[test]
+fn should_release_a_raw_self_store_once_like_a_named_self_assignment() {
+    let self_store = r#"module spec.cpr.rawselfstore;
+
+import { String, stringOf } from std.text;
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let q: raw String = unsafe &a;
+    unsafe {
+        *q = *q;
+    }
+    return 0;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("rawselfstore", self_store);
+    assert_no_asan("rawselfstore", &output);
+    assert_exit("rawselfstore", &output, 0);
+
+    let move_in = r#"module spec.cpr.rawmovestore;
+
+import { String, stringOf } from std.text;
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let y: String = stringOf("cd");
+    let q: raw String = unsafe &a;
+    unsafe {
+        *q = y;
+    }
+    return i32(len(a)) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("rawmovestore", move_in);
+    assert_no_asan("rawmovestore", &output);
+    assert_exit("rawmovestore", &output, 0);
+
+    let raw_use = r#"module spec.cpr.rawmovestoreuse;
+
+import { String, stringOf } from std.text;
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let y: String = stringOf("cd");
+    let q: raw String = unsafe &a;
+    unsafe {
+        *q = y;
+    }
+    return i32(len(y));
+}
+
+func main(): i32 { return use(); }
+"#;
+    compile_rejects("rawmovestoreuse", raw_use, "E10020", 1);
+
+    let place_use = r#"module spec.cpr.placemovestoreuse;
+
+import { String, stringOf } from std.text;
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let y: String = stringOf("cd");
+    a = y;
+    return i32(len(y));
+}
+
+func main(): i32 { return use(); }
+"#;
+    compile_rejects("placemovestoreuse", place_use, "E10020", 1);
+}

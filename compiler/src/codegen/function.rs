@@ -514,29 +514,17 @@ impl<'a> Emitter<'a> {
                         );
                     } else {
                         // The replaced element owns a value, so it is released
-                        // only after the new value has been evaluated: a call
-                        // may read the element it replaces. The value is stored
-                        // in a fresh local first and then moved into the
-                        // element, which empties the local and releases the old
-                        // element exactly once.
+                        // (and its storage cleared) before the value is
+                        // evaluated, exactly as a named destination is: a value
+                        // that reads the element — including the element itself
+                        // — then reads the emptied storage instead of the freed
+                        // one. The value's own source is emptied once the
+                        // element holds it.
+                        self.emit_drop_expr(&format!("*({pointer_c})"), &pointer_ty);
                         self.emit_guards(value);
                         let lowered = self.store_text(value, &pointer_ty);
-                        let temp = self.unique_local("__cl_arm");
-                        self.push(&format!(
-                            "    {} = {lowered};",
-                            declarator(&pointer_ty, &temp, &self.sema.table)
-                        ));
-                        self.emit_drop_expr(&format!("*({pointer_c})"), &pointer_ty);
-                        self.push(&format!("    *({pointer_c}) = {temp};"));
-                        self.emit_move_zero(&temp, &pointer_ty);
-                        // A deferred consume carrier still holds a copy of the
-                        // value the element now owns; emptying it keeps a
-                        // loop's reassigned-temp drop from freeing the value
-                        // twice.
-                        if matches!(value.kind, ValueKind::Materialize { .. }) {
-                            let source = self.value(value);
-                            self.emit_move_zero(&source, &pointer_ty);
-                        }
+                        self.push(&format!("    *({pointer_c}) = {lowered};"));
+                        self.emit_arm_source_moves(value, &pointer_ty);
                     }
                 } else {
                     self.emit_guards(value);

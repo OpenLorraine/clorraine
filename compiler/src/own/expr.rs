@@ -984,6 +984,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     self.combine(binary, element, right, &element_ty)
                 }
                 None => {
+                    // The store consumes an owned value exactly as a named
+                    // destination does, so a later use of the source reports
+                    // the moved-value error and the emission moves it in.
+                    self.consume_owned_place(value, value.span);
                     let lowered = self.lower_value(value);
                     let lowered = if pin {
                         self.pin_update_value(lowered)

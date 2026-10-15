@@ -483,9 +483,9 @@ func main(): i32 {
 ///
 /// `out[target()] = mkArray()[rhsIndex()]` pins both run-time indices, copies
 /// the selected element into the carrier, empties the source slot, then moves
-/// the value into the element and empties both the store temporary and the
-/// carrier, so a loop's reassigned-temp drop cannot free what the element
-/// owns. The stored element measures three bytes.
+/// the value into the element and empties the carrier, so a loop's
+/// reassigned-temp drop cannot free what the element owns. The stored element
+/// measures three bytes.
 #[test]
 fn should_empty_the_deferred_carrier_when_an_indexed_store_adopts_it() {
     let source = r#"module spec.sti.impl7;
@@ -528,7 +528,7 @@ func main(): i32 {
     assert_contains(
         "sti-impl7",
         &emitted,
-        "__cl_arm_1 = NULL;\n    __cl_tmp3 = NULL;",
+        "*(&(out[__cl_tmp0])) = __cl_tmp3;\n    __cl_tmp3 = NULL;",
     );
     let output = run_host("sti-impl7-run", source);
     assert_exit("sti-impl7-run", &output, 3);

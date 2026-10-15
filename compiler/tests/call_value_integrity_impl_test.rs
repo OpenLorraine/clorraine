@@ -910,7 +910,7 @@ func main(): i32 {
         .find("if (*(&(rows[i]))) { FreeString(*(&(rows[i]))); }")
         .unwrap_or_else(|| panic!("cviimpl-scalarmov: the replaced element is not released"));
     let assigned = emitted
-        .find("*(&(rows[i])) = __cl_arm_1;")
+        .find("*(&(rows[i])) = __cl_tmp0;")
         .unwrap_or_else(|| panic!("cviimpl-scalarmov: the element is not assigned"));
     assert!(
         dropped < assigned,
