@@ -169,7 +169,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return;
             }
         }
+        // A discarded conditional drops whichever arm it selects, so the
+        // literals inside its arms are read, not stored: their place fields
+        // stay usable, exactly like the direct `ok ? t : u;` control.
+        let discarded = matches!(&expr.kind, ExprKind::Conditional { .. });
+        let saved_discarded = self.discarded_conditional;
+        if discarded {
+            self.discarded_conditional = true;
+        }
         self.eval(expr);
+        self.discarded_conditional = saved_discarded;
         match &expr.kind {
             ExprKind::Assign { .. } => {}
             _ => self.emit_expr_statement(expr),

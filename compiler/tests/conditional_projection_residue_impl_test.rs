@@ -2315,3 +2315,194 @@ fn should_re_emit_the_frame_destination_programs_byte_identically() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The guarded and discarded literal positions: a loop-condition literal keeps
+// one owner for its owned field, a discarded literal materializes only its
+// fresh fields, and a discarded projection arm binds its root.
+// ---------------------------------------------------------------------------
+
+/// A conditional literal receiver in a loop condition.
+const LOOP_COND_WALK_SOURCE: &str = r#"module spec.cprimpl.loopcondwalk;
+
+import { String, stringOf } from std.text;
+
+struct H { call: func(i32): i32; s: String; }
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(c: bool): i32 {
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < 1 && (c ? H { call: addOne, s: stringOf("x") } : H { call: addOne, s: stringOf("y") }).call(5) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 2;
+}
+"#;
+
+/// A discarded conditional whose literal mixes a fresh and a place field.
+const DISCARD_PAIR_SOURCE: &str = r#"module spec.cprimpl.discardpair;
+
+import { String, stringOf } from std.text;
+
+struct Pair { a: String; b: String; }
+
+func pair(ok: bool): i32 {
+    let t: String = stringOf("tt");
+    let u: String = stringOf("uu");
+    ok ? Pair { a: stringOf("x"), b: t } : Pair { a: stringOf("y"), b: u };
+    return i32(len(t)) + i32(len(u)) - 4;
+}
+
+func main(): i32 {
+    return pair(true) + pair(false);
+}
+"#;
+
+/// A discarded conditional whose arm projects out of a fresh root.
+const DISCARD_ROOT_SOURCE: &str = r#"module spec.cprimpl.discardroot;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool): i32 {
+    let t: String = stringOf("tt");
+    c ? mk().v : t;
+    return i32(len(t));
+}
+
+func main(): i32 {
+    return use(true) + use(false) - 4;
+}
+"#;
+
+/// A loop-condition literal arm stores whole into its carrier.
+///
+/// The loop-condition walk materializes the conditional's chosen arm into the
+/// carrier temporary, so the literal's `s` field must not also get its own
+/// temporary: the carrier's field is the single owner and it releases at the
+/// loop edge. The pin therefore expects the arm stored straight into the
+/// carrier and no `__cl_tmp1` (the per-field temporary and its release).
+#[test]
+fn should_store_a_loop_condition_literal_arm_wholesale() {
+    let tag = "loopcondwalk";
+    let (_scratch, emitted) = emit_host(tag, LOOP_COND_WALK_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_loopcondwalk_use(bool c)\n{");
+    assert_contains(
+        tag,
+        body,
+        "__cl_tmp0 = (ClH){ cl_spec_cprimpl_loopcondwalk_addOne, cl_std_text_stringOf(cl_str(\"x\")) }",
+    );
+    assert_contains(
+        tag,
+        body,
+        "__cl_tmp0 = (ClH){ cl_spec_cprimpl_loopcondwalk_addOne, cl_std_text_stringOf(cl_str(\"y\")) }",
+    );
+    assert_absent(tag, body, "__cl_tmp1");
+    assert_release_after(
+        tag,
+        body,
+        "break;",
+        "if (__cl_tmp0.s) { FreeString(__cl_tmp0.s); }",
+    );
+}
+
+/// A discarded literal materializes each fresh field and reads the place
+/// fields.
+///
+/// `ok ? Pair { a: stringOf("x"), b: t } : …;` drops the selected literal, so
+/// the fresh `a` field binds to its own statement temporary and releases when
+/// the statement ends, while the `b` field reads `t` or `u` shallowly: the
+/// discard performs no store, so the place bindings stay untouched until their
+/// own scope cleanup.
+#[test]
+fn should_materialize_a_discarded_literal_field_per_fresh_owner() {
+    let tag = "discardpair";
+    let (_scratch, emitted) = emit_host(tag, DISCARD_PAIR_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_discardpair_pair(bool ok)\n{");
+    assert_contains(
+        tag,
+        body,
+        "__cl_tmp0 = cl_std_text_stringOf(cl_str(\"x\"))",
+    );
+    assert_contains(
+        tag,
+        body,
+        "__cl_tmp1 = cl_std_text_stringOf(cl_str(\"y\"))",
+    );
+    assert_on_line_of(tag, body, "(void)((ok ?", "(ClPair){ __cl_tmp0, t }");
+    assert_on_line_of(tag, body, "(void)((ok ?", "(ClPair){ __cl_tmp1, u }");
+    assert_release_after(
+        tag,
+        body,
+        "(void)((ok ?",
+        "if (__cl_tmp1) { FreeString(__cl_tmp1); }",
+    );
+    assert_release_after(
+        tag,
+        body,
+        "(void)((ok ?",
+        "if (__cl_tmp0) { FreeString(__cl_tmp0); }",
+    );
+    // The place bindings keep their own storage: no release of `t` or `u`
+    // runs between the fresh fields' releases and the statement's next
+    // computation, so only the scope cleanup frees them.
+    assert_follows(
+        tag,
+        body,
+        "    __cl_tmp0 = NULL;\n",
+        "__cl_ret = (i32)((u32)(i32)((u32)(i32)((cl_string_view(t)).len)",
+    );
+}
+
+/// A discarded projection arm binds its ownerless root for release.
+///
+/// `c ? mk().v : t;` reads a fresh root's member on one path; the statement
+/// binds the root to a temporary and releases its fields when the statement
+/// ends, while the projected member stays a read and the place arm stays
+/// untouched.
+#[test]
+fn should_bind_a_discarded_projection_root_for_release() {
+    let tag = "discardroot";
+    let (_scratch, emitted) = emit_host(tag, DISCARD_ROOT_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_discardroot_use(bool c)\n{");
+    assert_contains(tag, body, "__cl_tmp0 = cl_spec_cprimpl_discardroot_mk()");
+    assert_on_line_of(tag, body, "(void)((c ?", "__cl_tmp0.v) : t)");
+    assert_release_after(
+        tag,
+        body,
+        "(void)((c ?",
+        "if (__cl_tmp0.v) { FreeString(__cl_tmp0.v); }",
+    );
+    assert_release_after(
+        tag,
+        body,
+        "(void)((c ?",
+        "if (__cl_tmp0.w) { FreeString(__cl_tmp0.w); }",
+    );
+}
+
+/// The discarded pair and root programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_guarded_and_discarded_programs_byte_identically() {
+    let cases: [(&str, &str); 2] = [
+        ("discardpair", DISCARD_PAIR_SOURCE),
+        ("discardroot", DISCARD_ROOT_SOURCE),
+    ];
+    for (tag, source) in cases {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}

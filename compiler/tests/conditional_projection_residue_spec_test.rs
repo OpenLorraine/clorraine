@@ -4489,3 +4489,237 @@ func main(): i32 {
     assert_exit("discardprojection", &output, 0);
 }
 
+
+// ---------------------------------------------------------------------------
+// discardnestedleaf: a discarded mixed literal's nested and fixed-array
+// fields keep their fresh leaves released.
+//
+// The discard decides per field, and an aggregate field recurses into its own
+// fields and elements: each fresh owning leaf binds to its own statement
+// temporary and releases when the statement ends, while every place leaf stays
+// a read. A nested struct-literal field and a fixed-array field with a fresh
+// element must therefore both build strictly and run leak-free, with the
+// place bindings readable afterwards. The loop spelling re-executes the
+// discard once per iteration, so every iteration's fresh leaves release.
+// ---------------------------------------------------------------------------
+
+/// A discarded literal with a nested literal field and a fixed-array field
+/// releases every fresh leaf, on both selections and in a loop.
+///
+/// `ok ? Outer { inner: Box { v: stringOf("fr"), w: t } } : …;` drops a
+/// literal whose nested field owns a fresh `v` beside the place `w: t`, and
+/// `ok ? P { a: [stringOf("x")], b: t } : …;` drops a literal whose
+/// fixed-array field owns the fresh element. Both bind every fresh leaf to
+/// its own statement temporary and free it when the statement ends, while
+/// `t` stays readable for the trailing length read. Each program exits 0 with
+/// no memory report, and the loop spellings repeat the discard cleanly.
+#[test]
+fn should_release_the_fresh_leaves_of_a_discarded_aggregate_field() {
+    let nested = r#"module spec.cpr.discardnested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Outer { inner: Box; }
+
+func nested(ok: bool): i32 {
+    let t: String = stringOf("tt");
+    ok ? Outer { inner: Box { v: stringOf("fr"), w: t } } : Outer { inner: Box { v: stringOf("yy"), w: t } };
+    return i32(len(t)) - 2;
+}
+
+func looped(ok: bool, k: i32): i32 {
+    let t: String = stringOf("tt");
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < k) {
+        ok ? Outer { inner: Box { v: stringOf("fr"), w: t } } : Outer { inner: Box { v: stringOf("yy"), w: t } };
+        n = n + i32(len(t));
+        i = i + 1;
+    }
+    return n - k * 2;
+}
+
+func main(): i32 {
+    return nested(true) + nested(false) + looped(true, 3) + looped(false, 3);
+}
+"#;
+    let output = run_memory("discardnested", nested);
+    assert_no_asan("discardnested", &output);
+    assert_exit("discardnested", &output, 0);
+
+    let fixed = r#"module spec.cpr.discardfixed;
+
+import { String, stringOf } from std.text;
+
+struct P { a: String[1]; b: String; }
+
+func fixed(ok: bool): i32 {
+    let t: String = stringOf("tt");
+    ok ? P { a: [stringOf("x")], b: t } : P { a: [stringOf("y")], b: t };
+    return i32(len(t)) - 2;
+}
+
+func looped(ok: bool, k: i32): i32 {
+    let t: String = stringOf("tt");
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < k) {
+        ok ? P { a: [stringOf("x")], b: t } : P { a: [stringOf("y")], b: t };
+        n = n + i32(len(t));
+        i = i + 1;
+    }
+    return n - k * 2;
+}
+
+func main(): i32 {
+    return fixed(true) + fixed(false) + looped(true, 3) + looped(false, 3);
+}
+"#;
+    let output = run_memory("discardfixed", fixed);
+    assert_no_asan("discardfixed", &output);
+    assert_exit("discardfixed", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// discardarray: a discarded array-literal arm is judged like its direct
+// statement twin.
+//
+// The element read rule belongs to a discarded literal's *fields*; an array
+// literal that is itself the discarded arm stores its elements exactly as the
+// direct `[t, …];` statement does, so the place element is moved and a later
+// use reports. The rejection also keeps the arm's brace-elided spelling out of
+// the emitted C, which the strict build would refuse.
+// ---------------------------------------------------------------------------
+
+/// A discarded array-literal arm reports the moved place element once per
+/// arm.
+///
+/// `ok ? [t, stringOf("x")] : [t, stringOf("y")];` names `t` in both arms, so
+/// each arm's element store consumes it and the trailing `len(t)` reports one
+/// `E10020` per arm. No translation unit is emitted.
+#[test]
+fn should_reject_a_discarded_array_literal_arm() {
+    let source = r#"module spec.cpr.discardarray;
+
+import { String, stringOf } from std.text;
+
+func use(ok: bool): i32 {
+    let t: String = stringOf("tt");
+    ok ? [t, stringOf("x")] : [t, stringOf("y")];
+    return i32(len(t)) - 2;
+}
+
+func main(): i32 {
+    return use(true) + use(false);
+}
+"#;
+    compile_rejects("discardarray", source, "E10020", 2);
+}
+
+// ---------------------------------------------------------------------------
+// discardprojfield: a discarded literal field's conditional projection reads.
+//
+// The field of a discarded literal is never stored, so a projection over a
+// conditional keeps its place arms untouched: the selected member is read, its
+// root keeps owning it, and a later use stays valid. Only an ownerless root
+// binds for release, so the mixed fresh/place spelling frees the fresh arm's
+// storage when the statement ends while the place arm stays readable.
+// ---------------------------------------------------------------------------
+
+/// A discarded literal field that projects a conditional over place roots is a
+/// read, so the roots stay usable afterwards.
+///
+/// `ok ? Pair { a: (d ? p : q).v, b: t } : …;` drops the selected literal
+/// without storing it; the projected member is read from whichever root the
+/// inner condition picks, so `p.v`, `q.v`, and `t` keep their storage for the
+/// trailing length read. Both selections and the loop spelling run clean.
+#[test]
+fn should_read_a_discarded_literal_fields_place_projection() {
+    let source = r#"module spec.cpr.discardprojfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Pair { a: String; b: String; }
+
+func pick(ok: bool, d: bool): i32 {
+    let p: Box = Box { v: stringOf("pp"), w: stringOf("ww") };
+    let q: Box = Box { v: stringOf("qq"), w: stringOf("rr") };
+    let t: String = stringOf("tt");
+    ok ? Pair { a: (d ? p : q).v, b: t } : Pair { a: (d ? q : p).v, b: t };
+    return i32(len(p.v)) + i32(len(q.v)) + i32(len(t)) - 6;
+}
+
+func looped(ok: bool, d: bool, k: i32): i32 {
+    let p: Box = Box { v: stringOf("pp"), w: stringOf("ww") };
+    let q: Box = Box { v: stringOf("qq"), w: stringOf("rr") };
+    let t: String = stringOf("tt");
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < k) {
+        ok ? Pair { a: (d ? p : q).v, b: t } : Pair { a: (d ? q : p).v, b: t };
+        n = n + i32(len(p.v)) + i32(len(q.v));
+        i = i + 1;
+    }
+    return n - k * 4;
+}
+
+func main(): i32 {
+    return pick(true, true) + pick(true, false) + pick(false, true) + pick(false, false)
+        + looped(true, true, 3) + looped(false, false, 3);
+}
+"#;
+    let output = run_memory("discardprojfield", source);
+    assert_no_asan("discardprojfield", &output);
+    assert_exit("discardprojfield", &output, 0);
+}
+
+/// A discarded literal field's mixed fresh/place projection releases the fresh
+/// arm's root and keeps the place arm readable.
+///
+/// `ok ? Pair { a: (d ? p : mkB()).v, b: t } : …;` reads `p.v` on one path and
+/// a fresh root's member on the other; the fresh root binds to its own
+/// statement temporary and frees both of its fields when the statement ends,
+/// while `p.v` and `t` stay usable for the trailing read. Both selections and
+/// the loop spelling run leak-free.
+#[test]
+fn should_release_a_discarded_literal_fields_mixed_projection() {
+    let source = r#"module spec.cpr.discardprojmixed;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Pair { a: String; b: String; }
+
+func mkB(): Box { return Box { v: stringOf("cc"), w: stringOf("dd") }; }
+
+func pick(ok: bool, d: bool): i32 {
+    let p: Box = Box { v: stringOf("pp"), w: stringOf("ww") };
+    let t: String = stringOf("tt");
+    ok ? Pair { a: (d ? p : mkB()).v, b: t } : Pair { a: (d ? p : mkB()).v, b: t };
+    return i32(len(p.v)) + i32(len(t)) - 4;
+}
+
+func looped(ok: bool, d: bool, k: i32): i32 {
+    let p: Box = Box { v: stringOf("pp"), w: stringOf("ww") };
+    let t: String = stringOf("tt");
+    let i: i32 = 0;
+    let n: i32 = 0;
+    while (i < k) {
+        ok ? Pair { a: (d ? p : mkB()).v, b: t } : Pair { a: (d ? p : mkB()).v, b: t };
+        n = n + i32(len(p.v)) + i32(len(t));
+        i = i + 1;
+    }
+    return n - k * 4;
+}
+
+func main(): i32 {
+    return pick(true, true) + pick(true, false) + pick(false, true) + pick(false, false)
+        + looped(true, true, 3) + looped(false, false, 3);
+}
+"#;
+    let output = run_memory("discardprojmixed", source);
+    assert_no_asan("discardprojmixed", &output);
+    assert_exit("discardprojmixed", &output, 0);
+}

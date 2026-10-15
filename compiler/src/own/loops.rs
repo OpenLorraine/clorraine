@@ -732,6 +732,33 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a materialized operand stores the value itself.
+    ///
+    /// The materialize's assignment copies the value into its temporary, so
+    /// the temporary owns that value's storage: descending into it would give
+    /// an owned call result a second temporary, and both owners would release
+    /// the same storage. A conditional supplies the stored value from the arm
+    /// it selects, so it is stored wholesale exactly when every arm is; a
+    /// projection is not stored wholesale — only the selected part is — so
+    /// its root still needs its own owner and the walk descends it.
+    fn materialize_stores_wholesale(value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Call { .. }
+            | ValueKind::ClosureCall { .. }
+            | ValueKind::StructLit { .. }
+            | ValueKind::ArrayLit { .. } => true,
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                Self::materialize_stores_wholesale(then_value)
+                    && Self::materialize_stores_wholesale(else_value)
+            }
+            _ => false,
+        }
+    }
+
     /// Materializes every owned call result in an eagerly evaluated value.
     ///
     /// A loop condition is printed in a C header and an eagerly stored read
@@ -815,16 +842,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ValueKind::Materialize { value: inner, .. } => {
                 // The direct stored value already runs once through the
-                // materialize guard — a call or a struct literal whose owning
-                // fields the temporary itself holds — so it needs no second
+                // materialize guard — a call, a literal, or an array whose
+                // storage the temporary itself holds — so it needs no second
                 // owner; a call nested deeper still needs its own temporary
                 // and release.
-                if !matches!(
-                    inner.kind,
-                    ValueKind::Call { .. }
-                        | ValueKind::ClosureCall { .. }
-                        | ValueKind::StructLit { .. }
-                ) {
+                if !Self::materialize_stores_wholesale(inner) {
                     self.materialize_owned_calls(inner);
                 }
             }

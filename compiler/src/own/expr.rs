@@ -553,8 +553,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             ExprKind::StructLiteral { fields, .. } => {
                 for field in fields {
+                    // A discarded arm's literal field is a read, and so is an
+                    // array literal inside it: nothing stores either value,
+                    // and the source bindings stay usable afterwards.
+                    let saved_discarded_field = self.discarded_literal_field;
+                    self.discarded_literal_field = self.discarded_conditional;
                     self.eval(&field.value);
-                    self.consume_owned_place(&field.value, field.value.span);
+                    self.discarded_literal_field = saved_discarded_field;
+                    // A field of a discarded conditional's arm is never
+                    // stored: the statement drops the whole literal, so a
+                    // place-valued field is a read and its binding stays
+                    // usable, exactly like the direct `ok ? t : u;` control.
+                    if !self.discarded_conditional {
+                        self.consume_owned_place(&field.value, field.value.span);
+                    }
                     // A view-like field value stored in a struct field is
                     // storage in a field: a backing whose storage dies before
                     // the destination would leave the field dangling, so the
@@ -617,7 +629,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // An owned conditional field is an owning destination: the
                     // chosen arm moves into the field, so every owned place arm
                     // counts as maybe-moved afterwards; a maybe-owning field
-                    // records the duplicability duty instead.
+                    // records the duplicability duty instead. A discarded arm
+                    // stores nothing, so its fields keep their bindings.
+                    if self.discarded_conditional {
+                        continue;
+                    }
                     let field_ty = self.ty(&field.value);
                     if self.maybe_owns(&field_ty) {
                         for source in self.maybe_owning_move_sources(&field.value) {
@@ -642,6 +658,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for element in elements {
                     self.eval(element);
                     if view_elements {
+                        continue;
+                    }
+                    // An array literal inside a discarded literal's field
+                    // never stores its elements either, so the sources are
+                    // reads; an array literal that is the discarded arm
+                    // itself keeps the ordinary element rules.
+                    if self.discarded_literal_field {
                         continue;
                     }
                     self.consume_owned_place(element, element.span);
@@ -679,6 +702,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 if ffi::is_volatile_intrinsic(name) && self.unsafe_depth == 0 {
                     self.report_unsafe(UnsafeOp::Volatile, expr.span);
                 }
+                // An intrinsic's arguments are its operands, not discarded
+                // values, so the read rule does not reach them either.
+                let saved_discarded = self.discarded_conditional;
+                let saved_discarded_field = self.discarded_literal_field;
+                self.discarded_conditional = false;
+                self.discarded_literal_field = false;
                 for arg in args {
                     if let crate::ast::IntrinsicArg::Expr(inner) = arg {
                         self.eval(inner);
@@ -692,6 +721,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                     }
                 }
+                self.discarded_conditional = saved_discarded;
+                self.discarded_literal_field = saved_discarded_field;
             }
             ExprKind::Template(pieces) => {
                 for piece in pieces {
@@ -705,7 +736,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 type_args,
                 args,
             } => {
+                // A call consumes its callee and arguments, so the
+                // discarded-conditional read rule does not reach them: a
+                // literal argument is still a store destination for its
+                // fields.
+                let saved_discarded = self.discarded_conditional;
+                let saved_discarded_field = self.discarded_literal_field;
+                self.discarded_conditional = false;
+                self.discarded_literal_field = false;
                 self.check_call_expr(callee, type_args, args, expr.span);
+                self.discarded_conditional = saved_discarded;
+                self.discarded_literal_field = saved_discarded_field;
             }
         }
         ty

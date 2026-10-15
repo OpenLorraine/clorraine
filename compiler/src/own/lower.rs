@@ -306,7 +306,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         && !value.ty.is_unknown()
                         && !value.ty.is_fixed_array()
                     {
-                        if deferred {
+                        if self.discard_conditional_depth > 0 {
+                            // A discarded literal's field is never stored, so
+                            // the projection stays a read: the place arms keep
+                            // their storage while each ownerless root binds for
+                            // release. The store-oriented carriers below would
+                            // move the selected member out of its root and
+                            // leave a later read of it null.
+                            self.bind_guarded_projection_root(value)
+                        } else if deferred {
                             self.materialize_guarded_conditional_projection(value, true)
                         } else {
                             self.consume_conditional_projection(value)
@@ -323,8 +331,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // carrier on the evaluated path: the chosen member
                         // moves into the carrier and the fresh arm's root
                         // releases only its un-moved fields, while the literal
-                        // store copies the carrier the field now owns.
-                        self.materialize_guarded_conditional_projection(value, true)
+                        // store copies the carrier the field now owns. A
+                        // discarded literal stores nothing, so its field keeps
+                        // the same read: only the ownerless roots bind.
+                        if self.discard_conditional_depth > 0 {
+                            self.bind_guarded_projection_root(value)
+                        } else {
+                            self.materialize_guarded_conditional_projection(value, true)
+                        }
                     } else if deferred && !self.arm_has_ownerless_projection(&value) {
                         // A field that projects out of a fresh ownerless root
                         // binds that root even inside a conditionally evaluated
@@ -1135,24 +1149,44 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 ValueKind::Call { .. }
                     | ValueKind::ClosureCall { .. }
                     | ValueKind::StructLit { .. }
+                    | ValueKind::Member { .. }
+                    | ValueKind::Index { .. }
             )
         {
             return value;
         }
-        // A struct literal materializes only when every owning field is a
-        // fresh result. A field that reads a place, an already bound
-        // temporary, or an aggregate built from either is copied by the
-        // aggregate's store, so releasing the aggregate alongside the field's
-        // own owner would free the same storage twice; the literal stays an
-        // inline value instead.
-        if let ValueKind::StructLit { fields, .. } = &value.kind {
-            if fields
-                .iter()
-                .any(|(_, field)| self.field_aliases_owned_storage(field))
-            {
-                return value;
-            }
+        // A projection arm binds its ownerless root through the deferred fill:
+        // the root's storage materializes on the arm's own path and releases
+        // when the statement ends, while the projected member stays a read. A
+        // chain that already roots in storage keeps its spelling.
+        if matches!(&value.kind, ValueKind::Member { .. } | ValueKind::Index { .. }) {
+            return self.bind_guarded_projection_root(value);
         }
+        // A struct literal whose fields all name fresh results materializes as
+        // one value. A field that reads a place, an already bound temporary,
+        // or an aggregate built from either is a read the discard never
+        // stores: that field stays inline, and only the fresh owning fields
+        // materialize, each into its own statement temporary. The literal
+        // itself stays inline too, because nothing consumes it and a release
+        // of it would free storage the place fields still own.
+        let value = match value.kind {
+            ValueKind::StructLit { name, fields } => {
+                let aliases = fields
+                    .iter()
+                    .any(|(_, field)| self.field_aliases_owned_storage(field));
+                if aliases {
+                    let fields = fields
+                        .into_iter()
+                        .map(|(field_name, field)| {
+                            (field_name, self.materialize_discarded_field(field))
+                        })
+                        .collect();
+                    return Value::new(value.ty, ValueKind::StructLit { name, fields });
+                }
+                Value::new(value.ty, ValueKind::StructLit { name, fields })
+            }
+            other => Value::new(value.ty, other),
+        };
         let ty = value.ty.clone();
         let temp = self.new_temp(ty.clone());
         self.register_pending_release(temp, &ty);
@@ -1165,6 +1199,61 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 adopting: false,
             },
         )
+    }
+
+    /// Gives one discarded struct-literal field the owner its storage needs.
+    ///
+    /// A field that already names an owner — a place read or a bound
+    /// temporary — stays inline, because the discard reads it while that
+    /// owner's own cleanup frees it. A fresh owning field materializes into
+    /// its own statement temporary, whose registered release frees it when the
+    /// statement ends.
+    fn materialize_discarded_field(&mut self, field: Value) -> Value {
+        if !(self.owns_drop(&field.ty) || self.maybe_owns(&field.ty)) {
+            return field;
+        }
+        // A field that already travels through a materialized temporary keeps
+        // that single owner. The temporary may have been prepared for the
+        // literal store the discard never performs, so a missing release is
+        // registered here: the statement then frees the storage exactly once.
+        if let ValueKind::Materialize { temp, .. } | ValueKind::Temp(temp) = &field.kind {
+            if !self.has_pending_release(*temp, &field.ty) {
+                self.register_pending_release(*temp, &field.ty);
+            }
+            return field;
+        }
+        // An aggregate recurses: a nested literal's or an array literal's
+        // fresh leaves each bind through this rule, so every one of them gets
+        // its own released temporary while the place leaves stay reads. The
+        // aggregate itself stays inline, because nothing consumes it and its
+        // place leaves still own their storage.
+        let ty = field.ty.clone();
+        match field.kind {
+            ValueKind::StructLit { name, fields } => {
+                let fields = fields
+                    .into_iter()
+                    .map(|(field_name, field)| {
+                        (field_name, self.materialize_discarded_field(field))
+                    })
+                    .collect();
+                return Value::new(ty, ValueKind::StructLit { name, fields });
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                let elements = elements
+                    .into_iter()
+                    .map(|element| self.materialize_discarded_field(element))
+                    .collect();
+                let fill = fill.map(|fill| Box::new(self.materialize_discarded_field(*fill)));
+                return Value::new(ty, ValueKind::ArrayLit { elements, fill });
+            }
+            other => {
+                let field = Value::new(ty, other);
+                if self.field_aliases_owned_storage(&field) {
+                    return field;
+                }
+                return self.materialize_guard_operand(field);
+            }
+        }
     }
 
     /// True when a guard-materialized field reads storage another owner holds.

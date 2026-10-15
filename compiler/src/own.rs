@@ -306,6 +306,20 @@ struct FunctionChecker<'a, 'd> {
     /// destination and a return keep it, every other destination keeps
     /// module storage alone.
     literal_views: LiteralViews,
+    /// True while the value of a discarded conditional statement is being
+    /// checked.
+    ///
+    /// The statement drops whichever arm it selects, so a struct literal's
+    /// field there is a read: nothing stores the value, and the source binding
+    /// stays usable afterwards.
+    discarded_conditional: bool,
+    /// True while a discarded literal's field value is being checked.
+    ///
+    /// The field is read rather than stored, so an array literal inside it
+    /// reads its elements the same way; an array literal that *is* a discarded
+    /// arm keeps the ordinary element rules, exactly as the direct statement
+    /// spelling does.
+    discarded_literal_field: bool,
     /// The backings the accepted struct-literal view fields named.
     ///
     /// The enclosing store records them as loans on its destination, exactly
@@ -521,6 +535,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             view_array_literal_depth: 0,
             view_destination_adopts: true,
             literal_views: LiteralViews::Escaping,
+            discarded_conditional: false,
+            discarded_literal_field: false,
             pending_literal_owners: BTreeSet::new(),
             discard_conditional_depth: 0,
             builder: Builder::new(&decl.name, params, returns),
