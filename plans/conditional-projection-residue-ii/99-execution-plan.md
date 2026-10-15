@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 8/33 tasks (24%) — Executing Phase 2
+> **Progress**: 11/33 tasks (33%) — Phase 2 in review
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -110,18 +110,16 @@ taken arm, the discarded residual-owning root, and the bare discarded literal.
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Extend the deferred branch to the call-wrapped element position; bind the carrier
+- [x] 2.2.1 Extend the deferred branch to the call-wrapped element position; bind the carrier
       literal's taken-arm fresh root for the local's frame; judge the discarded arm by the
       root's residual ownership; materialize the bare discarded literal's fresh leaves —
       `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`,
-      `compiler/src/codegen/function.rs`
-- [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-16 02:30; the actual touched files: `own/lower.rs`, `own/statements.rs`, `codegen/function.rs` (`codegen/guards.rs` needed no change); the lend path binds a projection over a fresh root under `defer_move_outs > 0` through the deferred fill; the carrier literal's taken-arm fresh roots bind via the aggregate view-position descent; the discarded arm is judged by the root's residual ownership (narrowed to keep the batch-I dot-len pins); the bare discarded literal materializes its fresh leaves with the guards-only discard emission)
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 02:30; the residue spec 111/111 plain and under `RDC_ASAN=1`; the batch-H, callable-release, and batch-I suites green; `make check` exit 0 with no new warnings; the differential shows only the eight intended emit-diffs; parent-verified 111/111 plain + ASan)
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the deferred fill shapes, the arm bindings, the
-      release counts, the re-emission determinism pins) —
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+- [x] 2.3.1 Write the phase implementation pins (the deferred fill shapes, the arm bindings, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 02:30; five pins added (68 tests total, additions only); the deferred fill inside the guard, the taken-arm binding with its release, the residual-root bind, the bare-discard leaf materialization + determinism; 68/68 green)
 - [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses
 

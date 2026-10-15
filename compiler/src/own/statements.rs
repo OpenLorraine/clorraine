@@ -514,6 +514,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let lowered = self.hoist_ownerless_conditional_arms(lowered);
             return PreparedStore::Assign { value: lowered };
         }
+        // A conditional of literals whose view positions read fresh storage
+        // (`g ? Holder { names: [mk().v] } : ...`) hands the destination views
+        // of fresh results: each arm's root binds for the destination's frame,
+        // so the carried views stay valid while the roots' remaining fields
+        // release at the scope's end.
+        if !is_view(ty)
+            && !ty.is_unknown()
+            && matches!(lowered.kind, ValueKind::Conditional { .. })
+            && self.conditional_has_ownerless_view_positions(&lowered)
+        {
+            let lowered = self.hoist_view_conditional_arms(lowered);
+            return PreparedStore::Assign { value: lowered };
+        }
         // A consumed projection of fresh statement-owned storage is a move:
         // a call result's projection is bound to an owned temporary first,
         // while a projection over an existing destination temporary (a

@@ -1200,7 +1200,37 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if is_pure_value(&value) {
             return;
         }
+        // A bare literal statement has no conditional arm to defer, so its
+        // fresh owning leaves materialize here: each binds to its own statement
+        // temporary and releases when the statement ends, while a place leaf
+        // stays a read.
+        let value = self.materialize_discarded_literal(value);
         self.emit(Statement::Discard { value });
+    }
+
+    /// Gives a discarded literal's fresh leaves their own released temporaries.
+    ///
+    /// The bare statement spelling has no conditional arm to defer through, so
+    /// each fresh owning leaf of an array literal binds through the same
+    /// recursion the conditional discard uses: a leaf that already travels
+    /// through a temporary registers its release, a fresh call or literal
+    /// materializes into its own statement temporary, and a place leaf stays a
+    /// read. A struct literal keeps its own path: the discard emission builds
+    /// and releases a destination for the literal forms that need one, and its
+    /// fresh fields bind there.
+    fn materialize_discarded_literal(&mut self, value: Value) -> Value {
+        let Value { ty, kind } = value;
+        match kind {
+            ValueKind::ArrayLit { elements, fill } => {
+                let elements = elements
+                    .into_iter()
+                    .map(|element| self.materialize_discarded_field(element))
+                    .collect();
+                let fill = fill.map(|fill| Box::new(self.materialize_discarded_field(*fill)));
+                Value::new(ty, ValueKind::ArrayLit { elements, fill })
+            }
+            other => Value::new(ty, other),
+        }
     }
 
     /// Defers a discarded conditional arm's fresh owning result.
@@ -3618,6 +3648,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return value;
         }
+        // A projection over a fresh root that owns residual storage binds the
+        // root, so the root's remaining fields release while the projected
+        // value stays a read: `mk().v` owns the member, not the root, and
+        // binding the member alone drops the root's other fields. A sole-field
+        // root owns nothing besides the member, so the member binding stays,
+        // and a deferred operand binds through the guarded fill so the root's
+        // call runs on the evaluated path only.
+        if !self.projects_from_place(&value)
+            && matches!(value.kind, ValueKind::Member { .. } | ValueKind::Index { .. })
+            && self.conditional_projection_root_owns_residual(&value)
+        {
+            return if self.defer_move_outs == 0 {
+                self.bind_ownerless_projection_root(value)
+            } else {
+                self.bind_guarded_projection_root(value)
+            };
+        }
         if self.defer_move_outs > 0 {
             self.materialize_guard_operand(value)
         } else {
@@ -3827,7 +3874,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// and the binding's view reads through the selected root. The condition
     /// is evaluated once, and a nested conditional recurses into its own
     /// branch.
-    fn hoist_view_conditional_arms(&mut self, value: Value) -> Value {
+    pub(super) fn hoist_view_conditional_arms(&mut self, value: Value) -> Value {
         match value.kind {
             ValueKind::Conditional {
                 condition,
@@ -3903,7 +3950,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     },
                 )
             }
-            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } | ValueKind::StructLit { .. } => {
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
                 let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
                 if owning && !is_view(&value.ty) {
                     self.materialize_scoped_owner(value)
@@ -3911,8 +3958,163 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     value
                 }
             }
+            // A literal arm carries its view positions as fields or elements: a
+            // position that reads a fresh result binds that root for the
+            // destination's frame, exactly as a direct view projection does,
+            // while every other position keeps its spelling.
+            ValueKind::StructLit { .. } | ValueKind::ArrayLit { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                if owning && !is_view(&value.ty) {
+                    self.materialize_scoped_owner(value)
+                } else if self.aggregate_has_ownerless_view_positions(&value) {
+                    self.own_aggregate_view_positions(value)
+                } else {
+                    value
+                }
+            }
             ValueKind::Conditional { .. } => self.hoist_view_conditional_arms(value),
             _ => value,
+        }
+    }
+
+    /// True when an aggregate carries a view position over fresh storage.
+    ///
+    /// A literal's view-carrying field or element may read a member of a fresh
+    /// call result (`Holder { names: [mk().v] }`): the position's root owns
+    /// storage the destination's frame must release, so the aggregate needs the
+    /// same root binding a direct view projection does.
+    pub(super) fn aggregate_has_ownerless_view_positions(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::StructLit { name, fields } => {
+                let declared = self.instance_fields(&value.ty, name);
+                fields.iter().any(|(field_name, field)| {
+                    let position = declared
+                        .iter()
+                        .find(|(declared, _)| declared == field_name)
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or_else(|| field.ty.clone());
+                    self.may_carry_view(&position) && self.view_position_ownerless(field)
+                })
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                let view_like = self.may_carry_view(&value.ty.iterated_element());
+                view_like
+                    && (elements
+                        .iter()
+                        .any(|element| self.view_position_ownerless(element))
+                        || fill
+                            .as_deref()
+                            .is_some_and(|fill| self.view_position_ownerless(fill)))
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a conditional's arms carry a view position over fresh storage.
+    ///
+    /// A carrier destination's conditional of literals (`g ? Holder { names:
+    /// [mk().v] } : ...`) carries views of fresh results on the arm that runs:
+    /// each taken arm's root binds for the destination's frame exactly as a
+    /// direct view projection does.
+    pub(super) fn conditional_has_ownerless_view_positions(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.aggregate_has_ownerless_view_positions(then_value)
+                    || self.aggregate_has_ownerless_view_positions(else_value)
+            }
+            _ => false,
+        }
+    }
+
+    /// True when a view position's chain roots at ownerless storage.
+    fn view_position_ownerless(&self, value: &Value) -> bool {
+        if self.projects_from_place(value) {
+            return false;
+        }
+        match &value.kind {
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.view_position_ownerless(base)
+            }
+            // An aggregate position carries the storage its own view positions
+            // read, so the walk descends to them.
+            ValueKind::StructLit { .. } | ValueKind::ArrayLit { .. } => {
+                self.aggregate_has_ownerless_view_positions(value)
+            }
+            ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
+                let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
+                owning && !is_view(&value.ty) && !value.ty.is_unknown()
+            }
+            _ => false,
+        }
+    }
+
+    /// Binds an aggregate arm's view positions for the destination's frame.
+    ///
+    /// Mirrors [`Self::own_view_arm`] over an aggregate: each view-carrying
+    /// position's ownerless root binds to a scope owner the destination's frame
+    /// releases, so a literal arm that carries a view of a fresh result keeps
+    /// its backing for the destination's lifetime while the root's remaining
+    /// fields release at the scope's end.
+    fn own_aggregate_view_positions(&mut self, value: Value) -> Value {
+        let Value { ty, kind } = value;
+        match kind {
+            ValueKind::StructLit { name, fields } => {
+                let declared = self.instance_fields(&ty, &name);
+                let fields = fields
+                    .into_iter()
+                    .map(|(field_name, field_value)| {
+                        let position = declared
+                            .iter()
+                            .find(|(declared, _)| declared == &field_name)
+                            .map(|(_, ty)| ty.clone())
+                            .unwrap_or_else(|| field_value.ty.clone());
+                        let field_value = if self.may_carry_view(&position) {
+                            self.own_view_position(field_value)
+                        } else {
+                            field_value
+                        };
+                        (field_name, field_value)
+                    })
+                    .collect();
+                Value::new(ty, ValueKind::StructLit { name, fields })
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                let view_like = self.may_carry_view(&ty.iterated_element());
+                let elements = elements
+                    .into_iter()
+                    .map(|element| {
+                        if view_like {
+                            self.own_view_position(element)
+                        } else {
+                            element
+                        }
+                    })
+                    .collect();
+                let fill = fill.map(|fill| {
+                    Box::new(if view_like {
+                        self.own_view_position(*fill)
+                    } else {
+                        *fill
+                    })
+                });
+                Value::new(ty, ValueKind::ArrayLit { elements, fill })
+            }
+            other => self.own_view_arm(Value::new(ty, other)),
+        }
+    }
+
+    /// Binds one view position of an aggregate arm.
+    fn own_view_position(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::Conditional { .. } => self.hoist_view_conditional_arms(value),
+            ValueKind::StructLit { .. } | ValueKind::ArrayLit { .. } => {
+                self.own_aggregate_view_positions(value)
+            }
+            other => self.own_view_arm(Value::new(value.ty, other)),
         }
     }
 
@@ -4388,6 +4590,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             || value.ty.is_unknown()
         {
             return value;
+        }
+        // A projection over a fresh root inside a conditionally evaluated
+        // operand binds its root through the deferred materialization: the
+        // root's call runs only where the operand is evaluated, the projected
+        // value stays a read, and the statement's release frees the root's
+        // remaining fields. A projection that already roots in storage keeps
+        // its spelling.
+        if self.defer_move_outs > 0
+            && !self.projects_from_place(&value)
+            && matches!(value.kind, ValueKind::Member { .. } | ValueKind::Index { .. })
+        {
+            return self.bind_guarded_projection_root(value);
         }
         // A guarded view-carrying aggregate argument keeps its fill and each
         // view-like position's call on the evaluated path: a named temporary

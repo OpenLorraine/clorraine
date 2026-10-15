@@ -638,6 +638,16 @@ impl<'a> Emitter<'a> {
                         return;
                     }
                 }
+                // A literal has no C expression form: its elements
+                // materialized into statement temporaries the statement's
+                // release frees, so only their guards remain to run here.
+                if matches!(
+                    value.kind,
+                    ValueKind::ArrayLit { .. } | ValueKind::StructLit { .. }
+                ) {
+                    self.emit_guards(value);
+                    return;
+                }
                 self.emit_guards(value);
                 let value_c = self.value(value);
                 self.push(&format!("    (void)({value_c});"));

@@ -3998,3 +3998,233 @@ fn should_empty_the_view_element_of_a_module_root() {
         "if (__cl_itmp0.k) { FreeString(__cl_itmp0.k); }",
     );
 }
+
+// ---------------------------------------------------------------------------
+// Guarded, discarded, and carrier roots (phase 2).
+// ---------------------------------------------------------------------------
+
+/// A guarded call whose view element wraps a fresh call root.
+const GUARD_CALL_ROOT_SOURCE: &str = r#"module spec.cprimpl.implguardcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let calls: i32 = 0;
+
+func mk(): Box {
+    calls = calls + 1;
+    return Box { v: stringOf("ab"), w: stringOf("cd") };
+}
+
+func id(x: str): str { return x; }
+
+func use(h: Holder): i32 { return i32(len(h.names[0])); }
+
+func run(g: bool, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k) {
+        n = n + (g ? use(Holder { names: [id(mk().v)] }) : 0);
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32 = run(true, 3);
+    let taken_calls: i32 = calls;
+    let b: i32 = run(false, 3);
+    let all_calls: i32 = calls;
+    return a + b + (taken_calls - 3) * 10 + (all_calls - 3) * 10 - 6;
+}
+"#;
+
+/// The guarded element root fills inside the guard, the residual releases.
+///
+/// The deferred fill assigns `mk()` into the guard temporary on the `g ?`
+/// expression itself, reads the member through it, and the root's remaining
+/// field releases with the statement; the eager `__cl_owned0` binding is gone.
+#[test]
+fn should_defer_a_guarded_call_wrapped_element_root() {
+    let tag = "implguardcall";
+    let (_scratch, emitted) = emit_host(tag, GUARD_CALL_ROOT_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implguardcall_run(bool g, i32 k)\n{");
+    assert_on_line_of(
+        tag,
+        body,
+        "g ?",
+        "__cl_tmp0 = cl_spec_cprimpl_implguardcall_mk()",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "g ?",
+        "cl_string_view(__cl_tmp0.v)",
+    );
+    assert_absent(tag, body, "__cl_owned0");
+    assert_contains(
+        tag,
+        body,
+        "if (__cl_tmp0.w) { FreeString(__cl_tmp0.w); }",
+    );
+}
+
+/// A conditional carrier literal's taken arm root.
+const CARRIER_LITERAL_SOURCE: &str = r#"module spec.cprimpl.implcarrierlit;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func run(g: bool, want: i32): i32 {
+    let h: Holder = g ? Holder { names: [mk().v] } : Holder { names: ["zz"] };
+    return i32(h.names[0][0]) - want;
+}
+
+func main(): i32 {
+    return run(true, 97) + run(false, 122);
+}
+"#;
+
+/// The taken arm reads through a scoped owner the local's frame releases.
+#[test]
+fn should_bind_the_taken_carrier_arm_root() {
+    let tag = "implcarrierlit";
+    let (_scratch, emitted) = emit_host(tag, CARRIER_LITERAL_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implcarrierlit_run(bool g, i32 want)\n{");
+    assert_contains(tag, body, "ClBox __cl_owned0 = {0};");
+    assert_contains(tag, body, "__cl_owned0 = cl_spec_cprimpl_implcarrierlit_mk();");
+    assert_contains(
+        tag,
+        body,
+        "__cl_arm_2.names[0] = cl_string_view(__cl_owned0.v);",
+    );
+    assert_release_after(
+        tag,
+        body,
+        "h = __cl_arm_2;",
+        "if (__cl_owned0.w) { FreeString(__cl_owned0.w); }",
+    );
+    assert_absent(
+        tag,
+        body,
+        "cl_string_view(cl_spec_cprimpl_implcarrierlit_mk().v)",
+    );
+}
+
+/// A discarded non-owning arm over a residual-owning root.
+const DISCARD_RESIDUAL_SOURCE: &str = r#"module spec.cprimpl.impldiscardres;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool, t: i32): i32 {
+    c ? i32(mk().v.len()) : t;
+    return t - 5;
+}
+
+func main(): i32 {
+    return use(true, 5) + use(false, 5);
+}
+"#;
+
+/// A bare discarded array literal materializes and releases its leaf.
+const BARE_DISCARD_SOURCE: &str = r#"module spec.cprimpl.implbarediscard;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("hello"), w: stringOf("world") }; }
+
+func use(): i32 {
+    [mk().v];
+    return 0;
+}
+
+func looped(k: i32): i32 {
+    let i: i32 = 0;
+    while (i < k) {
+        [mk().w];
+        i = i + 1;
+    }
+    return i - k;
+}
+
+func main(): i32 {
+    return use() + looped(3);
+}
+"#;
+
+/// The discarded arm's root binds and releases its residual field.
+#[test]
+fn should_bind_the_discarded_arms_residual_root() {
+    let tag = "impldiscardres";
+    let (_scratch, emitted) = emit_host(tag, DISCARD_RESIDUAL_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_impldiscardres_use(bool c, i32 t)\n{");
+    assert_on_line_of(
+        tag,
+        body,
+        "(c ?",
+        "__cl_tmp0 = cl_spec_cprimpl_impldiscardres_mk()",
+    );
+    assert_on_line_of(
+        tag,
+        body,
+        "(c ?",
+        "__cl_tmp0.w ? (FreeString(__cl_tmp0.w), __cl_tmp0.w = NULL) : 0)",
+    );
+    assert_contains(tag, body, "(i32)((cl_string_view(__cl_tmp0.v)).len)");
+    assert_absent(tag, body, "__cl_tmp0 = cl_spec_cprimpl_impldiscardres_mk().v");
+}
+
+/// The bare discarded literal binds its leaf and emits no statement expression.
+#[test]
+fn should_materialize_a_bare_discarded_literal_element() {
+    let tag = "implbarediscard";
+    let (_scratch, emitted) = emit_host(tag, BARE_DISCARD_SOURCE);
+    let body = function_body(tag, &emitted, "cl_spec_cprimpl_implbarediscard_use(void)\n{");
+    assert_follows(tag, body, "__cl_tmp1 = __cl_tmp0.v;", "__cl_tmp0.v = NULL;");
+    assert_release_after(
+        tag,
+        body,
+        "__cl_tmp0.v = NULL;",
+        "if (__cl_tmp1) { FreeString(__cl_tmp1); }",
+    );
+    assert_absent(tag, body, "(void)({");
+    let looped =
+        function_body(tag, &emitted, "cl_spec_cprimpl_implbarediscard_looped(i32 k)\n{");
+    assert_follows(tag, looped, "__cl_tmp1 = __cl_tmp0.w;", "__cl_tmp0.w = NULL;");
+    assert_release_after(
+        tag,
+        looped,
+        "__cl_tmp0.w = NULL;",
+        "if (__cl_tmp1) { FreeString(__cl_tmp1); }",
+    );
+    assert_absent(tag, looped, "(void)({");
+}
+
+/// The phase-2 programs re-emit byte-identically.
+#[test]
+fn should_re_emit_the_guarded_and_discarded_phase_two_programs_byte_identically() {
+    for (tag, source) in [
+        ("implguardcall", GUARD_CALL_ROOT_SOURCE),
+        ("implcarrierlit", CARRIER_LITERAL_SOURCE),
+        ("impldiscardres", DISCARD_RESIDUAL_SOURCE),
+        ("implbarediscard", BARE_DISCARD_SOURCE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+    }
+}
