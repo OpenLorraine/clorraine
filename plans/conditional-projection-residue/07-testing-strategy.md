@@ -54,7 +54,7 @@
 
 | # | Input / Scenario | Expected Output / Behavior | Source |
 |---|------------------|----------------------------|--------|
-| ST-12 | `names = mk().v;` and `names = [mk().v]` (a global `str` / `str[1]`), plus the parameter-backed control `names = p.v` | Rejected: exactly one `E10033` at each store; the parameter-backed control rejects the same way (the head's behavior) | R3, AR-5, AR-20 |
+| ST-12 | `names = mk().v;` and `names = [mk().v]` (a global `str` / `str[1]`), plus the parameter-backed spelling `names = p.v` | Rejected: exactly one `E10033` at each store — the parameter-backed store too (a parameter does not outlive a global; the head accepts it, so it is red rather than a control) | R3, AR-5, AR-20 |
 | ST-13 | `fill(borrow slot: str) { slot = mk().v; }` and the parameter-supported twin | The fresh-derived store rejected (exactly one `E10030` at the store); the parameter-supported twin accepted; run exit 0; ASan-clean | R3, AR-5, AR-20 |
 | ST-14 | `g.names = [mk().v]` (a global struct field; a fresh element) and `slot = [mk().v]` (an out-slot; a fresh element) | Rejected: one `E10033` at the global store and one `E10030` at the out-slot store (the fresh element is an escaping store, so no emission is reached) | R3, AR-20 |
 | ST-15 | `xs[1] = c ? b.v : a;` and `xs[1] = v;` (a local `str[2]`) | Accepted; run exit 0; ASan-clean; the global/field spellings still rejected (`E10033`) | R3, AR-6, AR-21 |

@@ -2745,3 +2745,575 @@ func main(): i32 {
     assert_no_asan("kitandskipped", &output);
     assert_exit("kitandskipped", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// globalstore: a view stored into a global outlives its backing.
+//
+// A global binding lives for the whole program, so a view stored there must
+// name module-level static storage. A view derived from a fresh call result or
+// from a parameter does not outlive the global: the stored view dangles once
+// the statement's temporary or the caller's frame ends. The frozen escape
+// rule reports `E10033` once at each store, and the parameter-backed spelling
+// is the control — a parameter does not outlive a global either, so it
+// reports the same single error.
+// ---------------------------------------------------------------------------
+
+/// A fresh or parameter-backed view stored into a global binding reports one
+/// escape error per store.
+///
+/// `names = mk().v;` stores a view of the fresh call result into the global
+/// `names`: the call result's storage dies at the end of the store statement,
+/// while the global keeps reading it for the rest of the program. The array
+/// spelling `names = [mk().v];` derives each element the same way, so it
+/// reports the same one `E10033`. The parameter-backed spelling `names = p.v;`
+/// is the control: the parameter's frame ends before the global's, so it
+/// reports the same code. Every spelling is rejected with exactly one error
+/// and emits no translation unit.
+#[test]
+fn should_reject_a_fresh_or_parameter_backed_view_stored_into_a_global() {
+    let view = r#"module spec.cpr.globalstoreview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str = "start";
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func store(): void { names = mk().v; }
+
+func main(): i32 {
+    store();
+    return i32(len(names)) - 2;
+}
+"#;
+    compile_rejects("globalstoreview", view, "E10033", 1);
+
+    let array = r#"module spec.cpr.globalstorearray;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str[1] = ["start"];
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func store(): void { names = [mk().v]; }
+
+func main(): i32 {
+    store();
+    return i32(len(names[0])) - 2;
+}
+"#;
+    compile_rejects("globalstorearray", array, "E10033", 1);
+
+    let parameter = r#"module spec.cpr.globalstoreparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str = "start";
+
+func store(p: Box): void { names = p.v; }
+
+func main(): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    store(b);
+    return i32(len(names)) - 2;
+}
+"#;
+    compile_rejects("globalstoreparam", parameter, "E10033", 1);
+}
+
+// ---------------------------------------------------------------------------
+// outslotstore: a view stored into a writable parameter slot is judged against
+// the frame the write reaches.
+//
+// A `borrow` slot holds storage the caller keeps: the caller's frame outlives
+// the callee, so a view derived from a parameter is accepted and stays
+// readable, while a view derived from a fresh call result or from a callee
+// local dies before the caller's slot does and reports the loan-outlives error
+// `E10030`. The nullable spelling is the by-address slot the caller reads; the
+// non-nullable spelling receives the same judgment.
+// ---------------------------------------------------------------------------
+
+/// A fresh or local-backed view stored into a writable parameter slot reports
+/// the loan-outlives error once, while the parameter-backed twins stay
+/// accepted and memory-clean.
+///
+/// `slot = mk().v;` stores a view of the call result into the caller's slot;
+/// the result's storage dies at the end of the statement, before the callee
+/// returns. `slot = b.v;` stores a view of the callee's local `b`, which dies
+/// when the callee returns while the caller's slot still reads it. Both report
+/// one `E10030` and emit no translation unit. The parameter-backed twins
+/// `slot = p.v;` keep the caller's frame alive for as long as the slot is
+/// read: in the non-nullable spelling the callee reads the copy it stored, and
+/// in the nullable by-address spelling the caller reads the written view. Both
+/// are accepted, exit 0, and are memory-clean.
+#[test]
+fn should_reject_a_fresh_or_local_backed_view_stored_into_a_parameter_slot() {
+    let fresh = r#"module spec.cpr.outslotfresh;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func fill(borrow slot: str): void { slot = mk().v; }
+
+func main(): i32 {
+    let out: str = "aa";
+    fill(borrow out);
+    return i32(len(out)) - 2;
+}
+"#;
+    compile_rejects("outslotfresh", fresh, "E10030", 1);
+
+    let twin = r#"module spec.cpr.outslotpartwin;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(borrow slot: str, p: Box): i32 {
+    slot = p.v;
+    return i32(slot[0]);
+}
+
+func main(): i32 {
+    let out: str = "aa";
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    return fill(borrow out, b) - 120;
+}
+"#;
+    let output = run_memory("outslotpartwin", twin);
+    assert_no_asan("outslotpartwin", &output);
+    assert_exit("outslotpartwin", &output, 0);
+
+    let wide = r#"module spec.cpr.outslotpartwide;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(borrow slot: str?, p: Box): void { slot = p.v; }
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("xyz"), w: stringOf("ww") };
+    fill(borrow out, b);
+    if (out == null) {
+        return 9;
+    }
+    return i32(out[0]) - 120;
+}
+"#;
+    let output = run_memory("outslotpartwide", wide);
+    assert_no_asan("outslotpartwide", &output);
+    assert_exit("outslotpartwide", &output, 0);
+
+    let local = r#"module spec.cpr.outslotlocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(borrow slot: str): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    slot = b.v;
+}
+
+func main(): i32 {
+    let out: str = "aa";
+    fill(borrow out);
+    return i32(len(out)) - 2;
+}
+"#;
+    compile_rejects("outslotlocal", local, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// fieldstore: an array of views stored into a global field or a parameter slot.
+//
+// The whole-array spellings are judged per element. A global's field lives for
+// the whole program, so a fresh element — a view of a call result — escapes
+// its origin and reports `E10033`; the writable parameter slot is the caller's
+// frame, where the same fresh element dies first and reports `E10030`.
+// ---------------------------------------------------------------------------
+
+/// A fresh view element stored into a global struct field reports `E10033`
+/// once, and the same element stored into a parameter slot reports `E10030`
+/// once.
+///
+/// `g.names = [mk().v];` stores a view-array literal whose element derives
+/// from a call result; the result's storage dies at the end of the store
+/// statement while the global field reads the element for the rest of the
+/// program. `slot = [mk().v];` stores the same element through a writable
+/// parameter slot, whose storage is the caller's frame: the backing still dies
+/// before the slot's last read. Both stores are rejected with one error and
+/// emit no translation unit.
+#[test]
+fn should_reject_a_fresh_view_element_stored_into_a_global_field_or_parameter_slot() {
+    let global = r#"module spec.cpr.fieldstoreglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func store(): void { g.names = [mk().v]; }
+
+func main(): i32 {
+    store();
+    return i32(len(g.names[0])) - 2;
+}
+"#;
+    compile_rejects("fieldstoreglobal", global, "E10033", 1);
+
+    let slot = r#"module spec.cpr.fieldstoreout;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func fill(borrow slot: str[1]): void { slot = [mk().v]; }
+
+func main(): i32 {
+    let out: str[1] = ["AA"];
+    fill(borrow out);
+    return i32(len(out[0])) - 2;
+}
+"#;
+    compile_rejects("fieldstoreout", slot, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// localelement: a local view-array element accepts a backing from its own
+// frame.
+//
+// A local `str[N]` dies with the frame that owns its backing, so an element
+// store is judged against the backing's scope rather than rejected outright:
+// a view of a local or of a parameter covers the array's own scope and is
+// accepted. A global or a field outlives the frame, so its element store keeps
+// reporting `E10033`.
+// ---------------------------------------------------------------------------
+
+/// A local-backed view stored into a local view-array element is accepted and
+/// memory-clean, while the global and field spellings keep their escape
+/// report.
+///
+/// `xs[1] = c ? b.v : a;` stores the widened conditional — the local `b`'s
+/// member on one path, the `str` parameter `a` on the other — into a local
+/// `str[2]`. Both backings outlive the array's own last read, so the store is
+/// accepted, exits 0, and is clean. The named spelling `xs[1] = v;` takes the
+/// same judgment. The same conditional stored into a global array element or a
+/// global struct field element still reports one `E10033`, because the global
+/// outlives the local backing.
+#[test]
+fn should_accept_a_local_backed_view_stored_into_a_local_array_element() {
+    let conditional = r#"module spec.cpr.localelemcond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func pick(c: bool, a: str): i32 {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = c ? b.v : a;
+    return i32(xs[1][0]);
+}
+
+func main(): i32 {
+    return pick(true, "ppp") + pick(false, "qqqq") - 233;
+}
+"#;
+    let output = run_memory("localelemcond", conditional);
+    assert_no_asan("localelemcond", &output);
+    assert_exit("localelemcond", &output, 0);
+
+    let named = r#"module spec.cpr.localelemnamed;
+
+func use(v: str): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    xs[1] = v;
+    return i32(xs[1][0]);
+}
+
+func main(): i32 {
+    return use("xyz") - 120;
+}
+"#;
+    let output = run_memory("localelemnamed", named);
+    assert_no_asan("localelemnamed", &output);
+    assert_exit("localelemnamed", &output, 0);
+
+    let global = r#"module spec.cpr.localelemglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str[2] = ["AA", "BB"];
+
+func pick(c: bool, a: str): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    names[1] = c ? b.v : a;
+}
+
+func main(): i32 {
+    pick(true, "ppp");
+    return 0;
+}
+"#;
+    compile_rejects("localelemglobal", global, "E10033", 1);
+
+    let field = r#"module spec.cpr.localelemfield;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func pick(c: bool, a: str): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    g.names[1] = c ? b.v : a;
+}
+
+func main(): i32 {
+    pick(true, "ppp");
+    return 0;
+}
+"#;
+    compile_rejects("localelemfield", field, "E10033", 1);
+}
+
+// ---------------------------------------------------------------------------
+// widenedstore: the handle-to-view widening on a local backing is judged too.
+//
+// `names = b.v;` and `slot = b.v;` store a `String` member into a `str?`
+// destination, so the stored value is a view derived from the local `b`. The
+// widening must not hide the escape: the global spelling reports `E10033` and
+// the parameter-slot spelling reports `E10030`, each exactly once.
+// ---------------------------------------------------------------------------
+
+/// A `String` member widened into a `str?` global or parameter slot is judged
+/// by its local backing, one report per site.
+///
+/// `names = b.v;` widens the local `b`'s member into the global `str?`
+/// `names`, so the stored view escapes with the local frame and reports one
+/// `E10033`. `slot = b.v;` writes the same widened view through a nullable
+/// parameter slot: the caller's frame outlives the callee, but the local `b`
+/// still dies first, so the store reports one `E10030`. Neither program emits
+/// a translation unit.
+#[test]
+fn should_reject_a_local_backed_widened_view_stored_into_a_global_or_parameter_slot() {
+    let global = r#"module spec.cpr.wideglobal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let names: str? = null;
+
+func store(): void {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("cd") };
+    names = b.v;
+}
+
+func main(): i32 {
+    store();
+    if (names == null) {
+        return 9;
+    }
+    return i32(names[0]) - 97;
+}
+"#;
+    compile_rejects("wideglobal", global, "E10033", 1);
+
+    let slot = r#"module spec.cpr.wideout;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(borrow slot: str?): void {
+    let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+    slot = b.v;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(borrow out);
+    if (out == null) {
+        return 9;
+    }
+    return i32(out[0]) - 120;
+}
+"#;
+    compile_rejects("wideout", slot, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// loopstore: a backing from a loop iteration or a nested block does not cover
+// the array's scope.
+//
+// The local element store is accepted only when the backing's scope covers the
+// array's. A backing created inside a loop iteration dies at the end of that
+// iteration, and a backing declared in a nested block dies at the block's end;
+// a later read of the element reaches freed storage, so each store reports
+// `E10030` once.
+// ---------------------------------------------------------------------------
+
+/// A loop-iteration or nested-block backing stored into a local view-array
+/// element reports the loan-outlives error once.
+///
+/// `while (i < 3) { xs[1] = mk().v; }` stores a view of the iteration's call
+/// result; the result dies when the iteration's statement ends, so a later
+/// read of `xs[1]` reaches freed storage. The nested-block spelling stores a
+/// view of a local declared inside the block, which dies at the block's end
+/// while the array reads it afterwards. Each store reports exactly one
+/// `E10030` and emits no translation unit.
+#[test]
+fn should_reject_a_loop_or_nested_scope_backing_stored_into_a_local_array_element() {
+    let loop_store = r#"module spec.cpr.loopstoreelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    let i: i32 = 0;
+    while (i < 3) {
+        xs[1] = mk().v;
+        i = i + 1;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 {
+    return run() - 97;
+}
+"#;
+    compile_rejects("loopstoreelem", loop_store, "E10030", 1);
+
+    let nested_store = r#"module spec.cpr.nestedstoreelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): i32 {
+    let xs: str[2] = ["AA", "BB"];
+    {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        xs[1] = b.v;
+    }
+    return i32(xs[1][0]);
+}
+
+func main(): i32 {
+    return run() - 120;
+}
+"#;
+    compile_rejects("nestedstoreelem", nested_store, "E10030", 1);
+}
+
+// ---------------------------------------------------------------------------
+// staticelement: the accepted element stores reach strict C.
+//
+// `g.names = [s];` stores a static-backed element into a global struct field:
+// the element's owner is module-level storage, so the store is accepted and
+// must lower element by element (a compound initializer would be ill-formed C
+// for a view element). The parameter-backed out-slot twin `slot = [p];` writes
+// a parameter view through the caller's slot and is accepted the same way.
+// ---------------------------------------------------------------------------
+
+/// A static-backed element stored into a global field and a parameter-backed
+/// element stored through an out-slot both build strictly and run clean.
+///
+/// `g.names = [s];` stores the module-level static view `s`; the element-wise
+/// destination store must pass the strict warning set and the stored view must
+/// stay readable, so the run exits 0 with no memory report. The twin
+/// `slot = [p];` writes the parameter `p`'s view through the caller's
+/// `str[1]` slot, and the caller reads the stored byte back.
+#[test]
+fn should_accept_a_static_or_parameter_backed_element_store_into_a_global_field_or_out_slot() {
+    let global = r#"module spec.cpr.staticfield;
+
+let s: str = "st";
+
+struct Holder { names: str[1]; }
+
+let g: Holder = Holder { names: ["AA"] };
+
+func store(): void { g.names = [s]; }
+
+func main(): i32 {
+    store();
+    return i32(g.names[0][0]) - 115;
+}
+"#;
+    let output = run_memory("staticfield", global);
+    assert_no_asan("staticfield", &output);
+    assert_exit("staticfield", &output, 0);
+
+    let slot = r#"module spec.cpr.staticout;
+
+func fill(p: str, borrow slot: str[1]): void { slot = [p]; }
+
+func main(): i32 {
+    let out: str[1] = ["AA"];
+    fill("xyz", borrow out);
+    return i32(out[0][0]) - 120;
+}
+"#;
+    let output = run_memory("staticout", slot);
+    assert_no_asan("staticout", &output);
+    assert_exit("staticout", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// viewcapture: a lambda capture over a view array builds through its
+// conversion.
+//
+// Capturing a `str[1]` copies the array of views into the closure environment.
+// The environment field must be spelled with the same C shape the local
+// binding uses — an array of view structs — not a bare pointer, so the program
+// builds under the strict warning set and the captured element stays readable.
+// ---------------------------------------------------------------------------
+
+/// A lambda capturing a `str[1]` builds strictly and reads its element.
+///
+/// The inline closure `[names] () => i32(names[0][0])` copies the local view
+/// array into its environment; the environment field must carry the array's
+/// own C shape, so the emitted translation unit passes the strict warning set
+/// and the run exits 0 with no memory report.
+#[test]
+fn should_build_a_lambda_capture_over_a_view_array() {
+    let source = r#"module spec.cpr.viewcapture;
+
+func main(): i32 {
+    let names: str[1] = ["abc"];
+    return ([names] () => i32(names[0][0]))() - 97;
+}
+"#;
+    let output = run_memory("viewcapture", source);
+    assert_no_asan("viewcapture", &output);
+    assert_exit("viewcapture", &output, 0);
+}

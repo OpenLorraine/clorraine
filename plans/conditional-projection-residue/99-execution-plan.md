@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-15 10:05
-> **Progress**: 12/39 tasks (31%)
+> **Last Updated**: 2026-10-15 09:52
+> **Progress**: 14/39 tasks (36%)
 > **CodeOps Artifact Schema**: 1
 
 ## Overview
@@ -117,7 +117,7 @@ control (ST-10).
 
 ## Phase 3: Escaping stores
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `dd2ca01` (the phase's fix-tree base; recorded 2026-10-15)
 > **Lenses**: correctness + semantics + memory-safety + emission-integrity
 > **Reasoning**: high — the escape rule is frozen; the over-rejection also changes acceptance
 > and the store/capture shapes are emission-critical
@@ -128,8 +128,8 @@ control (ST-10).
 **Objective**: Pin the per-destination store judgment (globals/fields vs out-slots), the store and
 capture spellings, and the scoped local element acceptance.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (globalstore, outslotstore, fieldstore, localelement, widenedstore, loopstore, staticelement, viewcapture)
-- [ ] 3.1.2 Run the suite and record the red phase
+- [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (globalstore, outslotstore, fieldstore, localelement, widenedstore, loopstore, staticelement, viewcapture) ✅ (completed: 2026-10-15 09:52; eight tests appended (+572 lines, additions only); two design-text inaccuracies corrected from measurement — the parameter-backed global store is accepted at the head (a red, not a control) and the non-nullable `borrow slot: str` out-slot spelling copies by value so no use-after-free reproduces there)
+- [x] 3.1.2 Run the suite and record the red phase ✅ (completed: 2026-10-15 09:52; plain 36 passed / 8 failed and ASan 36 passed / 8 failed — exactly the eight new tests; the reds: the accepted global stores, the accepted out-slot fresh/local stores, the accepted widened stores, the accepted loop/nested-scope element stores, the field-store strict-build failure, the false E10033 rejections of the local element spellings, the static field's strict-build failure, and the capture's build failure; parent-verified)
 
 ### Step 3.2: Implementation
 

@@ -16,9 +16,13 @@ not escape.
 
 ### 1. The escaping store judgment (`DEF-265`, `DEF-276`, AR-5, AR-20)
 
-`names = mk().v;` (a global `str[1]` and a single `str`),
-`fill(borrow slot: str) { slot = mk().v; }`, and `slot = c ? b.v : a;` (the widened conditional
-spelling) are accepted and the stored view outlives the backing — use-after-free at base and head.
+`names = mk().v;` (a global `str[1]` and a single `str`) and the nullable out-slot spelling
+`fill(borrow slot: str?) { slot = mk().v; }` are accepted and the stored view outlives the backing —
+use-after-free at base and head. The non-nullable `borrow slot: str` spelling passes the view
+parameter by value, so the store lands on the callee's copy and the temporary's release is deferred
+to the function cleanup: no use-after-free reproduces there, but the required rejection is the same
+(`E10030`), so the judgment covers both spellings. The widened conditional spelling
+`slot = c ? b.v : a;` is accepted and escapes the same way at base and head.
 
 Judge the stored value's provenance against the frame the write escapes, per destination kind:
 
