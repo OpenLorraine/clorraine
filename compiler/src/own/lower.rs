@@ -286,14 +286,61 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let mut lowered = Vec::with_capacity(fields.len());
                 for field in fields {
                     let value = self.lower_value(&field.value);
-                    // A field that projects out of a fresh ownerless root
-                    // binds that root even inside a conditionally evaluated
-                    // operand: the field's own store moves the selected member
-                    // and the root releases only its un-moved fields. A
-                    // place-derived field stays in place, so a skipped arm's
-                    // value is not stranded in an unreleased temporary.
-                    let value = if deferred && !self.arm_has_ownerless_projection(&value) {
+                    // A field that projects a conditional moves the chosen
+                    // member out of each arm's root, so the field owns the
+                    // value and the chosen root releases only its un-moved
+                    // fields. An eagerly evaluated field consumes through
+                    // branch statements; a conditionally evaluated operand
+                    // defers the fill to the guarded expression and adopts the
+                    // carried value, because the field's own cleanup is the
+                    // sole release.
+                    let value = if self.consume_needs_conditional_arms(&value)
+                        && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
+                        && !is_view(&value.ty)
+                        && !value.ty.is_unknown()
+                        && !value.ty.is_fixed_array()
+                    {
+                        if deferred {
+                            self.materialize_guarded_conditional_projection(value, true)
+                        } else {
+                            self.consume_conditional_projection(value)
+                        }
+                    } else if deferred
+                        && matches!(value.kind, ValueKind::Conditional { .. })
+                        && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
+                        && !is_view(&value.ty)
+                        && !value.ty.is_unknown()
+                        && !value.ty.is_fixed_array()
+                        && self.conditional_projection_root_owns_residual(&value)
+                    {
+                        // A deferred bare conditional of projections fills one
+                        // carrier on the evaluated path: the chosen member
+                        // moves into the carrier and the fresh arm's root
+                        // releases only its un-moved fields, while the literal
+                        // store copies the carrier the field now owns.
+                        self.materialize_guarded_conditional_projection(value, true)
+                    } else if deferred && !self.arm_has_ownerless_projection(&value) {
+                        // A field that projects out of a fresh ownerless root
+                        // binds that root even inside a conditionally evaluated
+                        // operand: the field's own store moves the selected
+                        // member and the root releases only its un-moved
+                        // fields. A place-derived field stays in place, so a
+                        // skipped arm's value is not stranded in an unreleased
+                        // temporary.
                         value
+                    } else if !deferred
+                        && matches!(value.kind, ValueKind::Conditional { .. })
+                        && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
+                        && !is_view(&value.ty)
+                        && !value.ty.is_unknown()
+                        && !value.ty.is_fixed_array()
+                        && self.conditional_projection_root_owns_residual(&value)
+                    {
+                        // A conditional of projections binds each fresh arm's
+                        // root before the literal is built, so the root's
+                        // un-moved fields release while the statement-form
+                        // store still moves the chosen member into the field.
+                        self.hoist_ownerless_conditional_arms(value)
                     } else {
                         self.consume_place(value)
                     };
@@ -315,8 +362,39 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .iter()
                     .map(|element| {
                         let value = self.lower_value(element);
-                        if self.defer_move_outs > 0 || self.view_array_literal_depth > 0 {
+                        if self.view_array_literal_depth > 0 {
                             value
+                        } else if self.defer_move_outs > 0
+                            && matches!(value.kind, ValueKind::Conditional { .. })
+                            && (!self.sema.table.duplicable(&value.ty)
+                                || self.maybe_owns(&value.ty))
+                            && !is_view(&value.ty)
+                            && !value.ty.is_unknown()
+                            && !value.ty.is_fixed_array()
+                            && self.conditional_projection_root_owns_residual(&value)
+                        {
+                            // A deferred element's bare conditional fills one
+                            // carrier on the evaluated path: the chosen member
+                            // moves into the carrier and the fresh arm's root
+                            // releases only its un-moved fields, while the
+                            // element store copies the carrier the array owns.
+                            self.materialize_guarded_conditional_projection(value, true)
+                        } else if self.defer_move_outs > 0 {
+                            value
+                        } else if matches!(value.kind, ValueKind::Conditional { .. })
+                            && (!self.sema.table.duplicable(&value.ty)
+                                || self.maybe_owns(&value.ty))
+                            && !is_view(&value.ty)
+                            && !value.ty.is_unknown()
+                            && !value.ty.is_fixed_array()
+                            && self.conditional_projection_root_owns_residual(&value)
+                        {
+                            // A conditional of projections binds each fresh
+                            // arm's root before the literal is built, so the
+                            // root's un-moved fields release while the element
+                            // store still moves the chosen member into the
+                            // array.
+                            self.hoist_ownerless_conditional_arms(value)
                         } else {
                             self.consume_place(value)
                         }
@@ -1586,18 +1664,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(ty, ValueKind::Temp(carrier))
     }
 
-    /// Lowers a guarded `take` projection of a conditional into a deferred
-    /// carrier.
+    /// Lowers a guarded projection of a conditional into a deferred carrier.
     ///
     /// The operand runs only on the path its guard reaches, so the per-arm
     /// move-out cannot be eager branch statements. Each arm binds its
     /// ownerless root through the deferred fill, the projection chain is
     /// rebuilt on the arm, and the chosen member moves into one carrier the
-    /// guard emitter fills where the operand is evaluated. The ordinary
-    /// post-call move-out empties the carrier, and a fresh arm's root releases
-    /// only its un-moved fields. A place-rooted arm stays a place the carrier
-    /// copies and empties.
-    fn materialize_guarded_take_conditional_projection(&mut self, value: Value) -> Value {
+    /// guard emitter fills where the operand is evaluated. A fresh arm's root
+    /// releases only its un-moved fields, and a place-rooted arm stays a place
+    /// the carrier copies and empties.
+    ///
+    /// A `take` argument passes `adopting: false`: the call's post-call
+    /// move-out empties the carrier. A struct-literal field passes
+    /// `adopting: true`: the field copies the carried value and its own
+    /// cleanup is the sole release, so the carrier must not be released.
+    fn materialize_guarded_conditional_projection(
+        &mut self,
+        value: Value,
+        adopting: bool,
+    ) -> Value {
         let result_ty = value.ty.clone();
         let mut steps: Vec<ConditionalProjectionStep> = Vec::new();
         let mut cursor = value;
@@ -1625,8 +1710,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 other => return Value::new(cursor.ty, other),
             }
         };
-        let then_value = apply_conditional_steps(self.own_ownerless_arm(*then_value), &steps);
-        let else_value = apply_conditional_steps(self.own_ownerless_arm(*else_value), &steps);
+        let then_value = apply_conditional_steps_deep(self.own_ownerless_arm(*then_value), &steps);
+        let else_value = apply_conditional_steps_deep(self.own_ownerless_arm(*else_value), &steps);
         let carrier = self.new_temp(result_ty.clone());
         let conditional = Value::new(
             result_ty.clone(),
@@ -1642,7 +1727,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp: carrier,
                 value: Box::new(conditional),
                 move_outs: Vec::new(),
-                adopting: false,
+                adopting,
             },
         )
     }
@@ -2838,6 +2923,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 return value;
             }
+            // A literal's owning field sources were left in place while the
+            // conditionally evaluated arm was lowered, so binding the literal
+            // fills it only after moving those sources on the evaluated path:
+            // the literal holds the only reference and its release empties
+            // them exactly once.
+            ValueKind::StructLit { .. } => {
+                let value = self.consume_literal_sources(value);
+                return self.materialize_guard_operand(value);
+            }
             _ => {}
         }
         self.materialize_guard_operand(value)
@@ -3166,6 +3260,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             _ => {}
         }
+        // A literal's owning field sources were left in place while the
+        // conditionally evaluated arm was lowered (a skipped arm must not move
+        // them), so binding the literal here moves them on its own path: the
+        // literal holds the only reference and its release empties the sources
+        // exactly once. A brace-list copy would leave the source and the
+        // literal both owning the same storage.
+        let value = if matches!(value.kind, ValueKind::StructLit { .. }) {
+            self.consume_literal_sources(value)
+        } else {
+            value
+        };
         let ty = self.materialized_ty(&value);
         let filled = self.materialize_value(value);
         if let ValueKind::Temp(id) = filled.kind {
@@ -3173,6 +3278,45 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.register_pending_release(id, &ty);
         }
         filled
+    }
+
+    /// Moves a literal's owning field sources into the literal itself.
+    ///
+    /// The field sources of a conditionally evaluated literal stay in place
+    /// while its arm is lowered, because a skipped arm must not move them.
+    /// Binding the literal as an owner must therefore move them first: each
+    /// owned source travels through an adopting temporary the field store
+    /// empties, so the literal holds the only reference to the moved value.
+    /// An aggregate field is traversed first, so a place reached inside a
+    /// nested literal or an array element is moved at its own depth.
+    fn consume_literal_sources(&mut self, value: Value) -> Value {
+        match value.kind {
+            ValueKind::StructLit { name, fields } => {
+                let fields = fields
+                    .into_iter()
+                    .map(|(name, field)| (name, self.consume_aggregate_source(field)))
+                    .collect();
+                Value::new(value.ty, ValueKind::StructLit { name, fields })
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                let elements = elements
+                    .into_iter()
+                    .map(|element| self.consume_aggregate_source(element))
+                    .collect();
+                Value::new(value.ty, ValueKind::ArrayLit { elements, fill })
+            }
+            other => Value::new(value.ty, other),
+        }
+    }
+
+    /// Moves one aggregate field's or element's own place sources.
+    ///
+    /// A nested aggregate recurses so its own leaves move; every other value
+    /// moves through [`Self::consume_place`], which empties a named place and
+    /// passes through a value that owns nothing or names no storage.
+    fn consume_aggregate_source(&mut self, value: Value) -> Value {
+        let value = self.consume_literal_sources(value);
+        self.consume_place(value)
     }
 
     /// True when a value may hand back storage one of its arguments owns.
@@ -3231,8 +3375,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // value twice. An eagerly evaluated argument fills the carrier
             // through branch statements; a guarded one defers the fill to the
             // path that evaluates it, keeping the short circuit.
-            if !self.sema.table.duplicable(&value.ty)
-                && !mentions_type_param(&value.ty)
+            if (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
                 && !is_view(&value.ty)
                 && !value.ty.is_unknown()
                 && self.consume_needs_conditional_arms(&value)
@@ -3240,9 +3383,24 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 return if self.defer_move_outs == 0 {
                     self.materialize_take_conditional_projection(value)
                 } else {
-                    self.materialize_guarded_take_conditional_projection(value)
+                    self.materialize_guarded_conditional_projection(value, false)
                 };
             }
+            // A conditional of projections whose arm roots own residual
+            // storage binds each fresh root, so the chosen member transfers to
+            // the callee while the root releases only its un-moved fields.
+            let value = if self.defer_move_outs == 0
+                && matches!(value.kind, ValueKind::Conditional { .. })
+                && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
+                && !is_view(&value.ty)
+                && !value.ty.is_unknown()
+                && !value.ty.is_fixed_array()
+                && self.conditional_projection_root_owns_residual(&value)
+            {
+                self.hoist_ownerless_conditional_arms(value)
+            } else {
+                value
+            };
             // The base expression evaluates before the index (`m()[i]` runs
             // `m()` first and it may change the index), so an eager base is
             // filled before the index is pinned. A guarded operand keeps its
@@ -3497,6 +3655,36 @@ fn apply_conditional_steps(mut value: Value, steps: &[ConditionalProjectionStep]
         };
     }
     value
+}
+
+/// Rebuilds a value by applying projection steps to every conditional level.
+///
+/// A nested conditional arm carries the same chain as its siblings, and the
+/// steps must reach each inner leaf: wrapping the whole inner conditional in
+/// one projection yields a chain the emitter can only copy, so the chosen
+/// inner arm would keep its member and release it again. Distributing the
+/// steps into each inner arm keeps every level's projection a movable leaf,
+/// so each arm empties the member it moves out exactly once.
+fn apply_conditional_steps_deep(value: Value, steps: &[ConditionalProjectionStep]) -> Value {
+    match value.kind {
+        ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } => {
+            let then_value = apply_conditional_steps_deep(*then_value, steps);
+            let else_value = apply_conditional_steps_deep(*else_value, steps);
+            Value::new(
+                value.ty,
+                ValueKind::Conditional {
+                    condition,
+                    then_value: Box::new(then_value),
+                    else_value: Box::new(else_value),
+                },
+            )
+        }
+        other => apply_conditional_steps(Value::new(value.ty, other), steps),
+    }
 }
 
 /// True when an expression contains an update of a place.

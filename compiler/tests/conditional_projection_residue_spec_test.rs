@@ -994,3 +994,853 @@ func main(): i32 {
 "#;
     compile_rejects("ownertwinsdirect", direct, "E10031", 1);
 }
+
+// ---------------------------------------------------------------------------
+// statereuse: releasing an adopted array field on every guarded execution.
+//
+// A callable receiver's `Array<String>` field adopts a projection of a fresh
+// holder, and the array's drop has no expression form, so a release of the
+// previous carrier value is hoisted before the guarded construct. A statement
+// that runs again — a loop iteration, or a skipped second evaluation — must
+// not free the adopted storage the receiver's own release already freed. The
+// `?:` arm spelling keeps the same carrier and must stay clean too.
+// ---------------------------------------------------------------------------
+
+/// A guarded callable receiver's adopted array field releases exactly once per
+/// statement execution.
+///
+/// `H { call: addOne, s: mkHolder().data }.call(5)` inside the `g &&` guard
+/// adopts the fresh holder's `data` field, and the receiver's own release is
+/// the sole owner of that array. The loop executes the statement three times,
+/// so a release of the previous carrier value hoisted before the guard would
+/// free the adopted storage before the next fill; each call takes the guarded
+/// path and the accumulated returns cancel the trailing constant. The `?:` arm
+/// spelling re-executes the same carrier and must stay clean as well.
+#[test]
+fn should_release_a_guarded_array_field_on_every_statement_execution() {
+    let guarded = r#"module spec.cpr.statereuse;
+
+import { String, stringOf } from std.text;
+import { Array, arrayNew } from std.mem;
+
+struct Holder { data: Array<String>; tag: String; }
+struct H { call: func(i32): i32; s: Array<String>; }
+
+func mkHolder(): Holder {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    return Holder { data: a, tag: stringOf("tt") };
+}
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(g: bool, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k) {
+        if (g && H { call: addOne, s: mkHolder().data }.call(5) > 0) {
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return use(true, 3) - 3;
+}
+"#;
+    let output = run_memory("statereuse", guarded);
+    assert_no_asan("statereuse", &output);
+    assert_exit("statereuse", &output, 0);
+
+    let arm = r#"module spec.cpr.armstatreuse;
+
+import { String, stringOf } from std.text;
+import { Array, arrayNew } from std.mem;
+
+struct Holder { data: Array<String>; tag: String; }
+struct H { call: func(i32): i32; s: Array<String>; }
+
+func mkHolder(): Holder {
+    let a: Array<String> = arrayNew<String>();
+    a.push(stringOf("ab"));
+    return Holder { data: a, tag: stringOf("tt") };
+}
+
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(c: bool, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k) {
+        let r: i32 = c ? H { call: addOne, s: mkHolder().data }.call(5) : 0;
+        n = n + (r - 6);
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return use(true, 3);
+}
+"#;
+    let output = run_memory("armstatreuse", arm);
+    assert_no_asan("armstatreuse", &output);
+    assert_exit("armstatreuse", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// generictake: the generic take projection moves its member per instance.
+//
+// The take argument `(c ? a : mkPair<T>(x, y)).v` is judged per instantiation:
+// an owning `T` moves the chosen member into the callee (the source is
+// emptied), while a duplicable `T` copies it. The eager and the guarded
+// spellings share one carrier, and the loop re-executes both per iteration.
+// ---------------------------------------------------------------------------
+
+/// A generic take projection moves its chosen member per instance.
+///
+/// `hold<T>((c ? a : mkPair<T>(x, y)).v)` transfers the selected member to the
+/// callee: the `String` instances move the source out of the chosen root and
+/// the `i32` instances copy, so every run is leak-free and neither arm's root
+/// frees the transferred value. Both the eager and the guarded spelling run in
+/// a loop, and the accumulated returns cancel the trailing constant.
+#[test]
+fn should_release_a_generic_take_projection_per_instance() {
+    let source = r#"module spec.cpr.generictake;
+
+import { String, stringOf } from std.text;
+
+struct Pair<T> { v: T; w: T; }
+
+func mkPair<T>(take x: T, take y: T): Pair<T> { return Pair<T> { v: x, w: y }; }
+func hold<T>(take s: T): i32 { return 1; }
+
+func eager<T>(c: bool, take a: Pair<T>, take x: T, take y: T): i32 {
+    return hold<T>((c ? a : mkPair<T>(x, y)).v);
+}
+
+func guarded<T>(c: bool, take a: Pair<T>, take x: T, take y: T, g: bool): i32 {
+    if (g && hold<T>((c ? a : mkPair<T>(x, y)).v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let p: Pair<String> = Pair<String> { v: stringOf("ab"), w: stringOf("cd") };
+        n = n + eager<String>(true, p, stringOf("ij"), stringOf("kl"));
+        let q: Pair<String> = Pair<String> { v: stringOf("ef"), w: stringOf("gh") };
+        n = n + eager<String>(false, q, stringOf("mn"), stringOf("op"));
+        let r: Pair<String> = Pair<String> { v: stringOf("ab"), w: stringOf("cd") };
+        n = n + guarded<String>(true, r, stringOf("ij"), stringOf("kl"), true);
+        let s: Pair<String> = Pair<String> { v: stringOf("ef"), w: stringOf("gh") };
+        n = n + guarded<String>(false, s, stringOf("mn"), stringOf("op"), true);
+        let a: Pair<i32> = Pair<i32> { v: 1, w: 2 };
+        n = n + eager<i32>(true, a, 5, 6);
+        let b: Pair<i32> = Pair<i32> { v: 3, w: 4 };
+        n = n + eager<i32>(false, b, 7, 8);
+        let c2: Pair<i32> = Pair<i32> { v: 1, w: 2 };
+        n = n + guarded<i32>(true, c2, 5, 6, true);
+        let d2: Pair<i32> = Pair<i32> { v: 3, w: 4 };
+        n = n + guarded<i32>(false, d2, 7, 8, true);
+        i = i + 1;
+    }
+    return n - 24;
+}
+"#;
+    let output = run_memory("generictake", source);
+    assert_no_asan("generictake", &output);
+    assert_exit("generictake", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// nestedtake: a nested conditional take moves at every level.
+//
+// A conditional arm that is itself a conditional carries the same projection,
+// so each level must move its own chosen member. When only the outer level
+// moved, the inner arm's root kept and released the transferred storage, a
+// double free. The then-nested, else-nested, and both-nested spellings all run
+// every selection the four combinations name.
+// ---------------------------------------------------------------------------
+
+/// A nested conditional take empties the chosen member at every level.
+///
+/// `consume((c ? (d ? a : mkBox()) : b).v)` and its two mirror spellings move
+/// the member the selected leaf names: the projection is rebuilt over each
+/// nested arm, so the chosen root releases only its un-moved fields. Every
+/// selection returns 1 and the four calls cancel the trailing constant.
+#[test]
+fn should_release_a_nested_conditional_take_at_every_level() {
+    let then_nested = r#"module spec.cpr.nestedthen;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func use(c: bool, d: bool, take a: Box, take b: Box, g: bool): i32 {
+    if (g && consume((c ? (d ? a : mkBox()) : b).v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(true, true, a, b, true);
+    let a2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(true, false, a2, b2, true);
+    let a3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(false, true, a3, b3, true);
+    let a4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(false, false, a4, b4, true);
+    return n - 4;
+}
+"#;
+    let output = run_memory("nestedthen", then_nested);
+    assert_no_asan("nestedthen", &output);
+    assert_exit("nestedthen", &output, 0);
+
+    let else_nested = r#"module spec.cpr.nestedelse;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func use(c: bool, d: bool, take a: Box, take b: Box, g: bool): i32 {
+    if (g && consume((c ? b : (d ? a : mkBox())).v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(true, true, a, b, true);
+    let a2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(true, false, a2, b2, true);
+    let a3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(false, true, a3, b3, true);
+    let a4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(false, false, a4, b4, true);
+    return n - 4;
+}
+"#;
+    let output = run_memory("nestedelse", else_nested);
+    assert_no_asan("nestedelse", &output);
+    assert_exit("nestedelse", &output, 0);
+
+    let both_nested = r#"module spec.cpr.nestedboth;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func mkBox2(): Box { return Box { v: stringOf("ef"), w: stringOf("gh") }; }
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func use(c: bool, d: bool, take a: Box, take b: Box, g: bool): i32 {
+    if (g && consume((c ? (d ? mkBox() : mkBox2()) : b).v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(true, true, a, b, true);
+    let a2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(true, false, a2, b2, true);
+    let a3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(false, true, a3, b3, true);
+    let a4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    n = n + use(false, false, a4, b4, true);
+    return n - 4;
+}
+"#;
+    let output = run_memory("nestedboth", both_nested);
+    assert_no_asan("nestedboth", &output);
+    assert_exit("nestedboth", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// genericreturn: the generic return projection moves its member per instance.
+//
+// A returned projection `(c ? a : mkPair<T>(x, y)).v` moves the selected
+// member into the return slot: the place arm's field empties, the fresh root
+// releases only its un-moved field, and a duplicable instance copies. The loop
+// re-executes both arms for `String` and `i32`.
+// ---------------------------------------------------------------------------
+
+/// A generic return projection moves its chosen member per instance.
+///
+/// `return (c ? a : mkPair<T>(x, y)).v` gives the caller exactly one owner:
+/// the `String` instances move the selected member out of the chosen root and
+/// the root's sibling releases, the `i32` instances copy, and the accumulated
+/// lengths and values cancel the trailing constant.
+#[test]
+fn should_release_a_generic_return_projection_per_instance() {
+    let source = r#"module spec.cpr.genericreturn;
+
+import { String, stringOf } from std.text;
+
+struct Pair<T> { v: T; w: T; }
+
+func mkPair<T>(take x: T, take y: T): Pair<T> { return Pair<T> { v: x, w: y }; }
+
+func pick<T>(c: bool, take a: Pair<T>, take x: T, take y: T): T {
+    return (c ? a : mkPair<T>(x, y)).v;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < 3) {
+        let p: Pair<String> = Pair<String> { v: stringOf("ab"), w: stringOf("cd") };
+        let q: Pair<String> = Pair<String> { v: stringOf("ef"), w: stringOf("gh") };
+        let s: String = pick<String>(true, p, stringOf("ij"), stringOf("kl"));
+        let t: String = pick<String>(false, q, stringOf("mn"), stringOf("op"));
+        let a: Pair<i32> = Pair<i32> { v: 1, w: 2 };
+        let b: Pair<i32> = Pair<i32> { v: 3, w: 4 };
+        let u: i32 = pick<i32>(true, a, 5, 6);
+        let v: i32 = pick<i32>(false, b, 7, 8);
+        n = n + (i32(len(s)) + i32(len(t)) + u + v - 12);
+        i = i + 1;
+    }
+    return n;
+}
+"#;
+    let output = run_memory("genericreturn", source);
+    assert_no_asan("genericreturn", &output);
+    assert_exit("genericreturn", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// fieldcond: a conditional projection in an aggregate-literal field.
+//
+// A callable receiver whose field projects a conditional must move the chosen
+// member into the field and empty its source, in the guarded and the eager
+// spelling alike; a plain literal field whose value is a conditional of
+// projections must bind each fresh arm's root so its un-moved fields release.
+// ---------------------------------------------------------------------------
+
+/// A callable receiver's conditional projection field moves the chosen member.
+///
+/// `H { call: addOne, s: (c ? a : mkBox()).v }.call(5)` fills the field from
+/// the chosen arm and empties that arm's member, so the receiver's own release
+/// is the sole owner. The guarded spelling defers the fill to the guarded
+/// expression, the eager spelling consumes through branch statements, and every
+/// selection returns 6.
+#[test]
+fn should_release_a_conditional_projection_field_of_a_callable_receiver() {
+    let guarded = r#"module spec.cpr.fieldcondguarded;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct H { call: func(i32): i32; s: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(c: bool, take a: Box, g: bool): i32 {
+    if (g && H { call: addOne, s: (c ? a : mkBox()).v }.call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    return use(true, a, true) + use(false, b, true) - 2;
+}
+"#;
+    let output = run_memory("fieldcondguarded", guarded);
+    assert_no_asan("fieldcondguarded", &output);
+    assert_exit("fieldcondguarded", &output, 0);
+
+    let eager = r#"module spec.cpr.fieldcondeager;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct H { call: func(i32): i32; s: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(c: bool, take a: Box): i32 {
+    let r: i32 = H { call: addOne, s: (c ? a : mkBox()).v }.call(5);
+    return r;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    return use(true, a) + use(false, b) - 12;
+}
+"#;
+    let output = run_memory("fieldcondeager", eager);
+    assert_no_asan("fieldcondeager", &output);
+    assert_exit("fieldcondeager", &output, 0);
+}
+
+/// A literal field holding a conditional of projections releases each fresh
+/// arm's root.
+///
+/// `Out { v: c ? a.v : mkBox().v, ... }` moves the chosen member into the field
+/// through the statement-form store, and the fresh arm's root releases only its
+/// un-moved field, so the run is leak-free while the selected value is read.
+#[test]
+fn should_release_a_conditional_field_of_a_struct_literal() {
+    let source = r#"module spec.cpr.fieldcondplain;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Out { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool, take a: Box): i32 {
+    let o: Out = Out { v: c ? a.v : mkBox().v, w: stringOf("z") };
+    return i32(len(o.v)) - 2;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    return use(true, a) + use(false, b);
+}
+"#;
+    let output = run_memory("fieldcondplain", source);
+    assert_no_asan("fieldcondplain", &output);
+    assert_exit("fieldcondplain", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// condpositions: a conditional of projections in the remaining consuming
+// positions.
+//
+// An array-literal element, an eager `take` argument, and an owning return all
+// consume the selected member, so each must bind the fresh arm's root and
+// release only its un-moved field. Before the fix each position leaked the
+// root's sibling storage on every fresh-arm selection.
+// ---------------------------------------------------------------------------
+
+/// A conditional projection element, take argument, and return release their
+/// fresh root's residual, in the eager and the deferred position alike.
+///
+/// `[c ? a.v : mkBox().v, ...]` stores the chosen member into the array,
+/// `consume(c ? a.v : mkBox().v)` transfers it to the callee, and
+/// `return c ? a.v : mkBox().v` transfers it to the caller; each position
+/// releases the fresh root's un-moved field once. A guarded receiver field and
+/// a `?:` arm element fill one adopting carrier per arm on their evaluated
+/// path, so the same rule holds where the literal is conditionally evaluated.
+/// Every selection exits 0 and is clean.
+#[test]
+fn should_release_a_conditional_projection_in_the_remaining_consuming_positions() {
+    let element = r#"module spec.cpr.elementcond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool, take a: Box): i32 {
+    let arr: String[2] = [c ? a.v : mkBox().v, stringOf("z")];
+    return i32(len(arr[0])) - 2;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    return use(true, a) + use(false, b);
+}
+"#;
+    let output = run_memory("elementcond", element);
+    assert_no_asan("elementcond", &output);
+    assert_exit("elementcond", &output, 0);
+
+    let take = r#"module spec.cpr.takecond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func use(c: bool, take a: Box): i32 {
+    return consume(c ? a.v : mkBox().v);
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    return use(true, a) + use(false, b) - 4;
+}
+"#;
+    let output = run_memory("takecond", take);
+    assert_no_asan("takecond", &output);
+    assert_exit("takecond", &output, 0);
+
+    let returned = r#"module spec.cpr.returncond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(c: bool, take a: Box): String {
+    return c ? a.v : mkBox().v;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    let s: String = use(true, a);
+    let t: String = use(false, b);
+    return i32(len(s)) + i32(len(t)) - 4;
+}
+"#;
+    let output = run_memory("returncond", returned);
+    assert_no_asan("returncond", &output);
+    assert_exit("returncond", &output, 0);
+
+    let deferred_field = r#"module spec.cpr.guardedfieldcond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct H { call: func(i32): i32; s: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(c: bool, take a: Box, g: bool): i32 {
+    if (g && H { call: addOne, s: c ? a.v : mkBox().v }.call(5) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    return use(true, a, true) + use(false, b, true) - 2;
+}
+"#;
+    let output = run_memory("guardedfieldcond", deferred_field);
+    assert_no_asan("guardedfieldcond", &output);
+    assert_exit("guardedfieldcond", &output, 0);
+
+    let deferred_element = r#"module spec.cpr.armelemcond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func lenElem(names: String[2]): i32 { return i32(len(names[0])) - 2; }
+
+func use(c: bool, take a: Box, g: bool): i32 {
+    return g ? lenElem([c ? a.v : mkBox().v, stringOf("z")]) : 0;
+}
+
+func main(): i32 {
+    let a: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    return use(true, a, true) + use(false, b, true);
+}
+"#;
+    let output = run_memory("armelemcond", deferred_element);
+    assert_no_asan("armelemcond", &output);
+    assert_exit("armelemcond", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardedspells: the guarded take and receiver-field spellings beyond the
+// committed cases.
+//
+// The committed guarded cases cover the taken `&&` path with both arms. These
+// programs add the skipped guard, the `||` spelling (both the evaluated right
+// side and the short circuit), the fresh-arm-only argument, and the loop
+// condition, so every guarded evaluation path has a pinned run.
+// ---------------------------------------------------------------------------
+
+/// The skipped guard, `||`, fresh-arm-only, and loop-condition guarded take
+/// spellings stay accepted and memory-clean.
+///
+/// A skipped `&&` guard evaluates no arm, the `||` spelling evaluates its right
+/// side only when the left is false, the fresh-arm-only argument binds its call
+/// root, and the loop condition re-fills the carrier per iteration. The
+/// accumulated returns cancel the trailing constant.
+#[test]
+fn should_cover_the_guarded_take_spellings_beyond_the_pinned_cases() {
+    let source = r#"module spec.cpr.guardtakespells;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func useSkip(c: bool, g: bool): i32 {
+    if (g && consume((c ? Box { v: stringOf("xx"), w: stringOf("yy") } : mkBox()).v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func useOr(c: bool, g: bool): i32 {
+    if (g || consume((c ? Box { v: stringOf("xx"), w: stringOf("yy") } : mkBox()).v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func useFresh(g: bool): i32 {
+    if (g && consume(mkBox().v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func useLoop(c: bool, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k && consume((c ? Box { v: stringOf("xx"), w: stringOf("yy") } : mkBox()).v) > 0) {
+        n = n + 1;
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return useSkip(true, true) + useSkip(true, false)
+         + useOr(true, false) + useOr(true, true)
+         + useFresh(true)
+         + useLoop(true, 3) + useLoop(false, 3)
+         - 10;
+}
+"#;
+    let output = run_memory("guardtakespells", source);
+    assert_no_asan("guardtakespells", &output);
+    assert_exit("guardtakespells", &output, 0);
+}
+
+/// A callable receiver field in a loop condition releases its root per
+/// evaluation.
+///
+/// `while (n < k && H { call: addOne, s: mkBox().v }.call(5) > 0)` rebuilds the
+/// receiver on every condition evaluation, and each fresh root releases its
+/// un-moved field while the field's own release owns the member.
+#[test]
+fn should_release_a_callable_receiver_field_in_a_loop_condition() {
+    let source = r#"module spec.cpr.fieldrootcond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct H { call: func(i32): i32; s: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func addOne(x: i32): i32 { return x + 1; }
+
+func use(k: i32): i32 {
+    let n: i32 = 0;
+    while (n < k && H { call: addOne, s: mkBox().v }.call(5) > 0) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return use(3) - 3;
+}
+"#;
+    let output = run_memory("fieldrootcond", source);
+    assert_no_asan("fieldrootcond", &output);
+    assert_exit("fieldrootcond", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// literalfieldmove: a bound literal's owned field sources move into it.
+//
+// A conditionally evaluated struct-literal arm keeps its field sources in
+// place while its arm is lowered, so binding the literal as an owner must
+// move them: otherwise the literal's release and the source's own cleanup
+// free the same storage twice. The eager take, the store, and the guarded
+// take spellings all move the sibling field.
+// ---------------------------------------------------------------------------
+
+/// Binding a literal arm moves its owned sibling field source into it.
+///
+/// `c ? a.v : Out2 { v: stringOf("zz"), w: b }.v` binds the literal's root in
+/// the eager take, the store, and the guarded take alike: the sibling field's
+/// source empties as the literal takes it, so the literal's release is its
+/// sole owner and the source's cleanup is a no-op. Every selection is
+/// leak-free, and the accumulated results cancel the trailing constant.
+#[test]
+fn should_move_a_literal_arms_owned_field_sources() {
+    let source = r#"module spec.cpr.literalfieldmove;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Out2 { v: String; w: Box; }
+struct Out { v: String; w: String; }
+
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func eager(c: bool, take a: Box, take b: Box): i32 {
+    return consume(c ? a.v : Out2 { v: stringOf("zz"), w: b }.v) - 2;
+}
+
+func store(c: bool, take a: Box, take b: Box): i32 {
+    let o: Out = Out { v: c ? a.v : Out2 { v: stringOf("zz"), w: b }.v, w: stringOf("q") };
+    return i32(len(o.v)) - 2;
+}
+
+func guarded(c: bool, take a: Box, take b: Box, g: bool): i32 {
+    if (g && consume(c ? a.v : Out2 { v: stringOf("zz"), w: b }.v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let a1: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b1: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + eager(true, a1, b1);
+    let a2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b2: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + eager(false, a2, b2);
+    let a3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b3: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + store(true, a3, b3);
+    let a4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b4: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + store(false, a4, b4);
+    let a5: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b5: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + guarded(true, a5, b5, true);
+    let a6: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b6: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + guarded(false, a6, b6, true);
+    return n - 2;
+}
+"#;
+    let output = run_memory("literalfieldmove", source);
+    assert_no_asan("literalfieldmove", &output);
+    assert_exit("literalfieldmove", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// nestedliteralmove: a bound literal moves a place reached at any depth.
+//
+// A nested literal field and an array-literal field element that name a place
+// must move that place before the outer literal materializes: otherwise the
+// outer literal's release and the source's cleanup free the same storage. The
+// guarded take, the eager field, and the array-field element spellings all
+// reach the leaf.
+// ---------------------------------------------------------------------------
+
+/// Binding a literal moves a place reached inside a nested field or element.
+///
+/// `Outer { inner: Inner { v: …, w: b.w }, … }.inner.v` binds the outer
+/// literal's root, and the inner `w` moves `b.w` at its own depth; the array
+/// field `[b.w, …]` moves its element the same way. Every selection is
+/// leak-free, and the accumulated results cancel the trailing constant.
+#[test]
+fn should_move_a_nested_literals_field_sources() {
+    let source = r#"module spec.cpr.nestedliteralmove;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Inner { v: String; w: String; }
+struct Outer { inner: Inner; tag: String; }
+struct OutA { v: String; w: String[2]; }
+struct Out { v: String; w: String; }
+
+func consume(take s: String): i32 { return i32(len(s)); }
+
+func guarded(c: bool, take a: Box, take b: Box, g: bool): i32 {
+    if (g && consume(c ? a.v : Outer { inner: Inner { v: stringOf("zz"), w: b.w }, tag: stringOf("t") }.inner.v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func eagerField(c: bool, take a: Box, take b: Box): i32 {
+    let o: Out = Out { v: c ? a.v : Outer { inner: Inner { v: stringOf("zz"), w: b.w }, tag: stringOf("t") }.inner.v, w: stringOf("q") };
+    return i32(len(o.v)) - 2;
+}
+
+func arrayField(c: bool, take a: Box, take b: Box, g: bool): i32 {
+    if (g && consume(c ? a.v : OutA { v: stringOf("zz"), w: [b.w, stringOf("q")] }.v) > 0) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 0;
+    let a1: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b1: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + guarded(true, a1, b1, true);
+    let a2: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b2: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + guarded(false, a2, b2, true);
+    let a3: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b3: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + eagerField(true, a3, b3);
+    let a4: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b4: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + eagerField(false, a4, b4);
+    let a5: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b5: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + arrayField(true, a5, b5, true);
+    let a6: Box = Box { v: stringOf("xx"), w: stringOf("yy") };
+    let b6: Box = Box { v: stringOf("pp"), w: stringOf("qq") };
+    n = n + arrayField(false, a6, b6, true);
+    return n - 4;
+}
+"#;
+    let output = run_memory("nestedliteralmove", source);
+    assert_no_asan("nestedliteralmove", &output);
+    assert_exit("nestedliteralmove", &output, 0);
+}

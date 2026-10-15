@@ -248,25 +248,29 @@ impl<'a> Emitter<'a> {
     /// zero-initialized, so the first evaluation drops nothing, and the
     /// post-construct release stays null-safe, so each stored value is released
     /// exactly once. A type whose drop already has an expression form keeps it
-    /// and is not hoisted, and the walk descends the whole subtree because
-    /// nested guards embed at their own evaluation sites.
+    /// and is not hoisted, an adopting carrier is skipped because its
+    /// consumer's cleanup is the sole release, and the walk descends the whole
+    /// subtree because nested guards embed at their own evaluation sites.
     fn emit_conditional_drop_hoists(&mut self, value: &Value) {
         match &value.kind {
             ValueKind::Materialize {
                 temp,
                 value: inner,
+                adopting,
                 ..
             } => {
                 let inner_ty = self.substitute(&inner.ty);
                 let destination = format!("__cl_tmp{temp}");
-                if self.needs_drop(&inner_ty)
+                if !*adopting
+                    && self.needs_drop(&inner_ty)
                     && self.drop_expr_text(&destination, &inner_ty).is_none()
                 {
-                    // A consume carrier never reaches a conditionally
-                    // evaluated operand (its preparation is skipped while an
-                    // operand may be short-circuited), so the adopting flag is
-                    // not consulted here; this hoist covers guard temporaries,
-                    // whose previous value a re-fill must release.
+                    // A guard temporary is re-filled on each evaluation, so
+                    // its previous value must be released before the fill
+                    // overwrites it. An adopting carrier's consumer owns the
+                    // value, so the consumer's own cleanup is the sole owner:
+                    // releasing the carrier here would free the consumer's
+                    // storage again when the guarded statement re-executes.
                     self.emit_reassigned_temp_drop(*temp, &inner.ty);
                 }
                 self.emit_conditional_drop_hoists(inner);

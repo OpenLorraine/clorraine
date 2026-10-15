@@ -1207,10 +1207,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
                 && !is_view(&returns)
                 && !returns.is_unknown()
-                && !super::lower::mentions_type_param(&returns)
                 && self.consume_needs_conditional_arms(&lowered)
             {
                 self.consume_conditional_projection(lowered)
+            } else {
+                lowered
+            };
+            // A conditional of projections binds each fresh arm's root before
+            // the return, so the root releases only its un-moved fields while
+            // the chosen member transfers to the return slot.
+            let lowered = if (!self.sema.table.duplicable(&returns) || maybe_owning)
+                && !is_view(&returns)
+                && !returns.is_unknown()
+                && !returns.is_fixed_array()
+                && matches!(lowered.kind, ValueKind::Conditional { .. })
+                && self.conditional_projection_root_owns_residual(&lowered)
+            {
+                self.hoist_ownerless_conditional_arms(lowered)
             } else {
                 lowered
             };
