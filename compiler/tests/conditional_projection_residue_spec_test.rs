@@ -244,6 +244,82 @@ fn compile_rejects(tag: &str, source: &str, code: &str, count: usize) {
     );
 }
 
+/// Asserts the front end rejected `source` with exactly one report carrying
+/// `code` at `line:column`, that the report contains every phrase in
+/// `fragments` and none of the markers in `absent`, and that it emitted no
+/// translation unit.
+///
+/// This is the span-aware sibling of [`compile_rejects`]: the dedupe and
+/// display rules decide where and how a rejection is carried, so a one-report
+/// case pins the site as well as the code, and a fix that moves the report to
+/// another expression must fail it. The scratch program is always named
+/// `main.clo`, and a diagnostic renders its site on the line after its
+/// message, so the location line is matched by its `:line:column` suffix.
+fn compile_rejects_once_at(
+    tag: &str,
+    source: &str,
+    code: &str,
+    line: usize,
+    column: usize,
+    fragments: &[&str],
+    absent: &[&str],
+) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|report| report.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        1,
+        "{tag}: expected exactly one error, saw {}; stderr:\n{stderr}",
+        errors.len()
+    );
+    assert!(
+        errors[0].contains(code),
+        "{tag}: expected the {code} report; saw `{}`; stderr:\n{stderr}",
+        errors[0]
+    );
+    let suffix = format!(":{line}:{column}");
+    let sites: Vec<&str> = stderr
+        .lines()
+        .filter(|report| report.trim_start().starts_with("--> "))
+        .collect();
+    assert_eq!(
+        sites.len(),
+        1,
+        "{tag}: expected one report site, saw {}; stderr:\n{stderr}",
+        sites.len()
+    );
+    assert!(
+        sites[0].trim_end().ends_with(&suffix),
+        "{tag}: expected the report at {suffix}; saw `{}`; stderr:\n{stderr}",
+        sites[0].trim()
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    for marker in absent {
+        assert!(
+            !stderr.contains(marker),
+            "{tag}: the marker {marker:?} must be absent; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // armduty: moving a generic conditional arm's selected member into a value.
 //
@@ -10200,4 +10276,300 @@ func use(): i32 {
 func main(): i32 { return use(); }
 "#;
     compile_rejects("nameddistinctuse", named_use, "E10020", 1);
+}
+
+// ---------------------------------------------------------------------------
+// onereportnested: one report for a nested mixed view return.
+//
+// A return whose conditional mixes a local arm with a nested fresh-owner
+// conditional makes the per-backing walk report the generated-owner escape
+// twice at one span. Dependent errors are suppressed (Ch 14 section 1), so
+// the site carries one report. The cross-site twin — a rejected callee view
+// return whose result the caller stores into a field — keeps only the
+// callee's own `E10036`; the store's consequence report is withheld. The
+// local-only and local-plus-parameter returns keep their single `E10035`.
+// ---------------------------------------------------------------------------
+
+/// A nested mixed view return carries one report, and a rejected callee's
+/// consequence report is withheld.
+///
+/// `return (c ? a : (d ? mkBox() : mkBox2())).v;` mixes a local arm with two
+/// fresh arms, so two generated owners back one expression; the site reports
+/// exactly one `E10030`. The `str[2]` return that derives its views from
+/// module bindings rather than one view-like parameter reports exactly one
+/// `E10036` at the callee; the caller's store of that result adds no `E10033`
+/// consequence. A `Pair` array literal that stores views of two locals
+/// reports exactly one `E10030` at the store. The local-only and
+/// local-plus-parameter returns keep their single `E10035` at the return.
+#[test]
+fn should_report_a_nested_mixed_view_return_once() {
+    let nested = r#"module spec.cpr.onereportnested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+func mkBox2(): Box { return Box { v: stringOf("ef") }; }
+
+func f(c: bool, d: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    return (c ? a : (d ? mkBox() : mkBox2())).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects_once_at(
+        "onereportnested",
+        nested,
+        "E10030",
+        12,
+        5,
+        &["a compiler-generated owner", "does not live long enough"],
+        &[],
+    );
+
+    let gfieldcall = r#"module spec.cpr.onereportgfield;
+
+let s: str = "ab";
+let t: str = "cd";
+
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func row(): str[2] { return [s, t]; }
+
+func store(): void { g.names = row(); }
+
+func main(): i32 { store(); return i32(len(g.names[1])) - 2; }
+"#;
+    compile_rejects_once_at(
+        "onereportgfield",
+        gfieldcall,
+        "E10036",
+        10,
+        6,
+        &["view return does not derive from exactly one parameter"],
+        &["E10033"],
+    );
+
+    let pair = r#"module spec.cpr.onereportpair;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Pair { names: str[2]; }
+
+func pick(): i32 {
+    let h: Pair = Pair { names: ["AA", "BB"] };
+    {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        let c: Box = Box { v: stringOf("pq"), w: stringOf("rs") };
+        h = Pair { names: [b.v, c.v] };
+    }
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 { return pick() - 120; }
+"#;
+    compile_rejects_once_at(
+        "onereportpair",
+        pair,
+        "E10030",
+        13,
+        9,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let localonly = r#"module spec.cpr.onereportlocalonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f(c: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    let b: Box = Box { v: stringOf("ef") };
+    return (c ? a : b).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects_once_at(
+        "onereportlocalonly",
+        localonly,
+        "E10035",
+        10,
+        5,
+        &["cannot return a view of local"],
+        &[],
+    );
+
+    let localparam = r#"module spec.cpr.onereportlocalparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func f(c: bool, a: str): str {
+    let b: Box = Box { v: stringOf("cd") };
+    return (c ? b.v : a);
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects_once_at(
+        "onereportlocalparam",
+        localparam,
+        "E10035",
+        9,
+        5,
+        &["cannot return a view of local"],
+        &[],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// deferphrase: the deferred generated owner renders its phrase.
+//
+// A `defer` block returning a view of a mixed conditional reports the
+// generated-owner escape as `borrow of '__cl_owned1' ...` — the internal
+// binding name leaks into the message. The escape must render the phrase the
+// direct spelling already uses (`a compiler-generated owner`), and the
+// internal name must never be user-visible; the direct mixed return is the
+// control.
+// ---------------------------------------------------------------------------
+
+/// A deferred mixed view return renders the generated-owner phrase, never the
+/// internal binding name.
+///
+/// The deferred `return (c ? l : mkBox()).v;` reports exactly one `E10030` at
+/// the deferred return, whose message names `a compiler-generated owner` and
+/// contains no `__cl_` spelling; the direct mixed return reports the same
+/// phrase at its own return.
+#[test]
+fn should_render_the_deferred_generated_owner_phrase() {
+    let deferred = r#"module spec.cpr.deferphrase;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+
+func f(a: str, c: bool): str {
+    defer {
+        let l: Box = Box { v: stringOf("cd") };
+        return (c ? l : mkBox()).v;
+    }
+    return a;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects_once_at(
+        "deferphrase",
+        deferred,
+        "E10030",
+        12,
+        9,
+        &[
+            "borrow of a compiler-generated owner",
+            "does not live long enough",
+        ],
+        &["__cl_"],
+    );
+
+    let direct = r#"module spec.cpr.deferphrasedirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+
+func f(c: bool): str {
+    let l: Box = Box { v: stringOf("cd") };
+    return (c ? l : mkBox()).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+    compile_rejects_once_at(
+        "deferphrasedirect",
+        direct,
+        "E10030",
+        11,
+        5,
+        &[
+            "borrow of a compiler-generated owner",
+            "does not live long enough",
+        ],
+        &["__cl_"],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// iterableark: a whole-array conditional iterable leaves its arms usable.
+//
+// `for (borrow x in (c ? b1 : b2))` binds an exclusive element view per
+// iteration (Ch 05 section 9): the loop reads the selected arm in place and
+// never moves it, so a later use of either array stays accepted. The owned
+// `String[2]` spelling pins the read-back of both arms; the `u8[4]` twin is
+// the duplicable control.
+// ---------------------------------------------------------------------------
+
+/// A conditional iterable's arrays stay usable after the loop.
+///
+/// `for (borrow x in (c ? b1 : b2))` over `String[2]` arrays borrows each
+/// element of the selected arm. The trailing reads of `b1[0]` and `b2[1]`
+/// prove both arrays were read in place, and the exit code folds the lengths
+/// so an emptied array would fail the read-back. The `u8[4]` twin keeps the
+/// same shape with duplicable elements. Both programs build under the strict
+/// flags, exit 0, and report no memory error.
+#[test]
+fn should_keep_a_whole_array_conditional_iterable_usable() {
+    let owned = r#"module spec.cpr.iterableark;
+
+import { String, stringOf } from std.text;
+
+func use(c: bool): i32 {
+    let b1: String[2] = [stringOf("AA"), stringOf("BBB")];
+    let b2: String[2] = [stringOf("CCCC"), stringOf("DD")];
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2)) {
+        s = s + i32(len(x));
+    }
+    return s + i32(len(b1[0])) + i32(len(b2[1]));
+}
+
+func main(): i32 {
+    return (use(true) - 9) + (use(false) - 10);
+}
+"#;
+    let output = run_memory("iterableark", owned);
+    assert_no_asan("iterableark", &output);
+    assert_exit("iterableark", &output, 0);
+
+    let duplicable = r#"module spec.cpr.iterablearku8;
+
+func use(c: bool): i32 {
+    let b1: u8[4] = [1, 2, 3, 4];
+    let b2: u8[4] = [5, 6, 7, 8];
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2)) {
+        s = s + i32(x);
+    }
+    return s + i32(b1[0]) + i32(b2[1]);
+}
+
+func main(): i32 {
+    return (use(true) - 17) + (use(false) - 33);
+}
+"#;
+    let output = run_memory("iterablearku8", duplicable);
+    assert_no_asan("iterablearku8", &output);
+    assert_exit("iterablearku8", &output, 0);
 }

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 24/33 tasks (73%) — Phase 4 complete
+> **Progress**: 26/33 tasks (79%) — Executing Phase 5
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -238,8 +238,8 @@ ST-25..ST-27 · AR-7, AR-9
 **Objective**: Pin the one-report dedupe at a nested mixed return and its cross-site instances,
 the generated-owner phrase, and the conditional-iterable move mark.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (onereportnested, deferphrase, iterableark)
-- [ ] 5.1.2 Run the suite and record the red phase (the controls' counts re-measured first)
+- [x] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs` (onereportnested, deferphrase, iterableark) ✅ (completed: 2026-10-16 11:40; three tests appended (+372 lines, additions only; 138 → 141 tests) plus the one-report helper — the nested mixed view return reporting twice at one span (the file, the global-field and the two-owner pair spellings) with the local-only and local+param controls, the deferred generated-owner phrase (`__cl_owned1`) with the direct-phrase control, and the whole-array conditional iterable's stale per-arm move marks with the `u8[4]` control; the reds re-derived: the iterable case reports two marks (one per arm) and the mixed-pair probe was re-authored from the surviving evidence (disclosed))
+- [x] 5.1.2 Run the suite and record the red phase (the controls' counts re-measured first) ✅ (completed: 2026-10-16 11:40; plain 138 passed / 3 failed and ASan 138 passed / 3 failed — exactly the three new tests; the controls and the pinned oracles (`callable_release_integrity`, `checker_conformance`) green; parent-verified)
 
 ### Step 5.2: Implementation
 
