@@ -800,6 +800,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// Reports `E10600` when a store target dereferences a raw pointer.
+    ///
+    /// The bare deref target names no member, so the place walk never reaches
+    /// it: the pointer's own type decides whether the store sits outside an
+    /// `unsafe` block, exactly as a field write through a raw does.
+    pub(super) fn check_deref_raw(&mut self, pointer: &Expr, span: Span) {
+        if matches!(self.ty(pointer).kind, TyKind::Raw(_)) && self.unsafe_depth == 0 {
+            self.report_unsafe(UnsafeOp::Deref, span);
+        }
+    }
+
     /// Reports a nullable place used where a non-null value is required.
     ///
     /// The check covers projected places too, so a nullable struct field is
@@ -906,6 +917,62 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.check_place_raw(target);
         self.check_store_index_nonnull(target, target.span);
+        // A dereferenced raw pointer is a store target: the pointer names the
+        // storage, so the store writes through it in the same shape an indexed
+        // element store uses. The pointer expression evaluates first, an
+        // updating value settles at its own position before the store, and the
+        // read path is unchanged.
+        if let Some(pointer_expr) = raw_deref_target(target) {
+            self.check_deref_raw(pointer_expr, target.span);
+            let pin = super::lower::contains_update(value);
+            let element_ty = target_ty.clone();
+            let pointer = self.lower_value(pointer_expr);
+            let pointer = if super::lower::contains_update(pointer_expr) {
+                self.pin_update_value(pointer)
+            } else {
+                pointer
+            };
+            let stored = match compound {
+                Some(binary) => {
+                    // A compound store reads the pointee before the side runs,
+                    // so an updating side materializes that read first.
+                    let element = self.lower_value(target);
+                    let element = if pin {
+                        self.pin_update_value(element)
+                    } else {
+                        element
+                    };
+                    let right = self.lower_value(value);
+                    let right = if pin { self.pin_update_value(right) } else { right };
+                    self.combine(binary, element, right, &element_ty)
+                }
+                None => {
+                    let lowered = self.lower_value(value);
+                    let lowered = if pin {
+                        self.pin_update_value(lowered)
+                    } else {
+                        lowered
+                    };
+                    if is_view(&element_ty)
+                        || (self.view_destination_adopts && is_view_like(&element_ty))
+                    {
+                        if self.projects_from_place(&lowered) {
+                            lowered
+                        } else {
+                            self.bind_view_projection_root(lowered)
+                        }
+                    } else {
+                        self.consume_place(lowered)
+                    }
+                }
+            };
+            self.emit(Statement::StorePointer {
+                pointer,
+                value: stored,
+            });
+            self.check_value_into(value, &target_ty, value.span);
+            return;
+        }
         match self.place_target(target) {
             Some(PlaceTarget::Local(id, projections)) => {
                 // A view-element array target binds its elements as views, so
@@ -2290,4 +2357,25 @@ fn has_runtime_element(projections: &[ir::Projection]) -> bool {
             ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
         )
     })
+}
+
+/// The pointer expression when an assignment target dereferences a raw
+/// pointer.
+///
+/// A bare `*p` target names no place of its own: the pointer names the storage
+/// the store writes through. The walk unwraps the `unsafe` expression the
+/// parser keeps around the dereference and returns the pointer operand; every
+/// other target shape returns `None`.
+fn raw_deref_target(target: &Expr) -> Option<&Expr> {
+    let mut expr = target;
+    while let ExprKind::Unsafe(inner) = &expr.kind {
+        expr = inner;
+    }
+    match &expr.kind {
+        ExprKind::Unary {
+            op: UnaryOp::Deref,
+            operand,
+        } => Some(operand),
+        _ => None,
+    }
 }

@@ -9550,6 +9550,12 @@ func main(): i32 {
 // the loop-condition call arguments already settle, so the update completes
 // at its source position on the evaluated path only. The plain loop condition
 // `while (f(i++, i) < 30)` is the landed control.
+//
+// Each path reads its pass value from the guard's own outcome: the evaluated
+// path passes when `ok` is true, the skipped path passes when the guard
+// short-circuited and `ok` is false. The exit stays 0 while every path is
+// correct, and a wrong call-argument order makes `ok` false on the evaluated
+// path, so the exit check fails.
 // ---------------------------------------------------------------------------
 
 /// A guarded or conditional operand with an update settles its parts on the
@@ -9559,8 +9565,10 @@ func main(): i32 {
 /// old `i` left-to-right and the increment lands once) and at `3` on the
 /// skipped path, and the call counter proves the skipped path ran nothing.
 /// The recorded call arguments (`3` and `4`) and the ternary's value (`34`)
-/// prove the left-to-right order. The plain loop condition counts its three
-/// taken iterations and its four calls.
+/// prove the left-to-right order. Each path's pass value comes from its own
+/// guard outcome: the evaluated path needs `ok` true, the skipped path needs
+/// `ok` false, so a wrong argument order leaves the exit non-zero. The plain
+/// loop condition counts its three taken iterations and its four calls.
 #[test]
 fn should_settle_the_updating_parts_of_a_guarded_operand() {
     let source = r#"module spec.cpr.guardupdate;
@@ -9582,7 +9590,7 @@ func guardAnd(g: bool): i32 {
     if (g) {
         return (ok ? 0 : 1) + (i - 4);
     }
-    return (ok ? 0 : 1) + (i - 3);
+    return (ok ? 1 : 0) + (i - 3);
 }
 
 func guardOr(g: bool): i32 {

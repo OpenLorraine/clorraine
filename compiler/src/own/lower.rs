@@ -494,9 +494,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                             }
                         })
                         .collect(),
-                    fill: fill
-                        .as_ref()
-                        .map(|fill| Box::new(self.lower_value(fill))),
+                    fill: fill.as_ref().map(|fill| {
+                        let lowered = self.lower_value(fill);
+                        // The fill's value copies to every remaining element, so
+                        // an updating fill is pinned once at its own position:
+                        // the element stores then read the temporary instead of
+                        // re-running the update per element. Every other fill
+                        // keeps its spelling, which the element stores already
+                        // copy from once per element.
+                        if self.defer_move_outs > 0 || !contains_update(fill) {
+                            Box::new(lowered)
+                        } else {
+                            Box::new(self.pin_update_value(lowered))
+                        }
+                    }),
                 }
             }
             ExprKind::Unsafe(inner) => return self.lower_value(inner),
@@ -1675,7 +1686,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// per-iteration materialization instead of a statement before the loop.
     pub(super) fn pin_update_value(&mut self, value: Value) -> Value {
         if self.defer_move_outs > 0 {
-            return value;
+            // A conditionally evaluated operand keeps a statement-free
+            // spelling, so its updating part settles through the deferred
+            // fill: the update completes at its source position on the path
+            // that evaluates the operand, and the enclosing expression reads
+            // the filled temporary instead of an unsequenced update.
+            return self.materialize_guard_operand(value);
         }
         if self.in_loop_condition {
             return self.materialize_loop_condition_operand(value);

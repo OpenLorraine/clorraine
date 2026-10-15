@@ -143,6 +143,27 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 } else {
                     self.bind_guarded_projection_root(base)
                 };
+                // The receiver is the call's argument position zero, and the
+                // field designator reads it. A receiver whose own rendering
+                // nests an arm's fill into the designator settles into a
+                // temporary, so its evaluation — a conditional's selected arm,
+                // a fresh result — becomes a fill the designator reads. A
+                // place, a temporary, and a value the deferred fill already
+                // bound keep their spelling: the call reads them directly.
+                let settled = match &base.kind {
+                    ValueKind::Place(_)
+                    | ValueKind::Temp(_)
+                    | ValueKind::Materialize { .. } => true,
+                    ValueKind::Member { .. } | ValueKind::Index { .. } => {
+                        self.projects_from_place(&base)
+                    }
+                    _ => false,
+                };
+                let base = if settled {
+                    base
+                } else {
+                    self.materialize_guard_operand(base)
+                };
                 ValueKind::Member {
                     base: Box::new(base),
                     name: name.clone(),

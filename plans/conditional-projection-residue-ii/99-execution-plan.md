@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 20/33 tasks (61%) — Executing Phase 4
+> **Progress**: 22/33 tasks (67%) — Phase 4 implementation done, pins+review next
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -200,14 +200,14 @@ evaluation, and the bare raw-deref store.
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Settle/pin the mixed-arm loop receiver; bind the loop-condition projection's root
+- [x] 4.2.1 Settle/pin the mixed-arm loop receiver; bind the loop-condition projection's root
       once; pin the guarded operand's updating parts inside the guard path; pin the array fill
       before the element loop; lower the bare raw-deref store target with the update pin —
       `compiler/src/own/lower.rs`, `compiler/src/own/call.rs`, `compiler/src/own/expr.rs`,
       `compiler/src/own/loops.rs`, `compiler/src/codegen/guards.rs`,
       `compiler/src/codegen/control.rs`, `compiler/src/own/statements.rs`,
-      `compiler/src/ir.rs`
-- [ ] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/ir.rs` ✅ (completed: 2026-10-16 07:50; a func-field receiver that is not a place/temporary/bound value settles into a deferred temporary at argument position zero (`own/call.rs:153-168`), so both toolchains accept (AR-10 closure: the pinned emission changes to the sequential shape) and the eager top-level receiver read's 11 B leak closes; the guarded operand's updating parts settle through the guard fill (`own/lower.rs:1694`); an update-bearing array fill pins once (`:497-510`); the bare raw-deref store lowers (`own/expr.rs:920-985`, `:808`, `:2369`) with the update pin and the `unsafe` gate intact; the red-phase case's arithmetic was corrected per the parent's ruling (the per-path pass value; the exit-0 invariant preserved and discriminated — a wrong order exits 11))
+- [x] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 07:50; the residue spec 131/131 plain and under `RDC_ASAN=1`; the batch-H and related suites green; `make check` exit 0; the differential shows only the intended emit-diffs and no accept/reject change; parent-verified 131/131 plain + ASan)
 
 ### Step 4.3: Impl Tests & Review
 
