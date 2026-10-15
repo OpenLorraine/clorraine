@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 28/33 tasks (85%) — Phase 5 implementation done, pins+review next
+> **Progress**: 29/33 tasks (88%) — Phase 5 in review
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -252,9 +252,9 @@ the generated-owner phrase, and the conditional-iterable move mark.
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the counts and spans, the displayed phrase,
+- [x] 5.3.1 Write the phase implementation pins (the counts and spans, the displayed phrase,
       the mark shape, the re-emission determinism pins) —
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+      `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 12:30; six pins added (85 tests total, additions only) plus a one-report helper — the dedupe at the nested and pair returns (the pair owner unpinned), the withheld global-field consequence, the deferred phrase, the in-place iterable on owned and duplicable elements, the element/projection regression guard, and a discriminating re-emission pin; all six fail at `d0f9558` for the intended reason; 85/85 green and `make check` exit 0)
 - [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; run the pinned oracles (`callable_release_integrity`,
       `checker_conformance`)

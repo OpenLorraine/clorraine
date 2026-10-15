@@ -305,6 +305,83 @@ fn assert_rejected_at_line(tag: &str, source: &str, code: &str, count: usize, li
     );
 }
 
+/// Compiles `source` and asserts the front end rejected it with exactly one
+/// report at `line`:`column`, carrying `code`, whose message contains every
+/// `fragments` entry and no `absent` entry.
+///
+/// One expression carries one report: a nested mixed view return and a
+/// two-owner array literal each keep a single report at their own span, and a
+/// destination that only repeats its callee's judgment keeps none. Pinning the
+/// rendered message beside the code and count stops a phrase regression from
+/// passing unnoticed.
+fn assert_rejected_once_at(
+    tag: &str,
+    source: &str,
+    code: &str,
+    line: usize,
+    column: usize,
+    fragments: &[&str],
+    absent: &[&str],
+) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = write_source(tag, &scratch, source);
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|line| line.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        1,
+        "{tag}: expected exactly one error, saw {}; stderr:\n{stderr}",
+        errors.len()
+    );
+    assert!(
+        errors[0].contains(code),
+        "{tag}: expected the {code} report; saw `{}`; stderr:\n{stderr}",
+        errors[0]
+    );
+    let suffix = format!(":{line}:{column}");
+    let site = stderr
+        .lines()
+        .find(|line| line.trim_start().starts_with("--> "))
+        .unwrap_or_else(|| panic!("{tag}: the report has no site; stderr:\n{stderr}"));
+    assert!(
+        site.trim_end().ends_with(&suffix),
+        "{tag}: expected the report site to end with {suffix:?}; saw `{}`; stderr:\n{stderr}",
+        site.trim()
+    );
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    for fragment in absent {
+        assert!(
+            !stderr.contains(fragment),
+            "{tag}: expected the message to lack {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
 /// A `T`-typed member selected between a `take` pair and a freshly built pair.
 const ARM_DUTY_SOURCE: &str = r#"module spec.cpr.armduty;
 import { String, stringOf } from std.text;
@@ -4774,6 +4851,319 @@ fn should_re_emit_the_settled_receiver_and_raw_store_programs_byte_identically()
             "(__cl_tmp0 = cl_spec_cprimpl_implrecvsettle_mkH())",
         ),
         ("implrawstore", RAW_STORE_SOURCE, "*(&(*(q))) = 9;"),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+        assert_contains(tag, &first, shape);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The one-report sites. A nested mixed view return and a two-owner array
+// literal each keep one report at their own span, a global-field store keeps
+// its callee's report alone instead of adding a consequence report, and the
+// deferred generated owner renders the shared phrase rather than the internal
+// binding name.
+// ---------------------------------------------------------------------------
+
+/// A nested mixed view return: one local arm beside two fresh arms, so two
+/// generated owners back the one expression.
+const NESTED_VIEW_RETURN_SOURCE: &str = r#"module spec.cprimpl.implnested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+func mkBox2(): Box { return Box { v: stringOf("ef") }; }
+
+func f(c: bool, d: bool): str {
+    let a: Box = Box { v: stringOf("cd") };
+    return (c ? a : (d ? mkBox() : mkBox2())).v;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// A `Pair` array literal that stores views of two locals, so two owners'
+/// loans escape at the one store.
+const PAIR_VIEW_STORE_SOURCE: &str = r#"module spec.cprimpl.implpair;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Pair { names: str[2]; }
+
+func pick(): i32 {
+    let h: Pair = Pair { names: ["AA", "BB"] };
+    {
+        let b: Box = Box { v: stringOf("xy"), w: stringOf("zz") };
+        let c: Box = Box { v: stringOf("pq"), w: stringOf("rs") };
+        h = Pair { names: [b.v, c.v] };
+    }
+    return i32(h.names[0][0]);
+}
+
+func main(): i32 { return pick() - 120; }
+"#;
+
+/// A view return whose elision names no parameter, stored into a global
+/// field.
+const GLOBAL_FIELD_STORE_SOURCE: &str = r#"module spec.cprimpl.implgfield;
+
+let s: str = "ab";
+let t: str = "cd";
+
+struct Holder { names: str[2]; }
+
+let g: Holder = Holder { names: ["AA", "BB"] };
+
+func row(): str[2] { return [s, t]; }
+
+func store(): void { g.names = row(); }
+
+func main(): i32 { store(); return i32(len(g.names[1])) - 2; }
+"#;
+
+/// A deferred mixed view return whose owner is generated inside the deferred
+/// body.
+const DEFERRED_RETURN_SOURCE: &str = r#"module spec.cprimpl.impldefer;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func mkBox(): Box { return Box { v: stringOf("ab") }; }
+
+func f(a: str, c: bool): str {
+    defer {
+        let l: Box = Box { v: stringOf("cd") };
+        return (c ? l : mkBox()).v;
+    }
+    return a;
+}
+
+func main(): i32 { return 0; }
+"#;
+
+/// The nested mixed return and the two-owner array literal each keep exactly
+/// one report at their own span, whichever owner the pair's report names.
+#[test]
+fn should_report_once_at_the_nested_and_pair_view_returns() {
+    assert_rejected_once_at(
+        "implnested",
+        NESTED_VIEW_RETURN_SOURCE,
+        "E10030",
+        12,
+        5,
+        &[
+            "borrow of a compiler-generated owner",
+            "does not live long enough",
+        ],
+        &["__cl_"],
+    );
+    assert_rejected_once_at(
+        "implpair",
+        PAIR_VIEW_STORE_SOURCE,
+        "E10030",
+        13,
+        9,
+        &["does not live long enough"],
+        &[],
+    );
+}
+
+/// The global-field store keeps its callee's report alone: the downstream
+/// consequence report is withheld, so the program carries no second report.
+#[test]
+fn should_withhold_the_global_field_consequence_after_the_callee_report() {
+    assert_rejected_once_at(
+        "implgfield",
+        GLOBAL_FIELD_STORE_SOURCE,
+        "E10036",
+        10,
+        6,
+        &["view return does not derive from exactly one parameter"],
+        &["E10033"],
+    );
+}
+
+/// The deferred generated owner renders the shared phrase, never the internal
+/// binding name.
+#[test]
+fn should_render_the_deferred_generated_owner_phrase() {
+    assert_rejected_once_at(
+        "impldefer",
+        DEFERRED_RETURN_SOURCE,
+        "E10030",
+        12,
+        9,
+        &["borrow of a compiler-generated owner"],
+        &["__cl_"],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The whole-array conditional iterable. The loop reads the selected arm's
+// elements in place, so both arrays stay usable after the loop, while the
+// element and projection spellings keep their own move marks.
+// ---------------------------------------------------------------------------
+
+/// A whole-array conditional iterable with owned `String[2]` arms.
+const ITERABLE_SOURCE: &str = r#"module spec.cprimpl.impliterable;
+
+import { String, stringOf } from std.text;
+
+func use(c: bool): i32 {
+    let b1: String[2] = [stringOf("AA"), stringOf("BBB")];
+    let b2: String[2] = [stringOf("CCCC"), stringOf("DD")];
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2)) {
+        s = s + i32(len(x));
+    }
+    return s + i32(len(b1[0])) + i32(len(b2[1]));
+}
+
+func main(): i32 {
+    return (use(true) - 9) + (use(false) - 10);
+}
+"#;
+
+/// The duplicable `u8[4]` twin of the conditional iterable.
+const ITERABLE_U8_SOURCE: &str = r#"module spec.cprimpl.impliterableu8;
+
+func use(c: bool): i32 {
+    let b1: u8[4] = [1, 2, 3, 4];
+    let b2: u8[4] = [5, 6, 7, 8];
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2)) {
+        s = s + i32(x);
+    }
+    return s + i32(b1[0]) + i32(b2[1]);
+}
+
+func main(): i32 {
+    return (use(true) - 17) + (use(false) - 33);
+}
+"#;
+
+/// A conditional iterable beside an element read of a second conditional: the
+/// loop keeps its arms usable while the read still marks its own.
+const ITERABLE_ELEMENT_READ_SOURCE: &str = r#"module spec.cprimpl.implcombined;
+
+import { String, stringOf } from std.text;
+
+func use(c: bool, d: bool): i32 {
+    let b1: String[2] = [stringOf("AA"), stringOf("BBB")];
+    let b2: String[2] = [stringOf("CCCC"), stringOf("DD")];
+    let p1: String[2] = [stringOf("EE"), stringOf("FF")];
+    let p2: String[2] = [stringOf("GG"), stringOf("HH")];
+    let s: i32 = 0;
+    for (borrow x in (c ? b1 : b2)) {
+        s = s + i32(len(x));
+    }
+    let n: i32 = i32(len((d ? p1 : p2)[0]));
+    return s + n + i32(len(b1[0])) + i32(len(p1[1]));
+}
+
+func main(): i32 { return use(true, true) - 6; }
+"#;
+
+/// A conditional projection whose selected member is consumed, read back
+/// through the moved member.
+const PROJECTION_READ_SOURCE: &str = r#"module spec.cprimpl.implprojread;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("mk"), w: stringOf("wwww") }; }
+
+func use(c: bool): i32 {
+    let b: Box = Box { v: stringOf("ab"), w: stringOf("wwww") };
+    let s: String = (c ? b : mk()).v;
+    let t: i32 = i32(len(b.v));
+    return i32(len(s)) + t - 4;
+}
+
+func main(): i32 { return use(true); }
+"#;
+
+/// The whole-array conditional iterable is read in place on both element
+/// kinds: the loop takes the address of the selected arm's element per
+/// iteration instead of materializing an arm, so the trailing reads of both
+/// arrays stay in the emission.
+#[test]
+fn should_keep_the_whole_array_conditional_iterable_in_place() {
+    let owned = "impliterable";
+    let (_scratch, emitted) = emit_host(owned, ITERABLE_SOURCE);
+    let body = function_body(owned, &emitted, "cl_spec_cprimpl_impliterable_use(bool c)\n{");
+    assert_contains(
+        owned,
+        body,
+        "for (; (__cl_tmp0 < 2); __cl_tmp0 = (__cl_tmp0 + 1u)) {",
+    );
+    assert_contains(
+        owned,
+        body,
+        "__cl_tmp1 = &((__cl_tmp2 ? b1 : b2)[__cl_tmp0]);",
+    );
+    assert_contains(owned, body, "cl_string_view((*__cl_tmp1))");
+    let duplicable = "impliterableu8";
+    let (_scratch, emitted) = emit_host(duplicable, ITERABLE_U8_SOURCE);
+    let body = function_body(
+        duplicable,
+        &emitted,
+        "cl_spec_cprimpl_impliterableu8_use(bool c)\n{",
+    );
+    assert_contains(
+        duplicable,
+        body,
+        "for (; (__cl_tmp0 < 4); __cl_tmp0 = (__cl_tmp0 + 1u)) {",
+    );
+    assert_contains(
+        duplicable,
+        body,
+        "__cl_tmp1 = &((__cl_tmp2 ? b1 : b2)[__cl_tmp0]);",
+    );
+    assert_contains(duplicable, body, "((*__cl_tmp1))");
+}
+
+/// The element and projection spellings keep their own move marks beside the
+/// in-place iterable. The mixed program's single report is the element read's
+/// mark: the loop's later reads stay accepted, and a re-added iterable mark
+/// would add a second report, while a dropped element mark would leave none.
+/// The projection guard reports the moved member of its selected arm.
+#[test]
+fn should_report_the_element_and_projection_marks_beside_the_iterable() {
+    assert_rejected_at_line(
+        "implcombined",
+        ITERABLE_ELEMENT_READ_SOURCE,
+        "E10020",
+        1,
+        15,
+    );
+    assert_rejected_at_line("implprojread", PROJECTION_READ_SOURCE, "E10020", 1, 12);
+}
+
+/// The conditional iterable programs re-emit byte-identically, and the
+/// re-emitted text keeps the in-place element address.
+#[test]
+fn should_re_emit_the_conditional_iterable_programs_byte_identically() {
+    for (tag, source, shape) in [
+        (
+            "impliterable",
+            ITERABLE_SOURCE,
+            "__cl_tmp1 = &((__cl_tmp2 ? b1 : b2)[__cl_tmp0]);",
+        ),
+        (
+            "impliterableu8",
+            ITERABLE_U8_SOURCE,
+            "__cl_tmp1 = &((__cl_tmp2 ? b1 : b2)[__cl_tmp0]);",
+        ),
     ] {
         let (first, second) = emit_twice(tag, source);
         assert!(
