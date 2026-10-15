@@ -1190,6 +1190,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 target.span,
                             );
                         }
+                    } else if self.literal_view_loan_positions(value).is_empty()
+                        && self.names_fresh_view_storage(value, &target_ty)
+                    {
+                        // A value that creates its own view storage — a fresh
+                        // call result, or a literal or conditional of them —
+                        // dies with the statement, so the global cannot keep
+                        // it. A local- or parameter-backed position already
+                        // reported through its field's own judgment.
+                        self.error(
+                            "E10033",
+                            format!("borrow of '{}' escapes its scope", id.name),
+                            "derive the view from a parameter or take ownership",
+                            target.span,
+                        );
                     }
                 }
                 if (!is_const || through_pointer) && !immutable_view_write {
@@ -1531,6 +1545,81 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     }
                 }
             }
+        }
+    }
+
+    /// True when a value's view-like positions read storage the walk cannot
+    /// name.
+    ///
+    /// A fresh call result's member (`mk().v`) or an intrinsic view names no
+    /// binding, so its storage belongs to this frame: a destination outside the
+    /// frame cannot keep it. An aggregate contributes each view-carrying
+    /// position, a conditional each arm, and a view-returning call its single
+    /// lend source, so that source's storage counts too.
+    fn names_fresh_view_storage(&self, expr: &Expr, position: &Ty) -> bool {
+        if (is_view_like(position) || is_view_like(&self.ty(expr)))
+            && Self::storage_atoms(&self.view_provenance(expr))
+                .iter()
+                .any(|atom| matches!(atom, Provenance::None))
+        {
+            return true;
+        }
+        match &expr.kind {
+            ExprKind::StructLiteral { name, fields, .. } => {
+                let struct_name = name.segments.last().cloned().unwrap_or_default();
+                let mut declared = self.instance_fields(position, &struct_name);
+                if declared.is_empty() {
+                    declared = self.instance_fields(&self.ty(expr), &struct_name);
+                }
+                fields.iter().any(|field| {
+                    let field_ty = declared
+                        .iter()
+                        .find(|(declared, _)| declared == &field.name)
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or_else(|| self.ty(&field.value));
+                    self.names_fresh_view_storage(&field.value, &field_ty)
+                })
+            }
+            ExprKind::ArrayLiteral { elements, fill } => {
+                let element = position.iterated_element();
+                elements
+                    .iter()
+                    .any(|element_value| self.names_fresh_view_storage(element_value, &element))
+                    || fill
+                        .as_deref()
+                        .is_some_and(|fill| self.names_fresh_view_storage(fill, &element))
+            }
+            ExprKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.names_fresh_view_storage(then_value, position)
+                    || self.names_fresh_view_storage(else_value, position)
+            }
+            ExprKind::Unsafe(inner) => self.names_fresh_view_storage(inner, position),
+            ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
+                self.names_fresh_view_storage(value, position)
+            }
+            // A view-returning call reborrows its single lend source, so the
+            // result reads that source's storage; a call the walk cannot
+            // attribute names fresh storage too.
+            ExprKind::Call { callee, args, .. } => {
+                if !is_view_like(&self.ty(expr)) {
+                    return false;
+                }
+                match self.call_view_source(callee, args) {
+                    Some(super::place::ViewCallSource::Expr(source)) => {
+                        matches!(self.view_provenance(source), Provenance::None)
+                            || self.names_fresh_view_storage(source, &self.ty(source))
+                    }
+                    Some(super::place::ViewCallSource::Receiver(provenance)) => {
+                        matches!(provenance, Provenance::None)
+                    }
+                    None => true,
+                }
+            }
+            _ => false,
         }
     }
 

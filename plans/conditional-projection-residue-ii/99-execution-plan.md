@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-15 (planning)
-> **Progress**: 11/33 tasks (33%) — Phase 2 in review
+> **Progress**: 12/33 tasks (36%) — Phase 2 complete
 > **Planning baseline**: `a462084` (the batch-I close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -115,13 +115,12 @@ taken arm, the discarded residual-owning root, and the bare discarded literal.
       root's residual ownership; materialize the bare discarded literal's fresh leaves —
       `compiler/src/own/lower.rs`, `compiler/src/codegen/guards.rs`,
       `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-16 02:30; the actual touched files: `own/lower.rs`, `own/statements.rs`, `codegen/function.rs` (`codegen/guards.rs` needed no change); the lend path binds a projection over a fresh root under `defer_move_outs > 0` through the deferred fill; the carrier literal's taken-arm fresh roots bind via the aggregate view-position descent; the discarded arm is judged by the root's residual ownership (narrowed to keep the batch-I dot-len pins); the bare discarded literal materializes its fresh leaves with the guards-only discard emission)
-- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 02:30; the residue spec 111/111 plain and under `RDC_ASAN=1`; the batch-H, callable-release, and batch-I suites green; `make check` exit 0 with no new warnings; the differential shows only the eight intended emit-diffs; parent-verified 111/111 plain + ASan)
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 02:30; the residue spec 111/111 plain and under `RDC_ASAN=1`; the batch-H, callable-release, and batch-I suites green; `make check` exit 0 with no new warnings; the differential then showed eight intended emit-diffs — **superseded by the correction rounds: the re-measured count at the phase's final tree is 16 emit-diff rows + 3 rejection rows, all intended (the correctness confirmation J2C-1)**; parent-verified 111/111 plain + ASan at the time)
 
 ### Step 2.3: Impl Tests & Review
 
 - [x] 2.3.1 Write the phase implementation pins (the deferred fill shapes, the arm bindings, the release counts, the re-emission determinism pins) — `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-16 02:30; five pins added (68 tests total, additions only); the deferred fill inside the guard, the taken-arm binding with its release, the residual-root bind, the bare-discard leaf materialization + determinism; 68/68 green)
-- [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses
+- [x] 2.3.2 Phase review evidence and progress update — commit per the active commit mode; dispatch the lenses ✅ (completed: 2026-10-16 04:15; both lenses dispatched plus three targeted confirmations; the correction rounds: the discard materialization (struct fields + every impure leaf), the out-of-frame carrier-store rejection, the gate narrowed to non-owning arms, the kept-view scope-owner bind, the mixed-discard root bind, and the element-conditional `Conditional` arm with the arm-fill acceptance; the two fix-round claim gaps were caught by the confirmations and fixed; six rows filed (`DEF-316`..`DEF-321`, `DEF-288` extended); the closing verification: the residue spec 116/116 plain and ASan, the impl pins 68/68, `make check` exit 0, the six repros clean on the parent's re-run)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 

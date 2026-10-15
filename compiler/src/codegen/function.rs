@@ -638,9 +638,10 @@ impl<'a> Emitter<'a> {
                         return;
                     }
                 }
-                // A literal has no C expression form: its elements
-                // materialized into statement temporaries the statement's
-                // release frees, so only their guards remain to run here.
+                // A literal has no C expression form: its leaves materialize
+                // into statement temporaries the statement's release frees, so
+                // the guards that fill them run here and no value expression is
+                // emitted.
                 if matches!(
                     value.kind,
                     ValueKind::ArrayLit { .. } | ValueKind::StructLit { .. }

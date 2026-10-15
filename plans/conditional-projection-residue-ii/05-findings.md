@@ -151,3 +151,41 @@ partial-fix controls; the parked rows untouched)_
 `DEF-311` (the operand/guarded root-fill gaps), `DEF-312` (the owner-granular loan conflicts),
 `DEF-313` (the all-null call argument), `DEF-314` (the conditional-member retain), `DEF-315` (the
 view-like copy loans).
+
+## Phase 2 — Guarded, discarded, and carrier roots
+
+**Reviewed implementation**: `fb9732c` plus two correction rounds. **Lenses**: correctness (J2R/J2C)
+and memory-safety (F + the memory `J2C-1`), dispatched on the phase diff.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers (J2R-1 the guards-only discard swallowed struct-literal effects; J2R-2 the out-of-frame carrier store turned a leak into a UAF) + J2R-3 (the owning-arm gate delta) + J2R-4 (a test-name nit) | The blast-radius table; test integrity; 1,392/1,401 byte-identical with 9 intended diffs; `make check` green |
+| memory-safety | FINDINGS — 2 (Finding 1 the kept-view deferred lend UAF [in-diff, causal-revert-proven]; Finding 2 the mixed view/place discard leak) + A1 (= J2R-1) + A2 (`DEF-295` incidentally fixed by the residual gate) + A3/A4 pre-existing records | The probe set with base comparison; no base-clean program defective |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| J2R-1 + memory A1 | **Fixed**: the discard materialization descends struct fields and array elements; every impure leaf binds its own statement temporary; the struct-literal discard's calls run with the right counts |
+| J2R-2 | **Fixed**: the carrier store of a fresh/unnameable backing into an out-of-frame destination rejects (`E10033`); the static twin accepted |
+| J2R-3 | **Fixed**: the gate requires non-owning arms; the owning arm keeps its base path (its leak filed as `DEF-317`) |
+| Memory Finding 1 (C2) | **Fixed**: the kept-view deferred lend re-binds the root to a scope owner inside its branch |
+| Memory Finding 2 (C4b) | **Fixed**: a view-position root over fresh storage binds in the mixed discard |
+| Memory `J2C-1` (distinct from the correctness `J2C-1`) | **Fixed**: `view_position_ownerless` gained the `Conditional` arm (both arms judged) plus the arm-fill acceptance — the six element-conditional repros (`s3`, `r2_condpos`, `t3`, `s5`, `h5`, `h7`) are clean |
+
+### Confirmations
+
+| Lens | Result | Detail |
+|------|--------|--------|
+| correctness | PASS WITH MINORS — 0 blockers | The J2R corrections verified (the effects, the rejection, the gate narrowing); its `J2C-1` = the plan's 2.2.2 evidence line superseded (recorded); `J2C-2` accounting nit |
+| memory-safety | FINDINGS — 1 (the element-conditional `J2C-1`) | The first confirmation cleared C1/C3/C4a/C4b and caught C2's incompleteness; the follow-up fixed it, and the parent re-ran the six repros (clean) with the suites at 116/116 plain and ASan, impl 68/68, `make check` exit 0 |
+
+### Filed rows
+
+`DEF-316` (the duplicable member argument), `DEF-317` (the owning-literal arm), `DEF-318` (the
+module-initializer sibling), `DEF-319` (the direct literal return), `DEF-320` (the nested carrier),
+`DEF-321` (the view-typed `Index` receiver); `DEF-288` extended with the whole-carrier global-store
+hole. `DEF-295` is incidentally fixed by this phase's residual gate — phase 4 re-measures and can
+close it early.

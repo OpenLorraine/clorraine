@@ -2743,9 +2743,10 @@ fn should_release_a_discarded_fixed_array_conditional_destination() {
 /// `Mixed { names: ok ? n1() : n2(), tag: stringOf("x") };` drops the
 /// literal, so the statement declares `__cl_discard_1`, the field's
 /// conditional fills `__cl_discard_1.names` per arm through the hidden
-/// out-parameter, the fresh `tag` stores into the same local, and the
-/// statement releases the tag afterwards. The base's compound-literal
-/// spelling with the bare call arms must not come back.
+/// out-parameter, the fresh `tag` binds to its own statement temporary the
+/// field store moves out, and the statement releases the tag afterwards. The
+/// base's compound-literal spelling with the bare call arms must not come
+/// back.
 #[test]
 fn should_build_a_discarded_call_filled_literal_per_field() {
     let tag = "fixedfield";
@@ -2764,10 +2765,18 @@ fn should_build_a_discarded_call_filled_literal_per_field() {
         body,
         "memcpy(&(__cl_discard_1.names), &(__cl_arm_3), sizeof(__cl_discard_1.names));",
     );
-    assert_contains(
+    assert_contains(tag, body, "__cl_tmp0 = cl_std_text_stringOf(cl_str(\"x\"));");
+    assert_follows(
         tag,
         body,
-        "__cl_discard_1.tag = cl_std_text_stringOf(cl_str(\"x\"));",
+        "__cl_tmp0 = cl_std_text_stringOf(cl_str(\"x\"));",
+        "__cl_discard_1.tag = __cl_tmp0;",
+    );
+    assert_follows(
+        tag,
+        body,
+        "__cl_discard_1.tag = __cl_tmp0;",
+        "__cl_tmp0 = NULL;",
     );
     assert_release_after(
         tag,

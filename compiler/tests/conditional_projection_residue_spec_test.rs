@@ -8132,3 +8132,369 @@ func main(): i32 {
     assert_no_asan("barediscardcond", &output);
     assert_exit("barediscardcond", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// discardcalls: a bare discarded literal runs every leaf's effect.
+//
+// A literal statement drops its value but must still evaluate what it spells:
+// `Pair { a: counted(), b: counted() };` counts both fields, an array-literal
+// field counts its elements, a scalar array literal counts its elements, and
+// an owning field releases the storage it created while a place leaf stays a
+// read.
+// ---------------------------------------------------------------------------
+
+/// A bare discarded literal runs every leaf's effect exactly once.
+#[test]
+fn should_run_every_leaf_of_a_bare_discarded_literal() {
+    let struct_calls = r#"module spec.cpr.discardcalls;
+
+struct Pair { a: i32; b: i32; }
+
+let calls: i32 = 0;
+
+func counted(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+func use(): i32 {
+    Pair { a: counted(), b: counted() };
+    return calls - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("discardcalls", struct_calls);
+    assert_no_asan("discardcalls", &output);
+    assert_exit("discardcalls", &output, 0);
+
+    let array_field = r#"module spec.cpr.discardcallsfield;
+
+struct Holder { row: i32[2]; }
+
+let calls: i32 = 0;
+
+func counted(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+func use(): i32 {
+    Holder { row: [counted(), counted()] };
+    return calls - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("discardcallsfield", array_field);
+    assert_no_asan("discardcallsfield", &output);
+    assert_exit("discardcallsfield", &output, 0);
+
+    let scalar_array = r#"module spec.cpr.discardcallsarr;
+
+let calls: i32 = 0;
+
+func counted(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+func use(): i32 {
+    [counted(), counted()];
+    return calls - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("discardcallsarr", scalar_array);
+    assert_no_asan("discardcallsarr", &output);
+    assert_exit("discardcallsarr", &output, 0);
+
+    let owning = r#"module spec.cpr.discardcallsowning;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let calls: i32 = 0;
+
+func countedText(): String {
+    calls = calls + 1;
+    return stringOf("a");
+}
+
+func use(): i32 {
+    Box { v: countedText(), w: countedText() };
+    return calls - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+    let output = run_memory("discardcallsowning", owning);
+    assert_no_asan("discardcallsowning", &output);
+    assert_exit("discardcallsowning", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// keptcarrier: a conditional carrier keeps a view of a fresh result.
+//
+// `let h: Holder = g ? Holder { names: [id(mk().v)] } : Holder { names: ["zz"] };`
+// hands the local a view of a fresh result through a view-returning call. The
+// taken arm's root binds to the local's frame, so the byte stays readable
+// after the statement and the root's remaining field releases at the frame's
+// end; the skipped arm keeps its own literal. Both selections read back.
+// ---------------------------------------------------------------------------
+
+/// A kept conditional carrier's view-returning call reads live storage.
+#[test]
+fn should_keep_a_conditional_carriers_view_returning_call_readable() {
+    let source = r#"module spec.cpr.keptcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func id(x: str): str { return x; }
+
+func run(g: bool, want: i32): i32 {
+    let h: Holder = g ? Holder { names: [id(mk().v)] } : Holder { names: ["zz"] };
+    return i32(h.names[0][0]) - want;
+}
+
+func main(): i32 {
+    return run(true, 97) + run(false, 122);
+}
+"#;
+    let output = run_memory("keptcarrier", source);
+    assert_no_asan("keptcarrier", &output);
+    assert_exit("keptcarrier", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// globcarrier: a module carrier cannot keep a fresh view.
+//
+// `glob = g ? Holder { names: [mk().v] } : Holder { names: ["zz"] };` stores a
+// view of a fresh result into a module binding, which outlives the frame that
+// view dies with: the store reports one `E10033`. A module store whose arms
+// name static storage keeps its acceptance and reads back.
+// ---------------------------------------------------------------------------
+
+/// A module carrier store of a fresh view reports once; the static twin is
+/// accepted.
+#[test]
+fn should_reject_a_module_carrier_store_of_a_fresh_view() {
+    let fresh = r#"module spec.cpr.globcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+let glob: Holder = Holder { names: ["aa"] };
+
+func run(g: bool): i32 {
+    glob = g ? Holder { names: [mk().v] } : Holder { names: ["zz"] };
+    return 0;
+}
+
+func main(): i32 { run(true); return i32(glob.names[0][0]) - 97; }
+"#;
+    compile_rejects("globcarrier", fresh, "E10033", 1);
+
+    let static_twin = r#"module spec.cpr.globcarrierstatic;
+
+struct Holder { names: str[1]; }
+
+let glob: Holder = Holder { names: ["aa"] };
+
+func run(g: bool): i32 {
+    glob = g ? Holder { names: ["bb"] } : Holder { names: ["cc"] };
+    return 0;
+}
+
+func main(): i32 {
+    run(true);
+    run(false);
+    return i32(glob.names[0][0]) - 99;
+}
+"#;
+    let output = run_memory("globcarrierstatic", static_twin);
+    assert_no_asan("globcarrierstatic", &output);
+    assert_exit("globcarrierstatic", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// mixeddiscard: a mixed view/place bare discard releases the fresh root.
+//
+// `[u, mk().v];` drops a view array whose second element reads a fresh
+// result's member: the root's remaining field releases when the statement
+// ends, once per execution, while the place element stays a read.
+// ---------------------------------------------------------------------------
+
+/// A mixed view/place bare discard releases its fresh root per execution.
+#[test]
+fn should_release_the_root_of_a_mixed_bare_discard() {
+    let source = r#"module spec.cpr.mixeddiscard;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+
+func use(u: str, k: i32): i32 {
+    let i: i32 = 0;
+    while (i < k) {
+        [u, mk().v];
+        i = i + 1;
+    }
+    return i - k + i32(len(u)) - 2;
+}
+
+func main(): i32 { return use("uu", 3); }
+"#;
+    let output = run_memory("mixeddiscard", source);
+    assert_no_asan("mixeddiscard", &output);
+    assert_exit("mixeddiscard", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// condcarrier: a conditional view element inside a carrier literal.
+//
+// `Holder { names: [c ? id(mk().v) : id(mk().w)] }` stores a view that reads
+// a member of a fresh result on either selection. The element-conditional
+// inside a conditional carrier, its one-arm spelling, the re-executed loop
+// spelling, the nested conditional, and the deferred fill
+// `[; c ? id(mk().v) : "zz"]` each bind the taken arm's root for the local's
+// frame, so the stored byte stays readable while the roots' remaining fields
+// release. Every selection folds its byte into the exit code.
+// ---------------------------------------------------------------------------
+
+/// A conditional element inside a carrier literal keeps its byte readable.
+#[test]
+fn should_keep_the_conditional_element_of_a_carrier_literal_readable() {
+    let direct = r#"module spec.cpr.condcarrier;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func id(x: str): str { return x; }
+
+func run(c: bool): i32 {
+    let h: Holder = Holder { names: [c ? id(mk().v) : id(mk().w)] };
+    return i32(h.names[0][0]) - (c ? 97 : 99);
+}
+
+func main(): i32 {
+    return run(true) + run(false);
+}
+"#;
+    let output = run_memory("condcarrier", direct);
+    assert_no_asan("condcarrier", &output);
+    assert_exit("condcarrier", &output, 0);
+
+    let one_arm = r#"module spec.cpr.condcarrierone;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func id(x: str): str { return x; }
+
+func run(c: bool): i32 {
+    let h: Holder = Holder { names: [c ? id(mk().v) : "zz"] };
+    return i32(h.names[0][0]) - (c ? 97 : 122);
+}
+
+func main(): i32 {
+    return run(true) + run(false);
+}
+"#;
+    let output = run_memory("condcarrierone", one_arm);
+    assert_no_asan("condcarrierone", &output);
+    assert_exit("condcarrierone", &output, 0);
+
+    let looped = r#"module spec.cpr.condcarrierloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func id(x: str): str { return x; }
+
+func run(g: bool, c: bool, k: i32): i32 {
+    let n: i32 = 0;
+    let i: i32 = 0;
+    while (i < k) {
+        let h: Holder = g ? Holder { names: [c ? id(mk().v) : id(mk().w)] } : Holder { names: ["zz"] };
+        n = n + i32(h.names[0][0]) - (g ? (c ? 97 : 99) : 122);
+        i = i + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    return run(true, true, 3) + run(true, false, 3) + run(false, false, 3);
+}
+"#;
+    let output = run_memory("condcarrierloop", looped);
+    assert_no_asan("condcarrierloop", &output);
+    assert_exit("condcarrierloop", &output, 0);
+
+    let nested = r#"module spec.cpr.condcarriernested;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[1]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func id(x: str): str { return x; }
+
+func run(g: bool, c: bool, want: i32): i32 {
+    let h: Holder = g ? Holder { names: [c ? id(mk().v) : id(mk().w)] } : Holder { names: ["zz"] };
+    return i32(h.names[0][0]) - want;
+}
+
+func main(): i32 {
+    return run(true, true, 97) + run(true, false, 99) + run(false, false, 122);
+}
+"#;
+    let output = run_memory("condcarriernested", nested);
+    assert_no_asan("condcarriernested", &output);
+    assert_exit("condcarriernested", &output, 0);
+
+    let fill = r#"module spec.cpr.condcarrierfill;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+struct Holder { names: str[2]; }
+
+func mk(): Box { return Box { v: stringOf("ab"), w: stringOf("cd") }; }
+func id(x: str): str { return x; }
+
+func run(c: bool): i32 {
+    let h: Holder = Holder { names: [; c ? id(mk().v) : "zz"] };
+    return i32(h.names[0][0]) - (c ? 97 : 122);
+}
+
+func main(): i32 {
+    return run(true) + run(false);
+}
+"#;
+    let output = run_memory("condcarrierfill", fill);
+    assert_no_asan("condcarrierfill", &output);
+    assert_exit("condcarrierfill", &output, 0);
+}

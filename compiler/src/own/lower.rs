@@ -1201,9 +1201,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return;
         }
         // A bare literal statement has no conditional arm to defer, so its
-        // fresh owning leaves materialize here: each binds to its own statement
-        // temporary and releases when the statement ends, while a place leaf
-        // stays a read.
+        // fresh leaves materialize here: every leaf with an effect binds to its
+        // own statement temporary and releases when the statement ends, while
+        // a place leaf stays a read.
         let value = self.materialize_discarded_literal(value);
         self.emit(Statement::Discard { value });
     }
@@ -1211,22 +1211,40 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Gives a discarded literal's fresh leaves their own released temporaries.
     ///
     /// The bare statement spelling has no conditional arm to defer through, so
-    /// each fresh owning leaf of an array literal binds through the same
-    /// recursion the conditional discard uses: a leaf that already travels
-    /// through a temporary registers its release, a fresh call or literal
-    /// materializes into its own statement temporary, and a place leaf stays a
-    /// read. A struct literal keeps its own path: the discard emission builds
-    /// and releases a destination for the literal forms that need one, and its
-    /// fresh fields bind there.
+    /// each leaf of a literal binds through the same recursion the conditional
+    /// discard uses: a leaf that already travels through a temporary registers
+    /// its release, a leaf with an effect (a call, a closure call, or an
+    /// update, whether or not it owns storage) materializes into its own
+    /// statement temporary the statement's release frees, a leaf that projects
+    /// fresh storage binds that root first, and a place leaf stays a read.
     fn materialize_discarded_literal(&mut self, value: Value) -> Value {
         let Value { ty, kind } = value;
         match kind {
+            ValueKind::StructLit { name, fields } => {
+                let declared = self.instance_fields(&ty, &name);
+                let fields = fields
+                    .into_iter()
+                    .map(|(field_name, field)| {
+                        let position = declared
+                            .iter()
+                            .find(|(declared, _)| declared == &field_name)
+                            .map(|(_, field_ty)| field_ty.clone())
+                            .unwrap_or_else(|| field.ty.clone());
+                        (field_name, self.materialize_discarded_field(field, &position))
+                    })
+                    .collect();
+                Value::new(ty, ValueKind::StructLit { name, fields })
+            }
             ValueKind::ArrayLit { elements, fill } => {
+                let element = ty.iterated_element();
                 let elements = elements
                     .into_iter()
-                    .map(|element| self.materialize_discarded_field(element))
+                    .map(|element_value| {
+                        self.materialize_discarded_field(element_value, &element)
+                    })
                     .collect();
-                let fill = fill.map(|fill| Box::new(self.materialize_discarded_field(*fill)));
+                let fill =
+                    fill.map(|fill| Box::new(self.materialize_discarded_field(*fill, &element)));
                 Value::new(ty, ValueKind::ArrayLit { elements, fill })
             }
             other => Value::new(ty, other),
@@ -1275,10 +1293,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     .iter()
                     .any(|(_, field)| self.field_aliases_owned_storage(field));
                 if aliases {
+                    let declared = self.instance_fields(&value.ty, &name);
                     let fields = fields
                         .into_iter()
                         .map(|(field_name, field)| {
-                            (field_name, self.materialize_discarded_field(field))
+                            let position = declared
+                                .iter()
+                                .find(|(declared, _)| declared == &field_name)
+                                .map(|(_, field_ty)| field_ty.clone())
+                                .unwrap_or_else(|| field.ty.clone());
+                            (field_name, self.materialize_discarded_field(field, &position))
                         })
                         .collect();
                     return Value::new(value.ty, ValueKind::StructLit { name, fields });
@@ -1301,17 +1325,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         )
     }
 
-    /// Gives one discarded struct-literal field the owner its storage needs.
+    /// Gives one discarded literal field the owner its value needs.
     ///
     /// A field that already names an owner — a place read or a bound
     /// temporary — stays inline, because the discard reads it while that
-    /// owner's own cleanup frees it. A fresh owning field materializes into
-    /// its own statement temporary, whose registered release frees it when the
-    /// statement ends.
-    fn materialize_discarded_field(&mut self, field: Value) -> Value {
-        if !(self.owns_drop(&field.ty) || self.maybe_owns(&field.ty)) {
-            return field;
-        }
+    /// owner's own cleanup frees it. A field with an effect materializes into
+    /// its own statement temporary, whether or not it owns storage, so the
+    /// effect runs and the statement's release frees exactly what the field
+    /// allocated. A view position that projects fresh storage binds its root
+    /// first, so the root's remaining fields release with the statement while
+    /// an owning position keeps its consuming path.
+    fn materialize_discarded_field(&mut self, field: Value, position: &Ty) -> Value {
         // A field that already travels through a materialized temporary keeps
         // that single owner. The temporary may have been prepared for the
         // literal store the discard never performs, so a missing release is
@@ -1322,6 +1346,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return field;
         }
+        // A view position that projects fresh storage binds its root through
+        // the statement's deferred fill, so the root's remaining fields release
+        // when the statement ends even though the projected value is dropped.
+        // A chain that already roots in storage keeps its spelling.
+        if (is_view_like(position) || is_view(&field.ty))
+            && !self.projects_from_place(&field)
+            && matches!(field.kind, ValueKind::Member { .. } | ValueKind::Index { .. })
+        {
+            return self.bind_guarded_projection_root(field);
+        }
         // An aggregate recurses: a nested literal's or an array literal's
         // fresh leaves each bind through this rule, so every one of them gets
         // its own released temporary while the place leaves stay reads. The
@@ -1330,28 +1364,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let ty = field.ty.clone();
         match field.kind {
             ValueKind::StructLit { name, fields } => {
+                let declared = self.instance_fields(&ty, &name);
                 let fields = fields
                     .into_iter()
                     .map(|(field_name, field)| {
-                        (field_name, self.materialize_discarded_field(field))
+                        let position = declared
+                            .iter()
+                            .find(|(declared, _)| declared == &field_name)
+                            .map(|(_, field_ty)| field_ty.clone())
+                            .unwrap_or_else(|| field.ty.clone());
+                        (field_name, self.materialize_discarded_field(field, &position))
                     })
                     .collect();
-                return Value::new(ty, ValueKind::StructLit { name, fields });
+                Value::new(ty, ValueKind::StructLit { name, fields })
             }
             ValueKind::ArrayLit { elements, fill } => {
+                let element = ty.iterated_element();
                 let elements = elements
                     .into_iter()
-                    .map(|element| self.materialize_discarded_field(element))
+                    .map(|element_value| {
+                        self.materialize_discarded_field(element_value, &element)
+                    })
                     .collect();
-                let fill = fill.map(|fill| Box::new(self.materialize_discarded_field(*fill)));
-                return Value::new(ty, ValueKind::ArrayLit { elements, fill });
+                let fill =
+                    fill.map(|fill| Box::new(self.materialize_discarded_field(*fill, &element)));
+                Value::new(ty, ValueKind::ArrayLit { elements, fill })
             }
             other => {
                 let field = Value::new(ty, other);
+                // A field whose chain reads storage another owner holds stays
+                // a read: materializing it would give a second owner the same
+                // storage, and the owner's cleanup frees it once.
                 if self.field_aliases_owned_storage(&field) {
                     return field;
                 }
-                return self.materialize_guard_operand(field);
+                if !is_pure_value(&field) {
+                    return self.materialize_guard_operand(field);
+                }
+                if !(self.owns_drop(&field.ty) || self.maybe_owns(&field.ty)) {
+                    return field;
+                }
+                self.materialize_guard_operand(field)
             }
         }
     }
@@ -3335,7 +3388,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     || self.maybe_owns(&value.ty))
                     && !is_view(&value.ty)
                     && !value.ty.is_unknown();
-                let arm_fill = self.conditional_needs_arm_fill(&value)
+                let arm_fill = (self.conditional_needs_arm_fill(&value)
+                    || self.view_position_ownerless(&value))
                     && self.materialize_owned_temporaries;
                 if self.conditional_has_ownerless_projection_arm(&value) {
                     if arm_fill {
@@ -3926,8 +3980,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Binds one view conditional arm's owning root in its own branch.
     ///
     /// Mirrors [`Self::bind_view_projection_root`] for one arm: a place-rooted
-    /// arm stays a borrow, a nested conditional recurses, and a fresh call or
-    /// literal root binds to a scope owner the view's scope releases.
+    /// arm stays a borrow, a nested conditional recurses, a fresh call or
+    /// literal root binds to a scope owner the view's scope releases, and a
+    /// view-returning call binds the backing its single lend source reads
+    /// exactly as a direct derivation does. A projection the deferred fill
+    /// already bound to a statement temporary is unbound here: the destination
+    /// keeps the view past the statement, so the root binds to a scope owner
+    /// instead and the statement temporary's release stays a no-op.
     fn own_view_arm(&mut self, value: Value) -> Value {
         match value.kind {
             ValueKind::Member { base, name } => {
@@ -3950,6 +4009,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     },
                 )
             }
+            // A view-returning call reborrows its single lend source, so the
+            // destination keeps a view of that source's storage: the source
+            // binds for the destination's frame exactly as a direct derivation
+            // does. A call that owns its result binds as a whole instead.
+            ValueKind::Call {
+                callee,
+                type_args,
+                args,
+                receiver,
+            } if receiver.is_none() && is_view(&value.ty) => {
+                let index = self.lowered_lend_source(&callee);
+                let mut args = args;
+                if let Some(index) = index {
+                    if let Some(arg) = args.get_mut(index) {
+                        let pending =
+                            std::mem::replace(arg, Value::new(Ty::unknown(), ValueKind::Aggregate));
+                        *arg = self.own_view_arm(pending);
+                    }
+                }
+                Value::new(
+                    value.ty,
+                    ValueKind::Call {
+                        callee,
+                        type_args,
+                        args,
+                        receiver,
+                    },
+                )
+            }
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
                 let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
                 if owning && !is_view(&value.ty) {
@@ -3958,6 +4046,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     value
                 }
             }
+            // The deferred fill bound this position's root to a statement
+            // temporary; a destination that keeps the view needs the backing
+            // past the statement, so the root binds to a scope owner here
+            // instead. The statement temporary stays empty, and its release
+            // frees nothing.
+            ValueKind::Materialize { value: inner, .. } => self.own_view_arm(*inner),
             // A literal arm carries its view positions as fields or elements: a
             // position that reads a fresh result binds that root for the
             // destination's frame, exactly as a direct view projection does,
@@ -4031,12 +4125,23 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// True when a view position's chain roots at ownerless storage.
+    ///
+    /// A projection the deferred fill bound to a statement temporary reads the
+    /// storage its inner value names: the temporary's release runs at the
+    /// statement's end, so it does not own the backing for a view the
+    /// destination keeps. The walk looks through such a binding, while a chain
+    /// that roots at a place or a scope owner already names storage the frame
+    /// holds.
     fn view_position_ownerless(&self, value: &Value) -> bool {
-        if self.projects_from_place(value) {
-            return false;
-        }
         match &value.kind {
+            ValueKind::Materialize { value: inner, .. } => self.view_position_ownerless(inner),
             ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                if matches!(base.kind, ValueKind::Materialize { .. }) {
+                    return self.view_position_ownerless(base);
+                }
+                if self.projects_from_place(value) {
+                    return false;
+                }
                 self.view_position_ownerless(base)
             }
             // An aggregate position carries the storage its own view positions
@@ -4044,6 +4149,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ValueKind::StructLit { .. } | ValueKind::ArrayLit { .. } => {
                 self.aggregate_has_ownerless_view_positions(value)
             }
+            // A conditional selects one arm at run time, so either arm's storage
+            // may be the one the view reads; the walk judges both.
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.view_position_ownerless(then_value) || self.view_position_ownerless(else_value)
+            }
+            // A view-returning call reborrows its single lend source, so the
+            // view reads whatever that source reads; every other call roots at
+            // its own result.
+            ValueKind::Call { callee, args, .. } if is_view(&value.ty) => self
+                .lowered_lend_source(callee)
+                .and_then(|index| args.get(index))
+                .is_some_and(|source| self.view_position_ownerless(source)),
             ValueKind::Call { .. } | ValueKind::ClosureCall { .. } => {
                 let owning = !self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty);
                 owning && !is_view(&value.ty) && !value.ty.is_unknown()
