@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 02:10
-> **Progress**: 28/51 tasks (55%) — Phase 5 in review
+> **Last Updated**: 2026-10-19 02:50
+> **Progress**: 29/51 tasks (57%) — Phase 5 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -252,10 +252,10 @@ ST-13..ST-14 · AR-6
 
 ### Step 5.3: Impl Tests & Review
 
-- [ ] 5.3.1 Write the phase implementation pins (the per-arm store shapes, the guard-literal
+- [x] 5.3.1 Write the phase implementation pins (the per-arm store shapes, the guard-literal
       destination fill, the call-count shapes, the byte-identical controls, a re-emission
       determinism pin) —
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+      `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-19 02:50; four pins added (97 tests total, additions only) — the conditional-base rejection at its site for both selections (one `E10221`, the fragment, no TU), the accepted controls' emissions (the conditional reads, the place store's two calls, the projected store), the guard literal's evaluated-path fill (the materialized destination, the selection-gated fill, one call), and a re-emission pin; three fail at `4d79d60` for the intended reason, one is a disclosed base-stable guard; 97/97 green, `make check` exit 0)
 - [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses
 

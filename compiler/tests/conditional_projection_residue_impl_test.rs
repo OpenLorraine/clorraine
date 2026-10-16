@@ -5751,3 +5751,301 @@ fn should_re_emit_the_ownership_transfer_programs_byte_identically() {
         assert_contains(tag, &first, shape);
     }
 }
+
+// ===== The conditional-base store and the guarded view-array literal =====
+
+/// The taken-selection conditional-base store program.
+const CONDITIONAL_BASE_TAKEN_SOURCE: &str = r#"module spec.cpr.implcondstore;
+
+struct Box { ys: i32[3]; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let b2: Box = Box { ys: [4, 5, 6] };
+    let c: bool = true;
+    let i: i32 = 1;
+    (c ? b1 : b2).ys[i] = bump();
+    return (b1.ys[1] - 7) + (b2.ys[1] - 5) + calls;
+}
+"#;
+
+/// The false-selection conditional-base store program.
+const CONDITIONAL_BASE_OTHER_SOURCE: &str = r#"module spec.cpr.implcondstoreother;
+
+struct Box { ys: i32[3]; }
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let b2: Box = Box { ys: [4, 5, 6] };
+    let c: bool = false;
+    let i: i32 = 1;
+    (c ? b1 : b2).ys[i] = 7;
+    return (b2.ys[1] - 7) + (b1.ys[1] - 2);
+}
+"#;
+
+/// The accepted read spelling of the conditional base.
+const CONDITIONAL_BASE_READ_SOURCE: &str = r#"module spec.cpr.implcondstoreread;
+
+struct Box { ys: i32[3]; }
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let b2: Box = Box { ys: [4, 5, 6] };
+    let c: bool = true;
+    let d: bool = false;
+    let i: i32 = 1;
+    let v1: i32 = (c ? b1 : b2).ys[i];
+    let v2: i32 = (d ? b1 : b2).ys[i];
+    return (v1 - 2) + (v2 - 5) + (b1.ys[1] - 2) + (b2.ys[1] - 5);
+}
+"#;
+
+/// The accepted plain place store with two right-hand-side calls.
+const CONDITIONAL_BASE_PLACE_SOURCE: &str = r#"module spec.cpr.implcondstoreplace;
+
+struct Box { ys: i32[3]; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let i: i32 = 1;
+    b1.ys[i] = bump();
+    b1.ys[0] = bump() + 1;
+    return (b1.ys[1] - 7) + (b1.ys[0] - 8) + calls - 2;
+}
+"#;
+
+/// The accepted projected place store.
+const CONDITIONAL_BASE_PROJECTION_SOURCE: &str = r#"module spec.cpr.implcondstoreproj;
+
+struct Box { ys: i32[3]; }
+struct Holder { b: Box; }
+
+func main(): i32 {
+    let h: Holder = Holder { b: Box { ys: [1, 2, 3] } };
+    let i: i32 = 1;
+    h.b.ys[i] = 7;
+    return h.b.ys[1] - 7;
+}
+"#;
+
+/// The guarded view-array literal with the take parameter.
+const GUARD_VIEW_LITERAL_TAKE_SOURCE: &str = r#"module spec.cpr.implguardview;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    calls = calls + 1;
+    return ["CC", "DD"];
+}
+
+func consume(take m: Mixed): i32 {
+    seen = i32(m.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Mixed { names: n1(), tag: stringOf("x") } : Mixed { names: n2(), tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c + 1) + calls - 2;
+}
+"#;
+
+/// The guarded view-array literal with the plain parameter.
+const GUARD_VIEW_LITERAL_PLAIN_SOURCE: &str = r#"module spec.cpr.implguardviewplain;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    calls = calls + 1;
+    return ["CC", "DD"];
+}
+
+func consume(m: Mixed): i32 {
+    seen = i32(m.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Mixed { names: n1(), tag: stringOf("x") } : Mixed { names: n2(), tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c + 1) + calls - 2;
+}
+"#;
+
+/// An element store through a conditional base reports the place rule.
+///
+/// `(c ? b1 : b2).ys[i] = x` cannot name a place, so the assignment reports
+/// one `E10221` at the target's site and emits no translation unit — for the
+/// taken and the false selection alike. The store is never silently dropped,
+/// so the right-hand side never runs.
+#[test]
+fn should_reject_an_element_store_through_a_conditional_base_at_its_site() {
+    assert_rejected_once_at(
+        "implcondstore",
+        CONDITIONAL_BASE_TAKEN_SOURCE,
+        "E10221",
+        17,
+        5,
+        &[
+            "left side of an assignment must be a place",
+            "assign to a variable, field, or element",
+        ],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implcondstoreother",
+        CONDITIONAL_BASE_OTHER_SOURCE,
+        "E10221",
+        10,
+        5,
+        &["left side of an assignment must be a place"],
+        &[],
+    );
+}
+
+/// The conditional-base controls keep their accepted emissions.
+///
+/// The read spelling renders the conditional between the two arrays, the
+/// plain place store keeps both right-hand-side calls, and the projected
+/// store writes through the element address.
+#[test]
+fn should_keep_the_conditional_base_controls_accepted() {
+    let (_scratch, emitted) = emit_host("implcondstoreread", CONDITIONAL_BASE_READ_SOURCE);
+    assert_contains(
+        "implcondstoreread",
+        &emitted,
+        "v1 = (c ? b1 : b2).ys[i];",
+    );
+    assert_contains(
+        "implcondstoreread",
+        &emitted,
+        "v2 = (d ? b1 : b2).ys[i];",
+    );
+
+    let (_scratch, emitted) = emit_host("implcondstoreplace", CONDITIONAL_BASE_PLACE_SOURCE);
+    assert_contains(
+        "implcondstoreplace",
+        &emitted,
+        "*(&(b1.ys[i])) = cl_spec_cpr_implcondstoreplace_bump();",
+    );
+    assert_contains(
+        "implcondstoreplace",
+        &emitted,
+        "b1.ys[0] = (i32)((u32)cl_spec_cpr_implcondstoreplace_bump() + (u32)1);",
+    );
+
+    let (_scratch, emitted) = emit_host("implcondstoreproj", CONDITIONAL_BASE_PROJECTION_SOURCE);
+    assert_contains("implcondstoreproj", &emitted, "*(&(h.b.ys[i])) = 7;");
+}
+
+/// The guarded view-array literal fills its destination on the taken path.
+///
+/// The conditionally evaluated literal materializes into a destination the
+/// guard fills where the operand is actually evaluated, and each arm's call
+/// receives that destination's view-array field — so a skipped guard or a
+/// skipped arm never runs the other arm's call.
+#[test]
+fn should_fill_the_guard_literal_view_array_on_the_evaluated_path() {
+    let (_scratch, emitted) = emit_host("implguardview", GUARD_VIEW_LITERAL_TAKE_SOURCE);
+    assert_contains("implguardview", &emitted, "ClMixed __cl_tmp2 = {0};");
+    assert_contains("implguardview", &emitted, "(ok ? (__cl_tmp2 = ");
+    assert_eq!(
+        emitted
+            .matches("implguardview_n1(__cl_tmp0.names)")
+            .count(),
+        1,
+        "implguardview: the selected arm's call must fill once"
+    );
+
+    let (_scratch, emitted) = emit_host("implguardviewplain", GUARD_VIEW_LITERAL_PLAIN_SOURCE);
+    assert_contains("implguardviewplain", &emitted, "ClMixed __cl_tmp0 = {0};");
+    assert_contains(
+        "implguardviewplain",
+        &emitted,
+        "implguardviewplain_n1(__cl_tmp0.names)",
+    );
+    assert_contains("implguardviewplain", &emitted, "_consume((ok ? ");
+    assert_eq!(
+        emitted
+            .matches("implguardviewplain_n2(__cl_tmp1.names)")
+            .count(),
+        1,
+        "implguardviewplain: the other arm's call must fill its bound root once"
+    );
+}
+
+/// The conditional-base and guard-literal programs re-emit byte-identically.
+///
+/// The rejection and the destination fill read the substituted shapes, so a
+/// second emission of the same source produces the same text.
+#[test]
+fn should_re_emit_the_conditional_base_and_guard_literal_programs_identically() {
+    let (first, second) = emit_twice("reemitcondstoreplace", CONDITIONAL_BASE_PLACE_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitcondstoreplace: the program re-emitted differently"
+    );
+    assert_contains(
+        "reemitcondstoreplace",
+        &first,
+        "*(&(b1.ys[i])) = cl_spec_cpr_implcondstoreplace_bump();",
+    );
+
+    let (first, second) = emit_twice("reemitguardview", GUARD_VIEW_LITERAL_TAKE_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitguardview: the program re-emitted differently"
+    );
+    assert_contains("reemitguardview", &first, "(ok ? (__cl_tmp2 = ");
+}
