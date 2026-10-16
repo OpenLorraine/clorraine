@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 04:10
-> **Progress**: 17/39 tasks (44%) — Phase 3 in review
+> **Last Updated**: 2026-10-17 06:30
+> **Progress**: 18/39 tasks (46%) — Phase 3 complete
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -176,8 +176,8 @@ member typing, and the `toCString` acceptance.
 - [x] 3.3.1 Write the phase implementation pins (the rejection spans on both paths, the typed
       pointer-member conversion emission, the member controls byte-identical, the re-emission
       determinism pin) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17 04:10; four pins added (34 tests total, additions only) — the typed view pointer member and its conversions (the two sanctioned `(char *)(s.ptr)` occurrences; the `raw u8`→`usize` rejection once with `E10200`), the typed `.len` member, the value-form enum rejection on both paths (one `E10212` each; the scoped and qualified controls), and a re-emission pin; two of the five (the `.len` and determinism pins) are base-stable shape guards, reported; 34/34 green, `make check` exit 0)
-- [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses
+- [x] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses ✅ (completed: 2026-10-17 06:30; all three lenses dispatched plus two correction rounds and two bounded confirmations (correctness PASS WITH MINORS, 0 blockers; the semantics scope ruling implemented): the global widening reverted and the conversion scoped to the member read, the fixed-array instance guard, the instance use conversion, and the tightening to the slots and returns (the argument/FFI/struct-literal positions report `E10200`; the conversion case re-scoped per the ruling with two new rejection cases); rows filed `DEF-346`–`DEF-349`; the closing verification: the checker-conformance spec 108/108 plain and ASan, the impl pins 34/34, `make check` exit 0, the per-position matrix parent-verified)
 
 **Verify**: `make check`; the pinned `checker_conformance` phrase/conversion cases
 

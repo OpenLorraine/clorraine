@@ -204,3 +204,51 @@ initializer dot call).
 ### Filed rows
 
 `DEF-339` (the borrowed element's owned-field store leak), `DEF-340` (the temp-rooted projected argument), `DEF-341` (the lifted lambda return substitution), `DEF-342` (the declined projected-argument shapes), `DEF-343` (**closed fixed** in round 2), `DEF-344` (the null-shaped argument against a sibling-fixed parameter), `DEF-345` (the substituted element in a conversion/member position — the pre-existing gap the corrected index path now reaches).
+
+## Phase 3 — Member typing
+
+**Reviewed implementation**: `5491c87` plus two correction rounds (`ea46489`, `b8296d2`) and the
+note commit (`4d91949`). **Lenses**: correctness (K3R/K3C2), semantics (K3S/K3C), and
+emission-integrity (EM-1..EM-4).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | K3R-1 (the global `raw u8 → cstring` widening — outside the frozen table, with head-only accepts whose C fails), K3R-2 (the fixed-array instance `.ptr` flip), K3R-3 (the pin's `raw u8` half misleading); the enum rule and the typed members otherwise verified |
+| semantics | FAIL — 2 blockers | K3S-1 (= K3R-1; Ch 02 §9 "and no others"), K3S-2 (= K3R-2), K3S-3 (the pin record); the view-member typing and the codes conformant |
+| emission-integrity | FINDINGS — 4 | EM-1 (the argument cast missing), EM-2 (the substituted-member store cast), EM-3 (= K3R-2, critical), EM-4 (the instance use conversion unjudged) — all the same two roots; no emission delta in the corpus |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| C1 (K3R-1/K3S-1/EM-1/EM-2) | **Fixed**: the global widening reverted; the view pointer member reads marked by expression and exempted at a cstring destination; the sanctioned cast rendered at the argument and the substituted-member store |
+| C2 (K3R-2/K3S-2/EM-3) | **Fixed**: the instance pointer-member arm guarded on a dynamic extent — a fixed array keeps `E10212`, the slice twin accepted |
+| C3 (EM-4) | **Fixed**: the `OpaqueMemberUse` instance duty — a generic `.ptr` at an integer destination reports one `E10200` |
+| F1a (K3C-2) | **Fixed**: the exemption narrowed to the destination slots and the returns — the user-call argument, the FFI argument, and the struct-literal field report one `E10200`; the conversion case re-scoped per the ruling (the argument half now a rejection) with two new rejection cases |
+| F1b (K3C-1) | **Fixed**: the struct-literal field's un-rendered-cast acceptance now reports |
+| K3R-3/K3S-3 | **Recorded**: the pin carries the note (the `raw u8` half records a pre-existing const-discard shape deliberately) |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| correctness (`ea46489`) | **PASS WITH MINORS — 0 blockers**: the four repros and the wider family at frozen parity (message, span, help); the sanctioned positions cast and build; the four new cases red at the round base; K3C2-1 (a record-wording nit — the conditional merge's `E10200` is a *harmonization*, not frozen parity: the frozen binary accepted it with an invalid C) and K3C2-2 (a comment nit) recorded |
+| semantics (`ea46489`) | **FAIL — the scope ruling**: the member's exemption is sanctioned only at the store slots and the return (the frozen table's cstring entries are position-tagged; the stdlib's only `.ptr`-at-cstring spelling is `toCString`'s return) → the tightening round |
+| parent re-check (`b8296d2`) | The per-position matrix verified: the return and the store slots accepted (the cast; the sanctioned shapes strict-build); the user-call argument and the struct-literal field each one `E10200`; the suites 108/108 plain and ASan |
+
+### Record notes
+
+- Recorded consequences (conformant, disclosed by the confirmation): `.len` at narrowing integer
+  destinations now reports `E10200`, and `.ptr[i]` outside `unsafe` now `E10602` (per Ch 02 §9 and
+  Ch 04 §9); no base-working program changed class otherwise.
+- Unchanged residuals recorded: the generic return of a member read at `cstring` (`E10036`, a
+  pre-existing view-return rule); `(*p).ptr`'s pre-existing shape; the view-typed struct field
+  (`E10205`).
+
+### Filed rows
+
+`DEF-346` (the fixed array's `.ptr` and unknown view members on the concrete path — the concrete
+half persists), `DEF-347` (the const pointer at mutable destinations), `DEF-348` (the raw-enum
+member read), `DEF-349` (the `E10200` help's cast not host-build-clean).
