@@ -231,6 +231,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 }
                 let call = self.lower_call(callee, type_args, args);
                 let move_outs = self.take_move_out_places(call.modes.as_deref(), &call.args);
+                let value_move_outs =
+                    self.take_pointee_move_outs(call.modes.as_deref(), &call.args);
                 // The result of a discarded call is bound to a statement
                 // temporary when it owns storage, so the statement's release
                 // frees it; a duplicable or empty result is a plain call. A
@@ -258,6 +260,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 });
                 for place in move_outs {
                     self.emit(Statement::MoveOut { place });
+                }
+                for value in value_move_outs {
+                    self.emit(Statement::MoveOutValue { value });
                 }
             }
             ExprKind::IntrinsicCall { name, args } if name == "assert" || name == "panic" => {
@@ -379,11 +384,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // destination's views read the same storage, so the source's
             // element loans follow the copy — for a view-like array exactly as
             // for the single view, so a later escape or backing write through
-            // the copy is judged like the source's own.
+            // the copy is judged like the source's own. A projected source
+            // (`let ys: str[2] = rows[0];`) contributes the positions recorded
+            // under its projection, translated to the destination's paths. A
+            // single view keeps its own loan machinery, so only a container
+            // destination takes the element positions.
             if let Some(value) = &decl.value {
                 if let Some(PlaceTarget::Local(source, projections)) = self.place_target(value) {
-                    if projections.is_empty() {
-                        self.move_element_loans(source, id, &[]);
+                    if super::place::constant_path(&projections)
+                        && (projections.is_empty() || !is_view(&target))
+                    {
+                        self.move_element_loans(source, &projections, id, &[]);
                     }
                 }
             }
@@ -737,10 +748,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         // A carrier copy hands its view positions to the new binding — for a
         // view-like array exactly as in `check_let`, so a later escape or
-        // backing write through the copy is judged like the source's own.
-        if let Some(PlaceTarget::Local(source, projections)) = self.place_target(&decl.value) {
-            if projections.is_empty() {
-                self.move_element_loans(source, id, &[]);
+        // backing write through the copy is judged like the source's own. A
+        // projected source contributes the positions recorded under its
+        // projection, translated to the destination's paths; a single view
+        // keeps its own loan machinery.
+        if let Some(PlaceTarget::Local(source, projections)) =
+            self.place_target(&decl.value)
+        {
+            if super::place::constant_path(&projections)
+                && (projections.is_empty() || !is_view(&target))
+            {
+                self.move_element_loans(source, &projections, id, &[]);
             }
         }
         let place = self.binding_place(id);

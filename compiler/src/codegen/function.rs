@@ -285,36 +285,181 @@ impl<'a> Emitter<'a> {
     /// A temporary created in a generic body from a value the declaration
     /// cannot type — the selected member of a conditional take, for example —
     /// records the opaque type. The instance's substitution gives the filling
-    /// value its concrete type, so the fill statement identifies the
-    /// temporary's own type: the declaration, its drop, and its move-outs
-    /// then use the instance's shape instead of the generic fallback. Only a
-    /// temporary whose recorded type is still opaque is resolved, and the
-    /// first fill that resolves decides; a temporary with no resolvable fill
-    /// keeps its recorded type.
+    /// value its concrete type, so the fill identifies the temporary's own
+    /// type: the declaration, its drop, and its move-outs then use the
+    /// instance's shape instead of the generic fallback. A fill statement and
+    /// a guard-filled materialization are both consulted; only a temporary
+    /// whose recorded type is still opaque is resolved, and the first fill
+    /// that resolves decides. A temporary with no resolvable fill keeps its
+    /// recorded type.
     fn resolve_temp_types(&mut self, function: &ir::Function) {
         self.resolved_temp_types.clear();
         for block in &function.blocks {
             for instr in &block.statements {
-                let (target, filled) = match &instr.statement {
+                match &instr.statement {
                     Statement::Assign { target, value } => {
-                        (target, self.resolved_value_ty(value))
+                        self.record_temp_fill(target, self.resolved_value_ty(value));
+                        self.collect_materialized_temps(value);
                     }
                     Statement::Move { target, source } => {
-                        (target, self.resolved_place_ty(source))
+                        self.record_temp_fill(target, self.resolved_place_ty(source));
                     }
-                    _ => continue,
-                };
-                let ir::PlaceBase::Temp(id) = &target.base else {
-                    continue;
-                };
-                if !target.projections.is_empty()
-                    || !self.substitute(&target.ty).is_unknown()
-                    || filled.is_unknown()
-                {
-                    continue;
+                    Statement::StorePointer { pointer, value } => {
+                        self.collect_materialized_temps(pointer);
+                        self.collect_materialized_temps(value);
+                    }
+                    Statement::Call { args, receiver, .. } => {
+                        for arg in args {
+                            self.collect_materialized_temps(arg);
+                        }
+                        if let Some(receiver) = receiver {
+                            self.collect_materialized_temps(receiver);
+                        }
+                    }
+                    Statement::Discard { value } => self.collect_materialized_temps(value),
+                    Statement::Guards { checks } => {
+                        for check in checks {
+                            self.collect_materialized_temps(check);
+                        }
+                    }
+                    _ => {}
                 }
-                self.resolved_temp_types.entry(*id).or_insert(filled);
             }
+            match &block.terminator {
+                Terminator::Branch { condition, .. } => {
+                    self.collect_materialized_temps(condition);
+                }
+                Terminator::Switch { value, arms, .. } => {
+                    self.collect_materialized_temps(value);
+                    for (label, _) in arms {
+                        self.collect_materialized_temps(label);
+                    }
+                }
+                Terminator::Return {
+                    value: Some(value), ..
+                } => self.collect_materialized_temps(value),
+                _ => {}
+            }
+        }
+    }
+
+    /// Records one fill's resolved type for an opaque temporary.
+    fn record_temp_fill(&mut self, target: &Place, filled: Ty) {
+        let PlaceBase::Temp(id) = &target.base else {
+            return;
+        };
+        if !target.projections.is_empty()
+            || !self.substitute(&target.ty).is_unknown()
+            || filled.is_unknown()
+        {
+            return;
+        }
+        self.resolved_temp_types.entry(*id).or_insert(filled);
+    }
+
+    /// Resolves the types of guard-filled temporaries from the values they
+    /// carry.
+    ///
+    /// A deferred materialization is filled by the guard emitter rather than a
+    /// statement of its own, so this walk collects the temporary's type from
+    /// the value the fill carries — the selected member of an unresolved
+    /// conditional, for example.
+    fn collect_materialized_temps(&mut self, value: &Value) {
+        if let ValueKind::Materialize {
+            temp,
+            value: inner,
+            ..
+        } = &value.kind
+        {
+            if self.substitute(&inner.ty).is_unknown() {
+                let resolved = self.resolved_value_ty(inner);
+                if !resolved.is_unknown() {
+                    self.resolved_temp_types.entry(*temp).or_insert(resolved);
+                }
+            }
+        }
+        match &value.kind {
+            ValueKind::Member { base, .. } => self.collect_materialized_temps(base),
+            ValueKind::Index { base, index } => {
+                self.collect_materialized_temps(base);
+                self.collect_materialized_temps(index);
+            }
+            ValueKind::Unary { operand, .. } => self.collect_materialized_temps(operand),
+            ValueKind::Binary { left, right, .. } => {
+                self.collect_materialized_temps(left);
+                self.collect_materialized_temps(right);
+            }
+            ValueKind::Cast { value: inner, .. } => {
+                self.collect_materialized_temps(inner)
+            }
+            ValueKind::Conditional {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                self.collect_materialized_temps(condition);
+                self.collect_materialized_temps(then_value);
+                self.collect_materialized_temps(else_value);
+            }
+            ValueKind::StructLit { fields, .. } => {
+                for (_, field) in fields {
+                    self.collect_materialized_temps(field);
+                }
+            }
+            ValueKind::ArrayLit { elements, fill } => {
+                for element in elements {
+                    self.collect_materialized_temps(element);
+                }
+                if let Some(fill) = fill {
+                    self.collect_materialized_temps(fill);
+                }
+            }
+            ValueKind::Template(pieces) => {
+                for piece in pieces {
+                    if let ValuePiece::Placeholder(inner) = piece {
+                        self.collect_materialized_temps(inner);
+                    }
+                }
+            }
+            ValueKind::Call {
+                args, receiver, ..
+            } => {
+                for arg in args {
+                    self.collect_materialized_temps(arg);
+                }
+                if let Some(receiver) = receiver {
+                    self.collect_materialized_temps(receiver);
+                }
+            }
+            ValueKind::Closure { captures, .. } => {
+                for capture in captures {
+                    self.collect_materialized_temps(capture);
+                }
+            }
+            ValueKind::ClosureCall { callable, args } => {
+                self.collect_materialized_temps(callable);
+                for arg in args {
+                    self.collect_materialized_temps(arg);
+                }
+            }
+            ValueKind::Intrinsic { args, .. } => {
+                for arg in args {
+                    self.collect_materialized_temps(arg);
+                }
+            }
+            ValueKind::Materialize { value: inner, .. } => {
+                self.collect_materialized_temps(inner)
+            }
+            ValueKind::Place(_)
+            | ValueKind::Int(_)
+            | ValueKind::Float(_)
+            | ValueKind::Char(_)
+            | ValueKind::Bool(_)
+            | ValueKind::Null
+            | ValueKind::Str(_)
+            | ValueKind::Path(_)
+            | ValueKind::Aggregate
+            | ValueKind::Temp(_) => {}
         }
     }
 
@@ -553,6 +698,17 @@ impl<'a> Emitter<'a> {
                 if self.needs_drop(&ty) {
                     let source = self.place(place);
                     self.emit_move_zero_place(place, &source, &ty);
+                }
+            }
+            Statement::MoveOutValue { value } => {
+                self.emit_line_directive(span);
+                // A consumed value that names no place — a raw-deref take
+                // argument — is emptied through its own address, exactly as
+                // the raw store's value source is. A duplicable value copies
+                // and the emptying is a no-op.
+                let ty = self.resolved_value_ty(value);
+                if self.needs_drop(&ty) {
+                    self.emit_arm_source_moves(value, &ty);
                 }
             }
             Statement::StorePointer { pointer, value } => {
@@ -1214,6 +1370,25 @@ impl<'a> Emitter<'a> {
         }
         if moves_pointee {
             self.emit_arm_source_moves(value, &ty);
+        }
+        // A struct literal stores through a C compound initializer, which has
+        // no statement position of its own, so a field that reads through a
+        // raw pointer is emptied here once the literal holds its value.
+        if let ValueKind::StructLit { fields, .. } = &value.kind {
+            for (_, field) in fields {
+                if matches!(
+                    field.kind,
+                    ValueKind::Unary {
+                        op: UnaryOp::Deref,
+                        ..
+                    }
+                ) {
+                    let field_ty = self.resolved_value_ty(field);
+                    if self.needs_drop(&field_ty) {
+                        self.emit_arm_source_moves(field, &field_ty);
+                    }
+                }
+            }
         }
     }
 

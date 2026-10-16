@@ -51,8 +51,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // A move through a borrow element view is the v1 element-move limit
         // once the moved place owns; while its type is still a parameter the
         // site records the duty for the per-instance audit.
-        if let Some(target) = &target {
-            self.note_borrowed_element_move(target, &ty, span);
+        if let Some(PlaceTarget::Local(id, projections)) = &target {
+            self.note_borrowed_element_move(*id, projections, &ty, span);
         }
         if self.maybe_owns(&ty) {
             // The field store writes a move for an owning instance, so a later
@@ -104,20 +104,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         sources
     }
 
-    /// The owned places a still-unresolved `take` conditional moves from.
+    /// The places a still-unresolved conditional's arms name, with each arm's
+    /// recorded type.
     ///
     /// A `take` argument whose member type is unresolved selects one arm at
-    /// run time and the emitted move-out empties that arm's root once the
-    /// substituted member owns. The route is only sound when every arm
-    /// projects out of owned storage — a local or a `take`/out parameter —
-    /// because the move rules do not let any other root be emptied; an arm
-    /// that is a fresh value, a borrowed element, a lend, a global, or a
-    /// temporary makes the whole argument take its existing path. A nested
-    /// conditional recurses, so every level's arms are checked.
-    pub(super) fn unresolved_conditional_owned_sources(
+    /// run time, so each arm is judged per instance: the caller marks an arm
+    /// that owns its value for its per-instance move, and an arm rooted in a
+    /// borrow element records the element-move duty. A nested conditional
+    /// recurses; an arm that names no place contributes nothing. `None` when
+    /// the expression is not a conditional.
+    pub(super) fn unresolved_conditional_place_arms(
         &self,
         expr: &Expr,
-    ) -> Option<Vec<PlaceTarget>> {
+    ) -> Option<Vec<(PlaceTarget, Ty)>> {
         let ExprKind::Conditional {
             then_value,
             else_value,
@@ -126,19 +125,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         else {
             return None;
         };
-        let mut sources = Vec::new();
+        let mut arms = Vec::new();
         for arm in [then_value.as_ref(), else_value.as_ref()] {
             if matches!(arm.kind, ExprKind::Conditional { .. }) {
-                sources.extend(self.unresolved_conditional_owned_sources(arm)?);
+                arms.extend(self.unresolved_conditional_place_arms(arm)?);
                 continue;
             }
-            let target = self.place_target(arm)?;
-            if !self.root_owns_moves(&target) {
-                return None;
+            if let Some(target) = self.place_target(arm) {
+                arms.push((target, self.ty(arm)));
             }
-            sources.push(target);
         }
-        Some(sources)
+        Some(arms)
     }
 
     /// True when a move target's root is storage the move rules may empty.
@@ -146,7 +143,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// An owned local and a `take`/out parameter own their value; a borrow
     /// element alias, a read-only lend parameter, a global, and a temporary
     /// do not.
-    fn root_owns_moves(&self, target: &PlaceTarget) -> bool {
+    pub(super) fn root_owns_moves(&self, target: &PlaceTarget) -> bool {
         let PlaceTarget::Local(id, _) = target else {
             return false;
         };
@@ -1282,19 +1279,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // own path, so a later overwrite replaces exactly the
                 // positions it replaced. The store drops every record under
                 // its target path first — a whole store therefore drops them
-                // all — and the new value's positions record after. A copy
-                // from a carrier place hands its positions over instead.
+                // all — and the new value's positions record after.
                 // A copy from a carrier place hands its positions over: the
                 // destination's views read the same storage, so the source's
                 // element loans follow the copy — for a whole view-like array
-                // exactly as for the single view. A projected store keeps its
-                // own element-loan recording above, so it is not a copy.
+                // exactly as for the single view. A projected source
+                // (`ys = rows[0]`) contributes the positions recorded under its
+                // projection, translated to the destination's paths; a single
+                // view destination keeps its own loan machinery.
                 let moved = match self.place_target(value) {
                     Some(PlaceTarget::Local(source, source_projections))
-                        if source_projections.is_empty()
+                        if super::place::constant_path(&source_projections)
+                            && (source_projections.is_empty() || !is_view(&target_ty))
                             && (!is_view_like(&target_ty) || projections.is_empty()) =>
                     {
-                        self.move_element_loans(source, id, &projections);
+                        self.move_element_loans(source, &source_projections, id, &projections);
                         true
                     }
                     _ => false,

@@ -668,6 +668,32 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// The `take` arguments whose pointee the callee consumes.
+    ///
+    /// A `take` argument that reads through a raw pointer names no place the
+    /// ordinary move-out can empty, so its value travels here and the emitter
+    /// empties the pointee through the pointer after the call, exactly as the
+    /// store source is emptied. A duplicable pointee copies and the emitted
+    /// emptying is a no-op.
+    pub(super) fn take_pointee_move_outs(
+        &self,
+        modes: Option<&[Mode]>,
+        args: &[Value],
+    ) -> Vec<Value> {
+        let Some(modes) = modes else {
+            return Vec::new();
+        };
+        let mut values = Vec::new();
+        for (arg, mode) in args.iter().zip(modes) {
+            if *mode == Mode::Take
+                && matches!(arg.kind, ValueKind::Unary { op: UnaryOp::Deref, .. })
+            {
+                values.push(arg.clone());
+            }
+        }
+        values
+    }
+
     /// The places a call moves out of through non-duplicable `take` arguments.
     ///
     /// The modes are the callee's declared parameter modes: a module or `ffi`

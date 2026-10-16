@@ -537,14 +537,25 @@ impl<'a> Emitter<'a> {
     /// True when a direct return must empty storage the caller owns.
     ///
     /// A returned value that copied caller storage — the pointee of a `borrow`
-    /// pointer parameter — leaves the caller's slot and the result aliasing
-    /// one allocation, so the direct branch stores the value in a block-local
-    /// and empties the source before control leaves. A by-value parameter, a
-    /// local, a view, and a fresh temporary have no caller storage to empty
-    /// and keep the direct emission.
+    /// pointer parameter, or the pointee of a raw-deref read — leaves the
+    /// caller's slot and the result aliasing one allocation, so the direct
+    /// branch stores the value in a block local and empties the source before
+    /// control leaves. A by-value parameter, a local, a view, and a fresh
+    /// temporary have no caller storage to empty and keep the direct emission.
     fn return_source_needs_emptying(&self, value: &ir::Value, ret_ty: &Ty) -> bool {
         if !self.needs_drop(ret_ty) {
             return false;
+        }
+        // A raw-deref read returns a copy of its pointee, so the pointee must
+        // be emptied or the caller and the read would share one owner.
+        if matches!(
+            value.kind,
+            ir::ValueKind::Unary {
+                op: crate::ast::UnaryOp::Deref,
+                ..
+            }
+        ) {
+            return self.needs_drop(&self.substitute(&value.ty));
         }
         let ir::ValueKind::Place(place) = &value.kind else {
             return false;

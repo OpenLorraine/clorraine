@@ -796,7 +796,10 @@ impl<'a> Emitter<'a> {
     /// adjusted pointer.
     pub(super) fn move_zero_expr(&self, place: &Place) -> String {
         let c_name = self.place(place);
-        let ty = self.substitute(&place.ty);
+        // A place recorded in a generic body can carry the opaque type — a
+        // deferred take's carrier, for example — so the emptying resolves it
+        // through the place's own base and projections.
+        let ty = self.resolved_place_ty(place);
         if self.is_array_param_place(place) {
             if let TyKind::Array { element, extents } = &ty.kind {
                 let dims: Vec<usize> = extents.iter().filter_map(|extent| *extent).collect();

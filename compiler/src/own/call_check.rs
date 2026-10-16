@@ -782,18 +782,26 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // limit once the moved place owns; while its type is still a
                 // parameter the site records the duty for the per-instance
                 // audit.
-                if let Some(target) = &target {
-                    self.note_borrowed_element_move(target, arg_ty, span);
+                if let Some(PlaceTarget::Local(id, projections)) = &target {
+                    self.note_borrowed_element_move(*id, projections, arg_ty, span);
                 }
-                // An unresolved conditional whose arms project out of owned
-                // storage moves the chosen arm out at the instance, so each
-                // arm records the type-aware move; a later use then deposits
-                // the duplicability duty, exactly as the concrete spelling's
-                // partial move does.
+                // An unresolved conditional argument selects one arm at run
+                // time, so each arm is judged per instance: an owned arm is
+                // marked for its move (a later use deposits the duplicability
+                // duty), and a borrow-element arm records the element-move
+                // duty, exactly as its concrete twin judges the arm.
                 if arg_ty.is_unknown() && target.is_none() {
-                    if let Some(sources) = self.unresolved_conditional_owned_sources(expr) {
-                        for source in sources {
-                            self.mark_moved_if_owning(source, span);
+                    if let Some(arms) = self.unresolved_conditional_place_arms(expr) {
+                        for (source, arm_ty) in arms {
+                            if self.root_owns_moves(&source) {
+                                self.mark_moved_if_owning(source, span);
+                                continue;
+                            }
+                            if let PlaceTarget::Local(id, projections) = &source {
+                                self.note_borrowed_element_move(
+                                    *id, projections, &arm_ty, span,
+                                );
+                            }
                         }
                     }
                 }

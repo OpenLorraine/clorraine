@@ -365,6 +365,19 @@ pub enum Statement {
         /// The place whose value the callee took.
         place: Place,
     },
+    /// Empty the storage a consumed value reads through, when it is not a
+    /// place.
+    ///
+    /// A `take` argument that reads through a raw pointer names no place the
+    /// ordinary move-out can empty, so the checker records the value itself
+    /// and the emitter empties the pointee through the value's own address
+    /// after the call: the callee owns the transferred value, and the
+    /// caller's storage must not release it a second time. A duplicable
+    /// pointee copies, so the emitted emptying is a no-op.
+    MoveOutValue {
+        /// The consumed value whose storage is emptied.
+        value: Value,
+    },
     /// Begin a loan over a place. This is a checker statement and has no
     /// runtime code of its own.
     Borrow {

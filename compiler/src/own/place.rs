@@ -484,7 +484,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     || path.starts_with(projections)
             })
         {
-            self.record_requires_duplicable(id, span);
+            // A whole-binding use of a top-level field move is the concrete
+            // partial-move case, so it reports the partial-move code; every
+            // other conflict keeps the moved-value code, including the
+            // element and nested paths the concrete spelling would have
+            // rejected at the move itself.
+            let partial = projections.is_empty()
+                && !state.moved_if_owning.iter().any(|path| path.is_empty())
+                && state
+                    .moved_if_owning
+                    .iter()
+                    .all(|path| matches!(path.as_slice(), [ir::Projection::Field(_)]));
+            self.record_requires_duplicable(id, span, partial);
         }
     }
 
@@ -524,6 +535,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             self.with_place(id, |place| {
                 place.moved_if_owning.insert(projections.clone());
             });
+            // A move through a borrow element view is the v1 element-move
+            // limit once the substituted place owns, so every maybe-owning
+            // destination — a return, a binding, an assignment, a conditional
+            // arm — records the duty the per-instance audit judges.
+            let move_ty = if projections.is_empty() {
+                self.bindings[id].ty.clone()
+            } else {
+                self.projected_type(id, &projections)
+            };
+            self.note_borrowed_element_move(id, &projections, &move_ty, span);
             let binding = &self.bindings[id];
             // A lend whose value is moved into an owned position owes the
             // post-substitution judgment. Out-parameter slots carry their own
@@ -567,7 +588,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     ///
     /// Only a binding whose declared type mentions a type parameter carries the
     /// duty; the per-instance audit reports when the substituted type owns.
-    pub(super) fn record_requires_duplicable(&mut self, id: usize, span: Span) {
+    /// `partial` marks a whole-binding use whose conflicting moves are member
+    /// paths, which the audit reports with the partial-move code.
+    pub(super) fn record_requires_duplicable(&mut self, id: usize, span: Span, partial: bool) {
         if !self.recorded_requirements.insert(id) {
             return;
         }
@@ -580,6 +603,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             function: self.decl.name.clone(),
             binding: ir_name,
             ty: declared,
+            partial,
             span,
         });
     }
@@ -594,11 +618,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// or unresolved records this duty, and the per-instance audit reports
     /// the same limit once the substituted place owns. A duplicable place
     /// copies and stays accepted, exactly as the concrete spelling does.
-    pub(super) fn note_borrowed_element_move(&mut self, target: &PlaceTarget, ty: &Ty, span: Span) {
-        let PlaceTarget::Local(id, projections) = target else {
-            return;
-        };
-        let binding = &self.bindings[*id];
+    pub(super) fn note_borrowed_element_move(
+        &mut self,
+        id: usize,
+        projections: &[ir::Projection],
+        ty: &Ty,
+        span: Span,
+    ) {
+        let binding = &self.bindings[id];
         if binding.kind != BindingKind::Local || binding.mode != Mode::Borrow {
             return;
         }
@@ -607,7 +634,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         if !self
             .recorded_element_moves
-            .insert((*id, span.start, span.end))
+            .insert((id, span.start, span.end))
         {
             return;
         }
@@ -884,15 +911,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let id = self.alias_resolved_root(id);
         let paths = self.state.element_loans.get(&id)?;
-        let read = projections
-            .iter()
-            .all(|projection| {
-                !matches!(
-                    projection,
-                    ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
-                )
-            })
-            .then_some(projections);
+        let read = constant_path(&projections).then_some(projections);
         let mut owners = BTreeSet::new();
         match read {
             Some(read) => {
@@ -960,13 +979,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             found = true;
             let read = match self.place_target(expr) {
                 Some(PlaceTarget::Local(root, projections)) if root == id => {
-                    let constant = projections.iter().all(|projection| {
-                        !matches!(
-                            projection,
-                            ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
-                        )
-                    });
-                    constant.then_some(projections)
+                    constant_path(&projections).then_some(projections)
                 }
                 _ => None,
             };
@@ -1159,11 +1172,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// source holds, so every recorded position contributes its loans under
     /// the destination's path: the copy's views read the same storage, and a
     /// later escape reports through the destination exactly as through the
-    /// source. The destination's own record under `base` is replaced first —
+    /// source. `source` is the projection path the copied value reads: a
+    /// whole-binding copy passes `[]` and keeps every position, while a
+    /// projected copy (`let ys: str[2] = rows[0];`) keeps the positions
+    /// recorded under the projection and records their remaining steps on the
+    /// destination, exactly as the elements of `rows[0]` become the elements
+    /// of `ys`. The destination's own record under `base` is replaced first —
     /// the store replaced those positions — and a self-assignment keeps its
     /// positions because the source's record is captured before the
     /// replacement.
-    pub(super) fn move_element_loans(&mut self, from: usize, to: usize, base: &[ir::Projection]) {
+    pub(super) fn move_element_loans(
+        &mut self,
+        from: usize,
+        source: &[ir::Projection],
+        to: usize,
+        base: &[ir::Projection],
+    ) {
         let snapshot: Vec<(Vec<ir::Projection>, BTreeSet<LoanId>)> = self
             .state
             .element_loans
@@ -1177,8 +1201,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .unwrap_or_default();
         self.replace_element_loans(to, base, BTreeSet::new());
         for (path, loans) in snapshot {
+            let Some(rest) = path.strip_prefix(source) else {
+                continue;
+            };
             let mut full = base.to_vec();
-            full.extend(path);
+            full.extend(rest.iter().cloned());
             self.replace_element_loans(to, &full, loans);
         }
     }
@@ -2008,6 +2035,20 @@ fn is_by_value_capture_base(base: &Option<ir::PlaceBase>) -> bool {
             ..
         })
     )
+}
+
+/// True when every projection step names one storage position.
+///
+/// A run-time index and an element materialization name no single position, so
+/// a path over one cannot key or translate a loan record: such a read
+/// contributes every recorded position instead.
+pub(super) fn constant_path(projections: &[ir::Projection]) -> bool {
+    projections.iter().all(|projection| {
+        !matches!(
+            projection,
+            ir::Projection::Element(None) | ir::Projection::ElementTemp(_)
+        )
+    })
 }
 
 /// The identity of a module-level binding the name resolver resolved.

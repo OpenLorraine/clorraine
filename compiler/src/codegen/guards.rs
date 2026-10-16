@@ -118,10 +118,14 @@ impl<'a> Emitter<'a> {
                 // An adopting carrier's consumer owns the value, so the
                 // previous value must not be released on a re-fill: the
                 // destination's own cleanup is the sole owner.
+                // The inner value's type can still be opaque in a generic
+                // body — an unresolved conditional take's selected member,
+                // for example — so the fill resolves it through the value the
+                // instance substitutes, exactly as the declaration does.
+                let inner_ty = self.resolved_value_ty(inner);
                 if !adopting {
-                    self.emit_reassigned_temp_drop(*temp, &inner.ty);
+                    self.emit_reassigned_temp_drop(*temp, &inner_ty);
                 }
-                let inner_ty = self.substitute(&inner.ty);
                 if let ValueKind::Conditional {
                     condition,
                     then_value,
@@ -134,7 +138,7 @@ impl<'a> Emitter<'a> {
                     // conditional has no C value expression — a call arm
                     // cannot pass its hidden out-parameter through `?:` — so
                     // each arm fills the temporary on its own path instead.
-                    let ty = self.substitute(&inner.ty);
+                    let ty = inner_ty.clone();
                     if ty.is_fixed_array() {
                         let destination = ArrayTarget::object(&format!("__cl_tmp{temp}"));
                         self.emit_fixed_array_conditional_assign(
@@ -240,9 +244,10 @@ impl<'a> Emitter<'a> {
                 // slot are emptied only now, on the evaluated path, so a
                 // skipped guard leaves them owned. A duplicable instance
                 // copies, so its source keeps its value and is not zeroed;
-                // only a type that owns storage moves.
+                // only a type that owns storage moves, and a place recorded
+                // opaquely resolves through its own base and projections.
                 for place in move_outs {
-                    let ty = self.substitute(&place.ty);
+                    let ty = self.resolved_place_ty(place);
                     if !self.needs_drop(&ty) {
                         continue;
                     }
@@ -994,7 +999,11 @@ impl<'a> Emitter<'a> {
                 move_outs,
                 adopting,
             } => {
-                let inner_ty = self.substitute(&inner.ty);
+                // The carried value's type can still be opaque in a generic
+                // body — an unresolved conditional take's selected member —
+                // so the expression fill resolves it through the value the
+                // instance substitutes, exactly as the declaration does.
+                let inner_ty = self.resolved_value_ty(inner);
                 let destination = format!("__cl_tmp{temp}");
                 let owned_conditional = self.needs_drop(&inner_ty)
                     && !inner_ty.is_fixed_array()
@@ -1116,8 +1125,14 @@ impl<'a> Emitter<'a> {
                     out.push(stored);
                 }
                 // The call runs only when this operand is evaluated, so its
-                // `take` move-outs are emptied here, after the store.
+                // `take` move-outs are emptied here, after the store. Only an
+                // owning place is emptied: a duplicable instance leaves the
+                // caller its copy.
                 for place in move_outs {
+                    let ty = self.resolved_place_ty(place);
+                    if !self.needs_drop(&ty) {
+                        continue;
+                    }
                     out.push(self.move_zero_expr(place));
                 }
             }

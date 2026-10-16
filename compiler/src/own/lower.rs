@@ -134,13 +134,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // a func-typed binding, field, or global, or a call result.
                     let move_outs =
                         self.take_move_out_places(call.modes.as_deref(), &call.args);
+                    // A pointee move-out needs a statement position after the
+                    // call, which a guarded operand does not have: the
+                    // deferred channel carries place move-outs only, so a
+                    // guarded deref take keeps its existing shape.
+                    let value_move_outs = if self.defer_move_outs == 0 {
+                        self.take_pointee_move_outs(call.modes.as_deref(), &call.args)
+                    } else {
+                        Vec::new()
+                    };
                     let kind = ValueKind::Call {
                         callee: call.name,
                         type_args: call.type_args,
                         args: call.args,
                         receiver: call.receiver.map(Box::new),
                     };
-                    if move_outs.is_empty() {
+                    if move_outs.is_empty() && value_move_outs.is_empty() {
                         kind
                     } else if self.defer_move_outs > 0 {
                         // The operand is evaluated only on its guard's path,
@@ -168,16 +177,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         // The call consumes a `take` argument before the
                         // enclosing statement continues, so the result is
                         // stored in a destination temporary the statement end
-                        // releases, and the consumed places are emptied
-                        // immediately afterward. An adopting store moves the
-                        // whole value out of the temporary (emptying it, so
-                        // the release is a no-op); a projection of the
+                        // releases, and the consumed places and pointees are
+                        // emptied immediately afterward. An adopting store
+                        // moves the whole value out of the temporary (emptying
+                        // it, so the release is a no-op); a projection of the
                         // temporary reads it and the release drops the fields
                         // the take did not move out.
                         let temp =
                             self.materialize_value_type(Value::new(ty.clone(), kind), ty.clone());
                         for place in move_outs {
                             self.emit(Statement::MoveOut { place });
+                        }
+                        for value in value_move_outs {
+                            self.emit(Statement::MoveOutValue { value });
                         }
                         return temp;
                     }
@@ -2312,15 +2324,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// call runs. That move-out also leaves the empty state the branch store's
     /// own save and release expect. An operand that is evaluated only sometimes
     /// (the right side of `&&`/`||`, or an arm of `?:`) defers the store to its
-    /// guard, so a skipped path never runs an arm or the call. A struct literal
-    /// stores eagerly, because only its statement form exists.
+    /// guard, so a skipped path never runs an arm or the call; an unresolved
+    /// conditional takes that route too, because its member type is only known
+    /// at the instance. A struct literal stores eagerly, because only its
+    /// statement form exists.
     fn materialize_take_place(&mut self, value: Value) -> Value {
         let ty = self.materialized_ty(&value);
         // An owned conditional has an expression form in a guard; a
-        // duplicable struct conditional does not, so it stores eagerly.
+        // duplicable struct conditional does not, so it stores eagerly. An
+        // unresolved conditional is guarded like an owned one: the instance
+        // resolves its member type and the emitted branch store moves the
+        // chosen member.
         let deferred = self.defer_move_outs > 0
             && match &value.kind {
-                ValueKind::Conditional { .. } => !self.sema.table.duplicable(&value.ty),
+                ValueKind::Conditional { .. } => {
+                    !self.sema.table.duplicable(&value.ty) || value.ty.is_unknown()
+                }
                 ValueKind::ArrayLit { .. }
                 | ValueKind::Call { .. }
                 | ValueKind::ClosureCall { .. } => true,
@@ -4829,7 +4848,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// outlives every such view. A loop still assigns the one temporary each
     /// iteration, and the assignment releases the previous value, so the wider
     /// scope does not accumulate storage.
-    pub(super) fn materialize_owned_argument(&mut self, value: Value, take: bool) -> Value {
+    pub(super) fn materialize_owned_argument(&mut self, mut value: Value, take: bool) -> Value {
+        // A raw-deref read's pointer expression is read again when the
+        // pointee is emptied after the call, so an impure pointer is bound
+        // once for a `take` argument whose pointee may own.
+        if take
+            && (self.owns_drop(&value.ty)
+                || self.maybe_owns(&value.ty)
+                || value.ty.is_unknown())
+        {
+            if let ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } = &value.kind
+            {
+                let operand = self.materialize_operand((**operand).clone());
+                value = Value::new(
+                    value.ty.clone(),
+                    ValueKind::Unary {
+                        op: UnaryOp::Deref,
+                        operand: Box::new(operand),
+                    },
+                );
+            }
+        }
         if take {
             // A `take` projection of a mixed conditional moves the selected
             // member out of the chosen arm's root before the call runs: the
@@ -4939,8 +4981,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // substituted type owns, and a duplicable instance keeps its copy.
             // The carrier's own type is resolved at the instance from the value
             // that fills it.
-            if self.defer_move_outs == 0
-                && value.ty.is_unknown()
+            // An unresolved conditional whose arms project out of owned
+            // storage moves the selected member out per instance: the carrier
+            // branch copies the chosen member and empties its root once the
+            // substituted type owns, and a duplicable instance keeps its copy.
+            // The carrier's own type is resolved at the instance from the value
+            // that fills it. An operand inside a guard defers the carrier fill
+            // to the evaluated path, exactly as an owned conditional does.
+            if value.ty.is_unknown()
                 && matches!(value.kind, ValueKind::Conditional { .. })
                 && self.conditional_owns_place_arms(&value)
             {

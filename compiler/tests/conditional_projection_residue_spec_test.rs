@@ -11802,3 +11802,755 @@ func main(): i32 {
 "#;
     compile_rejects("borrowelemletconcrete", member_let_concrete, "E10026", 1);
 }
+
+// ---------------------------------------------------------------------------
+// The borrowed element's move judgment reaches every owning destination. A
+// move of an element member into a `let`, a return, an assignment target, or
+// a conditional arm is the v1 element-move limit once the instance's member
+// type owns, exactly as each concrete twin reports it; a duplicable instance
+// keeps its copy.
+// ---------------------------------------------------------------------------
+
+/// The member move into a `let` destination.
+const ELEMENT_DEST_LET_SOURCE: &str = r#"module spec.cpr.elemdests;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func each<T, E>(xs: T): void {
+    for (borrow v in xs) {
+        let t: E = v.name;
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    each<S[1], String>(a);
+    return 0;
+}
+"#;
+
+/// The concrete `let` twin of the element move.
+const ELEMENT_DEST_LET_CONCRETE_SOURCE: &str = r#"module spec.cpr.elemdestsconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eachS(xs: S[1]): void {
+    for (borrow v in xs) {
+        let t: String = v.name;
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    eachS(a);
+    return 0;
+}
+"#;
+
+/// The member move into a return.
+const ELEMENT_DEST_RET_SOURCE: &str = r#"module spec.cpr.elemdestret;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func pick<C, E>(xs: C, take fallback: E): E {
+    for (borrow v in xs) {
+        return v.name;
+    }
+    return fallback;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab") }];
+    let out: String = pick<S[1], String>(a, stringOf("z"));
+    return i32(len(bytes(out))) - 2;
+}
+"#;
+
+/// The concrete return twin of the element move.
+const ELEMENT_DEST_RET_CONCRETE_SOURCE: &str = r#"module spec.cpr.elemdestretconcrete;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func pickS(xs: S[1], take fallback: String): String {
+    for (borrow v in xs) {
+        return v.name;
+    }
+    return fallback;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab") }];
+    let out: String = pickS(a, stringOf("z"));
+    return i32(len(bytes(out))) - 2;
+}
+"#;
+
+/// The member move into an assignment target.
+const ELEMENT_DEST_ASSIGN_SOURCE: &str = r#"module spec.cpr.elemdestassign;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func each<T, E>(xs: T, take seed: E): void {
+    let slot: E = seed;
+    for (borrow v in xs) {
+        slot = v.name;
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    each<S[1], String>(a, stringOf("z"));
+    return 0;
+}
+"#;
+
+/// The concrete assignment twin of the element move.
+const ELEMENT_DEST_ASSIGN_CONCRETE_SOURCE: &str = r#"module spec.cpr.elemdestassignconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eachS(xs: S[1], take seed: String): void {
+    let slot: String = seed;
+    for (borrow v in xs) {
+        slot = v.name;
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    eachS(a, stringOf("z"));
+    return 0;
+}
+"#;
+
+/// The member move of each arm of a conditional take.
+const ELEMENT_DEST_COND_SOURCE: &str = r#"module spec.cpr.elemdestcond;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func each<T>(xs: T, ys: T, c: bool): i32 {
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            return eat(take (c ? v.name : w.name));
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    let b: S[1] = [S { name: stringOf("b") }];
+    return each<S[1]>(a, b, true) - 1;
+}
+"#;
+
+/// The concrete conditional twin of the element move.
+const ELEMENT_DEST_COND_CONCRETE_SOURCE: &str = r#"module spec.cpr.elemdestcondconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eatS(take x: String): i32 { return 1; }
+
+func eachS(xs: S[1], ys: S[1], c: bool): i32 {
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            return eatS(c ? v.name : w.name);
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    let b: S[1] = [S { name: stringOf("b") }];
+    return eachS(a, b, true) - 1;
+}
+"#;
+
+/// The duplicable member twin of the element move.
+const ELEMENT_DEST_DUP_SOURCE: &str = r#"module spec.cpr.elemdestsdup;
+
+struct D { name: i32; }
+
+func eat(take x: i32): i32 { return x; }
+
+func pick<T, E>(xs: T, take seed: E, c: bool): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        let t: E = v.name;
+        let slot: E = seed;
+        slot = v.name;
+        total = total + i32(t) + i32(slot);
+    }
+    return total + eat(c ? 3 : 4);
+}
+
+func main(): i32 {
+    let a: D[1] = [D { name: 2 }];
+    return pick<D[1], i32>(a, 5, true) - 7;
+}
+"#;
+
+/// The duplicable conditional twin at borrowed-element roots.
+const ELEMENT_DEST_COND_DUP_SOURCE: &str = r#"module spec.cpr.elemdestconddup;
+
+struct D { name: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func each<T>(xs: T, ys: T, c: bool): i32 {
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            return eat(take (c ? v.name : w.name));
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: D[1] = [D { name: 1 }];
+    let b: D[1] = [D { name: 2 }];
+    return each<D[1]>(a, b, true) - 1;
+}
+"#;
+
+/// The `let`, the return, the assignment, and the conditional take each report
+/// the v1 element-move limit once per moved member at their own site, exactly
+/// as their concrete twins do; the conditional take names both arms, so it
+/// reports once per arm.
+#[test]
+fn should_judge_a_borrowed_element_move_at_every_owning_destination() {
+    compile_rejects("elemdests", ELEMENT_DEST_LET_SOURCE, "E10026", 1);
+    compile_rejects(
+        "elemdestsconcrete",
+        ELEMENT_DEST_LET_CONCRETE_SOURCE,
+        "E10026",
+        1,
+    );
+    compile_rejects_once_at(
+        "elemdestret",
+        ELEMENT_DEST_RET_SOURCE,
+        "E10026",
+        9,
+        9,
+        &["partial moves are limited to top-level fields in v1"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "elemdestretconcrete",
+        ELEMENT_DEST_RET_CONCRETE_SOURCE,
+        "E10026",
+        9,
+        9,
+        &["partial moves are limited to top-level fields in v1"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "elemdestassign",
+        ELEMENT_DEST_ASSIGN_SOURCE,
+        "E10026",
+        10,
+        9,
+        &["partial moves are limited to top-level fields in v1"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "elemdestassignconcrete",
+        ELEMENT_DEST_ASSIGN_CONCRETE_SOURCE,
+        "E10026",
+        10,
+        9,
+        &["partial moves are limited to top-level fields in v1"],
+        &[],
+    );
+    compile_rejects("elemdestcond", ELEMENT_DEST_COND_SOURCE, "E10026", 2);
+    compile_rejects(
+        "elemdestcondconcrete",
+        ELEMENT_DEST_COND_CONCRETE_SOURCE,
+        "E10026",
+        2,
+    );
+}
+
+/// A duplicable member copies into a `let`, an assignment, and the guard-free
+/// take, so the same destinations stay accepted and the run reads the values
+/// back (exit 0) with the leak checker clean; the conditional take at
+/// borrowed-element roots is the same copy.
+#[test]
+fn should_copy_a_borrowed_element_move_into_a_duplicable_destination() {
+    let output = run_memory("elemdestsdup", ELEMENT_DEST_DUP_SOURCE);
+    assert_no_asan("elemdestsdup", &output);
+    assert_exit("elemdestsdup", &output, 0);
+
+    let output = run_memory("elemdestconddup", ELEMENT_DEST_COND_DUP_SOURCE);
+    assert_no_asan("elemdestconddup", &output);
+    assert_exit("elemdestconddup", &output, 0);
+}
+
+/// The whole-binding use after a conditional member take.
+const ELEMENT_DEST_PARTIAL_SOURCE: &str = r#"module spec.cpr.elemdestpartial;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func peek<T>(x: T): i32 { return 1; }
+
+func pick<T>(take a: T, take b: T, c: bool): i32 {
+    let x: T = a;
+    let y: T = b;
+    let r: i32 = eat(c ? x.name : y.name);
+    return r + peek(y);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pick<S>(take a, take b, true) - 2;
+}
+"#;
+
+/// The concrete twin of the whole-binding use.
+const ELEMENT_DEST_PARTIAL_CONCRETE_SOURCE: &str = r#"module spec.cpr.elemdestpartialconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eatS(take x: String): i32 { return 1; }
+
+func peekS(x: S): i32 { return 1; }
+
+func pickS(take a: S, take b: S, c: bool): i32 {
+    let x: S = a;
+    let y: S = b;
+    let r: i32 = eatS(c ? x.name : y.name);
+    return r + peekS(y);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pickS(take a, take b, true) - 2;
+}
+"#;
+
+/// A whole-binding use after a member move reports the concrete spelling's
+/// partial-move code once at the use: the conditional take moved only `y.name`,
+/// so reading the whole `y` afterwards is the partial-move judgment, exactly as
+/// the concrete twin reports it.
+#[test]
+fn should_report_the_partial_move_code_for_a_whole_use_after_a_member_move() {
+    compile_rejects_once_at(
+        "elemdestpartial",
+        ELEMENT_DEST_PARTIAL_SOURCE,
+        "E10025",
+        15,
+        21,
+        &["is partially moved and cannot be used as a whole"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "elemdestpartialconcrete",
+        ELEMENT_DEST_PARTIAL_CONCRETE_SOURCE,
+        "E10025",
+        15,
+        22,
+        &["is partially moved and cannot be used as a whole"],
+        &[],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A whole-array copy from a projected source. `let ys: str[2] = rows[0];` and
+// the assignment spelling hand the source row's element loans to the
+// destination, so the store through the copy reports the frozen conflict once;
+// the element store, the single-view spelling, and a copy with no later use
+// keep their own verdicts.
+// ---------------------------------------------------------------------------
+
+/// A whole-`str[2]` copy whose source is a row of a `str[2][2]` container.
+const VIEW_COPY_ROW_LET_SOURCE: &str = r#"module spec.cpr.viewcopyrowlet;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["AA", "AA"], ["BB", "BB"]];
+    rows[0] = xs;
+    let ys: str[2] = rows[0];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The overwriting-assignment spelling of the projected-source copy.
+const VIEW_COPY_ROW_ASSIGN_SOURCE: &str = r#"module spec.cpr.viewcopyrowassign;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["AA", "AA"], ["BB", "BB"]];
+    rows[0] = xs;
+    let ys: str[2] = ["CC", "DD"];
+    ys = rows[0];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The element-store route into the same row, which already transfers the loan.
+const VIEW_COPY_ROW_ELEMENT_SOURCE: &str = r#"module spec.cpr.viewcopyrowelem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["AA", "AA"], ["BB", "BB"]];
+    rows[0] = xs;
+    fill(rows[0][0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The single-view spelling of the same row element.
+const VIEW_COPY_ROW_VIEW_SOURCE: &str = r#"module spec.cpr.viewcopyrowview;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    a.v = stringOf("qq");
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The projected-source copy whose elements are never read afterwards.
+const VIEW_COPY_ROW_UNUSED_SOURCE: &str = r#"module spec.cpr.viewcopyrowunused;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func outer(): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let rows: str[2][2] = [["AA", "AA"], ["BB", "BB"]];
+    rows[0] = xs;
+    let ys: str[2] = rows[0];
+    a.v = stringOf("qq");
+}
+
+func main(): i32 {
+    outer();
+    return 0;
+}
+"#;
+
+/// The projected-source copy hands the row's element loan to the destination,
+/// so the store through the copy reports the frozen conflict once at its own
+/// site; the element-store route reports the same, while the single-view twin
+/// keeps its one backing-write report and a copy with no later use stays
+/// accepted and clean.
+#[test]
+fn should_loan_a_whole_array_copy_from_a_projected_source() {
+    compile_rejects_once_at(
+        "viewcopyrowlet",
+        VIEW_COPY_ROW_LET_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "viewcopyrowassign",
+        VIEW_COPY_ROW_ASSIGN_SOURCE,
+        "E10030",
+        17,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "viewcopyrowelem",
+        VIEW_COPY_ROW_ELEMENT_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "viewcopyrowview",
+        VIEW_COPY_ROW_VIEW_SOURCE,
+        "E10031",
+        14,
+        5,
+        &["cannot modify 'a' while it is shared-borrowed"],
+        &[],
+    );
+    let output = run_memory("viewcopyrowunused", VIEW_COPY_ROW_UNUSED_SOURCE);
+    assert_no_asan("viewcopyrowunused", &output);
+    assert_exit("viewcopyrowunused", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// The guarded conditional take. `d && eat(take (c ? a.name : b.name))` moves
+// the selected member out of its root on the evaluated path only: each
+// selection runs clean, the values release once, and a skipped guard leaves
+// both roots owned.
+// ---------------------------------------------------------------------------
+
+/// The guarded conditional take with every condition selection.
+const GUARDED_CONDITIONAL_TAKE_SOURCE: &str = r#"module spec.cpr.guardcondboth;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func pick<T>(take a: T, take b: T, c: bool, d: bool): i32 {
+    if (d && (eat(take (c ? a.name : b.name)) == 1)) { return 1; }
+    return 0;
+}
+
+func main(): i32 {
+    let a1: S = S { name: stringOf("ab"), y: 1 };
+    let b1: S = S { name: stringOf("cd"), y: 2 };
+    let a2: S = S { name: stringOf("ef"), y: 3 };
+    let b2: S = S { name: stringOf("gh"), y: 4 };
+    let a3: S = S { name: stringOf("ij"), y: 5 };
+    let b3: S = S { name: stringOf("kl"), y: 6 };
+    return (pick<S>(take a1, take b1, true, true) - 1)
+         + (pick<S>(take a2, take b2, false, true) - 1)
+         + (pick<S>(take a3, take b3, true, false) - 0);
+}
+"#;
+
+/// The concrete guarded conditional twin.
+const GUARDED_CONDITIONAL_TAKE_CONCRETE_SOURCE: &str = r#"module spec.cpr.guardcondconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eatS(take x: String): i32 { return 1; }
+
+func pickS(take a: S, take b: S, c: bool, d: bool): i32 {
+    if (d && (eatS(c ? a.name : b.name) == 1)) { return 1; }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pickS(take a, take b, true, true) - 1;
+}
+"#;
+
+/// The duplicable guarded conditional twin.
+const GUARDED_CONDITIONAL_TAKE_DUP_SOURCE: &str = r#"module spec.cpr.guardconddup;
+
+struct D { name: i32; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func pick<T>(take a: T, take b: T, c: bool): i32 {
+    return eat(take (c ? a.name : b.name));
+}
+
+func main(): i32 {
+    let a: D = D { name: 1, y: 1 };
+    let b: D = D { name: 2, y: 2 };
+    return pick<D>(take a, take b, true) - 1;
+}
+"#;
+
+/// The guarded conditional take moves the chosen member on the evaluated path
+/// only: both selections and the skipped guard run clean (exit 0) with the
+/// leak checker clean, and the concrete and duplicable twins stay clean too.
+#[test]
+fn should_move_a_guarded_conditional_take_member_per_arm() {
+    let output = run_memory("guardcondboth", GUARDED_CONDITIONAL_TAKE_SOURCE);
+    assert_no_asan("guardcondboth", &output);
+    assert_exit("guardcondboth", &output, 0);
+
+    let output = run_memory(
+        "guardcondconcrete",
+        GUARDED_CONDITIONAL_TAKE_CONCRETE_SOURCE,
+    );
+    assert_no_asan("guardcondconcrete", &output);
+    assert_exit("guardcondconcrete", &output, 0);
+
+    let output = run_memory("guardconddup", GUARDED_CONDITIONAL_TAKE_DUP_SOURCE);
+    assert_no_asan("guardconddup", &output);
+    assert_exit("guardconddup", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// The owned raw-deref read at every owned position. The return, the `take`
+// argument, and the struct field each empty the pointee once the value has
+// moved, so a fresh write through the pointer lands without releasing the
+// moved value; the array-element spelling keeps its own clean shape.
+// ---------------------------------------------------------------------------
+
+/// The deref read returned from a callee.
+const DEREF_READ_RETURN_SOURCE: &str = r#"module spec.cpr.derefretread;
+
+import { String, stringOf, bytes } from std.text;
+
+func takeOut(q: raw String): String {
+    return unsafe *q;
+}
+
+func main(): i32 {
+    let a: String = stringOf("ab");
+    let q: raw String = unsafe &a;
+    let v: String = takeOut(q);
+    unsafe { *q = stringOf("zz"); }
+    return i32(len(bytes(v))) - 2 + i32(len(bytes(a))) - 2;
+}
+"#;
+
+/// The deref read passed to a `take` parameter.
+const DEREF_READ_TAKE_SOURCE: &str = r#"module spec.cpr.dereftakeread;
+
+import { String, stringOf, bytes } from std.text;
+
+func eat(take s: String): i32 { return i32(len(bytes(s))); }
+
+func main(): i32 {
+    let a: String = stringOf("ab");
+    let q: raw String = unsafe &a;
+    let n: i32 = eat(unsafe *q);
+    unsafe { *q = stringOf("zz"); }
+    return n - 2 + i32(len(bytes(a))) - 2;
+}
+"#;
+
+/// The deref read stored into a struct field.
+const DEREF_READ_FIELD_SOURCE: &str = r#"module spec.cpr.dereffieldread;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func main(): i32 {
+    let a: String = stringOf("ab");
+    let q: raw String = unsafe &a;
+    let s: S = S { name: unsafe *q };
+    unsafe { *q = stringOf("zz"); }
+    return i32(len(bytes(s.name))) - 2 + i32(len(bytes(a))) - 2;
+}
+"#;
+
+/// The deref read stored into an array element.
+const DEREF_READ_ELEMENT_SOURCE: &str = r#"module spec.cpr.derefelemread;
+
+import { String, stringOf, bytes } from std.text;
+
+func main(): i32 {
+    let a: String = stringOf("ab");
+    let q: raw String = unsafe &a;
+    let v: String[1] = [unsafe *q];
+    unsafe { *q = stringOf("zz"); }
+    return i32(len(bytes(v[0]))) - 2 + i32(len(bytes(a))) - 2;
+}
+"#;
+
+/// Every owned position that consumes a raw-deref read empties its pointee, so
+/// the moved value keeps one owner: a fresh write through the pointer lands
+/// and both values read back (exit 0) with the leak checker clean. The
+/// array-element spelling is the unchanged control.
+#[test]
+fn should_empty_a_deref_read_at_every_owned_position() {
+    let output = run_memory("derefretread", DEREF_READ_RETURN_SOURCE);
+    assert_no_asan("derefretread", &output);
+    assert_exit("derefretread", &output, 0);
+
+    let output = run_memory("dereftakeread", DEREF_READ_TAKE_SOURCE);
+    assert_no_asan("dereftakeread", &output);
+    assert_exit("dereftakeread", &output, 0);
+
+    let output = run_memory("dereffieldread", DEREF_READ_FIELD_SOURCE);
+    assert_no_asan("dereffieldread", &output);
+    assert_exit("dereffieldread", &output, 0);
+
+    let output = run_memory("derefelemread", DEREF_READ_ELEMENT_SOURCE);
+    assert_no_asan("derefelemread", &output);
+    assert_exit("derefelemread", &output, 0);
+}

@@ -373,8 +373,10 @@ fn check_self_assign_requirements(
 /// A generic body that stores a maybe-owning value and then uses the source
 /// again is accepted only when the instance's type argument is duplicable. The
 /// audit substitutes each recorded argument into the binding's declared type
-/// and reports `E10020` at the conflicting use for the first owning
-/// instantiation.
+/// and reports at the conflicting use for the first owning instantiation: the
+/// moved-value code (`E10020`) for a whole-binding move, and the partial-move
+/// code (`E10025`) when only a member path moved and the use names the whole
+/// binding, matching the concrete spelling's two judgments.
 fn check_duplicable_requirements(
     program: &ProgramInfo,
     sema: &SemaOutput,
@@ -406,14 +408,25 @@ fn check_duplicable_requirements(
             if sema.table.duplicable(&substituted) {
                 continue;
             }
-            diagnostics.push(
-                Diagnostic::error(
-                    "E10020",
-                    format!("'{binding_name}' was moved and cannot be used"),
-                    requirement.span,
-                )
-                .with_help("re-initialize the binding or use a view"),
-            );
+            if requirement.partial {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10025",
+                        format!("'{binding_name}' is partially moved and cannot be used as a whole"),
+                        requirement.span,
+                    )
+                    .with_help("use the remaining fields or re-initialize the struct"),
+                );
+            } else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10020",
+                        format!("'{binding_name}' was moved and cannot be used"),
+                        requirement.span,
+                    )
+                    .with_help("re-initialize the binding or use a view"),
+                );
+            }
             // One duty per function and binding: the first owning instance
             // reports it.
             break;

@@ -978,6 +978,9 @@ fn walk_function(
                         walk_value(check, bindings, function, program, sema, mono, enclosing);
                     }
                 }
+                Statement::MoveOutValue { value } => {
+                    walk_value(value, bindings, function, program, sema, mono, enclosing)
+                }
                 Statement::Move { .. }
                 | Statement::MoveOut { .. }
                 | Statement::Borrow { .. }
@@ -1206,8 +1209,16 @@ fn resolved_ir_value_ty(
         // that fills it resolves it, exactly as the emitter resolves the
         // temporary it declares.
         ValueKind::Temp(id) => resolved_ir_temp_ty(*id, bindings, function, program, sema),
-        ValueKind::Materialize { temp, .. } => {
-            resolved_ir_temp_ty(*temp, bindings, function, program, sema)
+        // A materialized operand carries the value it holds, so an opaque
+        // carrier resolves through that value — a guarded conditional take's
+        // selected member, for example.
+        ValueKind::Materialize { value: inner, .. } => {
+            let resolved = resolved_ir_value_ty(inner, bindings, function, program, sema);
+            if resolved.is_unknown() {
+                ty
+            } else {
+                resolved
+            }
         }
         _ => ty,
     }

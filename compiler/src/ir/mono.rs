@@ -103,8 +103,9 @@ pub struct CopyObligation {
 /// then uses the source again is honest only when the instance's type argument
 /// is duplicable: an owning argument moves the source, so the later use would
 /// read a moved value. The checker records the duty at the conflicting use and
-/// the per-instance audit reports `E10020` when the substituted type is not
-/// duplicable.
+/// the per-instance audit reports the concrete spelling's diagnostic when the
+/// substituted type is not duplicable: `E10020` for a whole-binding move, and
+/// `E10025` when only a member path moved and the use names the whole binding.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequiresDuplicable {
     /// The generic function whose body carries the duty.
@@ -116,6 +117,12 @@ pub struct RequiresDuplicable {
     /// A base-overridden binding (a for-in borrow element or a capture) has no
     /// local entry to look up, so the record carries the type itself.
     pub ty: Ty,
+    /// True when every conflicting maybe-owning move is a member path and the
+    /// conflicting use names the whole binding.
+    ///
+    /// The concrete spelling reports that whole-binding use of a partially
+    /// moved value as `E10025`; a whole-binding move keeps `E10020`.
+    pub partial: bool,
     /// The conflicting use, for the body-site diagnostic.
     pub span: Span,
 }

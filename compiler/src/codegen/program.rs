@@ -395,7 +395,11 @@ impl<'a> Emitter<'a> {
                         }
                     }
                     // The remaining statements hold places, scopes, or
-                    // registrations and read no value.
+                    // registrations and read no value; a value move-out reads
+                    // the source's type, which contributes its own typedef.
+                    Statement::MoveOutValue { value } => {
+                        self.collect_value_slice_types(value, subst, found);
+                    }
                     Statement::Move { .. }
                     | Statement::MoveOut { .. }
                     | Statement::Borrow { .. }
