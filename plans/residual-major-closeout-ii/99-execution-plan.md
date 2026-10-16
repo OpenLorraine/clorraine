@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 11:00
-> **Progress**: 16/51 tasks (31%) — Phase 3 in review
+> **Last Updated**: 2026-10-18 11:45
+> **Progress**: 17/51 tasks (33%) — Phase 3 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -170,9 +170,9 @@ duplicable out-slot, and the capture pair control.
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the substituted drop emission, the duty records
+- [x] 3.3.1 Write the phase implementation pins (the substituted drop emission, the duty records
       and report spans, the out-slot store shape, the rejection parity, a re-emission determinism
-      pin) — `compiler/tests/checker_conformance_impl_test.rs`
+      pin) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-18 11:45; four pins added (62 tests total, additions only) plus a one-report rejection helper — the element store's drop sequence (the concrete twin included), the seven conversion spellings each rejected once with the text, the matching-element control instances, and a re-emission pin; three fail at `b42297a` for the intended reason, one is a disclosed base-stable guard; 62/62 green, `make check` exit 0)
 - [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; the memory lens probes the element store forms on both paths
 

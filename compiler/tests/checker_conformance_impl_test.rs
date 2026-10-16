@@ -2872,3 +2872,411 @@ func main(): i32 {
         "blocklambdashadow: the import's type must not add a dead instance"
     );
 }
+
+// ===== The element store's drop and the element conversions =====
+
+/// Emits a host program and asserts one report of `code` carries `fragment`.
+///
+/// The stderr must name the report exactly once and carry the fragment, so a
+/// per-instance judgment is pinned the way the concrete twin reports it.
+fn assert_rejected_once(tag: &str, source: &str, code: &str, fragment: &str) {
+    let stderr = reject_host(tag, source);
+    assert_eq!(
+        stderr.matches(code).count(),
+        1,
+        "{tag}: expected one {code}; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(fragment),
+        "{tag}: expected {fragment:?}; stderr:\n{stderr}"
+    );
+}
+
+/// The borrowed element store program.
+const ELEMENT_STORE_SOURCE: &str = r#"module spec.cc.impl.elemstore;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = stringOf("zzzz");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return each<S[2]>(a) - 8;
+}
+"#;
+
+/// The concrete twin of the borrowed element store program.
+const ELEMENT_STORE_CONTROL_SOURCE: &str = r#"module spec.cc.impl.elemstorectl;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eachS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = stringOf("zzzz");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return eachS(a) - 8;
+}
+"#;
+
+/// The loop element return over an `i32` slice.
+const ELEMENT_RETURN_CONTROL_SOURCE: &str = r#"module spec.cc.impl.convret;
+
+import { slice } from std.mem;
+
+func first<T>(xs: T[]): i32 {
+    for (borrow e in xs) {
+        return e;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32[3] = [7, 8, 9];
+    let s: i32[] = slice(a, 0, 3);
+    return first<i32>(s);
+}
+"#;
+
+/// The loop element `let` over an `i32` slice.
+const ELEMENT_LET_CONTROL_SOURCE: &str = r#"module spec.cc.impl.convlet;
+
+import { slice } from std.mem;
+
+func sum<T>(xs: T[]): i32 {
+    let total: i32 = 0;
+    for (borrow e in xs) {
+        let y: i32 = e;
+        total = total + y;
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: i32[3] = [7, 8, 9];
+    let s: i32[] = slice(a, 0, 3);
+    return sum<i32>(s);
+}
+"#;
+
+/// The conditional element member position over a concrete array.
+const CONDITIONAL_MEMBER_CONTROL_SOURCE: &str = r#"module spec.cc.impl.convcond;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick(xs: S[3], i: usize, c: bool): i32 {
+    return id(c ? xs[i] : xs[i]).y;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick(a, i, true);
+}
+"#;
+
+/// The conditional element member argument over an opaque array.
+const CONDITIONAL_ARGUMENT_CONTROL_SOURCE: &str = r#"module spec.cc.impl.convcondarg;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, c: bool): i32 {
+    return id(c ? xs[0].y : xs[0].y);
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return pick<S[2]>(a, true);
+}
+"#;
+
+/// The borrowed element store releases the owner it overwrites.
+///
+/// `v.name = stringOf("zzzz")` inside `each<T>`'s borrow loop overwrites the
+/// element's owning `String`, so the emitted store releases the old owner and
+/// empties the place first, exactly as the concrete twin's store does. Before
+/// the destination's resolved type reached the drop decision, the release was
+/// missing and the overwritten owner leaked.
+#[test]
+fn should_release_the_overwritten_owner_in_a_borrowed_element_store() {
+    let store = "    if ((*__cl_tmp1).name) { FreeString((*__cl_tmp1).name); }\n    \
+                 (*__cl_tmp1).name = NULL;\n    \
+                 (*__cl_tmp1).name = cl_std_text_stringOf(cl_str(\"zzzz\"));";
+    let emitted = emit_host("elemstore", ELEMENT_STORE_SOURCE);
+    assert_contains("elemstore", &emitted, store);
+    assert_eq!(
+        count(
+            &emitted,
+            "(*__cl_tmp1).name = cl_std_text_stringOf(cl_str(\"zzzz\"));"
+        ),
+        1,
+        "elemstore: expected one element store"
+    );
+
+    let emitted = emit_host("elemstorectl", ELEMENT_STORE_CONTROL_SOURCE);
+    assert_contains("elemstorectl", &emitted, store);
+}
+
+/// A converted element reports the conversion once at each spelling.
+///
+/// A place, conditional, and direct element return, an element `let`, an
+/// element argument, and the loop element return and `let` each substitute an
+/// `S` element into a concrete `i32` destination, so each instance reports the
+/// frozen conversion exactly once, as the same program with the array type
+/// carried concretely reports it. Before the per-instance judgment, all seven
+/// were accepted and the strict build failed on the C type mismatch.
+#[test]
+fn should_report_the_element_conversion_once_at_each_spelling() {
+    let place_return = r#"module spec.cc.impl.elemconvplaceret;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    return id(xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvplaceret",
+        place_return,
+        "error E10200:",
+        "cannot convert 'S' to 'i32' implicitly",
+    );
+
+    let conditional_return = r#"module spec.cc.impl.elemconvcondret;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, i: usize, c: bool): i32 {
+    return id(c ? xs[i] : xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i, true);
+}
+"#;
+    assert_rejected_once(
+        "elemconvcondret",
+        conditional_return,
+        "error E10200:",
+        "cannot convert 'S' to 'i32' implicitly",
+    );
+
+    let direct_return = r#"module spec.cc.impl.elemconvdirectret;
+
+struct S { y: i32; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    return xs[i];
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvdirectret",
+        direct_return,
+        "error E10200:",
+        "cannot convert 'S' to 'i32' implicitly",
+    );
+
+    let element_let = r#"module spec.cc.impl.elemconvlet;
+
+struct S { y: i32; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    let v: i32 = xs[i];
+    return v;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvlet",
+        element_let,
+        "error E10200:",
+        "cannot convert 'S' to 'i32' implicitly",
+    );
+
+    let element_argument = r#"module spec.cc.impl.elemconvarg;
+
+struct S { y: i32; }
+
+func use(x: i32): i32 { return x; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    return use(xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvarg",
+        element_argument,
+        "error E10200:",
+        "cannot convert 'S' to 'i32' implicitly",
+    );
+
+    let loop_return = r#"module spec.cc.impl.elemconvloopret;
+
+struct S { y: i32; }
+
+func first<T>(xs: T): i32 {
+    for (v in xs) {
+        return v;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return first<S[3]>(a);
+}
+"#;
+    assert_rejected_once(
+        "elemconvloopret",
+        loop_return,
+        "error E10200:",
+        "cannot convert 'S' to 'i32' implicitly",
+    );
+
+    let loop_let = r#"module spec.cc.impl.elemconvlooplet;
+
+struct S { y: i32; }
+
+func first<T>(xs: T): i32 {
+    for (v in xs) {
+        let w: i32 = v;
+        return w;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return first<S[3]>(a);
+}
+"#;
+    assert_rejected_once(
+        "elemconvlooplet",
+        loop_let,
+        "error E10200:",
+        "cannot convert 'S' to 'i32' implicitly",
+    );
+}
+
+/// The matching element positions keep their accepted instances.
+///
+/// The loop element return and `let` over an `i32` slice and the conditional
+/// element member positions convert an element into its own type, so each
+/// instance stays accepted and emits its keyed call. These shapes already held
+/// before the per-instance judgment — they guard the accepted side of the
+/// conversion duties rather than discriminate them.
+#[test]
+fn should_keep_the_matching_element_control_instances() {
+    let emitted = emit_host("convret", ELEMENT_RETURN_CONTROL_SOURCE);
+    assert_keyed_instance(
+        "convret",
+        &emitted,
+        "static i32 cl_first__",
+        "static i32 cl_first__i32(ClSlice_i32 xs)",
+        "cl_first__i32(s)",
+    );
+
+    let emitted = emit_host("convlet", ELEMENT_LET_CONTROL_SOURCE);
+    assert_keyed_instance(
+        "convlet",
+        &emitted,
+        "static i32 cl_sum__",
+        "static i32 cl_sum__i32(ClSlice_i32 xs)",
+        "cl_sum__i32(s)",
+    );
+
+    let emitted = emit_host("convcond", CONDITIONAL_MEMBER_CONTROL_SOURCE);
+    assert_contains("convcond", &emitted, "static ClS cl_id__S(ClS x);");
+    assert_contains("convcond", &emitted, "static ClS cl_id__S(ClS x)\n{");
+    assert_contains("convcond", &emitted, "return cl_id__S((c ? ");
+
+    let emitted = emit_host("convcondarg", CONDITIONAL_ARGUMENT_CONTROL_SOURCE);
+    assert_keyed_instance(
+        "convcondarg",
+        &emitted,
+        "static i32 cl_id__",
+        "static i32 cl_id__i32(i32 x)",
+        "cl_id__i32((c ? ",
+    );
+    assert_contains(
+        "convcondarg",
+        &emitted,
+        "static i32 cl_pick__arr2_S(ClS xs[2], bool c)",
+    );
+}
+
+/// The element surfaces re-emit byte-identically.
+///
+/// The store's drop decision and the conversion duties read the substituted
+/// instance types, so a second emission of the same source produces the same
+/// translation unit.
+#[test]
+fn should_re_emit_the_element_surfaces_identically() {
+    let (first, second) = emit_twice("reemitelemstore", ELEMENT_STORE_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitelemstore: the program re-emitted differently"
+    );
+    assert_contains(
+        "reemitelemstore",
+        &first,
+        "if ((*__cl_tmp1).name) { FreeString((*__cl_tmp1).name); }",
+    );
+
+    let (first, second) = emit_twice("reemitconvret", ELEMENT_RETURN_CONTROL_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitconvret: the program re-emitted differently"
+    );
+    assert_contains("reemitconvret", &first, "cl_first__i32(s)");
+}
