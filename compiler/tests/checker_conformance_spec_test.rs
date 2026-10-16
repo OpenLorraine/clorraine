@@ -6077,3 +6077,75 @@ func main(): i32 {
     assert_no_asan("elementtakestorectl", &output);
     assert_exit("elementtakestorectl", &output, 0);
 }
+
+// ===== The element store's aliasing right-hand side =====
+
+/// A store to a borrowed element survives a right-hand side that reads the
+/// same element through its container.
+///
+/// `v.name = dup(borrow xs[0].name)` reads the very storage the target names,
+/// through the array root, so the release of the replaced owner must wait
+/// until the right-hand side has been evaluated: both the generic spelling
+/// and the concrete twin save the replaced value first, store the new one,
+/// and release the saved value. Each run folds the cloned size back (exit 0)
+/// and the leak checker is clean. (The generic spelling used to release the
+/// target before the right-hand side read it and faulted on the emptied
+/// storage; the concrete spelling faulted the same way.)
+#[test]
+fn should_keep_an_aliasing_right_hand_side_alive_across_the_element_store() {
+    let looping = r#"module spec.cc.elementstorealias;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = dup(borrow xs[0].name);
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab"), y: 1 }];
+    return each<S[1]>(a) - 2;
+}
+"#;
+    let output = run_memory("elementstorealias", looping);
+    assert_no_asan("elementstorealias", &output);
+    assert_exit("elementstorealias", &output, 0);
+
+    let concrete = r#"module spec.cc.elementstorealiasctl;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func eachS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = dup(borrow xs[0].name);
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cdef"), y: 2 }];
+    return eachS(a) - 4;
+}
+"#;
+    let output = run_memory("elementstorealiasctl", concrete);
+    assert_no_asan("elementstorealiasctl", &output);
+    assert_exit("elementstorealiasctl", &output, 0);
+}

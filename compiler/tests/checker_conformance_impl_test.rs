@@ -3431,3 +3431,95 @@ fn should_empty_a_borrowed_element_after_a_take_argument() {
     assert_contains("elemtakectl", &emitted, "eat(a.name);");
     assert_contains("elemtakectl", &emitted, "a.name = NULL;");
 }
+
+/// The aliasing element store program.
+const ELEMENT_ALIAS_SOURCE: &str = r#"module spec.cc.impl.elemalias;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = dup(borrow xs[0].name);
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab"), y: 1 }];
+    return each<S[1]>(a) - 2;
+}
+"#;
+
+/// The concrete twin of the aliasing element store program.
+const ELEMENT_ALIAS_CONTROL_SOURCE: &str = r#"module spec.cc.impl.elemaliasctl;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func eachS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = dup(borrow xs[0].name);
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cdef"), y: 2 }];
+    return eachS(a) - 4;
+}
+"#;
+
+/// A store to a borrowed element saves it before an aliasing right-hand side.
+///
+/// `v.name = dup(borrow xs[0].name)` reads the target's storage through the
+/// array root, so the emitted store saves the replaced value, evaluates the
+/// right-hand side, stores, and releases the saved value — for the generic
+/// spelling and the concrete pointer store alike. Before the aliasing read
+/// deferred the release, the target was emptied first and the right-hand side
+/// read the emptied storage.
+#[test]
+fn should_save_a_borrowed_element_before_an_aliasing_right_hand_side() {
+    let save = "= (*__cl_tmp1).name;";
+    let store = "(*__cl_tmp1).name = cl_spec_cc_impl_elemalias_dup(xs[0].name);";
+    let emitted = emit_host("elemalias", ELEMENT_ALIAS_SOURCE);
+    assert_contains("elemalias", &emitted, save);
+    assert_contains("elemalias", &emitted, store);
+    let save_at = emitted
+        .find(save)
+        .unwrap_or_else(|| panic!("elemalias: the element is never saved"));
+    let store_at = emitted
+        .find(store)
+        .unwrap_or_else(|| panic!("elemalias: the aliasing store is missing"));
+    assert!(
+        save_at < store_at,
+        "elemalias: the element must be saved before the aliasing store"
+    );
+    assert_eq!(
+        count(&emitted, "__cl_save_"),
+        4,
+        "elemalias: expected the save, its release, and the emptied release slot"
+    );
+
+    let emitted = emit_host("elemaliasctl", ELEMENT_ALIAS_CONTROL_SOURCE);
+    assert_contains("elemaliasctl", &emitted, save);
+    assert_contains(
+        "elemaliasctl",
+        &emitted,
+        "(*__cl_tmp1).name = cl_spec_cc_impl_elemaliasctl_dup(xs[0].name);",
+    );
+}

@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ir::{self, Place, Statement, Terminator, Value, ValueKind, ValuePiece};
+use crate::ir::{self, Place, PlaceBase, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::ast::UnaryOp;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
@@ -532,6 +532,26 @@ impl<'a> Emitter<'a> {
                             then_value,
                             else_value,
                         );
+                    } else if value_reads_caller_storage(value) {
+                        // The pointer addresses caller storage, so a
+                        // right-hand side that reads a parameter or a
+                        // module-level binding can read the element itself
+                        // through a different base; the replaced value must
+                        // survive until the right-hand side has been
+                        // evaluated. Save it, store the new value, then
+                        // release the saved value.
+                        let save = self.unique_local("__cl_save");
+                        self.push("    {");
+                        self.push(&format!(
+                            "        {} = *({pointer_c});",
+                            declarator(&pointer_ty, &save, &self.sema.table)
+                        ));
+                        self.emit_guards(value);
+                        let lowered = self.store_text(value, &pointer_ty);
+                        self.push(&format!("        *({pointer_c}) = {lowered};"));
+                        self.emit_arm_source_moves(value, &pointer_ty);
+                        self.emit_drop_expr(&save, &pointer_ty);
+                        self.push("    }");
                     } else {
                         // The replaced element owns a value, so it is released
                         // (and its storage cleared) before the value is
@@ -1098,7 +1118,13 @@ impl<'a> Emitter<'a> {
             return;
         }
         let target_c = self.place(target);
-        if !value_reads_base(value, target) {
+        // An element target is reached through a pointer into its container,
+        // so a right-hand side that reads caller storage can read the same
+        // storage through a different base; the release waits for it then.
+        let reads_target = value_reads_base(value, target)
+            || (matches!(target.base, PlaceBase::DerefTemp { .. })
+                && value_reads_caller_storage(value));
+        if !reads_target {
             // The right-hand side does not read the target, so the old value
             // is released before the right-hand side is evaluated.
             self.emit_drop(target);
@@ -2654,57 +2680,76 @@ fn has_deferred_fill(value: &Value) -> bool {
 /// The check is deliberately broad: any projection of the same base counts,
 /// because releasing the target would invalidate every projection of it.
 fn value_reads_base(value: &Value, target: &Place) -> bool {
+    value_reads_place(value, &|place| place.base == target.base)
+}
+
+/// True when a value reads any place holding caller storage.
+///
+/// An element target is reached through a pointer into the container it
+/// belongs to — a borrow-loop binding, for example — so a right-hand side
+/// that reads a parameter or a module-level binding can read the very
+/// storage the target occupies through a different base. The release must
+/// wait for the right-hand side in every such case; the save costs one local
+/// and is always safe.
+fn value_reads_caller_storage(value: &Value) -> bool {
+    value_reads_place(value, &|place| {
+        matches!(place.base, PlaceBase::Param(_) | PlaceBase::Global(_))
+    })
+}
+
+/// Walks a value and reports whether any place it reads matches `matches`.
+fn value_reads_place(value: &Value, matches: &dyn Fn(&Place) -> bool) -> bool {
     match &value.kind {
-        ValueKind::Place(place) => place.base == target.base,
-        ValueKind::Member { base, .. } => value_reads_base(base, target),
+        ValueKind::Place(place) => matches(place),
+        ValueKind::Member { base, .. } => value_reads_place(base, matches),
         ValueKind::Index { base, index } => {
-            value_reads_base(base, target) || value_reads_base(index, target)
+            value_reads_place(base, matches) || value_reads_place(index, matches)
         }
-        ValueKind::Unary { operand, .. } => value_reads_base(operand, target),
+        ValueKind::Unary { operand, .. } => value_reads_place(operand, matches),
         ValueKind::Binary { left, right, .. } => {
-            value_reads_base(left, target) || value_reads_base(right, target)
+            value_reads_place(left, matches) || value_reads_place(right, matches)
         }
-        ValueKind::Cast { value: inner, .. } => value_reads_base(inner, target),
+        ValueKind::Cast { value: inner, .. } => value_reads_place(inner, matches),
         ValueKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            value_reads_base(condition, target)
-                || value_reads_base(then_value, target)
-                || value_reads_base(else_value, target)
+            value_reads_place(condition, matches)
+                || value_reads_place(then_value, matches)
+                || value_reads_place(else_value, matches)
         }
         ValueKind::StructLit { fields, .. } => fields
             .iter()
-            .any(|(_, field)| value_reads_base(field, target)),
+            .any(|(_, field)| value_reads_place(field, matches)),
         ValueKind::ArrayLit { elements, fill } => {
             elements
                 .iter()
-                .any(|element| value_reads_base(element, target))
+                .any(|element| value_reads_place(element, matches))
                 || fill
                     .as_deref()
-                    .is_some_and(|fill| value_reads_base(fill, target))
+                    .is_some_and(|fill| value_reads_place(fill, matches))
         }
         ValueKind::Template(pieces) => pieces.iter().any(|piece| match piece {
             ValuePiece::Literal(_) => false,
-            ValuePiece::Placeholder(inner) => value_reads_base(inner, target),
+            ValuePiece::Placeholder(inner) => value_reads_place(inner, matches),
         }),
         ValueKind::Call {
             args, receiver, ..
         } => {
             receiver
                 .as_deref()
-                .is_some_and(|receiver| value_reads_base(receiver, target))
-                || args.iter().any(|arg| value_reads_base(arg, target))
+                .is_some_and(|receiver| value_reads_place(receiver, matches))
+                || args.iter().any(|arg| value_reads_place(arg, matches))
         }
-        ValueKind::Intrinsic { args, .. } => args.iter().any(|arg| value_reads_base(arg, target)),
-        ValueKind::Materialize { value: inner, .. } => value_reads_base(inner, target),
+        ValueKind::Intrinsic { args, .. } => args.iter().any(|arg| value_reads_place(arg, matches)),
+        ValueKind::Materialize { value: inner, .. } => value_reads_place(inner, matches),
         ValueKind::Closure { captures, .. } => {
-            captures.iter().any(|capture| value_reads_base(capture, target))
+            captures.iter().any(|capture| value_reads_place(capture, matches))
         }
         ValueKind::ClosureCall { callable, args } => {
-            value_reads_base(callable, target)
-                || args.iter().any(|arg| value_reads_base(arg, target))
+            value_reads_place(callable, matches)
+                || args.iter().any(|arg| value_reads_place(arg, matches))
         }
         ValueKind::Int(_)
         | ValueKind::Float(_)
