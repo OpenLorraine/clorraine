@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 06:30
-> **Progress**: 18/39 tasks (46%) — Phase 3 complete
+> **Last Updated**: 2026-10-17 07:10
+> **Progress**: 20/39 tasks (51%) — Executing Phase 4
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -201,9 +201,9 @@ member typing, and the `toCString` acceptance.
 **Objective**: Pin the conversion duty's offending instances, the legal-instance controls, and
 the `ffi` result's declared type.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (genericconvert, ffiresult) with the legal-instance and valid-use controls
-- [ ] 4.1.2 Run the suite and record the red phase (the legal instances verified green first;
-      the `DEF-242` stop condition measured — AR-8)
+- [x] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (genericconvert, ffiresult) with the legal-instance and valid-use controls ✅ (completed: 2026-10-17 07:10; ten tests (thirteen programs) appended to `compiler/tests/checker_conformance_spec_test.rs` (+408 lines, additions only; 108 → 118 tests) — the generic conversion at an FFI and an ordinary cstring argument, at a concrete return and declaration, the null-shaped return/declaration (the frozen `E10012` per the design), the FFI integer result at a cstring destination, and the legal-instance/identity/integer-destination controls; adjustments recorded (the `cl_probe_convert` ffi probe instead of the shim `Open`; the `take` identity control; the `count` parameter name); the AR-8 legal-instance controls measured green, so the duty is expressible)
+- [x] 4.1.2 Run the suite and record the red phase (the legal instances verified green first;
+      the `DEF-242` stop condition measured — AR-8) ✅ (completed: 2026-10-17 07:10; plain 111 passed / 7 failed and ASan 111 passed / 7 failed — the seven reds (the `ClStr`-at-`char *` arguments, the `ClStr`/`void *` at concrete returns and declarations, the pointer-from-integer destinations); the controls green in both legs, 0 sanitizer reports; parent-verified)
 
 ### Step 4.2: Implementation
 

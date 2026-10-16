@@ -3463,3 +3463,411 @@ func main(): i32 {
     );
 }
 
+// ===== Call conversions and `ffi` result typing =====
+
+/// A `str` instance at an `ffi` `cstring` parameter reports the conversion.
+///
+/// A parameter-typed argument's conversion is discharged at its instance: the
+/// view's bytes carry no zero-terminator guarantee, so the frozen table
+/// reports the conversion once instead of passing the view struct where the
+/// `char *` parameter is declared (red at the phase base: the program was
+/// accepted and the strict build failed with `incompatible type for argument
+/// 1` for the view struct).
+#[test]
+fn should_report_a_view_instance_at_an_ffi_c_string_argument() {
+    let source = r#"module spec.cc.genericconvert;
+
+ffi probe {
+    func cl_probe_convert(name: cstring, mode: i32): raw u8;
+}
+
+func convert<T>(x: T): raw u8 {
+    unsafe {
+        return cl_probe_convert(x, 0);
+    }
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    unsafe {
+        let f: raw u8 = convert<str>(s);
+        if (f == null) {
+            return 1;
+        }
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "genericconvert",
+        source,
+        "E10200",
+        &["cannot convert 'str' to 'cstring' implicitly"],
+        &[],
+    );
+}
+
+/// The same conversion at an ordinary `cstring` parameter reports once.
+///
+/// The direct-call route defers a parameter-typed argument exactly as the
+/// `ffi` route does, so the instance judgment is the same (red at the phase
+/// base: the accepted program failed the strict build with `incompatible type
+/// for argument 1` for the view struct).
+#[test]
+fn should_report_a_view_instance_at_an_ordinary_c_string_argument() {
+    let source = r#"module spec.cc.genericconvertdirect;
+
+func consume(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func convert<T>(x: T): i32 {
+    return consume(x);
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return convert<str>(s);
+}
+"#;
+    assert_rejected_once(
+        "genericconvertdirect",
+        source,
+        "E10200",
+        &["cannot convert 'str' to 'cstring' implicitly"],
+        &[],
+    );
+}
+
+/// A parameter-typed value at a concrete return reports the conversion.
+///
+/// The return type is concrete, so the instance can judge the substituted
+/// value: a `str` instance cannot convert to `i32` and the return reports the
+/// frozen conversion once (red at the phase base: the accepted program failed
+/// the strict build with `incompatible types when returning type`).
+#[test]
+fn should_report_a_parameter_typed_value_at_a_concrete_return() {
+    let source = r#"module spec.cc.genericconvertret;
+
+func pick<T>(x: T): i32 {
+    return x;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return pick<str>(s);
+}
+"#;
+    assert_rejected_once(
+        "genericconvertret",
+        source,
+        "E10200",
+        &["cannot convert 'str' to 'i32' implicitly"],
+        &[],
+    );
+}
+
+/// A parameter-typed value at a concrete declaration reports the conversion.
+///
+/// The declared type is concrete, so the instance can judge the substituted
+/// value: a `str` instance cannot initialize an `i32` local and the
+/// declaration reports the frozen conversion once (red at the phase base: the
+/// accepted program failed the strict build with `incompatible types when
+/// assigning`).
+#[test]
+fn should_report_a_parameter_typed_value_at_a_concrete_declaration() {
+    let source = r#"module spec.cc.genericconvertdecl;
+
+func keep<T>(x: T): i32 {
+    let y: i32 = x;
+    return y;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return keep<str>(s);
+}
+"#;
+    assert_rejected_once(
+        "genericconvertdecl",
+        source,
+        "E10200",
+        &["cannot convert 'str' to 'i32' implicitly"],
+        &[],
+    );
+}
+
+/// A null-shaped value at a parameter-typed return reports the null rule.
+///
+/// The return type resolves to a concrete `i32` at the instance, and a value
+/// the compiler inferred from `null` has no type to convert: the frozen null
+/// judgment reports once, not a raw `void *` conversion (red at the phase
+/// base: the accepted program failed the strict build with `returning 'void
+/// *' from a function with return type 'i32'`).
+#[test]
+fn should_report_a_null_shaped_source_at_a_parameter_typed_return() {
+    let source = r#"module spec.cc.genericconvertnullret;
+
+func make<T>(): T {
+    let x = null;
+    return x;
+}
+
+func main(): i32 {
+    return i32(make<i32>()) + 1;
+}
+"#;
+    assert_rejected_once(
+        "genericconvertnullret",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &["E10200"],
+    );
+}
+
+/// A null-shaped value at a parameter-typed declaration reports the null rule.
+///
+/// `let y: T = x` with the local inferred from `null` resolves to an `i32`
+/// slot at the instance, and the frozen null judgment reports once, not a raw
+/// `void *` conversion (red at the phase base: the accepted program failed
+/// the strict build with `assignment to 'i32' from 'void *'`).
+#[test]
+fn should_report_a_null_shaped_source_at_a_parameter_typed_declaration() {
+    let source = r#"module spec.cc.genericconvertnulldecl;
+
+func store<T>(): i32 {
+    let x = null;
+    let y: T = x;
+    return 0;
+}
+
+func main(): i32 {
+    return store<i32>() + 1;
+}
+"#;
+    assert_rejected_once(
+        "genericconvertnulldecl",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &["E10200"],
+    );
+}
+
+/// The legally converting instances stay accepted.
+///
+/// The conversion duty reports only instances whose conversion is not
+/// implicit: a `cstring` instance at an `ffi` `cstring` parameter, a `str`
+/// instance at a `str` parameter, and a `String` instance widening to `str`
+/// all build and run, and each run folds the call's result into its exit code
+/// (the acceptance control for the duty's instance audit).
+#[test]
+fn should_keep_the_legal_conversion_instances_accepted() {
+    let c_string = r#"module spec.cc.genericconvertffiok;
+
+import { toCString } from std.text;
+
+ffi probe {
+    func Open(name: cstring, mode: i32): raw u8;
+}
+
+func convert<T>(x: T): raw u8 {
+    unsafe {
+        return Open(x, 0);
+    }
+}
+
+func main(): i32 {
+    let c: cstring = toCString("/definitely/not/here");
+    unsafe {
+        let f: raw u8 = convert<cstring>(c);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+    let output = run_memory("genericconvertffiok", c_string);
+    assert_no_asan("genericconvertffiok", &output);
+    assert_exit("genericconvertffiok", &output, 7);
+
+    let view = r#"module spec.cc.genericconvertparam;
+
+func span(s: str): i32 {
+    return i32(len(s));
+}
+
+func sink<T>(x: T): i32 {
+    return span(x);
+}
+
+func main(): i32 {
+    let s: str = "abcd";
+    return sink<str>(s);
+}
+"#;
+    let output = run_memory("genericconvertparam", view);
+    assert_no_asan("genericconvertparam", &output);
+    assert_exit("genericconvertparam", &output, 4);
+
+    let owned = r#"module spec.cc.genericconvertparamstr;
+
+import { stringOf } from std.text;
+
+func span(s: str): i32 {
+    return i32(len(s));
+}
+
+func sink<T>(x: T): i32 {
+    return span(x);
+}
+
+func main(): i32 {
+    return sink<String>(stringOf("abc"));
+}
+"#;
+    let output = run_memory("genericconvertparamstr", owned);
+    assert_no_asan("genericconvertparamstr", &output);
+    assert_exit("genericconvertparamstr", &output, 3);
+}
+
+/// The parameter-typed identity instances stay accepted.
+///
+/// A parameter-typed declaration and return are judged per instance, so the
+/// legal `cstring`, `str`, and `String` instances of an identity round trip
+/// must stay accepted: the run reads the view's and the handle's lengths and
+/// the pointer's non-null state back.
+#[test]
+fn should_keep_the_identity_instances_accepted() {
+    let source = r#"module spec.cc.genericconvertident;
+
+import { stringOf, toCString } from std.text;
+
+func keep<T>(take x: T): T {
+    let y: T = x;
+    return y;
+}
+
+func main(): i32 {
+    let s: str = "abcd";
+    let t: str = keep<str>(s);
+    if (len(t) != 4) {
+        return 1;
+    }
+    let u: String = keep<String>(stringOf("abc"));
+    if (len(u) != 3) {
+        return 2;
+    }
+    let c: cstring = toCString("ab");
+    let d: cstring = keep<cstring>(c);
+    if (d == null) {
+        return 3;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("genericconvertident", source);
+    assert_no_asan("genericconvertident", &output);
+    assert_exit("genericconvertident", &output, 0);
+}
+
+/// An `ffi` integer result at a `cstring` destination reports the conversion.
+///
+/// The call carries the declaration's resolved return type, so `Count()`
+/// reaches a `cstring` destination as an `i32` and the frozen conversion
+/// reports once instead of the C build failing (red at the phase base: the
+/// accepted program failed the strict build with `passing argument 1 ... makes
+/// pointer from integer`). The direct-call twin judges the same result at an
+/// ordinary `cstring` parameter.
+#[test]
+fn should_report_an_ffi_integer_result_at_a_c_string_destination() {
+    let source = r#"module spec.cc.ffiresult;
+
+ffi probe {
+    func Count(): i32;
+    func Uses(s: cstring): i32;
+}
+
+func main(): i32 {
+    unsafe {
+        return Uses(Count());
+    }
+}
+"#;
+    assert_rejected_once(
+        "ffiresult",
+        source,
+        "E10200",
+        &["cannot convert 'i32' to 'cstring' implicitly"],
+        &[],
+    );
+
+    let direct = r#"module spec.cc.ffiresultdirect;
+
+ffi probe {
+    func Count(): i32;
+}
+
+func consume(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    unsafe {
+        return consume(Count());
+    }
+}
+"#;
+    assert_rejected_once(
+        "ffiresultdirect",
+        direct,
+        "E10200",
+        &["cannot convert 'i32' to 'cstring' implicitly"],
+        &[],
+    );
+}
+
+/// An `ffi` integer result at an integer destination builds and runs.
+///
+/// The result carries the declared `i32`, so an integer destination accepts
+/// it and the run reads the call's value back; the handle is closed so the
+/// run stays leak-free.
+#[test]
+fn should_keep_an_ffi_integer_result_at_an_integer_destination() {
+    let source = r#"module spec.cc.ffiresultok;
+
+ffi probe {
+    func Open(name: cstring, mode: i32): raw u8;
+    func Read(file: raw u8, buf: raw u8, count: i32): i32;
+    func Close(file: raw u8): void;
+}
+
+func main(): i32 {
+    unsafe {
+        let f: raw u8 = Open("/dev/null", 0);
+        if (f == null) {
+            return 1;
+        }
+        let a: u8[4] = [0, 0, 0, 0];
+        let n: i32 = Read(f, &a[0], 4);
+        Close(f);
+        if (n == 0) {
+            return 7;
+        }
+        return 2;
+    }
+}
+"#;
+    let output = run_memory("ffiresultok", source);
+    assert_no_asan("ffiresultok", &output);
+    assert_exit("ffiresultok", &output, 7);
+}
+
