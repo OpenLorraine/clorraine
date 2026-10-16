@@ -11079,3 +11079,726 @@ func main(): i32 {
 "#;
     compile_rejects("capturepairconcrete", concrete, "E10401", 1);
 }
+
+// ---------------------------------------------------------------------------
+// viewcopyloans: a view-like array copy carries its element loans.
+//
+// `let ys: str[2] = xs;` (and the overwrite `ys = xs;`) copies an array whose
+// element views loan a frame local. The copy must hand each element's loan to
+// the copy, so the later `fill(ys[0], borrow slot)` stores a view whose owner
+// dies with the frame into the caller's out-slot and reports the frozen escape
+// `E10030`, exactly as the direct element argument and the single-view member
+// twin already report it. A caller-backed source keeps its acceptance (the
+// caller's box outlives the out-slot's read), the return variant keeps its
+// `E10035`, the single-view twins keep their `E10030`/`E10031` reports, and the
+// read-back copy stays accepted and memory-clean.
+// ---------------------------------------------------------------------------
+
+/// A whole-array copy of a view-like array carries its element loans.
+///
+/// The copy spellings — the `let` form over a frame local, the overwrite form,
+/// the loop fill over the copied elements, and the `take`-parameter source —
+/// each report exactly one `E10030` naming the frame owner whose buffer the
+/// copied elements view and emit no translation unit. The plain-parameter
+/// source and the read-back copy stay accepted and memory-clean; the return
+/// variant keeps its one `E10035`; the single-view element twin keeps its one
+/// backing-write `E10031`, and the direct member/element twins keep their one
+/// `E10030`.
+#[test]
+fn should_loan_the_element_views_of_a_whole_array_copy() {
+    let local = r#"module spec.cpr.viewcopyloans;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloans", local, "E10030", 1);
+
+    let overwrite = r#"module spec.cpr.viewcopyloansassign;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = ["CC", "DD"];
+    ys = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloansassign", overwrite, "E10030", 1);
+
+    let looped = r#"module spec.cpr.viewcopyloansloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[2] = xs;
+    for (borrow e in ys) {
+        fill(e, borrow slot);
+    }
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloansloop", looped, "E10030", 1);
+
+    let take_source = r#"module spec.cpr.viewcopyloanstake;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(take p: Box, borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = p.v;
+    let ys: str[2] = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloanstake", take_source, "E10030", 1);
+
+    let parameter = r#"module spec.cpr.viewcopyloansparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = p.v;
+    let ys: str[2] = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    let output = run_memory("viewcopyloansparam", parameter);
+    assert_no_asan("viewcopyloansparam", &output);
+    assert_exit("viewcopyloansparam", &output, 0);
+
+    let returned = r#"module spec.cpr.viewcopyloansreturn;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func run(): str[2] {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = xs;
+    return ys;
+}
+
+func main(): i32 {
+    return i32(run()[0][0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloansreturn", returned, "E10035", 1);
+
+    let backing = r#"module spec.cpr.viewcopyloansbacking;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    a.v = stringOf("qq");
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloansbacking", backing, "E10031", 1);
+
+    let member_twin = r#"module spec.cpr.viewcopyloansmember;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let s: str = a.v;
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloansmember", member_twin, "E10030", 1);
+
+    let element_twin = r#"module spec.cpr.viewcopyloanselem;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(xs[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects("viewcopyloanselem", element_twin, "E10030", 1);
+
+    let read_back = r#"module spec.cpr.viewcopyloansread;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = xs;
+    return i32(ys[0][0]) - 97 + i32(ys[1][0]) - 66;
+}
+
+func main(): i32 { return outer(); }
+"#;
+    let output = run_memory("viewcopyloansread", read_back);
+    assert_no_asan("viewcopyloansread", &output);
+    assert_exit("viewcopyloansread", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// rawreadowner: an owned raw deref read moves its pointee out.
+//
+// `let v: String = unsafe *q;` is an owned read of the raw pointee, so it
+// takes the ordinary owned read's judgment: the value moves into `v` and the
+// pointee is emptied through its own address, leaving exactly one owner (the
+// run reads the value back and is memory-clean). The discarded read creates no
+// owner, the ordinary named read is the model, and a duplicable pointee
+// copies, so the source stays readable.
+// ---------------------------------------------------------------------------
+
+/// An owned raw deref read moves out of its pointee like the named read.
+///
+/// `let v: String = unsafe *q;` binds the pointee's buffer to `v` and empties
+/// the pointee, so the run reads the moved value back (exit 2) with no memory
+/// report. The discarded read (`unsafe { *q; }`) and the duplicable-pointee
+/// read stay accepted and clean, and the named ordinary read keeps its own
+/// move (exit 2).
+#[test]
+fn should_move_the_owned_raw_deref_read_out_of_its_pointee() {
+    let owned = r#"module spec.cpr.rawreadowner;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let q: raw String = unsafe &a;
+    let v: String = unsafe *q;
+    return i32(len(v));
+}
+"#;
+    let output = run_memory("rawreadowner", owned);
+    assert_no_asan("rawreadowner", &output);
+    assert_exit("rawreadowner", &output, 2);
+
+    let discarded = r#"module spec.cpr.rawreadownerdiscard;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let q: raw String = unsafe &a;
+    unsafe { *q; }
+    return i32(len(a));
+}
+"#;
+    let output = run_memory("rawreadownerdiscard", discarded);
+    assert_no_asan("rawreadownerdiscard", &output);
+    assert_exit("rawreadownerdiscard", &output, 2);
+
+    let duplicable = r#"module spec.cpr.rawreadownerduplicable;
+
+func main(): i32 {
+    let a: i32 = 5;
+    let q: raw i32 = unsafe &a;
+    let v: i32 = unsafe *q;
+    return (v - 5) + (a - 5);
+}
+"#;
+    let output = run_memory("rawreadownerduplicable", duplicable);
+    assert_no_asan("rawreadownerduplicable", &output);
+    assert_exit("rawreadownerduplicable", &output, 0);
+
+    let named = r#"module spec.cpr.rawreadownernamed;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let v: String = a;
+    return i32(len(v));
+}
+"#;
+    let output = run_memory("rawreadownernamed", named);
+    assert_no_asan("rawreadownernamed", &output);
+    assert_exit("rawreadownernamed", &output, 2);
+}
+
+// ---------------------------------------------------------------------------
+// owningtake: a conditional take of an opaque member moves out per instance.
+//
+// `eat(take (c ? a.name : b.name))` inside a generic `pick<T>` takes the
+// chosen arm's owned member out of its root. The `T`-typed member is a type
+// parameter, so the move-out duty must be recorded per instantiation: the
+// chosen root empties the member and the un-taken arm keeps its owner, so
+// every buffer releases exactly once (the concrete twin's behavior). The
+// direct (non-conditional) local take and the duplicable member stay accepted
+// as controls.
+// ---------------------------------------------------------------------------
+
+/// A conditional take of an opaque member empties the chosen arm's root.
+///
+/// The parameter-arm conditional, the false selection, and the conditional
+/// over local roots each run with the selected member moved out and every
+/// owner released exactly once (exit 0, no memory report). The concrete
+/// conditional twins and the direct local take stay accepted and clean, and
+/// the duplicable-member instance keeps its copy.
+#[test]
+fn should_move_the_taken_opaque_conditional_member_out_at_the_instance() {
+    let conditional = r#"module spec.cpr.owningtake;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func pick<T>(take a: T, take b: T, c: bool): i32 {
+    return eat(take (c ? a.name : b.name));
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pick<S>(take a, take b, true) - 1;
+}
+"#;
+    let output = run_memory("owningtake", conditional);
+    assert_no_asan("owningtake", &output);
+    assert_exit("owningtake", &output, 0);
+
+    let false_selection = r#"module spec.cpr.owningtakefalse;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func pick<T>(take a: T, take b: T, c: bool): i32 {
+    return eat(c ? a.name : b.name);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pick<S>(take a, take b, false) - 1;
+}
+"#;
+    let output = run_memory("owningtakefalse", false_selection);
+    assert_no_asan("owningtakefalse", &output);
+    assert_exit("owningtakefalse", &output, 0);
+
+    let local_conditional = r#"module spec.cpr.owningtakelocal;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func pick<T>(take a: T, take b: T, c: bool): i32 {
+    let x: T = a;
+    let y: T = b;
+    return eat(c ? x.name : y.name);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pick<S>(take a, take b, true) - 1;
+}
+"#;
+    let output = run_memory("owningtakelocal", local_conditional);
+    assert_no_asan("owningtakelocal", &output);
+    assert_exit("owningtakelocal", &output, 0);
+
+    let concrete = r#"module spec.cpr.owningtakeconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eatS(take x: String): i32 { return 1; }
+
+func pickS(take a: S, take b: S, c: bool): i32 {
+    return eatS(c ? a.name : b.name);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pickS(take a, take b, true) - 1;
+}
+"#;
+    let output = run_memory("owningtakeconcrete", concrete);
+    assert_no_asan("owningtakeconcrete", &output);
+    assert_exit("owningtakeconcrete", &output, 0);
+
+    let local_concrete = r#"module spec.cpr.owningtakelocalconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eatS(take x: String): i32 { return 1; }
+
+func pickS(take a: S, take b: S, c: bool): i32 {
+    let x: S = a;
+    let y: S = b;
+    return eatS(c ? x.name : y.name);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pickS(take a, take b, true) - 1;
+}
+"#;
+    let output = run_memory("owningtakelocalconcrete", local_concrete);
+    assert_no_asan("owningtakelocalconcrete", &output);
+    assert_exit("owningtakelocalconcrete", &output, 0);
+
+    let direct = r#"module spec.cpr.owningtakelocaldirect;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func pick<T>(take a: T): i32 {
+    let b: T = a;
+    return eat(b.name);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    return pick<S>(take a) - 1;
+}
+"#;
+    let output = run_memory("owningtakelocaldirect", direct);
+    assert_no_asan("owningtakelocaldirect", &output);
+    assert_exit("owningtakelocaldirect", &output, 0);
+
+    let duplicable = r#"module spec.cpr.owningtakeduplicable;
+
+struct S { name: i32; y: i32; }
+
+let hits: i32 = 0;
+
+func eat<T>(take x: T): i32 {
+    hits = hits + 1;
+    return 1;
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        total = total + eat(v.y);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: 1, y: 1 }, S { name: 2, y: 2 }];
+    return (each<S[2]>(a) - 2) + (hits - 2);
+}
+"#;
+    let output = run_memory("owningtakeduplicable", duplicable);
+    assert_no_asan("owningtakeduplicable", &output);
+    assert_exit("owningtakeduplicable", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// borrowelem: an owned member of a borrowed element keeps the partial-move
+// judgment per instance.
+//
+// `v.row = w.row;` moves an owned fixed-array member out of a borrowed
+// element, and `eat(v.name)` takes an owned member of a borrowed element. A
+// borrowed element is neither an owned local nor a `take` parameter, so the
+// move is the v1 partial-move limit `E10026` in the concrete spelling; the
+// generic instance must report the same one error instead of emitting invalid
+// C or accepting the moved-out member. The `let` spelling and the concrete
+// twins already report it and stay as controls.
+// ---------------------------------------------------------------------------
+
+/// A borrowed element's owned member move reports the partial-move limit once
+/// per instance.
+///
+/// Both generic row-copy spellings (one array, two arrays) and the generic
+/// member take report exactly one `E10026` and emit no translation unit, the
+/// same error their concrete twins report. The generic and concrete member
+/// `let` spellings keep their one report.
+#[test]
+fn should_judge_a_borrowed_element_member_move_per_instance() {
+    let rowcopy = r#"module spec.cpr.borrowelemstore;
+
+import { String, stringOf, bytes } from std.text;
+
+struct R { row: String[2]; }
+
+func eachCopy<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        for (borrow w in xs) {
+            v.row = w.row;
+        }
+        total = total + i32(len(bytes(v.row[0]))) + i32(len(bytes(v.row[1])));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: R[2] = [R { row: [stringOf("a"), stringOf("b")] },
+                   R { row: [stringOf("cc"), stringOf("dd")] }];
+    return eachCopy<R[2]>(a);
+}
+"#;
+    compile_rejects("borrowelemstore", rowcopy, "E10026", 1);
+
+    let rowcopy_two = r#"module spec.cpr.borrowelemstoretwo;
+
+import { String, stringOf, bytes } from std.text;
+
+struct R { row: String[2]; }
+
+func eachCopy2<T>(xs: T, ys: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            v.row = w.row;
+        }
+        total = total + i32(len(bytes(v.row[0]))) + i32(len(bytes(v.row[1])));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: R[2] = [R { row: [stringOf("a"), stringOf("b")] },
+                   R { row: [stringOf("cc"), stringOf("dd")] }];
+    let b: R[2] = [R { row: [stringOf("e"), stringOf("f")] },
+                   R { row: [stringOf("gg"), stringOf("hh")] }];
+    return eachCopy2<R[2]>(a, b);
+}
+"#;
+    compile_rejects("borrowelemstoretwo", rowcopy_two, "E10026", 1);
+
+    let rowcopy_concrete = r#"module spec.cpr.borrowelemstoreconcrete;
+
+import { String, stringOf, bytes } from std.text;
+
+struct R { row: String[2]; }
+
+func eachCopy(xs: R[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        for (borrow w in xs) {
+            v.row = w.row;
+        }
+        total = total + i32(len(bytes(v.row[0]))) + i32(len(bytes(v.row[1])));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: R[2] = [R { row: [stringOf("a"), stringOf("b")] },
+                   R { row: [stringOf("cc"), stringOf("dd")] }];
+    return eachCopy(a);
+}
+"#;
+    compile_rejects("borrowelemstoreconcrete", rowcopy_concrete, "E10026", 1);
+
+    let take = r#"module spec.cpr.borrowelemtake;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func each<T>(xs: T): void {
+    for (borrow v in xs) {
+        eat(v.name);
+        v.name = stringOf("zzzz");
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    each<S[1]>(a);
+    return 0;
+}
+"#;
+    compile_rejects("borrowelemtake", take, "E10026", 1);
+
+    let take_concrete = r#"module spec.cpr.borrowelemtakeconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func eachS(xs: S[1]): void {
+    for (borrow v in xs) {
+        eat(v.name);
+        v.name = stringOf("zzzz");
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    eachS(a);
+    return 0;
+}
+"#;
+    compile_rejects("borrowelemtakeconcrete", take_concrete, "E10026", 1);
+
+    let member_let = r#"module spec.cpr.borrowelemlet;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func each<T>(xs: T): void {
+    for (borrow v in xs) {
+        let s: String = v.name;
+        v.name = stringOf("zzzz");
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    each<S[1]>(a);
+    return 0;
+}
+"#;
+    compile_rejects("borrowelemlet", member_let, "E10026", 1);
+
+    let member_let_concrete = r#"module spec.cpr.borrowelemletconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eachS(xs: S[1]): void {
+    for (borrow v in xs) {
+        let s: String = v.name;
+        v.name = stringOf("zzzz");
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    eachS(a);
+    return 0;
+}
+"#;
+    compile_rejects("borrowelemletconcrete", member_let_concrete, "E10026", 1);
+}

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 17:00
-> **Progress**: 18/51 tasks (35%) — Phase 3 complete
+> **Last Updated**: 2026-10-18 18:00
+> **Progress**: 20/51 tasks (39%) — Executing Phase 4
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -196,10 +196,10 @@ duplicable out-slot, and the capture pair control.
 ST-11..ST-12 · AR-3, AR-5
 **Objective**: Pin the view-like copy's loan transfer and the owned raw deref read.
 
-- [ ] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs`
-      (viewcopyloans, rawreadowner) with their controls
-- [ ] 4.1.2 Run the suite and record the red phase (the recorded controls verified green first —
-      AR-3/AR-5)
+- [x] 4.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs`
+      (viewcopyloans, rawreadowner) with their controls ✅ (completed: 2026-10-18 18:00; four tests (twenty-eight programs) appended to `compiler/tests/conditional_projection_residue_spec_test.rs` (+723 lines, additions only) — the whole-array copy loan shapes (`DEF-315`: the loop/assign/take spellings accepted with ASan heap-use-after-free; the parameter/return/backing/member/element/read controls), the owned raw deref read (`DEF-329`: the double free; the discard/duplicable/named controls), the taken opaque conditional member (`DEF-362` folded: the recorded b2 false/local spellings red; the concrete/duplicable controls; b16 incidentally fixed by the phase-3 F1 correction — carried as a control), and the borrowed element member move (`DEF-369` folded: the v21/v22 invalid-C red class re-derived, the m09 acceptance parity, the concrete/let controls); ST-12's E10020 alternative is not authorable (no checkable shape) — recorded; an adjacent element-read gap filed as `DEF-372`)
+- [x] 4.1.2 Run the suite and record the red phase (the recorded controls verified green first —
+      AR-3/AR-5) ✅ (completed: 2026-10-18 18:00; the residue suite plain 146 passed / 4 failed and ASan 146 passed / 4 failed — exactly the four new tests (the UAF shapes, the double frees, and the two rejection expectations); the controls green; parent-verified both legs)
 
 ### Step 4.2: Implementation
 
