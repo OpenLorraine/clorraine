@@ -3,6 +3,10 @@
 > **Document**: 03-07-member-typing-concrete-paths.md
 > **Parent**: [Index](00-index.md)
 
+> **Superseded (AR-22):** the `raw E` member read is the value form of its enum — every read reports
+> the frozen `E10212` (existing and unknown members alike); the resolve-through-the-pointee route below
+> is not conformant. The register records the ruling.
+
 ## Overview
 
 Three batch-K phase-3 residue rows are member-surface gaps on the *concrete* path: an unknown
