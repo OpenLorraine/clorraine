@@ -205,3 +205,12 @@ introduced). Filed as `DEF-362` and **folded into phase 4** (the ownership-trans
 move-out of an opaque member type must be recorded as a resolved per-instance duty, so the instance
 emits the concrete twin's source emptying. Phase 4's scope is DEF-315, DEF-329, and DEF-362.
 
+**AR-19 (scope ruling, auto-design):** The phase-3 spec authoring found that `DEF-353`'s fix direction
+(a caller write-through for a duplicable out-slot) contradicts the frozen rules: a lend of a
+duplicable value binds a copy and writes through it affect the copy only (Ch 03 3, Ch 06, Ch 16,
+decision D9/V5), with the pre-existing `W10001` warning and a pinned deviation in
+`def_backlog_closeout_impl_test.rs`. The row is **reclassified as a false positive** and closed; the
+phase-3 ST-9 slot carries the conforming control instead (the copy read-back + the frozen probe
+exit + the `String?` in-out slot control). The phase's implementation rows are `DEF-339` and
+`DEF-345`; the `DEF-341` and `DEF-350` controls stand.
+

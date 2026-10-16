@@ -11017,3 +11017,65 @@ func main(): i32 {
         &["a compiler-generated owner"],
     );
 }
+
+// ---------------------------------------------------------------------------
+// capturepair: a borrowed element moved from a lifted lambda keeps the
+// concrete twin's rejection.
+//
+// `let s: String = ([v] () => v.name)();` inside `each<T>` moves the
+// borrowed element's member out of the capture, which the frozen capture
+// rule rejects once; the concrete twin `each(xs: S[2])` reports the same
+// single `E10401`, so the pair pins the substituted capture-move judgment
+// and the concrete parity. (green control at the phase base: the
+// substitution reaches the capture-move duty, so the invalid C is
+// unreachable; a regression turns this case red.)
+// ---------------------------------------------------------------------------
+
+/// A lifted lambda's borrowed-element capture reports one `E10401` in both
+/// spellings.
+#[test]
+fn should_reject_a_captured_borrowed_element_move_in_both_spellings() {
+    let generic = r#"module spec.cc.capturepair;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        let s: String = ([v] () => v.name)();
+        total = total + i32(len(bytes(s)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cde"), y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    compile_rejects("capturepair", generic, "E10401", 1);
+
+    let concrete = r#"module spec.cc.capturepairconcrete;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func each(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        let s: String = ([v] () => v.name)();
+        total = total + i32(len(bytes(s)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cde"), y: 2 }];
+    return each(a);
+}
+"#;
+    compile_rejects("capturepairconcrete", concrete, "E10401", 1);
+}

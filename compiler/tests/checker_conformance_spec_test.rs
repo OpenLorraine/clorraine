@@ -5357,3 +5357,600 @@ func main(): i32 {
     assert_no_asan("exprlambdactl", &output);
     assert_exit("exprlambdactl", &output, 0);
 }
+
+// ===== The instance surface's element stores, conversions, and out-slots =====
+
+/// A store to an owned field through a borrowed generic element releases the
+/// overwritten owner on every path.
+///
+/// `v.name = stringOf("zzzz")` inside `each<T>`'s borrow loop overwrites the
+/// element's owning `String`, so the old owner must release once per store;
+/// the run reads each stored size back (exit 0) and the leak checker is
+/// clean. The early-exit spelling stores and returns from inside the loop, so
+/// the same release must cover that exit path. The concrete twin is the
+/// control: its store already releases and the run is clean. (red at the
+/// phase base: the generic spellings leaked one overwritten owner per store
+/// under LeakSanitizer; the runs otherwise read their sizes back.)
+#[test]
+fn should_release_the_overwritten_owner_of_a_borrowed_element_store() {
+    let looping = r#"module spec.cc.elementstoredrop;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = stringOf("zzzz");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return each<S[2]>(a) - 8;
+}
+"#;
+    let output = run_memory("elementstoredrop", looping);
+    assert_no_asan("elementstoredrop", &output);
+    assert_exit("elementstoredrop", &output, 0);
+
+    let early_exit = r#"module spec.cc.elementstoredropexit;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func first<T>(xs: T): i32 {
+    for (borrow v in xs) {
+        v.name = stringOf("zzzz");
+        return i32(len(bytes(v.name)));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return first<S[2]>(a) - 4;
+}
+"#;
+    let output = run_memory("elementstoredropexit", early_exit);
+    assert_no_asan("elementstoredropexit", &output);
+    assert_exit("elementstoredropexit", &output, 0);
+
+    let concrete = r#"module spec.cc.elementstoredropctl;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eachS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        v.name = stringOf("zzzz");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return eachS(a) - 8;
+}
+"#;
+    let output = run_memory("elementstoredropctl", concrete);
+    assert_no_asan("elementstoredropctl", &output);
+    assert_exit("elementstoredropctl", &output, 0);
+}
+
+/// A substituted element at a concrete conversion position reports the
+/// conversion exactly as its concrete twin does.
+///
+/// The seven element spellings — a place, conditional, and direct element
+/// return, an element `let`, an element argument, and the loop element
+/// return and `let` — each substitute an `S` element into a concrete `i32`
+/// destination, so each instance must report the frozen `E10200` exactly
+/// once and emit no translation unit, matching the same program with the
+/// array type carried concretely. (red at the phase base: all seven were
+/// accepted and the strict build failed with the C type mismatch the
+/// instance judgment must report.)
+#[test]
+fn should_report_a_converted_element_at_each_concrete_position() {
+    let place_return = r#"module spec.cc.elemconvplaceret;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    return id(xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvplaceret",
+        place_return,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let place_return_concrete = r#"module spec.cc.elemconvplaceretctl;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick(xs: S[3], i: usize): i32 {
+    return id(xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return pick(a, 1);
+}
+"#;
+    assert_rejected_once(
+        "elemconvplaceretctl",
+        place_return_concrete,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let conditional_return = r#"module spec.cc.elemconvcondret;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, i: usize, c: bool): i32 {
+    return id(c ? xs[i] : xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i, true);
+}
+"#;
+    assert_rejected_once(
+        "elemconvcondret",
+        conditional_return,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let conditional_return_concrete = r#"module spec.cc.elemconvcondretctl;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick(xs: S[3], i: usize, c: bool): i32 {
+    return id(c ? xs[i] : xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return pick(a, 1, true);
+}
+"#;
+    assert_rejected_once(
+        "elemconvcondretctl",
+        conditional_return_concrete,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let direct_return = r#"module spec.cc.elemconvdirectret;
+
+struct S { y: i32; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    return xs[i];
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvdirectret",
+        direct_return,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let direct_return_concrete = r#"module spec.cc.elemconvdirectretctl;
+
+struct S { y: i32; }
+
+func pick(xs: S[3], i: usize): i32 {
+    return xs[i];
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return pick(a, 1);
+}
+"#;
+    assert_rejected_once(
+        "elemconvdirectretctl",
+        direct_return_concrete,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let element_let = r#"module spec.cc.elemconvlet;
+
+struct S { y: i32; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    let v: i32 = xs[i];
+    return v;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvlet",
+        element_let,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let element_let_concrete = r#"module spec.cc.elemconvletctl;
+
+struct S { y: i32; }
+
+func pick(xs: S[3], i: usize): i32 {
+    let v: i32 = xs[i];
+    return v;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return pick(a, 1);
+}
+"#;
+    assert_rejected_once(
+        "elemconvletctl",
+        element_let_concrete,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let element_argument = r#"module spec.cc.elemconvarg;
+
+struct S { y: i32; }
+
+func use(x: i32): i32 { return x; }
+
+func pick<T>(xs: T, i: usize): i32 {
+    return use(xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i);
+}
+"#;
+    assert_rejected_once(
+        "elemconvarg",
+        element_argument,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let element_argument_concrete = r#"module spec.cc.elemconvargctl;
+
+struct S { y: i32; }
+
+func use(x: i32): i32 { return x; }
+
+func pick(xs: S[3], i: usize): i32 {
+    return use(xs[i]);
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return pick(a, 1);
+}
+"#;
+    assert_rejected_once(
+        "elemconvargctl",
+        element_argument_concrete,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let loop_return = r#"module spec.cc.elemconvloopret;
+
+struct S { y: i32; }
+
+func first<T>(xs: T): i32 {
+    for (v in xs) {
+        return v;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return first<S[3]>(a);
+}
+"#;
+    assert_rejected_once(
+        "elemconvloopret",
+        loop_return,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let loop_return_concrete = r#"module spec.cc.elemconvloopretctl;
+
+struct S { y: i32; }
+
+func first(xs: S[3]): i32 {
+    for (v in xs) {
+        return v;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return first(a);
+}
+"#;
+    assert_rejected_once(
+        "elemconvloopretctl",
+        loop_return_concrete,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let loop_let = r#"module spec.cc.elemconvlooplet;
+
+struct S { y: i32; }
+
+func first<T>(xs: T): i32 {
+    for (v in xs) {
+        let w: i32 = v;
+        return w;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return first<S[3]>(a);
+}
+"#;
+    assert_rejected_once(
+        "elemconvlooplet",
+        loop_let,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+
+    let loop_let_concrete = r#"module spec.cc.elemconvloopletctl;
+
+struct S { y: i32; }
+
+func first(xs: S[3]): i32 {
+    for (v in xs) {
+        let w: i32 = v;
+        return w;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    return first(a);
+}
+"#;
+    assert_rejected_once(
+        "elemconvloopletctl",
+        loop_let_concrete,
+        "E10200",
+        &["cannot convert 'S' to 'i32' implicitly"],
+        &[],
+    );
+}
+
+/// The matching-type element positions stay accepted and read their values
+/// back.
+///
+/// The loop element return and `let` over an `i32` slice and the conditional
+/// element member positions are the accepted twins of the conversion
+/// spellings: each instance builds strictly and folds its element value into
+/// the exit code (exit 7, 24, 2, and 1). (green controls at the phase base.)
+#[test]
+fn should_keep_the_matching_element_positions_accepted() {
+    let element_return = r#"module spec.cc.elementconvret;
+
+import { slice } from std.mem;
+
+func first<T>(xs: T[]): i32 {
+    for (borrow e in xs) {
+        return e;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: i32[3] = [7, 8, 9];
+    let s: i32[] = slice(a, 0, 3);
+    return first<i32>(s);
+}
+"#;
+    let output = run_memory("elementconvret", element_return);
+    assert_no_asan("elementconvret", &output);
+    assert_exit("elementconvret", &output, 7);
+
+    let element_let = r#"module spec.cc.elementconvlet;
+
+import { slice } from std.mem;
+
+func sum<T>(xs: T[]): i32 {
+    let total: i32 = 0;
+    for (borrow e in xs) {
+        let y: i32 = e;
+        total = total + y;
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: i32[3] = [7, 8, 9];
+    let s: i32[] = slice(a, 0, 3);
+    return sum<i32>(s);
+}
+"#;
+    let output = run_memory("elementconvlet", element_let);
+    assert_no_asan("elementconvlet", &output);
+    assert_exit("elementconvlet", &output, 24);
+
+    let conditional_member = r#"module spec.cc.elementconvcond;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick(xs: S[3], i: usize, c: bool): i32 {
+    return id(c ? xs[i] : xs[i]).y;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick(a, i, true);
+}
+"#;
+    let output = run_memory("elementconvcond", conditional_member);
+    assert_no_asan("elementconvcond", &output);
+    assert_exit("elementconvcond", &output, 2);
+
+    let conditional_argument = r#"module spec.cc.elementconvcondarg;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, c: bool): i32 {
+    return id(c ? xs[0].y : xs[0].y);
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return pick<S[2]>(a, true);
+}
+"#;
+    let output = run_memory("elementconvcondarg", conditional_argument);
+    assert_no_asan("elementconvcondarg", &output);
+    assert_exit("elementconvcondarg", &output, 1);
+}
+
+/// A writable lend of a duplicable type writes the callee's copy only.
+///
+/// The deliberate by-value deviation for a duplicable lend binds the
+/// `borrow` parameter to a copy, so a write through it affects that copy
+/// while the caller's slot is unchanged, and the compiler warns the lend as
+/// unnecessary (`W10001`), which is the documented behavior. The copy
+/// read-back and the caller read-back fold both values: the callee's `wrap`
+/// returns the copy it stored (7) and the caller's slot keeps its
+/// initialized 0, so the direct caller read-back folds 249 (the unchanged
+/// zero minus 7). The `String?` in-out slot is the control that does write
+/// through: `put<String?>` stores the handle and the caller reads the stored
+/// length back (exit 0). (green control at the phase base: the emitter
+/// already writes the parameter copy and warns the lend; the spec's own
+/// `bump` example keeps the caller's value.)
+#[test]
+fn should_keep_a_duplicable_lend_write_on_the_callee_copy() {
+    let copy_readback = r#"module spec.cc.duplicableoutslotcopy;
+
+func wrap<T>(borrow out: T, x: T): T {
+    ([borrow x, borrow out] () => {
+        out = x;
+    })();
+    return out;
+}
+
+func main(): i32 {
+    let out: i32 = 0;
+    let copy: i32 = wrap<i32>(borrow out, 7);
+    return (out - 0) + (copy - 7);
+}
+"#;
+    let output = run_memory("duplicableoutslotcopy", copy_readback);
+    assert_no_asan("duplicableoutslotcopy", &output);
+    assert_exit("duplicableoutslotcopy", &output, 0);
+
+    let caller_readback = r#"module spec.cc.duplicableoutslot;
+
+func wrap<T>(borrow out: T, x: T): void {
+    ([borrow x, borrow out] () => {
+        out = x;
+    })();
+}
+
+func main(): i32 {
+    let out: i32 = 0;
+    wrap<i32>(borrow out, 7);
+    return out - 7;
+}
+"#;
+    let output = run_memory("duplicableoutslot", caller_readback);
+    assert_no_asan("duplicableoutslot", &output);
+    assert_exit("duplicableoutslot", &output, 249);
+
+    let nullable = r#"module spec.cc.duplicableoutslotctl;
+
+import { String, stringOf, bytes } from std.text;
+
+func put<T>(borrow d: T, take s: T): void {
+    d = s;
+}
+
+func main(): i32 {
+    let d: String? = null;
+    let s: String = stringOf("ab");
+    put<String?>(borrow d, s);
+    if (d == null) {
+        return 1;
+    }
+    return i32(len(bytes(d))) - 2;
+}
+"#;
+    let output = run_memory("duplicableoutslotctl", nullable);
+    assert_no_asan("duplicableoutslotctl", &output);
+    assert_exit("duplicableoutslotctl", &output, 0);
+}

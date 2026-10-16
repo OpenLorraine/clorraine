@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 09:10
-> **Progress**: 12/51 tasks (24%) — Phase 2 complete
+> **Last Updated**: 2026-10-18 10:10
+> **Progress**: 14/51 tasks (27%) — Executing Phase 3
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -153,15 +153,15 @@ ST-7..ST-10 · AR-3, AR-8
 **Objective**: Pin the element store's release, the substituted conversion/member judgment, the
 duplicable out-slot, and the capture pair control.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
+- [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
       (elementstoredrop, elementconversion, duplicableoutslot) and the capture pair
-      (`conditional_projection_residue_spec_test.rs` or the element suite) with their controls
-- [ ] 3.1.2 Run the suite and record the red phase (the concrete twins and the `DEF-341` pair
-      verified green first — AR-3/AR-5/AR-8)
+      (`conditional_projection_residue_spec_test.rs` or the element suite) with their controls ✅ (completed: 2026-10-18 10:10; five tests appended across the two suites (+597 and +62 lines, additions only) — the borrowed-element store drop (the loop and early-exit leak programs with the concrete control), the converted element at the seven concrete positions with their seven concrete twins and the matching-position controls, the duplicable out-slot conforming control (ST-9's original oracle contradicted the frozen copy-lend rule — `DEF-353` reclassified as a false positive per AR-19), and the `DEF-341` capture pair in the residue suite (PF-006 placement); the seven conversion specs pin `E10200`; every accepted program folds a read-back)
+- [x] 3.1.2 Run the suite and record the red phase (the concrete twins and the `DEF-341` pair
+      verified green first — AR-3/AR-5/AR-8) ✅ (completed: 2026-10-18 10:10; the checker-conformance suite plain 142 passed / 1 failed and ASan 141 passed / 2 failed — exactly the intended reds (the seven conversion spellings accepted where the concrete twins reject; the leaked element store); the residue suite 146/146 in both legs (the capture pair green); the controls green; parent-verified)
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Substitute the element store's drop decision; record and judge the substituted
+- [ ] 3.2.1 Substitute the element store's drop decision; record and judge the substituted (DEF-353 reclassified as a false positive per AR-19 — the duplicable copy-write is conformant; the ST-9 slot is the conforming control)
       conversion/member duties; restore the duplicable out-slot write-through —
       `compiler/src/own/instance_check.rs`, `compiler/src/codegen/drop.rs`,
       `compiler/src/own/lower.rs`, `compiler/src/types/`, `compiler/src/sema/call.rs`,
