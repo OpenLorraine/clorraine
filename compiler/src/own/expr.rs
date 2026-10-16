@@ -899,7 +899,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// Reports the null rule at a position that requires a concrete value.
-    fn report_null_rule(&mut self, span: Span) {
+    pub(super) fn report_null_rule(&mut self, span: Span) {
         self.error(
             "E10012",
             "'null' is not allowed here",

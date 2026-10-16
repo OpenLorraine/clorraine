@@ -22,6 +22,7 @@ use super::types::{
     c_type, is_struct_view, scalar_of, type_key, zero_view_helper,
 };
 use super::Emitter;
+use super::FuncInfo;
 
 impl<'a> Emitter<'a> {
     // -- values --------------------------------------------------------------
@@ -692,9 +693,10 @@ impl<'a> Emitter<'a> {
             let symbol = if type_args.is_empty() {
                 self.function_symbol(&info.module, callee)
             } else {
-                let keys: Vec<String> = type_args
+                let keys: Vec<String> = self
+                    .resolved_call_type_args(info, type_args, args)
                     .iter()
-                    .map(|ty| type_key(&self.substitute(ty)))
+                    .map(type_key)
                     .collect();
                 format!("cl_{callee}__{}", keys.join("_"))
             };
@@ -714,6 +716,34 @@ impl<'a> Emitter<'a> {
                 format!("{spelled}({argument_list})")
             }
         }
+    }
+
+    /// The concrete type arguments of a call in the instance being emitted.
+    ///
+    /// A recorded argument can still be opaque in a generic body — a member
+    /// read on the element placeholder, for example — because the declaration
+    /// has no substitution to resolve it with. The substituted argument values
+    /// resolve it through the same matcher the call's own inference uses, so
+    /// the symbol names the concrete instance the monomorphization declares.
+    fn resolved_call_type_args(&self, info: &FuncInfo, type_args: &[Ty], args: &[Value]) -> Vec<Ty> {
+        let resolved: Vec<Ty> = type_args.iter().map(|ty| self.substitute(ty)).collect();
+        if !resolved.iter().any(|ty| ty.is_unknown() || ty.is_param()) {
+            return resolved;
+        }
+        let declared: Vec<String> = info
+            .decl
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
+        let param_types: Vec<Ty> = info
+            .decl
+            .params
+            .iter()
+            .map(|param| self.resolve_in_module(&info.module, &param.ty, &declared))
+            .collect();
+        let arg_types: Vec<Ty> = args.iter().map(|arg| self.resolved_value_ty(arg)).collect();
+        crate::sema::call::infer_type_args(&declared, &param_types, &arg_types).unwrap_or(resolved)
     }
 
     /// The closure type of a callable parameter of the open function.

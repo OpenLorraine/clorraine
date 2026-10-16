@@ -19,7 +19,7 @@ use crate::profile::Profile;
 use crate::span::Span;
 use crate::types::{ implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite, ClosureTy, FuncParam, FuncTy, Ty, TyKind, PlacePathStep };
 
-use super::{CaptureMoveRequirement, Checker, OpaqueProjection};
+use super::{CaptureMoveRequirement, Checker, OpaqueIndex, OpaqueProjection};
 
 impl Checker<'_, '_> {
     /// Checks an expression, records its type, and returns it.
@@ -632,6 +632,22 @@ impl Checker<'_, '_> {
             // element type. The access is legal only inside `unsafe`, which
             // the ownership stage checks.
             TyKind::Raw(inner) => (**inner).clone(),
+            // An index of an opaque base is judged after substitution: the
+            // instance's row type supplies the extent for a constant index and
+            // the run-time guard. The read stays accepted here and the
+            // per-instance audit reports the out-of-range constant exactly as
+            // a concrete read would.
+            TyKind::Param(_) => {
+                if let Some(function) = self.function_name.clone() {
+                    self.opaque_indexes.push(OpaqueIndex {
+                        function,
+                        ty: base_ty.clone(),
+                        constant: self.folder.integer(index),
+                        span: index.span,
+                    });
+                }
+                Ty::unknown()
+            }
             TyKind::Unknown => Ty::unknown(),
             _ => {
                 self.error(

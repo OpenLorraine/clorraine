@@ -208,7 +208,17 @@ impl Checker<'_, '_> {
     /// Checks an element `for` loop, binding the element type when known.
     fn check_for_in(&mut self, decl: &ForInStmt) {
         let iterable = self.check_value(&decl.iterable, None);
-        let element = iterable.iterated_element();
+        // A bare type parameter cannot name its one-step element, so the
+        // binding carries the same placeholder the ownership stage writes; the
+        // instance substitution fills it from the substituted argument's
+        // element.
+        let element = match &iterable.kind {
+            TyKind::Param(name) => Ty {
+                kind: TyKind::Param(crate::types::element_param(name)),
+                nullable: false,
+            },
+            _ => iterable.iterated_element(),
+        };
         self.push_scope();
         self.declare(&decl.name, element);
         self.check_block(&decl.body);

@@ -701,6 +701,21 @@ pub fn element_param(name: &str) -> String {
     format!("#element of {name}")
 }
 
+/// The substitution bindings of one generic instance.
+///
+/// Each declared parameter binds to its concrete argument, and the loop
+/// element placeholder (`#element of T`) binds to that argument's one-step
+/// element, so a type written for an element of the opaque parameter resolves
+/// at the instance exactly as the codegen substitution resolves it.
+pub fn instance_bindings(params: &[String], args: &[Ty]) -> BTreeMap<String, Ty> {
+    let mut bindings = BTreeMap::new();
+    for (param, arg) in params.iter().zip(args) {
+        bindings.insert(param.clone(), arg.clone());
+        bindings.insert(element_param(param), arg.iterated_element());
+    }
+    bindings
+}
+
 /// True when a type mentions a generic parameter anywhere inside it.
 ///
 /// The checker treats such a type as compatible with any concrete type, the

@@ -394,7 +394,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             let resolved = effective.get(index);
             let arg_ty = self.eval(&arg.value);
             if let Some(expected) = &expected {
-                self.check_value_into(&arg.value, expected, arg.span);
+                // An inferred parameter that resolved to the null shape is not
+                // a type an instance can carry: the argument reports the frozen
+                // null rule exactly as a concrete parameter would, instead of
+                // deriving a null-shaped instance key. The effective type is
+                // the substituted one; the declared type drives every other
+                // judgment.
+                let null_parameter = resolved.is_some_and(crate::types::is_null_shaped);
+                if null_parameter && crate::types::is_null_shaped(&arg_ty) {
+                    self.report_null_rule(arg.span);
+                } else {
+                    self.check_value_into(&arg.value, expected, arg.span);
+                }
             }
             let mode = params.get(index).map(|(mode, _)| *mode).unwrap_or(Mode::None);
             self.check_argument_place(

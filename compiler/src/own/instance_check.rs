@@ -56,6 +56,7 @@ pub fn check(
     check_not_lend_requirements(program, sema, mono, diagnostics);
     check_iterable_requirements(program, sema, mono, diagnostics);
     check_opaque_projections(program, sema, mono, diagnostics);
+    check_opaque_indexes(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
@@ -986,6 +987,61 @@ fn check_opaque_projections(
                 .with_help("check the declaration or the spelling"),
             );
             break;
+        }
+    }
+}
+
+/// Reports `E10216` when an opaque index exceeds the substituted row extent.
+///
+/// The declaration accepts an index on a bare type parameter because the
+/// instance supplies the row type: a constant index past the substituted
+/// extent reports the frozen range error once — the first offending instance —
+/// at the read's span, exactly as the concrete spelling does. A run-time
+/// index carries no constant, so its bounds judgment is the emitter's guard on
+/// the substituted row.
+fn check_opaque_indexes(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for index in &sema.opaque_indexes {
+        let Some(Callee::User(decl)) = program.callee(&index.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != index.function {
+                continue;
+            }
+            let bound = crate::types::instance_bindings(&params, &instance.args);
+            let substituted = crate::types::substitute(&index.ty, &bound);
+            if crate::types::contains_param(&substituted) || substituted.is_unknown() {
+                continue;
+            }
+            let TyKind::Array { element, extents } = &substituted.kind else {
+                continue;
+            };
+            let Some(Some(extent)) = extents.first() else {
+                continue;
+            };
+            let Some(value) = index.constant else {
+                continue;
+            };
+            if value < 0 || value >= *extent as i128 {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "E10216",
+                        format!(
+                            "index {value} is out of range for '{}[{extent}]'",
+                            element.display()
+                        ),
+                        index.span,
+                    )
+                    .with_help("fix the index or the extent"),
+                );
+                break;
+            }
         }
     }
 }

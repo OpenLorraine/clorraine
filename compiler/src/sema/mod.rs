@@ -73,6 +73,14 @@ pub struct SemaOutput {
     /// accepted at the declaration and the per-instance audit reports the
     /// unknown member exactly as a concrete read would.
     pub opaque_projections: Vec<OpaqueProjection>,
+    /// Index reads whose base is a bare type parameter, in check order.
+    ///
+    /// An index of an opaque base is judged after substitution: the instance
+    /// decides the row's extent for a constant index and the run-time guard,
+    /// so the read stays accepted at the declaration and the per-instance
+    /// audit reports the out-of-range constant exactly as a concrete read
+    /// would.
+    pub opaque_indexes: Vec<OpaqueIndex>,
 }
 
 /// A lambda body that returns or consumes a by-value capture whose
@@ -110,6 +118,22 @@ pub struct OpaqueProjection {
     pub span: Span,
 }
 
+/// One index read on a bare type parameter.
+///
+/// The declaration cannot judge the bounds: the substitution may be any type,
+/// so the read records this duty and the per-instance audit resolves it
+/// through the concrete row type.
+pub struct OpaqueIndex {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The base's declared type, still mentioning the parameter.
+    pub ty: Ty,
+    /// The constant index the source wrote, when it wrote one.
+    pub constant: Option<i128>,
+    /// The read's span, for the diagnostic.
+    pub span: Span,
+}
+
 /// Checks every module of the loaded program and records the result.
 pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -> SemaOutput {
     let table = TypeTable::build(loaded);
@@ -120,6 +144,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut closures: BTreeMap<usize, ClosureSite> = BTreeMap::new();
     let mut capture_moves: Vec<CaptureMoveRequirement> = Vec::new();
     let mut opaque_projections: Vec<OpaqueProjection> = Vec::new();
+    let mut opaque_indexes: Vec<OpaqueIndex> = Vec::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
     // program always names the same lifted function and environment.
@@ -131,6 +156,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         closures.extend(checker.closures.drain(..).map(|site| (site.id, site)));
         capture_moves.extend(checker.capture_moves.drain(..));
         opaque_projections.extend(checker.opaque_projections.drain(..));
+        opaque_indexes.extend(checker.opaque_indexes.drain(..));
         expr_types.extend(checker.recorded.drain(..));
     }
     SemaOutput {
@@ -139,6 +165,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         closures,
         capture_moves,
         opaque_projections,
+        opaque_indexes,
     }
 }
 
@@ -182,6 +209,8 @@ struct Checker<'a, 'd> {
     /// Value-form member reads whose base is a bare type parameter, in check
     /// order.
     opaque_projections: Vec<OpaqueProjection>,
+    /// Index reads whose base is a bare type parameter, in check order.
+    opaque_indexes: Vec<OpaqueIndex>,
     /// The resolved parameter types of each `ffi` declaration this module
     /// calls, so its declared types are validated once per declaration.
     ffi_params: BTreeMap<String, Vec<Ty>>,
@@ -240,6 +269,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             closures: Vec::new(),
             capture_moves: Vec::new(),
             opaque_projections: Vec::new(),
+            opaque_indexes: Vec::new(),
             ffi_params: BTreeMap::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),

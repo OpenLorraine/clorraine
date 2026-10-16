@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-16 22:00
-> **Progress**: 8/39 tasks (21%) — Executing Phase 2
+> **Last Updated**: 2026-10-16 22:45
+> **Progress**: 10/39 tasks (26%) — Phase 2 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -118,14 +118,14 @@ judgment with their controls.
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Bind the loop element in the type stage (`Param(element_param(T))`); extend the
+- [x] 2.2.1 Bind the loop element in the type stage (`Param(element_param(T))`); extend the
       inference and key derivation with the `#element of T → arg.iterated_element()` mapping;
       resolve the null shape before the key derives; register the opaque-base index judgment
       and emit it on the substituted row — `compiler/src/sema/stmt.rs`,
       `compiler/src/sema/expr.rs`, `compiler/src/own/loops.rs`, `compiler/src/codegen.rs`,
       `compiler/src/types/keys.rs`, `compiler/src/own/instance_check.rs`,
-      `compiler/src/codegen/guards.rs`
-- [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/codegen/guards.rs` ✅ (completed: 2026-10-16 22:45; the walk and the emitter resolve a projected-place argument at the instance (`own/generics.rs:994/1023/1055`, `codegen/expr.rs:728`); a bare-parameter iterable's element binds as the element of its array type (`sema/stmt.rs:209`), so the capture environment carries the element struct; the element placeholder maps through the shared `instance_bindings` (`types/mod.rs:710`, `codegen.rs:740`) and an inferred parameter resolved to the null shape reports the frozen null rule (`own/call_check.rs:403`); an opaque-base index is recorded (`sema/mod.rs:83/126`, `sema/expr.rs:640`) and resolved per instance (`own/instance_check.rs:1002`), so the constant out-of-range row reports `E10216` and the runtime index traps `E11211`; the walk's value resolver still declines on a runtime-index temporary and a non-local place base (recorded as left))
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 22:45; the checker-conformance spec 88/88 plain and under `RDC_ASAN=1`; the impl pins 25/25; the suite family green; `make check` exit 0; the differential shows 9 intended emission diffs and 4 head-only rejects (the two new rejections), no head-only accepts; parent-verified 88/88 plain + ASan)
 
 ### Step 2.3: Impl Tests & Review
 
