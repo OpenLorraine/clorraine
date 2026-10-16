@@ -232,3 +232,11 @@ judgment") settle it in favor of the rejection. The two phase-3 cases are re-pin
 rejection, the top-level field control keeps its accepted move-and-empty shape. All other phase-3
 findings stand; this ruling supersedes the phase-3 ledger's `m09` accepted-shape note only.
 
+**AR-22 (oracle ruling, auto-design):** A `raw E` member read (`p.A` with `p: raw E`) is a **value-form
+read**: the Ch 04 §7 table's "member access through raw; the dereference is implied" makes the receiver the
+pointee value, Ch 04 §8 sanctions only the scoped `Type.MEMBER` spelling for an enum constant, and the
+value-form rule (the batch-K `E10212` precedent) reports an enum member read on a value. So **every**
+raw-enum member read reports one `E10212` at the same rule and site as the value form; the
+design's resolve-and-run alternative is not conformant. The ST-20 resolving half is re-pinned
+accordingly before the phase's red commit.
+
