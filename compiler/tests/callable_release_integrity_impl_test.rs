@@ -1227,3 +1227,34 @@ func main(): i32 {
         "scopepin: both spellings call the holder's binding; emitted C:\n{emitted}"
     );
 }
+
+/// A module path binding wins over a colliding import in the emission.
+///
+/// The qualified read spells the module's own global, not the imported
+/// binding of the same name.
+#[test]
+fn should_spell_a_module_path_binding_despite_an_import_collision() {
+    let dep = r#"module pinmoddep;
+
+export let thing: i32 = 3;
+"#;
+    let other = r#"module pinmodother;
+
+export let pinmoddep: i32 = 4;
+"#;
+    let app = r#"module pinmodapp;
+
+import { pinmoddep } from pinmodother;
+
+func main(): i32 {
+    return pinmoddep.thing - 3;
+}
+"#;
+    let emitted = emit_three("pinmodapp", dep, other, app);
+    assert_contains("pinmodapp", &emitted, "cl_pinmoddep_thing");
+    assert_eq!(
+        count(&emitted, "cl_pinmodother_pinmoddep.thing"),
+        0,
+        "pinmodapp: the read must not go through the imported binding; emitted C:\n{emitted}"
+    );
+}

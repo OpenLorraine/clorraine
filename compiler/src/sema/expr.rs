@@ -638,6 +638,16 @@ impl Checker<'_, '_> {
     /// module-qualified function, or an opaque external name.
     fn check_qualified(&mut self, expr: &Expr, name: &QualifiedName) -> Ty {
         if let Some(first) = name.segments.first() {
+            // A module path that reaches one of the module's exported bindings
+            // is the qualified reading, with or without an import of the same
+            // name: the path mentions no name of its own, so it resolves even
+            // though an import binds the head. A lexical binding still
+            // shadows the path.
+            if !self.is_local(first) {
+                if let Some(ty) = self.module_path_type(&name.segments, name.span) {
+                    return ty;
+                }
+            }
             // A dotted name that starts with a value in scope is member access,
             // for example `point.x`; the parser cannot tell that apart from a
             // type path, so the choice is made here once names are known.
@@ -682,27 +692,18 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        // A module path may reach one of the module's bindings, as in
-        // `m.a.holder` or `m.a.holder.g`: the path mentions no name, so the
-        // binding supplies the type and the segments after it are fields.
-        if let Some((binding_ty, fields)) = self.module_binding_read(name) {
-            let mut ty = binding_ty;
-            for field in &fields {
-                ty = self.member_type(&ty, field, name.span);
-            }
-            return ty;
-        }
         Ty::unknown()
     }
 
-    /// The binding a dotted name reads through a module path.
+    /// The type a dotted path names through a module path.
     ///
-    /// Returns the binding's declared type and the field segments after it,
-    /// when the leading segments spell a loaded module and the next one a
-    /// binding the module exports. The longest module prefix wins, so a
-    /// binding is reached even when an earlier split also names a module.
-    fn module_binding_read(&self, name: &QualifiedName) -> Option<(Ty, Vec<String>)> {
-        let segments = &name.segments;
+    /// The leading segments must spell a loaded module and the next one a
+    /// binding the module declares (and exports, unless the module is the
+    /// checker's own), so `m.a.holder` reads the binding and a later segment
+    /// is one of its fields. The longest module prefix wins, so a binding is
+    /// reached even when an earlier split also names a module; `None` lets
+    /// the caller keep its value-head or opaque handling.
+    fn module_path_type(&mut self, segments: &[String], span: Span) -> Option<Ty> {
         for split in (1..segments.len()).rev() {
             let module = segments[..split].join(".");
             if module.is_empty() {
@@ -717,9 +718,14 @@ impl Checker<'_, '_> {
             if !visible {
                 continue;
             }
-            if let Some(ty) = self.table.global(&module, binding) {
-                return Some((ty.clone(), segments[split + 1..].to_vec()));
+            let Some(declared) = self.table.global(&module, binding) else {
+                continue;
+            };
+            let mut ty = declared.clone();
+            for field in &segments[split + 1..] {
+                ty = self.member_type(&ty, field, span);
             }
+            return Some(ty);
         }
         None
     }
@@ -732,8 +738,16 @@ impl Checker<'_, '_> {
         let Some(first) = name.segments.first() else {
             return Ty::unknown();
         };
-        let mut ty = self.check_name(first, name.span);
         let last = name.segments.len().saturating_sub(1);
+        // The receiver of a value-headed dotted callee may itself be a module
+        // path reaching one of the module's bindings; a lexical binding of the
+        // head's name still shadows the path.
+        if !self.is_local(first) {
+            if let Some(ty) = self.module_path_type(&name.segments[..last], name.span) {
+                return ty;
+            }
+        }
+        let mut ty = self.check_name(first, name.span);
         for segment in &name.segments[1..last] {
             ty = self.member_type(&ty, segment, name.span);
         }

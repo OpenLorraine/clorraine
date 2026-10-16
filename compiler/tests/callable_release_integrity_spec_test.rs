@@ -2646,3 +2646,44 @@ func main(): i32 {
     let output = run_with_timeout("sigscopegreen", &program, &[]);
     assert_exit("sigscopegreen", &output, 0);
 }
+
+/// A module path reads its binding even when an import collides with it.
+///
+/// The import binds the head's name to another module's value, but the
+/// qualified reading of a loaded module stays available (Ch 10): `dep.thing`
+/// reads module `dep`'s binding, exactly as the resolver and the emitter
+/// resolve it, and the run reads the module's value back.
+#[test]
+fn should_read_a_module_path_binding_despite_an_import_collision() {
+    let dep = r#"module collisiondep;
+
+export let thing: i32 = 3;
+"#;
+    let other = r#"module collisionother;
+
+export let collisiondep: i32 = 4;
+"#;
+    let app = r#"module collisionapp;
+
+import { collisiondep } from collisionother;
+
+func main(): i32 {
+    return collisiondep.thing - 3;
+}
+"#;
+    let (scratch, output, c_path) = compile_three("collisionapp", dep, other, app);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "collisionapp: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "collisionapp: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("collisionapp", &scratch, &emitted);
+    let output = run_with_timeout("collisionapp", &program, &[]);
+    assert_exit("collisionapp", &output, 0);
+}
