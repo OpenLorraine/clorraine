@@ -3537,7 +3537,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // then guards its view construction instead of building a
                     // view over the null handle.
                     let mut value = value;
-                    if FunctionChecker::conditional_selects_null(&value) {
+                    if value.selects_null() {
                         value.ty.nullable = true;
                     }
                     self.materialize_scoped_owner(value)
@@ -4389,25 +4389,6 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
-    /// True when a conditional can select the null literal.
-    ///
-    /// The null may sit behind a nested conditional, so the walk descends
-    /// through the reachable arms; every other form is a value.
-    pub(super) fn conditional_selects_null(value: &Value) -> bool {
-        match &value.kind {
-            ValueKind::Null => true,
-            ValueKind::Conditional {
-                then_value,
-                else_value,
-                ..
-            } => {
-                Self::conditional_selects_null(then_value)
-                    || Self::conditional_selects_null(else_value)
-            }
-            _ => false,
-        }
-    }
-
     /// True when any reachable arm of a conditional owns storage to fill.
     ///
     /// A place-rooted arm stays an inline read; every other arm — a fresh call
@@ -4993,7 +4974,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // destination's widening then guards the view construction instead of
         // building a view over the null handle.
         let mut value = value;
-        if FunctionChecker::conditional_selects_null(&value) {
+        if value.selects_null() {
             value.ty.nullable = true;
         }
         let name = format!("__cl_owned{}", self.next_owned_temp);

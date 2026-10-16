@@ -2004,3 +2004,238 @@ func main(): i32 {
     assert_no_asan("nullguarddirectarg", &output);
     assert_exit("nullguarddirectarg", &output, 0);
 }
+
+/// A typed-nullable else arm in an initializer widens under its guard.
+///
+/// The else arm is a `String?` call result, so the conditional binds into an
+/// init local and the store tests the local before the view construction: the
+/// null selection reads back as null (exit 9), the string selection reads its
+/// length (exit 2), and the nested twin selects its inner null arm (exit 9)
+/// (red at the phase base: the store widened the local through
+/// `cl_string_view` and the null selection segfaulted with exit 139).
+#[test]
+fn should_guard_a_typed_nullable_else_arm_in_a_module_initializer() {
+    let source = r#"module spec.mii.nullguardelsearm;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+let c: bool = false;
+let s: str? = c ? stringOf("xy") : maybe(false);
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let output = run_memory("nullguardelsearm", source);
+    assert_no_asan("nullguardelsearm", &output);
+    assert_exit("nullguardelsearm", &output, 9);
+
+    let taken = source.replace("let c: bool = false;", "let c: bool = true;");
+    let output = run_memory("nullguardelsearm-taken", &taken);
+    assert_no_asan("nullguardelsearm-taken", &output);
+    assert_exit("nullguardelsearm-taken", &output, 2);
+
+    let nested = r#"module spec.mii.nullguardelsetwins;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+let c: bool = false;
+let d: bool = false;
+let s: str? = c ? stringOf("x") : (d ? maybe(d) : null);
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let output = run_memory("nullguardelsetwins", nested);
+    assert_no_asan("nullguardelsetwins", &output);
+    assert_exit("nullguardelsetwins", &output, 9);
+}
+
+/// A typed-nullable arm in the body and lambda spellings widens under its
+/// guard.
+///
+/// The body store, the body argument, and the lambda body all bind the
+/// conditional and test it before the view construction: each null selection
+/// returns the null branch's value and each string selection its length, and
+/// the exit code folds all six read-backs (red at the phase base: every
+/// spelling widened the nullable owner through `cl_string_view` and
+/// segfaulted).
+#[test]
+fn should_guard_a_typed_nullable_arm_in_the_body_spellings() {
+    let source = r#"module spec.mii.nullguardbodyarm;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+func size(s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func code(c: bool): i32 {
+    let s: str? = c ? stringOf("xy") : maybe(c);
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let f: func(bool): i32 = (c: bool) => {
+        let s: str? = c ? stringOf("xy") : maybe(c);
+        if (s == null) {
+            return 9;
+        }
+        return i32(len(s));
+    };
+    return (code(true) - 2)
+        + (code(false) - 9)
+        + (size(true ? stringOf("abc") : maybe(true)) - 3)
+        + (size(false ? stringOf("abc") : maybe(false)) - 9)
+        + (f(true) - 2)
+        + (f(false) - 9);
+}
+"#;
+    let output = run_memory("nullguardbodyarm", source);
+    assert_no_asan("nullguardbodyarm", &output);
+    assert_exit("nullguardbodyarm", &output, 0);
+}
+
+/// A conditional argument in a module initializer widens under its guard.
+///
+/// The argument's arms are the only sources the callee receives — a null arm
+/// carries the parameter's zero view and a taken one widens to the view — so
+/// both an `i32` destination and a view destination read the null branch's
+/// value back (red at the phase base: the emitted argument widened the whole
+/// conditional through `cl_string_view` and the null selection segfaulted with
+/// exit 139).
+#[test]
+fn should_guard_a_conditional_argument_in_a_module_initializer() {
+    let source = r#"module spec.mii.nullguardinitarg;
+
+import { String, stringOf } from std.text;
+
+func size(c: bool, s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+let n: i32 = size(false, false ? stringOf("abc") : null);
+
+func main(): i32 {
+    return n - 9;
+}
+"#;
+    let output = run_memory("nullguardinitarg", source);
+    assert_no_asan("nullguardinitarg", &output);
+    assert_exit("nullguardinitarg", &output, 0);
+
+    let view = r#"module spec.mii.nullguardinitargv;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+func pick(s: str?): str? {
+    return s;
+}
+
+let g: str? = pick(false ? stringOf("abc") : maybe(false));
+
+func main(): i32 {
+    if (g == null) {
+        return 9;
+    }
+    return i32(len(g)) - 3;
+}
+"#;
+    let output = run_memory("nullguardinitargv", view);
+    assert_no_asan("nullguardinitargv", &output);
+    assert_exit("nullguardinitargv", &output, 9);
+}
+
+/// A fresh-rooted member arm in an initializer binds its root once.
+///
+/// The arm projects a member out of a fresh call result, so the root binds
+/// under the arm's guard and the view reads the bound member place: the taken
+/// selection calls `mkBox` exactly once and reads its member back (exit 0),
+/// the null member reads back as null (exit 9), and the retained root's other
+/// field still frees (ASan/LSan-clean) (red at the phase base: the guard read
+/// the arm twice, called `mkBox` twice — exit 5 — and leaked the first
+/// result).
+#[test]
+fn should_guard_a_fresh_rooted_member_arm() {
+    let source = r#"module spec.mii.nullguardmemberarm;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; other: String?; }
+
+let count: i32 = 0;
+
+func mkBox(has: bool): Box {
+    count = count + 1;
+    if (has) {
+        return Box { name: stringOf("ab"), other: stringOf("zz") };
+    }
+    return Box { name: null, other: stringOf("cd") };
+}
+
+let c: bool = true;
+let s: str? = c ? mkBox(true).name : stringOf("xy");
+
+func main(): i32 {
+    if (count != 1) {
+        return 5;
+    }
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("nullguardmemberarm", source);
+    assert_no_asan("nullguardmemberarm", &output);
+    assert_exit("nullguardmemberarm", &output, 0);
+
+    let nullcase = source.replace("mkBox(true).name", "mkBox(false).name");
+    let output = run_memory("nullguardmemberarm-null", &nullcase);
+    assert_no_asan("nullguardmemberarm-null", &output);
+    assert_exit("nullguardmemberarm-null", &output, 9);
+}

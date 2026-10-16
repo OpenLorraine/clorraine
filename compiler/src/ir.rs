@@ -113,6 +113,25 @@ impl Value {
         let ty = place.ty.clone();
         Self::new(ty, ValueKind::Place(place))
     }
+
+    /// True when the value can be the null literal at run time.
+    ///
+    /// The null literal selects null directly. A conditional selects null when
+    /// any reachable arm does, and an arm whose own type can hold null selects
+    /// null too: a conditional's recorded type takes its sibling arm's type
+    /// when the kinds match, so the arm that carries the nullness can sit
+    /// behind a type that no longer spells it.
+    pub fn selects_null(&self) -> bool {
+        match &self.kind {
+            ValueKind::Null => true,
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => then_value.selects_null() || else_value.selects_null(),
+            _ => self.ty.nullable,
+        }
+    }
 }
 
 /// The value shapes the checker names in the graph.

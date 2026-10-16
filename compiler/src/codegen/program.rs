@@ -18,7 +18,8 @@ use crate::types::{resolve_ty, resolve_ty_folded, substitute_instance, view_type
 use super::function::ArrayTarget;
 use super::types::{
     c_type, collect_slice_types, declarator, function_declarator, innermost_is_struct,
-    mangle_module, pointer_to_array_declarator, scalar_of, type_key, zero_view_helper,
+    is_struct_view, mangle_module, pointer_to_array_declarator, scalar_of, type_key,
+    zero_view_helper,
 };
 use super::{Emitter, FuncInfo};
 
@@ -1089,38 +1090,41 @@ impl<'a> Emitter<'a> {
             _ => self.value(&lowered),
         };
         self.push(&format!("    {target} = {rendered};"));
-        if let Some(move_out) = member_move_out {
+        for move_out in &member_move_out {
             self.push(&format!("    {move_out};"));
         }
     }
 
-    /// Binds the fresh owned root of a retained view-member projection.
+    /// Binds the fresh owned roots a retained view projection reads.
     ///
     /// A view destination keeps the storage its view points into, so an
     /// initializer's owned results are otherwise left inline and retained
     /// whole. A member projection reads one position of a fresh root, though:
     /// binding the root registers it with the release pass, so its remaining
     /// fields free at the initializer's end, and the read member empties right
-    /// after the store so the release leaves the view's storage alone. Returns
-    /// the rebound value and the move-out statement, or the value unchanged
-    /// when it is not such a projection.
-    fn retain_view_member_root(&mut self, value: &Value) -> (Value, Option<String>) {
+    /// after the store so the release leaves the view's storage alone. A
+    /// conditional reads one arm, so each arm's root binds under its own
+    /// branch guard. Returns the rebound value and the move-out statements to
+    /// emit after the store.
+    fn retain_view_member_root(&mut self, value: &Value) -> (Value, Vec<String>) {
         if !self.init_retain_owners || self.init_skip_owner_binding {
-            return (value.clone(), None);
+            return (value.clone(), Vec::new());
         }
-        self.retain_fresh_projection_root(value)
+        if matches!(value.kind, ValueKind::Conditional { .. }) {
+            return self.retain_conditional_projection_roots(value);
+        }
+        let (value, move_out) = self.retain_fresh_projection_root(value);
+        (value, move_out.into_iter().collect())
     }
 
-    /// Binds a fresh owning root under a projection chain and empties the read
-    /// position after the store.
+    /// The fresh owning root of a projection chain, with the chain's accessors.
     ///
-    /// The chain walks down to the owning root; each step records its C
-    /// accessor so the move-out can empty the exact position the view reads.
-    /// A value with no projection step and a chain step that names no constant
-    /// position keep their inline form: the first is the destination's own
-    /// value, and the second has no position the move-out could empty ahead of
-    /// the release.
-    fn retain_fresh_projection_root(&mut self, value: &Value) -> (Value, Option<String>) {
+    /// The chain walks down through members and constant-index elements to a
+    /// call or closure result; the accessors read outermost-first, so they
+    /// spell the read position over the root's place. `None` when the chain
+    /// has no step, names no fresh call root, owns nothing to release, or ends
+    /// in a fixed array the C cannot assign through.
+    fn fresh_projection_chain<'v>(&self, value: &'v Value) -> Option<(&'v Value, Vec<String>)> {
         let mut accessors: Vec<String> = Vec::new();
         let mut cursor = value;
         loop {
@@ -1131,7 +1135,7 @@ impl<'a> Emitter<'a> {
                 }
                 ValueKind::Index { base, index } => {
                     let ValueKind::Int(position) = index.kind else {
-                        return (value.clone(), None);
+                        return None;
                     };
                     accessors.push(format!("[{position}]"));
                     cursor = base;
@@ -1148,16 +1152,30 @@ impl<'a> Emitter<'a> {
             // owning ones.
             || value.ty.is_fixed_array()
         {
-            return (value.clone(), None);
+            return None;
         }
-        let zero = self.empty_state(&cursor.ty);
+        accessors.reverse();
+        Some((cursor, accessors))
+    }
+
+    /// Binds a fresh owning root under a projection chain and empties the read
+    /// position after the store.
+    ///
+    /// A value with no projection step and a chain step that names no constant
+    /// position keep their inline form: the first is the destination's own
+    /// value, and the second has no position the move-out could empty ahead of
+    /// the release.
+    fn retain_fresh_projection_root(&mut self, value: &Value) -> (Value, Option<String>) {
+        let Some((root, accessors)) = self.fresh_projection_chain(value) else {
+            return (value.clone(), None);
+        };
+        let zero = self.empty_state(&root.ty);
         // The root's fields free at the initializer's end: the release
         // registration must see the local even under a retaining destination.
         let retaining = std::mem::replace(&mut self.init_retain_owners, false);
-        let (local, root) = self.materialize_init_local(cursor, None, &zero);
+        let (local, root_read) = self.materialize_init_local(root, None, &zero);
         self.init_retain_owners = retaining;
-        accessors.reverse();
-        let read = Self::rebind_projection_root(value, root);
+        let read = Self::rebind_projection_root(value, root_read);
         let empty = match zero_view_helper(&value.ty) {
             // A struct-typed view position spells its empty state with the
             // zero view helper, exactly as a store into it would.
@@ -1168,6 +1186,84 @@ impl<'a> Emitter<'a> {
             read,
             Some(format!("{local}{} = {empty}", accessors.concat())),
         )
+    }
+
+    /// Binds each fresh projection root a conditional's arms read.
+    ///
+    /// Each arm is evaluated only when it is selected, so its root binds under
+    /// the arm's own guard: the arm's call runs exactly once on its path, the
+    /// root registers with the release pass, and the read position empties
+    /// after the store so the retained view keeps the storage while the root's
+    /// other fields free. The condition stores once, so both guards read the
+    /// same decision, and an arm with no fresh projection keeps its form.
+    fn retain_conditional_projection_roots(&mut self, value: &Value) -> (Value, Vec<String>) {
+        let ValueKind::Conditional {
+            condition,
+            then_value,
+            else_value,
+        } = &value.kind
+        else {
+            return (value.clone(), Vec::new());
+        };
+        if self.fresh_projection_chain(then_value).is_none()
+            && self.fresh_projection_chain(else_value).is_none()
+        {
+            return (value.clone(), Vec::new());
+        }
+        // A stable condition (a place read) spells the guards directly; a
+        // fresh one stores once, so both binds read the same decision.
+        let (condition, then_guard, else_guard) = if self.reads_stable_storage(condition) {
+            let text = self.value(condition);
+            ((**condition).clone(), text.clone(), format!("!({text})"))
+        } else {
+            let (name, read) = self.materialize_init_local(condition, None, "false");
+            (read, name.clone(), format!("!{name}"))
+        };
+        let mut move_outs = Vec::new();
+        let then_value =
+            self.retain_guarded_projection_root(then_value, &then_guard, &mut move_outs);
+        let else_value =
+            self.retain_guarded_projection_root(else_value, &else_guard, &mut move_outs);
+        (
+            Value::new(
+                value.ty.clone(),
+                ValueKind::Conditional {
+                    condition: Box::new(condition),
+                    then_value: Box::new(then_value),
+                    else_value: Box::new(else_value),
+                },
+            ),
+            move_outs,
+        )
+    }
+
+    /// Binds one conditional arm's fresh projection root under the arm's guard.
+    ///
+    /// The arm's root call runs only when the guard holds; the read then
+    /// follows the root's bound place. An arm with no fresh projection chain
+    /// keeps its value.
+    fn retain_guarded_projection_root(
+        &mut self,
+        arm: &Value,
+        guard: &str,
+        move_outs: &mut Vec<String>,
+    ) -> Value {
+        let Some((root, accessors)) = self.fresh_projection_chain(arm) else {
+            return arm.clone();
+        };
+        let zero = self.empty_state(&root.ty);
+        // The root's fields free at the initializer's end: the release
+        // registration must see the local even under a retaining destination.
+        let retaining = std::mem::replace(&mut self.init_retain_owners, false);
+        let (local, root_read) = self.materialize_init_local(root, Some(guard), &zero);
+        self.init_retain_owners = retaining;
+        let read = Self::rebind_projection_root(arm, root_read);
+        let empty = match zero_view_helper(&arm.ty) {
+            Some(helper) => format!("{helper}()"),
+            None => self.empty_state(&arm.ty),
+        };
+        move_outs.push(format!("{local}{} = {empty}", accessors.concat()));
+        read
     }
 
     /// Binds every fresh member root a retained view array reads.
@@ -1440,31 +1536,79 @@ impl<'a> Emitter<'a> {
     /// place-rooted, non-nullable, or non-`String` source keeps its form.
     fn bind_guarded_view_source(&mut self, value: &Value, view: &Ty) -> Value {
         let fresh = match &value.kind {
-            ValueKind::Conditional { .. } => self.conditional_arms_need_guard_binding(value, view),
-            _ => {
-                self.needs_view_guard(&value.ty, view)
-                    && !matches!(
-                        value.kind,
-                        ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
-                    )
-            }
+            ValueKind::Conditional { .. } => self.conditional_arms_need_guard_binding(value),
+            _ => self.needs_view_guard(&value.ty, view) && !self.reads_stable_storage(value),
         };
         if !fresh {
             return value.clone();
         }
         let zero = self.empty_state(&value.ty);
-        let (_, local) = self.materialize_init_local(value, None, &zero);
+        let (_, mut local) = self.materialize_init_local(value, None, &zero);
+        // A conditional whose arm carries the nullness can hide it behind the
+        // sibling arm's matching type; the bound local stands for a value that
+        // can be null, so the store's guard has to fire.
+        if value.selects_null() {
+            local.ty.nullable = true;
+        }
+        local
+    }
+
+    /// The declared parameter types of a call's callee, when the emitter can
+    /// name them.
+    ///
+    /// A user or `ffi` function keeps its declared signature; a call through a
+    /// func value takes the parameter types from the value's own signature.
+    /// Every other callee yields `None`, and its arguments keep their form.
+    fn call_expected_types(&self, callee: &str, receiver: Option<&Value>) -> Option<Vec<Ty>> {
+        if let Some(types) = self.callee_param_types(callee) {
+            return Some(types);
+        }
+        let ty = self.callee_func_type(callee, receiver)?;
+        let TyKind::Func(signature) = &ty.kind else {
+            return None;
+        };
+        Some(signature.params.iter().map(|param| param.ty.clone()).collect())
+    }
+
+    /// True when an argument's widening at `expected` needs a bound source.
+    ///
+    /// The widening tests its source and selects the parameter's empty view
+    /// for a null one, so an argument that reads a fresh value and can select
+    /// null binds to a local that the guard reads twice. A stable source, a
+    /// non-view parameter, and a source that cannot select null keep their
+    /// form.
+    fn nullable_view_argument_needs_binding(&self, arg: &Value, expected: &Ty) -> bool {
+        is_struct_view(&self.substitute(expected))
+            && arg.selects_null()
+            && !self.reads_stable_storage(arg)
+    }
+
+    /// Binds an argument whose view widening needs a guard.
+    ///
+    /// The bound local is the argument's source, and the view destination
+    /// retains it exactly as it retains one written directly: the storage the
+    /// view points into lives as long as the program.
+    fn bind_nullable_view_argument(&mut self, arg: &Value, guard: Option<&str>) -> Value {
+        let zero = self.empty_state(&arg.ty);
+        let (_, mut local) = self.materialize_init_local(arg, guard, &zero);
+        // A conditional whose arm carries the nullness can hide it behind the
+        // sibling arm's matching type; the bound local stands for a value that
+        // can be null.
+        if arg.selects_null() {
+            local.ty.nullable = true;
+        }
         local
     }
 
     /// True when a conditional's view store needs the guard on an arm that
     /// cannot spell it.
     ///
-    /// The guard reads its source twice, so an arm that reads a fresh value —
-    /// a call result, or a nested conditional over one — binds with the whole
-    /// conditional into an init local first. A null, place-rooted, non-null,
-    /// or non-`String` arm renders its own guard or its plain widening.
-    fn conditional_arms_need_guard_binding(&self, value: &Value, view: &Ty) -> bool {
+    /// The guard reads its source twice, so an arm that reads a fresh value
+    /// and can select null — a call result, a field of one, or a nested
+    /// conditional over either — binds with the whole conditional into an init
+    /// local first. A null, stable, or non-null arm renders its own guard or
+    /// its plain widening.
+    fn conditional_arms_need_guard_binding(&self, value: &Value) -> bool {
         let ValueKind::Conditional {
             then_value,
             else_value,
@@ -1473,24 +1617,26 @@ impl<'a> Emitter<'a> {
         else {
             return false;
         };
-        self.conditional_arm_needs_guard_binding(then_value, view)
-            || self.conditional_arm_needs_guard_binding(else_value, view)
+        self.conditional_arm_needs_guard_binding(then_value)
+            || self.conditional_arm_needs_guard_binding(else_value)
     }
 
     /// True when one conditional arm needs the view guard but reads a fresh
     /// value.
-    fn conditional_arm_needs_guard_binding(&self, value: &Value, view: &Ty) -> bool {
+    fn conditional_arm_needs_guard_binding(&self, value: &Value) -> bool {
         if matches!(value.kind, ValueKind::Null) || self.carries_null_shape(value) {
             return false;
         }
         if matches!(value.kind, ValueKind::Conditional { .. }) {
-            return self.conditional_arms_need_guard_binding(value, view);
+            return self.conditional_arms_need_guard_binding(value);
         }
-        self.needs_view_guard(&value.ty, view)
-            && !matches!(
-                value.kind,
-                ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
-            )
+        // The arm's own type is the owned handle the widening wraps, and the
+        // arm can select null: the guard has to read a bound place.
+        matches!(
+            &self.substitute(&value.ty).kind,
+            TyKind::Handle(name) if name == "String"
+        ) && value.selects_null()
+            && !self.reads_stable_storage(value)
     }
 
     /// Stores a walked value into a fresh init local and returns the local's
@@ -1774,8 +1920,11 @@ impl<'a> Emitter<'a> {
                 // The parameter modes decide which arguments move into the
                 // callee before the arguments are prepared: nothing in a
                 // consumed argument's subtree records an owner, because the
-                // callee frees the value.
+                // callee frees the value. The parameter types let an owned
+                // argument at a view parameter bind first: its widening tests
+                // the value, so the guard has to read a place.
                 let modes = self.call_param_modes(callee, receiver.as_deref());
+                let expected = self.call_expected_types(callee, receiver.as_deref());
                 let receiver = receiver
                     .as_deref()
                     .map(|inner| Box::new(self.materialize_init_value(inner, guard)));
@@ -1787,7 +1936,16 @@ impl<'a> Emitter<'a> {
                     if consumed {
                         self.init_skip_owner_binding = true;
                     }
-                    written.push(self.materialize_init_value(arg, guard));
+                    let walked = self.materialize_init_value(arg, guard);
+                    let prepared = match expected.as_ref().and_then(|types| types.get(index)) {
+                        Some(expected)
+                            if self.nullable_view_argument_needs_binding(&walked, expected) =>
+                        {
+                            self.bind_nullable_view_argument(&walked, guard)
+                        }
+                        _ => walked,
+                    };
+                    written.push(prepared);
                     self.init_skip_owner_binding = restore;
                 }
                 let args = written;

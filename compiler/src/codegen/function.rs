@@ -2071,21 +2071,45 @@ impl<'a> Emitter<'a> {
             && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
     }
 
+    /// True when re-reading a value reads storage that already exists.
+    ///
+    /// A place, a statement temporary, and a deferred materialization all name
+    /// storage the program already holds, and a field or element of one reads
+    /// that storage again. A field or element of a fresh call or closure
+    /// result re-runs the call on every read, so a guard that reads it twice
+    /// would evaluate the call twice and keep the first result; a conditional
+    /// re-reads the arm it selected, so it is stable exactly when every
+    /// reachable arm is.
+    pub(super) fn reads_stable_storage(&self, value: &Value) -> bool {
+        match &value.kind {
+            // The null literal re-reads nothing, so testing it twice costs
+            // nothing and cannot change its value.
+            ValueKind::Null => true,
+            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. } => true,
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.reads_stable_storage(base)
+            }
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.reads_stable_storage(then_value) && self.reads_stable_storage(else_value)
+            }
+            _ => false,
+        }
+    }
+
     /// Renders a nullable owned handle at a view destination under its guard.
     ///
     /// The view constructor would dereference a null handle, so a source that
     /// can be null tests it first and selects the destination's empty view:
     /// `(handle ? cl_string_view(handle) : cl_zero_ClStr())`. The guard reads
-    /// the source twice, so only a place-rooted source — a place, a field, or
-    /// an element — spells it; a source that reads a fresh value binds to a
-    /// temporary before the store instead. Every other source keeps the plain
-    /// widening.
+    /// the source twice, so only a stable source spells it; a source that
+    /// reads a fresh value — a call, or a field of one — binds to a temporary
+    /// before the store instead. Every other source keeps the plain widening.
     pub(super) fn guarded_view_widening(&self, value: &Value, target: &Ty) -> Option<String> {
-        if !matches!(
-            value.kind,
-            ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
-        ) || !self.needs_view_guard(&value.ty, target)
-        {
+        if !self.reads_stable_storage(value) || !self.needs_view_guard(&value.ty, target) {
             return None;
         }
         let text = self.value(value);

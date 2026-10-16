@@ -292,16 +292,27 @@ impl Emitter<'_> {
                 TyKind::Str | TyKind::StaticStr
             )
         });
-        if wants_str && matches!(&arg_ty.kind, TyKind::Handle(name) if name == "String") {
-            // A possibly-null handle keeps its nullness through the widening:
-            // the view constructor would dereference it, so the argument
-            // carries the parameter's own null guard instead.
-            if let Some(guarded) = expected.and_then(|expected| {
-                self.guarded_view_widening(arg, expected)
-            }) {
-                return guarded;
+        if wants_str {
+            if let Some(expected) = expected {
+                // A conditional argument keeps each arm's own nullness: a null
+                // arm carries the parameter's zero view and an owned arm
+                // widens to the view, so one C `?:` carries one type in both
+                // arms. Widening the whole conditional would build a view over
+                // whichever arm ran, including the null one, which
+                // dereferences the null handle.
+                if matches!(arg.kind, ValueKind::Conditional { .. }) {
+                    return self.conditional_arm(arg, expected);
+                }
+                // A possibly-null handle keeps its nullness through the
+                // widening: the view constructor would dereference it, so the
+                // argument carries the parameter's own null guard instead.
+                if matches!(&arg_ty.kind, TyKind::Handle(name) if name == "String") {
+                    if let Some(guarded) = self.guarded_view_widening(arg, expected) {
+                        return guarded;
+                    }
+                    return format!("cl_string_view({text})");
+                }
             }
-            return format!("cl_string_view({text})");
         }
         text
     }

@@ -1466,3 +1466,239 @@ fn should_re_emit_the_guarded_view_stores_identically() {
         "(__cl_itmp0.name ? cl_string_view(__cl_itmp0.name) : cl_zero_ClStr())",
     );
 }
+
+/// A fresh-rooted member arm binds its root once and reads the bound place.
+///
+/// The arm projects a member out of a fresh call result, so the root binds
+/// under the arm's guard, the view reads the bound member place, and the
+/// member empties after the store (red at the phase base: the guard read the
+/// arm twice, so the call ran twice).
+#[test]
+fn should_bind_a_fresh_member_root_under_its_arm_guard() {
+    let source = r#"module spec.miiimpl.nullguardmemberarm;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; other: String?; }
+
+let count: i32 = 0;
+
+func mkBox(has: bool): Box {
+    count = count + 1;
+    if (has) {
+        return Box { name: stringOf("ab"), other: stringOf("zz") };
+    }
+    return Box { name: null, other: stringOf("cd") };
+}
+
+let c: bool = true;
+let s: str? = c ? mkBox(true).name : stringOf("xy");
+
+func main(): i32 {
+    if (count != 1) {
+        return 5;
+    }
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s)) - 2;
+}
+"#;
+    let emitted = emit_host("nullguardmemberarm", source);
+    assert_contains(
+        "nullguardmemberarm",
+        &emitted,
+        "if (cl_spec_miiimpl_nullguardmemberarm_c) { __cl_itmp0 = cl_spec_miiimpl_nullguardmemberarm_mkBox(1); }",
+    );
+    assert_contains(
+        "nullguardmemberarm",
+        &emitted,
+        "cl_spec_miiimpl_nullguardmemberarm_s = (cl_spec_miiimpl_nullguardmemberarm_c ? (__cl_itmp0.name ? cl_string_view(__cl_itmp0.name) : cl_zero_ClStr()) : cl_string_view(cl_std_text_stringOf(cl_str(\"xy\"))));",
+    );
+    assert_contains(
+        "nullguardmemberarm",
+        &emitted,
+        "__cl_itmp0.name = NULL;",
+    );
+    assert!(
+        !emitted.contains("cl_string_view(cl_spec_miiimpl_nullguardmemberarm_mkBox(1).name)"),
+        "nullguardmemberarm: the arm must not re-call the root; emitted C:\n{emitted}"
+    );
+}
+
+/// A typed-nullable else arm binds the conditional and tests the local.
+///
+/// The conditional's own type takes the then arm's non-nullable type, so the
+/// bound local has to carry the nullness the arm selected: the store tests
+/// the local before the view construction (red at the phase base: the store
+/// widened the local directly and the null selection segfaulted).
+#[test]
+fn should_guard_a_typed_nullable_else_arm() {
+    let source = r#"module spec.miiimpl.nullguardelsearm;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+let c: bool = false;
+let s: str? = c ? stringOf("xy") : maybe(false);
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("nullguardelsearm", source);
+    assert_contains(
+        "nullguardelsearm",
+        &emitted,
+        "ClString __cl_itmp0 = (cl_spec_miiimpl_nullguardelsearm_c ? cl_std_text_stringOf(cl_str(\"xy\")) : cl_spec_miiimpl_nullguardelsearm_maybe(0));",
+    );
+    assert_contains(
+        "nullguardelsearm",
+        &emitted,
+        "cl_spec_miiimpl_nullguardelsearm_s = (__cl_itmp0 ? cl_string_view(__cl_itmp0) : cl_zero_ClStr());",
+    );
+    assert!(
+        !emitted.contains("cl_spec_miiimpl_nullguardelsearm_s = cl_string_view(__cl_itmp0);"),
+        "nullguardelsearm: the nullable local must widen through the guard; emitted C:\n{emitted}"
+    );
+}
+
+/// A typed-nullable arm binds in the body store, the argument, and the lambda.
+///
+/// Each spelling binds the conditional's owner and tests it before the view
+/// construction; the non-null arm keeps its plain widening (red at the phase
+/// base: every owner widened unguarded and the null selections segfaulted).
+#[test]
+fn should_guard_a_typed_nullable_arm_in_the_body_spellings() {
+    let source = r#"module spec.miiimpl.nullguardbodyarm;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+func size(s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func code(c: bool): i32 {
+    let s: str? = c ? stringOf("xy") : maybe(c);
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func probe(c: bool): i32 {
+    return size(c ? stringOf("abc") : maybe(c));
+}
+
+func main(): i32 {
+    let f: func(bool): i32 = (c: bool) => {
+        let s: str? = c ? stringOf("xy") : maybe(c);
+        if (s == null) {
+            return 9;
+        }
+        return i32(len(s));
+    };
+    return (code(true) - 2)
+        + (code(false) - 9)
+        + (probe(true) - 3)
+        + (probe(false) - 9)
+        + (f(true) - 2)
+        + (f(false) - 9);
+}
+"#;
+    let emitted = emit_host("nullguardbodyarm", source);
+    assert_eq!(
+        count(
+            &emitted,
+            "s = (__cl_owned0 ? cl_string_view(__cl_owned0) : cl_zero_ClStr());"
+        ),
+        2,
+        "nullguardbodyarm: the body store and the lambda body must test their owner; emitted C:\n{emitted}"
+    );
+    assert_contains(
+        "nullguardbodyarm",
+        &emitted,
+        "cl_spec_miiimpl_nullguardbodyarm_size((__cl_owned0 ? cl_string_view(__cl_owned0) : cl_zero_ClStr()))",
+    );
+    assert!(
+        !emitted.contains("cl_spec_miiimpl_nullguardbodyarm_size(cl_string_view(__cl_owned"),
+        "nullguardbodyarm: the argument must not widen unguarded; emitted C:\n{emitted}"
+    );
+}
+
+/// A conditional argument in an initializer widens per arm or through its
+/// bound local.
+///
+/// The `i32` destination binds each arm, so the per-arm guard tests the bound
+/// arm place; a view destination binds the conditional once and tests the
+/// local (red at the phase base: both widened the whole conditional through
+/// `cl_string_view` and the null selections segfaulted).
+#[test]
+fn should_guard_a_conditional_argument_in_an_initializer() {
+    let source = r#"module spec.miiimpl.nullguardinitarg;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+func size(c: bool, s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func pick(s: str?): str? {
+    return s;
+}
+
+let n: i32 = size(false, false ? stringOf("abc") : null);
+let g: str? = pick(false ? stringOf("abc") : maybe(false));
+
+func main(): i32 {
+    if (g == null) {
+        return 9;
+    }
+    return (n - 9) + (i32(len(g)) - 3);
+}
+"#;
+    let emitted = emit_host("nullguardinitarg", source);
+    assert_contains(
+        "nullguardinitarg",
+        &emitted,
+        "cl_spec_miiimpl_nullguardinitarg_n = cl_spec_miiimpl_nullguardinitarg_size(0, (__cl_itmp0 ? cl_string_view(__cl_itmp1) : cl_zero_ClStr()));",
+    );
+    assert_contains(
+        "nullguardinitarg",
+        &emitted,
+        "cl_spec_miiimpl_nullguardinitarg_g = cl_spec_miiimpl_nullguardinitarg_pick((__cl_itmp2 ? cl_string_view(__cl_itmp2) : cl_zero_ClStr()));",
+    );
+    assert!(
+        !emitted.contains("cl_string_view((__cl_itmp"),
+        "nullguardinitarg: the conditional must not widen as a whole; emitted C:\n{emitted}"
+    );
+}
