@@ -2055,18 +2055,41 @@ impl<'a> Emitter<'a> {
         if matches!(value.kind, ValueKind::Null) {
             return self.null_value(ty);
         }
-        // A conditional whose arms are all null carries the null literal's
-        // unknown type, so its empty spelling must come from the destination
-        // too: rendering it from its own type would store the bare null
-        // pointer where a view struct is expected.
+        // A conditional at a struct-view destination renders per arm: each arm
+        // keeps its own nullness (an owned arm widens to the view, a null arm
+        // carries the destination's empty view). A conditional whose arms are
+        // all null carries the null literal's unknown type, so its empty
+        // spelling must come from the destination; and rendering an owned arm
+        // as one value and widening the whole conditional after would
+        // construct a view over whichever arm ran, including the null one.
         if matches!(value.kind, ValueKind::Conditional { .. })
-            && self.substitute(&value.ty).is_unknown()
             && is_struct_view(&self.substitute(ty))
         {
             return self.conditional_arm(value, ty);
         }
+        let value_ty = self.substitute(&value.ty);
+        // A possibly-null handle keeps its nullness through the widening: a
+        // view constructed over the null handle would dereference it, so the
+        // null guard selects the destination's empty view instead. The guard
+        // reads the source twice, so only a place-rooted source spells it; a
+        // fresh call root binds into an owner before a view store, and every
+        // other value keeps the plain constructor.
+        if value_ty.nullable
+            && is_struct_view(&self.substitute(ty))
+            && matches!(
+                value.kind,
+                ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
+            )
+            && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
+        {
+            let text = self.value(value);
+            return format!(
+                "({text} ? cl_string_view({text}) : {})",
+                self.null_value(&self.substitute(ty))
+            );
+        }
         let text = self.value(value);
-        let text = self.widen_text_view(text, &self.substitute(&value.ty), ty);
+        let text = self.widen_text_view(text, &value_ty, ty);
         // A view's pointer member is a `const u8 *` in the C while a
         // `cstring` destination is a `char *`: the store spells the
         // conversion the declaration expects. The member is untyped, so only

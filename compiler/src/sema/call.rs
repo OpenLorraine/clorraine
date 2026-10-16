@@ -872,6 +872,29 @@ fn call_name(callee: &Expr) -> Option<&str> {
     }
 }
 
+/// Infers a generic call's type arguments from its argument types.
+///
+/// Each declared parameter binds against its argument with
+/// [`match_param`], so a nested shape (`T[]`, `Pair<T>`, `func(T)`) binds
+/// through its parts. Returns the arguments in declaration order, or `None`
+/// when a parameter stays unbound: the callers then treat the call as
+/// uninstantiable rather than guessing a key.
+pub(crate) fn infer_type_args(
+    declared: &[String],
+    param_types: &[Ty],
+    arg_types: &[Ty],
+) -> Option<Vec<Ty>> {
+    let mut inferred: BTreeMap<String, Ty> = BTreeMap::new();
+    for (param, arg) in param_types.iter().zip(arg_types) {
+        match_param(param, arg, declared, &mut inferred);
+    }
+    let mut result = Vec::with_capacity(declared.len());
+    for param in declared {
+        result.push(inferred.get(param).cloned()?);
+    }
+    Some(result)
+}
+
 /// Binds type parameters by matching a declared parameter type against an
 /// argument type.
 ///

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-16 (planning)
-> **Progress**: 2/39 tasks (5%) — Executing Phase 1
+> **Last Updated**: 2026-10-16 18:00
+> **Progress**: 4/39 tasks (10%) — Phase 1 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -71,13 +71,13 @@ control.
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Resolve the initializer expression callee like the body path; record the inferred
+- [x] 1.2.1 Resolve the initializer expression callee like the body path; record the inferred
       generic instance (the initializer call and the view-builder spelling); construct the
       per-arm view for a nullable view conditional (the null arm carries the zero view); keep
       the guarded owned bind's release inside its declaration block — `compiler/src/codegen/program.rs`,
       `compiler/src/own/generics.rs`, `compiler/src/own/call.rs`, `compiler/src/codegen/expr.rs`,
-      `compiler/src/codegen/function.rs`, `compiler/src/sema/call.rs`
-- [ ] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/codegen/function.rs`, `compiler/src/sema/call.rs` ✅ (completed: 2026-10-16 18:00; the expression callee lowers as the call receiver (`codegen/program.rs:2436`); the inferred generic instances are keyed at the initializer top level (`own/generics.rs:421/488`, `codegen/program.rs:2496`, `sema/call.rs:882`), with `instance_keyable` (`own/generics.rs:192`) rejecting type parameters, placeholders, and unstamped closure types; the guarded owned bind releases inside its decision block (`codegen/program.rs:1893-1902`); the nullable view conditional keeps its per-arm nullness (`codegen/program.rs:1055`, `codegen/function.rs:2065/2077`, `codegen/expr.rs:462`, `own/lower.rs:3520/4376`))
+- [x] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-16 18:00; the module-initializer spec 44/44 plain and under `RDC_ASAN=1`; the impl pins 19/19; the batch-I/J suites and the oracles green; `make check` exit 0; the differential shows 19 intended emission diffs and no accept/reject or diagnostic change; parent-verified 44/44 plain + ASan)
 
 ### Step 1.3: Impl Tests & Review
 

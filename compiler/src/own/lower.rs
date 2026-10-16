@@ -3512,6 +3512,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         value
                     }
                 } else if whole_owned && !self.conditional_borrows_place(&value) {
+                    // A conditional that can select the null literal keeps that
+                    // nullness in the owner's type: the destination's widening
+                    // then guards its view construction instead of building a
+                    // view over the null handle.
+                    let mut value = value;
+                    if FunctionChecker::conditional_selects_null(&value) {
+                        value.ty.nullable = true;
+                    }
                     self.materialize_scoped_owner(value)
                 } else if arm_fill {
                     self.hoist_view_conditional_arms(value)
@@ -4358,6 +4366,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.own_aggregate_view_positions(value)
             }
             other => self.own_view_arm(Value::new(value.ty, other)),
+        }
+    }
+
+    /// True when a conditional can select the null literal.
+    ///
+    /// The null may sit behind a nested conditional, so the walk descends
+    /// through the reachable arms; every other form is a value.
+    pub(super) fn conditional_selects_null(value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Null => true,
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                Self::conditional_selects_null(then_value)
+                    || Self::conditional_selects_null(else_value)
+            }
+            _ => false,
         }
     }
 

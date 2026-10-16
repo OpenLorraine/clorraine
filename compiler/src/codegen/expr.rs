@@ -442,10 +442,13 @@ impl<'a> Emitter<'a> {
     ///
     /// A null arm is typed by the conditional's result, so a struct-typed view
     /// result needs its zero view rather than the untyped null literal. A
-    /// nested conditional is not typed by the context on its own, so the outer
-    /// result type carries into its null arms. An owned `String` arm widens to
-    /// the view result through the shim view, exactly as a store spells the
-    /// widening, because one C `?:` must carry one type in both arms.
+    /// conditional is not always typed by the context on its own: an all-null
+    /// conditional carries the null literal's unknown type, and an owned-handle
+    /// conditional beside a null arm must widen to the destination's view, so
+    /// the outer result type carries into those arms. An owned `String` arm
+    /// widens to the view result through the shim view, exactly as a store
+    /// spells the widening, because one C `?:` must carry one type in both
+    /// arms.
     pub(super) fn conditional_arm(&self, value: &Value, result: &Ty) -> String {
         if matches!(value.kind, ValueKind::Null) {
             return self.null_value(result);
@@ -456,10 +459,14 @@ impl<'a> Emitter<'a> {
             else_value,
         } = &value.kind
         {
-            let nested = if value.ty.is_unknown() {
+            let own = self.substitute(&value.ty);
+            let nested = if value.ty.is_unknown()
+                || (matches!(&own.kind, TyKind::Handle(name) if name == "String")
+                    && is_struct_view(result))
+            {
                 result.clone()
             } else {
-                self.substitute(&value.ty)
+                own
             };
             return format!(
                 "({} ? {} : {})",

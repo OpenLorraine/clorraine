@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::ast::{Block, Expr, ExprKind, Item, Mode, Stmt, StructDecl, Type, TypeParam};
+use crate::ast::{Arg, Block, Expr, ExprKind, Item, Mode, Stmt, StructDecl, Type, TypeParam};
 use crate::ir::{
     CopyObligation, Function, Instance, LiftedSpecialization, Monomorphization, Statement,
     StructInstance, Terminator, Value, ValueKind, ValuePiece,
@@ -24,9 +24,10 @@ use super::program::{Callee, ProgramInfo};
 
 /// Collects the instantiation set and copy obligations of the program.
 ///
-/// Only explicit type arguments are recorded. An inferred instantiation has no
-/// written spelling to key on, so it is left to the type stage's inference,
-/// which already validates it; this pass never guesses a key.
+/// A written type-argument list keys the instance directly; a call that
+/// writes none derives its arguments from the checked argument types with the
+/// body path's inference. A parameter the arguments leave unbound records
+/// nothing: this pass never guesses a key.
 pub fn collect(
     loaded: &Loaded,
     program: &ProgramInfo,
@@ -182,6 +183,30 @@ fn is_concrete(ty: &Ty) -> bool {
     }
 }
 
+/// True when a type can key a recorded instance on its own.
+///
+/// A type parameter or an unresolved placeholder names no concrete key, and an
+/// unstamped closure type belongs to a generic template whose enclosing
+/// instance the body's per-instance walk stamps later. Every other type keys
+/// its parts.
+fn instance_keyable(ty: &Ty) -> bool {
+    match &ty.kind {
+        TyKind::Param(_) | TyKind::Unknown => false,
+        TyKind::Closure(closure) => closure.instance.is_some(),
+        TyKind::Array { element, .. } => instance_keyable(element),
+        TyKind::Raw(inner) => instance_keyable(inner),
+        TyKind::Struct(_, args) => args.iter().all(instance_keyable),
+        TyKind::Func(signature) => {
+            signature
+                .params
+                .iter()
+                .all(|param| instance_keyable(&param.ty))
+                && instance_keyable(&signature.returns)
+        }
+        _ => true,
+    }
+}
+
 /// Walks a block looking for generic call sites.
 fn walk_block(
     block: &Block,
@@ -296,7 +321,7 @@ fn walk_expr(
             type_args,
             args,
         } => {
-            record_call(callee, type_args, program, sema, mono);
+            record_call(callee, type_args, args, program, sema, mono);
             walk_expr(callee, program, sema, mono);
             for arg in args {
                 walk_expr(&arg.value, program, sema, mono);
@@ -372,44 +397,62 @@ fn walk_expr(
     }
 }
 
-/// Records one explicit generic call and its copy obligations.
+/// Records one generic call and its copy obligations.
+///
+/// A written type-argument list keys the instance directly. A call that
+/// writes none derives its arguments from the checked argument types, exactly
+/// as the body path's inference does, so an initializer's inferred call
+/// declares the same instance its body twin would; a parameter the arguments
+/// leave unbound records nothing, and a non-generic callee records nothing.
 fn record_call(
     callee: &Expr,
     type_args: &[Type],
+    args: &[Arg],
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
 ) {
-    if type_args.is_empty() {
-        return;
-    }
     let Some(name) = callee_simple_name(callee) else {
         return;
     };
     let Some(Callee::User(decl)) = program.callee(&name) else {
         return;
     };
-    if decl.type_params.len() != type_args.len() {
-        return;
-    }
-    let bindings = type_bindings(decl, type_args, sema);
-    let instance = Instance {
-        function: decl.name.clone(),
-        args: type_args
+    let instance_args: Vec<Ty> = if type_args.is_empty() {
+        match infer_call_type_args(decl, args, sema) {
+            Some(inferred) => inferred,
+            None => return,
+        }
+    } else {
+        if decl.type_params.len() != type_args.len() {
+            return;
+        }
+        type_args
             .iter()
             .map(|ty| resolve_ty(ty, &[], &sema.table))
-            .collect(),
+            .collect()
     };
-    // A call written inside a generic body may name a type parameter. Only a
-    // concrete instantiation has an emitted copy and a stable symbol.
-    if instance
-        .args
-        .iter()
-        .any(|ty| ty.is_param() || ty.is_unknown())
-    {
+    if instance_args.is_empty() {
+        return;
+    }
+    let instance = Instance {
+        function: decl.name.clone(),
+        args: instance_args,
+    };
+    // Only a concrete instantiation has an emitted copy and a stable symbol: a
+    // call written inside a generic body may name a type parameter, and an
+    // unstamped closure argument (one this template's enclosing instance does
+    // not key yet) belongs to the body's own per-instance walk.
+    if instance.args.iter().any(|ty| !instance_keyable(ty)) {
         return;
     }
     let key = instance.dedupe_key();
+    let bindings: BTreeMap<String, Ty> = decl
+        .type_params
+        .iter()
+        .map(|param| param.name.clone())
+        .zip(instance.args.iter().cloned())
+        .collect();
     if !mono.record(instance) {
         return;
     }
@@ -436,17 +479,32 @@ fn record_call(
     }
 }
 
-/// Binds each generic parameter to the concrete type its type argument names.
-fn type_bindings(
+/// Derives a call's type arguments from its checked argument types.
+///
+/// The type stage recorded every argument's type beside its node, so the walk
+/// binds each declared parameter against the recorded type of its argument —
+/// the same matcher the body path's inference uses. Returns `None` when a
+/// parameter stays unbound or an argument's type was never recorded.
+fn infer_call_type_args(
     decl: &crate::ast::FuncDecl,
-    type_args: &[Type],
+    args: &[Arg],
     sema: &SemaOutput,
-) -> BTreeMap<String, Ty> {
-    let mut bindings = BTreeMap::new();
-    for (param, written) in decl.type_params.iter().zip(type_args) {
-        bindings.insert(param.name.clone(), resolve_ty(written, &[], &sema.table));
-    }
-    bindings
+) -> Option<Vec<Ty>> {
+    let declared: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
+    let param_types: Vec<Ty> = decl
+        .params
+        .iter()
+        .map(|param| resolve_ty(&param.ty, &declared, &sema.table))
+        .collect();
+    let arg_types: Vec<Ty> = args
+        .iter()
+        .map(|arg| {
+            sema.expr_types
+                .get(&(&arg.value as *const Expr as usize))
+                .cloned()
+        })
+        .collect::<Option<Vec<Ty>>>()?;
+    crate::sema::call::infer_type_args(&declared, &param_types, &arg_types)
 }
 
 /// Records the concrete generic instances named by the lowered IR.

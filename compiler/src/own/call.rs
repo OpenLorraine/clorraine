@@ -431,15 +431,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             .iter()
             .map(|param| self.resolve_with(&param.ty, &declared))
             .collect();
-        let mut inferred: BTreeMap<String, Ty> = BTreeMap::new();
-        for (param, arg) in param_types.iter().zip(arg_types) {
-            crate::sema::call::match_param(param, arg, &declared, &mut inferred);
-        }
-        let mut result = Vec::with_capacity(declared.len());
-        for param in &declared {
-            result.push(inferred.get(param).cloned()?);
-        }
-        Some(result)
+        crate::sema::call::infer_type_args(&declared, &param_types, arg_types)
     }
 
     /// The structural extent a dot-`len` receiver names, when it names one.

@@ -7,7 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{BinaryOp, EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece};
+use crate::ast::{
+    Arg, BinaryOp, EnumDecl, Expr, ExprKind, IntrinsicArg, Item, StructDecl, TemplatePiece, Type,
+};
 use crate::ir::{GlobalId, Place, PlaceBase, Projection, Statement, Terminator, Value, ValueKind, ValuePiece};
 use crate::load::Module;
 use crate::profile::Profile;
@@ -1050,10 +1052,23 @@ impl<'a> Emitter<'a> {
         // A view destination takes an owned `String` value through the view
         // constructor, exactly as the function path's store does; without the
         // wrapper the handle cannot assign to the view.
-        let rendered = match (&declared_ty, &self.substitute(&lowered.ty).kind) {
-            (Some(declared), TyKind::Handle(handle))
-                if handle == "String"
-                    && matches!(declared.kind, TyKind::Str | TyKind::StaticStr) =>
+        let declared_view = declared_ty
+            .as_ref()
+            .filter(|declared| matches!(declared.kind, TyKind::Str | TyKind::StaticStr));
+        let rendered = match declared_view {
+            // A conditional at a view destination keeps each arm's own
+            // nullness: the owned arm widens to the view and the null arm
+            // carries the destination's zero view. Wrapping the whole
+            // conditional would construct a view over whichever arm ran —
+            // including the null one, which dereferences the null handle.
+            Some(declared) if matches!(lowered.kind, ValueKind::Conditional { .. }) => {
+                self.conditional_arm(&lowered, declared)
+            }
+            Some(_)
+                if matches!(
+                    &self.substitute(&lowered.ty).kind,
+                    TyKind::Handle(handle) if handle == "String"
+                ) =>
             {
                 format!("cl_string_view({})", self.value(&lowered))
             }
@@ -1870,9 +1885,19 @@ impl<'a> Emitter<'a> {
                         declarator(&value.ty, &name, &self.sema.table)
                     ));
                     self.push(&format!("    if ({decision}) {{"));
+                    // An owned bind the right side declares lives in this
+                    // decision block, so its release runs at the block's end:
+                    // the end-of-init release pass stands outside the block
+                    // and could not name it. The binds keep their reverse
+                    // creation order, and the untaken path releases nothing.
+                    let declared_here = self.init_owners.len();
                     let right = self.materialize_init_value(right, None);
                     let rendered = self.value(&right);
                     self.push(&format!("        {name} = {rendered};"));
+                    let block_owners: Vec<(String, Ty)> = self.init_owners.split_off(declared_here);
+                    for (owner, ty) in block_owners.into_iter().rev() {
+                        self.emit_drop_expr(&owner, &ty);
+                    }
                     self.push("    }");
                     return Value::new(
                         value.ty.clone(),
@@ -2387,15 +2412,34 @@ impl<'a> Emitter<'a> {
                 // A func-typed global or field names the callable itself; the
                 // callable carries its own signature, so the argument
                 // conversions run exactly as a body call's.
+                let resolved_type_args: Vec<Ty> =
+                    self.init_call_type_args(module, callee, type_args, args);
                 if let Some(callable) = self.init_callable_value(module, callee) {
                     return Value::new(
                         ty,
                         ValueKind::Call {
                             callee: callee_name(callee).unwrap_or_default(),
-                            type_args: type_args
+                            type_args: resolved_type_args,
+                            args: args
                                 .iter()
-                                .map(|ty| self.resolve_written(ty))
+                                .map(|arg| self.lower_global(module, &arg.value))
                                 .collect(),
+                            receiver: Some(Box::new(callable)),
+                        },
+                    );
+                }
+                // An expression callee — a call result or a conditional over
+                // func values — is the callable itself. Lower it as a value
+                // and attach it as the call's receiver, so the emitted C calls
+                // the value the callee produced instead of collapsing the
+                // call into its arguments.
+                if callee_name(callee).is_none() {
+                    let callable = self.lower_global(module, callee);
+                    return Value::new(
+                        ty,
+                        ValueKind::Call {
+                            callee: String::new(),
+                            type_args: resolved_type_args,
                             args: args
                                 .iter()
                                 .map(|arg| self.lower_global(module, &arg.value))
@@ -2416,7 +2460,7 @@ impl<'a> Emitter<'a> {
                 }
                 ValueKind::Call {
                     callee: callee_name(callee).unwrap_or_default(),
-                    type_args: type_args.iter().map(|ty| self.resolve_written(ty)).collect(),
+                    type_args: resolved_type_args,
                     args: written_args,
                     receiver: None,
                 }
@@ -2439,6 +2483,55 @@ impl<'a> Emitter<'a> {
             _ => ValueKind::Aggregate,
         };
         Value { ty, kind }
+    }
+
+    /// The resolved type arguments of a program-level call.
+    ///
+    /// A written list resolves to its types directly. With none written, a
+    /// user generic callee derives its arguments from the checked argument
+    /// types with the same matcher the body path's inference uses, so an
+    /// inferred call spells the keyed instance the monomorphization declares;
+    /// a callee that is not generic, or whose parameters the arguments leave
+    /// unbound, resolves to no arguments.
+    fn init_call_type_args(
+        &self,
+        module: &Module,
+        callee: &Expr,
+        type_args: &[Type],
+        args: &[Arg],
+    ) -> Vec<Ty> {
+        if !type_args.is_empty() {
+            return type_args
+                .iter()
+                .map(|ty| self.resolve_written(ty))
+                .collect();
+        }
+        let Some(name) = callee_name(callee) else {
+            return Vec::new();
+        };
+        let Some(info) = self.resolve_function(&name) else {
+            return Vec::new();
+        };
+        let decl = info.decl;
+        if decl.type_params.is_empty() {
+            return Vec::new();
+        }
+        let declared: Vec<String> = decl
+            .type_params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect();
+        let param_types: Vec<Ty> = decl
+            .params
+            .iter()
+            .map(|param| self.resolve_in_module(&module.name, &param.ty, &declared))
+            .collect();
+        let arg_types: Vec<Ty> = args
+            .iter()
+            .map(|arg| self.expr_type(&arg.value))
+            .collect::<Option<Vec<Ty>>>()
+            .unwrap_or_default();
+        crate::sema::call::infer_type_args(&declared, &param_types, &arg_types).unwrap_or_default()
     }
 
     /// The callable value a func-typed callee names, carrying its signature.
