@@ -376,17 +376,41 @@ impl Checker<'_, '_> {
         ty
     }
 
+    /// Checks an expression against a destination slot or a return type.
+    ///
+    /// A let or module store, an assignment to a field or element, an
+    /// array-literal element, and a return are the positions the frozen rules
+    /// let a view's pointer member reach a `cstring` without a cast in the
+    /// source: the sanctioned conversion. Every other `cstring` position — a
+    /// call argument, an FFI argument, a struct-literal field — goes through
+    /// [`Checker::check_into`] and reports the frozen conversion rule.
+    pub(super) fn check_into_slot(&mut self, expr: &Expr, expected: &Ty) -> Ty {
+        self.check_into_position(expr, expected, true)
+    }
+
     /// Checks an expression against an expected type and reports a bad
     /// implicit conversion.
     pub(super) fn check_into(&mut self, expr: &Expr, expected: &Ty) -> Ty {
+        self.check_into_position(expr, expected, false)
+    }
+
+    /// The shared conversion check, marked with the position it sits at.
+    ///
+    /// `slot` marks the destination-slot and return positions; only there the
+    /// sanctioned view pointer conversion is available. A member read on an
+    /// opaque base is recorded with its position so the instance audit judges
+    /// the conversion exactly as the concrete read would, including the
+    /// position's exemption.
+    fn check_into_position(&mut self, expr: &Expr, expected: &Ty, slot: bool) -> Ty {
         let ty = self.check_value(expr, Some(expected));
         if ty.is_void() {
             return ty;
         }
         // A view's pointer member read is the one spelling the frozen
-        // conversion table lets reach a `cstring` destination: the sanctioned
-        // conversion stays accepted and the emitter spells the cast.
-        if matches!(expected.kind, TyKind::CString)
+        // conversion table lets reach a `cstring` slot; the sanctioned
+        // conversion stays accepted there and the emitter spells the cast.
+        if slot
+            && matches!(expected.kind, TyKind::CString)
             && self
                 .view_pointer_members
                 .contains(&(expr as *const Expr as usize))
@@ -399,18 +423,14 @@ impl Checker<'_, '_> {
         // dotted read `Qualified` and a postfix read `Member`, so both shapes
         // name the member.
         if ty.is_unknown() {
-            let member = match &expr.kind {
-                ExprKind::Member { name, .. } => Some(name.clone()),
-                ExprKind::Qualified(name) => name.segments.last().cloned(),
-                _ => None,
-            };
-            if let Some(name) = member {
+            if let Some(name) = member_read_name(expr) {
                 if let Some(function) = self.function_name.clone() {
                     self.opaque_member_uses.push(OpaqueMemberUse {
                         function,
                         name,
                         span: expr.span,
                         expected: expected.clone(),
+                        sanctioned: slot,
                     });
                     return ty;
                 }
@@ -959,7 +979,7 @@ impl Checker<'_, '_> {
         }
         for expr in elements {
             let ty = match &element {
-                Some(element_ty) => self.check_into(expr, element_ty),
+                Some(element_ty) => self.check_into_slot(expr, element_ty),
                 None => self.check_value(expr, None),
             };
             if let Some(element_ty) = &element {
@@ -981,7 +1001,7 @@ impl Checker<'_, '_> {
         if let Some(fill_expr) = fill {
             match &element {
                 Some(element_ty) => {
-                    let value_ty = self.check_into(fill_expr, element_ty);
+                    let value_ty = self.check_into_slot(fill_expr, element_ty);
                     if value_ty.is_closure() && !matches!(element_ty.kind, TyKind::Func(_)) {
                         self.reject_ephemeral_storage(&value_ty, fill_expr.span);
                     }
@@ -1190,6 +1210,18 @@ fn formattable(ty: &Ty) -> bool {
         TyKind::Handle(name) => name == "String",
         TyKind::Scalar(_) => true,
         _ => false,
+    }
+}
+
+/// The member name of a value-form member read, when the expression is one.
+///
+/// The parser spells a dotted read `Qualified` and a postfix read `Member`, so
+/// both shapes name the member; every other shape is not a member read.
+pub(super) fn member_read_name(expr: &Expr) -> Option<String> {
+    match &expr.kind {
+        ExprKind::Member { name, .. } => Some(name.clone()),
+        ExprKind::Qualified(name) => name.segments.last().cloned(),
+        _ => None,
     }
 }
 

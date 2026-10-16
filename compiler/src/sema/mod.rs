@@ -139,6 +139,10 @@ pub struct OpaqueMemberUse {
     pub span: Span,
     /// The destination the read must convert to.
     pub expected: Ty,
+    /// True when the read sits at a destination slot or a return, the only
+    /// positions the frozen rules let the sanctioned view pointer conversion
+    /// reach. Every other position reports the frozen conversion rule.
+    pub sanctioned: bool,
 }
 
 /// One index read on a bare type parameter.

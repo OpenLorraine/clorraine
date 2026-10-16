@@ -737,21 +737,36 @@ impl Checker<'_, '_> {
             if matches!(param.kind, TyKind::CString)
                 && !is_cstring_literal_argument(&arg.value, param)
                 && !matches!(ty.kind, TyKind::CString)
-                && !ty.is_unknown()
-                && !crate::types::contains_param(&ty)
-                && !self
-                    .view_pointer_members
-                    .contains(&(&arg.value as *const Expr as usize))
             {
-                self.error(
-                    "E10200",
-                    format!(
-                        "cannot convert '{}' to 'cstring' implicitly",
-                        ty.display()
-                    ),
-                    "pass `toCString(value)`",
-                    arg.value.span,
-                );
+                // A member read on an opaque base has no type until the
+                // instance is known: the read is recorded and judged at the
+                // instance. An FFI argument is not a destination slot, so the
+                // view pointer member reports the frozen conversion there too.
+                if ty.is_unknown() {
+                    if let Some(name) = super::expr::member_read_name(&arg.value) {
+                        if let Some(function) = self.function_name.clone() {
+                            self.opaque_member_uses.push(super::OpaqueMemberUse {
+                                function,
+                                name,
+                                span: arg.value.span,
+                                expected: param.clone(),
+                                sanctioned: false,
+                            });
+                            continue;
+                        }
+                    }
+                }
+                if !ty.is_unknown() && !crate::types::contains_param(&ty) {
+                    self.error(
+                        "E10200",
+                        format!(
+                            "cannot convert '{}' to 'cstring' implicitly",
+                            ty.display()
+                        ),
+                        "pass `toCString(value)`",
+                        arg.value.span,
+                    );
+                }
             }
         }
     }

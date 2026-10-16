@@ -110,7 +110,7 @@ impl Checker<'_, '_> {
         if constant {
             self.require_constant(value, integer_scalar(&ty));
         }
-        self.check_into(value, &ty);
+        self.check_into_slot(value, &ty);
     }
 
     /// Reports `E10224` or `E10223` when an expression is not foldable at the

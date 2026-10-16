@@ -1135,7 +1135,9 @@ fn check_opaque_member_uses(
             if crate::types::implicit_conversion(&member, &expected) {
                 continue;
             }
-            if crate::types::converts_view_pointer_member(&base, &usage.name, &expected) {
+            if usage.sanctioned
+                && crate::types::converts_view_pointer_member(&base, &usage.name, &expected)
+            {
                 continue;
             }
             diagnostics.push(

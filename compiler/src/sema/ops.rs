@@ -366,7 +366,7 @@ impl Checker<'_, '_> {
         let target_ty = self.check_value(target, None);
         match op {
             AssignOp::Assign => {
-                self.check_into(value, &target_ty);
+                self.check_into_slot(value, &target_ty);
                 // A store consumes its value; a by-value capture moved through
                 // it is recorded so the per-instance capture rule judges it.
                 self.record_generic_capture_move(value);

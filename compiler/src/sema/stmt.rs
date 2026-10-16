@@ -46,7 +46,7 @@ impl Checker<'_, '_> {
                         let value_ty = if returns.is_void() {
                             self.check_value(value, None)
                         } else {
-                            self.check_into(value, &returns)
+                            self.check_into_slot(value, &returns)
                         };
                         self.reject_callable_only_value(&value_ty, value.span);
                         // A closure cannot be returned: its environment dies
@@ -92,7 +92,7 @@ impl Checker<'_, '_> {
         }
         match (&declared, &decl.value) {
             (Some(ty), Some(value)) => {
-                let value_ty = self.check_into(value, ty);
+                let value_ty = self.check_into_slot(value, ty);
                 self.reject_callable_only_value(&value_ty, value.span);
                 // A closure is accepted only where a callable bound consumes it
                 // inline; storing one in a named binding is E10404. A concrete
@@ -143,7 +143,7 @@ impl Checker<'_, '_> {
         let declared = decl.ty.as_ref().map(|ty| self.resolve_type(ty));
         let ty = match declared {
             Some(ty) => {
-                let value_ty = self.check_into(&decl.value, &ty);
+                let value_ty = self.check_into_slot(&decl.value, &ty);
                 if value_ty.is_closure() && !matches!(ty.kind, TyKind::Func(_)) {
                     self.reject_ephemeral_storage(&value_ty, decl.value.span);
                 }

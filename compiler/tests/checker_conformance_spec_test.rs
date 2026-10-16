@@ -3227,16 +3227,39 @@ func main(): i32 {
 
 // ===== View pointer member conversions and the fixed-array member =====
 
-/// A view pointer member read reaches a `cstring` destination and runs.
+/// A view pointer member read reaches a `cstring` store and a return and runs.
 ///
-/// The member's ABI type is the view's byte pointer, and the one spelling the
-/// frozen conversion table lets reach a `cstring` is that member read — at a
-/// call argument and at a return; the run reads the non-null pointers back
-/// (red at the phase base: the accepted read emitted the bare pointer and the
-/// strict build failed with `pointer-sign`).
+/// The member's ABI type is the view's byte pointer, and the frozen rules let
+/// that read reach a `cstring` destination slot — here a local store — and a
+/// return without a cast in the source; the run reads the non-null pointers
+/// back. The same read at a call argument is not a destination slot: the
+/// rejected half below reports the frozen conversion rule there.
 #[test]
 fn should_convert_a_view_pointer_member_at_a_c_string_destination() {
     let source = r#"module spec.cc.pointermembercstr;
+
+func cstr(s: str): cstring {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    let c: cstring = s.ptr;
+    if (c == null) {
+        return 1;
+    }
+    let d: cstring = cstr(s);
+    if (d == null) {
+        return 2;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("pointermembercstr", source);
+    assert_no_asan("pointermembercstr", &output);
+    assert_exit("pointermembercstr", &output, 0);
+
+    let argument = r#"module spec.cc.pointermembercstrarg;
 
 func use(c: cstring): i32 {
     if (c == null) {
@@ -3245,18 +3268,76 @@ func use(c: cstring): i32 {
     return 0;
 }
 
-func cstr(s: str): cstring {
-    return s.ptr;
+func main(): i32 {
+    let s: str = "abc";
+    return use(s.ptr);
+}
+"#;
+    assert_rejected_once(
+        "pointermembercstrarg",
+        argument,
+        "E10200",
+        &["cannot convert 'raw u8' to 'cstring' implicitly"],
+        &[],
+    );
+}
+
+/// A view pointer member read at an FFI argument reports the conversion rule.
+///
+/// An FFI argument is not a destination slot: the frozen conversion table has
+/// no raw-pointer widening, so the read reports exactly one `E10200` and the
+/// call never reaches the linker.
+#[test]
+fn should_reject_a_view_pointer_member_at_an_ffi_c_string_argument() {
+    let source = r#"module spec.cc.pointermemberffi;
+
+ffi probe {
+    func cl_probe_take(c: cstring): i32;
 }
 
 func main(): i32 {
     let s: str = "abc";
-    return use(s.ptr) + use(cstr(s));
+    unsafe {
+        return cl_probe_take(s.ptr);
+    }
 }
 "#;
-    let output = run_memory("pointermembercstr", source);
-    assert_no_asan("pointermembercstr", &output);
-    assert_exit("pointermembercstr", &output, 0);
+    assert_rejected_once(
+        "pointermemberffi",
+        source,
+        "E10200",
+        &["cannot convert 'raw u8' to 'cstring' implicitly"],
+        &[],
+    );
+}
+
+/// A view pointer member read at a struct-literal field reports the rule.
+///
+/// A struct-literal field is not a destination slot: the read reports exactly
+/// one `E10200` (the emitter would carry the bare pointer and the strict build
+/// would fail).
+#[test]
+fn should_reject_a_view_pointer_member_at_a_struct_literal_field() {
+    let source = r#"module spec.cc.pointermemberfield;
+
+struct Holder { c: cstring; }
+
+func main(): i32 {
+    let s: str = "abc";
+    let h: Holder = Holder { c: s.ptr };
+    if (h.c == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "pointermemberfield",
+        source,
+        "E10200",
+        &["cannot convert 'raw u8' to 'cstring' implicitly"],
+        &[],
+    );
 }
 
 /// A byte pointer that is not a view member keeps the frozen conversion rule.
