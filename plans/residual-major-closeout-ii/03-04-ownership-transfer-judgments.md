@@ -14,7 +14,7 @@ pass.
 
 ## Design
 
-### 1. The view-like copy's element loans (`DEF-315`)
+### 1. The view-like copy's element loans (`DEF-315, DEF-362`)
 
 `let ys: str[2] = xs;` (or `ys = xs;`) transfers no element loans: the carrier-copy transfer is
 guarded by `!is_view_like(&target)`, so a view-like array is excluded, and a later

@@ -197,3 +197,11 @@ and reviewed by the phase's lenses.
 - The `DEF-344` count question (`pair(x, 1)` one `E10012` for two uses of the null `x` while
   `pair(x, x)` reports two) is settled inside the phase with the frozen per-site rules; the
   findings ledger records the ruling.
+
+**AR-18 (ownership scope, auto-design):** The phase-2 memory audit found a double free on shapes the walk
+resolver newly keys (`build/memory-audit/L2-audit/progs/b2_cond_owning_take.clo`; the Local-rooted twin
+`b16`/`b17` reproduces byte-identically at the base, so the root pre-exists while the reachability is
+introduced). Filed as `DEF-362` and **folded into phase 4** (the ownership-transfer phase): the `take`
+move-out of an opaque member type must be recorded as a resolved per-instance duty, so the instance
+emits the concrete twin's source emptying. Phase 4's scope is DEF-315, DEF-329, and DEF-362.
+
