@@ -1177,6 +1177,9 @@ func main(): i32 {
 fn should_type_a_view_pointer_member_for_its_conversions() {
     let emitted = emit_host("ptrpin", VIEW_POINTER_SOURCE);
     assert_contains("ptrpin", &emitted, "static u8 * cl_spec_cc_impl_ptrpin_ptr(ClStr s)");
+    // The `raw u8` return spells the pre-existing const-discard shape (a
+    // const pointer at a mutable destination): the pin records the emission
+    // deliberately, not a build regression; the shape is a filed row.
     assert_contains("ptrpin", &emitted, "return s.ptr;");
     // The local `cstring` return and the stdlib `toCString` body both spell
     // the sanctioned pointer conversion.
