@@ -319,7 +319,7 @@ impl Checker<'_, '_> {
     /// report single, and a composite records at its innermost move site
     /// before the enclosing site's walk reaches the same name.
     pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
-        self.record_capture_move(value, false);
+        self.record_capture_move(value, false, None);
     }
 
     /// Records a capture move at a store for the per-instance audit.
@@ -328,12 +328,12 @@ impl Checker<'_, '_> {
     /// an owning instance the store moves the value out of the borrow, which
     /// the concrete rule cannot judge while the capture's type is a parameter.
     /// A duplicable instance copies out of the borrow and stays accepted.
-    pub(super) fn record_store_capture_move(&mut self, value: &Expr) {
-        self.record_capture_move(value, true);
+    pub(super) fn record_store_capture_move(&mut self, value: &Expr, dest: &Ty) {
+        self.record_capture_move(value, true, Some(dest));
     }
 
     /// The shared capture-move record for one value.
-    fn record_capture_move(&mut self, value: &Expr, borrows: bool) {
+    fn record_capture_move(&mut self, value: &Expr, borrows: bool, dest: Option<&Ty>) {
         let mut roots = Vec::new();
         super::place_move_paths(value, &[], &mut roots);
         if roots.is_empty() {
@@ -378,6 +378,7 @@ impl Checker<'_, '_> {
                 capture: root.to_owned(),
                 ty,
                 path,
+                dest: dest.cloned(),
                 span: value.span,
             });
         }

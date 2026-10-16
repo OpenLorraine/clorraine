@@ -112,6 +112,13 @@ pub struct CaptureMoveRequirement {
     /// element the move selects, so the per-instance audit judges the moved
     /// place's substituted type and a duplicable projection stays a copy.
     pub path: Vec<PlacePathStep>,
+    /// The store destination when the record comes from an assignment.
+    ///
+    /// A store only consumes its value when the destination owns it: a
+    /// duplicable destination copies the value in — a view widening is the
+    /// case — so the audit leaves those stores accepted. A return or a `take`
+    /// argument always consumes, so its record carries no destination.
+    pub dest: Option<Ty>,
     /// The returning or consuming site.
     pub span: Span,
 }

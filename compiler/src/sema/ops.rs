@@ -367,10 +367,11 @@ impl Checker<'_, '_> {
         match op {
             AssignOp::Assign => {
                 self.check_into_slot(value, &target_ty);
-                // A store consumes its value; a capture moved through it —
-                // by value or out of a borrow — is recorded so the
-                // per-instance capture rule judges it.
-                self.record_store_capture_move(value);
+                // A store may consume its value; a capture moved through it —
+                // by value or out of a borrow — is recorded with the
+                // destination, so the per-instance capture rule judges only
+                // the stores whose destination owns the value.
+                self.record_store_capture_move(value, &target_ty);
             }
             _ => {
                 let value_ty = self.check_value(value, None);

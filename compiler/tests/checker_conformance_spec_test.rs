@@ -4510,3 +4510,80 @@ func main(): i32 {
     assert_no_asan("captureslotctl", &output);
     assert_exit("captureslotctl", &output, 3);
 }
+
+// ===== The null-shaped conditional arm and the capture view store =====
+
+/// A null-shaped conditional arm lowers at an owning destination.
+///
+/// A conditional at a non-duplicable destination stores per arm, so the
+/// arm's null shape takes the destination's own empty value and the run reads
+/// the null back (before the per-arm destination typing the accepted programs
+/// emitted the shape's `void *` into the handle and failed the strict build).
+#[test]
+fn should_lower_a_null_shaped_conditional_arm_at_an_owning_destination() {
+    let handle = r#"module spec.cc.nullcondfile;
+
+import { File } from std.io;
+
+func main(): i32 {
+    let c: bool = true;
+    let x = null;
+    let g: File? = c ? x : null;
+    if (g == null) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("nullcondfile", handle);
+    assert_no_asan("nullcondfile", &output);
+    assert_exit("nullcondfile", &output, 0);
+
+    let owned = r#"module spec.cc.nullcondarm;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let c: bool = true;
+    let x = null;
+    let g: String? = c ? x : null;
+    if (g == null) {
+        return 0;
+    }
+    return i32(len(g)) + 1;
+}
+"#;
+    let output = run_memory("nullcondarm", owned);
+    assert_no_asan("nullcondarm", &output);
+    assert_exit("nullcondarm", &output, 0);
+}
+
+/// A capture's view-widening store is not a move and stays accepted.
+///
+/// The store copies the borrowed capture into the view, so the instance
+/// judgment leaves it accepted; the run measures the stored view and the
+/// caller's own string (before the store's duty judged every assignment, the
+/// accepted program was rejected with the capture-move rule).
+#[test]
+fn should_keep_a_capture_view_widening_store_accepted() {
+    let source = r#"module spec.cc.captureviewstore;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): i32 {
+    return ([borrow x] () => {
+        let y: str = "q";
+        y = x;
+        return i32(len(y));
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    return make<String>(s) + i32(len(s)) + 1;
+}
+"#;
+    let output = run_memory("captureviewstore", source);
+    assert_no_asan("captureviewstore", &output);
+    assert_exit("captureviewstore", &output, 5);
+}

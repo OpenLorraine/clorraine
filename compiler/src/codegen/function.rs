@@ -1966,6 +1966,11 @@ impl<'a> Emitter<'a> {
     /// condition selects. This is what makes the statement-end release of a
     /// copied transfer temporary a no-op.
     pub(super) fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
+        // A null-shaped arm lowers to the destination's own empty value, so it
+        // read no storage the store must empty.
+        if self.is_null_shaped(arm) && self.carries_null_value(ty) {
+            return;
+        }
         match &arm.kind {
             ValueKind::Place(place) => {
                 let source = self.value(arm);
@@ -2447,16 +2452,7 @@ fn unread_locals(
         for instr in &block.statements {
             match &instr.statement {
                 Statement::Assign { target, value } => {
-                    // A null-shaped value lowers to the target's own empty
-                    // value, so the assignment does not read it: a local
-                    // reached only from such a store counts as unused.
-                    if !(null_shape(&value.ty)
-                        && !null_shape(&target.ty)
-                        && null_capable(&target.ty)
-                        && !matches!(value.kind, ValueKind::Conditional { .. }))
-                    {
-                        note_value(value, &mut read, &null_shape);
-                    }
+                    note_store_value(value, &target.ty, &mut read, &null_shape, &null_capable);
                 }
                 Statement::Move { target, source } => {
                     // A null-shaped source lowers to the target's own empty
@@ -2509,15 +2505,7 @@ fn unread_locals(
             Terminator::Return {
                 value: Some(value), ..
             } => {
-                // A null-shaped value lowers to the return type's own empty
-                // value, so the return does not read it either.
-                if !(null_shape(&value.ty)
-                    && !null_shape(&function.ret)
-                    && null_capable(&function.ret)
-                    && !matches!(value.kind, ValueKind::Conditional { .. }))
-                {
-                    note_value(value, &mut read, &null_shape);
-                }
+                note_store_value(value, &function.ret, &mut read, &null_shape, &null_capable);
             }
             _ => {}
         }
@@ -2642,6 +2630,38 @@ fn note_place(place: &Place, read: &mut BTreeSet<String>) {
     if let ir::PlaceBase::Local(name) = &place.base {
         read.insert(name.clone());
     }
+}
+
+/// Records the locals a store or return value reads.
+///
+/// A conditional renders per arm, so the destination distributes over the
+/// arms: a null-shaped arm at a null-capable destination lowers to the
+/// destination's own empty value and is not read, while the condition and
+/// every other arm keep the ordinary walk. A null-shaped value outside a
+/// conditional is skipped the same way.
+fn note_store_value(
+    value: &Value,
+    dest: &Ty,
+    read: &mut BTreeSet<String>,
+    null_shape: &impl Fn(&Ty) -> bool,
+    null_capable: &impl Fn(&Ty) -> bool,
+) {
+    if let ValueKind::Conditional {
+        condition,
+        then_value,
+        else_value,
+    } = &value.kind
+    {
+        note_value(condition, read, null_shape);
+        for arm in [then_value, else_value] {
+            note_store_value(arm, dest, read, null_shape, null_capable);
+        }
+        return;
+    }
+    if null_shape(&value.ty) && !null_shape(dest) && null_capable(dest) {
+        return;
+    }
+    note_value(value, read, null_shape);
 }
 
 /// Records every local named anywhere inside a value.

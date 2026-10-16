@@ -427,20 +427,19 @@ impl<'a> Emitter<'a> {
 
     /// True when a type carries the null shape's empty value.
     ///
-    /// A view, a slice, a handle, a `cstring`, and a raw pointer lower the
-    /// null shape to their own empty value; a scalar-backed type (a scalar,
-    /// an enum, a `bool`) has no empty state a null literal can name, so the
-    /// position's own accepting rule keeps the value's rendering there.
+    /// The frozen nullable set is a handle, a `raw` pointer, a `cstring`, and
+    /// a view or slice: those lower the null shape to their own empty value.
+    /// Every other type — a scalar, an enum, a `bool`, a struct, a `func` —
+    /// has no empty state a null literal can name, so the position's own
+    /// accepting rule keeps the value's rendering there.
     pub(super) fn carries_null_value(&self, ty: &Ty) -> bool {
         matches!(
             self.substitute(ty).kind,
             TyKind::Handle(_)
                 | TyKind::Raw(_)
                 | TyKind::CString
-                | TyKind::Func(_)
                 | TyKind::Str
                 | TyKind::StaticStr
-                | TyKind::Struct(..)
                 | TyKind::Array { .. }
         )
     }

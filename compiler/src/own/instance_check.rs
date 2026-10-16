@@ -92,6 +92,15 @@ fn check_capture_move_requirements(
                 continue;
             }
             let bound = crate::types::instance_bindings(&params, &instance.args);
+            // A store whose destination is duplicable copies the value in —
+            // a view widening is the case — so it does not consume the
+            // capture and no move happens.
+            if let Some(dest) = &requirement.dest {
+                let destination = crate::types::substitute(dest, &bound);
+                if destination.is_unknown() || sema.table.duplicable(&destination) {
+                    continue;
+                }
+            }
             let substituted = crate::types::substitute(&requirement.ty, &bound);
             // The move is judged at the place it consumes: a duplicable
             // projection copies out, so a field read stays accepted while a

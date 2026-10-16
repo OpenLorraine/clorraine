@@ -2225,3 +2225,79 @@ func main(): i32 {
     );
     assert_contains("reemitcapturectl", &first, "(*d) = s;");
 }
+
+// ===== The null-shaped conditional arm and the capture view store =====
+
+/// A null-shaped conditional arm stores the destination's empty value.
+///
+/// The conditional stores per arm at a non-duplicable handle destination, so
+/// the arm's null shape takes the destination's `NULL` and the source is not
+/// zeroed again: the hoisted declaration is the local's only `x = NULL;`
+/// spelling (before the per-arm destination typing the arm copied `x` and the
+/// strict build failed with `variable 'x' set but not used`).
+#[test]
+fn should_store_a_null_shaped_conditional_arm_as_the_destination_value() {
+    let source = r#"module spec.cc.impl.nullcondhandle;
+
+import { File } from std.io;
+
+func main(): i32 {
+    let c: bool = true;
+    let x = null;
+    let g: File? = c ? x : null;
+    if (g == null) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let emitted = emit_host("nullcondhandle", source);
+    assert_eq!(
+        count(&emitted, "g = NULL;"),
+        4,
+        "nullcondhandle: both arms, the hoisted initialization, and the drop \
+         must each store the destination's null"
+    );
+    assert_eq!(
+        count(&emitted, "x = NULL;"),
+        2,
+        "nullcondhandle: the declaration and the source's own initialization \
+         spell the shape's zero; the arm's redundant zero is absent"
+    );
+    assert_eq!(
+        count(&emitted, "g = x;"),
+        0,
+        "nullcondhandle: the arm must not copy the shape's pointer"
+    );
+}
+
+/// A capture's view-widening store emits the view conversion.
+///
+/// The store copies the borrowed capture into the view, so it lowers through
+/// the `String`-to-`str` widening and stays accepted.
+#[test]
+fn should_emit_the_capture_view_widening_store() {
+    let source = r#"module spec.cc.impl.captureviewstore;
+
+import { String, stringOf } from std.text;
+
+func make<T>(x: T): i32 {
+    return ([borrow x] () => {
+        let y: str = "q";
+        y = x;
+        return i32(len(y));
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    return make<String>(s) + i32(len(s)) + 1;
+}
+"#;
+    let emitted = emit_host("captureviewstore", source);
+    assert_contains(
+        "captureviewstore",
+        &emitted,
+        "y = cl_string_view((*__env->x));",
+    );
+}
