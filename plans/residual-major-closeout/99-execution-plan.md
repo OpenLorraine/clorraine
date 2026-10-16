@@ -51,7 +51,7 @@ pinned controls.
 
 ## Phase 1: Initializer call resolution, guards, and nullable view conditionals
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `d949f7f` (the phase-1 red-cases baseline)
 > **Lenses**: correctness + emission-integrity + memory-safety (AR-10) — the read-only
 > `emission-integrity-auditor` and `memory-safety-auditor` join the phase
 > **Reasoning**: high — the initializer lowering, the init-owner release scope, and the
