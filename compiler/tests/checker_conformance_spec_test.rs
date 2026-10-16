@@ -7674,6 +7674,56 @@ func main(): i32 {
     assert_exit("constptrcontrols", &output, 0);
 }
 
+/// A module initializer's pointer member store casts like a store.
+///
+/// The module-scope direct store of a view's `.ptr` at a raw destination and
+/// at a `cstring` destination spells the sanctioned member conversions a
+/// function-path store spells, so the emitted initializer builds strictly and
+/// the run reads the module view's bytes back (red at the phase base: the two
+/// direct stores were accepted and the strict build failed with
+/// `discarded-qualifiers`). The raw struct-literal field, the raw array
+/// literal, the raw conditional, and the explicit cast stay accepted below.
+#[test]
+fn should_cast_the_module_initializer_pointer_member_store() {
+    let source = r#"module spec.cc.modulestore;
+
+struct Holder {
+    c: raw u8;
+}
+
+let s: str = "abc";
+let g: raw u8 = s.ptr;
+let c: cstring = s.ptr;
+let h: Holder = Holder { c: s.ptr };
+let a: raw u8[2] = [s.ptr, null];
+let p: raw u8 = unsafe raw u8(s.ptr);
+
+func main(): i32 {
+    if (c == null) {
+        return 1;
+    }
+    if (h.c == null) {
+        return 2;
+    }
+    if (a[0] == null) {
+        return 3;
+    }
+    if (p == null) {
+        return 4;
+    }
+    unsafe {
+        if (g == null) {
+            return 5;
+        }
+        return i32(*g) - 97;
+    }
+}
+"#;
+    let output = run_memory("modulestore", source);
+    assert_no_asan("modulestore", &output);
+    assert_exit("modulestore", &output, 0);
+}
+
 /// A raw-enum member read reports the value-form member rule at both paths.
 ///
 /// A member reached through a raw pointer implies the dereference (Ch 04

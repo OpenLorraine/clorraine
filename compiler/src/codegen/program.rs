@@ -1094,7 +1094,24 @@ impl<'a> Emitter<'a> {
                 self.guarded_view_widening(&lowered, declared)
                     .unwrap_or_else(|| format!("cl_string_view({})", self.value(&lowered)))
             }
-            _ => self.value(&lowered),
+            // A non-view destination still spells the member conversions a
+            // function-path store does: a text view's pointer member at a
+            // raw destination takes the sanctioned cast, and a byte pointer
+            // at a `cstring` destination takes its own. Every other render
+            // is unchanged.
+            _ => match declared_ty.as_ref() {
+                Some(declared)
+                    if self.raw_text_view_pointer(&lowered, declared)
+                        || (matches!(declared.kind, TyKind::CString)
+                            && matches!(
+                                self.resolved_value_ty(&lowered).kind,
+                                TyKind::Raw(_)
+                            )) =>
+                {
+                    self.store_text(&lowered, declared)
+                }
+                _ => self.value(&lowered),
+            },
         };
         self.push(&format!("    {target} = {rendered};"));
         for move_out in &member_move_out {

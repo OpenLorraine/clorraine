@@ -4165,6 +4165,43 @@ func main(): i32 {
     );
 }
 
+/// A module initializer spells the same member conversions a store does.
+///
+/// The module-scope direct store of a view's `.ptr` at a raw destination and
+/// at a `cstring` destination renders through the store conversion, so the
+/// emitted initializer carries both casts; the explicit-cast control keeps
+/// its own spelling.
+#[test]
+fn should_cast_the_module_initializer_pointer_member_store() {
+    let source = r#"module spec.cc.impl.modstore;
+
+let s: str = "abc";
+let g: raw u8 = s.ptr;
+let c: cstring = s.ptr;
+let e: raw u8 = unsafe raw u8(s.ptr);
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let emitted = emit_host("modstore", source);
+    assert_contains(
+        "modstore",
+        &emitted,
+        "cl_spec_cc_impl_modstore_g = (u8 *)(cl_spec_cc_impl_modstore_s.ptr);",
+    );
+    assert_contains(
+        "modstore",
+        &emitted,
+        "cl_spec_cc_impl_modstore_c = (char *)(cl_spec_cc_impl_modstore_s.ptr);",
+    );
+    assert_contains(
+        "modstore",
+        &emitted,
+        "cl_spec_cc_impl_modstore_e = (u8 *)(cl_spec_cc_impl_modstore_s.ptr);",
+    );
+}
+
 /// An unknown member on a concrete base reports at the base's span.
 ///
 /// The fixed array, the `cstring`, and the `raw E` each report the registered
