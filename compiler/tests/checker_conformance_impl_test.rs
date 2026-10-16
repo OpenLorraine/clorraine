@@ -3523,3 +3523,88 @@ fn should_save_a_borrowed_element_before_an_aliasing_right_hand_side() {
         "(*__cl_tmp1).name = cl_spec_cc_impl_elemaliasctl_dup(xs[0].name);",
     );
 }
+
+/// The local-container aliasing element store program.
+const ELEMENT_LOCAL_SOURCE: &str = r#"module spec.cc.impl.elemlocal;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func each<T>(take v: T): i32 {
+    let a: T = v;
+    for (borrow e in a) {
+        e.name = dup(borrow a[0].name);
+    }
+    return i32(len(bytes(a[0].name))) - 2;
+}
+
+func main(): i32 {
+    let s: S[1] = [S { name: stringOf("ab"), y: 1 }];
+    return each<S[1]>(s);
+}
+"#;
+
+/// The concrete twin of the local-container aliasing store program.
+const ELEMENT_LOCAL_CONTROL_SOURCE: &str = r#"module spec.cc.impl.elemlocalctl;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab"), y: 1 }];
+    for (borrow v in a) {
+        v.name = dup(borrow a[0].name);
+    }
+    return i32(len(bytes(a[0].name))) - 2;
+}
+"#;
+
+/// A borrowed element of a local container saves before an aliasing store.
+///
+/// The element belongs to the local `a`, so `dup(borrow a[0].name)` reads the
+/// target's storage through that local; the emitted store saves the replaced
+/// value, evaluates the right-hand side, stores, and releases the saved value
+/// — for the generic spelling and the concrete pointer store alike. Before
+/// the local container was recognized, the target was emptied first and the
+/// right-hand side read the emptied storage.
+#[test]
+fn should_save_a_local_container_element_before_an_aliasing_right_hand_side() {
+    let save = "= (*__cl_tmp1).name;";
+    let store = "(*__cl_tmp1).name = cl_spec_cc_impl_elemlocal_dup(a[0].name);";
+    let emitted = emit_host("elemlocal", ELEMENT_LOCAL_SOURCE);
+    assert_contains("elemlocal", &emitted, save);
+    assert_contains("elemlocal", &emitted, store);
+    let save_at = emitted
+        .find(save)
+        .unwrap_or_else(|| panic!("elemlocal: the element is never saved"));
+    let store_at = emitted
+        .find(store)
+        .unwrap_or_else(|| panic!("elemlocal: the aliasing store is missing"));
+    assert!(
+        save_at < store_at,
+        "elemlocal: the element must be saved before the aliasing store"
+    );
+    assert_eq!(
+        count(&emitted, "__cl_save_"),
+        4,
+        "elemlocal: expected the save, its release, and the emptied release slot"
+    );
+
+    let emitted = emit_host("elemlocalctl", ELEMENT_LOCAL_CONTROL_SOURCE);
+    assert_contains("elemlocalctl", &emitted, save);
+    assert_contains(
+        "elemlocalctl",
+        &emitted,
+        "(*__cl_tmp1).name = cl_spec_cc_impl_elemlocalctl_dup(a[0].name);",
+    );
+}

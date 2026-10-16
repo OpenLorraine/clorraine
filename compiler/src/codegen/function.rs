@@ -532,14 +532,14 @@ impl<'a> Emitter<'a> {
                             then_value,
                             else_value,
                         );
-                    } else if value_reads_caller_storage(value) {
-                        // The pointer addresses caller storage, so a
-                        // right-hand side that reads a parameter or a
-                        // module-level binding can read the element itself
-                        // through a different base; the replaced value must
-                        // survive until the right-hand side has been
-                        // evaluated. Save it, store the new value, then
-                        // release the saved value.
+                    } else if value_reads_named_binding(value) {
+                        // The pointer addresses the container the element
+                        // belongs to, so a right-hand side that reads a named
+                        // binding can read the element itself through a
+                        // different base; the replaced value must survive
+                        // until the right-hand side has been evaluated. Save
+                        // it, store the new value, then release the saved
+                        // value.
                         let save = self.unique_local("__cl_save");
                         self.push("    {");
                         self.push(&format!(
@@ -1119,11 +1119,11 @@ impl<'a> Emitter<'a> {
         }
         let target_c = self.place(target);
         // An element target is reached through a pointer into its container,
-        // so a right-hand side that reads caller storage can read the same
+        // so a right-hand side that reads a named binding can read the same
         // storage through a different base; the release waits for it then.
         let reads_target = value_reads_base(value, target)
             || (matches!(target.base, PlaceBase::DerefTemp { .. })
-                && value_reads_caller_storage(value));
+                && value_reads_named_binding(value));
         if !reads_target {
             // The right-hand side does not read the target, so the old value
             // is released before the right-hand side is evaluated.
@@ -2683,17 +2683,20 @@ fn value_reads_base(value: &Value, target: &Place) -> bool {
     value_reads_place(value, &|place| place.base == target.base)
 }
 
-/// True when a value reads any place holding caller storage.
+/// True when a value reads any named binding.
 ///
 /// An element target is reached through a pointer into the container it
 /// belongs to — a borrow-loop binding, for example — so a right-hand side
-/// that reads a parameter or a module-level binding can read the very
-/// storage the target occupies through a different base. The release must
-/// wait for the right-hand side in every such case; the save costs one local
-/// and is always safe.
-fn value_reads_caller_storage(value: &Value) -> bool {
+/// that reads a local, a parameter, or a module-level binding can read the
+/// very storage the target occupies through a different base. The release
+/// must wait for the right-hand side in every such case; the save costs one
+/// local and is always safe.
+fn value_reads_named_binding(value: &Value) -> bool {
     value_reads_place(value, &|place| {
-        matches!(place.base, PlaceBase::Param(_) | PlaceBase::Global(_))
+        matches!(
+            place.base,
+            PlaceBase::Local(_) | PlaceBase::Param(_) | PlaceBase::Global(_)
+        )
     })
 }
 

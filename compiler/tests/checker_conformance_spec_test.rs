@@ -6149,3 +6149,66 @@ func main(): i32 {
     assert_no_asan("elementstorealiasctl", &output);
     assert_exit("elementstorealiasctl", &output, 0);
 }
+
+/// A store to a borrowed element of a local container survives an aliasing
+/// right-hand side.
+///
+/// The element belongs to the local `a` — an opaque local container in the
+/// generic spelling and a concrete one in the twin — so a right-hand side
+/// that reads `a` reads the very storage the target names; the release of
+/// the replaced owner must wait until the right-hand side has been
+/// evaluated. Each run folds the cloned size back (exit 0) and the leak
+/// checker is clean. (The generic spelling used to release the target before
+/// the right-hand side read it and faulted on the emptied storage; the
+/// concrete twin faulted the same way.)
+#[test]
+fn should_keep_an_aliasing_right_hand_side_alive_across_a_local_element_store() {
+    let looping = r#"module spec.cc.elementlocalalias;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func each<T>(take v: T): i32 {
+    let a: T = v;
+    for (borrow e in a) {
+        e.name = dup(borrow a[0].name);
+    }
+    return i32(len(bytes(a[0].name))) - 2;
+}
+
+func main(): i32 {
+    let s: S[1] = [S { name: stringOf("ab"), y: 1 }];
+    return each<S[1]>(s);
+}
+"#;
+    let output = run_memory("elementlocalalias", looping);
+    assert_no_asan("elementlocalalias", &output);
+    assert_exit("elementlocalalias", &output, 0);
+
+    let concrete = r#"module spec.cc.elementlocalaliasctl;
+
+import { String, stringOf, bytes, clone } from std.text;
+
+struct S { name: String; y: i32; }
+
+func dup(borrow s: String): String {
+    return clone(s);
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab"), y: 1 }];
+    for (borrow v in a) {
+        v.name = dup(borrow a[0].name);
+    }
+    return i32(len(bytes(a[0].name))) - 2;
+}
+"#;
+    let output = run_memory("elementlocalaliasctl", concrete);
+    assert_no_asan("elementlocalaliasctl", &output);
+    assert_exit("elementlocalaliasctl", &output, 0);
+}

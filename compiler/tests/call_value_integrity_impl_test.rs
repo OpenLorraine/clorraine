@@ -888,6 +888,11 @@ func main(): i32 {
 
 /// A run-time-index scalar store empties the moved source and releases the
 /// element it replaces exactly once.
+///
+/// The right-hand side reads the source binding, which may name the very
+/// container the element belongs to, so the replaced element is saved before
+/// the store and released after it instead of being released ahead of the
+/// store.
 #[test]
 fn should_move_an_owned_scalar_source_and_release_the_replaced_element() {
     let source = r#"module impl.cvi.scalarmov;
@@ -906,15 +911,25 @@ func main(): i32 {
     let emitted = emit_host("cviimpl-scalarmov", source);
     let moved = after("cviimpl-scalarmov", &emitted, "__cl_tmp0 = s;");
     assert_contains("cviimpl-scalarmov", moved, "s = NULL;");
-    let dropped = emitted
-        .find("if (*(&(rows[i]))) { FreeString(*(&(rows[i]))); }")
-        .unwrap_or_else(|| panic!("cviimpl-scalarmov: the replaced element is not released"));
+    let saved = emitted
+        .find("= *(&(rows[i]));")
+        .unwrap_or_else(|| panic!("cviimpl-scalarmov: the replaced element is not saved"));
     let assigned = emitted
         .find("*(&(rows[i])) = __cl_tmp0;")
         .unwrap_or_else(|| panic!("cviimpl-scalarmov: the element is not assigned"));
     assert!(
-        dropped < assigned,
-        "cviimpl-scalarmov: the replaced element must be released before the new value is stored"
+        saved < assigned,
+        "cviimpl-scalarmov: the replaced element must be saved before the new value is stored"
+    );
+    assert_eq!(
+        emitted.matches("FreeString(__cl_save_").count(),
+        1,
+        "cviimpl-scalarmov: the saved element must be released exactly once"
+    );
+    assert_eq!(
+        emitted.matches("FreeString(*(&(rows[i])))").count(),
+        0,
+        "cviimpl-scalarmov: the replaced element must not be released ahead of the store"
     );
 }
 
