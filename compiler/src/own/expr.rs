@@ -1215,25 +1215,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // its target path first — a whole store therefore drops them
                 // all — and the new value's positions record after. A copy
                 // from a carrier place hands its positions over instead.
-                if !is_view_like(&target_ty) {
-                    match self.place_target(value) {
-                        Some(PlaceTarget::Local(source, source_projections))
-                            if source_projections.is_empty() =>
-                        {
-                            self.move_element_loans(source, id, &projections);
-                        }
-                        _ => {
-                            self.replace_element_loans(id, &projections, BTreeSet::new());
-                            let positions = self.literal_view_loan_positions(value);
-                            if !positions.is_empty() {
-                                self.record_literal_view_positions(
-                                    id,
-                                    &projections,
-                                    &positions,
-                                    target.span,
-                                );
-                            }
-                        }
+                // A copy from a carrier place hands its positions over: the
+                // destination's views read the same storage, so the source's
+                // element loans follow the copy — for a whole view-like array
+                // exactly as for the single view. A projected store keeps its
+                // own element-loan recording above, so it is not a copy.
+                let moved = match self.place_target(value) {
+                    Some(PlaceTarget::Local(source, source_projections))
+                        if source_projections.is_empty()
+                            && (!is_view_like(&target_ty) || projections.is_empty()) =>
+                    {
+                        self.move_element_loans(source, id, &projections);
+                        true
+                    }
+                    _ => false,
+                };
+                if !moved && !is_view_like(&target_ty) {
+                    self.replace_element_loans(id, &projections, BTreeSet::new());
+                    let positions = self.literal_view_loan_positions(value);
+                    if !positions.is_empty() {
+                        self.record_literal_view_positions(
+                            id,
+                            &projections,
+                            &positions,
+                            target.span,
+                        );
                     }
                 }
                 self.view_destination_adopts = saved_adopts;
