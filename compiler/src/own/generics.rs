@@ -1076,6 +1076,23 @@ fn resolved_ir_value_ty(
                 element
             }
         }
+        // A conditional selects one arm at run time, so the projection
+        // resolves only when both arms name the same substituted type — the
+        // same both-arms-agree rule the emitter's value resolver applies, so
+        // the recorded instance set matches the spelled symbols.
+        ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } => {
+            let then_ty = resolved_ir_value_ty(then_value, bindings, locals, sema);
+            let else_ty = resolved_ir_value_ty(else_value, bindings, locals, sema);
+            if then_ty.is_unknown() || then_ty != else_ty {
+                ty
+            } else {
+                then_ty
+            }
+        }
         // A projected place reads through its base's declared type: the local
         // table carries the instance's substituted binding, and each named
         // field resolves through the same lookup the emitter's place renderer

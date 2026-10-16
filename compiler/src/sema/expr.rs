@@ -637,7 +637,13 @@ impl Checker<'_, '_> {
             // the run-time guard. The read stays accepted here and the
             // per-instance audit reports the out-of-range constant exactly as
             // a concrete read would.
-            TyKind::Param(_) => {
+            // An index of an opaque base is judged after substitution: the
+            // instance's row type supplies the extent for a constant index and
+            // the run-time guard. The read's own type is the base's one-step
+            // element placeholder, so a chained index (`xs[i][j]`) judges its
+            // inner base at the instance exactly as the outer one, and the
+            // per-instance audit reports the out-of-range constant.
+            TyKind::Param(name) => {
                 if let Some(function) = self.function_name.clone() {
                     self.opaque_indexes.push(OpaqueIndex {
                         function,
@@ -648,7 +654,10 @@ impl Checker<'_, '_> {
                         base: plain_binding_root(base),
                     });
                 }
-                Ty::unknown()
+                Ty {
+                    kind: TyKind::Param(crate::types::element_param(name)),
+                    nullable: false,
+                }
             }
             TyKind::Unknown => Ty::unknown(),
             _ => {

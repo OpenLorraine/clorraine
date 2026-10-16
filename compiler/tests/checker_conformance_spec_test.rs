@@ -2932,3 +2932,145 @@ func main(): i32 {
     );
 }
 
+// ===== Chained opaque indexes and conditional arguments =====
+
+/// A chained opaque index's inner bounds judgment reaches the instance.
+///
+/// The inner base is the outer index's element placeholder, so the substituted
+/// row supplies its own extent: the run-time index traps, the constant index
+/// reports the frozen range error, and the in-bounds spelling reads the value
+/// back (red at the phase base: only the outer guard was emitted and the run
+/// read out of bounds).
+#[test]
+fn should_guard_a_chained_opaque_index_in_the_instance() {
+    let runtime = r#"module spec.cc.corrchainidx;
+
+func pick<T>(xs: T, i: usize, j: usize): i32 {
+    return xs[i][j];
+}
+
+func main(): i32 {
+    let g: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let i: usize = 1;
+    let j: usize = 5;
+    return pick<i32[2][3]>(g, i, j);
+}
+"#;
+    let output = run_memory("corrchainidx", runtime);
+    assert_no_asan("corrchainidx", &output);
+    assert_trap("corrchainidx", &output, "E11211");
+
+    let constant = r#"module spec.cc.corrchainidxconst;
+
+func pick<T>(xs: T, i: usize): i32 {
+    return xs[i][5];
+}
+
+func main(): i32 {
+    let g: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let i: usize = 1;
+    return pick<i32[2][3]>(g, i);
+}
+"#;
+    assert_rejected_once(
+        "corrchainidxconst",
+        constant,
+        "E10216",
+        &["index 5 is out of range for 'i32[3]'"],
+        &[],
+    );
+
+    let in_bounds = r#"module spec.cc.corrchainidxok;
+
+func pick<T>(xs: T, i: usize, j: usize): i32 {
+    return xs[i][j];
+}
+
+func main(): i32 {
+    let g: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let i: usize = 1;
+    let j: usize = 2;
+    return pick<i32[2][3]>(g, i, j);
+}
+"#;
+    let output = run_memory("corrchainidxok", in_bounds);
+    assert_no_asan("corrchainidxok", &output);
+    assert_exit("corrchainidxok", &output, 6);
+}
+
+/// A chained index of a loop element keeps the same inner judgment.
+///
+/// The element's own index reaches a row, so the inner index carries the row's
+/// extent: the out-of-range index traps exactly as the concrete twin does (red
+/// at the phase base: the run read past the row and returned a value).
+#[test]
+fn should_guard_a_chained_element_index_in_the_instance() {
+    let source = r#"module spec.cc.corrchainelem;
+
+func each<T>(xs: T, i: usize): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[0][i];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let g: i32[2][2][3] = [[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]];
+    let i: usize = 5;
+    return each<i32[2][2][3]>(g, i);
+}
+"#;
+    let output = run_memory("corrchainelem", source);
+    assert_no_asan("corrchainelem", &output);
+    assert_trap("corrchainelem", &output, "E11211");
+}
+
+/// A conditional argument of agreeing arms keys its instance.
+///
+/// Both arms resolve to the same substituted type, so the inferred argument
+/// keys the concrete instance exactly as a direct argument would; the run
+/// reads the selected member back (red at the phase base: no instance was
+/// recorded and the strict build failed with an implicit keyed symbol).
+#[test]
+fn should_key_a_conditional_argument_in_the_instance() {
+    let member = r#"module spec.cc.corrcondarg;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, c: bool): i32 {
+    return id(c ? xs[0].y : xs[0].y);
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return pick<S[2]>(a, true) - 1;
+}
+"#;
+    let output = run_memory("corrcondarg", member);
+    assert_no_asan("corrcondarg", &output);
+    assert_exit("corrcondarg", &output, 0);
+
+    let place = r#"module spec.cc.corrcondplace;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(xs: T, i: usize, c: bool): i32 {
+    return id(c ? xs[i] : xs[i]).y;
+}
+
+func main(): i32 {
+    let a: S[3] = [S { y: 1 }, S { y: 2 }, S { y: 3 }];
+    let i: usize = 1;
+    return pick<S[3]>(a, i, true) - 2;
+}
+"#;
+    let output = run_memory("corrcondplace", place);
+    assert_no_asan("corrcondplace", &output);
+    assert_exit("corrcondplace", &output, 0);
+}
+

@@ -722,7 +722,7 @@ pub fn instance_bindings(params: &[String], args: &[Ty]) -> BTreeMap<String, Ty>
     while index < levels.len() {
         let (name, ty) = levels[index].clone();
         let inner = element_param(&name);
-        let element = ty.iterated_element();
+        let element = index_element(&ty);
         if !bindings.contains_key(&inner) {
             bindings.insert(inner.clone(), element.clone());
             if matches!(&element.kind, TyKind::Array { .. }) {

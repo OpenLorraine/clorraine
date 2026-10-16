@@ -1171,7 +1171,11 @@ impl<'a> Emitter<'a> {
 
     /// The condition under which an index is out of range.
     fn bounds_guard_condition(&self, base: &Value, index: &Value) -> Option<String> {
-        let ty = self.substitute(&base.ty);
+        // The base resolves like any value: a chained index (`xs[i][j]`)
+        // carries the element placeholder, and a projection carries the
+        // opaque type, so the guard decides on the substituted row exactly as
+        // the access does.
+        let ty = self.resolved_value_ty(base);
         let index_c = self.value(index);
         let signed = scalar_of(&self.substitute(&index.ty)).is_some_and(is_signed_scalar);
         match &ty.kind {
