@@ -1967,3 +1967,40 @@ func main(): i32 {
     assert_no_asan("nullguardmemberbody", &output);
     assert_exit("nullguardmemberbody", &output, 0);
 }
+
+/// A direct nullable call argument widens under its guard.
+///
+/// The argument is a `String?` call result, not a conditional, so the call
+/// itself receives the parameter's zero view on the null selection: the null
+/// selection returns the null branch's value and the non-null selection its
+/// length, and both fold into the exit code (red at the phase base: the
+/// emitted argument wrapped the handle through `cl_string_view`, and the null
+/// selection segfaulted with exit 139).
+#[test]
+fn should_guard_a_direct_nullable_call_argument() {
+    let source = r#"module spec.mii.nullguarddirectarg;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+func size(s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (size(maybe(false)) - 9) + (size(maybe(true)) - 3);
+}
+"#;
+    let output = run_memory("nullguarddirectarg", source);
+    assert_no_asan("nullguarddirectarg", &output);
+    assert_exit("nullguarddirectarg", &output, 0);
+}

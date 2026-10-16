@@ -1194,3 +1194,275 @@ func main(): i32 {
     assert_contains("fparraysize", &emitted, "n = sizeof(i32 (*[2])(i32));");
     assert_contains("fparraysize", &emitted, "m = sizeof(i32 (*)(i32));");
 }
+
+// ===== The nullable-view arms and initializer view stores =====
+
+/// The conditional-argument program the argument pins share.
+const NULLGUARD_ARGUMENT: &str = r#"module spec.miiimpl.nullguardarg;
+
+import { String, stringOf } from std.text;
+
+func size(c: bool, s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (size(false, false ? stringOf("abc") : null) - 9) + (size(true, true ? stringOf("abc") : null) - 3);
+}
+"#;
+
+/// The member-projection program the member pins share.
+const NULLGUARD_MEMBER: &str = r#"module spec.miiimpl.nullguardmember;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; other: String?; }
+
+func mkBox(has: bool): Box {
+    if (has) {
+        return Box { name: stringOf("ab"), other: null };
+    }
+    return Box { name: null, other: stringOf("cd") };
+}
+
+let s: str? = mkBox(true).name;
+let t: str? = mkBox(false).name;
+
+func main(): i32 {
+    if (t != null) {
+        return 2;
+    }
+    return i32(len(s)) - 2;
+}
+"#;
+
+/// A nullable owned call arm in an initializer widens under its guard.
+///
+/// The arm is a `String?` call result, so the conditional binds into an init
+/// local and the store tests the local before the view construction; the
+/// unguarded widening of the call is gone (red at the phase base: the store
+/// widened the call directly through `cl_string_view` and the null selection
+/// segfaulted).
+#[test]
+fn should_widen_a_nullable_call_arm_under_its_guard() {
+    let source = r#"module spec.miiimpl.nullguardcall;
+
+import { String, stringOf } from std.text;
+
+let c: bool = true;
+let d: bool = false;
+
+func maybe(): String? {
+    if (d) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+let s: str? = c ? maybe() : stringOf("xy");
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let emitted = emit_host("nullguardcall", source);
+    assert_contains(
+        "nullguardcall",
+        &emitted,
+        "ClString __cl_itmp0 = (cl_spec_miiimpl_nullguardcall_c ? cl_spec_miiimpl_nullguardcall_maybe() : cl_std_text_stringOf(cl_str(\"xy\")));",
+    );
+    assert_contains(
+        "nullguardcall",
+        &emitted,
+        "cl_spec_miiimpl_nullguardcall_s = (__cl_itmp0 ? cl_string_view(__cl_itmp0) : cl_zero_ClStr());",
+    );
+    assert!(
+        !emitted.contains("cl_string_view(cl_spec_miiimpl_nullguardcall_maybe())"),
+        "nullguardcall: the nullable call arm must not widen unguarded; emitted C:\n{emitted}"
+    );
+}
+
+/// A nullable owned place arm widens under its guard.
+///
+/// The `String?` parameter arm tests its own place and selects the zero view;
+/// the non-nullable owned arm beside it keeps its plain widening (red at the
+/// phase base: the arm widened the place directly through `cl_string_view`).
+#[test]
+fn should_widen_a_nullable_place_arm_under_its_guard() {
+    let source = r#"module spec.miiimpl.nullguardplace;
+
+import { String, stringOf } from std.text;
+
+func code(c: bool, p: String?): i32 {
+    let s: str? = c ? p : stringOf("xy");
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let q: String? = null;
+    return (code(true, q) - 9) + (code(false, q) - 2);
+}
+"#;
+    let emitted = emit_host("nullguardplace", source);
+    assert_contains(
+        "nullguardplace",
+        &emitted,
+        "s = (__cl_tmp0 ? (p ? cl_string_view(p) : cl_zero_ClStr()) : cl_string_view(__cl_owned0));",
+    );
+    assert!(
+        !emitted.contains("? cl_string_view(p) : cl_string_view(__cl_owned0)"),
+        "nullguardplace: the nullable place arm must not widen unguarded; emitted C:\n{emitted}"
+    );
+}
+
+/// A nullable conditional argument widens under its guard.
+///
+/// Each language argument carries the parameter's null guard, so a null
+/// selection passes the zero view (red at the phase base: the argument widened
+/// the owned temporary directly through `cl_string_view`).
+#[test]
+fn should_widen_a_nullable_conditional_argument_under_its_guard() {
+    let emitted = emit_host("nullguardarg", NULLGUARD_ARGUMENT);
+    assert_eq!(
+        count(&emitted, "? cl_string_view(__cl_owned"),
+        2,
+        "nullguardarg: both arguments must test their own temporary; emitted C:\n{emitted}"
+    );
+    assert_contains(
+        "nullguardarg",
+        &emitted,
+        "(__cl_owned0 ? cl_string_view(__cl_owned0) : cl_zero_ClStr())",
+    );
+    assert_contains(
+        "nullguardarg",
+        &emitted,
+        "(__cl_owned1 ? cl_string_view(__cl_owned1) : cl_zero_ClStr())",
+    );
+    assert!(
+        !emitted.contains("size(0, cl_string_view(__cl_owned0))"),
+        "nullguardarg: the null selection must not widen unguarded; emitted C:\n{emitted}"
+    );
+}
+
+/// An initializer member projection widens under its guard.
+///
+/// Each `String?` member store tests the projected place and selects the
+/// destination's zero view, and the member's move-out still follows its store
+/// (red at the phase base: the store widened the member directly through
+/// `cl_string_view`, and the null selection segfaulted).
+#[test]
+fn should_widen_a_nullable_member_projection_under_its_guard() {
+    let emitted = emit_host("nullguardmember", NULLGUARD_MEMBER);
+    let store = "cl_spec_miiimpl_nullguardmember_t = (__cl_itmp1.name ? cl_string_view(__cl_itmp1.name) : cl_zero_ClStr());";
+    assert_contains(
+        "nullguardmember",
+        &emitted,
+        "cl_spec_miiimpl_nullguardmember_s = (__cl_itmp0.name ? cl_string_view(__cl_itmp0.name) : cl_zero_ClStr());",
+    );
+    assert_contains("nullguardmember", &emitted, store);
+    assert!(
+        !emitted.contains("= cl_string_view(__cl_itmp1.name)"),
+        "nullguardmember: the member must widen through the guard; emitted C:\n{emitted}"
+    );
+    let store_at = emitted
+        .find(store)
+        .expect("nullguardmember: the guarded store is missing");
+    let move_out_at = emitted
+        .find("__cl_itmp1.name = NULL;")
+        .expect("nullguardmember: the member move-out is missing");
+    assert!(
+        move_out_at > store_at,
+        "nullguardmember: the member move-out must follow its store; emitted C:\n{emitted}"
+    );
+}
+
+/// The non-nullable arm and the body twin keep their spelling.
+///
+/// A non-nullable place arm keeps the plain widening, and the body store of
+/// the same conditional keeps its owner temporary and guard exactly as before
+/// the phase (green controls at the phase base).
+#[test]
+fn should_keep_the_non_null_view_controls_unchanged() {
+    let source = r#"module spec.miiimpl.nullguardctl;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+func body(c: bool): i32 {
+    let s: str? = c ? maybe(c) : stringOf("xy");
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func plain(c: bool): i32 {
+    let p: String = stringOf("ab");
+    let s: str? = c ? p : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (body(true) - 3) + (body(false) - 9) + (plain(false) - 9) + (plain(true) - 2);
+}
+"#;
+    let emitted = emit_host("nullguardctl", source);
+    assert_contains(
+        "nullguardctl",
+        &emitted,
+        "s = (__cl_owned0 ? cl_string_view(__cl_owned0) : cl_zero_ClStr());",
+    );
+    assert_contains(
+        "nullguardctl",
+        &emitted,
+        "s = (c ? cl_string_view(p) : cl_zero_ClStr());",
+    );
+    assert!(
+        !emitted.contains("(p ? cl_string_view(p)"),
+        "nullguardctl: a non-nullable arm must not gain a guard; emitted C:\n{emitted}"
+    );
+}
+
+/// The guarded view stores re-emit identically.
+#[test]
+fn should_re_emit_the_guarded_view_stores_identically() {
+    let (first, second) = emit_twice("reemitnullguardarg", NULLGUARD_ARGUMENT);
+    assert_eq!(
+        first, second,
+        "reemitnullguardarg: the program re-emitted differently"
+    );
+    assert_contains(
+        "reemitnullguardarg",
+        &first,
+        "(__cl_owned0 ? cl_string_view(__cl_owned0) : cl_zero_ClStr())",
+    );
+
+    let (first, second) = emit_twice("reemitnullguardmember", NULLGUARD_MEMBER);
+    assert_eq!(
+        first, second,
+        "reemitnullguardmember: the program re-emitted differently"
+    );
+    assert_contains(
+        "reemitnullguardmember",
+        &first,
+        "(__cl_itmp0.name ? cl_string_view(__cl_itmp0.name) : cl_zero_ClStr())",
+    );
+}
