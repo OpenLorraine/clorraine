@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 21:00
-> **Progress**: 36/39 tasks (92%) — Phase 6 complete
+> **Last Updated**: 2026-10-17 21:40
+> **Progress**: 39/39 tasks (100%) — ✅ Complete
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -331,8 +331,8 @@ fixed-array `sizeof` value, and the void lambda over an abort intrinsic.
 
 ### Step 7.1: Verification and Sync
 
-- [ ] 7.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and
-      the ASan suites; record the evidence
+- [x] 7.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and
+      the ASan suites; record the evidence ✅ (completed: 2026-10-17 21:40; `make check` exit 0; **`make verify` all legs passed** — the hosted-amiga cross-toolchain builds and the six runtime-fault programs match; the focused suites green (the checker-conformance spec 133, the phase-6 suites 57/24, 50/35, 48/30, 17, the load unit 11); the emission differentials clean; the host/hosted-amiga/freestanding legs verified per phase; the log under `/tmp/opencode/k-verify.log`)
 - [ ] 7.1.2 Update the roadmap rows: the 20 rows move to Done with per-row evidence
       (`DEF-209` recorded as incidentally fixed with its control pins); the six older parked
       rows stay open (AR-2); the batch-J follow-ons stay untouched
