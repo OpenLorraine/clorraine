@@ -2665,5 +2665,3 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>) {
         | ValueKind::Temp(_) => {}
     }
 }
-
-
