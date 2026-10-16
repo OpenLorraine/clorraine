@@ -419,7 +419,7 @@ fn record_call(
         return;
     };
     let instance_args: Vec<Ty> = if type_args.is_empty() {
-        match infer_call_type_args(decl, args, sema) {
+        match infer_call_type_args(decl, callee, args, program, sema) {
             Some(inferred) => inferred,
             None => return,
         }
@@ -479,15 +479,80 @@ fn record_call(
     }
 }
 
+/// The receiver a dot callee contributes to its call's argument list.
+///
+/// The body's call lowering puts the dot receiver at argument position zero,
+/// next to the written arguments, so an inferred instance key must align with
+/// that list. A member that names a declared field is the callable value
+/// itself: the call passes through the field and no declared-function
+/// inference applies.
+enum DotReceiver {
+    /// The receiver is the call's argument position zero, with this type.
+    Argument(Ty),
+    /// A receiver exists but this walk cannot type it: a local-headed path or
+    /// a base whose checked type was not recorded. No instance is recorded
+    /// here — the body's per-instance IR walk records the stamped one — so a
+    /// shifted key can never be guessed.
+    Unknown,
+    /// The callee names a callable field.
+    Field,
+    /// No dot receiver: a plain name or a module-qualified path.
+    None,
+}
+
+/// The receiver type a dot callee contributes to its call's argument list.
+fn dot_receiver(callee: &Expr, program: &ProgramInfo, sema: &SemaOutput) -> DotReceiver {
+    let (receiver, member) = match &callee.kind {
+        ExprKind::Member { base, name } => {
+            let Some(ty) = sema
+                .expr_types
+                .get(&(base.as_ref() as *const Expr as usize))
+                .cloned()
+            else {
+                return DotReceiver::Unknown;
+            };
+            (ty, name.clone())
+        }
+        ExprKind::Qualified(name) if name.segments.len() >= 2 => {
+            let (head, rest) = name.segments.split_first().expect("checked segment count");
+            let Some((_, info)) = program.globals.iter().find(|(id, _)| id.name == *head) else {
+                // A local-headed path in a body is typed by the caller's scope,
+                // which this walk does not carry, and a module-qualified path
+                // names no value receiver at all. Either way the key cannot be
+                // derived here.
+                return DotReceiver::Unknown;
+            };
+            let mut ty = info.ty.clone();
+            for segment in &rest[..rest.len() - 1] {
+                let Some(next) = sema.table.instance_field(&ty, segment) else {
+                    return DotReceiver::Unknown;
+                };
+                ty = next;
+            }
+            (ty, rest.last().expect("checked segment count").clone())
+        }
+        _ => return DotReceiver::None,
+    };
+    if sema.table.instance_field(&receiver, &member).is_some() {
+        return DotReceiver::Field;
+    }
+    DotReceiver::Argument(receiver)
+}
+
 /// Derives a call's type arguments from its checked argument types.
 ///
 /// The type stage recorded every argument's type beside its node, so the walk
 /// binds each declared parameter against the recorded type of its argument —
-/// the same matcher the body path's inference uses. Returns `None` when a
-/// parameter stays unbound or an argument's type was never recorded.
+/// the same matcher the body path's inference uses. A dot call's receiver is
+/// its argument position zero, so it takes part in the derivation first; a
+/// callable-field callee records nothing, because the call passes through the
+/// field rather than the declared function its name may share. Returns `None`
+/// when a parameter stays unbound or an argument's type was never recorded.
 fn infer_call_type_args(
     decl: &crate::ast::FuncDecl,
+    callee: &Expr,
     args: &[Arg],
+    program: &ProgramInfo,
     sema: &SemaOutput,
 ) -> Option<Vec<Ty>> {
     let declared: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
@@ -496,14 +561,19 @@ fn infer_call_type_args(
         .iter()
         .map(|param| resolve_ty(&param.ty, &declared, &sema.table))
         .collect();
-    let arg_types: Vec<Ty> = args
-        .iter()
-        .map(|arg| {
-            sema.expr_types
-                .get(&(&arg.value as *const Expr as usize))
-                .cloned()
-        })
-        .collect::<Option<Vec<Ty>>>()?;
+    let mut arg_types: Vec<Ty> = Vec::new();
+    match dot_receiver(callee, program, sema) {
+        DotReceiver::Argument(ty) => arg_types.push(ty),
+        DotReceiver::Unknown | DotReceiver::Field => return None,
+        DotReceiver::None => {}
+    }
+    for arg in args {
+        let ty = sema
+            .expr_types
+            .get(&(&arg.value as *const Expr as usize))
+            .cloned()?;
+        arg_types.push(ty);
+    }
     crate::sema::call::infer_type_args(&declared, &param_types, &arg_types)
 }
 

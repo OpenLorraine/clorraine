@@ -1523,3 +1523,45 @@ func main(): i32 {
     assert_no_asan("memberprojcontrol", &output);
     assert_exit("memberprojcontrol", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// receiverinfer: a receiver-bound generic dot call in an initializer.
+//
+// `xs.mergeBox(yi, zj)` passes `xs` as the call's argument position zero, so
+// the inferred instance key must take the receiver's type first: `A` binds to
+// the receiver's `Box<str>` argument, never to the first written argument.
+// The keyed instance builds under the strict flags and the run reads the
+// call's result back; the body spelling of the same call is the twin.
+// ---------------------------------------------------------------------------
+
+/// A receiver-bound generic dot call in an initializer keys its receiver.
+#[test]
+fn should_infer_a_receiver_bound_generic_call_in_an_initializer() {
+    let source = r#"module spec.mii.receiverinfer;
+
+struct Box<T> { tag: i32; }
+
+func mergeBox<A, B>(self: Box<A>, x: Box<B>, y: Box<B>): i32 {
+    return x.tag + y.tag;
+}
+
+let xs: Box<str> = Box<str> { tag: 1 };
+let yi: Box<i32> = Box<i32> { tag: 2 };
+let zj: Box<i32> = Box<i32> { tag: 3 };
+let r: i32 = xs.mergeBox(yi, zj);
+
+func bodyTwin(): i32 {
+    let a: Box<str> = Box<str> { tag: 1 };
+    let b: Box<i32> = Box<i32> { tag: 2 };
+    let c: Box<i32> = Box<i32> { tag: 3 };
+    return a.mergeBox(b, c);
+}
+
+func main(): i32 {
+    return (r - 5) + (bodyTwin() - 5);
+}
+"#;
+    let output = run_memory("receiverinfer", source);
+    assert_no_asan("receiverinfer", &output);
+    assert_exit("receiverinfer", &output, 0);
+}

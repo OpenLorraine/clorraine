@@ -1015,3 +1015,72 @@ fn should_re_emit_the_resolved_call_and_guard_programs_byte_identically() {
         assert_contains(tag, &first, shape);
     }
 }
+
+/// A receiver-bound generic dot call keys the receiver's type.
+///
+/// `xs.mergeBox(yi, zj)` passes `xs` as the call's argument position zero, so
+/// the inferred instance binds `A` from the receiver instead of shifting the
+/// written arguments into its place; the receiver-blind key must not appear.
+/// The nullable-slice twin is the spurious-instance guard: `value.prep(...)`
+/// keys `T` from its receiver, so no dead `slice`-keyed instance is recorded.
+#[test]
+fn should_key_a_receiver_bound_generic_dot_call() {
+    let source = r#"module spec.mii.impl.recvkey;
+
+struct Box<T> { tag: i32; }
+
+func mergeBox<A, B>(self: Box<A>, x: Box<B>, y: Box<B>): i32 {
+    return x.tag + y.tag;
+}
+
+let xs: Box<str> = Box<str> { tag: 1 };
+let yi: Box<i32> = Box<i32> { tag: 2 };
+let zj: Box<i32> = Box<i32> { tag: 3 };
+let r: i32 = xs.mergeBox(yi, zj);
+
+func main(): i32 {
+    return r - 5;
+}
+"#;
+    let emitted = emit_host("recvkey", source);
+    assert_contains(
+        "recvkey",
+        &emitted,
+        "static i32 cl_mergeBox__str_i32(ClBox__str self, ClBox__i32 x, ClBox__i32 y);",
+    );
+    assert_contains(
+        "recvkey",
+        &emitted,
+        "cl_spec_mii_impl_recvkey_r = cl_mergeBox__str_i32(cl_spec_mii_impl_recvkey_xs, cl_spec_mii_impl_recvkey_yi, cl_spec_mii_impl_recvkey_zj);",
+    );
+    assert_eq!(
+        count(&emitted, "cl_mergeBox__i32_i32"),
+        0,
+        "recvkey: the receiver-blind instance key must not be emitted"
+    );
+
+    let guard = r#"module spec.mii.impl.recvguard;
+
+func prep<T>(take v: T, borrow slot: T[]?): void {
+    slot = null;
+}
+
+func main(): i32 {
+    let value: i32 = 1;
+    let xs: i32[]? = null;
+    value.prep(borrow xs);
+    return 0;
+}
+"#;
+    let emitted = emit_host("recvguard", guard);
+    assert_contains(
+        "recvguard",
+        &emitted,
+        "static void cl_prep__i32(i32 v, ClSlice_i32 *slot);",
+    );
+    assert_eq!(
+        count(&emitted, "__slice_i32Q"),
+        0,
+        "recvguard: a shifted argument must not key a dead slice instance"
+    );
+}

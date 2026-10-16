@@ -2412,9 +2412,32 @@ impl<'a> Emitter<'a> {
                 // A func-typed global or field names the callable itself; the
                 // callable carries its own signature, so the argument
                 // conversions run exactly as a body call's.
-                let resolved_type_args: Vec<Ty> =
-                    self.init_call_type_args(module, callee, type_args, args);
-                if let Some(callable) = self.init_callable_value(module, callee) {
+                // A func-typed global or field names the callable itself; the
+                // callable carries its own signature, so the argument
+                // conversions run exactly as a body call's. Every other dot
+                // call passes its receiver as the first argument, exactly as
+                // the body's call lowering builds its list, and the inferred
+                // instance key below must align with that list.
+                let callable = self.init_callable_value(module, callee);
+                let receiver = match callable {
+                    Some(_) => None,
+                    None => self.global_dot_receiver(module, callee),
+                };
+                let resolved_type_args: Vec<Ty> = if callable.is_some() {
+                    type_args
+                        .iter()
+                        .map(|ty| self.resolve_written(ty))
+                        .collect()
+                } else {
+                    self.init_call_type_args(
+                        module,
+                        callee,
+                        type_args,
+                        args,
+                        receiver.as_ref().map(|value| value.ty.clone()),
+                    )
+                };
+                if let Some(callable) = callable {
                     return Value::new(
                         ty,
                         ValueKind::Call {
@@ -2452,7 +2475,7 @@ impl<'a> Emitter<'a> {
                 // argument, like the body's dot-call path; a path that names a
                 // module or a declared function has no receiver.
                 let mut written_args: Vec<Value> = Vec::new();
-                if let Some(receiver) = self.global_dot_receiver(module, callee) {
+                if let Some(receiver) = receiver {
                     written_args.push(receiver);
                 }
                 for arg in args {
@@ -2492,13 +2515,16 @@ impl<'a> Emitter<'a> {
     /// types with the same matcher the body path's inference uses, so an
     /// inferred call spells the keyed instance the monomorphization declares;
     /// a callee that is not generic, or whose parameters the arguments leave
-    /// unbound, resolves to no arguments.
+    /// unbound, resolves to no arguments. `receiver_ty` is the dot receiver
+    /// the call carries as its argument position zero, so it takes part in
+    /// the derivation first, exactly as the body's inference sees it.
     fn init_call_type_args(
         &self,
         module: &Module,
         callee: &Expr,
         type_args: &[Type],
         args: &[Arg],
+        receiver_ty: Option<Ty>,
     ) -> Vec<Ty> {
         if !type_args.is_empty() {
             return type_args
@@ -2526,11 +2552,13 @@ impl<'a> Emitter<'a> {
             .iter()
             .map(|param| self.resolve_in_module(&module.name, &param.ty, &declared))
             .collect();
-        let arg_types: Vec<Ty> = args
-            .iter()
-            .map(|arg| self.expr_type(&arg.value))
-            .collect::<Option<Vec<Ty>>>()
-            .unwrap_or_default();
+        let mut arg_types: Vec<Ty> = receiver_ty.into_iter().collect();
+        for arg in args {
+            let Some(ty) = self.expr_type(&arg.value) else {
+                return Vec::new();
+            };
+            arg_types.push(ty);
+        }
         crate::sema::call::infer_type_args(&declared, &param_types, &arg_types).unwrap_or_default()
     }
 
