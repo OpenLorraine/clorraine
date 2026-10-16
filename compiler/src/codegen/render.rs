@@ -43,15 +43,11 @@ pub(super) fn index_text(ty: &Ty, base: &str, index: &str) -> String {
 
 /// The element one indexing step binds.
 ///
-/// The element is one step of iteration: a multi-extent array or slice yields
-/// the whole row, and a single-extent one yields its element. A string view
-/// yields its byte, and any other type yields the unknown placeholder.
+/// The shared rule lives in [`crate::types::index_element`], so the emitter's
+/// place and value resolvers, the walk's key derivation, and the audits all
+/// name the same element for a given base.
 pub(super) fn element_type(ty: &Ty) -> Ty {
-    match &ty.kind {
-        TyKind::Array { .. } => ty.iterated_element(),
-        TyKind::Str | TyKind::StaticStr => Ty::scalar(ScalarType::U8),
-        _ => Ty::unknown(),
-    }
+    crate::types::index_element(ty)
 }
 
 /// The unsigned scalar of the same width as a signed scalar.

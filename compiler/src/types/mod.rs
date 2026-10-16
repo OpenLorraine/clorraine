@@ -709,11 +709,44 @@ pub fn element_param(name: &str) -> String {
 /// at the instance exactly as the codegen substitution resolves it.
 pub fn instance_bindings(params: &[String], args: &[Ty]) -> BTreeMap<String, Ty> {
     let mut bindings = BTreeMap::new();
+    let mut levels: Vec<(String, Ty)> = Vec::new();
     for (param, arg) in params.iter().zip(args) {
         bindings.insert(param.clone(), arg.clone());
-        bindings.insert(element_param(param), arg.iterated_element());
+        levels.push((param.clone(), arg.clone()));
+    }
+    // A nested element loop mints one placeholder per level (`#element of
+    // #element of T`), so each level's element binds the next placeholder, to
+    // a fixed point: the element of the element resolves like the element
+    // itself, exactly as the loops that mint the names iterate one step each.
+    let mut index = 0;
+    while index < levels.len() {
+        let (name, ty) = levels[index].clone();
+        let inner = element_param(&name);
+        let element = ty.iterated_element();
+        if !bindings.contains_key(&inner) {
+            bindings.insert(inner.clone(), element.clone());
+            if matches!(&element.kind, TyKind::Array { .. }) {
+                levels.push((inner, element));
+            }
+        }
+        index += 1;
     }
     bindings
+}
+
+/// The element one indexing step binds.
+///
+/// The element is one step of iteration: a multi-extent array or slice yields
+/// the whole row and a single-extent one its element; a string view (owned,
+/// static, or `cstring`) yields its byte; a `raw` pointer yields its pointee.
+/// Every other kind has no index surface and keeps the unknown placeholder.
+pub fn index_element(ty: &Ty) -> Ty {
+    match &ty.kind {
+        TyKind::Array { .. } => ty.iterated_element(),
+        TyKind::Str | TyKind::StaticStr | TyKind::CString => Ty::scalar(ScalarType::U8),
+        TyKind::Raw(inner) => (**inner).clone(),
+        _ => Ty::unknown(),
+    }
 }
 
 /// True when a type mentions a generic parameter anywhere inside it.

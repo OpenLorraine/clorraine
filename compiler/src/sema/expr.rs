@@ -643,7 +643,9 @@ impl Checker<'_, '_> {
                         function,
                         ty: base_ty.clone(),
                         constant: self.folder.integer(index),
-                        span: index.span,
+                        span: base.span,
+                        index_span: index.span,
+                        base: plain_binding_root(base),
                     });
                 }
                 Ty::unknown()
@@ -1115,5 +1117,20 @@ fn formattable(ty: &Ty) -> bool {
         TyKind::Handle(name) => name == "String",
         TyKind::Scalar(_) => true,
         _ => false,
+    }
+}
+
+/// The written root name of a plain binding expression, when it is one.
+///
+/// An index base that is not a plain binding has no name the null rule could
+/// print, exactly as the concrete spelling judges: only a binding's own
+/// storage can be narrowed or may be null.
+fn plain_binding_root(expr: &Expr) -> Option<String> {
+    match &expr.kind {
+        ExprKind::Name(name) => Some(name.clone()),
+        ExprKind::Member { base, .. }
+        | ExprKind::Index { base, .. }
+        | ExprKind::Unsafe(base) => plain_binding_root(base),
+        _ => None,
     }
 }

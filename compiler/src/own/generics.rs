@@ -1069,7 +1069,7 @@ fn resolved_ir_value_ty(
         }
         ValueKind::Index { base, .. } => {
             let base_ty = resolved_ir_value_ty(base, bindings, locals, sema);
-            let element = base_ty.iterated_element();
+            let element = crate::types::index_element(&base_ty);
             if element.is_unknown() {
                 ty
             } else {

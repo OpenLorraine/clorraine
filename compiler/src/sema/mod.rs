@@ -130,8 +130,14 @@ pub struct OpaqueIndex {
     pub ty: Ty,
     /// The constant index the source wrote, when it wrote one.
     pub constant: Option<i128>,
-    /// The read's span, for the diagnostic.
+    /// The base's span: the non-indexable and null rules report there,
+    /// exactly as the concrete spelling does.
     pub span: Span,
+    /// The index's span: the constant range rule reports there.
+    pub index_span: Span,
+    /// The base's written root name when it is a plain binding, so the null
+    /// rule names the value as the concrete spelling does.
+    pub base: Option<String>,
 }
 
 /// Checks every module of the loaded program and records the result.

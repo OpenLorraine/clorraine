@@ -2716,3 +2716,219 @@ func main(): i32 {
     assert_trap("rowindexconctrap", &output, "E11211");
 }
 
+// ===== Substituted index kinds, nested elements, and capture moves =====
+
+/// A scalar instance indexed through its type parameter reports the frozen
+/// non-indexable rule.
+///
+/// The substituted base is `i32`, which has no index surface: the instance
+/// reports the concrete rule's code and message at the base, so the program
+/// never reaches the strict build (red at the phase base: the read was
+/// accepted and the emitted `xs[i]` failed `subscripted value`).
+#[test]
+fn should_reject_a_scalar_instance_indexed_through_a_type_parameter() {
+    let source = r#"module spec.cc.corrscalarindex;
+
+func at<T>(xs: T, i: usize): i32 {
+    return xs[i];
+}
+
+func main(): i32 {
+    let n: i32 = 7;
+    let i: usize = 0;
+    return at<i32>(n, i) - 7;
+}
+"#;
+    assert_rejected_once(
+        "corrscalarindex",
+        source,
+        "E10209",
+        &["type 'i32' cannot be indexed"],
+        &[],
+    );
+}
+
+/// A string-view instance's element index is accepted and runs.
+///
+/// The substituted base is `str`, so the index yields its byte and the keyed
+/// element type resolves; the run reads the byte back (red at the phase base:
+/// the inferred element keyed `u8` with no instance declared, and the strict
+/// build failed).
+#[test]
+fn should_accept_a_string_view_instance_element_index() {
+    let source = r#"module spec.cc.corrstrindex;
+
+func at<T>(xs: T, i: usize): u8 {
+    return xs[i];
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    let i: usize = 1;
+    return i32(at<str>(s, i)) - 98;
+}
+"#;
+    let output = run_memory("corrstrindex", source);
+    assert_no_asan("corrstrindex", &output);
+    assert_exit("corrstrindex", &output, 0);
+}
+
+/// A possibly-null substituted index base reports the null rule.
+///
+/// The parameter binds to `i32[]?`, so the base may be null exactly as a
+/// concrete nullable spelling may be: the instance reports the frozen null
+/// rule instead of emitting the read (red at the phase base: the program was
+/// accepted and the emitted C read the null slice).
+#[test]
+fn should_reject_a_nullable_instance_index_base() {
+    let source = r#"module spec.cc.corrnullindex;
+
+func at<T>(xs: T, i: usize): i32 {
+    return xs[i];
+}
+
+func main(): i32 {
+    let s: i32[]? = null;
+    let i: usize = 0;
+    return at<i32[]?>(s, i);
+}
+"#;
+    assert_rejected_once(
+        "corrnullindex",
+        source,
+        "E10010",
+        &["may be null here"],
+        &[],
+    );
+}
+
+/// A nested element loop in a generic body builds and runs.
+///
+/// Both element levels carry their own placeholder, so the inner loop's
+/// element binds from the substituted row; the run reads the summed rows back
+/// (red at the phase base: the doubly nested placeholder rendered into the C
+/// declaration and the strict build failed).
+#[test]
+fn should_build_a_nested_element_loop_in_a_generic_body() {
+    let source = r#"module spec.cc.corrnestedloop;
+
+func total<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (row in xs) {
+        for (x in row) {
+            n = n + x;
+        }
+    }
+    return n;
+}
+
+func main(): i32 {
+    let m: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return total<i32[2][3]>(m);
+}
+"#;
+    let output = run_memory("corrnestedloop", source);
+    assert_no_asan("corrnestedloop", &output);
+    assert_exit("corrnestedloop", &output, 21);
+}
+
+/// A by-value capture of an owning element reports the concrete move rule.
+///
+/// The element's substituted type owns its field, so the capture's by-value
+/// move aliases the array's storage; the instance reports the capture-move
+/// rule once, exactly as the concrete twin reports its release rule (red at
+/// the phase base: the duty skipped the element placeholder and the run
+/// double-freed).
+#[test]
+fn should_reject_a_capture_move_of_an_owning_element() {
+    let source = r#"module spec.cc.corrcapturemove;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        ([v] () => { let s: String = v.name; })();
+        total = total + 1;
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab"), y: 1 }];
+    return each<S[1]>(a);
+}
+"#;
+    assert_rejected_once(
+        "corrcapturemove",
+        source,
+        "E10401",
+        &["cannot move captured 'v' in a lambda"],
+        &[],
+    );
+
+    let concrete = r#"module spec.cc.corrcapturemoveconcrete;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eachc(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        total = total + ([v] () => { let s: String = v.name; return i32(len(bytes(s))); })();
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cd"), y: 2 }];
+    return eachc(a);
+}
+"#;
+    assert_rejected_once(
+        "corrcapturemoveconcrete",
+        concrete,
+        "E10034",
+        &["cannot release or store borrowed parameter 'v'"],
+        &[],
+    );
+}
+
+/// An unknown member of a substituted element reports the concrete rule.
+///
+/// The read stays accepted at the declaration; the instance resolves the
+/// substituted struct and reports the frozen unknown-member rule once,
+/// exactly as a concrete read would (red at the phase base: the audit left
+/// the element placeholder unbound and the emitted C failed `'ClS' has no
+/// member named 'z'`).
+#[test]
+fn should_reject_an_unknown_member_of_a_substituted_element() {
+    let source = r#"module spec.cc.corrmember;
+
+struct S { y: i32; }
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v.z;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    assert_rejected_once(
+        "corrmember",
+        source,
+        "E10212",
+        &["'z' is not a member of 'S'"],
+        &[],
+    );
+}
+

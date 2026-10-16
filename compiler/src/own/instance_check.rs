@@ -89,7 +89,8 @@ fn check_capture_move_requirements(
             if instance.function != requirement.function {
                 continue;
             }
-            let substituted = substitute_instance(&requirement.ty, &params, &instance.args);
+            let bound = crate::types::instance_bindings(&params, &instance.args);
+            let substituted = crate::types::substitute(&requirement.ty, &bound);
             // The move is judged at the place it consumes: a duplicable
             // projection copies out, so a field read stays accepted while a
             // whole capture or an owning projection is the unsound move.
@@ -379,7 +380,8 @@ fn check_duplicable_requirements(
             if instance.function != requirement.function {
                 continue;
             }
-            let substituted = substitute_instance(declared, &params, &instance.args);
+            let bound = crate::types::instance_bindings(&params, &instance.args);
+            let substituted = crate::types::substitute(declared, &bound);
             if sema.table.duplicable(&substituted) {
                 continue;
             }
@@ -967,7 +969,8 @@ fn check_opaque_projections(
             if instance.function != projection.function {
                 continue;
             }
-            let substituted = substitute_instance(&projection.ty, &params, &instance.args);
+            let bound = crate::types::instance_bindings(&params, &instance.args);
+            let substituted = crate::types::substitute(&projection.ty, &bound);
             if crate::types::contains_param(&substituted) || substituted.is_unknown() {
                 continue;
             }
@@ -1019,28 +1022,65 @@ fn check_opaque_indexes(
             if crate::types::contains_param(&substituted) || substituted.is_unknown() {
                 continue;
             }
-            let TyKind::Array { element, extents } = &substituted.kind else {
-                continue;
-            };
-            let Some(Some(extent)) = extents.first() else {
-                continue;
-            };
-            let Some(value) = index.constant else {
-                continue;
-            };
-            if value < 0 || value >= *extent as i128 {
-                diagnostics.push(
-                    Diagnostic::error(
-                        "E10216",
-                        format!(
-                            "index {value} is out of range for '{}[{extent}]'",
-                            element.display()
-                        ),
-                        index.span,
-                    )
-                    .with_help("fix the index or the extent"),
-                );
-                break;
+            // A possibly-null substituted base is not a valid index base: the
+            // concrete spelling reports the null rule at the base's own span.
+            if substituted.nullable {
+                if let Some(name) = &index.base {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10010",
+                            format!("value '{name}' may be null here"),
+                            index.span,
+                        )
+                        .with_help("check `!= null` before the use"),
+                    );
+                    break;
+                }
+            }
+            match &substituted.kind {
+                // A fixed first extent folds a constant index exactly as the
+                // concrete spelling does; a run-time index is the emitter's
+                // guard on the substituted row.
+                TyKind::Array { element, extents } => {
+                    let Some(Some(extent)) = extents.first() else {
+                        continue;
+                    };
+                    let Some(value) = index.constant else {
+                        continue;
+                    };
+                    if value < 0 || value >= *extent as i128 {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "E10216",
+                                format!(
+                                    "index {value} is out of range for '{}[{extent}]'",
+                                    element.display()
+                                ),
+                                index.index_span,
+                            )
+                            .with_help("fix the index or the extent"),
+                        );
+                        break;
+                    }
+                }
+                // A string view, a `cstring`, and a `raw` pointer are all
+                // indexable, exactly as the concrete spelling judges; none
+                // carries a fixed constant extent, so no range rule applies.
+                TyKind::Str | TyKind::CString | TyKind::StaticStr | TyKind::Raw(_) => {}
+                // Every other substituted kind has no index surface: the
+                // concrete spelling reports the frozen non-indexable rule at
+                // the base.
+                _ => {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "E10209",
+                            format!("type '{}' cannot be indexed", substituted.display()),
+                            index.span,
+                        )
+                        .with_help("arrays, slices, and `str` are indexable"),
+                    );
+                    break;
+                }
             }
         }
     }
