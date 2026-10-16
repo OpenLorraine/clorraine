@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 07:50
-> **Progress**: 22/39 tasks (56%) — Phase 4 in review
+> **Last Updated**: 2026-10-17 08:20
+> **Progress**: 23/39 tasks (59%) — Phase 4 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -217,10 +217,10 @@ the `ffi` result's declared type.
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the duty records, the per-instance report
+- [x] 4.3.1 Write the phase implementation pins (the duty records, the per-instance report
       counts and spans, the emitted `ffi` prototype unchanged, the accepted-instance
       emissions byte-identical, the re-emission determinism pin) —
-      `compiler/tests/checker_conformance_impl_test.rs`
+      `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17 08:20; seven pins added (41 tests total, additions only) — the deferred argument/return/declaration conversions (one `E10200` with the span and text), the null shapes (one `E10012`, no `E10200`), the legal-instance emissions, the FFI prototype typing, the FFI result arithmetic typing, and a re-emission pin; four fail at `2cda910` for the intended reason, three are disclosed base-stable guards; 41/41 green, `make check` exit 0)
 - [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; record any park in the ledger
 

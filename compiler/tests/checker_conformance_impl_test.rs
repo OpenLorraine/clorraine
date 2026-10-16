@@ -152,6 +152,132 @@ fn emit_twice(tag: &str, source: &str) -> (String, String) {
 
 
 
+/// The accepted `cstring` instance of the deferred argument conversion.
+const DEFERRED_FFI_OK_SOURCE: &str = r#"module spec.cc.impl.deferredokffi;
+
+import { toCString } from std.text;
+
+ffi probe {
+    func Open(name: cstring, mode: i32): raw u8;
+}
+
+func convert<T>(x: T): raw u8 {
+    unsafe {
+        return Open(x, 0);
+    }
+}
+
+func main(): i32 {
+    let c: cstring = toCString("/definitely/not/here");
+    unsafe {
+        let f: raw u8 = convert<cstring>(c);
+        if (f == null) {
+            return 7;
+        }
+        return 1;
+    }
+}
+"#;
+
+/// The accepted `str` instance of the deferred argument conversion.
+const DEFERRED_VIEW_SOURCE: &str = r#"module spec.cc.impl.deferredokview;
+
+func span(s: str): i32 {
+    return i32(len(s));
+}
+
+func sink<T>(x: T): i32 {
+    return span(x);
+}
+
+func main(): i32 {
+    let s: str = "abcd";
+    return sink<str>(s);
+}
+"#;
+
+/// The accepted `String` widening instance of the deferred argument conversion.
+const DEFERRED_OWNED_SOURCE: &str = r#"module spec.cc.impl.deferredokowned;
+
+import { String, stringOf } from std.text;
+
+func span(s: str): i32 {
+    return i32(len(s));
+}
+
+func sink<T>(x: T): i32 {
+    return span(x);
+}
+
+func main(): i32 {
+    return sink<String>(stringOf("abc"));
+}
+"#;
+
+/// The accepted identity round trip over `str`, `String`, and `cstring`.
+const DEFERRED_IDENTITY_SOURCE: &str = r#"module spec.cc.impl.deferredokident;
+
+import { stringOf, toCString } from std.text;
+
+func keep<T>(take x: T): T {
+    let y: T = x;
+    return y;
+}
+
+func main(): i32 {
+    let s: str = "abcd";
+    let t: str = keep<str>(s);
+    if (len(t) != 4) {
+        return 1;
+    }
+    let u: String = keep<String>(stringOf("abc"));
+    if (len(u) != 3) {
+        return 2;
+    }
+    let c: cstring = toCString("ab");
+    let d: cstring = keep<cstring>(c);
+    if (d == null) {
+        return 3;
+    }
+    return 0;
+}
+"#;
+
+/// The accepted `ffi` prototype and integer-use control.
+const DEFERRED_FFI_RESULT_OK_SOURCE: &str = r#"module spec.cc.impl.ffiresultok;
+
+ffi probe {
+    func Open(name: cstring, mode: i32): raw u8;
+    func Read(file: raw u8, buf: raw u8, count: i32): i32;
+    func Close(file: raw u8): void;
+    func Count(): i32;
+}
+
+func sum(): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = Count() + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    unsafe {
+        let f: raw u8 = Open("/dev/null", 0);
+        if (f == null) {
+            return 1;
+        }
+        let a: u8[4] = [0, 0, 0, 0];
+        let n: i32 = Read(f, &a[0], 4);
+        Close(f);
+        if (n == 0) {
+            return 7;
+        }
+        return sum();
+    }
+}
+"#;
+
 /// The initializer stores an impure dividend once.
 ///
 /// The guard and the division read the stored local, so the call appears
@@ -1336,3 +1462,314 @@ fn should_re_emit_the_view_member_programs_byte_identically() {
     }
 }
 
+// ===== Deferred conversion duties and ffi result typing =====
+
+/// A parameter-typed argument's conversion is judged at its instance.
+///
+/// A written argument whose type is a parameter cannot be judged at the
+/// declaration; the instance audit reports the frozen conversion once, at the
+/// argument that cannot convert. Both argument routes judge the same way: the
+/// `ffi` declaration and the ordinary function. Without the judgment the
+/// accepted program passed the view struct where the `char *` parameter is
+/// declared and the strict build failed with `incompatible type for argument
+/// 1`.
+#[test]
+fn should_report_a_deferred_argument_conversion_at_its_instance() {
+    let ffi = r#"module spec.cc.impl.deferredffi;
+
+ffi probe {
+    func cl_probe_convert(name: cstring, mode: i32): raw u8;
+}
+
+func convert<T>(x: T): raw u8 {
+    unsafe {
+        return cl_probe_convert(x, 0);
+    }
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    unsafe {
+        let f: raw u8 = convert<str>(s);
+        if (f == null) {
+            return 1;
+        }
+    }
+    return 0;
+}
+"#;
+    let stderr = reject_host("deferredffi", ffi);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "deferredffi: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'str' to 'cstring' implicitly"),
+        "deferredffi: the conversion message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:9:33"),
+        "deferredffi: the report must name the deferred argument; stderr:\n{stderr}"
+    );
+
+    let direct = r#"module spec.cc.impl.deferreddirect;
+
+func consume(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func convert<T>(x: T): i32 {
+    return consume(x);
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return convert<str>(s);
+}
+"#;
+    let stderr = reject_host("deferreddirect", direct);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "deferreddirect: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'str' to 'cstring' implicitly"),
+        "deferreddirect: the conversion message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:11:20"),
+        "deferreddirect: the report must name the deferred argument; stderr:\n{stderr}"
+    );
+}
+
+/// A parameter-typed return and declaration are judged at their instances.
+///
+/// The return type and the declared type are concrete, so the substituted
+/// value faces the frozen conversion and reports once per site (without the
+/// judgment the accepted programs failed the strict build with `incompatible
+/// types when returning` and `incompatible types when assigning`).
+#[test]
+fn should_report_a_deferred_return_and_declaration_conversion_at_its_instance() {
+    let ret = r#"module spec.cc.impl.deferredret;
+
+func pick<T>(x: T): i32 {
+    return x;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return pick<str>(s);
+}
+"#;
+    let stderr = reject_host("deferredret", ret);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "deferredret: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'str' to 'i32' implicitly"),
+        "deferredret: the conversion message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:12"),
+        "deferredret: the report must name the returned value; stderr:\n{stderr}"
+    );
+
+    let decl = r#"module spec.cc.impl.deferreddecl;
+
+func keep<T>(x: T): i32 {
+    let y: i32 = x;
+    return y;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return keep<str>(s);
+}
+"#;
+    let stderr = reject_host("deferreddecl", decl);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "deferreddecl: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'str' to 'i32' implicitly"),
+        "deferreddecl: the conversion message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:4:18"),
+        "deferreddecl: the report must name the declared value; stderr:\n{stderr}"
+    );
+}
+
+/// A null-shaped value at a concrete destination reports the null rule.
+///
+/// The null shape has no concrete value surface to convert, so the instance
+/// judgment reports the frozen null rule once and never the conversion (the
+/// accepted programs previously failed the strict build with `returning 'void
+/// *'` and `assignment to 'i32' from 'void *'`).
+#[test]
+fn should_report_a_deferred_null_shape_at_its_instance() {
+    let ret = r#"module spec.cc.impl.deferrednullret;
+
+func make<T>(): T {
+    let x = null;
+    return x;
+}
+
+func main(): i32 {
+    return i32(make<i32>()) + 1;
+}
+"#;
+    let stderr = reject_host("deferrednullret", ret);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "deferrednullret: expected one E10012; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'null' is not allowed here"),
+        "deferrednullret: the null message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("E10200"),
+        "deferrednullret: the null shape must not report as a conversion; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:5:12"),
+        "deferrednullret: the report must name the returned value; stderr:\n{stderr}"
+    );
+
+    let decl = r#"module spec.cc.impl.deferrednulldecl;
+
+func store<T>(): i32 {
+    let x = null;
+    let y: T = x;
+    return 0;
+}
+
+func main(): i32 {
+    return store<i32>() + 1;
+}
+"#;
+    let stderr = reject_host("deferrednulldecl", decl);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "deferrednulldecl: expected one E10012; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'null' is not allowed here"),
+        "deferrednulldecl: the null message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("E10200"),
+        "deferrednulldecl: the null shape must not report as a conversion; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:5:16"),
+        "deferrednulldecl: the report must name the declared value; stderr:\n{stderr}"
+    );
+}
+
+/// The legal conversion instances keep their emitted calls.
+///
+/// The instance audit reports only instances whose conversion is not implicit,
+/// so a `cstring` instance at an `ffi` `cstring` parameter, a `str` instance
+/// at a `str` parameter, and a `String` instance widening to `str` all emit
+/// their substituted calls: no cast appears at the parameter and the handle
+/// wraps in the view conversion.
+#[test]
+fn should_keep_the_legal_conversion_instances_emitting_their_calls() {
+    let emitted = emit_host("deferredokffi", DEFERRED_FFI_OK_SOURCE);
+    assert_contains("deferredokffi", &emitted, "APTR Open(char *, LONG);");
+    assert_contains("deferredokffi", &emitted, "static u8 * cl_convert__cstring(char *x)");
+    assert_contains("deferredokffi", &emitted, "return Open(x, 0);");
+
+    let emitted = emit_host("deferredokview", DEFERRED_VIEW_SOURCE);
+    assert_contains(
+        "deferredokview",
+        &emitted,
+        "static i32 cl_sink__str(ClStr x);",
+    );
+    assert_contains(
+        "deferredokview",
+        &emitted,
+        "return cl_spec_cc_impl_deferredokview_span(x);",
+    );
+
+    let emitted = emit_host("deferredokowned", DEFERRED_OWNED_SOURCE);
+    assert_contains(
+        "deferredokowned",
+        &emitted,
+        "return cl_spec_cc_impl_deferredokowned_span(cl_string_view(x));",
+    );
+}
+
+/// An `ffi` result keeps its declared type in the emitted prototypes.
+///
+/// The declared signature is the ABI: the prototype renders the declared
+/// parameter and result types, and a valid integer use emits the call without
+/// a cast.
+#[test]
+fn should_keep_an_ffi_result_typed_in_its_prototypes() {
+    let emitted = emit_host("ffiresultok", DEFERRED_FFI_RESULT_OK_SOURCE);
+    assert_contains("ffiresultok", &emitted, "APTR Open(char *, LONG);");
+    assert_contains("ffiresultok", &emitted, "LONG Read(APTR, APTR, LONG);");
+    assert_contains("ffiresultok", &emitted, "void Close(APTR);");
+}
+
+/// An `ffi` integer result carries its type into arithmetic.
+///
+/// With the declared result typed, the operands are `i32` and the sum emits
+/// the explicit 32-bit wrap (before the typing the operands were unresolved
+/// and the sum rendered bare).
+#[test]
+fn should_type_an_ffi_result_in_its_arithmetic() {
+    let source = r#"module spec.cc.impl.ffiresultsum;
+
+ffi probe {
+    func Count(): i32;
+    func Other(): i32;
+    func More(): i32;
+}
+
+func total(): i32 {
+    let n: i32 = 0;
+    unsafe {
+        n = Count() + Other() + More();
+    }
+    return n;
+}
+
+func main(): i32 {
+    return total();
+}
+"#;
+    let emitted = emit_host("ffiresultsum", source);
+    assert_contains("ffiresultsum", &emitted, "LONG Count(void);");
+    assert_contains(
+        "ffiresultsum",
+        &emitted,
+        "n = (i32)((u32)(i32)((u32)Count() + (u32)Other()) + (u32)More());",
+    );
+}
+
+/// The accepted instances re-emit identically.
+#[test]
+fn should_re_emit_the_deferred_conversion_instances_identically() {
+    for (tag, source) in [
+        ("reemitident", DEFERRED_IDENTITY_SOURCE),
+        ("reemitffiok", DEFERRED_FFI_OK_SOURCE),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(first, second, "{tag}: the program re-emitted differently");
+    }
+}
