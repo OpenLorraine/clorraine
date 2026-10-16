@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 14:00
-> **Progress**: 41/51 tasks (80%) — Phase 7 in review
+> **Last Updated**: 2026-10-19 17:00
+> **Progress**: 42/51 tasks (82%) — Phase 7 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -345,8 +345,8 @@ member.
 - [x] 7.3.1 Write the phase implementation pins (the rejection spans, the emitted casts per
       destination, the enum member shape, the byte-identical controls, a re-emission determinism
       pin) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-19 14:00; delivered with the implementation round — the `ptrpin` pin updated to the corrected cast (recorded), `should_cast_the_view_pointer_member_at_every_raw_destination` pinning all four destinations plus byte-identity, and `should_report_unknown_members_at_the_base_span` pinning the spans; 74/74 green)
-- [ ] 7.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses
+- [x] 7.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses ✅ (completed: 2026-10-19 17:00; all three lenses dispatched plus two correction rounds: the doc repair and the generic-argument pin (L7R-1/L7R-2), and the module-initializer store conversions (L7S-1) — the semantics blocker; rows filed `DEF-387`/`DEF-388`; AR-22 recorded (the raw-enum value-form ruling); the closing verification: the checker-conformance spec 163/163 plain and ASan, the impl pins 76/76, `make check` exit 0, the emission audit CONFIRMED — 0 findings)
 
 **Verify**: `make check`; the strict builds
 

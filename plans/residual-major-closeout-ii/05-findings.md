@@ -421,3 +421,39 @@ extension (the dot-call borrow-slot spelling).
   pre-existing, noted by the memory lens (its battery covered the phase's shapes).
 - The non-nullable borrow instance's report span differs from its twin by the `borrow ` prefix
   (disclosed; the code and count match).
+
+## Phase 7 — Member typing on concrete paths
+
+**Reviewed implementation**: `11c6c46` plus two correction rounds (`664c045`, `1925bfb`).
+**Lenses**: correctness (L7R), semantics (L7S), and emission-integrity.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | L7R-1 (a doc split around the new helper), L7R-2 (the generic-argument cast path had no committed pin), both fixed; the AR-22 design-doc supersession noted; the standing shapes confirmed base-identical and correctly attributed (`DEF-352`) |
+| semantics | FAIL — 1 blocker | L7S-1 (the AR-7 cast was missing at the module-initializer direct store — `self.value` instead of the conversion path), L7S-2 (the free-function carve-out keeps a bare member read accepted — filed `DEF-387`), L7S-3 (an unknown base falls through — filed `DEF-388`); Q1 (the unknown-member rejection) sound and complete except the two residual classes, Q2 conformant at every other position, Q3/Q4 conformant |
+| emission-integrity | CONFIRMED — 0 | Every one of the 102 differing files is a cast-only insertion (a line-level checker); 0 head-only strict failures; re-emission 2,464/2,464; the profiles clean apart from the pre-existing carve-out; the diagnostic-selection observation noted below |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| the minors (`664c045`) | **Fixed**: the six split-off doc lines moved back above their function (comment only); an impl pin for the generic instance's pointer-member argument cast (`cl_id__raw_u8((u8 *)(v.ptr))`) added, failing at the phase base for the intended reason |
+| L7S-1 (`1925bfb`) | **Fixed**: the non-view module-init destination routes through `store_text` exactly when a store conversion applies — the raw and `cstring` module stores spell their sanctioned casts; the spec case and the shape pin added; the repro strict-builds on host and the freestanding sibling |
+
+### Filed rows
+
+`DEF-387` (a bare member read matching a visible free function escapes the report — the emission lens's pre-existing
+carve-out), `DEF-388` (an unknown member on a null base falls through), plus the `AR-22` ruling (the
+raw-enum member read is the value form of its enum).
+
+### Record notes
+
+- The `k2p__d05_cond_place_arg` diagnostic-selection observation: both refs reject it, but the base
+  reports `E10200` (the generic body) while the head reports `E10212` (the new concrete-member report
+  fires first); no C either way — noted by the emission lens.
+- The module-scope `cstring` direct store of a view `.ptr` was also accepted-invalid and now spells
+  its sanctioned conversion (the same boundary; disclosed and pinned).
+- The standing shapes (`p.foo` on `raw u8`, `p.ptr` on `raw str`) remain as `DEF-352`; `DEF-349`'s
+  pointer-to-int cast is untouched.
