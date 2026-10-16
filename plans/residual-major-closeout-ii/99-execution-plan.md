@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 02:30
-> **Progress**: 6/51 tasks (12%) — Phase 1 complete
+> **Last Updated**: 2026-10-18 03:30
+> **Progress**: 8/51 tasks (16%) — Executing Phase 2
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -110,10 +110,10 @@ AR-3, AR-5
 **Objective**: Pin the local-headed qualified receiver, the temp-rooted projection, and the
 conditional/non-local place bases with their controls.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
-      (walkdotreceiver, walktemprooted, walkconditional) with their controls
-- [ ] 2.1.2 Run the suite and record the red phase (the `id(v[i].y)`, `id(s.y)`, `id(o.s.y)`, and
-      direct-dot controls verified green first — AR-3/AR-5)
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
+      (walkdotreceiver, walktemprooted, walkconditional) with their controls ✅ (completed: 2026-10-18 03:30; five tests (eleven programs) appended to `compiler/tests/checker_conformance_spec_test.rs` (+403 lines, additions only) plus five two-file helpers — the aliased-receiver initializer dot call (the `cl_pick__Box` implicit; the body and direct controls), the temp-rooted member argument in a borrow loop (the `cl_keep__String` implicit; the ref and concrete controls), and the conditional argument in a generic instance (the `cl_id__i32` implicit; the nested-loop, call-result, local-place and projected controls); `DEF-338`'s recorded `d03` probe is ill-typed (the dot-call checker accepts a mismatched written argument — filed `DEF-360`) and the nearest conforming shape (the aliased imported receiver) is used)
+- [x] 2.1.2 Run the suite and record the red phase (the `id(v[i].y)`, `id(s.y)`, `id(o.s.y)`, and
+      direct-dot controls verified green first — AR-3/AR-5) ✅ (completed: 2026-10-18 03:30; plain 133 passed / 3 failed and ASan 133 passed / 3 failed — exactly the three new tests (the implicit `cl_pick__Box`/`cl_keep__String`/`cl_id__i32`); the controls green in both legs; parent-verified)
 
 ### Step 2.2: Implementation
 
