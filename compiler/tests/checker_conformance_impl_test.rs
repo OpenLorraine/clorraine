@@ -1127,3 +1127,209 @@ fn should_re_emit_the_element_and_row_programs_byte_identically() {
     }
 }
 
+// ===== Member typing: enum value form and view members =====
+
+/// A view pointer member read through its typed member and conversions.
+///
+/// `.ptr` carries the view's byte pointer, so a `raw u8` destination takes it
+/// directly and a `cstring` destination spells the sanctioned pointer
+/// conversion; the stdlib's `toCString` body keeps the same cast.
+const VIEW_POINTER_SOURCE: &str = r#"module spec.cc.impl.ptrpin;
+
+import { toCString } from std.text;
+
+func ptr(s: str): raw u8 {
+    return s.ptr;
+}
+
+func cstr(s: str): cstring {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    let p: raw u8 = ptr(s);
+    let c: cstring = cstr(s);
+    let d: cstring = toCString(s);
+    unsafe {
+        if (p == null) {
+            return 1;
+        }
+    }
+    if (c == null) {
+        return 2;
+    }
+    if (d == null) {
+        return 3;
+    }
+    return 0;
+}
+"#;
+
+/// A view pointer member read is typed and its conversions judge.
+///
+/// The member's checked type is the byte pointer, so a `raw u8` destination
+/// takes the read directly, a `cstring` destination spells the pointer
+/// conversion, and an integer destination reports the frozen conversion rule
+/// (red at the phase base: the member was untyped, the integer return was
+/// accepted, and the strict build failed with `int-conversion`).
+#[test]
+fn should_type_a_view_pointer_member_for_its_conversions() {
+    let emitted = emit_host("ptrpin", VIEW_POINTER_SOURCE);
+    assert_contains("ptrpin", &emitted, "static u8 * cl_spec_cc_impl_ptrpin_ptr(ClStr s)");
+    assert_contains("ptrpin", &emitted, "return s.ptr;");
+    // The local `cstring` return and the stdlib `toCString` body both spell
+    // the sanctioned pointer conversion.
+    assert_eq!(
+        count(&emitted, "return (char *)(s.ptr);"),
+        2,
+        "ptrpin: the sanctioned pointer conversions are missing"
+    );
+
+    let integer = r#"module spec.cc.impl.ptrintpin;
+
+func span(s: str): usize {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return i32(span(s));
+}
+"#;
+    let stderr = reject_host("ptrintpin", integer);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "ptrintpin: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'raw u8' to 'usize' implicitly"),
+        "ptrintpin: the conversion message is missing; stderr:\n{stderr}"
+    );
+}
+
+/// A view length member read keeps its typed scalar shape.
+///
+/// `.len` is the view's element count typed `usize`, so the return needs no
+/// conversion and the member renders as the struct field.
+const VIEW_LENGTH_SOURCE: &str = r#"module spec.cc.impl.lenpin;
+
+func span(s: str): usize {
+    return s.len;
+}
+
+func main(): i32 {
+    let s: str = "abcd";
+    return i32(span(s)) - 4;
+}
+"#;
+
+/// A view length member stays typed and unconverted.
+#[test]
+fn should_keep_a_view_length_member_typed() {
+    let emitted = emit_host("lenpin", VIEW_LENGTH_SOURCE);
+    assert_contains("lenpin", &emitted, "static usize cl_spec_cc_impl_lenpin_span(ClStr s)");
+    assert_contains("lenpin", &emitted, "return s.len;");
+    assert_eq!(
+        count(&emitted, "cannot convert"),
+        0,
+        "lenpin: the length member must need no conversion"
+    );
+}
+
+/// A value-form enum member read reports the unknown member at both paths.
+///
+/// The concrete read and the instance read each report exactly one `E10212`
+/// naming the enum, because the frozen member table spells the member
+/// `Type.MEMBER` (red at the phase base: both were accepted and the strict
+/// build failed with `request for member 'A' in something not a structure or
+/// union`). The scoped and qualified controls keep their emission.
+#[test]
+fn should_reject_a_value_form_enum_member_read_at_both_paths() {
+    let concrete = r#"module spec.cc.impl.enumpin;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.A;
+    let n = i32(e.A);
+    return n - 1;
+}
+"#;
+    let stderr = reject_host("enumpin", concrete);
+    assert_eq!(
+        stderr.matches("error E10212:").count(),
+        1,
+        "enumpin: expected one E10212; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'A' is not a member of 'E'"),
+        "enumpin: the unknown-member message is missing; stderr:\n{stderr}"
+    );
+
+    let instance = r#"module spec.cc.impl.enumpininst;
+
+enum E : u8 { A, B }
+
+func read<T>(x: T): i32 {
+    return i32(x.A);
+}
+
+func main(): i32 {
+    let e: E = E.B;
+    return read<E>(e);
+}
+"#;
+    let stderr = reject_host("enumpininst", instance);
+    assert_eq!(
+        stderr.matches("error E10212:").count(),
+        1,
+        "enumpininst: expected one E10212; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'A' is not a member of 'E'"),
+        "enumpininst: the unknown-member message is missing; stderr:\n{stderr}"
+    );
+
+    let scoped = r#"module spec.cc.impl.enumctl;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.B;
+    return i32(e);
+}
+"#;
+    let emitted = emit_host("enumctl", scoped);
+    assert_contains("enumctl", &emitted, "e = E_B;");
+    assert_contains("enumctl", &emitted, "return (i32)(e);");
+
+    let qualified = r#"module spec.cc.impl.enumqual;
+
+func main(): i32 {
+    let owned: String = std.text.stringOf("abc");
+    let v: u8[] = std.text.bytes(owned);
+    return i32(len(v));
+}
+"#;
+    let emitted = emit_host("enumqual", qualified);
+    assert_contains("enumqual", &emitted, "cl_std_text_stringOf(cl_str(\"abc\"))");
+}
+
+/// The pointer and length member programs re-emit byte-identically.
+///
+/// Both re-emit from one source path so their `#line` facts agree, and the
+/// re-emitted text keeps the typed member spellings.
+#[test]
+fn should_re_emit_the_view_member_programs_byte_identically() {
+    for (tag, source, shape) in [
+        ("ptrpin", VIEW_POINTER_SOURCE, "return (char *)(s.ptr);"),
+        ("lenpin", VIEW_LENGTH_SOURCE, "return s.len;"),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(first, second, "{tag}: the program re-emitted differently");
+        assert_contains(tag, &first, shape);
+    }
+}
+

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 03:40
-> **Progress**: 16/39 tasks (41%) — Phase 3 in review
+> **Last Updated**: 2026-10-17 04:10
+> **Progress**: 17/39 tasks (44%) — Phase 3 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -173,9 +173,9 @@ member typing, and the `toCString` acceptance.
 
 ### Step 3.3: Impl Tests & Review
 
-- [ ] 3.3.1 Write the phase implementation pins (the rejection spans on both paths, the typed
+- [x] 3.3.1 Write the phase implementation pins (the rejection spans on both paths, the typed
       pointer-member conversion emission, the member controls byte-identical, the re-emission
-      determinism pin) — `compiler/tests/checker_conformance_impl_test.rs`
+      determinism pin) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17 04:10; four pins added (34 tests total, additions only) — the typed view pointer member and its conversions (the two sanctioned `(char *)(s.ptr)` occurrences; the `raw u8`→`usize` rejection once with `E10200`), the typed `.len` member, the value-form enum rejection on both paths (one `E10212` each; the scoped and qualified controls), and a re-emission pin; two of the five (the `.len` and determinism pins) are base-stable shape guards, reported; 34/34 green, `make check` exit 0)
 - [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses
 
