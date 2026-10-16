@@ -1124,3 +1124,106 @@ func main(): i32 {
         "globalfnpriv: the unexported function must not be called; emitted C:\n{emitted}"
     );
 }
+
+// ===== Aliased imports and module-qualified value heads =====
+
+/// An aliased import calls the imported function's own symbol.
+///
+/// The alias is a local spelling of the imported binding, so the emitted call
+/// names the imported function; the alias spelling would leave the call
+/// undeclared in the C.
+#[test]
+fn should_call_an_aliased_import_by_the_imported_symbol() {
+    let holder = r#"module spec.criimpl.aliaspinmod;
+
+export func g(x: i32): i32 {
+    return x + 4;
+}
+"#;
+    let main = r#"module spec.criimpl.aliaspin;
+
+import { g as bg } from spec.criimpl.aliaspinmod;
+
+func main(): i32 {
+    return (bg(5) - 9) + (bg(7) - 11);
+}
+"#;
+    let emitted = emit_pair("aliaspin", holder, main);
+    assert_contains("aliaspin", &emitted, "cl_spec_criimpl_aliaspinmod_g(5)");
+    assert_eq!(
+        count(&emitted, "_bg("),
+        0,
+        "aliaspin: the alias must not spell the symbol; emitted C:\n{emitted}"
+    );
+}
+
+/// A value-headed call through its declaring module names the binding.
+///
+/// `m.holder.g(5)` reads the module's binding and calls its field, so the
+/// emitted call spells the mangled binding the module declares, exactly as
+/// the same call through a plain import does.
+#[test]
+fn should_call_a_module_qualified_value_head_field() {
+    let holder = r#"module spec.criimpl.vheadpinmod;
+
+func qf(x: i32): i32 {
+    return x + 30;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+export let holder: Holder = Holder { g: qf };
+"#;
+    let main = r#"module spec.criimpl.vheadpin;
+
+func main(): i32 {
+    return spec.criimpl.vheadpinmod.holder.g(5) - 35;
+}
+"#;
+    let emitted = emit_pair("vheadpin", holder, main);
+    assert_contains(
+        "vheadpin",
+        &emitted,
+        "(cl_spec_criimpl_vheadpinmod_holder.g)(5)",
+    );
+}
+
+/// A bare func-global call resolves through the scope's binding.
+///
+/// The imported `f` names the holder's func-typed global in both spellings,
+/// so the emitted calls use the holder's symbol even though another loaded
+/// module declares a same-named function (whose mismatched call the spec
+/// suite pins as rejected).
+#[test]
+fn should_resolve_a_bare_func_global_call_through_the_scope() {
+    let holder = r#"module spec.criimpl.scopepinholder;
+
+func hg(x: i32): i32 {
+    return x + 200;
+}
+
+export let f: func(i32): i32 = hg;
+"#;
+    let other = r#"module spec.criimpl.scopepinother;
+
+export func f(s: str): i32 {
+    return 0;
+}
+"#;
+    let main = r#"module spec.criimpl.scopepin;
+
+import { f } from spec.criimpl.scopepinholder;
+
+func main(): i32 {
+    return (f(5) - 205) + (spec.criimpl.scopepinholder.f(5) - 205);
+}
+"#;
+    let emitted = emit_three("scopepin", holder, other, main);
+    assert_eq!(
+        count(&emitted, "cl_spec_criimpl_scopepinholder_f(5)"),
+        2,
+        "scopepin: both spellings call the holder's binding; emitted C:\n{emitted}"
+    );
+}

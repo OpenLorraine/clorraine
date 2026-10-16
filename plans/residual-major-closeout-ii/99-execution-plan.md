@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 18:00
-> **Progress**: 44/51 tasks (86%) — Executing Phase 8
+> **Last Updated**: 2026-10-19 19:30
+> **Progress**: 47/51 tasks (92%) — Phase 8 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -379,18 +379,18 @@ checker typing.
 
 ### Step 8.2: Implementation
 
-- [ ] 8.2.1 Thread the aliased-import and qualified value-head identity; defer the extent-position
+- [x] 8.2.1 Thread the aliased-import and qualified value-head identity; defer the extent-position
       `sizeof` fold to the C type size (AR-13); type the bare func-global call through the
       scope's binding — `compiler/src/codegen/expr.rs`, `compiler/src/own/call.rs`,
-      `compiler/src/load/`, `compiler/src/consts/mod.rs`, `compiler/src/sema/call.rs`
-- [ ] 8.2.2 Run the suites to green; on any failure STOP and fix the implementation (or park per
-      AR-13 if the stop condition fires)
+      `compiler/src/load/`, `compiler/src/consts/mod.rs`, `compiler/src/sema/call.rs` ✅ (completed: 2026-10-19 19:30; `DEF-356`: the call symbol spells the resolved declaration's own name (`codegen/expr.rs:955-975`), so an aliased import calls the imported symbol; a module path reaching an exported binding and its fields resolves end to end (`resolve/mod.rs:459/473`, `sema/expr.rs:688/704`, `own/call.rs:87-102`), so the qualified value head runs; `DEF-357`: a new `AbiLayout` (`types/layout.rs`, 175 lines; the table's active layout) models the host and m68k ABIs and the extent-only folder folds `sizeof` through it (`consts/mod.rs:97/527`; `sema/mod.rs:367/385/488`) while the value folders keep the declared sizes — the extent reds run 0, the value controls byte-identical (the AR-13 illustration deviation recorded as AR-24); `DEF-359`: a bare imported func-global is typed through its scope binding (`sema/mod.rs:770-785`), reporting one `E10200` for the mismatch; the controls unchanged)"
+- [x] 8.2.2 Run the suites to green; on any failure STOP and fix the implementation (or park per
+      AR-13 if the stop condition fires) ✅ (completed: 2026-10-19 19:30; the callable spec 61/61 and impl 27/27; the module-initializer spec 64/64 and impl 43/43 — each plain and under `RDC_ASAN=1`; `make check` exit 0 (2,365 passed); the differential shows 0 deltas (the corpus holds no phase-8 shape); parent-verified all four suites)
 
 ### Step 8.3: Impl Tests & Review
 
-- [ ] 8.3.1 Write the phase implementation pins (the emitted alias/binding symbols, the deferred
+- [x] 8.3.1 Write the phase implementation pins (the emitted alias/binding symbols, the deferred
       extent spelling, the checker typing record, the byte-identical controls, re-emission
-      determinism pins) in the origin `_impl_test.rs` files
+      determinism pins) in the origin `_impl_test.rs` files ✅ (completed: 2026-10-19 19:30; delivered with the implementation round — the aliased-import symbol pin (the imported symbol present, the alias absent), the module-qualified binding call, the scope-resolution control, the extent spelling + value reads + byte-identical re-emission pin, and the ABI-numbers unit test (`types/table.rs`); the base discrimination verified by the review lenses)
 - [ ] 8.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; the emission lens runs the base/head differential over the `k18`
       matrix

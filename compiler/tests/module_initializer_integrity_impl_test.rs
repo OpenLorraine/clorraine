@@ -1861,3 +1861,53 @@ func main(): i32 {
         "if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
     );
 }
+
+// ===== The extent-position size measures the target ABI =====
+
+/// An extent-position `sizeof` measures the emitted C type.
+///
+/// `const n: usize = sizeof(S)` resolves through the target ABI's layout, so
+/// the array is declared with the extent the `sizeof(ClS)` value position
+/// reads back; the declared-layout fold stays in the value positions. The
+/// program re-emits byte-identically.
+#[test]
+fn should_measure_an_extent_position_sizeof_on_the_target_abi() {
+    let struct_case = r#"module spec.miiimpl.extentsize;
+
+struct S {
+    a: i32;
+    b: u8;
+}
+
+const n: usize = sizeof(S);
+
+func main(): i32 {
+    let pad: u8[n] = [; 0];
+    let m: usize = sizeof(S);
+    return i32(len(pad)) - i32(m);
+}
+"#;
+    let emitted = emit_host("extentsize", struct_case);
+    assert_contains("extentsize", &emitted, "u8 pad[8] = {0};");
+    assert_contains("extentsize", &emitted, "m = sizeof(ClS);");
+
+    let view_case = r#"module spec.miiimpl.extentview;
+
+const n: usize = sizeof(str);
+
+func main(): i32 {
+    let buf: u8[n] = [; 0];
+    let m: usize = sizeof(str);
+    return i32(len(buf)) - i32(m);
+}
+"#;
+    let emitted = emit_host("extentview", view_case);
+    assert_contains("extentview", &emitted, "u8 buf[16] = {0};");
+    assert_contains("extentview", &emitted, "m = sizeof(ClStr);");
+
+    let (first, second) = emit_twice("extentsize", struct_case);
+    assert_eq!(
+        first, second,
+        "extentsize: the program re-emitted differently"
+    );
+}

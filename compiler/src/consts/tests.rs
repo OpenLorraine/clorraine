@@ -143,7 +143,7 @@ pub(super) fn with_loaded<R>(sources: &[&str], module: &str, run: impl FnOnce(&m
         programs.push((id, program));
     }
     let loaded = load::load(programs, &mut diagnostics);
-    let table = TypeTable::build(&loaded);
+    let table = TypeTable::build(&loaded, crate::types::AbiLayout::host());
     let module = loaded.module(module).expect("the test module loaded");
     let mut folder = ConstFolder::new(&table, module, &loaded);
     run(&mut folder)

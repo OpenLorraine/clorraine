@@ -956,15 +956,19 @@ impl<'a> Emitter<'a> {
             return format!("{spelled}({argument_list})");
         }
         if let Some(info) = self.resolve_function(callee) {
+            // The resolved declaration's own name spells the symbol: a name
+            // bound by an aliased import resolves to the imported function,
+            // whose C symbol keeps its declared name.
+            let name = info.decl.name.as_str();
             let symbol = if type_args.is_empty() {
-                self.function_symbol(&info.module, callee)
+                self.function_symbol(&info.module, name)
             } else {
                 let keys: Vec<String> = self
                     .resolved_call_type_args(info, type_args, args)
                     .iter()
                     .map(type_key)
                     .collect();
-                format!("cl_{callee}__{}", keys.join("_"))
+                format!("cl_{name}__{}", keys.join("_"))
             };
             return format!("{symbol}({argument_list})");
         }

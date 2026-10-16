@@ -682,7 +682,46 @@ impl Checker<'_, '_> {
                 }
             }
         }
+        // A module path may reach one of the module's bindings, as in
+        // `m.a.holder` or `m.a.holder.g`: the path mentions no name, so the
+        // binding supplies the type and the segments after it are fields.
+        if let Some((binding_ty, fields)) = self.module_binding_read(name) {
+            let mut ty = binding_ty;
+            for field in &fields {
+                ty = self.member_type(&ty, field, name.span);
+            }
+            return ty;
+        }
         Ty::unknown()
+    }
+
+    /// The binding a dotted name reads through a module path.
+    ///
+    /// Returns the binding's declared type and the field segments after it,
+    /// when the leading segments spell a loaded module and the next one a
+    /// binding the module exports. The longest module prefix wins, so a
+    /// binding is reached even when an earlier split also names a module.
+    fn module_binding_read(&self, name: &QualifiedName) -> Option<(Ty, Vec<String>)> {
+        let segments = &name.segments;
+        for split in (1..segments.len()).rev() {
+            let module = segments[..split].join(".");
+            if module.is_empty() {
+                continue;
+            }
+            let binding = &segments[split];
+            let visible = if module == self.module.name {
+                self.module.decls.contains_key(binding)
+            } else {
+                self.loaded.has_module(&module) && self.loaded.module_exports(&module, binding)
+            };
+            if !visible {
+                continue;
+            }
+            if let Some(ty) = self.table.global(&module, binding) {
+                return Some((ty.clone(), segments[split + 1..].to_vec()));
+            }
+        }
+        None
     }
 
     /// Types the receiver of a value-headed dotted callee.

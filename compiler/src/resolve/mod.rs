@@ -452,9 +452,44 @@ impl Resolver<'_, '_> {
                 }
             }
         }
+        // A module path may reach one of its bindings and then a field of it,
+        // as in `m.a.holder.g(5)`: the binding is the head and the segments
+        // after it are field projections the type checker judges, so the name
+        // resolves as written. The longest module prefix wins.
+        if self.resolve_module_binding_path(name) {
+            return true;
+        }
         name.segments
             .first()
             .is_some_and(|first| self.resolve_name(first))
+    }
+
+    /// True when a dotted name is a module path, one of the module's bindings,
+    /// and that binding's fields.
+    ///
+    /// The module path itself mentions no local name, so a value-headed call
+    /// through the declaring module is not reported undeclared. Only an
+    /// exported binding counts; the field names are the type checker's.
+    fn resolve_module_binding_path(&self, name: &QualifiedName) -> bool {
+        let segments = &name.segments;
+        for split in (1..segments.len()).rev() {
+            let module = segments[..split].join(".");
+            if module.is_empty() {
+                continue;
+            }
+            let binding = &segments[split];
+            let declared = if module == self.module.name {
+                self.module.decls.contains_key(binding)
+            } else if self.loaded.has_module(&module) {
+                self.loaded.module_exports(&module, binding)
+            } else {
+                false
+            };
+            if declared {
+                return true;
+            }
+        }
+        false
     }
 
     /// Declares a name in the innermost scope.

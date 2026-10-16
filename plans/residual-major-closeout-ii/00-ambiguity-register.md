@@ -247,3 +247,12 @@ the cross-module value head. The nearest conforming control is the **value-heade
 module-level struct value, the current-module `let g`), which runs 0 and discriminates a wrong-callee
 redirect. The phase's control set is adjusted accordingly.
 
+**AR-24 (implementation deviation, auto-design):** AR-13's illustration spelled the extent position as a
+deferred C `sizeof(ClS)`; the implementation instead models the host and m68k ABI layouts
+(`types/layout.rs`, the table's active layout), so the extent position folds the ABI-faithful
+*value* (`u8 pad[8]` host / 6 on m68k; the `sizeof(str)` extent 16/8), verified against both
+toolchains. The extent is a number in the type because `len` and the bounds checks fold it (the
+oracle needs `len(pad) == sizeof(ClS)`); a deferred spelling alone would need a type-representation
+change. The value positions keep their pinned declared folds. Recorded; the review lenses verify
+the numbers per profile.
+

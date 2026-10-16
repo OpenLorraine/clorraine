@@ -24,7 +24,7 @@ use crate::diag::{Diagnostic, Diagnostics};
 use crate::load::{DeclKind, Loaded, Module};
 use crate::profile::Profile;
 use crate::span::Span;
-use crate::types::{ resolve_ty_with, substitute_instance, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind, TypeTable, PlacePathStep };
+use crate::types::{ resolve_ty_with, substitute_instance, AbiLayout, CaptureInfo, CaptureMode, ClosureSite, Ty, TyKind, TypeTable, PlacePathStep };
 
 pub(crate) mod call;
 mod expr;
@@ -230,7 +230,7 @@ pub struct OpaqueIndex {
 
 /// Checks every module of the loaded program and records the result.
 pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -> SemaOutput {
-    let table = TypeTable::build(loaded);
+    let table = TypeTable::build(loaded, AbiLayout::for_profile(profile));
     // A global initializer cycle has no valid initialization order, so it is
     // reported before the per-module type checks that would consume the order.
     init_cycle::check(loaded, diagnostics);
@@ -359,6 +359,12 @@ struct Checker<'a, 'd> {
     diagnostics: &'d mut Diagnostics,
     /// The selected profile, so profile-surface rules can be reported here.
     profile: Profile,
+    /// The folder array extents resolve through.
+    ///
+    /// An extent must equal the C type the emitter spells, so an extent
+    /// `sizeof` measures the target ABI; the value positions keep the declared
+    /// widths and fold through `folder`.
+    extent_folder: ConstFolder<'a>,
 }
 
 impl<'a, 'd> Checker<'a, 'd> {
@@ -376,6 +382,7 @@ impl<'a, 'd> Checker<'a, 'd> {
             loaded,
             table,
             folder: ConstFolder::new(table, module, loaded),
+            extent_folder: ConstFolder::for_extents(table, module, loaded),
             scopes: Vec::new(),
             type_params: Vec::new(),
             callable_bound_params: Vec::new(),
@@ -478,8 +485,9 @@ impl<'a, 'd> Checker<'a, 'd> {
         }
         let table = self.table;
         let type_params = &self.type_params;
+        let folder = &mut self.extent_folder;
         let resolved = resolve_ty_with(ty, type_params, table, &mut |expr| {
-            self.folder.integer_at(expr, Some(ScalarType::Usize))
+            folder.integer_at(expr, Some(ScalarType::Usize))
         });
         self.reject_fixed_array_sequence(&resolved, ty.span);
         // The built-in `String` handle is heap-backed: its drop and view use
@@ -763,10 +771,17 @@ impl<'a, 'd> Checker<'a, 'd> {
             if binding.poisoned {
                 return Ty::unknown();
             }
+            // The import's original name is the binding: an imported function
+            // is typed by its signature and an imported module-level value by
+            // its own declared type, so a same-named binding elsewhere never
+            // stands in for the imported one.
+            if let Some(signature) = self.table.function(&binding.module, &binding.original) {
+                return Ty::func(signature.ty());
+            }
             return self
                 .table
-                .function(&binding.module, &binding.original)
-                .map(|signature| Ty::func(signature.ty()))
+                .global(&binding.module, &binding.original)
+                .cloned()
                 .unwrap_or_else(Ty::unknown);
         }
         Ty::unknown()

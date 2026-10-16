@@ -85,20 +85,47 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 Some(self.member_type(&base_ty, name))
             }
             ExprKind::Qualified(name) if name.segments.len() >= 2 => {
-                let head = name.segments.first()?;
-                let mut ty = if let Some(id) = self.lookup(head) {
-                    self.bindings[id].ty.clone()
-                } else {
-                    self.global_type(head)?
-                };
                 let last = name.segments.len() - 1;
-                for segment in &name.segments[1..last] {
-                    ty = self.member_type(&ty, segment);
-                }
+                let ty = self.receiver_path_type(&name.segments[..last])?;
                 Some(self.member_type(&ty, &name.segments[last]))
             }
             _ => None,
         }
+    }
+
+    /// The type of a dotted receiver path.
+    ///
+    /// A local or module binding is the head and the rest are its fields. A
+    /// path whose leading segments spell a module resolves the binding after
+    /// them, so `m.a.holder` reads module `m.a`'s binding even though the path
+    /// itself mentions no name.
+    fn receiver_path_type(&self, segments: &[String]) -> Option<Ty> {
+        let (first, rest) = segments.split_first()?;
+        if let Some(id) = self.lookup(first) {
+            let mut ty = self.bindings[id].ty.clone();
+            for segment in rest {
+                ty = self.member_type(&ty, segment);
+            }
+            return Some(ty);
+        }
+        if let Some(ty) = self.global_type(first) {
+            let mut ty = ty;
+            for segment in rest {
+                ty = self.member_type(&ty, segment);
+            }
+            return Some(ty);
+        }
+        let name = crate::ast::QualifiedName {
+            segments: segments.to_vec(),
+            span: crate::span::Span::default(),
+        };
+        let global = crate::init_graph::resolve_global(self.loaded, self.module, &name)?;
+        let id = ir::GlobalId::new(global.module.clone(), global.name.clone());
+        let mut ty = self.program.globals.get(&id)?.ty.clone();
+        for field in &global.fields {
+            ty = self.member_type(&ty, field);
+        }
+        Some(ty)
     }
 
     /// The callable value of a `func`-typed field call.

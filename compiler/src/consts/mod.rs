@@ -69,6 +69,12 @@ pub struct ConstFolder<'a> {
     active: BTreeSet<String>,
     /// Folded values, cached under a module- or enum-qualified key.
     values: BTreeMap<String, FoldValue>,
+    /// True when array extents are being folded.
+    ///
+    /// An extent must equal the C type the emitter spells, so `sizeof` here
+    /// measures through the target ABI instead of the declared layout; every
+    /// other fold keeps the declared sizes.
+    extents: bool,
 }
 
 impl<'a> ConstFolder<'a> {
@@ -80,6 +86,18 @@ impl<'a> ConstFolder<'a> {
             loaded,
             active: BTreeSet::new(),
             values: BTreeMap::new(),
+            extents: false,
+        }
+    }
+
+    /// Creates a folder for array extents, whose `sizeof` uses the target ABI.
+    ///
+    /// The value-position folds keep the declared widths; only an extent
+    /// measures the size the emitted C type has on the target.
+    pub fn for_extents(table: &'a TypeTable, module: &'a Module, loaded: &'a Loaded) -> Self {
+        Self {
+            extents: true,
+            ..Self::new(table, module, loaded)
         }
     }
 
@@ -506,10 +524,12 @@ impl<'a> ConstFolder<'a> {
                     return Err(ConstError::NotConstant(span));
                 };
                 let resolved = self.resolve_const_type(ty);
-                let size = self
-                    .table
-                    .size_of(&resolved)
-                    .ok_or(ConstError::NotConstant(span))?;
+                let size = if self.extents {
+                    self.table.abi_size_of(&resolved)
+                } else {
+                    self.table.size_of(&resolved)
+                }
+                .ok_or(ConstError::NotConstant(span))?;
                 Ok(usize_value(size))
             }
             "offsetof" => {

@@ -15,6 +15,7 @@ use crate::ast::{
 use crate::consts::ConstFolder;
 use crate::load::Loaded;
 
+use super::layout::AbiLayout;
 use super::{int_literal_value, substitute_instance, FuncParam, FuncTy, Ty, TyKind};
 
 /// A function signature collected from a declaration.
@@ -107,13 +108,18 @@ pub struct TypeTable {
     handles: BTreeSet<String>,
     functions: BTreeMap<String, BTreeMap<String, FuncSig>>,
     globals: BTreeMap<String, BTreeMap<String, Ty>>,
+    /// The target ABI's layout, for the sizes an extent position must match.
+    layout: AbiLayout,
 }
 
 impl TypeTable {
     /// Collects the declarations of every module in two passes: first the name
     /// sets (so a reference can be classified), then the resolved types.
-    pub fn build(loaded: &Loaded) -> Self {
-        let mut table = TypeTable::default();
+    pub fn build(loaded: &Loaded, layout: AbiLayout) -> Self {
+        let mut table = TypeTable {
+            layout,
+            ..TypeTable::default()
+        };
         table.handles.insert("String".to_owned());
 
         for module in loaded.modules.values() {
@@ -254,7 +260,7 @@ impl TypeTable {
         let mut global_updates: Vec<(String, String, Ty)> = Vec::new();
         {
             for module in loaded.modules.values() {
-                let mut folder = ConstFolder::new(self, module, loaded);
+                let mut folder = ConstFolder::for_extents(self, module, loaded);
                 for item in &module.items {
                     match item {
                         Item::Struct(decl) => {
@@ -433,6 +439,16 @@ impl TypeTable {
         self.size_of_at(ty, 0)
     }
 
+    /// The byte size of a type under the target ABI.
+    ///
+    /// The declared layout sums field widths without the target's alignment
+    /// padding and assumes 32-bit pointers; an array extent must equal the C
+    /// type the emitter spells, so the extent position measures through this
+    /// ABI-faithful counterpart instead.
+    pub fn abi_size_of(&self, ty: &Ty) -> Option<usize> {
+        self.layout.size_of(self, ty)
+    }
+
     /// Depth-limited worker for [`TypeTable::size_of`].
     ///
     /// A malformed self-referential declaration would otherwise recurse without
@@ -491,7 +507,7 @@ impl TypeTable {
 }
 
 /// The byte width of a scalar.
-fn scalar_size(scalar: crate::ast::ScalarType) -> Option<usize> {
+pub(super) fn scalar_size(scalar: crate::ast::ScalarType) -> Option<usize> {
     use crate::ast::ScalarType;
     match scalar {
         ScalarType::I8 | ScalarType::U8 | ScalarType::Bool => Some(1),
@@ -572,7 +588,7 @@ pub fn resolve_ty_folded(
     module: &crate::load::Module,
     loaded: &Loaded,
 ) -> Ty {
-    let mut folder = ConstFolder::new(table, module, loaded);
+    let mut folder = ConstFolder::for_extents(table, module, loaded);
     resolve_ty_with(ty, type_params, table, &mut |expr| {
         folder.integer_at(expr, Some(ScalarType::Usize))
     })
@@ -869,6 +885,43 @@ mod tests {
         assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "value"), Some(3));
         assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "scale"), Some(7));
         assert_eq!(table.offset_of(&Ty::struct_("Mixed"), "missing"), None);
+    }
+
+    #[test]
+    fn the_target_layouts_measure_the_emitted_c_types() {
+        let mut table = TypeTable::default();
+        insert_struct(
+            &mut table,
+            "S",
+            vec![("a", Ty::i32_ty()), ("b", scalar(ScalarType::U8))],
+        );
+        insert_struct(
+            &mut table,
+            "Mixed",
+            vec![
+                ("tag", scalar(ScalarType::U8)),
+                ("count", scalar(ScalarType::U16)),
+                ("value", scalar(ScalarType::U32)),
+            ],
+        );
+        let host = AbiLayout::host();
+        let m68k = AbiLayout::m68k();
+        let view = Ty {
+            kind: TyKind::Str,
+            nullable: false,
+        };
+        // The host C ABI pads `S` to its four-byte alignment and the view to
+        // its eight-byte pointer alignment; the m68k ABI aligns to two bytes.
+        // Both numbers are the ones the host `cc` and `m68k-amigaos-gcc`
+        // report for the emitted C types.
+        assert_eq!(host.size_of(&table, &Ty::struct_("S")), Some(8));
+        assert_eq!(m68k.size_of(&table, &Ty::struct_("S")), Some(6));
+        assert_eq!(host.size_of(&table, &view), Some(16));
+        assert_eq!(m68k.size_of(&table, &view), Some(8));
+        assert_eq!(host.size_of(&table, &Ty::struct_("Mixed")), Some(8));
+        assert_eq!(m68k.size_of(&table, &Ty::struct_("Mixed")), Some(8));
+        // The declared layout keeps its unpadded numbers for the value folds.
+        assert_eq!(table.size_of(&Ty::struct_("S")), Some(5));
     }
 
     #[test]
