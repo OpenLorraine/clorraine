@@ -721,6 +721,36 @@ impl<'a> Emitter<'a> {
         found
     }
 
+    /// True when the caller's module declares the function, or one of its
+    /// imports binds the name to a function.
+    ///
+    /// The scope rule the call resolution follows: a function bound in the
+    /// caller's module or by one of its imports is the callee, while a
+    /// function of the same simple name elsewhere is not in scope. A guard
+    /// that decides between a function and a module-level value of the same
+    /// name must not treat `resolve_function`'s unique-function-elsewhere arm
+    /// as a binding. An `ffi` signature resolves by name for the whole
+    /// program, exactly as the checker reads it, so its names are in scope
+    /// too.
+    pub(super) fn function_in_scope(&self, name: &str) -> bool {
+        if self
+            .functions
+            .contains_key(&(self.current_module.clone(), name.to_owned()))
+        {
+            return true;
+        }
+        if self.ffi_functions.contains_key(name) {
+            return true;
+        }
+        self.loaded
+            .module(&self.current_module)
+            .and_then(|module| module.import(name))
+            .is_some_and(|binding| {
+                self.functions
+                    .contains_key(&(binding.module.clone(), binding.original.clone()))
+            })
+    }
+
     /// The first declared function with a simple name.
     ///
     /// A generic instance records only the simple name, so this lookup keeps

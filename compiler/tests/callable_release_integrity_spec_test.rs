@@ -2316,3 +2316,84 @@ func main(): i32 {
     let output = run_with_timeout("globalmod", &program, &[]);
     assert_exit("globalmod", &output, 0);
 }
+
+/// An imported or qualified func-global keeps its binding when a same-named
+/// function exists elsewhere.
+///
+/// The import binds its head to the holder's func-typed global and the
+/// qualified spelling names it directly, so a function of the same simple
+/// name in another module — exported or not, imported or not — is not in
+/// scope and never becomes the callee. Both spellings read their values back
+/// in each fixture, so a call through the foreign function cannot exit zero
+/// (red at the phase base: the imported, qualified, and unexported-function
+/// programs all ran the foreign function).
+#[test]
+fn should_keep_the_func_global_when_a_same_named_function_exists_elsewhere() {
+    let holder = r#"module spec.cri.globalfnholder;
+
+func hg(x: i32): i32 {
+    return x + 200;
+}
+
+export let f: func(i32): i32 = hg;
+"#;
+    let other = r#"module spec.cri.globalfnother;
+
+export func f(x: i32): i32 {
+    return x + 3;
+}
+"#;
+    let main = r#"module spec.cri.globalfnmain;
+
+import { f } from spec.cri.globalfnholder;
+
+func main(): i32 {
+    return (f(5) - 205) + (spec.cri.globalfnholder.f(5) - 205);
+}
+"#;
+    let (scratch, output, c_path) = compile_three("globalfn", holder, other, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "globalfn: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "globalfn: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("globalfn", &scratch, &emitted);
+    let output = run_with_timeout("globalfn", &program, &[]);
+    assert_exit("globalfn", &output, 0);
+
+    let hidden = r#"module spec.cri.globalfnhidden;
+
+func f(x: i32): i32 {
+    return x + 230;
+}
+"#;
+    let private_main = r#"module spec.cri.globalfnprivmain;
+
+import { f } from spec.cri.globalfnholder;
+
+func main(): i32 {
+    return (f(5) - 205) + (spec.cri.globalfnholder.f(5) - 205);
+}
+"#;
+    let (scratch, output, c_path) = compile_three("globalfnpriv", holder, hidden, private_main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "globalfnpriv: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "globalfnpriv: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("globalfnpriv", &scratch, &emitted);
+    let output = run_with_timeout("globalfnpriv", &program, &[]);
+    assert_exit("globalfnpriv", &output, 0);
+}

@@ -423,17 +423,19 @@ impl<'a> Emitter<'a> {
     /// resolved the way a read is: the current module wins, and otherwise the
     /// name must be unique among the loaded modules, because taking one of
     /// several same-named bindings would silently reach the wrong one. A
-    /// declared function of the written name is the callee instead: the call
-    /// reaches the function's own symbol, and a module-level value that merely
-    /// shares the name never shadows it.
+    /// function the caller's module declares or one of its imports binds is
+    /// the callee instead, and a module-level value that merely shares the
+    /// name never shadows it.
     pub(super) fn func_global_binding(
         &self,
         callee: &str,
     ) -> Option<(crate::ir::GlobalId, Ty)> {
-        // The caller's module first, then its import, then a unique function
-        // elsewhere: whenever a function resolves the name, the call goes
-        // through that declaration and the global fallback stays out.
-        if self.resolve_function(callee).is_some() {
+        // A function the caller's module declares or one of its imports binds
+        // is the callee: the call reaches the function's own symbol, and a
+        // module-level value that merely shares the name never shadows it. A
+        // function of that name elsewhere is not in scope, so it must not
+        // displace the binding the caller's module or its import names.
+        if self.function_in_scope(callee) {
             return None;
         }
         if let Some((module, name)) = callee.rsplit_once('.') {

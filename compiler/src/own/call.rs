@@ -445,13 +445,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// reaches that binding, exactly as a read of it does, so its declaring
     /// module is spelled with the name. Two modules may export the same-named
     /// global, and the qualified spelling keeps the call on the binding the
-    /// front end resolved instead of the first name match. A declared or
-    /// `ffi` function, a library helper, a callable field, and a callee that
-    /// names no whole binding yield `None`.
+    /// front end resolved instead of a name match. A function the caller's
+    /// module declares or one of its imports binds is the callee instead; a
+    /// function of the same simple name elsewhere is not in scope, so it never
+    /// displaces the binding. A declared or `ffi` function, a library helper,
+    /// a callable field, and a callee that names no whole binding yield
+    /// `None`.
     fn func_global_callee_path(&self, callee: &Expr) -> Option<String> {
-        let simple = self.callee_name(callee)?;
-        if self.program.callee(&simple).is_some() {
-            return None;
+        // A function bound in the caller's module or by one of its imports
+        // wins over a module-level value of the same written name. A
+        // qualified path names its binding directly, so the same-named
+        // function of another module cannot shadow it.
+        if let ExprKind::Name(written) = &callee.kind {
+            if self.function_in_scope(written) {
+                return None;
+            }
         }
         let ty = self.value_callee_global_type(callee)?;
         if !matches!(ty.kind, TyKind::Func(_)) {
@@ -466,6 +474,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             _ => return None,
         };
         Some(format!("{}.{}", id.module, id.name))
+    }
+
+    /// True when the caller's own module declares a function of the name, or
+    /// one of the caller's imports binds the name to a function.
+    ///
+    /// The scope rule call resolution follows: a function bound in the
+    /// caller's module or by its imports is the callee, while a function of
+    /// the same simple name elsewhere is not in scope. An `ffi` declaration
+    /// is a function for this purpose, matching the checker.
+    fn function_in_scope(&self, name: &str) -> bool {
+        let is_function = |decl: &crate::load::Decl| {
+            matches!(
+                decl.kind,
+                crate::load::DeclKind::Func | crate::load::DeclKind::Ffi
+            )
+        };
+        if self.module.decls.get(name).is_some_and(is_function) {
+            return true;
+        }
+        self.module.import(name).is_some_and(|binding| {
+            self.loaded
+                .module(&binding.module)
+                .and_then(|target| target.decls.get(&binding.original))
+                .is_some_and(is_function)
+        })
     }
 
     /// Infers the type arguments of a generic call from its argument types.

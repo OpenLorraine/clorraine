@@ -1053,3 +1053,74 @@ func main(): i32 {
         "globalmod: the foreign global must not be called; emitted C:\n{emitted}"
     );
 }
+
+/// Imported and qualified func-global calls emit the holder's symbol when a
+/// same-named function exists elsewhere.
+///
+/// The import binding and the qualified spelling both resolve the holder's
+/// module-level binding, so the emitted calls name its symbol and a foreign
+/// function's symbol never appears as a callee — the unexported function of a
+/// never-imported module least of all (red at the phase base: the calls named
+/// the foreign function).
+#[test]
+fn should_keep_the_func_global_symbol_when_a_same_named_function_exists_elsewhere() {
+    let holder = r#"module spec.criimpl.globalfnholder;
+
+func hg(x: i32): i32 {
+    return x + 200;
+}
+
+export let f: func(i32): i32 = hg;
+"#;
+    let other = r#"module spec.criimpl.globalfnother;
+
+export func f(x: i32): i32 {
+    return x + 3;
+}
+"#;
+    let main = r#"module spec.criimpl.globalfnmain;
+
+import { f } from spec.criimpl.globalfnholder;
+
+func main(): i32 {
+    return (f(5) - 205) + (spec.criimpl.globalfnholder.f(5) - 205);
+}
+"#;
+    let emitted = emit_three("globalfn", holder, other, main);
+    assert_eq!(
+        count(&emitted, "cl_spec_criimpl_globalfnholder_f(5)"),
+        2,
+        "globalfn: both calls must name the holder's binding; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_spec_criimpl_globalfnother_f(5)"),
+        0,
+        "globalfn: the foreign function must not be called; emitted C:\n{emitted}"
+    );
+
+    let hidden = r#"module spec.criimpl.globalfnhidden;
+
+func f(x: i32): i32 {
+    return x + 230;
+}
+"#;
+    let private_main = r#"module spec.criimpl.globalfnprivmain;
+
+import { f } from spec.criimpl.globalfnholder;
+
+func main(): i32 {
+    return (f(5) - 205) + (spec.criimpl.globalfnholder.f(5) - 205);
+}
+"#;
+    let emitted = emit_three("globalfnpriv", holder, hidden, private_main);
+    assert_eq!(
+        count(&emitted, "cl_spec_criimpl_globalfnholder_f(5)"),
+        2,
+        "globalfnpriv: both calls must name the holder's binding; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_spec_criimpl_globalfnhidden_f(5)"),
+        0,
+        "globalfnpriv: the unexported function must not be called; emitted C:\n{emitted}"
+    );
+}
