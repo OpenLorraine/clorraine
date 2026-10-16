@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 07:00
-> **Progress**: 32/51 tasks (63%) — Executing Phase 6
+> **Last Updated**: 2026-10-19 08:00
+> **Progress**: 34/51 tasks (67%) — Phase 6 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -289,11 +289,11 @@ ST-15..ST-17 · AR-8
 
 ### Step 6.2: Implementation
 
-- [ ] 6.2.1 Judge the sibling-fixed null argument against the resolved parameter; record the
+- [x] 6.2.1 Judge the sibling-fixed null argument against the resolved parameter; record the
       destination-side and explicit-type-argument conversion duties and judge them per instance —
       `compiler/src/own/call_check.rs`, `compiler/src/sema/call.rs`,
-      `compiler/src/own/instance_check.rs`
-- [ ] 6.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/instance_check.rs` ✅ (completed: 2026-10-19 08:00; `DEF-344`: a null-shaped argument at a parameter resolved concretely reports the frozen `E10012` at its own use site (`own/call_check.rs:397-412`), so `pair(1, x)` reports one at the `x` site while the per-use-site counts, the explicit twins, and the nullable instances stay; `DEF-351`: the deferred-conversion duty records when the destination still mentions a type parameter (`sema/expr.rs:485-504`) and the generic-call route records each argument's conversion against the resolved parameter (`sema/call.rs:317-326`), so the four inverted spellings report one `E10200` each at the concrete twins' sites; the `bs02` observation is covered by the same fix; left: none in scope)
+- [x] 6.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-19 08:00; the checker-conformance suite 153/153 plain and under `RDC_ASAN=1`; the impl pins 66/66; the differential shows 11 head-only rejects (the two rows' families, incl. the `bs01`/`bs02` probes) and no emission or acceptance change beyond them; parent-verified both legs)
 
 ### Step 6.3: Impl Tests & Review
 

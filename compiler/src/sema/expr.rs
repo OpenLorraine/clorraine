@@ -492,7 +492,14 @@ impl Checker<'_, '_> {
         }
         let null_deferred = crate::types::is_null_shaped(source)
             && (crate::types::contains_param(expected) || expected.is_unknown());
-        if !crate::types::contains_param(source) && !null_deferred {
+        // A destination that still mentions a type parameter judges its
+        // instance too: a concrete source converts to whatever the instance
+        // resolves, so the duty records and the audit reports exactly as the
+        // concrete twin does.
+        if !crate::types::contains_param(source)
+            && !null_deferred
+            && !crate::types::contains_param(expected)
+        {
             return;
         }
         let Some(function) = self.function_name.clone() else {

@@ -320,6 +320,11 @@ impl Checker<'_, '_> {
                     // to the inferred type arguments.
                     self.check_out_slot_place(arg, ty, &expected);
                 } else {
+                    // The resolved parameter judges the argument exactly as a
+                    // direct call's does: a destination or a source that still
+                    // mentions a type parameter records the deferred
+                    // conversion for the instance audit.
+                    self.record_deferred_conversion(ty, &expected, *arg_span);
                     self.check_conversion(ty, &expected, *arg_span);
                 }
             }

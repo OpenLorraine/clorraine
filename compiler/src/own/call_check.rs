@@ -401,7 +401,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // the substituted one; the declared type drives every other
                 // judgment.
                 let null_parameter = resolved.is_some_and(crate::types::is_null_shaped);
-                if null_parameter && crate::types::is_null_shaped(&arg_ty) {
+                let null_argument = crate::types::is_null_shaped(&arg_ty);
+                // A sibling argument can fix the parameter concretely, so the
+                // frozen null rule fires at every use site whose instance
+                // resolved the parameter to a concrete non-nullable type,
+                // exactly as a concrete parameter would; a null-capable
+                // resolution keeps the legal null use.
+                let sibling_fixed = resolved
+                    .is_some_and(|ty| !ty.is_unknown() && !ty.nullable);
+                if null_argument && (null_parameter || sibling_fixed) {
                     self.report_null_rule(arg.span);
                 } else {
                     self.check_value_into(&arg.value, expected, arg.span);
