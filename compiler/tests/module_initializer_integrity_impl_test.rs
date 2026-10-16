@@ -1702,3 +1702,80 @@ func main(): i32 {
         "nullguardinitarg: the conditional must not widen as a whole; emitted C:\n{emitted}"
     );
 }
+
+/// A guarded member arm keeps its index fill and traps ahead of the test.
+///
+/// The arm reads `xs[next()].name`, so the arm renders the fill and the bounds
+/// trap once as leading comma operands and tests the filled place; the
+/// division arm does the same with the division trap (red at the phase base:
+/// the test dropped the fill and both traps, so the call never ran and no
+/// bound or division was checked).
+#[test]
+fn should_keep_the_arm_guards_ahead_of_a_nullable_member_test() {
+    let source = r#"module spec.miiimpl.nullguardindex;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; }
+
+let count: i32 = 0;
+
+func next(): i32 {
+    count = count + 1;
+    return 0;
+}
+
+func pick(c: bool): i32 {
+    let xs: Box[2] = [Box { name: stringOf("abcd") }, Box { name: null }];
+    let s: str? = c ? xs[next()].name : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s)) + count;
+}
+
+func divpick(c: bool, i: i32, j: i32): i32 {
+    let xs: Box[2] = [Box { name: stringOf("ab") }, Box { name: null }];
+    let s: str? = c ? xs[i / j].name : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (pick(true) - 5) + (divpick(true, 1, 1) - 2);
+}
+"#;
+    let (first, second) = emit_twice("nullguardindex", source);
+    assert_eq!(
+        first, second,
+        "nullguardindex: the program re-emitted differently"
+    );
+    let emitted = &first;
+    assert_eq!(
+        count(emitted, "__cl_tmp0 = cl_spec_miiimpl_nullguardindex_next()"),
+        1,
+        "nullguardindex: the index call must fill exactly once; emitted C:\n{emitted}"
+    );
+    assert_contains(
+        "nullguardindex",
+        emitted,
+        "), (xs[__cl_tmp0].name ? cl_string_view(xs[__cl_tmp0].name) : cl_zero_ClStr())",
+    );
+    assert_contains(
+        "nullguardindex",
+        emitted,
+        "cl_trap(\"E11211\", \"index out of range\")",
+    );
+    assert_contains(
+        "nullguardindex",
+        emitted,
+        "), (xs[(i / j)].name ? cl_string_view(xs[(i / j)].name) : cl_zero_ClStr())",
+    );
+    assert_contains(
+        "nullguardindex",
+        emitted,
+        "cl_trap(\"E11210\", \"integer division by zero\")",
+    );
+}

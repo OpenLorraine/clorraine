@@ -312,6 +312,33 @@ fn assert_no_asan(tag: &str, output: &Output) {
     );
 }
 
+/// The first non-empty stderr line of a run.
+fn first_stderr_line(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Asserts the run aborted with `line` as its first stderr line.
+///
+/// The trap's message is the first thing the run writes, so the frozen fault
+/// line is the abort's own text rather than the sanitizer's or the C library's
+/// report.
+fn assert_fault(tag: &str, output: &Output, line: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag}: the run must abort; exit code: {:?}",
+        output.status.code()
+    );
+    assert_eq!(
+        first_stderr_line(output),
+        line,
+        "{tag}: the abort must print the frozen fault line"
+    );
+}
+
 /// A capture-less lambda callee runs from a module initializer.
 ///
 /// The initializer's lambda lifts to a module-level function like a body
@@ -2238,4 +2265,114 @@ func main(): i32 {
     let output = run_memory("nullguardmemberarm-null", &nullcase);
     assert_no_asan("nullguardmemberarm-null", &output);
     assert_exit("nullguardmemberarm-null", &output, 9);
+}
+
+/// A call-indexed member arm keeps its index call ahead of the null guard.
+///
+/// The arm reads `xs[next()].name`, so the index call fills once before the
+/// guard tests the member: the taken selection reads the member plus the one
+/// call (exit 0) and the null member reads back as null (exit 9) (red at the
+/// phase base: the guard's source dropped the fill, so the call never ran and
+/// the counter read zero).
+#[test]
+fn should_keep_the_call_index_when_a_nullable_member_arm_reads_it() {
+    let source = r#"module spec.mii.nullguardindex;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; }
+
+let count: i32 = 0;
+
+func next(): i32 {
+    count = count + 1;
+    return 0;
+}
+
+func pick(c: bool): i32 {
+    let xs: Box[2] = [Box { name: stringOf("abcd") }, Box { name: null }];
+    let s: str? = c ? xs[next()].name : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s)) + count;
+}
+
+func main(): i32 {
+    return (pick(true) - 5) + (pick(false) - 9);
+}
+"#;
+    let output = run_memory("nullguardindex", source);
+    assert_no_asan("nullguardindex", &output);
+    assert_exit("nullguardindex", &output, 0);
+}
+
+/// A negative index in a nullable member arm traps at the frozen bound.
+///
+/// The arm's bounds guard stays part of the arm, so the run aborts with the
+/// frozen index fault instead of reading past the array (red at the phase
+/// base: the guard's source dropped the bounds trap and the run read out of
+/// bounds).
+#[test]
+fn should_trap_a_negative_index_when_a_nullable_member_arm_reads_it() {
+    let source = r#"module spec.mii.nullguardindextrap;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; }
+
+func pick(c: bool, i: i32): i32 {
+    let xs: Box[2] = [Box { name: stringOf("ab") }, Box { name: null }];
+    let s: str? = c ? xs[i].name : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return pick(true, -1);
+}
+"#;
+    let output = run_memory("nullguardindextrap", source);
+    assert_fault(
+        "nullguardindextrap",
+        &output,
+        "error E11211: index out of range",
+    );
+}
+
+/// A zero divisor in a nullable member arm traps at the frozen division.
+///
+/// The arm's division guard stays part of the arm, so the run aborts with the
+/// frozen division fault instead of dividing by zero (red at the phase base:
+/// the guard's source dropped the division trap and the run raised the
+/// hardware fault).
+#[test]
+fn should_trap_a_zero_divisor_when_a_nullable_member_arm_reads_it() {
+    let source = r#"module spec.mii.nullguarddivtrap;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; }
+
+func pick(c: bool, i: i32, j: i32): i32 {
+    let xs: Box[2] = [Box { name: stringOf("ab") }, Box { name: null }];
+    let s: str? = c ? xs[i / j].name : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return pick(true, 1, 0);
+}
+"#;
+    let output = run_memory("nullguarddivtrap", source);
+    assert_fault(
+        "nullguarddivtrap",
+        &output,
+        "error E11210: integer division by zero",
+    );
 }

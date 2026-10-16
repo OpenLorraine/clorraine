@@ -430,9 +430,7 @@ impl<'a> Emitter<'a> {
                 )
             }
             _ => {
-                let mut guards: Vec<String> = Vec::new();
-                self.guard_expressions(value, &mut guards);
-                let rendered = self.value(value);
+                let (rendered, guards) = self.guarded_parts(value);
                 if guards.is_empty() {
                     rendered
                 } else {
@@ -882,6 +880,19 @@ impl<'a> Emitter<'a> {
             });
         }
         Some(parts.join(", "))
+    }
+
+    /// The plain rendering of a value and its always-evaluated operand guards.
+    ///
+    /// The guards — a materialize fill, a bounds or division trap — run once,
+    /// ahead of the value they check; the rendering itself is the plain
+    /// expression a caller may read again. A null guard's test reads the
+    /// rendering twice, so separating the two keeps the guards from running
+    /// twice.
+    pub(super) fn guarded_parts(&self, value: &Value) -> (String, Vec<String>) {
+        let mut guards: Vec<String> = Vec::new();
+        self.guard_expressions(value, &mut guards);
+        (self.value(value), guards)
     }
 
     /// Collects the guard expressions of a value's always-evaluated part.

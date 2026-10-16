@@ -2104,19 +2104,25 @@ impl<'a> Emitter<'a> {
     ///
     /// The view constructor would dereference a null handle, so a source that
     /// can be null tests it first and selects the destination's empty view:
-    /// `(handle ? cl_string_view(handle) : cl_zero_ClStr())`. The guard reads
+    /// `(handle ? cl_string_view(handle) : cl_zero_ClStr())`. The test reads
     /// the source twice, so only a stable source spells it; a source that
     /// reads a fresh value — a call, or a field of one — binds to a temporary
     /// before the store instead. Every other source keeps the plain widening.
+    /// The source's own operand guards run once, ahead of the test.
     pub(super) fn guarded_view_widening(&self, value: &Value, target: &Ty) -> Option<String> {
         if !self.reads_stable_storage(value) || !self.needs_view_guard(&value.ty, target) {
             return None;
         }
-        let text = self.value(value);
-        Some(format!(
+        let (text, guards) = self.guarded_parts(value);
+        let guarded = format!(
             "({text} ? cl_string_view({text}) : {})",
             self.null_value(target)
-        ))
+        );
+        Some(if guards.is_empty() {
+            guarded
+        } else {
+            format!("(({}), {guarded})", guards.join(", "))
+        })
     }
 
     /// Renders a value for a store into a target of type `ty`.
