@@ -4152,3 +4152,34 @@ func main(): i32 {
         &[],
     );
 }
+
+// ===== The nullable parameter destination =====
+
+/// A null shape at a nullable parameter destination keeps one report.
+///
+/// A `T?` destination is rejected where it is written (a type parameter
+/// cannot be empty), so the instance judgment must not add a dependent null
+/// report on the recovered substituted shape: the declaration reports exactly
+/// one `E10011` and no `E10012` (before the suppression the same declaration
+/// also reported the null rule at the value).
+#[test]
+fn should_report_a_nullable_parameter_destination_once() {
+    let source = r#"module spec.cc.nullableparameter;
+
+func store<T>(x: T): i32 {
+    let y: T? = null;
+    return 0;
+}
+
+func main(): i32 {
+    return store<i32>(5) + 1;
+}
+"#;
+    assert_rejected_once(
+        "nullableparameter",
+        source,
+        "E10011",
+        &["nullable type is not allowed on 'T'"],
+        &["E10012"],
+    );
+}

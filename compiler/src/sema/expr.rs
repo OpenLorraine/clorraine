@@ -453,6 +453,13 @@ impl Checker<'_, '_> {
     /// recording it again would report twice or reject where the concrete
     /// spelling accepts.
     pub(super) fn record_deferred_conversion(&mut self, source: &Ty, expected: &Ty, span: Span) {
+        // A destination that is a nullable type parameter is already rejected
+        // where it is written (a type parameter cannot be empty), so its
+        // recovered substituted shape is never judged again: the declaration
+        // keeps its single report instead of a dependent one.
+        if expected.nullable && matches!(expected.kind, TyKind::Param(_)) {
+            return;
+        }
         let null_deferred = crate::types::is_null_shaped(source)
             && (crate::types::contains_param(expected) || expected.is_unknown());
         if !crate::types::contains_param(source) && !null_deferred {
