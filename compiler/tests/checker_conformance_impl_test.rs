@@ -3280,3 +3280,154 @@ fn should_re_emit_the_element_surfaces_identically() {
     );
     assert_contains("reemitconvret", &first, "cl_first__i32(s)");
 }
+
+// ===== The element place's moves =====
+
+/// The borrowed element move-store program.
+const ELEMENT_MOVE_SOURCE: &str = r#"module spec.cc.impl.elemmove;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eachM<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        let s: String = stringOf("qq");
+        v.name = s;
+        total = total + i32(len(bytes(v.name)));
+        v.name = stringOf("r");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return eachM<S[2]>(a) - 6;
+}
+"#;
+
+/// The concrete twin of the borrowed element move-store program.
+const ELEMENT_MOVE_CONTROL_SOURCE: &str = r#"module spec.cc.impl.elemmovectl;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eachMS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        let s: String = stringOf("qq");
+        v.name = s;
+        total = total + i32(len(bytes(v.name)));
+        v.name = stringOf("r");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return eachMS(a) - 6;
+}
+"#;
+
+/// The borrowed element take-then-store program.
+const ELEMENT_TAKE_SOURCE: &str = r#"module spec.cc.impl.elemtake;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func each<T>(xs: T): i32 {
+    for (borrow v in xs) {
+        eat(v.name);
+        v.name = stringOf("zzzz");
+        return i32(len(bytes(v.name)));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    return each<S[1]>(a) - 4;
+}
+"#;
+
+/// The top-level field twin of the take-then-store program.
+const ELEMENT_TAKE_CONTROL_SOURCE: &str = r#"module spec.cc.impl.elemtakectl;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("a") };
+    eat(a.name);
+    a.name = stringOf("zzzz");
+    return i32(len(bytes(a.name))) - 4;
+}
+"#;
+
+/// A named owner stored into a borrowed element empties the source.
+///
+/// `v.name = s` stores the `String` `s` into the element, so the emitted move
+/// releases the element's replaced owner, stores, and empties `s` — the
+/// sequence the concrete twin emits. Before the element destination was
+/// routed as an owning store, the source stayed intact and the overwrite
+/// release freed the moved value twice.
+#[test]
+fn should_empty_a_named_source_stored_into_a_borrowed_element() {
+    let sequence = "    if ((*__cl_tmp1).name) { FreeString((*__cl_tmp1).name); }\n    \
+                    (*__cl_tmp1).name = NULL;\n    \
+                    (*__cl_tmp1).name = s;\n    \
+                    s = NULL;";
+    let emitted = emit_host("elemmove", ELEMENT_MOVE_SOURCE);
+    assert_contains("elemmove", &emitted, sequence);
+
+    let emitted = emit_host("elemmovectl", ELEMENT_MOVE_CONTROL_SOURCE);
+    assert_contains("elemmovectl", &emitted, sequence);
+}
+
+/// A take argument empties a borrowed element before the next store.
+///
+/// `eat(v.name)` moves the element's member to the callee, so the element is
+/// emptied right after the call — the top-level field spelling's shape — and
+/// the store that follows sees an empty place. Before the place type reached
+/// the move-out, the element kept the value the callee owned and the store's
+/// overwrite release freed it twice. The top-level spelling already held its
+/// shape before the element places followed it, so its half of this pin is
+/// the unchanged control.
+#[test]
+fn should_empty_a_borrowed_element_after_a_take_argument() {
+    let take = "cl_spec_cc_impl_elemtake_eat((*__cl_tmp1).name);";
+    let empty = "(*__cl_tmp1).name = NULL;";
+    let emitted = emit_host("elemtake", ELEMENT_TAKE_SOURCE);
+    assert_contains("elemtake", &emitted, take);
+    let take_at = emitted
+        .find(take)
+        .unwrap_or_else(|| panic!("elemtake: the take call is missing"));
+    let empty_at = emitted
+        .find(empty)
+        .unwrap_or_else(|| panic!("elemtake: the element is never emptied"));
+    assert!(
+        take_at < empty_at,
+        "elemtake: the take must empty the element before the next store"
+    );
+    assert_eq!(
+        count(&emitted, empty),
+        2,
+        "elemtake: expected the take's emptying and the store's release"
+    );
+
+    // The top-level spelling already emptied its field before the element
+    // places followed it, so these shapes guard it unchanged.
+    let emitted = emit_host("elemtakectl", ELEMENT_TAKE_CONTROL_SOURCE);
+    assert_contains("elemtakectl", &emitted, "eat(a.name);");
+    assert_contains("elemtakectl", &emitted, "a.name = NULL;");
+}

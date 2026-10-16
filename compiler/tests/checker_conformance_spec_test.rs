@@ -5954,3 +5954,126 @@ func main(): i32 {
     assert_no_asan("duplicableoutslotctl", &output);
     assert_exit("duplicableoutslotctl", &output, 0);
 }
+
+// ===== The element place's moves and stores =====
+
+/// A named owner stored into a borrowed element moves, and the next store
+/// releases what it replaces.
+///
+/// `v.name = s` inside `each<T>`'s borrow loop stores the `String` `s` into
+/// the element, so the source empties exactly as the concrete twin empties
+/// it, and the following store releases the owner it overwrites. The run
+/// folds both stored sizes back (exit 0) and the leak checker is clean. The
+/// concrete twin is the control. (The overwrite release used to leak one
+/// stored owner per element, and without the matching source emptying the
+/// release that followed freed the moved value twice.)
+#[test]
+fn should_move_a_named_owner_into_a_borrowed_element_and_release_the_replaced_value() {
+    let looping = r#"module spec.cc.elementmovestore;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eachM<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        let s: String = stringOf("qq");
+        v.name = s;
+        total = total + i32(len(bytes(v.name)));
+        v.name = stringOf("r");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return eachM<S[2]>(a) - 6;
+}
+"#;
+    let output = run_memory("elementmovestore", looping);
+    assert_no_asan("elementmovestore", &output);
+    assert_exit("elementmovestore", &output, 0);
+
+    let concrete = r#"module spec.cc.elementmovestorectl;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eachMS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        let s: String = stringOf("qq");
+        v.name = s;
+        total = total + i32(len(bytes(v.name)));
+        v.name = stringOf("r");
+        total = total + i32(len(bytes(v.name)));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("a"), y: 1 }, S { name: stringOf("bb"), y: 2 }];
+    return eachMS(a) - 6;
+}
+"#;
+    let output = run_memory("elementmovestorectl", concrete);
+    assert_no_asan("elementmovestorectl", &output);
+    assert_exit("elementmovestorectl", &output, 0);
+}
+
+/// A take argument empties the borrowed element before the next store.
+///
+/// `eat(v.name)` moves the element's member to the callee, so the element is
+/// emptied exactly as the top-level field spelling empties it; the store that
+/// follows writes a fresh value and the run folds its size back (exit 0) with
+/// the leak checker clean. The top-level field spelling is the control.
+#[test]
+fn should_empty_a_borrowed_element_after_a_take_argument() {
+    let looping = r#"module spec.cc.elementtakestore;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func each<T>(xs: T): i32 {
+    for (borrow v in xs) {
+        eat(v.name);
+        v.name = stringOf("zzzz");
+        return i32(len(bytes(v.name)));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    return each<S[1]>(a) - 4;
+}
+"#;
+    let output = run_memory("elementtakestore", looping);
+    assert_no_asan("elementtakestore", &output);
+    assert_exit("elementtakestore", &output, 0);
+
+    let top_level = r#"module spec.cc.elementtakestorectl;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("a") };
+    eat(a.name);
+    a.name = stringOf("zzzz");
+    return i32(len(bytes(a.name))) - 4;
+}
+"#;
+    let output = run_memory("elementtakestorectl", top_level);
+    assert_no_asan("elementtakestorectl", &output);
+    assert_exit("elementtakestorectl", &output, 0);
+}

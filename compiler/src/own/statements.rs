@@ -427,8 +427,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     fn prepare_store(&mut self, ty: &Ty, value: &'a Expr) -> PreparedStore {
         // A type that may own at an instantiation stores as a move too: the
         // emitted move checks the substituted source type and falls back to a
-        // plain copy when the instance is duplicable.
-        let owning = !self.sema.table.duplicable(ty) || self.maybe_owns(ty);
+        // plain copy when the instance is duplicable. An unknown destination
+        // type takes the same route: the declaration already consumes a named
+        // source for it, and its substituted shape may own once the instance
+        // is known, so the emitted move stays the one place the source is
+        // emptied.
+        let owning = !self.sema.table.duplicable(ty) || self.maybe_owns(ty) || ty.is_unknown();
         if owning {
             if let Some(source) = self.place_target(value) {
                 return PreparedStore::Move {
@@ -439,8 +443,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // so storing it into an owned destination is the v1 element-move
             // limit rather than an assign of a borrowed element. A conditional
             // whose arms are such reads hits the same limit. A maybe-owning
-            // destination cannot judge the limit here, so it stays a copy.
+            // destination cannot judge the limit here, so it stays a copy; an
+            // unknown destination keeps the declaration's untouched verdict
+            // too, because its substituted shape is not known yet.
             if !self.maybe_owns(ty)
+                && !ty.is_unknown()
                 && (self.is_ownerless_element_move(value)
                     || self.conditional_ownerless_element_move(value))
             {

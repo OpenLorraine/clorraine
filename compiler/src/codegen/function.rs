@@ -476,8 +476,11 @@ impl<'a> Emitter<'a> {
                 }
                 // A move whose source type does not own at this instantiation
                 // is a plain copy: the source stays intact for a duplicable
-                // instance, while an owning one empties it.
-                let source_ty = self.substitute(&source.ty);
+                // instance, while an owning one empties it. The source type is
+                // the resolved place type, so a source recorded opaquely — the
+                // member of an element placeholder — empties exactly as the
+                // concrete spelling does.
+                let source_ty = self.resolved_place_ty(source);
                 if self.needs_drop(&source_ty) {
                     self.emit_move_zero_place(source, &source_c, &source_ty);
                 }
@@ -486,8 +489,10 @@ impl<'a> Emitter<'a> {
                 self.emit_line_directive(span);
                 // The callee took the value; only an owning argument place is
                 // emptied, because a duplicable instance leaves the caller its
-                // copy.
-                let ty = self.substitute(&place.ty);
+                // copy. The place type is the resolved one, so an argument
+                // recorded opaquely — the member of an element placeholder —
+                // empties exactly as the top-level spelling does.
+                let ty = self.resolved_place_ty(place);
                 if self.needs_drop(&ty) {
                     let source = self.place(place);
                     self.emit_move_zero_place(place, &source, &ty);

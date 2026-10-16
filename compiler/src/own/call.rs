@@ -693,9 +693,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for (arg, mode) in args.iter().zip(modes) {
             // A maybe-owning argument travels as a move for an owning instance
             // and as a copy for a duplicable one; the emitted move-out chooses
-            // by the substituted type.
+            // by the substituted type. An argument recorded with an unknown
+            // type takes the same route: its substituted shape may own once
+            // the instance is known, so the move-out is emitted and the
+            // emptied check decides per instance.
+            let maybe_owning = self.maybe_owns(&arg.ty) || arg.ty.is_unknown();
             if *mode != Mode::Take
-                || (self.sema.table.duplicable(&arg.ty) && !self.maybe_owns(&arg.ty))
+                || (self.sema.table.duplicable(&arg.ty) && !maybe_owning)
             {
                 continue;
             }
