@@ -515,13 +515,21 @@ fn dot_receiver(callee: &Expr, program: &ProgramInfo, sema: &SemaOutput) -> DotR
         }
         ExprKind::Qualified(name) if name.segments.len() >= 2 => {
             let (head, rest) = name.segments.split_first().expect("checked segment count");
-            let Some((_, info)) = program.globals.iter().find(|(id, _)| id.name == *head) else {
+            // Two modules may export the same-named binding, and this walk
+            // carries no module context, so an ambiguous head cannot be typed
+            // here: the receiver stays underived rather than taking the first
+            // name match.
+            let mut candidates = program.globals.iter().filter(|(id, _)| id.name == *head);
+            let Some((_, info)) = candidates.next() else {
                 // A local-headed path in a body is typed by the caller's scope,
                 // which this walk does not carry, and a module-qualified path
                 // names no value receiver at all. Either way the key cannot be
                 // derived here.
                 return DotReceiver::Unknown;
             };
+            if candidates.next().is_some() {
+                return DotReceiver::Unknown;
+            }
             let mut ty = info.ty.clone();
             for segment in &rest[..rest.len() - 1] {
                 let Some(next) = sema.table.instance_field(&ty, segment) else {

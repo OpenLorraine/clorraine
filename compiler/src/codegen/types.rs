@@ -296,6 +296,14 @@ pub(super) fn declarator(ty: &Ty, name: &str, table: &TypeTable) -> String {
             for extent in extents {
                 suffix.push_str(&format!("[{}]", extent.unwrap_or(0)));
             }
+            // A function-pointer element keeps the array inside its own
+            // declarator: the extents follow the name inside the pointer's
+            // parentheses (`ret (*name[N])(params)`), because the element's
+            // own text (`ret (*)(params)`) followed by an extent would declare
+            // a function returning an array.
+            if matches!(element.kind, TyKind::Func(_)) {
+                return declarator(element, &format!("{name}{suffix}"), table);
+            }
             format!("{} {name}{suffix}", c_type(element, table))
         }
         TyKind::Raw(inner) => pointer_to_array_declarator(inner, name, table)

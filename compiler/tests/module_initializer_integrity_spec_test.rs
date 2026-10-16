@@ -1630,3 +1630,29 @@ func main(): i32 {
     assert_no_asan("arraysizeofctl", &output);
     assert_exit("arraysizeofctl", &output, 0);
 }
+
+/// A function-pointer array `sizeof` measures the whole type.
+///
+/// The array's element is a function pointer, so the C type keeps its extents
+/// inside the pointer's parentheses: the whole type measures two pointers,
+/// 16 bytes on the host, while one function pointer measures 8. The
+/// module-level binding and the body locals read both values back, so a
+/// measure of one element, or an invalid spelling, cannot exit zero (red at
+/// the phase base: the emitted translation unit spelled `i32 (*)(i32)[2]`,
+/// which the C compiler rejected).
+#[test]
+fn should_measure_the_whole_function_pointer_array_type() {
+    let source = r#"module spec.mii.fparraysizeof;
+
+let wholeSize: usize = sizeof((func(i32): i32)[2]);
+
+func main(): i32 {
+    let n: usize = sizeof((func(i32): i32)[2]);
+    let m: usize = sizeof(func(i32): i32);
+    return i32(wholeSize - 16) + i32(n - 16) + i32(m - 8);
+}
+"#;
+    let output = run_memory("fparraysizeof", source);
+    assert_no_asan("fparraysizeof", &output);
+    assert_exit("fparraysizeof", &output, 0);
+}

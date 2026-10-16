@@ -416,13 +416,57 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// The module-level func-typed binding a call's callee name denotes.
+    ///
+    /// A callee spelled with its declaring module (`m2.pick`) names the
+    /// binding exactly, so two same-named globals stay apart. A bare name is
+    /// resolved the way a read is: the current module wins, and otherwise the
+    /// name must be unique among the loaded modules, because taking one of
+    /// several same-named bindings would silently reach the wrong one.
+    pub(super) fn func_global_binding(
+        &self,
+        callee: &str,
+    ) -> Option<(crate::ir::GlobalId, Ty)> {
+        if let Some((module, name)) = callee.rsplit_once('.') {
+            return self
+                .globals
+                .iter()
+                .find(|(id, info)| {
+                    id.module == module
+                        && id.name == name
+                        && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
+                })
+                .map(|(id, info)| (id.clone(), self.substitute(&info.ty)));
+        }
+        let same_module = self.globals.iter().find(|(id, info)| {
+            id.name == callee
+                && id.module == self.current_module
+                && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
+        });
+        if let Some((id, info)) = same_module {
+            return Some((id.clone(), self.substitute(&info.ty)));
+        }
+        let mut candidates = self.globals.iter().filter(|(id, info)| {
+            id.name == callee && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
+        });
+        let (id, info) = candidates.next()?;
+        if candidates.next().is_some() {
+            return None;
+        }
+        Some((id.clone(), self.substitute(&info.ty)))
+    }
+
     /// The module-level binding a dotted name names, with its field path.
     ///
     /// A name whose head is a module-level binding names that binding with
-    /// its fields (`h.call`); otherwise the leading segments are the
-    /// declaring module's dotted name and the last segment is the binding
-    /// (`spec.cri.globalcallee.g`). A single-segment name prefers the current
-    /// module, exactly as the name resolver does.
+    /// its fields (`h.call`); otherwise the leading segments spell the
+    /// declaring module and the binding follows them (`spec.cri.globalcallee.g`,
+    /// or a name the lowering already qualified with its module:
+    /// `spec.cri.globalcallee.h.call`). A simple head prefers the current
+    /// module, exactly as the name resolver does, and it is taken from another
+    /// module only when exactly one module declares it; several same-named
+    /// bindings with no module spelled leave the name unresolved rather than
+    /// silently reading one of them.
     fn global_binding_path(
         &self,
         segments: &[String],
@@ -433,16 +477,32 @@ impl<'a> Emitter<'a> {
             .globals
             .iter()
             .find(|(id, _)| head(id) && id.module == self.current_module)
-            .or_else(|| self.globals.iter().find(|(id, _)| head(id)))
         {
             return Some((id.clone(), rest.join(".")));
         }
-        let (name, module) = segments.split_last()?;
-        let module_path = module.join(".");
-        self.globals
-            .iter()
-            .find(|(id, _)| &id.name == name && id.module == module_path)
-            .map(|(id, _)| (id.clone(), String::new()))
+        let mut candidates = self.globals.iter().filter(|(id, _)| head(id));
+        let head_match = match candidates.next() {
+            Some(found) => candidates.next().is_none().then_some(found),
+            None => None,
+        };
+        if let Some((id, _)) = head_match {
+            return Some((id.clone(), rest.join(".")));
+        }
+        // The leading segments may spell the declaring module with the binding
+        // after them, so a qualified name resolves the exact binding and the
+        // segments after it are its fields. The longest module prefix wins.
+        for split in (1..segments.len()).rev() {
+            let module = segments[..split].join(".");
+            let name = &segments[split];
+            if let Some((id, _)) = self
+                .globals
+                .iter()
+                .find(|(id, _)| id.module == module && &id.name == name)
+            {
+                return Some((id.clone(), segments[split + 1..].join(".")));
+            }
+        }
+        None
     }
 
     /// Renders a unary operator, wrapping signed negation through unsigned.
@@ -896,22 +956,11 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
-        // A same-module global wins, then any loaded module's: an imported
-        // or qualified spelling carries the global's identity, so its symbol
-        // comes from the module that declares it.
-        self.globals
-            .iter()
-            .find(|(id, info)| {
-                id.name == callee
-                    && id.module == self.current_module
-                    && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
-            })
-            .or_else(|| {
-                self.globals.iter().find(|(id, info)| {
-                    id.name == callee
-                        && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
-                })
-            })
+        // A module-level func-typed global resolves through its own identity:
+        // a qualified or imported spelling names the exact binding, and a
+        // bare name is taken only when the current module declares it or a
+        // single module does.
+        self.func_global_binding(callee)
             .map(|(id, _)| self.global_symbol(&id.module, &id.name))
     }
 

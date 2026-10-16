@@ -10,7 +10,7 @@ use crate::ir::{Value, ValueKind};
 use crate::types::{contains_param, Ty, TyKind};
 
 use super::render::escape_c_string;
-use super::types::{c_type, is_pointer_param, is_struct_view, type_key};
+use super::types::{c_type, declarator, is_pointer_param, is_struct_view, type_key};
 use super::Emitter;
 
 impl Emitter<'_> {
@@ -370,19 +370,28 @@ impl Emitter<'_> {
             "sizeof" => match type_arg {
                 Some(ty) => {
                     let ty = self.substitute(ty);
-                    // A fixed array measures the whole type, so the intrinsic
-                    // spells the C array type itself: the base type with every
-                    // extent. The declarator spelling folds a fixed array to
-                    // its element, which would measure one element instead.
+                    // A fixed array measures the whole type, spelled through
+                    // the declarator so a function-pointer element keeps its
+                    // extents inside the pointer's parentheses. The declarator
+                    // folds a fixed array to its element for a variable
+                    // declaration, which would measure one element instead.
                     match &ty.kind {
                         TyKind::Array { element, extents }
                             if extents.iter().all(Option::is_some) =>
                         {
-                            let mut text = c_type(element, &self.sema.table);
-                            for extent in extents.iter().flatten() {
-                                text.push_str(&format!("[{extent}]"));
+                            // A function-pointer element keeps its extents
+                            // inside the pointer's parentheses; every other
+                            // fixed array spells its element's C type with the
+                            // extents appended.
+                            if matches!(element.kind, TyKind::Func(_)) {
+                                format!("sizeof({})", declarator(&ty, "", &self.sema.table))
+                            } else {
+                                let mut text = c_type(element, &self.sema.table);
+                                for extent in extents.iter().flatten() {
+                                    text.push_str(&format!("[{extent}]"));
+                                }
+                                format!("sizeof({text})")
                             }
-                            format!("sizeof({text})")
                         }
                         _ => format!("sizeof({})", c_type(&ty, &self.sema.table)),
                     }

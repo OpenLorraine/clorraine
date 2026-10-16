@@ -960,22 +960,11 @@ impl<'a> Emitter<'a> {
         if let Some(ty) = self.func_value_type(callee) {
             return Some(ty);
         }
-        // A same-module global wins, then any loaded module's: an imported
-        // or qualified spelling carries the global's identity.
-        self.globals
-            .iter()
-            .find(|(id, info)| {
-                id.name == callee
-                    && id.module == self.current_module
-                    && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
-            })
-            .or_else(|| {
-                self.globals.iter().find(|(id, info)| {
-                    id.name == callee
-                        && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
-                })
-            })
-            .map(|(_, info)| self.substitute(&info.ty))
+        // A module-level func-typed global resolves through its own identity:
+        // a qualified or imported spelling names the exact binding, and a
+        // bare name is taken only when the current module declares it or a
+        // single module does.
+        self.func_global_binding(callee).map(|(_, ty)| ty)
     }
 
     /// The checked type of a func-typed local, parameter, or lambda capture.

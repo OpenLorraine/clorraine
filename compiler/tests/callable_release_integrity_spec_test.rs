@@ -157,6 +157,40 @@ fn compile_pair(tag: &str, holder: &str, main: &str) -> (ScratchDir, Output, Pat
     (scratch, output, c_path)
 }
 
+/// Compiles a three-file module program and returns the compiler output.
+///
+/// Two holder files declare the modules the program names; every path reaches
+/// the compiler, so two same-named bindings in different modules both resolve
+/// and the ordinary checks run on them.
+fn compile_three(
+    tag: &str,
+    first: &str,
+    second: &str,
+    main: &str,
+) -> (ScratchDir, Output, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let first_path = scratch.path().join("first.clo");
+    let second_path = scratch.path().join("second.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&first_path, first)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the first holder: {err}"));
+    std::fs::write(&second_path, second)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the second holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        first_path.display().to_string(),
+        second_path.display().to_string(),
+    ]);
+    (scratch, output, c_path)
+}
+
 /// Emits one host-profile program and asserts the front end accepted it.
 fn emit_host(tag: &str, source: &str) -> String {
     let (_scratch, output, c_path) = compile_only(tag, source);
@@ -2174,4 +2208,64 @@ func main(): i32 {
     let program = build_host_c("globalcallee", &scratch, &emitted);
     let output = run_with_timeout("globalcallee", &program, &[]);
     assert_exit("globalcallee", &output, 0);
+}
+
+/// Two same-named func globals in different modules stay apart.
+///
+/// The front end resolves each call to its own module-level binding, so a
+/// qualified spelling reaches the module it names, an imported spelling
+/// reaches the module it imports from, and a bare call inside a module keeps
+/// that module's own binding even while another module exports the same name.
+/// The run reads every call back, so resolving one name to the wrong module's
+/// binding cannot exit zero (red at the phase base: the import and the bare
+/// same-module call both ran the first module's function, so two of the three
+/// calls read the wrong value).
+#[test]
+fn should_keep_two_same_named_func_globals_apart() {
+    let first = r#"module spec.cri.globalsplitfirst;
+
+func plusOne(v: i32): i32 {
+    return v + 1;
+}
+
+export let pick: func(i32): i32 = plusOne;
+"#;
+    let second = r#"module spec.cri.globalsplitsecond;
+
+func plusHundred(v: i32): i32 {
+    return v + 100;
+}
+
+export let pick: func(i32): i32 = plusHundred;
+
+export func ownCall(): i32 {
+    return pick(5) - 105;
+}
+"#;
+    let main = r#"module spec.cri.globalsplitmain;
+
+import { pick, ownCall } from spec.cri.globalsplitsecond;
+
+func main(): i32 {
+    let imported: i32 = pick(5) - 105;
+    let qualified: i32 = spec.cri.globalsplitfirst.pick(5) - 6;
+    let own: i32 = ownCall();
+    return imported + qualified + own;
+}
+"#;
+    let (scratch, output, c_path) = compile_three("globalsplit", first, second, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "globalsplit: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "globalsplit: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("globalsplit", &scratch, &emitted);
+    let output = run_with_timeout("globalsplit", &program, &[]);
+    assert_exit("globalsplit", &output, 0);
 }

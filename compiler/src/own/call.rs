@@ -186,7 +186,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     name: name.clone(),
                 }
             }
-            ExprKind::Qualified(name) => ValueKind::Path(name.segments.clone()),
+            ExprKind::Qualified(name) => {
+                ValueKind::Path(self.global_head_segments(&name.segments))
+            }
             _ => return None,
         };
         Some(Value::new(field_ty, kind))
@@ -230,6 +232,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 _ => written.clone(),
             },
             _ => self.callee_name(callee).unwrap_or_default(),
+        };
+        // A callee that resolves to a module-level func global carries the
+        // binding's identity: the declaring module is spelled with the name,
+        // so two modules exporting the same-named global stay apart. A local
+        // binding, a declared or `ffi` function, a library helper, and a
+        // callable field keep their own spelling.
+        let name = if local_callee {
+            name
+        } else {
+            self.func_global_callee_path(callee).unwrap_or(name)
         };
         let receiver = self.func_field_receiver(callee);
         // The dot receiver is the call's argument position zero, so its
@@ -412,6 +424,35 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             args: values,
             modes,
         }
+    }
+
+    /// The identity-qualified spelling of a module-level func-global callee.
+    ///
+    /// A call whose callee is a whole module-level binding of function type
+    /// reaches that binding, exactly as a read of it does, so its declaring
+    /// module is spelled with the name. Two modules may export the same-named
+    /// global, and the qualified spelling keeps the call on the binding the
+    /// front end resolved instead of the first name match. A declared or
+    /// `ffi` function, a library helper, a callable field, and a callee that
+    /// names no whole binding yield `None`.
+    fn func_global_callee_path(&self, callee: &Expr) -> Option<String> {
+        let simple = self.callee_name(callee)?;
+        if self.program.callee(&simple).is_some() {
+            return None;
+        }
+        let ty = self.value_callee_global_type(callee)?;
+        if !matches!(ty.kind, TyKind::Func(_)) {
+            return None;
+        }
+        let id = match &callee.kind {
+            ExprKind::Name(written) => self.resolve_global_id(written)?,
+            ExprKind::Qualified(name) => {
+                let global = crate::init_graph::resolve_global(self.loaded, self.module, name)?;
+                ir::GlobalId::new(global.module, global.name)
+            }
+            _ => return None,
+        };
+        Some(format!("{}.{}", id.module, id.name))
     }
 
     /// Infers the type arguments of a generic call from its argument types.

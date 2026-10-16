@@ -1748,6 +1748,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         crate::init_graph::resolve_name_global(self.loaded, self.module, name).map(global_id)
     }
 
+    /// The segments of a dotted read, with the head binding's identity.
+    ///
+    /// A dotted name reads a binding at its head and fields after it. When
+    /// that head is a module-level binding, the declaring module is spelled in
+    /// front of it, so the emitter names the same binding the front end
+    /// resolved even when several modules export the same name. A local,
+    /// parameter, or unresolved head keeps its written segments.
+    pub(super) fn global_head_segments(&self, segments: &[String]) -> Vec<String> {
+        let Some((head, rest)) = segments.split_first() else {
+            return segments.to_vec();
+        };
+        if self.lookup(head).is_some() {
+            return segments.to_vec();
+        }
+        let Some(id) = self.resolve_global_id(head) else {
+            return segments.to_vec();
+        };
+        let mut qualified: Vec<String> = id.module.split('.').map(str::to_owned).collect();
+        qualified.push(id.name);
+        qualified.extend(rest.iter().cloned());
+        qualified
+    }
+
     /// The checked type of the module-level binding a bare name resolves to.
     pub(super) fn global_type(&self, name: &str) -> Option<Ty> {
         let id = self.resolve_global_id(name)?;

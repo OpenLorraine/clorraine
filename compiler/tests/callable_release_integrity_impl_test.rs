@@ -81,6 +81,41 @@ fn emit_pair(tag: &str, holder: &str, main: &str) -> String {
     std::fs::read_to_string(&c_path).unwrap_or_default()
 }
 
+/// Emits a three-file module program and asserts the front end accepted it.
+///
+/// Two holder files declare the modules the program names, so two same-named
+/// bindings in different modules both resolve and the emitter must keep them
+/// apart. Returns the emitted translation unit.
+fn emit_three(tag: &str, first: &str, second: &str, main: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let first_path = scratch.path().join("first.clo");
+    let second_path = scratch.path().join("second.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&first_path, first)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the first holder: {err}"));
+    std::fs::write(&second_path, second)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the second holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        first_path.display().to_string(),
+        second_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::read_to_string(&c_path).unwrap_or_default()
+}
+
 /// Emits one host-profile program and asserts the front end accepted it.
 ///
 /// Returns the emitted translation unit. These cases are about what the
@@ -922,5 +957,59 @@ func main(): i32 {
         "funccallctl",
         &emitted,
         "cl_spec_criimpl_funcglobalctl_local(2)",
+    );
+}
+
+/// Two same-named func globals emit their own modules' symbols.
+///
+/// Each call carries the binding's identity, so the qualified spelling emits
+/// the first module's symbol, and the import and the bare same-module call
+/// emit the second module's symbol; a name-only resolution would emit the
+/// first module's symbol three times. The counts pin each symbol to its own
+/// call sites (red at the phase base: all three calls emitted the first
+/// module's symbol).
+#[test]
+fn should_split_two_same_named_func_globals_by_module() {
+    let first = r#"module spec.criimpl.globalsplitfirst;
+
+func plusOne(v: i32): i32 {
+    return v + 1;
+}
+
+export let pick: func(i32): i32 = plusOne;
+"#;
+    let second = r#"module spec.criimpl.globalsplitsecond;
+
+func plusHundred(v: i32): i32 {
+    return v + 100;
+}
+
+export let pick: func(i32): i32 = plusHundred;
+
+export func ownCall(): i32 {
+    return pick(5) - 105;
+}
+"#;
+    let main = r#"module spec.criimpl.globalsplitmain;
+
+import { pick, ownCall } from spec.criimpl.globalsplitsecond;
+
+func main(): i32 {
+    let imported: i32 = pick(5) - 105;
+    let qualified: i32 = spec.criimpl.globalsplitfirst.pick(5) - 6;
+    let own: i32 = ownCall();
+    return imported + qualified + own;
+}
+"#;
+    let emitted = emit_three("globalsplit", first, second, main);
+    assert_eq!(
+        count(&emitted, "cl_spec_criimpl_globalsplitfirst_pick(5)"),
+        1,
+        "globalsplit: only the qualified call must name the first module; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_spec_criimpl_globalsplitsecond_pick(5)"),
+        2,
+        "globalsplit: the import and the bare same-module call must both name the second module; emitted C:\n{emitted}"
     );
 }

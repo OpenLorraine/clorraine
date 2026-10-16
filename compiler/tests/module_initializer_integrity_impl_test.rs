@@ -1171,3 +1171,26 @@ func main(): i32 {
     );
     assert_contains("reemitarraysize", &first, "n = sizeof(i32[2]);");
 }
+
+/// A function-pointer array `sizeof` spells the extents inside the pointer.
+///
+/// The C declarator for a function-pointer element keeps the array extent
+/// inside the pointer's parentheses — `i32 (*[2])(i32)` — because the
+/// element's own text followed by an extent would declare a function
+/// returning an array. The single function pointer keeps its own declarator.
+/// (Red at the phase base: the emission spelled `i32 (*)(i32)[2]`, which the
+/// C compiler rejects.)
+#[test]
+fn should_spell_the_function_pointer_array_measure() {
+    let source = r#"module spec.miiimpl.fparraysize;
+
+func main(): i32 {
+    let n: usize = sizeof((func(i32): i32)[2]);
+    let m: usize = sizeof(func(i32): i32);
+    return i32(n - 16) + i32(m - 8);
+}
+"#;
+    let emitted = emit_host("fparraysize", source);
+    assert_contains("fparraysize", &emitted, "n = sizeof(i32 (*[2])(i32));");
+    assert_contains("fparraysize", &emitted, "m = sizeof(i32 (*)(i32));");
+}
