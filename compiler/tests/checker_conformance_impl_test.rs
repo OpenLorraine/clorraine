@@ -2793,3 +2793,82 @@ func main(): i32 {
         "shadowedalias: the import's type must not add a dead instance"
     );
 }
+
+// ===== The lambda body's own scope =====
+
+/// The holder module of the initializer-lambda programs.
+const LAMBDA_HOLDER_SOURCE: &str = r#"module spec.cc.impl.exprholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+/// An initializer lambda whose parameter shadows an import leaves no phantom
+/// instance.
+///
+/// `(bb: i32) => bb.pick(7)` binds `bb` to the lambda's parameter, so the
+/// lifted body's call keys the `i32` instance, which the emitter declares,
+/// defines, and calls — in the expression-bodied form and the block-bodied
+/// twin alike. The import's struct type must not add a specialization the
+/// emitter never calls.
+#[test]
+fn should_not_record_a_shadowed_lambda_parameter_receiver() {
+    let expression = r#"module spec.cc.impl.exprlambdashadow;
+
+import { b as bb } from spec.cc.impl.exprholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let f: func(i32): i32 = (bb: i32) => bb.pick(7);
+
+func main(): i32 {
+    return f(3) - 7;
+}
+"#;
+    let emitted = emit_host_pair("exprlambdashadow", LAMBDA_HOLDER_SOURCE, expression);
+    assert_keyed_instance(
+        "exprlambdashadow",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__i32(i32 v, i32 w)",
+        "cl_pick__i32(bb, 7)",
+    );
+    assert_eq!(
+        count(&emitted, "cl_pick__Box"),
+        0,
+        "exprlambdashadow: the import's type must not add a dead instance"
+    );
+
+    let block = r#"module spec.cc.impl.blocklambdashadow;
+
+import { b as bb } from spec.cc.impl.exprholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let f: func(i32): i32 = (bb: i32) => {
+    return bb.pick(7);
+};
+
+func main(): i32 {
+    return f(3) - 7;
+}
+"#;
+    let emitted = emit_host_pair("blocklambdashadow", LAMBDA_HOLDER_SOURCE, block);
+    assert_keyed_instance(
+        "blocklambdashadow",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__i32(i32 v, i32 w)",
+        "cl_pick__i32(bb, 7)",
+    );
+    assert_eq!(
+        count(&emitted, "cl_pick__Box"),
+        0,
+        "blocklambdashadow: the import's type must not add a dead instance"
+    );
+}

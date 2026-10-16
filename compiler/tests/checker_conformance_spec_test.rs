@@ -5290,3 +5290,70 @@ func main(): i32 {
     assert_no_asan("shadowedparam", &output);
     assert_exit("shadowedparam", &output, 0);
 }
+
+// ===== The lambda body's own scope =====
+
+/// An expression-bodied initializer lambda resolves its own parameter, not an
+/// import the parameter shadows.
+///
+/// `(bb: i32[2]) => bb.drain()` binds `bb` to the lambda's parameter, so the
+/// body iterates the argument and the run counts its two elements (exit 0).
+/// The renamed parameter is the control: nothing is shadowed there, and the
+/// same shape keys the same instance. Reading the parameter's name as the
+/// imported binding instead rejected the generic body with an iteration error
+/// over the import's struct type.
+#[test]
+fn should_key_an_expression_lambda_parameter_that_shadows_an_import() {
+    let holder = r#"module spec.cc.aliasreceiverholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+    let shadowed = r#"module spec.cc.exprlambdashadow;
+
+import { b as bb } from spec.cc.aliasreceiverholder;
+
+func drain<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+let f: func(i32[2]): i32 = (bb: i32[2]) => bb.drain();
+
+func main(): i32 {
+    let a: i32[2] = [3, 4];
+    return f(a) - 2;
+}
+"#;
+    let output = run_memory_pair("exprlambdashadow", holder, shadowed);
+    assert_no_asan("exprlambdashadow", &output);
+    assert_exit("exprlambdashadow", &output, 0);
+
+    let control = r#"module spec.cc.exprlambdactl;
+
+import { b as bb } from spec.cc.aliasreceiverholder;
+
+func drain<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+let f: func(i32[2]): i32 = (q: i32[2]) => q.drain();
+
+func main(): i32 {
+    let a: i32[2] = [3, 4];
+    return f(a) - 2;
+}
+"#;
+    let output = run_memory_pair("exprlambdactl", holder, control);
+    assert_no_asan("exprlambdactl", &output);
+    assert_exit("exprlambdactl", &output, 0);
+}

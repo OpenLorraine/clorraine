@@ -396,16 +396,21 @@ fn walk_expr(
                 }
             }
         }
-        ExprKind::Lambda { body, .. } => match body {
-            crate::ast::LambdaBody::Expr(inner) => walk_expr(inner, visible, program, sema, mono),
+        ExprKind::Lambda { body, .. } => {
             // A lambda body is a function scope of its own: its parameters and
             // locals shadow the enclosing names, so the module-scope map does
-            // not apply inside it. Its lifted form is keyed by the IR walk.
-            crate::ast::LambdaBody::Block(block) => {
-                let body_scope = BTreeMap::new();
-                walk_block(block, &body_scope, program, sema, mono);
+            // not apply inside it, in either body form. Its lifted form is
+            // keyed by the IR walk.
+            let body_scope = BTreeMap::new();
+            match body {
+                crate::ast::LambdaBody::Expr(inner) => {
+                    walk_expr(inner, &body_scope, program, sema, mono)
+                }
+                crate::ast::LambdaBody::Block(block) => {
+                    walk_block(block, &body_scope, program, sema, mono)
+                }
             }
-        },
+        }
         ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Char(_)
