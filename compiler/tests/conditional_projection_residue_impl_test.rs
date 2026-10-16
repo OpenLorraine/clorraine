@@ -946,8 +946,8 @@ fn should_move_a_nested_conditional_take_at_every_level() {
         &emitted,
         "cl_spec_cpr_nestedthen_use(bool c, bool d, ClBox a, ClBox b, bool g)\n{",
     );
-    assert_on_line_of(tag, body, "if ((g && ((", "(d ? (__cl_tmp1 = a.v, (a.v = NULL))");
-    assert_on_line_of(tag, body, "if ((g && ((", ": (__cl_tmp1 = b.v, (b.v = NULL))");
+    assert_on_line_of(tag, body, "if ((g && ((", "(d ? ((__cl_tmp1 = a.v, (a.v = NULL)))");
+    assert_on_line_of(tag, body, "if ((g && ((", ": ((__cl_tmp1 = b.v, (b.v = NULL)))");
 
     let tag = "nestedelse";
     let (_scratch, emitted) = emit_host(tag, NESTED_ELSE_SOURCE);
@@ -956,8 +956,8 @@ fn should_move_a_nested_conditional_take_at_every_level() {
         &emitted,
         "cl_spec_cpr_nestedelse_use(bool c, bool d, ClBox a, ClBox b, bool g)\n{",
     );
-    assert_on_line_of(tag, body, "if ((g && ((", "(c ? (__cl_tmp1 = b.v, (b.v = NULL))");
-    assert_on_line_of(tag, body, "if ((g && ((", "(d ? (__cl_tmp1 = a.v, (a.v = NULL))");
+    assert_on_line_of(tag, body, "if ((g && ((", "(c ? ((__cl_tmp1 = b.v, (b.v = NULL)))");
+    assert_on_line_of(tag, body, "if ((g && ((", "(d ? ((__cl_tmp1 = a.v, (a.v = NULL)))");
 
     let tag = "nestedboth";
     let (_scratch, emitted) = emit_host(tag, NESTED_BOTH_SOURCE);
@@ -968,7 +968,7 @@ fn should_move_a_nested_conditional_take_at_every_level() {
     );
     assert_on_line_of(tag, body, "if ((g && ((", "__cl_tmp0.v), (__cl_tmp0.v = NULL)");
     assert_on_line_of(tag, body, "if ((g && ((", "__cl_tmp1.v), (__cl_tmp1.v = NULL)");
-    assert_on_line_of(tag, body, "if ((g && ((", ": (__cl_tmp2 = b.v, (b.v = NULL))");
+    assert_on_line_of(tag, body, "if ((g && ((", ": ((__cl_tmp2 = b.v, (b.v = NULL)))");
 }
 
 /// A conditional projection in a callable receiver's field, both spellings.
@@ -5999,7 +5999,7 @@ fn should_keep_the_conditional_base_controls_accepted() {
 fn should_fill_the_guard_literal_view_array_on_the_evaluated_path() {
     let (_scratch, emitted) = emit_host("implguardview", GUARD_VIEW_LITERAL_TAKE_SOURCE);
     assert_contains("implguardview", &emitted, "ClMixed __cl_tmp2 = {0};");
-    assert_contains("implguardview", &emitted, "(ok ? (__cl_tmp2 = ");
+    assert_contains("implguardview", &emitted, "(ok ? ((__cl_tmp2 = ");
     assert_eq!(
         emitted
             .matches("implguardview_n1(__cl_tmp0.names)")
@@ -6047,5 +6047,57 @@ fn should_re_emit_the_conditional_base_and_guard_literal_programs_identically() 
         first, second,
         "reemitguardview: the program re-emitted differently"
     );
-    assert_contains("reemitguardview", &first, "(ok ? (__cl_tmp2 = ");
+    assert_contains("reemitguardview", &first, "(ok ? ((__cl_tmp2 = ");
+}
+
+/// The two-field arm literal program.
+const TWO_FIELD_ARM_SOURCE: &str = r#"module spec.cpr.impltwofield;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; tag: String; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func consumeO(take m: Outer): i32 {
+    seen = i32(m.inner.names[0][0]);
+    return 1;
+}
+
+func useT(g: bool, ok: bool): i32 {
+    if (g && consumeO(ok ? Outer { inner: Inner { names: n1(), tag: stringOf("iiii1") }, tag: stringOf("ooooo1") }
+                         : Outer { inner: Inner { names: n1(), tag: stringOf("iiii2") }, tag: stringOf("ooooo2") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    return useT(true, true);
+}
+"#;
+
+/// A two-field arm literal parenthesizes each stored arm.
+///
+/// The field-wise arm text is parenthesized inside the conditional, so the
+/// comma sequence cannot escape a `?:`'s third operand; the two-field spec
+/// case proves the behavior (the leak and the skipped call are gone).
+#[test]
+fn should_parenthesize_a_two_field_arm_literal() {
+    let (_scratch, emitted) = emit_host("impltwofield", TWO_FIELD_ARM_SOURCE);
+    assert_contains("impltwofield", &emitted, "(ok ? ((");
+    assert_contains("impltwofield", &emitted, ") : ((");
+
+    let (first, second) = emit_twice("reemittwofield", TWO_FIELD_ARM_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemittwofield: the program re-emitted differently"
+    );
 }

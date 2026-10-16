@@ -13046,3 +13046,100 @@ func main(): i32 {
     assert_no_asan("guardnest", &output);
     assert_exit("guardnest", &output, 0);
 }
+
+/// A two-field arm literal keeps every stored part inside its own arm.
+///
+/// `consumeO(take ok ? Outer { inner: ..., tag: ... } : Outer { ... })` stores
+/// each arm field by field, and the field-wise text must stay inside the
+/// conditional: a tail that escapes the else arm would run on the taken path,
+/// overwrite the then arm's fresh field (a leak), and evaluate the skipped
+/// arm's call. Both selections fold their read-backs and call counts (exit 0,
+/// the leak checker clean), and the skipped arm's `t2` never runs.
+#[test]
+fn should_keep_a_two_field_arm_literal_inside_its_own_arm() {
+    let nested = r#"module spec.cpr.guardtwice;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; tag: String; }
+struct Outer { inner: Inner; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func consumeO(take m: Outer): i32 {
+    seen = i32(m.inner.names[0][0]);
+    return 1;
+}
+
+func useT(g: bool, ok: bool): i32 {
+    if (g && consumeO(ok ? Outer { inner: Inner { names: n1(), tag: stringOf("iiii1") }, tag: stringOf("ooooo1") }
+                         : Outer { inner: Inner { names: n1(), tag: stringOf("iiii2") }, tag: stringOf("ooooo2") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = useT(true, true);
+    let b: i32 = useT(true, false);
+    let c: i32 = useT(false, true);
+    return (a - 65) + (b - 65) + (c + 1) + calls - 2;
+}
+"#;
+    let output = run_memory("guardtwice", nested);
+    assert_no_asan("guardtwice", &output);
+    assert_exit("guardtwice", &output, 0);
+
+    let skipped = r#"module spec.cpr.guardskip;
+
+import { String, stringOf } from std.text;
+
+struct Inner { names: str[2]; tag: String; }
+struct Outer { inner: Inner; tag: String; }
+
+let tcalls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    return ["AA", "BB"];
+}
+
+func t1(): String {
+    tcalls = tcalls + 1;
+    return stringOf("oooooo1");
+}
+
+func t2(): String {
+    tcalls = tcalls + 1;
+    return stringOf("oooooo2");
+}
+
+func consumeO(take m: Outer): i32 {
+    seen = i32(m.inner.names[0][0]);
+    return 1;
+}
+
+func useT(g: bool, ok: bool): i32 {
+    if (g && consumeO(ok ? Outer { inner: Inner { names: n1(), tag: stringOf("iiiii") }, tag: t1() }
+                         : Outer { inner: Inner { names: n1(), tag: stringOf("jjjjj") }, tag: t2() }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = useT(true, true);
+    let b: i32 = useT(false, true);
+    return (a - 65) + (b + 1) + tcalls - 1;
+}
+"#;
+    let output = run_memory("guardskip", skipped);
+    assert_no_asan("guardskip", &output);
+    assert_exit("guardskip", &output, 0);
+}

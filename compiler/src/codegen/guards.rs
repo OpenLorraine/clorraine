@@ -460,8 +460,12 @@ impl<'a> Emitter<'a> {
         then_value: &Value,
         else_value: &Value,
     ) -> String {
+        // Each arm is parenthesized: a field-wise arm returns a bare comma
+        // sequence, and a `?:`'s third operand cannot carry a top-level comma
+        // — unparenthesized, the sequence's tail would run after the whole
+        // conditional on every path.
         format!(
-            "({} ? {} : {})",
+            "({} ? ({}) : ({}))",
             self.guarded_value(condition),
             self.conditional_move_arm_expr(target_c, ty, then_value),
             self.conditional_move_arm_expr(target_c, ty, else_value)
