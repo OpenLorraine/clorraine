@@ -1779,3 +1779,85 @@ func main(): i32 {
         "cl_trap(\"E11210\", \"integer division by zero\")",
     );
 }
+
+/// A flat store keeps its guard statements and reads the filled place once.
+///
+/// The store's index fill and bounds trap were emitted as statements, so the
+/// null guard tests the filled place and neither the call nor the
+/// post-increment repeats (red at the phase base: the guard carried the fill
+/// inline a second time, so the index advanced twice and the call ran twice).
+#[test]
+fn should_evaluate_a_flat_store_index_once() {
+    let source = r#"module spec.miiimpl.nullguardflatindex;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String?; }
+
+let count: i32 = 0;
+
+func next(): i32 {
+    count = count + 1;
+    return 0;
+}
+
+func fromcall(): i32 {
+    let xs: Box[2] = [Box { v: stringOf("abcd") }, Box { v: null }];
+    let s: str? = xs[next()].v;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s)) + count;
+}
+
+func fromupdate(): i32 {
+    let xs: Box[2] = [Box { v: stringOf("ab") }, Box { v: stringOf("cdef") }];
+    let i: i32 = 0;
+    let s: str? = xs[i++].v;
+    if (s == null) {
+        return 90 + i;
+    }
+    return i32(len(s)) * 10 + i;
+}
+
+func main(): i32 {
+    return (fromcall() - 5) + (fromupdate() - 21);
+}
+"#;
+    let (first, second) = emit_twice("nullguardflatindex", source);
+    assert_eq!(
+        first, second,
+        "nullguardflatindex: the program re-emitted differently"
+    );
+    let emitted = &first;
+    assert_eq!(
+        count(
+            emitted,
+            "__cl_tmp0 = cl_spec_miiimpl_nullguardflatindex_next()"
+        ),
+        1,
+        "nullguardflatindex: the call index must fill exactly once; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(emitted, "__cl_tmp0 = (i)++"),
+        1,
+        "nullguardflatindex: the update index must fill exactly once; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(
+            emitted,
+            "s = (xs[__cl_tmp0].v ? cl_string_view(xs[__cl_tmp0].v) : cl_zero_ClStr());"
+        ),
+        2,
+        "nullguardflatindex: both stores must test the filled place; emitted C:\n{emitted}"
+    );
+    assert!(
+        !emitted.contains("((__cl_tmp0 = "),
+        "nullguardflatindex: the fill must not ride inline as well; emitted C:\n{emitted}"
+    );
+    assert_contains(
+        "nullguardflatindex",
+        emitted,
+        "if ((__cl_tmp0 < 0) || ((usize)(__cl_tmp0) >= (usize)(2))) cl_trap(\"E11211\", \"index out of range\");",
+    );
+}

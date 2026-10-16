@@ -639,7 +639,9 @@ impl<'a> Emitter<'a> {
         // guard reads the arm's place twice and selects the result's empty
         // view for a null handle. A fresh arm binds to a temporary before the
         // conditional's store instead, so only a place-rooted arm spells it.
-        if let Some(guarded) = self.guarded_view_widening(value, result) {
+        // The arm has no statement position for its operand guards, so they
+        // ride inline, once, ahead of the test.
+        if let Some(guarded) = self.guarded_view_widening_inline(value, result) {
             return guarded;
         }
         let text = self.guarded_value(value);

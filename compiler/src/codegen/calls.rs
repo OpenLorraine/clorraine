@@ -306,8 +306,10 @@ impl Emitter<'_> {
                 // A possibly-null handle keeps its nullness through the
                 // widening: the view constructor would dereference it, so the
                 // argument carries the parameter's own null guard instead.
+                // The argument is evaluated inside an expression, so its own
+                // operand guards ride inline, once, ahead of the test.
                 if matches!(&arg_ty.kind, TyKind::Handle(name) if name == "String") {
-                    if let Some(guarded) = self.guarded_view_widening(arg, expected) {
+                    if let Some(guarded) = self.guarded_view_widening_inline(arg, expected) {
                         return guarded;
                     }
                     return format!("cl_string_view({text})");

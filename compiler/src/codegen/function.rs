@@ -2108,8 +2108,34 @@ impl<'a> Emitter<'a> {
     /// the source twice, so only a stable source spells it; a source that
     /// reads a fresh value — a call, or a field of one — binds to a temporary
     /// before the store instead. Every other source keeps the plain widening.
-    /// The source's own operand guards run once, ahead of the test.
+    /// A flat store already emitted the source's operand guards as statements,
+    /// so the test reads the plain place; a caller with no statement position
+    /// for them calls [`Self::guarded_view_widening_inline`] instead.
     pub(super) fn guarded_view_widening(&self, value: &Value, target: &Ty) -> Option<String> {
+        self.widening_with_guards(value, target, false)
+    }
+
+    /// Renders the same guard with the source's operand guards inline.
+    ///
+    /// A conditional arm and a call argument are evaluated inside an
+    /// expression, so they have no statement position for the source's
+    /// materialize fill or traps: the guard carries them once, ahead of the
+    /// test. A flat store's caller already emitted them as statements.
+    pub(super) fn guarded_view_widening_inline(
+        &self,
+        value: &Value,
+        target: &Ty,
+    ) -> Option<String> {
+        self.widening_with_guards(value, target, true)
+    }
+
+    /// Renders the guarded view widening, optionally with the guards inline.
+    fn widening_with_guards(
+        &self,
+        value: &Value,
+        target: &Ty,
+        inline_guards: bool,
+    ) -> Option<String> {
         if !self.reads_stable_storage(value) || !self.needs_view_guard(&value.ty, target) {
             return None;
         }
@@ -2118,10 +2144,10 @@ impl<'a> Emitter<'a> {
             "({text} ? cl_string_view({text}) : {})",
             self.null_value(target)
         );
-        Some(if guards.is_empty() {
-            guarded
-        } else {
+        Some(if inline_guards && !guards.is_empty() {
             format!("(({}), {guarded})", guards.join(", "))
+        } else {
+            guarded
         })
     }
 

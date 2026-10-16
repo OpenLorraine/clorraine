@@ -2376,3 +2376,76 @@ func main(): i32 {
         "error E11210: integer division by zero",
     );
 }
+
+/// A flat store evaluates its post-increment index exactly once.
+///
+/// The store's index fill and bounds guard run as statements ahead of the
+/// store, so the view reads the filled place and the update happens once: the
+/// run reads the second element back with the advanced index (exit 0) (red at
+/// the phase base: the guard repeated the fill inline, the index advanced
+/// twice, and the wrong element was read).
+#[test]
+fn should_evaluate_a_flat_store_index_once() {
+    let source = r#"module spec.mii.nullguardflatindex;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String?; }
+
+func consume(): i32 {
+    let xs: Box[2] = [Box { v: stringOf("ab") }, Box { v: stringOf("cdef") }];
+    let i: i32 = 0;
+    let s: str? = xs[i++].v;
+    if (s == null) {
+        return 90 + i;
+    }
+    return i32(len(s)) * 10 + i;
+}
+
+func main(): i32 {
+    return consume() - 21;
+}
+"#;
+    let output = run_memory("nullguardflatindex", source);
+    assert_no_asan("nullguardflatindex", &output);
+    assert_exit("nullguardflatindex", &output, 0);
+}
+
+/// A flat store evaluates its call index exactly once.
+///
+/// The store's fill runs as a statement ahead of the store, so the view reads
+/// the filled place and the call runs once: the read-back counts it (exit 0)
+/// (red at the phase base: the guard repeated the fill inline and the call ran
+/// twice).
+#[test]
+fn should_evaluate_a_flat_store_call_index_once() {
+    let source = r#"module spec.mii.nullguardflatcall;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String?; }
+
+let count: i32 = 0;
+
+func next(): i32 {
+    count = count + 1;
+    return 0;
+}
+
+func pick(): i32 {
+    let xs: Box[2] = [Box { v: stringOf("abcd") }, Box { v: null }];
+    let s: str? = xs[next()].v;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s)) + count;
+}
+
+func main(): i32 {
+    return pick() - 5;
+}
+"#;
+    let output = run_memory("nullguardflatcall", source);
+    assert_no_asan("nullguardflatcall", &output);
+    assert_exit("nullguardflatcall", &output, 0);
+}
