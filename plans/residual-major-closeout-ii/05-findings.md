@@ -250,3 +250,39 @@ seven intended fixes and no unintended accept/reject.
 declaration/import collision not reported), `DEF-364` (the opaque conditional judgments), `DEF-365`
 (the element-of-element key leak), `DEF-366` (the owning row field double free), plus the `DEF-347`
 extension (the newly keyed view-pointer const-discard).
+
+## Phase 3 — Instance substitution and element surfaces
+
+**Reviewed implementation**: `a825044` plus three correction rounds (`308711e`, `f6778e4`,
+`9104572`). **Lenses**: correctness (L3R), semantics (L3S), memory-safety (F-1/F-2),
+emission-integrity (F1), plus a bounded re-confirmation.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | No phase findings: the drop shape/timing matched the concrete twin, the conversion duties reported once with twin parity, the AR-19 ruling confirmed; L3R-1 (a runtime-indexed member store silently dropped — pre-existing) filed as `DEF-367`; L3R-2 (a record nit) noted |
+| semantics | FAIL — 1 blocker | L3S-1 (the element store's drop ran before an aliasing right-hand side reading through the array root — a head-only SEGV), L3S-2 (an AR-19 citation nit — fixed), L3S-3 (the design doc — aligned); Q1-Q4 otherwise conformant; P-2 → `DEF-367` extended, P-3 → `DEF-370`, P-4 → `DEF-371` |
+| memory-safety | FINDINGS — 2 | F-1 (the store of a place value into an opaque destination lowered as a copy — a second store double-freed where the base leaked; the same root as the emission F1), F-2 (an owned fixed-array member of a borrowed element moved out without the partial-move judgment — a newly runnable SEGV; root pre-existing); the clean-path coverage (loop, early exit, break, both conditional arms, lambda, slice, nested generics, self-read, panic) complete |
+| emission-integrity | FINDINGS — 1 | F1 (the overwrite drop freed a moved-from element source — CRITICAL, head-only; P4 the same root at the base); P2 → `DEF-368`, P3 → `DEF-367` extended; the 5 intended emit diffs and the 9 rejects otherwise confirmed, with twin parity and determinism |
+| re-confirmation | FAIL then PASS | The bounded re-confirmation confirmed items 1/2/4/5 and the parameter-root spellings but found L3S-4 (the save guard missed local containers — a head-only SEGV); after the fix the parent's six-probe re-run: `r2e`/`r2d`/`min_alias`/`ac_alias_concrete`/`r2a`/`r2b` all exit 0, ASan/LSan clean |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| F1 (`308711e`) | **Fixed**: an unknown destination type stores as a move (the checker route), the move and move-out sources resolve through `resolved_place_ty`, and an unknown take-argument type is maybe-owning — the element place empties exactly like the concrete spelling (`m11`/`m09`/`v5`/`v5b` clean) |
+| L3S-1 (`f6778e4`) | **Fixed**: one recursive `value_reads_place` walk and a caller-storage test; an element-target store defers its release to the save path when the right-hand side reads caller storage (the generic `min_alias` and its pre-existing concrete root `ac_alias_concrete` both clean) |
+| L3S-4 (`9104572`) | **Fixed**: the named-binding predicate matches `Local` as well as `Param`/`Global`, so a local-container element store saves too (`r2e`/`r2d` clean; one pre-existing pin re-pinned to the save path, recorded) |
+
+### Filed rows
+
+`DEF-367` (the runtime-indexed member store silently dropped — **extended** twice: the borrow-parameter variant, the P-2 local/slice spellings), `DEF-368` (the generic element member `str` conversion), `DEF-369` (the per-instance partial-move judgment — **folded into phase 4**, AR-20, with the `m09` parity evidence), `DEF-370` (the spurious `W10001` on a move-only array lend), `DEF-371` (a literal argument at a generic callee's concrete parameter).
+
+### Record notes
+
+- The widened deferral saves for any named-binding read from an element or raw-pointer target (one local
+  each, always safe); the differential's 23 emit diffs are all behavior-checked base-vs-head identical.
+- The re-pinned shape assertion (`call_value_integrity_impl_test`): the runtime-index store now takes
+  the save path; its run is clean.
+- `rawself_use`'s pre-existing raw self-move failure is unchanged (the `DEF-327`/raw family).

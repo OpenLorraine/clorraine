@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 11:45
-> **Progress**: 17/51 tasks (33%) — Phase 3 in review
+> **Last Updated**: 2026-10-18 17:00
+> **Progress**: 18/51 tasks (35%) — Phase 3 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -173,8 +173,8 @@ duplicable out-slot, and the capture pair control.
 - [x] 3.3.1 Write the phase implementation pins (the substituted drop emission, the duty records
       and report spans, the out-slot store shape, the rejection parity, a re-emission determinism
       pin) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-18 11:45; four pins added (62 tests total, additions only) plus a one-report rejection helper — the element store's drop sequence (the concrete twin included), the seven conversion spellings each rejected once with the text, the matching-element control instances, and a re-emission pin; three fail at `b42297a` for the intended reason, one is a disclosed base-stable guard; 62/62 green, `make check` exit 0)
-- [ ] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses; the memory lens probes the element store forms on both paths
+- [x] 3.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses; the memory lens probes the element store forms on both paths ✅ (completed: 2026-10-18 17:00; all four lenses dispatched plus three correction rounds and a bounded re-confirmation (FAIL on the local-container guard, fixed and parent-verified): the move routing/source emptying (F1), the element-store save path (L3S-1), and the local-binding guard widening (L3S-4); rows filed `DEF-367`–`DEF-371` (+ the `DEF-362` extension; `DEF-369` folded into phase 4, AR-20); the closing verification: the checker-conformance spec 147/147 plain and ASan, the impl pins 66/66, the residue 146/146, `make check` exit 0, the six-probe re-run green, no unintended accept/reject)
 
 **Verify**: `make check`; the element cases under `RDC_ASAN=1`; the strict builds
 
