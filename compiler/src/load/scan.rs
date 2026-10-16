@@ -38,8 +38,9 @@ pub(super) struct Mentions {
 /// standard-library module such as `std.mem.Buffer` is qualified access, which
 /// is available without an import, so it does not mark an import used; its
 /// longest standard-library prefix is recorded as a module reference instead.
-/// Any other dotted name reads a value binding at its head, so the head counts
-/// as a name exactly as a plain identifier does. `include_staged` controls whether a
+/// Any other dotted name counts its head as a name exactly as a plain
+/// identifier does; the mention is deliberately conservative, so a head that
+/// merely names a loaded module path also counts. `include_staged` controls whether a
 /// staged `comptime` body is walked: the profile-surface check leaves it out so
 /// the semantic stage's staged-feature diagnostic is the one reported.
 pub(super) fn collect_name_mentions(items: &[Item], include_staged: bool) -> Mentions {
