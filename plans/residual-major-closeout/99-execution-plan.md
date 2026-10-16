@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 08:20
-> **Progress**: 23/39 tasks (59%) — Phase 4 in review
+> **Last Updated**: 2026-10-17 10:30
+> **Progress**: 24/39 tasks (62%) — Phase 4 complete
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -221,8 +221,8 @@ the `ffi` result's declared type.
       counts and spans, the emitted `ffi` prototype unchanged, the accepted-instance
       emissions byte-identical, the re-emission determinism pin) —
       `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17 08:20; seven pins added (41 tests total, additions only) — the deferred argument/return/declaration conversions (one `E10200` with the span and text), the null shapes (one `E10012`, no `E10200`), the legal-instance emissions, the FFI prototype typing, the FFI result arithmetic typing, and a re-emission pin; four fail at `2cda910` for the intended reason, three are disclosed base-stable guards; 41/41 green, `make check` exit 0)
-- [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses; record any park in the ledger
+- [x] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses; record any park in the ledger ✅ (completed: 2026-10-17 10:30; all four lenses dispatched plus four correction rounds: the receiver duty (K4R-1), the null-shape destination gate (K4R-2/K4S-1), the `T?` destination skip (K4S-2), and the ABI-pointer typing for the view-typed FFI result (F1); rows filed/extended `DEF-350`–`DEF-352`; the closing verification: the checker-conformance spec 124/124 plain and ASan, the impl pins 43/43, `make check` exit 0, 0 head-only strict failures for accepted programs, the F1 repro parent-verified)
 
 **Verify**: `make check`; the ffi/intrinsic origin cases
 

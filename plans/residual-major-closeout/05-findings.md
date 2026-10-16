@@ -252,3 +252,49 @@ emission-integrity (EM-1..EM-4).
 `DEF-346` (the fixed array's `.ptr` and unknown view members on the concrete path — the concrete
 half persists), `DEF-347` (the const pointer at mutable destinations), `DEF-348` (the raw-enum
 member read), `DEF-349` (the `E10200` help's cast not host-build-clean).
+
+## Phase 4 — Call conversions and ffi typing
+
+**Reviewed implementation**: `5c66f88` plus four correction rounds (`dc77c85`, `53a0517`,
+`8bcd9cd`, `382f9ac`). **Lenses**: correctness (K4R), semantics (K4S), emission-integrity (F1),
+and memory-safety (0 findings).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | K4R-1 (the dot-call receiver's deferred conversion was never recorded — the `DEF-242` hole stayed open on that route), K4R-2 (the null-shape record fired at every destination — duplicate reports and head-only element/field rejects), K4R-3 (record wording); the codes/positions/FFI typing otherwise verified |
+| semantics | PASS WITH MINORS — 0 blockers | K4S-1 (= K4R-2), K4S-2 (a dependent `E10012` on an `E10011`-poisoned `T?` declaration); the code choices, the destination set, the deferral mechanism, the FFI result typing, and the legal instances all conformant |
+| emission-integrity | FINDINGS — 1 | F1 (a view-typed FFI result took the struct-representation path — `len(Make())` dereferenced a `void *`; head-only, the base emitted a silently-wrong `0`); the three named emit classes and the 16 rejects otherwise intended, no head-only accepts, determinism 3,206/3,206 |
+| memory-safety | CONFIRMED CLEAN — 0 findings | Every changed accepted shape probed (strict + ASan/LSan); the diff incidentally fixes the FFI-result temporary leaks (`h18`/`h20`) and several invalid-C shapes; one in-diff duplicate-report observation routed to the correctness lens (= K4R-2) |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| C1 (K4R-1) | **Fixed**: the receiver duty records with the argument shape (the receiver span; the out-slot route; the previous false-positive out-slot receiver now accepts) |
+| C2 (K4R-2/K4S-1) | **Fixed**: the null-shape record gates on a parameter-mentioning or unknown destination — the duplicates collapse to one report and the element/field positions match their concrete siblings |
+| C3 (K4S-2) | **Fixed**: a bare `T?` destination records no duty (one `E10011`, the dependent `E10012` gone) |
+| C4 (F1) | **Fixed**: a view/slice FFI result types as the ABI pointer (`raw u8`/`raw <elem>`, the `?` preserved) — the repro builds and runs the folded length, and the view destinations report one `E10200` each; the raw path now matches the plain-pointer behavior |
+
+### Confirmations
+
+No separate lens re-review was dispatched; the four rounds were verified by the fixer differentials
+(no unintended class; no head-only accept), the parent's focused suites (124/124 plain and under
+`RDC_ASAN=1`, the impl pins 43/43), `make check` exit 0, and the parent's re-run of the F1 repro
+(build + run 0).
+
+### Filed rows
+
+`DEF-350` (the FFI view/slice result — extended with F1's head-only manifestation and the P2
+spellings; F1 fixed), `DEF-351` (the inverse conversion routes — extended with the `bs01`
+destination-typed shape), `DEF-352` (a raw pointer's `.ptr`/`.len` emit the arrow shape).
+
+### Record notes
+
+- Intended harmonizations recorded: `if (Count())` → `E10218`; `consume(u8)` from an `i32` result →
+  `E10200`; the un-narrowed `File?` result → `E10010`; the `e3`/`fr17m` diagnostic-shape changes on
+  programs rejected either way. The FFI arithmetic now renders the defined wrapping shape.
+- Left as recorded: the out-slot conversion help keeps the conversion text; a receiver whose
+  nullability differs from the out-slot type passes the kind-level judgment; the substitution's
+  Param arm still drops the declaration `?` marker (worked around at the duty record).
