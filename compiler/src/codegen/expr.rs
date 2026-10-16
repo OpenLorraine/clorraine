@@ -267,7 +267,9 @@ impl<'a> Emitter<'a> {
                 .map(|declared| self.substitute(&declared))
                 .unwrap_or_else(Ty::unknown),
             TyKind::Raw(inner) => self.field_type(inner, field),
-            _ => Ty::unknown(),
+            // A view's ABI members resolve through the shared rule, so a
+            // substituted member read types for the store's conversion.
+            _ => crate::types::view_member_ty(base, field).unwrap_or_else(Ty::unknown),
         }
     }
 

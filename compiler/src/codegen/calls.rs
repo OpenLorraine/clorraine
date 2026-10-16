@@ -256,6 +256,13 @@ impl Emitter<'_> {
             if let ValueKind::Str(literal) = &arg.kind {
                 return escape_c_string(literal.as_bytes());
             }
+            // A view's pointer member carries the byte pointer the parameter
+            // expects: the sanctioned conversion spells the same cast the
+            // store spells. Every other raw argument was rejected before
+            // emission.
+            if matches!(self.resolved_value_ty(arg).kind, TyKind::Raw(_)) {
+                return format!("(char *)({})", self.value(arg));
+            }
         }
         let text = self.value(arg);
         let arg_ty = self.substitute(&arg.ty);

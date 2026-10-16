@@ -57,6 +57,7 @@ pub fn check(
     check_iterable_requirements(program, sema, mono, diagnostics);
     check_opaque_projections(program, sema, mono, diagnostics);
     check_opaque_indexes(program, sema, mono, diagnostics);
+    check_opaque_member_uses(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
@@ -1086,6 +1087,87 @@ fn check_opaque_indexes(
     }
 }
 
+/// Reports `E10200` when an opaque member read cannot convert at its use.
+///
+/// The declaration records the read's destination because the member's type
+/// is unresolved there; at the instance the member resolves through the
+/// matching projection and the concrete conversion rule applies. The view
+/// pointer member's sanctioned `cstring` conversion stays accepted exactly as
+/// the concrete spelling accepts it. One use reports once — the first
+/// offending instance.
+fn check_opaque_member_uses(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for usage in &sema.opaque_member_uses {
+        let Some(Callee::User(decl)) = program.callee(&usage.function) else {
+            continue;
+        };
+        // The projection records the read's base span while the use records
+        // the whole read's span; both begin where the base expression begins,
+        // so the start identifies the site.
+        let Some(projection) = sema.opaque_projections.iter().find(|projection| {
+            projection.function == usage.function
+                && projection.name == usage.name
+                && projection.span.start == usage.span.start
+        }) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != usage.function {
+                continue;
+            }
+            let bound = crate::types::instance_bindings(&params, &instance.args);
+            let base = crate::types::substitute(&projection.ty, &bound);
+            if crate::types::contains_param(&base) || base.is_unknown() {
+                continue;
+            }
+            let Some(member) = resolved_member_ty(sema, &base, &usage.name) else {
+                continue;
+            };
+            let expected = crate::types::substitute(&usage.expected, &bound);
+            if crate::types::contains_param(&expected) || expected.is_unknown() {
+                continue;
+            }
+            if crate::types::implicit_conversion(&member, &expected) {
+                continue;
+            }
+            if crate::types::converts_view_pointer_member(&base, &usage.name, &expected) {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10200",
+                    format!(
+                        "cannot convert '{}' to '{}' implicitly",
+                        member.display(),
+                        expected.display()
+                    ),
+                    usage.span,
+                )
+                .with_help("use an explicit cast `T(expr)`"),
+            );
+            break;
+        }
+    }
+}
+
+/// The type of a member resolved on a substituted base.
+///
+/// A struct field, a field reached through a `raw` pointer, and a view's ABI
+/// member all resolve through the shared rules; every other kind has no
+/// member surface.
+fn resolved_member_ty(sema: &SemaOutput, base: &Ty, name: &str) -> Option<Ty> {
+    match &base.kind {
+        TyKind::Struct(..) => sema.table.instance_field(base, name),
+        TyKind::Raw(inner) => resolved_member_ty(sema, inner, name),
+        _ => crate::types::view_member_ty(base, name),
+    }
+}
+
 /// True when a value-form member resolves on the substituted type.
 ///
 /// The dispatch mirrors the value-form checker's own rules: a struct field
@@ -1105,10 +1187,13 @@ fn projection_resolves(sema: &SemaOutput, ty: &Ty, name: &str) -> bool {
             TyKind::Raw(_) => projection_resolves(sema, inner, name),
             _ => false,
         },
-        // A view's ABI members are its pointer and its element count.
-        TyKind::Array { .. } | TyKind::Str | TyKind::StaticStr => {
-            name == "len" || name == "ptr"
+        // A view's ABI members are its pointer and its element count; only a
+        // dynamic extent is a view, so a fixed array keeps its base
+        // unknown-member report.
+        TyKind::Array { extents, .. } => {
+            name == "len" || (name == "ptr" && extents.iter().any(|extent| extent.is_none()))
         }
+        TyKind::Str | TyKind::StaticStr => name == "len" || name == "ptr",
         _ => false,
     }
 }

@@ -3225,3 +3225,160 @@ func main(): i32 {
     assert_exit("viewmemberlen", &output, 4);
 }
 
+// ===== View pointer member conversions and the fixed-array member =====
+
+/// A view pointer member read reaches a `cstring` destination and runs.
+///
+/// The member's ABI type is the view's byte pointer, and the one spelling the
+/// frozen conversion table lets reach a `cstring` is that member read — at a
+/// call argument and at a return; the run reads the non-null pointers back
+/// (red at the phase base: the accepted read emitted the bare pointer and the
+/// strict build failed with `pointer-sign`).
+#[test]
+fn should_convert_a_view_pointer_member_at_a_c_string_destination() {
+    let source = r#"module spec.cc.pointermembercstr;
+
+func use(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func cstr(s: str): cstring {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return use(s.ptr) + use(cstr(s));
+}
+"#;
+    let output = run_memory("pointermembercstr", source);
+    assert_no_asan("pointermembercstr", &output);
+    assert_exit("pointermembercstr", &output, 0);
+}
+
+/// A byte pointer that is not a view member keeps the frozen conversion rule.
+///
+/// The frozen table has no raw-pointer-to-`cstring` widening, so a `raw u8`
+/// local passed where a `cstring` is expected reports exactly one `E10200`,
+/// the same report the base emits (the member read above is the sanctioned
+/// exception).
+#[test]
+fn should_reject_a_non_member_byte_pointer_at_a_c_string_argument() {
+    let source = r#"module spec.cc.rawcstrarg;
+
+func use(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: u8[4] = [65, 66, 67, 0];
+    let p: raw u8 = unsafe &a[0];
+    return use(p);
+}
+"#;
+    assert_rejected_once(
+        "rawcstrarg",
+        source,
+        "E10200",
+        &["cannot convert 'raw u8' to 'cstring' implicitly"],
+        &[],
+    );
+}
+
+/// A fixed-array instance has no pointer member; the slice twin does.
+///
+/// The member rule is the view's: a fixed array is not a view, so the
+/// instance reports the frozen unknown-member rule exactly as the concrete
+/// spelling would; the slice substitution carries the member and the run
+/// reads the first byte back through it (red at the phase base: the
+/// fixed-array instance was accepted and the emitted C failed `request for
+/// member 'ptr'`).
+#[test]
+fn should_reject_a_fixed_array_pointer_member_at_the_instance() {
+    let fixed = r#"module spec.cc.fixedptrmember;
+
+func first<T>(x: T): raw u8 {
+    return x.ptr;
+}
+
+func main(): i32 {
+    let a: u8[4] = [1, 2, 3, 4];
+    let p: raw u8 = first<u8[4]>(a);
+    unsafe {
+        if (p == null) {
+            return 1;
+        }
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "fixedptrmember",
+        fixed,
+        "E10212",
+        &["'ptr' is not a member of 'u8[4]'"],
+        &[],
+    );
+
+    let slice_twin = r#"module spec.cc.sliceptrmember;
+
+import { slice } from std.mem;
+
+func first<T>(x: T): raw u8 {
+    return x.ptr;
+}
+
+func main(): i32 {
+    let a: u8[4] = [65, 66, 67, 68];
+    let s: u8[] = slice(a, 0, 4);
+    let p: raw u8 = first<u8[]>(s);
+    unsafe {
+        if (p == null) {
+            return 1;
+        }
+        if (p[0] != 65) {
+            return 2;
+        }
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("sliceptrmember", slice_twin);
+    assert_no_asan("sliceptrmember", &output);
+    assert_exit("sliceptrmember", &output, 0);
+}
+
+/// A generic pointer member at an integer destination reports the conversion.
+///
+/// The instance resolves the member to the view's byte pointer, so the integer
+/// return reports the frozen conversion rule exactly as the concrete spelling
+/// does (red at the phase base: the instance was accepted and the emitted C
+/// failed `int-conversion`).
+#[test]
+fn should_reject_a_generic_pointer_member_at_an_integer_destination() {
+    let source = r#"module spec.cc.genptrint;
+
+func span<T>(x: T): usize {
+    return x.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return i32(span<str>(s));
+}
+"#;
+    assert_rejected_once(
+        "genptrint",
+        source,
+        "E10200",
+        &["cannot convert 'raw u8' to 'usize' implicitly"],
+        &[],
+    );
+}
+

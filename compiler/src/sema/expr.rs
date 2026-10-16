@@ -19,7 +19,7 @@ use crate::profile::Profile;
 use crate::span::Span;
 use crate::types::{ implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite, ClosureTy, FuncParam, FuncTy, Ty, TyKind, PlacePathStep };
 
-use super::{CaptureMoveRequirement, Checker, OpaqueIndex, OpaqueProjection};
+use super::{CaptureMoveRequirement, Checker, OpaqueIndex, OpaqueMemberUse, OpaqueProjection};
 
 impl Checker<'_, '_> {
     /// Checks an expression, records its type, and returns it.
@@ -50,14 +50,14 @@ impl Checker<'_, '_> {
                 nullable: true,
             },
             ExprKind::Name(name) => self.check_name(name, expr.span),
-            ExprKind::Qualified(name) => self.check_qualified(name),
+            ExprKind::Qualified(name) => self.check_qualified(expr, name),
             ExprKind::Call {
                 callee,
                 type_args,
                 args,
             } => self.check_call(callee, type_args, args, expr.span),
             ExprKind::Index { base, index } => self.check_index(base, index),
-            ExprKind::Member { base, name } => self.check_member(base, name),
+            ExprKind::Member { base, name } => self.check_member(expr, base, name),
             ExprKind::Unary { op, operand } => self.check_unary(*op, operand),
             ExprKind::Binary { op, left, right } => self.check_binary(*op, left, right),
             ExprKind::Assign { op, target, value } => self.check_assign(*op, target, value),
@@ -383,6 +383,39 @@ impl Checker<'_, '_> {
         if ty.is_void() {
             return ty;
         }
+        // A view's pointer member read is the one spelling the frozen
+        // conversion table lets reach a `cstring` destination: the sanctioned
+        // conversion stays accepted and the emitter spells the cast.
+        if matches!(expected.kind, TyKind::CString)
+            && self
+                .view_pointer_members
+                .contains(&(expr as *const Expr as usize))
+        {
+            return ty;
+        }
+        // A member read on an opaque base has no type until the instance is
+        // known: its conversion is recorded and judged at the instance,
+        // exactly as the concrete read would report it. The parser spells a
+        // dotted read `Qualified` and a postfix read `Member`, so both shapes
+        // name the member.
+        if ty.is_unknown() {
+            let member = match &expr.kind {
+                ExprKind::Member { name, .. } => Some(name.clone()),
+                ExprKind::Qualified(name) => name.segments.last().cloned(),
+                _ => None,
+            };
+            if let Some(name) = member {
+                if let Some(function) = self.function_name.clone() {
+                    self.opaque_member_uses.push(OpaqueMemberUse {
+                        function,
+                        name,
+                        span: expr.span,
+                        expected: expected.clone(),
+                    });
+                    return ty;
+                }
+            }
+        }
         self.check_conversion(&ty, expected, expr.span);
         ty
     }
@@ -470,14 +503,25 @@ impl Checker<'_, '_> {
 
     /// Types a dotted name: a value's member chain, an enum member, a
     /// module-qualified function, or an opaque external name.
-    fn check_qualified(&mut self, name: &QualifiedName) -> Ty {
+    fn check_qualified(&mut self, expr: &Expr, name: &QualifiedName) -> Ty {
         if let Some(first) = name.segments.first() {
             // A dotted name that starts with a value in scope is member access,
             // for example `point.x`; the parser cannot tell that apart from a
             // type path, so the choice is made here once names are known.
             if self.name_is_value(first) {
                 let mut ty = self.check_name(first, name.span);
-                for segment in &name.segments[1..] {
+                let last = name.segments.len().saturating_sub(1);
+                for (index, segment) in name.segments[1..].iter().enumerate() {
+                    // The final segment is the member the expression names; a
+                    // view's pointer member is the read the conversion table
+                    // lets reach a `cstring` destination.
+                    if index + 1 == last
+                        && segment == "ptr"
+                        && (matches!(ty.kind, TyKind::Str | TyKind::StaticStr) || ty.is_slice())
+                    {
+                        self.view_pointer_members
+                            .insert(expr as *const Expr as usize);
+                    }
                     ty = self.member_type(&ty, segment, name.span);
                 }
                 return ty;
@@ -525,8 +569,17 @@ impl Checker<'_, '_> {
     }
 
     /// Types a member access: a struct field or an enum member.
-    fn check_member(&mut self, base: &Expr, name: &str) -> Ty {
+    fn check_member(&mut self, expr: &Expr, base: &Expr, name: &str) -> Ty {
         let base_ty = self.check_value(base, None);
+        // A view's pointer member is the one read the frozen conversion table
+        // lets reach a `cstring` destination; the read is marked so the
+        // conversion positions accept it and spell the sanctioned cast.
+        if name == "ptr"
+            && (matches!(base_ty.kind, TyKind::Str | TyKind::StaticStr) || base_ty.is_slice())
+        {
+            self.view_pointer_members
+                .insert(expr as *const Expr as usize);
+        }
         self.member_type(&base_ty, name, base.span)
     }
 
@@ -581,23 +634,13 @@ impl Checker<'_, '_> {
                 Ty::unknown()
             }
             // A view's members are its ABI fields: `.ptr` is the pointer to
-            // the view's element (the byte pointer for the text views, the
-            // element pointer for slices) and `.len` is the element count.
-            // Typing them lets the conversion rules judge a destination the
+            // the view's element and `.len` the element count, typed by the
+            // shared rule so the conversion rules judge a destination the
             // member cannot reach; the renderer already spells the struct
             // fields and the fixed-array `.len` keeps its compile-time fold.
-            TyKind::Str | TyKind::StaticStr => match name {
-                "ptr" => Ty::raw(Ty::scalar(ScalarType::U8)),
-                "len" => Ty::usize_ty(),
-                _ => Ty::unknown(),
-            },
-            TyKind::Array { extents, .. } => match name {
-                "ptr" if extents.iter().any(|extent| extent.is_none()) => {
-                    Ty::raw(base_ty.iterated_element())
-                }
-                "len" => Ty::usize_ty(),
-                _ => Ty::unknown(),
-            },
+            TyKind::Str | TyKind::StaticStr | TyKind::Array { .. } => {
+                crate::types::view_member_ty(base_ty, name).unwrap_or_else(Ty::unknown)
+            }
             // A field reached through a raw pointer is typed from the pointee;
             // the unsafe gate for the dereference stays in the ownership stage.
             TyKind::Raw(_) => self.field_type(base_ty, name).unwrap_or_else(Ty::unknown),

@@ -81,6 +81,13 @@ pub struct SemaOutput {
     /// audit reports the out-of-range constant exactly as a concrete read
     /// would.
     pub opaque_indexes: Vec<OpaqueIndex>,
+    /// Member reads on a bare type parameter used at a concrete destination.
+    ///
+    /// The declaration cannot judge the read's conversion because the member's
+    /// type is unresolved there; the per-instance audit resolves the member
+    /// through the matching [`OpaqueProjection`] and applies the concrete
+    /// conversion rule.
+    pub opaque_member_uses: Vec<OpaqueMemberUse>,
 }
 
 /// A lambda body that returns or consumes a by-value capture whose
@@ -118,6 +125,22 @@ pub struct OpaqueProjection {
     pub span: Span,
 }
 
+/// One value-form member read on a bare type parameter used at a destination.
+///
+/// The read's span identifies its recorded [`OpaqueProjection`], which carries
+/// the base's declared type: the audit substitutes both and reports the frozen
+/// conversion when the resolved member cannot reach the destination.
+pub struct OpaqueMemberUse {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The member's spelling.
+    pub name: String,
+    /// The read's span, which also identifies its recorded projection.
+    pub span: Span,
+    /// The destination the read must convert to.
+    pub expected: Ty,
+}
+
 /// One index read on a bare type parameter.
 ///
 /// The declaration cannot judge the bounds: the substitution may be any type,
@@ -151,6 +174,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut capture_moves: Vec<CaptureMoveRequirement> = Vec::new();
     let mut opaque_projections: Vec<OpaqueProjection> = Vec::new();
     let mut opaque_indexes: Vec<OpaqueIndex> = Vec::new();
+    let mut opaque_member_uses: Vec<OpaqueMemberUse> = Vec::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
     // program always names the same lifted function and environment.
@@ -163,6 +187,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         capture_moves.extend(checker.capture_moves.drain(..));
         opaque_projections.extend(checker.opaque_projections.drain(..));
         opaque_indexes.extend(checker.opaque_indexes.drain(..));
+        opaque_member_uses.extend(checker.opaque_member_uses.drain(..));
         expr_types.extend(checker.recorded.drain(..));
     }
     SemaOutput {
@@ -172,6 +197,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         capture_moves,
         opaque_projections,
         opaque_indexes,
+        opaque_member_uses,
     }
 }
 
@@ -217,6 +243,12 @@ struct Checker<'a, 'd> {
     opaque_projections: Vec<OpaqueProjection>,
     /// Index reads whose base is a bare type parameter, in check order.
     opaque_indexes: Vec<OpaqueIndex>,
+    /// Member reads on a bare type parameter used at a destination.
+    opaque_member_uses: Vec<OpaqueMemberUse>,
+    /// The member-read expressions whose base is a view and whose spelling is
+    /// `ptr`: they are the one form the frozen conversion table lets reach a
+    /// `cstring` destination without a cast in the source.
+    view_pointer_members: BTreeSet<usize>,
     /// The resolved parameter types of each `ffi` declaration this module
     /// calls, so its declared types are validated once per declaration.
     ffi_params: BTreeMap<String, Vec<Ty>>,
@@ -276,6 +308,8 @@ impl<'a, 'd> Checker<'a, 'd> {
             capture_moves: Vec::new(),
             opaque_projections: Vec::new(),
             opaque_indexes: Vec::new(),
+            opaque_member_uses: Vec::new(),
+            view_pointer_members: BTreeSet::new(),
             ffi_params: BTreeMap::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),

@@ -789,20 +789,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 .instance_field(base, field)
                 .unwrap_or_else(Ty::unknown),
             TyKind::Raw(inner) => self.member_type(inner, field),
-            // A view's ABI members mirror the type-stage dispatch: `.ptr` is
-            // the pointer to the view's element and `.len` its element count.
-            TyKind::Str | TyKind::StaticStr => match field {
-                "ptr" => Ty::raw(Ty::scalar(crate::ast::ScalarType::U8)),
-                "len" => Ty::usize_ty(),
-                _ => Ty::unknown(),
-            },
-            TyKind::Array { extents, .. } => match field {
-                "ptr" if extents.iter().any(|extent| extent.is_none()) => {
-                    Ty::raw(base.iterated_element())
-                }
-                "len" => Ty::usize_ty(),
-                _ => Ty::unknown(),
-            },
+            // A view's ABI members mirror the type-stage dispatch through the
+            // shared rule: `.ptr` is the pointer to the view's element and
+            // `.len` its element count.
+            TyKind::Str | TyKind::StaticStr | TyKind::Array { .. } => {
+                crate::types::view_member_ty(base, field).unwrap_or_else(Ty::unknown)
+            }
             _ => Ty::unknown(),
         }
     }

@@ -739,6 +739,9 @@ impl Checker<'_, '_> {
                 && !matches!(ty.kind, TyKind::CString)
                 && !ty.is_unknown()
                 && !crate::types::contains_param(&ty)
+                && !self
+                    .view_pointer_members
+                    .contains(&(&arg.value as *const Expr as usize))
             {
                 self.error(
                     "E10200",

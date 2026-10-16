@@ -665,16 +665,6 @@ pub fn implicit_conversion(from: &Ty, to: &Ty) -> bool {
     match (&from.kind, &to.kind) {
         (TyKind::StaticStr, TyKind::Str) => true,
         (TyKind::Handle(name), TyKind::Str) if name == "String" => true,
-        // A byte pointer reaches a `cstring` destination implicitly: the
-        // frozen ABI spells `cstring` as the C `char *`, and the sanctioned
-        // byte-view conversion is the pointer itself (`toCString`'s body).
-        // Integer destinations and every other raw keep the explicit-cast
-        // rule, so a bare `usize` destination reports the conversion.
-        (TyKind::Raw(inner), TyKind::CString)
-            if matches!(inner.kind, TyKind::Scalar(ScalarType::U8)) =>
-        {
-            true
-        }
         (TyKind::Scalar(a), TyKind::Scalar(b)) => scalar_widens(*a, *b),
         // Two views describe the same view when their elements are the same
         // type: the written `T[][M]` and the inferred `T[]` whose element is
@@ -757,6 +747,43 @@ pub fn index_element(ty: &Ty) -> Ty {
         TyKind::Raw(inner) => (**inner).clone(),
         _ => Ty::unknown(),
     }
+}
+
+/// The type of a view's ABI member (`.ptr` or `.len`), when the base is a
+/// view.
+///
+/// `.ptr` is the pointer to the view's element — the byte pointer for the
+/// text views, the element pointer for slices (a fixed array has no pointer
+/// member) — and `.len` is the element count. `None` for every other base or
+/// member, so the caller keeps its own unknown-member handling.
+pub fn view_member_ty(ty: &Ty, name: &str) -> Option<Ty> {
+    match &ty.kind {
+        TyKind::Str | TyKind::StaticStr => match name {
+            "ptr" => Some(Ty::raw(Ty::scalar(ScalarType::U8))),
+            "len" => Some(Ty::usize_ty()),
+            _ => None,
+        },
+        TyKind::Array { extents, .. } => match name {
+            "ptr" if extents.iter().any(|extent| extent.is_none()) => {
+                Some(Ty::raw(ty.iterated_element()))
+            }
+            "len" => Some(Ty::usize_ty()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// True when a view pointer member read reaches a `cstring` destination.
+///
+/// The frozen conversion table has no raw-pointer-to-`cstring` widening, so
+/// only the view's own pointer member — whose ABI type is that byte pointer —
+/// takes the sanctioned conversion (`toCString`'s body); every other raw
+/// pointer keeps the explicit-cast rule.
+pub fn converts_view_pointer_member(base: &Ty, member: &str, expected: &Ty) -> bool {
+    member == "ptr"
+        && matches!(expected.kind, TyKind::CString)
+        && (matches!(base.kind, TyKind::Str | TyKind::StaticStr) || base.is_slice())
 }
 
 /// True when a type mentions a generic parameter anywhere inside it.
