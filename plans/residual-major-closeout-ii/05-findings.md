@@ -290,4 +290,3 @@ emission-integrity (F1), plus a bounded re-confirmation.
 **Phase-3 addendum (AR-21):** the F1 round's accepted `m09` shape (`eat(v.name)` on a borrowed
 element, emptied after the call) was re-pinned during phase 4 to the parity oracle: the generic
 instance now reports the concrete twin's one `E10026`. The other phase-3 findings stand.
-

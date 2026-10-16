@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 20:30
-> **Progress**: 22/51 tasks (43%) — Phase 4 in review
+> **Last Updated**: 2026-10-18 21:30
+> **Progress**: 23/51 tasks (45%) — Phase 4 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -210,10 +210,10 @@ ST-11..ST-12 · AR-3, AR-5
 
 ### Step 4.3: Impl Tests & Review
 
-- [ ] 4.3.1 Write the phase implementation pins (the loan records and the conflict reports, the
+- [x] 4.3.1 Write the phase implementation pins (the loan records and the conflict reports, the
       deref read's move-out/emptying shape, the byte-identical discarded/duplicable twins, a
       re-emission determinism pin) —
-      `compiler/tests/conditional_projection_residue_impl_test.rs`
+      `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-18 21:30; eight pins added to the residue impl suite (85 → 93 tests, additions only) plus a normalized-body helper — the four copy spellings' one `E10030` each (the assignment/loop/take sites), the accepted copy emission, the element-move duty (one `E10026` per owning shape; the duplicable instance accepted; the top-level control's move-and-empty), the conditional take's per-arm carrier shape (equal to the concrete twin's normalized sequence), the deref store's source emptying (the impure pointer pinned once), and a re-emission pin; four discriminate at `f4559c3` (the copy pin at `37b213e`); 93/93 green, `make check` exit 0)
 - [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; run the ASan matrix
 

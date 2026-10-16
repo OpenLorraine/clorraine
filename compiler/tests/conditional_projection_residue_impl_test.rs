@@ -5173,3 +5173,581 @@ fn should_re_emit_the_conditional_iterable_programs_byte_identically() {
         assert_contains(tag, &first, shape);
     }
 }
+
+// ---------------------------------------------------------------------------
+// The whole-array copy's element loans. A copy of a view-like array hands its
+// element loans to the destination, so a later store through the copy reports
+// the frozen conflict once per copy spelling; the parameter and read
+// spellings stay accepted with the copy and the reads in place.
+// ---------------------------------------------------------------------------
+
+/// A whole-`str[2]` copy whose first element reads a live local view.
+const VIEW_COPY_LOCAL_SOURCE: &str = r#"module spec.cprimpl.viewcopylocal;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The overwriting-assignment spelling of the whole-`str[2]` copy.
+const VIEW_COPY_ASSIGN_SOURCE: &str = r#"module spec.cprimpl.viewcopyassign;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = ["CC", "DD"];
+    ys = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The element-loop spelling of the whole-`str[2]` copy: both copied
+/// elements read the local view, and the loop stores one of them through.
+const VIEW_COPY_LOOP_SOURCE: &str = r#"module spec.cprimpl.viewcopyloop;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[2] = xs;
+    for (borrow e in ys) {
+        fill(e, borrow slot);
+    }
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The `take`-source spelling of the whole-`str[2]` copy: the copy's element
+/// reads the taken parameter's live view.
+const VIEW_COPY_TAKE_SOURCE: &str = r#"module spec.cprimpl.viewcopytake;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(take p: Box, borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = p.v;
+    let ys: str[2] = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The accepted parameter-source control: the copied element derives from the
+/// caller's by-value parameter, whose storage outlives the callee.
+const VIEW_COPY_PARAM_SOURCE: &str = r#"module spec.cprimpl.viewcopyparam;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(p: Box, borrow slot: str?): void {
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = p.v;
+    let ys: str[2] = xs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let b: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    outer(b, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The accepted read-back control: the copied array is read through both
+/// elements, so the copy must stay a full two-element transfer.
+const VIEW_COPY_READ_SOURCE: &str = r#"module spec.cprimpl.viewcopyread;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = xs;
+    return i32(ys[0][0]) - 97 + i32(ys[1][0]) - 66;
+}
+
+func main(): i32 { return outer(); }
+"#;
+
+/// Each copy spelling of a whole-`str[2]` array hands its live element loan to
+/// the destination, so the later store through the copy reports the frozen
+/// conflict exactly once: the `let`, the assignment, the element loop, and the
+/// `take` source. The report site is the store that reaches through the copy.
+#[test]
+fn should_report_one_element_loan_conflict_per_whole_array_copy_spelling() {
+    assert_rejected_at_line("viewcopylocal", VIEW_COPY_LOCAL_SOURCE, "E10030", 1, 14);
+    assert_rejected_at_line("viewcopyassign", VIEW_COPY_ASSIGN_SOURCE, "E10030", 1, 15);
+    assert_rejected_at_line("viewcopyloop", VIEW_COPY_LOOP_SOURCE, "E10030", 1, 16);
+    assert_rejected_at_line("viewcopytake", VIEW_COPY_TAKE_SOURCE, "E10030", 1, 13);
+}
+
+/// The accepted copy controls keep their emitted shape: the whole-array copy
+/// is one byte copy of the destination's storage, the parameter source still
+/// writes through the out-slot, and the read-back reads both copied elements
+/// instead of a single one.
+#[test]
+fn should_copy_a_whole_view_array_and_read_it_back() {
+    let param = "viewcopyparam";
+    let (_scratch, emitted) = emit_host(param, VIEW_COPY_PARAM_SOURCE);
+    assert_contains(param, &emitted, "memcpy(&(ys), &(xs), sizeof(ys));");
+    assert_contains(
+        param,
+        &emitted,
+        "cl_spec_cprimpl_viewcopyparam_fill(ys[0], &((*slot)));",
+    );
+
+    let read = "viewcopyread";
+    let (_scratch, emitted) = emit_host(read, VIEW_COPY_READ_SOURCE);
+    assert_contains(read, &emitted, "memcpy(&(ys), &(xs), sizeof(ys));");
+    assert_contains(read, &emitted, "(ys[0]).ptr[0]");
+    assert_contains(read, &emitted, "(ys[1]).ptr[0]");
+}
+
+// ---------------------------------------------------------------------------
+// The borrowed element's move judgment. A move through an element view is the
+// v1 element-move limit once the substituted member owns, so each owning
+// spelling reports once and the duplicable and top-level spellings keep their
+// copies and moves.
+// ---------------------------------------------------------------------------
+
+/// The member store through one borrowed element.
+const ELEMENT_MOVE_STORE_SOURCE: &str = r#"module spec.cprimpl.elemmovestore;
+
+import { String, stringOf, bytes } from std.text;
+
+struct R { row: String[2]; }
+
+func eachCopy<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        for (borrow w in xs) {
+            v.row = w.row;
+        }
+        total = total + i32(len(bytes(v.row[0]))) + i32(len(bytes(v.row[1])));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: R[2] = [R { row: [stringOf("a"), stringOf("b")] },
+                   R { row: [stringOf("cc"), stringOf("dd")] }];
+    return eachCopy<R[2]>(a);
+}
+"#;
+
+/// The member store through two borrowed elements from two arrays.
+const ELEMENT_MOVE_STORE_TWO_SOURCE: &str = r#"module spec.cprimpl.elemmovestoretwo;
+
+import { String, stringOf, bytes } from std.text;
+
+struct R { row: String[2]; }
+
+func eachCopy2<T>(xs: T, ys: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            v.row = w.row;
+        }
+        total = total + i32(len(bytes(v.row[0]))) + i32(len(bytes(v.row[1])));
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: R[2] = [R { row: [stringOf("a"), stringOf("b")] },
+                   R { row: [stringOf("cc"), stringOf("dd")] }];
+    let b: R[2] = [R { row: [stringOf("e"), stringOf("f")] },
+                   R { row: [stringOf("gg"), stringOf("hh")] }];
+    return eachCopy2<R[2]>(a, b);
+}
+"#;
+
+/// The member take through a borrowed element, followed by a fresh store.
+const ELEMENT_MOVE_TAKE_SOURCE: &str = r#"module spec.cprimpl.elemmovetake;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func each<T>(xs: T): void {
+    for (borrow v in xs) {
+        eat(v.name);
+        v.name = stringOf("zzzz");
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    each<S[1]>(a);
+    return 0;
+}
+"#;
+
+/// The duplicable member twin of the take spelling.
+const ELEMENT_MOVE_COPY_SOURCE: &str = r#"module spec.cprimpl.elemmovecopy;
+
+import { String, stringOf } from std.text;
+
+struct S { name: i32; }
+
+func eat(take s: i32): void { }
+
+func each<T>(xs: T): void {
+    for (borrow v in xs) {
+        eat(v.name);
+        v.name = 7;
+    }
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: 3 }];
+    each<S[1]>(a);
+    return 0;
+}
+"#;
+
+/// The top-level member twin of the take spelling: the same take on an owned
+/// local, which the move rules do allow.
+const TOP_LEVEL_TAKE_SOURCE: &str = r#"module spec.cprimpl.taketopfield;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func eat(take s: String): void { }
+
+func main(): i32 {
+    let a: S = S { name: stringOf("a") };
+    eat(a.name);
+    a.name = stringOf("zzzz");
+    return i32(len(bytes(a.name))) - 4;
+}
+"#;
+
+/// The owning member store, the two-array member store, and the member take
+/// each report the v1 element-move limit exactly once and write no translation
+/// unit, matching their concrete twins.
+#[test]
+fn should_report_a_borrowed_element_move_once_per_owning_instance() {
+    assert_rejected_at_line("elemmovestore", ELEMENT_MOVE_STORE_SOURCE, "E10026", 1, 11);
+    assert_rejected_at_line(
+        "elemmovestoretwo",
+        ELEMENT_MOVE_STORE_TWO_SOURCE,
+        "E10026",
+        1,
+        11,
+    );
+    assert_rejected_at_line("elemmovetake", ELEMENT_MOVE_TAKE_SOURCE, "E10026", 1, 11);
+}
+
+/// A duplicable element member is a copy, so the move judgment stays silent:
+/// the instance emits the take call with the element intact, and the member
+/// carries no zeroing move-out that would drop a value the element still owns.
+#[test]
+fn should_keep_a_duplicable_borrowed_element_move_a_copy() {
+    let tag = "elemmovecopy";
+    let (_scratch, emitted) = emit_host(tag, ELEMENT_MOVE_COPY_SOURCE);
+    let body = function_body(tag, &emitted, "cl_each__arr1_S(ClS xs[1])\n{");
+    assert_contains(
+        tag,
+        body,
+        "cl_spec_cprimpl_elemmovecopy_eat((*__cl_tmp1).name);",
+    );
+    assert_contains(tag, body, "(*__cl_tmp1).name = 7;");
+    assert_absent(tag, body, "cl_zero(&((*__cl_tmp1).name))");
+    assert_absent(tag, body, "(*__cl_tmp1).name = 0;");
+}
+
+/// The top-level member twin keeps its accepted move-and-empty shape: the
+/// callee receives the member and the owner's field is emptied right after the
+/// call, so the following store writes a fresh value over empty storage.
+#[test]
+fn should_move_a_top_level_member_take_out_of_its_owner() {
+    let tag = "taketopfield";
+    let (_scratch, emitted) = emit_host(tag, TOP_LEVEL_TAKE_SOURCE);
+    assert_follows(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_taketopfield_eat(a.name);",
+        "a.name = NULL;",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The conditional take's carrier and the deref store's source. An unresolved
+// member of a conditional moves into one carrier per arm and the callee
+// receives the carrier; an owned raw-deref read empties its pointee through
+// the pointer that named it.
+// ---------------------------------------------------------------------------
+
+/// The generic conditional take whose member type is unresolved in the body.
+const CONDITIONAL_TAKE_SOURCE: &str = r#"module spec.cprimpl.condtakearms;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func pick<T>(take a: T, take b: T, c: bool): i32 {
+    return eat(take (c ? a.name : b.name));
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pick<S>(take a, take b, true) - 1;
+}
+"#;
+
+/// The concrete member twin of the conditional take.
+const CONDITIONAL_TAKE_CONCRETE_SOURCE: &str = r#"module spec.cprimpl.condtakeconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func eatS(take x: String): i32 { return 1; }
+
+func pickS(take a: S, take b: S, c: bool): i32 {
+    return eatS(c ? a.name : b.name);
+}
+
+func main(): i32 {
+    let a: S = S { name: stringOf("ab"), y: 1 };
+    let b: S = S { name: stringOf("cd"), y: 2 };
+    return pickS(take a, take b, true) - 1;
+}
+"#;
+
+/// An owned raw-deref read of a handle pointee.
+const DEREF_READ_SOURCE: &str = r#"module spec.cprimpl.derefreadowner;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let q: raw String = unsafe &a;
+    let v: String = unsafe *q;
+    return i32(len(v));
+}
+"#;
+
+/// The struct-pointee twin of the owned raw-deref read.
+const DEREF_READ_STRUCT_SOURCE: &str = r#"module spec.cprimpl.derefreadstruct;
+
+import { String, stringOf, bytes } from std.text;
+
+struct S { name: String; }
+
+func use(): i32 {
+    let a: S = S { name: stringOf("ab") };
+    let p: raw S = unsafe &a;
+    let v: S = unsafe *p;
+    return i32(len(bytes(v.name))) - 2;
+}
+
+func main(): i32 { return use(); }
+"#;
+
+/// An owned raw-deref read whose pointer expression is an impure call.
+const DEREF_READ_IMPURE_SOURCE: &str = r#"module spec.cprimpl.derefreadimpure;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt(s: raw String, t: raw String): raw String {
+    calls = calls + 1;
+    return s;
+}
+
+func use(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let p: raw String = unsafe &a;
+    let q: raw String = unsafe &b;
+    let v: String = unsafe *alt(p, q);
+    return i32(len(v)) + calls * 10;
+}
+
+func main(): i32 { return use() - 12; }
+"#;
+
+/// The normalized statement shape of one emitted function body.
+///
+/// The generic and concrete spellings of one program differ only in the
+/// callee's symbol and the `#line` markers that name their source files, so
+/// the comparison replaces the callee symbol and drops the markers and blank
+/// lines; what remains is the emitted statement sequence itself.
+fn normalized_body(tag: &str, emitted: &str, signature: &str, callee: &str) -> Vec<String> {
+    function_body(tag, emitted, signature)
+        .replace(callee, "callee")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("#line"))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The selected member of an unresolved conditional moves into one carrier
+/// per arm, and the callee receives the carrier: each branch copies the arm's
+/// member and empties its root, the call reads the carrier, and the post-call
+/// move-out zeroes it. The concrete member twin's statement sequence is the
+/// reference, normalized only for the callee symbol and the line markers.
+#[test]
+fn should_move_the_conditional_take_member_into_the_carrier_per_arm() {
+    let tag = "condtakearms";
+    let (_scratch, emitted) = emit_host(tag, CONDITIONAL_TAKE_SOURCE);
+    assert_contains(tag, &emitted, "ClString __cl_tmp0 = NULL;");
+    assert_follows(tag, &emitted, "if (c) {", "__cl_tmp0 = a.name;");
+    assert_follows(tag, &emitted, "__cl_tmp0 = a.name;", "a.name = NULL;");
+    assert_follows(tag, &emitted, "} else {", "__cl_tmp0 = b.name;");
+    assert_follows(tag, &emitted, "__cl_tmp0 = b.name;", "b.name = NULL;");
+    assert_follows(
+        tag,
+        &emitted,
+        "__cl_tmp1 = cl_eat__String(__cl_tmp0);",
+        "__cl_tmp0 = NULL;",
+    );
+
+    let concrete = "condtakeconcrete";
+    let (_scratch, emitted_concrete) = emit_host(concrete, CONDITIONAL_TAKE_CONCRETE_SOURCE);
+    let generic_shape = normalized_body(
+        tag,
+        &emitted,
+        "cl_pick__S(ClS a, ClS b, bool c)\n{",
+        "cl_eat__String",
+    );
+    let concrete_shape = normalized_body(
+        concrete,
+        &emitted_concrete,
+        "cl_spec_cprimpl_condtakeconcrete_pickS(ClS a, ClS b, bool c)\n{",
+        "cl_spec_cprimpl_condtakeconcrete_eatS",
+    );
+    assert_eq!(
+        generic_shape, concrete_shape,
+        "the generic conditional take must match the concrete twin's statement shape"
+    );
+}
+
+/// An owned raw-deref read used as a store value moves the pointee: the handle
+/// spelling is emptied through its own address and the struct spelling
+/// through `cl_zero` at the same address, so only the destination owns the
+/// value. An impure pointer expression is bound once, so the store and the
+/// emptying read one address.
+#[test]
+fn should_empty_the_owned_deref_store_source_through_its_own_address() {
+    let tag = "derefreadowner";
+    let (_scratch, emitted) = emit_host(tag, DEREF_READ_SOURCE);
+    assert_follows(tag, &emitted, "v = *(q);", "*(q) = NULL;");
+
+    let struct_tag = "derefreadstruct";
+    let (_scratch, emitted) = emit_host(struct_tag, DEREF_READ_STRUCT_SOURCE);
+    assert_follows(struct_tag, &emitted, "v = *(p);", "cl_zero(&*(p));");
+
+    let impure = "derefreadimpure";
+    let (_scratch, emitted) = emit_host(impure, DEREF_READ_IMPURE_SOURCE);
+    let body = function_body(
+        impure,
+        &emitted,
+        "cl_spec_cprimpl_derefreadimpure_use(void)\n{",
+    );
+    assert_contains(
+        impure,
+        body,
+        "__cl_tmp0 = cl_spec_cprimpl_derefreadimpure_alt(p, q);",
+    );
+    assert_eq!(
+        body.matches("cl_spec_cprimpl_derefreadimpure_alt(").count(),
+        1,
+        "the impure pointer must evaluate exactly once in the body; body:\n{body}"
+    );
+    assert_follows(impure, body, "v = *(__cl_tmp0);", "*(__cl_tmp0) = NULL;");
+}
+
+/// The conditional take's carrier shape and the deref store's emptied pointee
+/// re-emit byte-identically.
+#[test]
+fn should_re_emit_the_ownership_transfer_programs_byte_identically() {
+    for (tag, source, shape) in [
+        (
+            "condtakearms",
+            CONDITIONAL_TAKE_SOURCE,
+            "__cl_tmp1 = cl_eat__String(__cl_tmp0);",
+        ),
+        ("derefreadowner", DEREF_READ_SOURCE, "*(q) = NULL;"),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+        assert_contains(tag, &first, shape);
+    }
+}
