@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 00:50
-> **Progress**: 5/51 tasks (10%) — Phase 1 in review
+> **Last Updated**: 2026-10-18 02:30
+> **Progress**: 6/51 tasks (12%) — Phase 1 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -84,9 +84,9 @@ non-null controls.
 - [x] 1.3.1 Write the phase implementation pins (the null-guarded arm spellings, the argument and
       initializer guards, the byte-identical non-null controls, a re-emission determinism pin) —
       `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-18 00:50; six impl pins added (36 tests total) plus one spec case for the adjacent fixed shape (the direct nullable call argument; the spec 53 tests), additions only — the guarded call/place arms, the guarded argument (count 2), the guarded member projection with the move-out order, the disclosed base-stable non-null control, and a re-emission pin; the discriminating pins fail at `4346a84` for the intended reason; 36/36 + 53/53 green; `make check` exit 0)
-- [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode;
+- [x] 1.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses (correctness + memory-safety + emission-integrity; the reviewer packet
-      includes the blast-radius step and the test-integrity step)
+      includes the blast-radius step and the test-integrity step) ✅ (completed: 2026-10-18 02:30; all three lenses dispatched plus three correction rounds and a bounded confirmation (FAIL then PASS after the fix): the fresh arm roots, the shared `selects_null`, the conditional-argument routing, the operand-guard restoration, and the plain/inline split; the closing verification: the module-initializer spec 62/62 plain and ASan, the impl pins 42/42, `make check` exit 0, no acceptance change, 0 head-only strict failures, the six probe re-runs as designed)
 
 **Verify**: `make check`; the view cases under `RDC_ASAN=1`; the strict-build probes
 
