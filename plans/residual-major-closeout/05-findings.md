@@ -171,3 +171,36 @@ accepted (the same symbol set, run-identical, deterministic); the suites are 45/
 `DEF-335` (the nullable-view conditional call and place arms), `DEF-336` (the argument),
 `DEF-337` (the initializer member projection), `DEF-338` (the local-headed qualified receiver's
 initializer dot call).
+
+## Phase 2 — Element placeholder, inference, bounds
+
+**Reviewed implementation**: `9e88cb5` plus two correction rounds (`3096378`, `802d016`).
+**Lenses**: correctness (K2R), semantics (K2S), emission-integrity (F-1/F-2), memory-safety (K2M).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | K2R-1 (the unjudged substituted index kinds: previously-diagnosed programs accepted with invalid C), K2R-2 (the element member audit never fired), K2R-3 (the declined projected-argument shapes — filed `DEF-342`); 2,060-program differential |
+| semantics | FAIL — 2 blockers | K2S-1 (the nested element placeholder rendered into C — a head-only regression; base built and ran), K2S-2 (= K2R-1), K2S-3..6 (the declined/keyed/chained/null families — filed); Q1-Q4 conformant otherwise (the element rule, the projected-place key, the null rule, the index codes) |
+| emission-integrity | FINDINGS — 2 | F-1 (the chained index's inner judgment — head-newly-accepted, an OOB read), F-2 (the conditional argument's keying — head-newly-accepted, an undeclared symbol); 3,685-program differential |
+| memory-safety | FINDINGS — 1 critical | K2M-1 (the owning-element by-value capture double-frees — the capture-move duty's substitution missed the element binding) + K2M-P1/O2/O3 (pre-existing, filed) |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| C1 (K2R-1/K2S-2) | **Fixed**: the instance index judgment completed (nullable → `E10010`, non-indexable → one `E10209` at the base span, arrays keep `E10216`/the guard, `str`/`cstring`/`raw` via the shared `index_element`); the walk/emitter resolver duplication collapsed |
+| C2 (K2S-1/K2M-O1) | **Fixed**: the nested element placeholders bind to a fixed point — the nested loop builds and runs (21) |
+| C3 (K2M-1) | **Fixed**: the capture move requirements substitute with the instance bindings — one `E10401`, no TU |
+| C4 (K2R-2) | **Fixed**: the projection and duplicability audits use the instance bindings — one `E10212` |
+| F-1 | **Fixed**: an opaque-base index types as the base's one-step element placeholder, so a chained index's inner base records its own opaque index; the guard base resolves through the value-type resolver — the inner runtime index traps `E11211`, the constant reports `E10216`; `DEF-343` closed incidentally |
+| F-2 | **Fixed**: the walk's value resolver gained the conditional arm (the emitter's both-arms-agree rule) — the conditional argument keys its instance |
+
+### Confirmation
+
+**CONFIRMED — 0 findings** (the emission lens, 3,913 programs): 2,398 strict-OK at head (83 CCFAIL, none head-only), 112 intended emission diffs, 26 intended rejects, 28 accepts (27 intended + one invalid probe of a pre-existing family), determinism 2,481/2,481, both alternate profiles clean; the capture, nested-loop, chained-index, string-index and conditional-argument repros all behave as designed.
+
+### Filed rows
+
+`DEF-339` (the borrowed element's owned-field store leak), `DEF-340` (the temp-rooted projected argument), `DEF-341` (the lifted lambda return substitution), `DEF-342` (the declined projected-argument shapes), `DEF-343` (**closed fixed** in round 2), `DEF-344` (the null-shaped argument against a sibling-fixed parameter), `DEF-345` (the substituted element in a conversion/member position — the pre-existing gap the corrected index path now reaches).
