@@ -3871,3 +3871,284 @@ func main(): i32 {
     assert_exit("ffiresultok", &output, 7);
 }
 
+// ===== Instance-time receiver and null-shape judgments =====
+
+/// A parameter-typed dot-call receiver is judged at its instance.
+///
+/// The receiver is a written argument at index zero, so its conversion is
+/// deferred exactly as an argument's and the instance reports the frozen
+/// conversion once, at the receiver; the out-slot receiver route defers the
+/// same way. Before the judgment the accepted program passed the view struct
+/// where the `char *` receiver parameter is declared and the strict build
+/// failed with `incompatible type for argument 1`. The legal receiver
+/// instances run: the `cstring` receiver and the `cstring?` out-slot receiver
+/// (whose write-through is read back).
+#[test]
+fn should_report_a_generic_dot_call_receiver_at_its_instance() {
+    let receiver = r#"module spec.cc.receiverinstance;
+
+func sink(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func conv<T>(x: T): i32 {
+    return x.sink();
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return conv<str>(s);
+}
+"#;
+    assert_rejected_once(
+        "receiverinstance",
+        receiver,
+        "E10200",
+        &["cannot convert 'str' to 'cstring' implicitly"],
+        &[],
+    );
+
+    let slot = r#"module spec.cc.receiveroutslot;
+
+func put(borrow out: cstring?, v: cstring?): void {
+    out = v;
+}
+
+func conv<T>(x: T, v: cstring?): i32 {
+    let r: T = x;
+    r.put(v);
+    return 0;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    let v: cstring? = null;
+    return conv<str>(s, v);
+}
+"#;
+    assert_rejected_once(
+        "receiveroutslot",
+        slot,
+        "E10200",
+        &["cannot convert 'str' to 'cstring?' implicitly"],
+        &[],
+    );
+
+    let legal = r#"module spec.cc.receiverok;
+
+import { toCString } from std.text;
+
+func sink(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func conv<T>(x: T): i32 {
+    return x.sink();
+}
+
+func main(): i32 {
+    let c: cstring = toCString("abc");
+    return conv<cstring>(c);
+}
+"#;
+    let output = run_memory("receiverok", legal);
+    assert_no_asan("receiverok", &output);
+    assert_exit("receiverok", &output, 0);
+
+    let legal_slot = r#"module spec.cc.receiveroutslotok;
+
+import { toCString } from std.text;
+
+func put(borrow out: cstring?, v: cstring?): void {
+    out = v;
+}
+
+func conv<T>(x: T, v: cstring?): i32 {
+    let r: T = x;
+    r.put(v);
+    return 0;
+}
+
+func main(): i32 {
+    let r: cstring? = toCString("xy");
+    let v: cstring? = toCString("ab");
+    if (conv<cstring?>(r, v) != 0) {
+        return 1;
+    }
+    if (r == null) {
+        return 2;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("receiveroutslotok", legal_slot);
+    assert_no_asan("receiveroutslotok", &output);
+    assert_exit("receiveroutslotok", &output, 0);
+}
+
+/// A null shape at a concrete destination reports the null rule once.
+///
+/// A destination that is already concrete keeps the position's own rule, so
+/// the instance conversion must not record the null shape again: the
+/// declaration and the argument report exactly one `E10012` (without the
+/// destination gate the same site reported twice, twice at the same span for
+/// the argument).
+#[test]
+fn should_report_a_null_shape_at_a_concrete_destination_once() {
+    let decl = r#"module spec.cc.nullconcretedecl;
+
+func store<T>(x: T): i32 {
+    let n = null;
+    let y: i32 = n;
+    return y;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return store<str>(s);
+}
+"#;
+    assert_rejected_once(
+        "nullconcretedecl",
+        decl,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+
+    let argument = r#"module spec.cc.nullconcretearg;
+
+func want(v: i32): i32 {
+    return v;
+}
+
+func pass<T>(x: T): i32 {
+    let n = null;
+    return want(n);
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return pass<str>(s);
+}
+"#;
+    assert_rejected_once(
+        "nullconcretearg",
+        argument,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+}
+
+/// A null shape keeps the destination position's own rule.
+///
+/// An element or field destination accepts the null shape exactly as its
+/// concrete sibling does — both are accepted and leave the emitted conversion
+/// to the host compiler, the pre-existing null-shape hole at those positions —
+/// while a destination that is still a type parameter defers to its instance
+/// and reports the null rule once.
+#[test]
+fn should_keep_a_null_shape_matching_its_destination_position() {
+    for (tag, source) in [
+        ("nullelement", r#"module spec.cc.nullelement;
+
+func pass<T>(x: T): i32 {
+    let n = null;
+    let a: i32[2] = [n, 0];
+    return a[1];
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return pass<str>(s);
+}
+"#),
+        ("nullelementsibling", r#"module spec.cc.nullelementsibling;
+
+func main(): i32 {
+    let n = null;
+    let a: i32[2] = [n, 0];
+    return a[1];
+}
+"#),
+        ("nullfield", r#"module spec.cc.nullfield;
+
+struct Box { v: i32; }
+
+func pass<T>(x: T): i32 {
+    let n = null;
+    let b: Box = Box { v: n };
+    return b.v;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return pass<str>(s);
+}
+"#),
+        ("nullfieldsibling", r#"module spec.cc.nullfieldsibling;
+
+struct Box { v: i32; }
+
+func main(): i32 {
+    let n = null;
+    let b: Box = Box { v: n };
+    return b.v;
+}
+"#),
+    ] {
+        let (_scratch, output, _c_path) = compile_only(tag, source);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the destination position must accept the null shape; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let decl = r#"module spec.cc.nulltdecl;
+
+func store<T>(x: T): i32 {
+    let n = null;
+    let y: T = n;
+    return 0;
+}
+
+func main(): i32 {
+    return store<i32>(5) + 1;
+}
+"#;
+    assert_rejected_once(
+        "nulltdecl",
+        decl,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+
+    let ret = r#"module spec.cc.nulltret;
+
+func make<T>(): T {
+    let n = null;
+    return n;
+}
+
+func main(): i32 {
+    return i32(make<i32>()) + 1;
+}
+"#;
+    assert_rejected_once(
+        "nulltret",
+        ret,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+}

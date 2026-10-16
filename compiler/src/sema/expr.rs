@@ -438,22 +438,35 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        // A source that mentions a type parameter or that is the null shape
-        // cannot be judged at the declaration: the conversion is recorded and
-        // the instance audit applies the ordinary conversion (or null)
-        // judgment to the resolved source and destination.
-        if crate::types::contains_param(&ty) || crate::types::is_null_shaped(&ty) {
-            if let Some(function) = self.function_name.clone() {
-                self.opaque_conversions.push(OpaqueConversion {
-                    function,
-                    source: ty.clone(),
-                    expected: expected.clone(),
-                    span: expr.span,
-                });
-            }
-        }
+        self.record_deferred_conversion(&ty, expected, expr.span);
         self.check_conversion(&ty, expected, expr.span);
         ty
+    }
+
+    /// Records a value whose conversion is deferred to its instance.
+    ///
+    /// A source that mentions a type parameter cannot be judged at the
+    /// declaration, so the instance audit applies the ordinary conversion (or
+    /// null) judgment to the substituted source and destination. A null-shaped
+    /// source is recorded only when the destination is itself unresolved: a
+    /// concrete destination already faces the position's own rules, so
+    /// recording it again would report twice or reject where the concrete
+    /// spelling accepts.
+    pub(super) fn record_deferred_conversion(&mut self, source: &Ty, expected: &Ty, span: Span) {
+        let null_deferred = crate::types::is_null_shaped(source)
+            && (crate::types::contains_param(expected) || expected.is_unknown());
+        if !crate::types::contains_param(source) && !null_deferred {
+            return;
+        }
+        let Some(function) = self.function_name.clone() else {
+            return;
+        };
+        self.opaque_conversions.push(OpaqueConversion {
+            function,
+            source: source.clone(),
+            expected: expected.clone(),
+            span,
+        });
     }
 
     /// Checks an already-computed type against an expected one.

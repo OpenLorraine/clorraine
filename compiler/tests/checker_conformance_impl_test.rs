@@ -1773,3 +1773,178 @@ fn should_re_emit_the_deferred_conversion_instances_identically() {
         assert_eq!(first, second, "{tag}: the program re-emitted differently");
     }
 }
+
+// ===== Deferred dot-call receivers and the null-shape destination gate =====
+
+/// A parameter-typed dot-call receiver reports once at its instance.
+///
+/// The receiver is a written argument at index zero, so its deferred
+/// conversion is recorded like an argument's and judged at the instance, at
+/// the receiver's span. The `raw u8` instance reports the frozen conversion
+/// too, where the emitted cast had kept the program building. The legal
+/// `cstring` instance emits the substituted call unchanged.
+#[test]
+fn should_report_a_deferred_dot_call_receiver_at_its_instance() {
+    let receiver = r#"module spec.cc.impl.receiverduty;
+
+func sink(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func conv<T>(x: T): i32 {
+    return x.sink();
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return conv<str>(s);
+}
+"#;
+    let stderr = reject_host("receiverduty", receiver);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "receiverduty: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'str' to 'cstring' implicitly"),
+        "receiverduty: the conversion message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:11:12"),
+        "receiverduty: the report must name the receiver; stderr:\n{stderr}"
+    );
+
+    let raw = r#"module spec.cc.impl.receiverraw;
+
+func sink(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func conv<T>(x: T): i32 {
+    return x.sink();
+}
+
+func main(): i32 {
+    let a: u8[4] = [65, 66, 67, 0];
+    let p: raw u8 = unsafe &a[0];
+    return conv<raw u8>(p);
+}
+"#;
+    let stderr = reject_host("receiverraw", raw);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "receiverraw: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'raw u8' to 'cstring' implicitly"),
+        "receiverraw: the conversion message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:11:12"),
+        "receiverraw: the report must name the receiver; stderr:\n{stderr}"
+    );
+
+    let legal = r#"module spec.cc.impl.receiverlegal;
+
+import { toCString } from std.text;
+
+func sink(c: cstring): i32 {
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func conv<T>(x: T): i32 {
+    return x.sink();
+}
+
+func main(): i32 {
+    let c: cstring = toCString("abc");
+    return conv<cstring>(c);
+}
+"#;
+    let emitted = emit_host("receiverlegal", legal);
+    assert_contains("receiverlegal", &emitted, "static i32 cl_conv__cstring(char *x)");
+    assert_contains(
+        "receiverlegal",
+        &emitted,
+        "return cl_spec_cc_impl_receiverlegal_sink(x);",
+    );
+}
+
+/// A null shape at a concrete destination keeps a single report.
+///
+/// The destination gate leaves a concrete destination to the position's own
+/// rule, so the declaration and the argument each report exactly one `E10012`,
+/// at the position's own span (the instance conversion recorded the same site
+/// again before the gate, twice at the same span for the argument).
+#[test]
+fn should_not_duplicate_a_null_report_at_a_concrete_destination() {
+    let decl = r#"module spec.cc.impl.nullconcretedecl;
+
+func store<T>(x: T): i32 {
+    let n = null;
+    let y: i32 = n;
+    return y;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return store<str>(s);
+}
+"#;
+    let stderr = reject_host("nullconcretedecl", decl);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "nullconcretedecl: expected one E10012; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'null' is not allowed here"),
+        "nullconcretedecl: the null message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:5:5"),
+        "nullconcretedecl: the report must keep the position's span; stderr:\n{stderr}"
+    );
+
+    let argument = r#"module spec.cc.impl.nullconcretearg;
+
+func want(v: i32): i32 {
+    return v;
+}
+
+func pass<T>(x: T): i32 {
+    let n = null;
+    return want(n);
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return pass<str>(s);
+}
+"#;
+    let stderr = reject_host("nullconcretearg", argument);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "nullconcretearg: expected one E10012; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'null' is not allowed here"),
+        "nullconcretearg: the null message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:9:17"),
+        "nullconcretearg: the report must keep the position's span; stderr:\n{stderr}"
+    );
+}

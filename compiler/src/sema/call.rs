@@ -478,6 +478,14 @@ impl Checker<'_, '_> {
                             span,
                         );
                     } else {
+                        // The receiver is a written argument at index zero, so
+                        // its deferred conversion is recorded exactly like an
+                        // argument's and judged at the instance.
+                        self.record_deferred_conversion(
+                            &receiver,
+                            receiver_param,
+                            receiver_expr.map(|expr| expr.span).unwrap_or(span),
+                        );
                         self.check_conversion(&receiver, receiver_param, span);
                     }
                     // The receiver is not a written argument, so the remaining
@@ -777,17 +785,7 @@ impl Checker<'_, '_> {
                 // A parameter-typed argument resolves at its instance: the
                 // conversion is recorded and judged there, exactly as the
                 // ordinary call path judges its instances.
-                if crate::types::contains_param(&ty) {
-                    if let Some(function) = self.function_name.clone() {
-                        self.opaque_conversions.push(super::OpaqueConversion {
-                            function,
-                            source: ty.clone(),
-                            expected: param.clone(),
-                            span: arg.value.span,
-                        });
-                        continue;
-                    }
-                }
+                self.record_deferred_conversion(&ty, param, arg.value.span);
                 if !ty.is_unknown() && !crate::types::contains_param(&ty) {
                     self.error(
                         "E10200",
@@ -851,6 +849,14 @@ impl Checker<'_, '_> {
         param: &Ty,
         span: Span,
     ) {
+        // A receiver that still mentions a type parameter cannot be judged
+        // here: the instance audit applies the same rule to the substituted
+        // receiver, exactly as it does for a declared argument.
+        if crate::types::contains_param(ty) {
+            let receiver_span = receiver.map(|expr| expr.span).unwrap_or(span);
+            self.record_deferred_conversion(ty, param, receiver_span);
+            return;
+        }
         let place = receiver.map_or(true, |expr| self.is_place(expr));
         if place && ty == param {
             return;
