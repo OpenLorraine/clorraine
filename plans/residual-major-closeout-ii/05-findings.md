@@ -211,3 +211,42 @@ exit 0; no acceptance change; 0 head-only strict failures.
 
 None — every phase-1 finding was fixed in the correction rounds (the family's pre-existing
 spellings closed with them).
+
+## Phase 2 — The generic walk's projected-argument resolver
+
+**Reviewed implementation**: `3d54079` plus two correction rounds (`cfeffd3`, `7b3cc68`). **Lenses**:
+correctness (L2R/L2R-R1), semantics (L2S), memory-safety (the take move-out), and emission-integrity,
+plus a bounded re-confirmation.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | L2R-1 (an import alias overwrote a same-named own binding in the walk's scope map — a base-green call emitted an undeclared symbol), L2R-2 (the body walks received the scope map without a shadowing check — a base-green program rejected `E10043`), L2R-3 (the direct-name shadow — filed `DEF-361`); the re-confirmation then found L2R-R1 (the expression-bodied lambda arm still inherited the map) → fixed and parent-verified |
+| semantics | FAIL — 1 blocker | L2S-1 (the missing lexical-scope overlay — the same family as L2R-2), L2S-2 (= L2R-1); Q2/Q3 conformant (the place resolver mirrors the emitter; the conditional rule matches); Q4 confirmed `DEF-360` as a checker gap; PRE-1/2/3 filed (`DEF-363`/`DEF-364`; `DEF-347` extended) |
+| memory-safety | FINDINGS — 1 | A `take` argument of an opaque member type never moves out at the instance — an ASan double free on shapes this phase newly keys (the Local-rooted twin reproduces byte-identically at the base: root pre-existing, reachability introduced); filed `DEF-362` and folded into phase 4 (AR-18); the three reds, eight controls, seven fixes, and the do-not-fix set otherwise clean |
+| emission-integrity | FINDINGS — 2 | Both MINOR and both the same roots as L2R-1/L2R-2 (a dead specialization from the collision; a dead specialization from the body shadow) — already fixed by the correction; the 11 intended deltas are addition-only keyed instances; instance integrity, determinism, and the cross profiles clean |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| C1 (L2R-1/L2S-2) | **Fixed**: `visible_bindings` skips an import whose local name is already bound — the own binding wins, mirroring the read resolution |
+| C2 (L2R-2/L2S-1) | **Fixed**: only the initializer walks carry the module scope; the function bodies keep the base decline |
+| R1 (L2R-R1) | **Fixed**: one empty body scope hoisted for both lambda body forms (the expression arm previously inherited the map) |
+
+### Confirmations
+
+The bounded re-confirmation: **FAIL — 1 blocker** (L2R-R1 only; the seven fixes, eight controls,
+the differential, and the suites all confirmed). After the one-branch fix, the parent's probe
+re-run: the expression-lambda shape keys `cl_pick__arr2_i32` only (exit 0); the suites 139/139 plain
+and under `RDC_ASAN=1`, the impl pins 58/58, `make check` exit 0; the differential shows the same
+seven intended fixes and no unintended accept/reject.
+
+### Filed rows
+
+`DEF-360` (the dot-call written-argument checker gap), `DEF-361` (the direct-name shadow),
+`DEF-362` (the opaque-member take move-out — **folded into phase 4**, AR-18), `DEF-363` (the
+declaration/import collision not reported), `DEF-364` (the opaque conditional judgments), `DEF-365`
+(the element-of-element key leak), `DEF-366` (the owning row field double free), plus the `DEF-347`
+extension (the newly keyed view-pointer const-discard).

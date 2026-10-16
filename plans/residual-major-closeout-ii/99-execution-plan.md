@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 05:00
-> **Progress**: 11/51 tasks (22%) — Phase 2 in review
+> **Last Updated**: 2026-10-18 09:10
+> **Progress**: 12/51 tasks (24%) — Phase 2 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -128,8 +128,8 @@ conditional/non-local place bases with their controls.
       opaque/undeclared keys absent, the conditional both-arms agreement, the receiver
       evaluation count, a re-emission determinism pin) —
       `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-18 05:00; five pins added (55 tests total, additions only) plus a two-file emitter helper and a keyed-instance helper — the aliased-receiver dot call, the temp-rooted member argument, and the conditional argument each assert the keyed instance declared, defined, and called exactly once; the four controls keep their keyed instances; a re-emission pin; three of the five fail at `6c5b98a` for the intended reason, two are disclosed base-stable guards; 55/55 green, `make check` exit 0)
-- [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses (correctness + semantics + memory-safety + emission-integrity)
+- [x] 2.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses (correctness + semantics + memory-safety + emission-integrity) ✅ (completed: 2026-10-18 09:10; all four lenses dispatched plus two correction rounds and a bounded re-confirmation (FAIL on the expression-lambda corner, fixed and parent-verified): the own-wins collision precedence, the initializer-only scope map, and the shared empty lambda scope; rows filed `DEF-360`–`DEF-366` (+ the `DEF-347` extension; `DEF-362` folded into phase 4, AR-18); the closing verification: the checker-conformance spec 139/139 plain and ASan, the impl pins 58/58, `make check` exit 0, the seven intended fixes unchanged, no unintended accept/reject)
 
 **Verify**: `make check`; the focused suites; the strict builds
 
