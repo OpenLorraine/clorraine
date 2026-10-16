@@ -1012,7 +1012,7 @@ impl<'a> Emitter<'a> {
     /// it leaks. The drop is null-safe, so writing a fresh (empty) target is
     /// unaffected; a scalar target owns nothing and is skipped.
     fn emit_reassigned_target_drop(&mut self, target: &Place) {
-        let ty = self.substitute(&target.ty);
+        let ty = self.resolved_place_ty(target);
         if self.needs_drop(&ty) {
             self.emit_drop(target);
         }
@@ -1027,7 +1027,7 @@ impl<'a> Emitter<'a> {
     /// and only then is the saved value released. A target that owns nothing is
     /// overwritten directly.
     fn emit_assign(&mut self, span: crate::span::Span, target: &Place, value: &Value) {
-        let ty = self.substitute(&target.ty);
+        let ty = self.resolved_place_ty(target);
         self.emit_line_directive(span);
         if ty.is_fixed_array() {
             self.emit_fixed_array_assign(target, &ty, value);

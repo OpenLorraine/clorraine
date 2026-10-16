@@ -20,7 +20,7 @@ impl<'a> Emitter<'a> {
     /// local in a loop body, whose per-iteration cleanup runs on each pass.
     pub(super) fn emit_drop(&mut self, place: &Place) {
         let c_name = self.place(place);
-        let ty = self.substitute(&place.ty);
+        let ty = self.resolved_place_ty(place);
         self.emit_drop_expr(&c_name, &ty);
     }
 

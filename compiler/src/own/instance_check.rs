@@ -1211,11 +1211,17 @@ fn check_deferred_conversions(
             if instance.function != conversion.function {
                 continue;
             }
-            let expected = substitute_instance(&conversion.expected, &params, &instance.args);
+            // The instance's bindings include the element placeholder
+            // (`#element of T`), so a source written as an element of the
+            // opaque parameter resolves to the substituted argument's element
+            // before the conversion is judged, exactly as the concrete read
+            // would report it.
+            let bindings = crate::types::instance_bindings(&params, &instance.args);
+            let expected = crate::types::substitute(&conversion.expected, &bindings);
             if crate::types::contains_param(&expected) || expected.is_void() {
                 continue;
             }
-            let source = substitute_instance(&conversion.source, &params, &instance.args);
+            let source = crate::types::substitute(&conversion.source, &bindings);
             let Some(report) = deferred_conversion_report(&source, &expected, conversion.span)
             else {
                 continue;

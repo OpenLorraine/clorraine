@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 10:10
-> **Progress**: 14/51 tasks (27%) — Executing Phase 3
+> **Last Updated**: 2026-10-18 11:00
+> **Progress**: 16/51 tasks (31%) — Phase 3 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -161,12 +161,12 @@ duplicable out-slot, and the capture pair control.
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Substitute the element store's drop decision; record and judge the substituted (DEF-353 reclassified as a false positive per AR-19 — the duplicable copy-write is conformant; the ST-9 slot is the conforming control)
+- [x] 3.2.1 Substitute the element store's drop decision; record and judge the substituted (DEF-353 reclassified as a false positive per AR-19 — the duplicable copy-write is conformant; the ST-9 slot is the conforming control)
       conversion/member duties; restore the duplicable out-slot write-through —
       `compiler/src/own/instance_check.rs`, `compiler/src/codegen/drop.rs`,
       `compiler/src/own/lower.rs`, `compiler/src/types/`, `compiler/src/sema/call.rs`,
-      `compiler/src/own/call_check.rs`
-- [ ] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/call_check.rs` ✅ (completed: 2026-10-18 11:00; `DEF-339`: the new `resolved_place_ty` (`codegen/expr.rs:283`) completes the recorded destination type through the place base and projections after substitution, and the three drop-decision sites read it (`codegen/drop.rs:23`, `codegen/function.rs:1015`/`:1030`), so the overwritten owning field drops before the store (`if ((*__cl_tmp1).name) { FreeString((*__cl_tmp1).name); } (*__cl_tmp1).name = NULL;`) and the loop/early-exit leaks are clean; `DEF-345`: the deferred-conversion audit substitutes the source and destination through the element-aware bindings (`own/instance_check.rs:1219-1226`), so the seven concrete positions each report exactly one `E10200` matching their concrete twins; `DEF-353` and `DEF-341`: conforming controls only (AR-19); left: `e01_scalar_member_min` stays a pre-existing red outside the row's scope per the design)
+- [x] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-18 11:00; the checker-conformance spec 143/143 plain and under `RDC_ASAN=1`; the residue spec 146/146 both legs; the differential shows 2 addition-only emission diffs (the element store drop) and 9 head-only rejects (the seven conversion spellings + `d05_cond_place_arg` + `p2c_capture`), no head-only strict failure; parent-verified both suites plain + ASan)
 
 ### Step 3.3: Impl Tests & Review
 

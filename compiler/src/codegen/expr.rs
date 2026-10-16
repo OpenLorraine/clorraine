@@ -273,6 +273,35 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// The type of a place after the active instance substitution.
+    ///
+    /// A place recorded in a generic body can still be opaque at the emission
+    /// — a member of the element placeholder, for example — so the recorded
+    /// type is resolved through the base and its projections exactly as the
+    /// value resolver walks them. A store's drop decision must see the
+    /// resolved type, or the owner it overwrites is never released.
+    pub(super) fn resolved_place_ty(&self, place: &Place) -> Ty {
+        let ty = self.substitute(&place.ty);
+        if !ty.is_unknown() {
+            return ty;
+        }
+        let mut current = self.substitute(&self.place_base_type(&place.base));
+        for projection in &place.projections {
+            if current.is_unknown() {
+                return ty;
+            }
+            current = match projection {
+                Projection::Field(field) => self.field_type(&current, field),
+                Projection::Element(_) | Projection::ElementTemp(_) => element_type(&current),
+            };
+        }
+        if current.is_unknown() {
+            ty
+        } else {
+            current
+        }
+    }
+
     /// The type of a value after instance substitution, following projections.
     ///
     /// A projection recorded in a generic body carries the opaque type: the
