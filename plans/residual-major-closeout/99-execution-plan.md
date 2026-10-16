@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-16 18:00
-> **Progress**: 4/39 tasks (10%) — Phase 1 in review
+> **Last Updated**: 2026-10-16 18:30
+> **Progress**: 5/39 tasks (13%) — Phase 1 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -81,10 +81,10 @@ control.
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the keyed callee/instance spellings, the
+- [x] 1.3.1 Write the phase implementation pins (the keyed callee/instance spellings, the
       per-arm view construction, the release-in-block shape, the byte-identical explicit-type
       control, the re-emission determinism pin) —
-      `compiler/tests/module_initializer_integrity_impl_test.rs`
+      `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-16 18:30; six pins added (25 tests total, additions only) — the expression-callee receiver call, the keyed inferred instances (the call and the view builder with the typed temporary), the in-block guarded release, the per-arm nullable view construction (module and body), and a discriminating re-emission pin; all six fail at `d949f7f` for the intended reason; 25/25 green, `make check` exit 0 (one pre-existing dead-code warning cleared))
 - [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses (correctness + emission-integrity + memory-safety; the reviewer
       packet includes the blast-radius step and the test-integrity step)

@@ -722,3 +722,296 @@ func main(): i32 {
         "__cl_tmp0 = ((cl_spec_mii_impl_storeslice_position + sizeof(ClSlice_i32)) - sizeof(ClSlice_i32));",
     );
 }
+
+/// The expression-callee initializer spellings and their func-value control.
+///
+/// `mk()` returns a func value and `c ? addOne : addOne` selects one, so the
+/// two calls go through a value the emitted C must carry; the func-typed
+/// global `f` is the plain-receiver control.
+const EXPR_CALLEE_SOURCE: &str = r#"module spec.mii.impl.exprcallee;
+
+func addOne(a: i32): i32 {
+    return a + 1;
+}
+
+func mk(): func(i32): i32 {
+    return addOne;
+}
+
+let c: bool = true;
+let f: func(i32): i32 = addOne;
+let h: i32 = mk()(5);
+let j: i32 = (c ? addOne : addOne)(5);
+let k: i32 = f(5);
+
+func main(): i32 {
+    return (h - 6) + (j - 6) + (k - 6);
+}
+"#;
+
+/// An expression callee in an initializer is the call's callable value.
+///
+/// A call-result callee and a conditional over func values both lower to the
+/// call's receiver, so the emitted C calls the value the callee produced
+/// instead of collapsing the call into its arguments; the func-typed global
+/// beside them keeps the plain receiver spelling.
+#[test]
+fn should_call_an_expression_callee_in_an_initializer() {
+    let emitted = emit_host("exprcallee", EXPR_CALLEE_SOURCE);
+    assert_contains(
+        "exprcallee",
+        &emitted,
+        "cl_spec_mii_impl_exprcallee_h = (cl_spec_mii_impl_exprcallee_mk())(5);",
+    );
+    assert_contains(
+        "exprcallee",
+        &emitted,
+        "cl_spec_mii_impl_exprcallee_j = ((cl_spec_mii_impl_exprcallee_c ? cl_spec_mii_impl_exprcallee_addOne : cl_spec_mii_impl_exprcallee_addOne))(5);",
+    );
+    assert_contains(
+        "exprcallee",
+        &emitted,
+        "cl_spec_mii_impl_exprcallee_k = (cl_spec_mii_impl_exprcallee_f)(5);",
+    );
+    assert_eq!(
+        count(&emitted, " = (5);"),
+        0,
+        "exprcallee: a collapsed call must not store its bare argument"
+    );
+}
+
+/// An inferred generic initializer call reaches the keyed instance.
+///
+/// The inferred spelling derives its type arguments from the checked argument
+/// types, so the call spells the same keyed symbol the explicit control does
+/// and the declaration carries exactly one instance; the plain module symbol
+/// must not appear.
+#[test]
+fn should_key_an_inferred_generic_initializer_call() {
+    let source = r#"module spec.mii.impl.infergeneric;
+
+func pick<T>(a: T, b: T): T {
+    return a;
+}
+
+let g: i32 = pick(1, 2);
+let h: i32 = pick<i32>(3, 4);
+
+func main(): i32 {
+    return (g - 1) + (h - 3);
+}
+"#;
+    let emitted = emit_host("infergeneric", source);
+    assert_contains(
+        "infergeneric",
+        &emitted,
+        "static i32 cl_pick__i32(i32 a, i32 b);",
+    );
+    assert_contains(
+        "infergeneric",
+        &emitted,
+        "cl_spec_mii_impl_infergeneric_g = cl_pick__i32(1, 2);",
+    );
+    assert_contains(
+        "infergeneric",
+        &emitted,
+        "cl_spec_mii_impl_infergeneric_h = cl_pick__i32(3, 4);",
+    );
+    assert_eq!(
+        count(&emitted, "static i32 cl_pick__i32(i32 a, i32 b)\n{"),
+        1,
+        "infergeneric: the instance must declare once"
+    );
+    assert_eq!(
+        count(&emitted, "cl_spec_mii_impl_infergeneric_pick("),
+        0,
+        "infergeneric: the plain module symbol must not be emitted"
+    );
+}
+
+/// The inferred view-builder initializer call spells its keyed instance.
+///
+/// The slice argument's element type keys the builder, the typed temporary
+/// carries the keyed slice, and the explicit spelling beside it shares the
+/// instance; the plain view-builder symbol must not appear.
+#[test]
+fn should_key_an_inferred_view_builder_initializer_call() {
+    let source = r#"module spec.mii.impl.inferview;
+
+import { slice } from std.mem;
+
+let xs: i32[4] = [1, 2, 3, 4];
+
+func viewOf<T>(v: T[]): T[] {
+    return v;
+}
+
+let e: i32 = viewOf(slice(xs, 0, 4))[1];
+let f: i32 = viewOf<i32>(slice(xs, 0, 4))[2];
+
+func main(): i32 {
+    return (e - 2) + (f - 3);
+}
+"#;
+    let emitted = emit_host("inferview", source);
+    assert_contains(
+        "inferview",
+        &emitted,
+        "static ClSlice_i32 cl_viewOf__i32(ClSlice_i32 v);",
+    );
+    assert_contains(
+        "inferview",
+        &emitted,
+        "ClSlice_i32 __cl_itmp0 = cl_viewOf__i32(((ClSlice_i32){ (cl_spec_mii_impl_inferview_xs) + (0), (usize)((4) - (0)) }));",
+    );
+    assert_eq!(
+        count(&emitted, "cl_spec_mii_impl_inferview_viewOf("),
+        0,
+        "inferview: the plain view-builder symbol must not be emitted"
+    );
+}
+
+/// The guarded `&&` bind beside its unguarded twin.
+const GUARD_BIND_SOURCE: &str = r#"module spec.mii.impl.guardbind;
+
+import { String, stringOf, bytes } from std.text;
+
+let yes: bool = true;
+
+func firstByte(s: String): u8 {
+    return bytes(s)[0];
+}
+
+let hit: bool = yes && (firstByte(stringOf("ab")) == 97);
+let plain: bool = firstByte(stringOf("ab")) == 97;
+
+func main(): i32 {
+    if (hit && plain) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+
+/// A guarded owned bind releases inside its decision block.
+///
+/// The `&&` right side declares its owned temporary inside the block that
+/// guards it, so the block ends with the null-guarded release in reverse
+/// order; the unguarded bind beside it keeps the end-of-init release, and the
+/// guarded bind has exactly one release outside nothing.
+#[test]
+fn should_release_a_guarded_initializer_bind_inside_its_block() {
+    let emitted = emit_host("guardbind", GUARD_BIND_SOURCE);
+    assert_contains(
+        "guardbind",
+        &emitted,
+        concat!(
+            "    if (cl_spec_mii_impl_guardbind_yes) {\n",
+            "    ClString __cl_itmp1 = cl_std_text_stringOf(cl_str(\"ab\"));\n",
+            "        __cl_itmp0 = (cl_spec_mii_impl_guardbind_firstByte(__cl_itmp1) == 97);\n",
+            "    if (__cl_itmp1) { FreeString(__cl_itmp1); }\n",
+            "    __cl_itmp1 = NULL;\n",
+            "    }",
+        ),
+    );
+    assert_eq!(
+        count(&emitted, "if (__cl_itmp1)"),
+        1,
+        "guardbind: the guarded bind must release once, inside its block"
+    );
+    assert_contains(
+        "guardbind",
+        &emitted,
+        "if (__cl_itmp2) { FreeString(__cl_itmp2); }",
+    );
+}
+
+/// A nullable view conditional builds each arm's own view.
+///
+/// The module initializer wraps the owned arm and gives the null arm the zero
+/// view; the body binds the owned handle into an init-scope owner first and
+/// guards its store the same way, so the null arm never reaches the view
+/// constructor. The whole-value wrapper must appear in neither program.
+#[test]
+fn should_build_a_nullable_view_conditional_per_arm() {
+    let module_source = r#"module spec.mii.impl.viewarm;
+
+import { stringOf } from std.text;
+
+let c: bool = false;
+let s: str? = c ? stringOf("abc") : null;
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let module_emitted = emit_host("viewarm", module_source);
+    assert_contains(
+        "viewarm",
+        &module_emitted,
+        "cl_spec_mii_impl_viewarm_s = (cl_spec_mii_impl_viewarm_c ? cl_string_view(cl_std_text_stringOf(cl_str(\"abc\"))) : cl_zero_ClStr());",
+    );
+    assert_eq!(
+        count(&module_emitted, "cl_string_view(("),
+        0,
+        "viewarm: the whole-conditional view wrapper must not be emitted"
+    );
+    let body_source = r#"module spec.mii.impl.viewarmbody;
+
+import { stringOf } from std.text;
+
+func code(c: bool): i32 {
+    let s: str? = c ? stringOf("abc") : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return code(false);
+}
+"#;
+    let body_emitted = emit_host("viewarmbody", body_source);
+    assert_contains(
+        "viewarmbody",
+        &body_emitted,
+        "s = (__cl_owned0 ? cl_string_view(__cl_owned0) : cl_zero_ClStr());",
+    );
+    assert_eq!(
+        count(&body_emitted, "cl_string_view(("),
+        0,
+        "viewarmbody: the whole-conditional view wrapper must not be emitted"
+    );
+}
+
+/// The resolved-call and guarded-bind programs re-emit byte-identically.
+///
+/// Both programs re-emit from one source path so their `#line` facts agree,
+/// and the re-emitted text keeps the receiver-call and in-block release
+/// shapes.
+#[test]
+fn should_re_emit_the_resolved_call_and_guard_programs_byte_identically() {
+    for (tag, source, shape) in [
+        (
+            "exprcallee",
+            EXPR_CALLEE_SOURCE,
+            "cl_spec_mii_impl_exprcallee_h = (cl_spec_mii_impl_exprcallee_mk())(5);",
+        ),
+        (
+            "guardbind",
+            GUARD_BIND_SOURCE,
+            "if (__cl_itmp1) { FreeString(__cl_itmp1); }",
+        ),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert!(
+            first == second,
+            "{tag}: the two emissions differ; first:\n{first}\nsecond:\n{second}"
+        );
+        assert_contains(tag, &first, shape);
+    }
+}
