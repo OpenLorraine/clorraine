@@ -389,3 +389,38 @@ for a bare func-global call).
   conservative head mention).
 - The dbc-spec ASan flake is `DEF-358` (both sides flake on byte-identical binaries).
 - The `dep.h.call` `E10219` and the `program.callee`-based checks' behavior are pre-existing.
+
+## Close-out
+
+**Scope**: the 20 remaining open 🟠 majors named by AR-1, grouped into six machinery phases — the
+initializer calls, guards, and view conditionals (`DEF-196`, `197`, `207`, `219`, `220`; `DEF-209`
+the incidental control); the element placeholder, inference, and bounds (`DEF-229`, `230`, `231`,
+`232`); the member typing (`DEF-233`, `238`); the call conversions and `ffi` typing (`DEF-242`,
+`243`); the null destinations and capture stores (`DEF-245`, `251`); and the standalone emission
+shapes (`DEF-170`, `189`, `211`, `255`). 39 tasks.
+
+**Result**: all 20 rows fixed — 19 implemented and 1 incidental (`DEF-209`, reclassified as a green
+control by the plan's AR-3 probe table). The six older ruling-parked rows and the batch-J follow-ons
+stayed out of scope (AR-2).
+
+**Review record**: every phase ran the specification-first loop (spec cases red → implement → green
+→ pins with base-fail evidence), then the phase lenses — correctness and semantics throughout, plus
+memory-safety and emission-integrity as the surface required — with correction rounds and bounded
+confirmations. Across the batch: 14 correction rounds and 10 confirmations. Each phase section above
+carries its verdicts, fix rounds, and confirmations.
+
+**Test surface**: the existing suites (the checker-conformance, module-initializer, callable-release,
+def-backlog-closeout, freestanding, and load unit suites grew the batch's cases and pins; several
+suites gained hosted-amiga emit/build helpers); every addition is additive.
+
+**Verification**: `make check` exit 0; `make verify` all legs passed (the hosted-amiga
+cross-toolchain legs and the runtime-fault programs); the focused suites green (the checker-conformance
+spec 133, the phase-6 suites 57/24, 50/35, 48/30, 17, the load unit 11); the emission differentials
+clean; the profile legs (host, hosted-amiga, freestanding) verified per phase.
+
+**Filed rows**: `DEF-335`–`DEF-359` (25 rows: 4 phase 1, 7 phase 2, 4 phase 3, 3 phase 4, 3 phase 5, 4
+phase 6). Closed among them: `DEF-343` (fixed in the phase-2 follow-up). The remaining 24 stay in
+Backlog with their per-row evidence.
+
+**Follow-ups recorded**: re-run the specialist check (`analyze-agents`) now that the batch-J/K plans
+have landed (the `AGENTS.md` convention; the state file carries 2026-10-10).

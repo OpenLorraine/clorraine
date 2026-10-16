@@ -9,7 +9,7 @@
 > `ffi` typing surfaces (batch G Phase 3), the null-shaped destination and capture slot stores
 > (batch G Phase 4/5), and the standalone emission shapes (batch E, batch F, and the
 > def-backlog-closeout close-out).
-> **Status**: 🔄 Executing (phase 1 in review)
+> **Status**: ✅ Complete (2026-10-17) — 39/39 pending the close-out verification record; all 20 rows fixed; see `05-findings.md` (Close-out)
 > **Created**: 2026-10-16
 > **Implements**: DEF-170, DEF-189, DEF-196, DEF-197, DEF-207, DEF-209, DEF-211, DEF-219,
 > DEF-220, DEF-229, DEF-230, DEF-231, DEF-232, DEF-233, DEF-238, DEF-242, DEF-243, DEF-245,
