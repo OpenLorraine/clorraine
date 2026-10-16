@@ -1656,3 +1656,314 @@ func main(): i32 {
     assert_no_asan("fparraysizeof", &output);
     assert_exit("fparraysizeof", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// nullguardcall / nullguardplace / nullguardparam / nullguardarg /
+// nullguardmember: a nullable owned handle reaching a nullable view
+// destination.
+//
+// A conditional arm, a call argument, and an initializer member projection
+// widen an owned handle through `cl_string_view`, so each position must turn a
+// null handle into the destination's zero view instead of dereferencing it.
+// The non-null twins, the string arm, and the body spellings are the
+// unchanged controls.
+// ---------------------------------------------------------------------------
+
+/// A nullable owned call arm in a module initializer widens under its guard.
+///
+/// The conditional's call result is a `String?`, so the taken arm widens
+/// through the destination's zero view when the handle is null: the null
+/// selection reads back as null (exit 9), the non-null selection reads its
+/// length (exit 3), the string arm reads two (exit 2), and the body spelling
+/// of the same conditional stays zero (red at the phase base: the initializer
+/// wrapped the call through `cl_string_view`, and the null selection
+/// segfaulted with exit 139 inside `cl_string_ptr(NULL)`).
+#[test]
+fn should_guard_a_nullable_owned_call_arm_in_a_module_initializer() {
+    let source = r#"module spec.mii.nullguardcall;
+
+import { String, stringOf } from std.text;
+
+let c: bool = true;
+let d: bool = false;
+
+func maybe(): String? {
+    if (d) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+let s: str? = c ? maybe() : stringOf("xy");
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let output = run_memory("nullguardcall-null", source);
+    assert_no_asan("nullguardcall-null", &output);
+    assert_exit("nullguardcall-null", &output, 9);
+
+    let taken = source.replace("let d: bool = false;", "let d: bool = true;");
+    let output = run_memory("nullguardcall-taken", &taken);
+    assert_no_asan("nullguardcall-taken", &output);
+    assert_exit("nullguardcall-taken", &output, 3);
+
+    let nullcase = source.replace("let c: bool = true;", "let c: bool = false;");
+    let output = run_memory("nullguardcall-nullcase", &nullcase);
+    assert_no_asan("nullguardcall-nullcase", &output);
+    assert_exit("nullguardcall-nullcase", &output, 2);
+
+    let body = r#"module spec.mii.nullguardcallbody;
+
+import { String, stringOf } from std.text;
+
+func maybe(c: bool): String? {
+    if (c) {
+        return stringOf("abc");
+    }
+    return null;
+}
+
+func code(c: bool, d: bool): i32 {
+    let s: str? = c ? maybe(d) : stringOf("xy");
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (code(true, false) - 9) + (code(true, true) - 3) + (code(false, false) - 2);
+}
+"#;
+    let output = run_memory("nullguardcall-body", body);
+    assert_no_asan("nullguardcall-body", &output);
+    assert_exit("nullguardcall-body", &output, 0);
+}
+
+/// A nullable owned place arm widens under its guard.
+///
+/// A local and a parameter `String?` arm can hold a null handle, so the taken
+/// arm widens through the destination's zero view: both null selections read
+/// back as null (exit 9), and the non-null `String` place arm keeps its length
+/// read beside the null literal arm (exit 0) (red at the phase base: the store
+/// wrapped the null handle through `cl_string_view`, and both null selections
+/// segfaulted with exit 139 inside `cl_string_ptr(NULL)`).
+#[test]
+fn should_guard_a_nullable_owned_place_arm_at_a_view_destination() {
+    let local = r#"module spec.mii.nullguardplace;
+
+import { String, stringOf } from std.text;
+
+func main(): i32 {
+    let p: String? = null;
+    let c: bool = true;
+    let s: str? = c ? p : stringOf("xy");
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let output = run_memory("nullguardplace", local);
+    assert_no_asan("nullguardplace", &output);
+    assert_exit("nullguardplace", &output, 9);
+
+    let param = r#"module spec.mii.nullguardparam;
+
+import { String, stringOf } from std.text;
+
+func pick(p: String?): i32 {
+    let c: bool = true;
+    let s: str? = c ? p : stringOf("xy");
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return pick(null);
+}
+"#;
+    let output = run_memory("nullguardparam", param);
+    assert_no_asan("nullguardparam", &output);
+    assert_exit("nullguardparam", &output, 9);
+
+    let nonnull = r#"module spec.mii.nullguardnonnull;
+
+import { String, stringOf } from std.text;
+
+func code(c: bool): i32 {
+    let p: String = stringOf("ab");
+    let s: str? = c ? p : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (code(false) - 9) + (code(true) - 2);
+}
+"#;
+    let output = run_memory("nullguardnonnull", nonnull);
+    assert_no_asan("nullguardnonnull", &output);
+    assert_exit("nullguardnonnull", &output, 0);
+}
+
+/// A nullable owned conditional argument widens under its guard.
+///
+/// The argument's conditional can select a null handle, so the call must
+/// receive the destination's zero view: the null selection returns the null
+/// branch's value and the non-null selection its length, and both fold into
+/// the exit code; the non-null conditional is the control (red at the phase
+/// base: the emitted argument wrapped the handle through `cl_string_view`, and
+/// the null selection segfaulted with exit 139 inside `cl_string_ptr(NULL)`).
+#[test]
+fn should_guard_a_nullable_owned_conditional_argument() {
+    let source = r#"module spec.mii.nullguardarg;
+
+import { String, stringOf } from std.text;
+
+func size(c: bool, s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (size(false, false ? stringOf("abc") : null) - 9) + (size(true, true ? stringOf("abc") : null) - 3);
+}
+"#;
+    let output = run_memory("nullguardarg", source);
+    assert_no_asan("nullguardarg", &output);
+    assert_exit("nullguardarg", &output, 0);
+
+    let control = r#"module spec.mii.nullguardargnonnull;
+
+import { String, stringOf } from std.text;
+
+func size(c: bool, s: str?): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return size(true, true ? stringOf("abc") : null) - 3;
+}
+"#;
+    let output = run_memory("nullguardargnonnull", control);
+    assert_no_asan("nullguardargnonnull", &output);
+    assert_exit("nullguardargnonnull", &output, 0);
+}
+
+/// A nullable member projection in an initializer widens under its guard.
+///
+/// The module-level `str?` bindings wrap `mkBox(...).name`, so the store must
+/// guard the null member into the destination's zero view: the run reads the
+/// call count, the null member, and the non-null member back (exit 0), and the
+/// member move-out and release keep their order (ASan-clean). The non-null
+/// member and the body twin are the controls (red at the phase base: the
+/// initializer wrapped the null member through `cl_string_view`, and its store
+/// segfaulted with exit 139 inside `cl_string_ptr(NULL)`).
+#[test]
+fn should_guard_a_nullable_member_projection_in_a_module_initializer() {
+    let source = r#"module spec.mii.nullguardmember;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; other: String?; }
+
+let count: i32 = 0;
+
+func mkBox(has: bool): Box {
+    count = count + 1;
+    if (has) {
+        return Box { name: stringOf("ab"), other: null };
+    }
+    return Box { name: null, other: stringOf("cd") };
+}
+
+let s: str? = mkBox(true).name;
+let t: str? = mkBox(false).name;
+
+func main(): i32 {
+    if (count != 2) {
+        return 1;
+    }
+    if (t != null) {
+        return 2;
+    }
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("nullguardmember", source);
+    assert_no_asan("nullguardmember", &output);
+    assert_exit("nullguardmember", &output, 0);
+
+    let nonnull = r#"module spec.mii.nullguardmembernonnull;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; other: String?; }
+
+func mkBox(has: bool): Box {
+    if (has) {
+        return Box { name: stringOf("ab"), other: null };
+    }
+    return Box { name: null, other: stringOf("cd") };
+}
+
+let s: str? = mkBox(true).name;
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s)) - 2;
+}
+"#;
+    let output = run_memory("nullguardmembernonnull", &nonnull);
+    assert_no_asan("nullguardmembernonnull", &output);
+    assert_exit("nullguardmembernonnull", &output, 0);
+
+    let body = r#"module spec.mii.nullguardmemberbody;
+
+import { String, stringOf } from std.text;
+
+struct Box { name: String?; other: String?; }
+
+let count: i32 = 0;
+
+func mkBox(has: bool): Box {
+    count = count + 1;
+    if (has) {
+        return Box { name: stringOf("ab"), other: null };
+    }
+    return Box { name: null, other: stringOf("cdef") };
+}
+
+func code(has: bool): i32 {
+    let s: str? = mkBox(has).name;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return (code(true) - 2) + (code(false) - 9);
+}
+"#;
+    let output = run_memory("nullguardmemberbody", &body);
+    assert_no_asan("nullguardmemberbody", &output);
+    assert_exit("nullguardmemberbody", &output, 0);
+}

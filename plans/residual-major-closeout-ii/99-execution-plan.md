@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-16 (planning)
-> **Progress**: 0/51 tasks (0%) — Planning
+> **Last Updated**: 2026-10-17 23:10
+> **Progress**: 2/51 tasks (4%) — Executing Phase 1
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -67,10 +67,10 @@ AR-3, AR-5
 **Objective**: Pin the call arm, the argument, and the initializer member projection with the
 non-null controls.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/module_initializer_integrity_spec_test.rs`
-      (nullguardcall, nullguardarg, nullguardmember) with their controls
-- [ ] 1.1.2 Run the suite and record the red phase (the non-null controls verified green first —
-      AR-3/AR-5)
+- [x] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/module_initializer_integrity_spec_test.rs`
+      (nullguardcall, nullguardarg, nullguardmember) with their controls ✅ (completed: 2026-10-17 23:10; four tests (twelve programs) appended to `compiler/tests/module_initializer_integrity_spec_test.rs` (+311 lines, additions only; 48 → 52 tests) — the nullable owned call/place arms at a view destination, the nullable conditional argument, and the nullable member projection in a module initializer, each with its non-null and body controls; the place-arm read-back folds 9 on the null path (the read-back rule) and the call-arm case adds the taken-selection control)
+- [x] 1.1.2 Run the suite and record the red phase (the non-null controls verified green first —
+      AR-3/AR-5) ✅ (completed: 2026-10-17 23:10; plain 48 passed / 4 failed and ASan 48 passed / 4 failed — exactly the four new tests (five red programs: the SIGSEGV 139 / the ASan SEGV on the null paths); the controls green in both legs; parent-verified)
 
 ### Step 1.2: Implementation
 
