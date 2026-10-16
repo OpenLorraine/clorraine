@@ -12554,3 +12554,393 @@ fn should_empty_a_deref_read_at_every_owned_position() {
     assert_no_asan("derefelemread", &output);
     assert_exit("derefelemread", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// condbasestore: the element store through a conditional base.
+//
+// A conditional is not a place, so `(c ? b1 : b2).ys[i] = ...` cannot be the
+// target of a store: the frozen place rule (a local, a parameter, a struct
+// field, an array element, or a dereferenced raw pointer) reports one `E10221`
+// and leaves no translation unit, exactly as it rejects the scalar member twin
+// `(c ? b1 : b2).x = ...`. Because a rejected program never builds, the store
+// is never silently dropped and its side-effecting right-hand side never runs.
+// The read spelling needs no place and stays accepted; a real place (a local
+// element and a field chain) keeps storing, with its right-hand side running
+// exactly once per store.
+// ---------------------------------------------------------------------------
+
+/// An element store through a conditional base is rejected on both selections,
+/// while its read spelling and the place-store forms stay accepted.
+///
+/// `(c ? b1 : b2).ys[i] = bump();` targets a conditional, which the frozen
+/// place rule does not list, so the assignment reports exactly one `E10221`
+/// at the target and emits no translation unit; the side-effecting right-hand
+/// side never runs. The scalar member twin `(c ? b1 : b2).x = 7;` is rejected
+/// the same way. The read spelling reads the selected element on each
+/// selection; the accepted local and projected place stores write their values
+/// back with `bump` running once per store, so every accepted control exits 0.
+#[test]
+fn should_reject_an_element_store_through_a_conditional_base() {
+    let taken = r#"module spec.cpr.condbasestore;
+
+struct Box { ys: i32[3]; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let b2: Box = Box { ys: [4, 5, 6] };
+    let c: bool = true;
+    let i: i32 = 1;
+    (c ? b1 : b2).ys[i] = bump();
+    return (b1.ys[1] - 7) + (b2.ys[1] - 5) + calls;
+}
+"#;
+    compile_rejects_once_at(
+        "condbasestore",
+        taken,
+        "E10221",
+        17,
+        5,
+        &[
+            "left side of an assignment must be a place",
+            "assign to a variable, field, or element",
+        ],
+        &[],
+    );
+
+    let other = r#"module spec.cpr.condbasestoreother;
+
+struct Box { ys: i32[3]; }
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let b2: Box = Box { ys: [4, 5, 6] };
+    let c: bool = false;
+    let i: i32 = 1;
+    (c ? b1 : b2).ys[i] = 7;
+    return (b2.ys[1] - 7) + (b1.ys[1] - 2);
+}
+"#;
+    compile_rejects_once_at(
+        "condbasestoreother",
+        other,
+        "E10221",
+        10,
+        5,
+        &["left side of an assignment must be a place"],
+        &[],
+    );
+
+    let read = r#"module spec.cpr.condbasestoreread;
+
+struct Box { ys: i32[3]; }
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let b2: Box = Box { ys: [4, 5, 6] };
+    let c: bool = true;
+    let d: bool = false;
+    let i: i32 = 1;
+    let v1: i32 = (c ? b1 : b2).ys[i];
+    let v2: i32 = (d ? b1 : b2).ys[i];
+    return (v1 - 2) + (v2 - 5) + (b1.ys[1] - 2) + (b2.ys[1] - 5);
+}
+"#;
+    let output = run_memory("condbasestoreread", read);
+    assert_no_asan("condbasestoreread", &output);
+    assert_exit("condbasestoreread", &output, 0);
+
+    let place = r#"module spec.cpr.condbaseplace;
+
+struct Box { ys: i32[3]; }
+
+let calls: i32 = 0;
+
+func bump(): i32 {
+    calls = calls + 1;
+    return 7;
+}
+
+func main(): i32 {
+    let b1: Box = Box { ys: [1, 2, 3] };
+    let i: i32 = 1;
+    b1.ys[i] = bump();
+    b1.ys[0] = bump() + 1;
+    return (b1.ys[1] - 7) + (b1.ys[0] - 8) + calls - 2;
+}
+"#;
+    let output = run_memory("condbaseplace", place);
+    assert_no_asan("condbaseplace", &output);
+    assert_exit("condbaseplace", &output, 0);
+
+    let projected = r#"module spec.cpr.condbaseproj;
+
+struct Box { ys: i32[3]; }
+struct Holder { b: Box; }
+
+func main(): i32 {
+    let h: Holder = Holder { b: Box { ys: [1, 2, 3] } };
+    let i: i32 = 1;
+    h.b.ys[i] = 7;
+    return h.b.ys[1] - 7;
+}
+"#;
+    let output = run_memory("condbaseproj", projected);
+    assert_no_asan("condbaseproj", &output);
+    assert_exit("condbaseproj", &output, 0);
+
+    let scalar = r#"module spec.cpr.condbasescalar;
+
+struct Box { x: i32; ys: i32[3]; }
+
+func main(): i32 {
+    let b1: Box = Box { x: 1, ys: [1, 2, 3] };
+    let b2: Box = Box { x: 4, ys: [4, 5, 6] };
+    let c: bool = true;
+    (c ? b1 : b2).x = 7;
+    return (b1.x - 7) + (b2.x - 4);
+}
+"#;
+    compile_rejects_once_at(
+        "condbasescalar",
+        scalar,
+        "E10221",
+        9,
+        5,
+        &["left side of an assignment must be a place"],
+        &[],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// guardviewliteral: the guarded conditional of call-filled view-array literals.
+//
+// `g && consume(ok ? Mixed { names: n1(), ... } : Mixed { names: n2(), ... })`
+// builds the selected literal's view-array field from the selected call. The
+// field is filled through the call's hidden destination, so the fill must sit
+// on the path that evaluates it: a skipped guard runs no call, and a taken path
+// runs exactly the selected arm's call. Both the `take` and the plain parameter
+// spelling build under the strict flags; the direct-literal take and the scalar
+// and owned field twins stay accepted controls.
+// ---------------------------------------------------------------------------
+
+/// A guarded conditional of call-filled view-array literals runs only the
+/// taken arm's call, on both parameter spellings.
+///
+/// The two taken evaluations run `n1` once and `n2` once (the selected arm's
+/// field byte reads back as `A` and `C`) and the skipped guard runs no call at
+/// all, so the counter and byte read-backs cancel to exit 0. The direct
+/// literal take and the scalar and owned field twins run their own counted
+/// shapes unchanged.
+#[test]
+fn should_run_only_the_taken_arm_of_a_guarded_view_array_literal() {
+    let take = r#"module spec.cpr.guardviewliteral;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    calls = calls + 1;
+    return ["CC", "DD"];
+}
+
+func consume(take m: Mixed): i32 {
+    seen = i32(m.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Mixed { names: n1(), tag: stringOf("x") } : Mixed { names: n2(), tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c + 1) + calls - 2;
+}
+"#;
+    let output = run_memory("guardviewliteral", take);
+    assert_no_asan("guardviewliteral", &output);
+    assert_exit("guardviewliteral", &output, 0);
+
+    let plain = r#"module spec.cpr.guardviewliteralplain;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func n2(): str[2] {
+    calls = calls + 1;
+    return ["CC", "DD"];
+}
+
+func consume(m: Mixed): i32 {
+    seen = i32(m.names[0][0]);
+    return 1;
+}
+
+func use(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Mixed { names: n1(), tag: stringOf("x") } : Mixed { names: n2(), tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true, true);
+    let b: i32 = use(true, false);
+    let c: i32 = use(false, true);
+    return (a - 65) + (b - 67) + (c + 1) + calls - 2;
+}
+"#;
+    let output = run_memory("guardviewliteralplain", plain);
+    assert_no_asan("guardviewliteralplain", &output);
+    assert_exit("guardviewliteralplain", &output, 0);
+
+    let direct = r#"module spec.cpr.guardviewliteraldirect;
+
+import { String, stringOf } from std.text;
+
+struct Mixed { names: str[2]; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func n1(): str[2] {
+    calls = calls + 1;
+    return ["AA", "BB"];
+}
+
+func consume(take m: Mixed): i32 {
+    seen = i32(m.names[0][0]);
+    return 1;
+}
+
+func use(g: bool): i32 {
+    if (g && consume(Mixed { names: n1(), tag: stringOf("x") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = use(true);
+    let b: i32 = use(false);
+    return (a - 65) + (b + 1) + calls - 1;
+}
+"#;
+    let output = run_memory("guardviewliteraldirect", direct);
+    assert_no_asan("guardviewliteraldirect", &output);
+    assert_exit("guardviewliteraldirect", &output, 0);
+
+    let scalar = r#"module spec.cpr.guardviewliteralscalar;
+
+import { String, stringOf } from std.text;
+
+struct Sc { n: i32; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func s1(): i32 {
+    calls = calls + 1;
+    return 1;
+}
+
+func s2(): i32 {
+    calls = calls + 1;
+    return 2;
+}
+
+func consumeS(take m: Sc): i32 {
+    seen = m.n;
+    return 1;
+}
+
+func useS(g: bool, ok: bool): i32 {
+    if (g && consumeS(ok ? Sc { n: s1(), tag: stringOf("x") } : Sc { n: s2(), tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = useS(true, true);
+    let b: i32 = useS(true, false);
+    let c: i32 = useS(false, true);
+    return (a - 1) + (b - 2) + (c + 1) + calls - 2;
+}
+"#;
+    let output = run_memory("guardviewliteralscalar", scalar);
+    assert_no_asan("guardviewliteralscalar", &output);
+    assert_exit("guardviewliteralscalar", &output, 0);
+
+    let owned = r#"module spec.cpr.guardviewliteralowned;
+
+import { String, stringOf, bytes } from std.text;
+
+struct Ow { s: String; tag: String; }
+
+let calls: i32 = 0;
+let seen: i32 = 0;
+
+func m1(): String {
+    calls = calls + 1;
+    return stringOf("ab");
+}
+
+func m2(): String {
+    calls = calls + 1;
+    return stringOf("cdef");
+}
+
+func consumeO(take m: Ow): i32 {
+    seen = i32(len(bytes(m.s)));
+    return 1;
+}
+
+func useO(g: bool, ok: bool): i32 {
+    if (g && consumeO(ok ? Ow { s: m1(), tag: stringOf("x") } : Ow { s: m2(), tag: stringOf("y") }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = useO(true, true);
+    let b: i32 = useO(true, false);
+    let c: i32 = useO(false, true);
+    return (a - 2) + (b - 4) + (c + 1) + calls - 2;
+}
+"#;
+    let output = run_memory("guardviewliteralowned", owned);
+    assert_no_asan("guardviewliteralowned", &output);
+    assert_exit("guardviewliteralowned", &output, 0);
+}

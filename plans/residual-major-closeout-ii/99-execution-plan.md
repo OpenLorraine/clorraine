@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 00:30
-> **Progress**: 24/51 tasks (47%) — Phase 4 complete
+> **Last Updated**: 2026-10-19 01:30
+> **Progress**: 26/51 tasks (51%) — Executing Phase 5
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -237,10 +237,10 @@ ST-11..ST-12 · AR-3, AR-5
 ST-13..ST-14 · AR-6
 **Objective**: Pin the per-arm conditional-base store and the guarded view-array literal.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs`
-      (condbasestore, guardviewliteral) with their controls
-- [ ] 5.1.2 Run the suite and record the red phase (the read spelling, the scalar `E10221`, and
-      the direct-literal take controls verified green first)
+- [x] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/conditional_projection_residue_spec_test.rs`
+      (condbasestore, guardviewliteral) with their controls ✅ (completed: 2026-10-19 01:30; two tests (eleven programs) appended to the residue suite (+390 lines, additions only) — the conditional-base element store rejections (both selections) with the scalar twin and the read/place/projection controls (`DEF-322`: the accepted-runs-251/254 reds; the oracle one `E10221` each at its site, per the PF-001 ruling), and the guarded view-array literal (`DEF-323`: the take spelling's strict-build red, the plain spelling's skipped-arm red (run 1, the selected arm's call on the skipped path), and the direct/scalar/owned controls); the second-selection coverage and the extra characterization recorded)
+- [x] 5.1.2 Run the suite and record the red phase (the read spelling, the scalar `E10221`, and
+      the direct-literal take controls verified green first) ✅ (completed: 2026-10-19 01:30; the residue suite plain 156 passed / 2 failed and ASan 156 passed / 2 failed — exactly the two new tests (the accepted conditional-base store and the guarded literal's build failure); the controls green in both legs; parent-verified)
 
 ### Step 5.2: Implementation
 
