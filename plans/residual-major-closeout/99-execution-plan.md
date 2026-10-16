@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 15:20
-> **Progress**: 32/39 tasks (82%) — Executing Phase 6
+> **Last Updated**: 2026-10-17 16:00
+> **Progress**: 34/39 tasks (87%) — Phase 6 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -297,14 +297,14 @@ fixed-array `sizeof` value, and the void lambda over an abort intrinsic.
 
 ### Step 6.2: Implementation
 
-- [ ] 6.2.1 Resolve the imported/qualified func-global identity for the callee spelling;
+- [x] 6.2.1 Resolve the imported/qualified func-global identity for the callee spelling;
       align the stack before the `main` call in the freestanding shim; render the whole
       fixed-array type size for `sizeof`; judge a void intrinsic statement in a lambda's
       expression body — `compiler/src/codegen/expr.rs`,
       `compiler/src/codegen/function.rs`, `compiler/runtime/shim_freestanding.c`,
       `compiler/src/codegen/calls.rs`, `compiler/src/own/lower.rs`,
-      `compiler/src/codegen/cleanup.rs`
-- [ ] 6.2.2 Run the suites to green; on any failure STOP and fix the implementation
+      `compiler/src/codegen/cleanup.rs` ✅ (completed: 2026-10-17 16:00; the imported/qualified func-global callee resolves through the module binding path (`codegen/expr.rs:426`, the callable-signature fallback, the import-use scanner `load/scan.rs:119`; the `W10006` also gone); the freestanding `_start` realigns its frame on x86-64 (`compiler/runtime/shim_freestanding.c:311`, `force_align_arg_pointer`; m68k untouched); `sizeof` of a fixed array spells the C array type (`codegen/calls.rs:370`); a void expression-bodied lambda lowers as a statement (`own/lower.rs:1032`) so the abort fires; left: the known container-ASan harness flake in the backlog-closeout suite (pre-existing, the base flakes identically, the emissions byte-identical))
+- [x] 6.2.2 Run the suites to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-17 16:00; the four suites plain all green (callable-release 54/54, freestanding 17/17, module-initializer 47/47, backlog-closeout 49/49); the load unit tests 10/10; `make check` exit 0; the differential shows three intended emission diffs (the two void-lambda traps and the whole-type `sizeof`); parent-verified the four suites)
 
 ### Step 6.3: Impl Tests & Review
 

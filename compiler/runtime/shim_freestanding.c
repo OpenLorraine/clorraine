@@ -301,6 +301,15 @@ int Write(void *file, void *buffer, int count)
 
 int main(void);
 
+/* The entry the host's no-libc link starts at. The host ABI expects `main` to
+ * be entered with a 16-byte-aligned call stack, but a raw entry does not
+ * guarantee it, so a 16-byte-aligned local store inside `main` faults. The
+ * attribute realigns the frame on entry there; a target whose placement is
+ * already aligned (m68k's 4-byte one) needs nothing, so the attribute is
+ * selected for x86-64 only. */
+#if defined(__x86_64__)
+__attribute__((force_align_arg_pointer))
+#endif
 void _start(void)
 {
     cl_exit(main());

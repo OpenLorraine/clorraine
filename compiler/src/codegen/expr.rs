@@ -388,6 +388,22 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        // A name that is not a local names a module-level binding: the head
+        // is the binding with its fields, or the leading segments are the
+        // declaring module and the last segment is the binding. Either way
+        // the read renders the mangled symbol, so a struct global's field
+        // and a qualified binding resolve the same identity a bare imported
+        // name does.
+        if !self.local_names.contains_key(first) {
+            if let Some((id, fields)) = self.global_binding_path(segments) {
+                let symbol = self.global_symbol(&id.module, &id.name);
+                return if fields.is_empty() {
+                    symbol
+                } else {
+                    format!("{symbol}.{fields}")
+                };
+            }
+        }
         let base = self
             .local_names
             .get(first)
@@ -398,6 +414,35 @@ impl<'a> Emitter<'a> {
         } else {
             format!("{base}.{rest}")
         }
+    }
+
+    /// The module-level binding a dotted name names, with its field path.
+    ///
+    /// A name whose head is a module-level binding names that binding with
+    /// its fields (`h.call`); otherwise the leading segments are the
+    /// declaring module's dotted name and the last segment is the binding
+    /// (`spec.cri.globalcallee.g`). A single-segment name prefers the current
+    /// module, exactly as the name resolver does.
+    fn global_binding_path(
+        &self,
+        segments: &[String],
+    ) -> Option<(crate::ir::GlobalId, String)> {
+        let (first, rest) = segments.split_first()?;
+        let head = |id: &crate::ir::GlobalId| &id.name == first;
+        if let Some((id, _)) = self
+            .globals
+            .iter()
+            .find(|(id, _)| head(id) && id.module == self.current_module)
+            .or_else(|| self.globals.iter().find(|(id, _)| head(id)))
+        {
+            return Some((id.clone(), rest.join(".")));
+        }
+        let (name, module) = segments.split_last()?;
+        let module_path = module.join(".");
+        self.globals
+            .iter()
+            .find(|(id, _)| &id.name == name && id.module == module_path)
+            .map(|(id, _)| (id.clone(), String::new()))
     }
 
     /// Renders a unary operator, wrapping signed negation through unsigned.
@@ -851,12 +896,21 @@ impl<'a> Emitter<'a> {
                 }
             }
         }
+        // A same-module global wins, then any loaded module's: an imported
+        // or qualified spelling carries the global's identity, so its symbol
+        // comes from the module that declares it.
         self.globals
             .iter()
             .find(|(id, info)| {
                 id.name == callee
                     && id.module == self.current_module
                     && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
+            })
+            .or_else(|| {
+                self.globals.iter().find(|(id, info)| {
+                    id.name == callee
+                        && matches!(self.substitute(&info.ty).kind, TyKind::Func(_))
+                })
             })
             .map(|(id, _)| self.global_symbol(&id.module, &id.name))
     }

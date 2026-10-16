@@ -368,7 +368,25 @@ impl Emitter<'_> {
                 )
             }
             "sizeof" => match type_arg {
-                Some(ty) => format!("sizeof({})", c_type(&self.substitute(ty), &self.sema.table)),
+                Some(ty) => {
+                    let ty = self.substitute(ty);
+                    // A fixed array measures the whole type, so the intrinsic
+                    // spells the C array type itself: the base type with every
+                    // extent. The declarator spelling folds a fixed array to
+                    // its element, which would measure one element instead.
+                    match &ty.kind {
+                        TyKind::Array { element, extents }
+                            if extents.iter().all(Option::is_some) =>
+                        {
+                            let mut text = c_type(element, &self.sema.table);
+                            for extent in extents.iter().flatten() {
+                                text.push_str(&format!("[{extent}]"));
+                            }
+                            format!("sizeof({text})")
+                        }
+                        _ => format!("sizeof({})", c_type(&ty, &self.sema.table)),
+                    }
+                }
                 None => "0".to_owned(),
             },
             // The hardware intrinsics become a `volatile`-qualified access at

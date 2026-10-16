@@ -1029,6 +1029,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
         self.declare_captures(site);
         match body {
+            LambdaBody::Expr(value) if self.returns.is_void() => {
+                // A void expression body is a statement: the expression
+                // lowers for its effect exactly as the block-bodied spelling
+                // lowers it — an `assert` traps on a false condition and a
+                // `panic` aborts — and the body ends without a value return.
+                self.check_expr_statement(value);
+                self.scopes.pop();
+                if !self.is_terminated() {
+                    let releases = self.pending_release_copies();
+                    self.record_release_events(&releases);
+                    self.terminate(Terminator::Return {
+                        value: None,
+                        releases,
+                    });
+                }
+            }
             LambdaBody::Expr(value) => {
                 // An expression body is the lifted function's return, so it
                 // owes the same move and lend-storage judgement a `return`

@@ -34,10 +34,12 @@ pub(super) struct Mentions {
 /// Collects every simple identifier and qualified standard-library module a
 /// module's declarations mention.
 ///
-/// Only a plain identifier counts as a name. A dotted name such as
-/// `std.mem.Buffer` is qualified access, which is available without an import,
-/// so it does not mark an import used; its longest standard-library prefix is
-/// recorded as a module reference instead. `include_staged` controls whether a
+/// A plain identifier counts as a name. A dotted name that names a
+/// standard-library module such as `std.mem.Buffer` is qualified access, which
+/// is available without an import, so it does not mark an import used; its
+/// longest standard-library prefix is recorded as a module reference instead.
+/// Any other dotted name reads a value binding at its head, so the head counts
+/// as a name exactly as a plain identifier does. `include_staged` controls whether a
 /// staged `comptime` body is walked: the profile-surface check leaves it out so
 /// the semantic stage's staged-feature diagnostic is the one reported.
 pub(super) fn collect_name_mentions(items: &[Item], include_staged: bool) -> Mentions {
@@ -114,17 +116,18 @@ fn mention_signature(decl: &FuncDecl, mentions: &mut Mentions) {
 /// as `point.x` names no standard module and is ignored, so an ordinary field
 /// access never asks for a module injection. The first span seen for a module
 /// is kept, so a later profile-surface diagnostic can point at the reference.
-fn mention_module(segments: &[String], span: Span, mentions: &mut Mentions) {
+fn mention_module(segments: &[String], span: Span, mentions: &mut Mentions) -> bool {
     if segments.len() < 2 {
-        return;
+        return false;
     }
     for end in (1..segments.len()).rev() {
         let candidate = segments[..end].join(".");
         if crate::stdlib::lookup(&candidate).is_some() {
             mentions.modules.entry(candidate).or_insert(span);
-            return;
+            return true;
         }
     }
+    false
 }
 
 /// Records the simple identifier of a named type and recurses into its parts.
@@ -134,7 +137,7 @@ fn mention_type(ty: &Type, mentions: &mut Mentions) {
             if let [only] = name.segments.as_slice() {
                 mentions.names.insert(only.clone());
             } else {
-                mention_module(&name.segments, ty.span, mentions);
+                let _ = mention_module(&name.segments, ty.span, mentions);
             }
             for arg in args {
                 mention_type(arg, mentions);
@@ -267,7 +270,18 @@ fn mention_expr(expr: &Expr, mentions: &mut Mentions) {
                 }
             }
         }
-        ExprKind::Qualified(name) => mention_module(&name.segments, name.span, mentions),
+        ExprKind::Qualified(name) => {
+            // A dotted path that names a standard-library module is qualified
+            // access, which needs no import; every other dotted name reads a
+            // value binding at its head (`h.call` reads the imported global
+            // `h`), so the head counts as a name mention exactly as a plain
+            // identifier does.
+            if !mention_module(&name.segments, name.span, mentions) {
+                if let Some(first) = name.segments.first() {
+                    mentions.names.insert(first.clone());
+                }
+            }
+        }
         ExprKind::Int(_)
         | ExprKind::Float(_)
         | ExprKind::Char(_)
