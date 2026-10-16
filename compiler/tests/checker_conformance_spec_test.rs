@@ -6220,3 +6220,750 @@ func main(): i32 {
     assert_no_asan("elementlocalaliasctl", &output);
     assert_exit("elementlocalaliasctl", &output, 0);
 }
+
+// ===== The sibling-fixed null argument at an inferred generic call =====
+
+/// A null-shaped argument whose sibling fixes the parameter reports the null
+/// rule at each use site.
+///
+/// `pair(1, x)` with `x` inferred from `null` resolves the parameter from the
+/// first argument, so the second argument's null shape faces the frozen null
+/// rule exactly as the explicit `pair<i32>(1, x)` does: one `E10012` at the
+/// argument's own site and no translation unit. The reversed spelling
+/// (`pair(x, 1)`) and the two-null spelling (`pair(x, x)`) keep the frozen
+/// per-use counts — one report and two reports — and the explicit twin keeps
+/// its one report. (red at the phase base: `pair(1, x)` was accepted and the
+/// strict build failed with `passing argument 2 ... makes integer from
+/// pointer`.)
+#[test]
+fn should_judge_the_sibling_fixed_null_argument_at_each_use_site() {
+    let sibling_fixed = r#"module spec.cc.inferrednull;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair(1, x);
+}
+"#;
+    assert_rejected_once(
+        "inferrednull",
+        sibling_fixed,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:9:20"],
+        &["E10200"],
+    );
+
+    let reversed = r#"module spec.cc.inferrednullrev;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair(x, 1);
+}
+"#;
+    assert_rejected_once(
+        "inferrednullrev",
+        reversed,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:9:17"],
+        &["E10200"],
+    );
+
+    let two_uses = r#"module spec.cc.inferrednullxx;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair(x, x);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("inferrednullxx", two_uses);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "inferrednullxx: the front end accepted the two-use spelling"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        2,
+        "inferrednullxx: each null use reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:9:17") && stderr.contains("main.clo:9:20"),
+        "inferrednullxx: the reports name both use sites; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "inferrednullxx: a rejected program must not produce a translation unit"
+    );
+
+    let explicit_twin = r#"module spec.cc.inferrednulltwin;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair<i32>(1, x);
+}
+"#;
+    assert_rejected_once(
+        "inferrednulltwin",
+        explicit_twin,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:9:25"],
+        &["E10200"],
+    );
+}
+
+/// The nullable sibling instances stay accepted and read the callee's null
+/// test back.
+///
+/// A `T?` parameter is null-capable, so a null-shaped argument at a nullable
+/// instance is a legal null use: the inferred `str?` instance and the explicit
+/// `String?` instance both build under the strict flags, run under the memory
+/// helper, and fold the callee's `b == null` test back into their exit codes
+/// (exit 0). (green controls at the phase base: both spellings were accepted
+/// and ran.)
+#[test]
+fn should_keep_the_nullable_sibling_instances_accepted() {
+    let view = r#"module spec.cc.inferrednullok;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let s: str? = null;
+    let x = null;
+    return pair(s, x) - 7;
+}
+"#;
+    let output = run_memory("inferrednullok", view);
+    assert_no_asan("inferrednullok", &output);
+    assert_exit("inferrednullok", &output, 0);
+
+    let owned = r#"module spec.cc.inferrednulloke;
+
+import { String, stringOf } from std.text;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    let x = null;
+    return pair<String?>(s, x) - 7;
+}
+"#;
+    let output = run_memory("inferrednulloke", owned);
+    assert_no_asan("inferrednulloke", &output);
+    assert_exit("inferrednulloke", &output, 0);
+}
+
+// ===== The inverted conversion routes at their instances =====
+
+/// A conversion the declaration cannot judge reports the frozen conversion at
+/// its instance.
+///
+/// Four routes invert the direction the deferred conversion duty records: a
+/// concrete return value at a parameter-typed return (`pick<cstring>()`'s
+/// `return 5`), a parameter value at a concrete destination reached through
+/// an explicit type argument (`consume2<cstring>(x)` with `x: str`), the
+/// caller's own parameter written as the callee's explicit type argument
+/// (`sink<U>(a)` at `U = cstring`), and a concrete argument at the callee's
+/// parameter instantiated with the caller's own type argument (`inner<U>(c)`
+/// at `U = raw u8`). Each reports the frozen `E10200` once at the written
+/// value's site and writes no translation unit, exactly as its concrete twin
+/// does; the explicit generic call with a static literal keeps its one
+/// `E10200` as the rejecting control. (red at the phase base: all four routes
+/// were accepted and failed the strict build with the C type mismatch the
+/// instance judgment must report.)
+#[test]
+fn should_report_the_inverted_conversion_routes_at_their_instances() {
+    let return_route = r#"module spec.cc.instconvret;
+
+func pick<T>(): T {
+    return 5;
+}
+
+func main(): i32 {
+    let c: cstring = pick<cstring>();
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "instconvret",
+        return_route,
+        "E10200",
+        &["cannot convert 'i32' to 'cstring' implicitly", "main.clo:4:12"],
+        &[],
+    );
+
+    let concrete_return = r#"module spec.cc.instconvretctl;
+
+func pickc(): cstring {
+    return 5;
+}
+
+func main(): i32 {
+    let c: cstring = pickc();
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "instconvretctl",
+        concrete_return,
+        "E10200",
+        &["cannot convert 'i32' to 'cstring' implicitly", "main.clo:4:12"],
+        &[],
+    );
+
+    let argument_route = r#"module spec.cc.instconvcallee;
+
+func consume2<U>(c: U): i32 {
+    return 0;
+}
+
+func convert<T>(x: T): i32 {
+    return consume2<cstring>(x);
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return convert<str>(s);
+}
+"#;
+    assert_rejected_once(
+        "instconvcallee",
+        argument_route,
+        "E10200",
+        &["cannot convert 'str' to 'cstring' implicitly", "main.clo:8:30"],
+        &[],
+    );
+
+    let concrete_argument = r#"module spec.cc.instconvcalleectl;
+
+func consume2(c: cstring): i32 {
+    return 0;
+}
+
+func convert(x: str): i32 {
+    return consume2(x);
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return convert(s);
+}
+"#;
+    assert_rejected_once(
+        "instconvcalleectl",
+        concrete_argument,
+        "E10200",
+        &["cannot convert 'str' to 'cstring' implicitly", "main.clo:8:21"],
+        &[],
+    );
+
+    let caller_parameter = r#"module spec.cc.instconvmixed;
+
+func sink<U>(x: U): i32 {
+    return 0;
+}
+
+func outer<T, U>(a: T): i32 {
+    return sink<U>(a);
+}
+
+func main(): i32 {
+    return outer<i32, cstring>(1) + 1;
+}
+"#;
+    assert_rejected_once(
+        "instconvmixed",
+        caller_parameter,
+        "E10200",
+        &["cannot convert 'i32' to 'cstring' implicitly", "main.clo:8:20"],
+        &[],
+    );
+
+    let concrete_parameter = r#"module spec.cc.instconvmixedctl;
+
+func sink(x: cstring): i32 {
+    return 0;
+}
+
+func outer(a: i32): i32 {
+    return sink(a);
+}
+
+func main(): i32 {
+    return outer(1) + 1;
+}
+"#;
+    assert_rejected_once(
+        "instconvmixedctl",
+        concrete_parameter,
+        "E10200",
+        &["cannot convert 'i32' to 'cstring' implicitly", "main.clo:8:17"],
+        &[],
+    );
+
+    let concrete_caller = r#"module spec.cc.instconvparam;
+
+import { toCString } from std.text;
+
+func inner<T>(x: T): i32 {
+    if (x == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func outer<U>(c: cstring): i32 {
+    return inner<U>(c);
+}
+
+func main(): i32 {
+    let c: cstring = toCString("x");
+    return outer<raw u8>(c);
+}
+"#;
+    assert_rejected_once(
+        "instconvparam",
+        concrete_caller,
+        "E10200",
+        &["cannot convert 'cstring' to 'raw u8' implicitly", "main.clo:13:21"],
+        &[],
+    );
+
+    let concrete_parameter_twin = r#"module spec.cc.instconvparamctl;
+
+import { toCString } from std.text;
+
+func inner(x: raw u8): i32 {
+    if (x == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func outer(c: cstring): i32 {
+    return inner(c);
+}
+
+func main(): i32 {
+    let c: cstring = toCString("x");
+    return outer(c);
+}
+"#;
+    assert_rejected_once(
+        "instconvparamctl",
+        concrete_parameter_twin,
+        "E10200",
+        &["cannot convert 'cstring' to 'raw u8' implicitly", "main.clo:13:18"],
+        &[],
+    );
+
+    let literal_control = r#"module spec.cc.instconvlit;
+
+func consume2<U>(c: U): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    return consume2<cstring>("x") + 1;
+}
+"#;
+    assert_rejected_once(
+        "instconvlit",
+        literal_control,
+        "E10200",
+        &["cannot convert 'static str' to 'cstring' implicitly", "main.clo:8:30"],
+        &[],
+    );
+}
+
+/// The legal instances of the inverted routes stay accepted and read their
+/// values back.
+///
+/// The instance judgment reports only the incompatible pairs: the reverse
+/// route's `i32` instance returns its value, the explicit argument route's
+/// `cstring` instance is the identity, and the caller-parameter routes accept
+/// the identity and widening instances (`i32`, `str`, the `String` widening
+/// to `str`, and `cstring`). Every accepted call folds its result into the
+/// exit code and the program observes the values under the memory helper
+/// (exit 0).
+#[test]
+fn should_keep_the_inverted_route_legal_instances_accepted() {
+    let source = r#"module spec.cc.instconvok;
+
+import { String, stringOf, toCString } from std.text;
+
+func pick<T>(): T {
+    return 5;
+}
+
+func consume2<U>(c: U): i32 {
+    return 1;
+}
+
+func convert<T>(x: T): i32 {
+    return consume2<cstring>(x);
+}
+
+func sink<U>(x: U): i32 {
+    return 1;
+}
+
+func outer<T, U>(a: T): i32 {
+    return sink<U>(a);
+}
+
+func inner<T>(x: T): i32 {
+    return 1;
+}
+
+func outer2<U>(c: cstring): i32 {
+    return inner<U>(c);
+}
+
+func main(): i32 {
+    let r: i32 = pick<i32>();
+    if (r != 5) {
+        return 1;
+    }
+    let c: cstring = toCString("ab");
+    if (convert<cstring>(c) != 1) {
+        return 2;
+    }
+    if (outer<i32, i32>(7) != 1) {
+        return 3;
+    }
+    let s: str = "xy";
+    if (outer<str, str>(s) != 1) {
+        return 4;
+    }
+    let h: String = stringOf("abc");
+    if (outer<String, str>(h) != 1) {
+        return 5;
+    }
+    if (outer<cstring, cstring>(c) != 1) {
+        return 6;
+    }
+    if (outer2<cstring>(c) != 1) {
+        return 7;
+    }
+    return 0;
+}
+"#;
+    let output = run_memory("instconvok", source);
+    assert_no_asan("instconvok", &output);
+    assert_exit("instconvok", &output, 0);
+}
+
+// ===== The view and slice `ffi` result spellings =====
+
+/// A view or slice `ffi` result at a view destination reports the conversion.
+///
+/// A view or slice crosses the FFI boundary as its pointer only, so the result
+/// types as the ABI pointer: storing it in a `str` or a slice and passing it
+/// to a `str` parameter each report the frozen `E10200` once, including the
+/// nullable `str?` destination whose pointer keeps its nullability. The
+/// template placeholder reports its own frozen `E10500` for the pointer. Each
+/// rejection names the written call's span and writes no translation unit.
+/// (green controls at the phase base: the pointer typing made these spellings
+/// report exactly as pinned.)
+#[test]
+fn should_report_the_view_and_slice_ffi_result_destinations() {
+    let view = r#"module spec.cc.ffiresultview;
+
+ffi probe {
+    func GetStr(): str;
+}
+
+func main(): i32 {
+    let s: str = GetStr();
+    if (len(s) != 3) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "ffiresultview",
+        view,
+        "E10200",
+        &["cannot convert 'raw u8' to 'str' implicitly", "main.clo:8:18"],
+        &[],
+    );
+
+    let slice = r#"module spec.cc.ffiresultslice;
+
+ffi probe {
+    func GetSlice(): u8[];
+}
+
+func main(): i32 {
+    let s: u8[] = GetSlice();
+    if (len(s) != 3) {
+        return 1;
+    }
+    return i32(s[0]);
+}
+"#;
+    assert_rejected_once(
+        "ffiresultslice",
+        slice,
+        "E10200",
+        &["cannot convert 'raw u8' to 'u8[]' implicitly", "main.clo:8:19"],
+        &[],
+    );
+
+    let argument = r#"module spec.cc.ffiresultarg;
+
+ffi probe {
+    func Make(): str;
+}
+
+func consume(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    unsafe {
+        return consume(Make());
+    }
+}
+"#;
+    assert_rejected_once(
+        "ffiresultarg",
+        argument,
+        "E10200",
+        &["cannot convert 'raw u8' to 'str' implicitly", "main.clo:13:24"],
+        &[],
+    );
+
+    let nullable = r#"module spec.cc.ffiresultnullable;
+
+ffi probe {
+    func Maybe(): str?;
+}
+
+func main(): i32 {
+    unsafe {
+        let s: str? = Maybe();
+        if (s == null) {
+            return 1;
+        }
+        return i32(len(s));
+    }
+}
+"#;
+    assert_rejected_once(
+        "ffiresultnullable",
+        nullable,
+        "E10200",
+        &["cannot convert 'raw u8?' to 'str?' implicitly", "main.clo:9:23"],
+        &[],
+    );
+
+    let template = r#"module spec.cc.ffiresulttemplate;
+
+ffi probe {
+    func Make(): str;
+}
+
+func main(): i32 {
+    unsafe {
+        let s: String = $"{Make()}";
+        return i32(len(s));
+    }
+}
+"#;
+    assert_rejected_once(
+        "ffiresulttemplate",
+        template,
+        "E10500",
+        &["type 'raw u8' is not formattable", "main.clo:9:28"],
+        &[],
+    );
+}
+
+/// The recorded `ffi` stub for the `cstring` return: the call answers a
+/// non-null literal so the program's null check observes the value.
+const CSTRING_RETURN_STUB: &str = r#"typedef void *APTR;
+typedef char *STRPTR;
+STRPTR Get(void) { return "x"; }
+"#;
+
+/// Emits a program, links the emitted C with an inline stub under the strict
+/// flags, and runs it, returning its output.
+///
+/// An `ffi` target has no definition in the emitted translation unit, so a
+/// case that asserts a run supplies the recorded stub and the C compiler
+/// builds both files together.
+fn run_host_with_stub(tag: &str, source: &str, stub: &str) -> Output {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, source);
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let stub_path = scratch.path().join("stub.c");
+    std::fs::write(&stub_path, stub).expect("write the stub");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+            stub_path.to_str().expect("stub path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    run_with_timeout(tag, &program, &[])
+}
+
+/// Emits a program and strictly compiles the emitted C without linking.
+///
+/// The pinned evidence for a result position whose extern has no recorded
+/// stub ends at the translation unit: the same strict flags a linking build
+/// uses must accept it while the extern stays unresolved.
+fn compile_host_c_only(tag: &str, source: &str) {
+    let scratch = ScratchDir::new(tag);
+    let emitted = emit_host(tag, source);
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let object_path = scratch.path().join("build.o");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-c",
+            "-o",
+            object_path.to_str().expect("object path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the host C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+}
+
+/// The pointer uses of a view or slice `ffi` result build and read back.
+///
+/// The folded `len` of the ABI pointer is the empty length, exactly as the
+/// same use of a `raw u8` value; each run reads the folded length back (exit
+/// 0). A `cstring` result is a value pointer: the strict build links the
+/// recorded stub and the run reads its non-null answer back (exit 0). The
+/// index result is a pointer read whose extern has no recorded stub, so its
+/// pinned evidence is the strict compile of the translation unit; the
+/// `.ptr`/`.len` member spellings stay outside this table.
+#[test]
+fn should_keep_the_view_and_slice_ffi_result_uses_building() {
+    let view = r#"module spec.cc.ffiresultlen;
+
+ffi probe {
+    func Make(): str;
+}
+
+func main(): i32 {
+    unsafe {
+        return i32(len(Make()));
+    }
+}
+"#;
+    let output = run_memory("ffiresultlen", view);
+    assert_no_asan("ffiresultlen", &output);
+    assert_exit("ffiresultlen", &output, 0);
+
+    let slice = r#"module spec.cc.ffiresultslielen;
+
+ffi probe {
+    func Make(): u8[];
+}
+
+func main(): i32 {
+    unsafe {
+        return i32(len(Make()));
+    }
+}
+"#;
+    let output = run_memory("ffiresultslielen", slice);
+    assert_no_asan("ffiresultslielen", &output);
+    assert_exit("ffiresultslielen", &output, 0);
+
+    let c_string = r#"module spec.cc.ffiresultcstring;
+
+ffi probe {
+    func Get(): cstring;
+}
+
+func main(): i32 {
+    unsafe {
+        let c: cstring = Get();
+        if (c == null) {
+            return 1;
+        }
+        return 0;
+    }
+}
+"#;
+    let output = run_host_with_stub("ffiresultcstring", c_string, CSTRING_RETURN_STUB);
+    assert_exit("ffiresultcstring", &output, 0);
+
+    let index = r#"module spec.cc.ffiresultindex;
+
+ffi probe {
+    func Make(): str;
+}
+
+func main(): i32 {
+    unsafe {
+        return i32(Make()[0]);
+    }
+}
+"#;
+    compile_host_c_only("ffiresultindex", index);
+}

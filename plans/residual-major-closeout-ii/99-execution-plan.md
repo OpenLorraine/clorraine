@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 06:00
-> **Progress**: 30/51 tasks (59%) — Phase 5 complete
+> **Last Updated**: 2026-10-19 07:00
+> **Progress**: 32/51 tasks (63%) — Executing Phase 6
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -281,11 +281,11 @@ ST-15..ST-17 · AR-8
 **Objective**: Pin the sibling-fixed null argument, the inverted conversion routes, and the
 `DEF-350` control table.
 
-- [ ] 6.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
+- [x] 6.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
       (inferrednullarg, instanceconversions, ffiresultcontrol) with the count and legal-instance
-      controls
-- [ ] 6.1.2 Run the suite and record the red phase (the legal instances and the `DEF-350`
-      controls verified green first; the `DEF-344` count ruling measured — AR-3/AR-8)
+      controls ✅ (completed: 2026-10-19 07:00; five tests appended to the checker-conformance suite (+747 lines, additions only) plus two helpers and a stub constant — the sibling-fixed null argument (`DEF-344`: the red with the per-use-site count controls incl. the two-report case and the legal instances) and the inverted conversion routes (`DEF-351`: the four reds — the return, the callee, the mixed and the parameter spellings — with their concrete-twin controls and the literal/legal controls), plus the `DEF-350` ffi-result control family (the view/slice/arg/nullable rejections, the template code, and the building len/index/cstring stubs); the adjacent `bs02` observation recorded for the implementation round)
+- [x] 6.1.2 Run the suite and record the red phase (the legal instances and the `DEF-350`
+      controls verified green first; the `DEF-344` count ruling measured — AR-3/AR-8) ✅ (completed: 2026-10-19 07:00; the checker-conformance suite plain 151 passed / 2 failed and ASan 151 passed / 2 failed — exactly the two new red tests (the accepted sibling-fixed null argument and the accepted inverted conversion routes); the controls green in both legs; parent-verified)
 
 ### Step 6.2: Implementation
 
