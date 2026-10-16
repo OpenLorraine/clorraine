@@ -180,6 +180,12 @@ pub struct OpaqueConversion {
     pub expected: Ty,
     /// The value's span.
     pub span: Span,
+    /// True when the source is a numeric literal.
+    ///
+    /// A literal takes the destination's type wherever the context supplies a
+    /// scalar, so the instance audit applies the frozen numeric widenings to
+    /// it instead of the ordinary conversion report.
+    pub literal: bool,
 }
 
 /// One index read on a bare type parameter.

@@ -468,7 +468,8 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        self.record_deferred_conversion(&ty, expected, expr.span);
+        let literal = matches!(expr.kind, ExprKind::Int(_) | ExprKind::Float(_));
+        self.record_deferred_conversion_with(&ty, expected, expr.span, literal);
         self.check_conversion(&ty, expected, expr.span);
         ty
     }
@@ -477,12 +478,27 @@ impl Checker<'_, '_> {
     ///
     /// A source that mentions a type parameter cannot be judged at the
     /// declaration, so the instance audit applies the ordinary conversion (or
-    /// null) judgment to the substituted source and destination. A null-shaped
+    /// null) judgment to the substituted source and destination. A destination
+    /// that still mentions a type parameter judges its instance too: a
+    /// concrete source converts to whatever the instance resolves, and the
+    /// audit reports exactly as the concrete twin does. A numeric literal is
+    /// marked so the audit lets a scalar context supply its type. A null-shaped
     /// source is recorded only when the destination is itself unresolved: a
     /// concrete destination already faces the position's own rules, so
     /// recording it again would report twice or reject where the concrete
     /// spelling accepts.
     pub(super) fn record_deferred_conversion(&mut self, source: &Ty, expected: &Ty, span: Span) {
+        self.record_deferred_conversion_with(source, expected, span, false);
+    }
+
+    /// Records a deferred conversion, marking a numeric literal source.
+    pub(super) fn record_deferred_conversion_with(
+        &mut self,
+        source: &Ty,
+        expected: &Ty,
+        span: Span,
+        literal: bool,
+    ) {
         // A destination that is a nullable type parameter is already rejected
         // where it is written (a type parameter cannot be empty), so its
         // recovered substituted shape is never judged again: the declaration
@@ -510,6 +526,7 @@ impl Checker<'_, '_> {
             source: source.clone(),
             expected: expected.clone(),
             span,
+            literal,
         });
     }
 

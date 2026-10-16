@@ -323,8 +323,22 @@ impl Checker<'_, '_> {
                     // The resolved parameter judges the argument exactly as a
                     // direct call's does: a destination or a source that still
                     // mentions a type parameter records the deferred
-                    // conversion for the instance audit.
-                    self.record_deferred_conversion(ty, &expected, *arg_span);
+                    // conversion for the instance audit. A numeric literal
+                    // carries its marker, and a borrow argument whose declared
+                    // slot still mentions a type parameter keeps the out-slot
+                    // place duty's single instance report instead.
+                    let literal = matches!(
+                        arg.value.kind,
+                        crate::ast::ExprKind::Int(_) | crate::ast::ExprKind::Float(_)
+                    );
+                    let borrow_slot = mode == crate::ast::Mode::Borrow
+                        && signature
+                            .params
+                            .get(index)
+                            .is_some_and(crate::types::contains_param);
+                    if !borrow_slot {
+                        self.record_deferred_conversion_with(ty, &expected, *arg_span, literal);
+                    }
                     self.check_conversion(ty, &expected, *arg_span);
                 }
             }

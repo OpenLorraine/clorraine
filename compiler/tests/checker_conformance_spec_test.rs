@@ -6967,3 +6967,213 @@ func main(): i32 {
 "#;
     compile_host_c_only("ffiresultindex", index);
 }
+
+// ===== The context-typed literals and the borrow-slot count =====
+
+/// A numeric literal takes the scalar context's type at every destination.
+///
+/// A literal's type is the context's where the instance supplies a scalar —
+/// the frozen numeric widenings judge it there — so the return, the `let`,
+/// the assignment, the struct-literal field, the array element, the argument,
+/// and the float destination all accept their literals exactly as the
+/// concrete twins do. Each run folds its read-back (exit 0).
+#[test]
+fn should_accept_a_numeric_literal_at_every_scalar_destination() {
+    let returned = r#"module spec.cc.litcontextret;
+
+func pick<T>(): T {
+    return 5;
+}
+
+func main(): i32 {
+    let y: u8 = pick<u8>();
+    return i32(y) - 5;
+}
+"#;
+    let output = run_memory("litcontextret", returned);
+    assert_no_asan("litcontextret", &output);
+    assert_exit("litcontextret", &output, 0);
+
+    let binding = r#"module spec.cc.litcontextlet;
+
+func outer<T>(): T {
+    let y: T = 5;
+    return y;
+}
+
+func main(): i32 {
+    let z: u8 = outer<u8>();
+    return i32(z) - 5;
+}
+"#;
+    let output = run_memory("litcontextlet", binding);
+    assert_no_asan("litcontextlet", &output);
+    assert_exit("litcontextlet", &output, 0);
+
+    let assigned = r#"module spec.cc.litcontextassign;
+
+func outer<T>(): u8 {
+    let y: T = 1;
+    y = 5;
+    return u8(y);
+}
+
+func main(): i32 {
+    return i32(outer<u8>()) - 5;
+}
+"#;
+    let output = run_memory("litcontextassign", assigned);
+    assert_no_asan("litcontextassign", &output);
+    assert_exit("litcontextassign", &output, 0);
+
+    let field = r#"module spec.cc.litcontextfield;
+
+struct Box<T> { x: T; }
+
+func outer<T>(): T {
+    let b: Box<T> = Box<T> { x: 5 };
+    return b.x;
+}
+
+func main(): i32 {
+    let v: u8 = outer<u8>();
+    return i32(v) - 5;
+}
+"#;
+    let output = run_memory("litcontextfield", field);
+    assert_no_asan("litcontextfield", &output);
+    assert_exit("litcontextfield", &output, 0);
+
+    let element = r#"module spec.cc.litcontextelem;
+
+func outer<T>(): T {
+    let xs: T[2] = [1, 2];
+    return xs[0];
+}
+
+func main(): i32 {
+    let v: u8 = outer<u8>();
+    return i32(v) - 1;
+}
+"#;
+    let output = run_memory("litcontextelem", element);
+    assert_no_asan("litcontextelem", &output);
+    assert_exit("litcontextelem", &output, 0);
+
+    let argument = r#"module spec.cc.litcontextarg;
+
+func sink<T>(x: T): i32 {
+    return 0;
+}
+
+func outer<T>(): i32 {
+    return sink<T>(5);
+}
+
+func main(): i32 {
+    return outer<u8>();
+}
+"#;
+    let output = run_memory("litcontextarg", argument);
+    assert_no_asan("litcontextarg", &output);
+    assert_exit("litcontextarg", &output, 0);
+
+    let float = r#"module spec.cc.litcontextfloat;
+
+func outer<T>(): T {
+    return 1.5;
+}
+
+func main(): i32 {
+    let v: f32 = outer<f32>();
+    return i32(v) - 1;
+}
+"#;
+    let output = run_memory("litcontextfloat", float);
+    assert_no_asan("litcontextfloat", &output);
+    assert_exit("litcontextfloat", &output, 0);
+}
+
+/// A numeric literal at a non-scalar destination keeps the frozen report.
+///
+/// A view destination is no scalar context, so `pick<str>()`'s `return 5`
+/// reports the frozen conversion once, exactly as its concrete twin does.
+#[test]
+fn should_report_a_numeric_literal_at_a_non_scalar_destination() {
+    let view = r#"module spec.cc.litcontextview;
+
+func pick<T>(): T {
+    return 5;
+}
+
+func main(): i32 {
+    let s: str = pick<str>();
+    return i32(len(s));
+}
+"#;
+    assert_rejected_once(
+        "litcontextview",
+        view,
+        "E10200",
+        &["cannot convert 'i32' to 'str' implicitly", "main.clo:4:12"],
+        &[],
+    );
+}
+
+/// A borrow argument whose declared slot mentions a parameter reports once.
+///
+/// The out-slot place duty judges the borrow argument at its instance, so the
+/// ordinary conversion record stays silent: the shape reports one `E10200`
+/// exactly as its concrete twin does.
+#[test]
+fn should_report_a_borrow_slot_argument_once() {
+    let slot = r#"module spec.cc.borrowslotcount;
+
+export handle File freedBy Close;
+
+ffi probe {
+    func Open(name: cstring, mode: i32): File?;
+    func Close(take f: File): void;
+}
+
+func fill<T>(borrow out: T, take x: T): void {
+    out = x;
+}
+
+func outer<T, U>(a: T, b: U): i32 {
+    fill<T>(borrow b, a);
+    return 0;
+}
+
+func main(): i32 {
+    unsafe {
+        let f = Open("/definitely/not/here", 0);
+        if (f == null) {
+            return 7;
+        }
+        let s: str = "y";
+        return outer<File?, str>(f, s);
+    }
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("borrowslotcount", slot);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "borrowslotcount: the front end accepted the incompatible borrow slot"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "borrowslotcount: the borrow slot reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'str' to 'File?' implicitly"),
+        "borrowslotcount: the report names the slot conversion; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "borrowslotcount: a rejected program must not produce a translation unit"
+    );
+}

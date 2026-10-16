@@ -1284,7 +1284,8 @@ fn check_deferred_conversions(
                 continue;
             }
             let source = crate::types::substitute(&conversion.source, &bindings);
-            let Some(report) = deferred_conversion_report(&source, &expected, conversion.span)
+            let Some(report) =
+                deferred_conversion_report(&source, &expected, conversion.span, conversion.literal)
             else {
                 continue;
             };
@@ -1297,11 +1298,17 @@ fn check_deferred_conversions(
 /// The frozen report for one deferred value at its resolved destination.
 ///
 /// `None` means the pair is legal: the null shape fits a nullable destination,
-/// an unresolved source keeps the accepted path, and every other pair converts
-/// implicitly. The null shape reports the null rule because it has no concrete
-/// value surface to convert; every other rejected pair reports the frozen
-/// conversion.
-fn deferred_conversion_report(source: &Ty, expected: &Ty, span: Span) -> Option<Diagnostic> {
+/// an unresolved source keeps the accepted path, a numeric literal takes a
+/// scalar destination's type through the frozen widenings, and every other
+/// pair converts implicitly. The null shape reports the null rule because it
+/// has no concrete value surface to convert; every other rejected pair reports
+/// the frozen conversion.
+fn deferred_conversion_report(
+    source: &Ty,
+    expected: &Ty,
+    span: Span,
+    literal: bool,
+) -> Option<Diagnostic> {
     if crate::types::is_null_shaped(source) {
         if expected.nullable || expected.is_unknown() {
             return None;
@@ -1312,6 +1319,12 @@ fn deferred_conversion_report(source: &Ty, expected: &Ty, span: Span) -> Option<
         );
     }
     if source.is_unknown() || crate::types::contains_param(source) {
+        return None;
+    }
+    // A numeric literal takes the destination's type wherever the context
+    // supplies a scalar: the frozen widenings judge it there, exactly as the
+    // concrete spelling's literal is judged.
+    if literal && matches!(expected.kind, TyKind::Scalar(_)) {
         return None;
     }
     if crate::types::implicit_conversion(source, expected) {
