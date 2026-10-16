@@ -344,3 +344,48 @@ reaches the typed-null lowering).
   a computed value in a conditional arm at a `str?` view destination (the `?:` mismatch);
   `q04`'s `E10010`.
 - The handle destinations keep the integer `0` on the `0` profiles (the `BPTR` ABI).
+
+## Phase 6 — Standalone emission shapes
+
+**Reviewed implementation**: `b67f95c` plus the correction rounds (`19a8109`, `178d499`, `7457b88`).
+**Lenses**: correctness (K6R), semantics (K6S/K6C), emission-integrity (F1/F2), plus a bounded
+confirmation and its scoped re-run.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | K6R-1 (the bare-name func-global fallback across all loaded modules), K6R-2 (the void expression body's raw scope pop — an owned temporary leaked), K6R-3 (record), K6R-4 (the W10006 suppression unpinned), K6R-5 (= F2); the `_start` alignment, the whole-type `sizeof`, and the void lowering otherwise verified |
+| semantics | FAIL — 2 blockers | K6S-1 (sharper than K6R-1: a call to a *declared function* was hijacked by any loaded module's same-named global — a regression of previously-correct programs), K6S-2 (the BTreeMap-first pick instead of the import/qualified target), K6S-3 (the dotted-head policy + the comment), K6S-4 (the m68k alignment figure); the `_start`/`sizeof`/void-body rules conformant; P-1/P-2/P-3 filed (`DEF-356`/`DEF-357`) |
+| emission-integrity | FINDINGS — 2 | F1 (the func-global identity loss), F2 (the func-pointer array declarator); the three intended delta classes otherwise confirmed over 4,948 programs, no head-only failures |
+| confirmation | FAIL then PASS | The first bounded confirmation PASSED the pre-correction keys; after the corrections it found K6C-1 (the guard's over-application redirected imported/qualified func-globals to unrelated — even unexported — functions); the final scoped re-confirmation: **PASS — 0 blockers** |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| C1 (`19a8109`) | **Fixed**: the func-global identity threading (a declared module + name carried; a bare name resolves same-module or unique; an ambiguous dotted head stays underived) and the func-pointer array declarator (`i32 (*[2])(i32)`, fixing the declarations too) |
+| F-a..F-e (`178d499`) | **Fixed**: the function preference, the void expression body's `pop_scope()`, the element-call lowering, the dotted-head policy (a loaded-module path head is not a mention) with a load unit-test pin — but the function-preference guard over-applied |
+| K6C-1 (`7457b88`) | **Fixed**: the veto is scope-aware (`function_in_scope`: the caller's own module or its imports), and the qualified callee resolves its path directly — the four probes resolve the holder symbol and run 0 |
+
+### Confirmations
+
+The final scoped re-confirmation: **PASS — 0 blockers** — the four K6C-1 probes (the import + a
+unique foreign function; the three-module variant; the qualified spelling; the unexported function)
+all resolve the holder symbol; the previous keys (fnself, the import/qualified picks, pdiff, the
+W10006 policy, the sizeof/alias/void keys) unchanged; the new pins' red/green verified; `make check`
+exit 0; re-emission deterministic; no unintended delta.
+
+### Filed rows
+
+`DEF-356` (the func-global resolution residuals — the aliased imports and the self-qualified
+priority), `DEF-357` (the const folder's ABI-layout blindness), `DEF-358` (the `run_with_timeout`
+harness deadlock — the container ASan flake's root cause), `DEF-359` (the name-based checker typing
+for a bare func-global call).
+
+### Record notes
+
+- Comment corrections landed for the shim (m68k's 2-byte alignment) and the scanner (the
+  conservative head mention).
+- The dbc-spec ASan flake is `DEF-358` (both sides flake on byte-identical binaries).
+- The `dep.h.call` `E10219` and the `program.callee`-based checks' behavior are pre-existing.

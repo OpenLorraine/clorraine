@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 16:40
-> **Progress**: 35/39 tasks (90%) — Phase 6 in review
+> **Last Updated**: 2026-10-17 21:00
+> **Progress**: 36/39 tasks (92%) — Phase 6 complete
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -312,8 +312,8 @@ fixed-array `sizeof` value, and the void lambda over an abort intrinsic.
       alignment shape, the emitted `sizeof` expression, the void return/trap shape, the
       byte-identical controls, the re-emission determinism pins) in the origin `_impl_test.rs`
       files ✅ (completed: 2026-10-17 16:40; seven pins added across three impl suites (callable-release 21/21, module-initializer 29/29, backlog-closeout 34/34; additions only) plus two helpers — the imported/qualified func-global pair (the `emit_pair` helper for the two-file form) with the current-module control, the whole-type `sizeof` with the scalar/struct/view controls and a re-emission pin, and the void expression lambda’s statement lowering with a re-emission pin; five discriminate, two are the disclosed base-stable controls; `DEF-189`’s alignment has no impl-suite home (no freestanding impl suite) — the spec case’s host no-libc run and the m68k link are the behavior pins, reported; 84/84 green across the three suites; `make check` exit 0)
-- [ ] 6.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses; the emission lens runs the base/head differential
+- [x] 6.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses; the emission lens runs the base/head differential ✅ (completed: 2026-10-17 21:00; all three lenses dispatched plus three correction rounds and two bounded confirmations: the identity threading and the declarator (C1), the function preference/void scope/element call/head policy (F-a..F-e), and the scope-aware gate (K6C-1); the final re-confirmation PASS — 0 blockers; rows filed `DEF-356`–`DEF-359`; the closing verification: the phase-6 suites green, `make check` exit 0 (2243 passed), the differential clean)
 
 **Verify**: `make check`; the freestanding host/m68k legs; the emission differential
 
