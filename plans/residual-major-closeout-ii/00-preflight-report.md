@@ -15,7 +15,7 @@
 
 **Audit target**: the 15 documents under `plans/residual-major-closeout-ii/`.
 **Context documents** (read to test the target; not audited, not advanced): `plans/00-roadmap.md`
-(the 23 rows), `plans/residual-major-closeout/05-findings.md` (batch K), 
+(the 23 rows), `plans/residual-major-closeout/05-findings.md` (batch K),
 `plans/conditional-projection-residue-ii/05-findings.md` (batch J), `spec/04-expressions.md`,
 `spec/02-types.md`, `spec/14-diagnostics.md`, `spec/17-codegen.md`, the compiler sources, and the
 recorded `build/` probe tree.
