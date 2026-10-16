@@ -403,11 +403,15 @@ impl Checker<'_, '_> {
         match &expr.kind {
             ExprKind::Name(_) => true,
             // An element store needs a place base exactly as a member store
-            // does: an indexing step on a conditional selection is not a
-            // place, so `(c ? a : b).f[i] = x` reports the place rule instead
-            // of being silently dropped. The test recurses, so a member chain
-            // over a conditional is judged at its root.
-            ExprKind::Index { base, .. } => self.is_place(base),
+            // does. The walk recurses into the index's base, so an indexing
+            // step whose base chain carries no member between a conditional
+            // and the index reports the place rule rather than silently
+            // dropping the store; a member step above the index is judged by
+            // the member arm. The unsafe wrapper stays place-transparent,
+            // exactly as the member arm treats it.
+            ExprKind::Index { base, .. } => {
+                self.is_place(base) || matches!(base.kind, ExprKind::Unsafe(_))
+            }
             // The parser spells `value.field` as a dotted name, so a dotted name
             // that starts with a value in scope is a place just like a field.
             ExprKind::Qualified(name) => {

@@ -12944,3 +12944,56 @@ func main(): i32 {
     assert_no_asan("guardviewliteralowned", &output);
     assert_exit("guardviewliteralowned", &output, 0);
 }
+
+/// An unsafe-wrapped array base keeps its place at an element store.
+///
+/// `(unsafe b)[i] = 7` and `(unsafe b)[i]++` store into the element exactly as
+/// the unparenthesized spelling does — the unsafe wrapper is place-transparent
+/// — so each run reads the stored value back (exit 0) and the leak checker is
+/// clean. The unsafe member spelling and the plain increment are the sibling
+/// controls, beside the conditional-base rejections above.
+#[test]
+fn should_keep_the_unsafe_array_base_place_at_an_element_store() {
+    let store = r#"module spec.cpr.unsafestore;
+
+func main(): i32 {
+    let b: i32[3] = [1, 2, 3];
+    let i: i32 = 1;
+    (unsafe b)[i] = 7;
+    return b[1] - 7;
+}
+"#;
+    let output = run_memory("unsafestore", store);
+    assert_no_asan("unsafestore", &output);
+    assert_exit("unsafestore", &output, 0);
+
+    let increment = r#"module spec.cpr.unsafeinc;
+
+func main(): i32 {
+    let b: i32[3] = [1, 2, 3];
+    let i: i32 = 1;
+    (unsafe b)[i]++;
+    return b[1] - 3;
+}
+"#;
+    let output = run_memory("unsafeinc", &increment);
+    assert_no_asan("unsafeinc", &output);
+    assert_exit("unsafeinc", &output, 0);
+
+    let control = r#"module spec.cpr.unsafecontrol;
+
+struct Box { ys: i32[3]; }
+
+func main(): i32 {
+    let b: Box = Box { ys: [1, 2, 3] };
+    let i: i32 = 1;
+    (unsafe b).ys[i] = 7;
+    (unsafe b).ys[i]++;
+    b.ys[i]++;
+    return b.ys[1] - 9;
+}
+"#;
+    let output = run_memory("unsafecontrol", control);
+    assert_no_asan("unsafecontrol", &output);
+    assert_exit("unsafecontrol", &output, 0);
+}
