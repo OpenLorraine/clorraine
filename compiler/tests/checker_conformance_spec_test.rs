@@ -4282,3 +4282,231 @@ func main(): i32 {
     assert_no_asan("ffislice_len", &output);
     assert_exit("ffislice_len", &output, 0);
 }
+
+// ===== Null-shaped destinations and the capture slot store =====
+
+/// True when `tool` can be spawned, so an m68k case skips on a host without
+/// the pinned SDK toolchain.
+fn tool_available(tool: &str) -> bool {
+    Command::new(tool).arg("--version").output().is_ok()
+}
+
+/// Emits one hosted-amiga program and asserts the front end accepted it.
+fn emit_hosted_amiga(tag: &str, source: &str) -> (ScratchDir, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "hosted-amiga".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    (scratch, emitted)
+}
+
+/// Links the emitted hosted-amiga C with the cross toolchain under the
+/// profile's strict flags.
+///
+/// The toolchain lives only in the pinned SDK container, so a bare host
+/// reports a skip rather than a false failure. The flags mirror the driver's
+/// compile matrix line for the hosted profile. The m68k artifact cannot run
+/// here, so the case ends at the link.
+fn build_hosted_amiga_c(tag: &str, scratch: &ScratchDir, emitted: &str) {
+    if !tool_available("m68k-amigaos-gcc") {
+        println!("{tag}: skipped (m68k-amigaos-gcc is not installed)");
+        return;
+    }
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("m68k-amigaos-gcc")
+        .args([
+            "-std=c99",
+            "-mcrt=nix20",
+            "-m68000",
+            "-fwrapv",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+            "-lamiga",
+            "-lm",
+        ])
+        .output()
+        .expect("failed to spawn the hosted-amiga C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the hosted-amiga C compiler rejected the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+}
+
+/// A null shape at a nullable view destination carries the zero view.
+///
+/// The store and the argument destination lower the shape to the view's zero
+/// value, so the store's run exits 0 on the null test and the argument's run
+/// exits 0 when the parameter receives the same null view; a non-null empty
+/// view would exit 1 on either path. The length read sits on the narrowed
+/// branch because the frozen null rule keeps a read off the possibly-null
+/// value itself (red at the phase base: the emitted store copied the shape's
+/// own `void *` into the view struct and the strict build failed with
+/// `incompatible types when assigning to type 'ClStr' from type 'void *'` and
+/// `incompatible type for argument 1`). The pinned null comparisons, the
+/// null-shaped copy, and the single-`null` declarations are the existing
+/// controls.
+#[test]
+fn should_lower_a_null_shape_at_a_nullable_view_destination() {
+    let store = r#"module spec.cc.nullshape;
+
+func main(): i32 {
+    let x = null;
+    let s: str? = x;
+    if (s == null) {
+        return 0;
+    }
+    return i32(len(s)) + 1;
+}
+"#;
+    let output = run_memory("nullshape", store);
+    assert_no_asan("nullshape", &output);
+    assert_exit("nullshape", &output, 0);
+
+    let argument = r#"module spec.cc.nullshapearg;
+
+func show(s: str?): i32 {
+    if (s == null) {
+        return 0;
+    }
+    return i32(len(s)) + 1;
+}
+
+func main(): i32 {
+    let x = null;
+    return show(x);
+}
+"#;
+    let output = run_memory("nullshapearg", argument);
+    assert_no_asan("nullshapearg", &output);
+    assert_exit("nullshapearg", &output, 0);
+}
+
+/// A null shape at a nullable handle destination lowers on hosted-amiga.
+///
+/// The `File?` store and return carry the destination's own null value, so the
+/// cross build links the handle instead of copying the shape's `void *` (red
+/// at the phase base: the accepted program failed the hosted-amiga build with
+/// `assignment to 'BPTR' {aka 'long int'} from 'void *'` and `returning 'void
+/// *' from a function with return type 'BPTR'`).
+#[test]
+fn should_lower_a_null_shape_at_a_hosted_amiga_handle_destination() {
+    let source = r#"module spec.cc.nullshapeamiga;
+
+import { File } from std.io;
+
+func pass(): File? {
+    let x = null;
+    return x;
+}
+
+func main(): i32 {
+    let x = null;
+    let fl: File? = x;
+    if (fl != null) {
+        return 1;
+    }
+    let f2: File? = pass();
+    if (f2 != null) {
+        return 2;
+    }
+    return 0;
+}
+"#;
+    let (scratch, emitted) = emit_hosted_amiga("nullshapeamiga", source);
+    build_hosted_amiga_c("nullshapeamiga", &scratch, &emitted);
+}
+
+/// A writable capture stored into a nullable owning out-slot reports once.
+///
+/// The out-slot store would move out of the capture environment while the
+/// caller still owns the value, so the store judges the capture move and the
+/// frozen capture rule reports one `E10401` at the store (red at the phase
+/// base: the accepted program aborted with `free(): double free detected` at
+/// exit 134 and AddressSanitizer reported `attempting double-free`). The
+/// read-only capture's rejection stays pinned by
+/// `should_reject_a_capture_stored_into_an_out_slot`.
+#[test]
+fn should_reject_a_writable_capture_stored_into_a_nullable_out_slot() {
+    let source = r#"module spec.cc.captureslot;
+
+import { String, stringOf } from std.text;
+
+func wrap<T>(borrow out: T, x: T): void {
+    ([borrow x, borrow out] () => {
+        out = x;
+    })();
+}
+
+func main(): i32 {
+    let out: String? = null;
+    let s: String = stringOf("ab");
+    wrap<String?>(borrow out, s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "captureslot",
+        source,
+        "E10401",
+        &["cannot move captured 'x' in a lambda"],
+        &["E10034"],
+    );
+}
+
+/// The writable non-capture out-slot store stays accepted.
+///
+/// A `take` argument moves into the slot, so the store writes through without
+/// a capture source and the caller reads the slot back: the run measures the
+/// stored string and exits 3 (the acceptance control for the store judgment).
+#[test]
+fn should_keep_the_non_capture_nullable_out_slot_store_accepted() {
+    let source = r#"module spec.cc.captureslotctl;
+
+import { String, stringOf } from std.text;
+
+func put<T>(borrow d: T, take s: T): void {
+    d = s;
+}
+
+func main(): i32 {
+    let d: String? = null;
+    let s: String = stringOf("ab");
+    put<String?>(borrow d, s);
+    if (d == null) {
+        return 1;
+    }
+    return i32(len(d)) + 1;
+}
+"#;
+    let output = run_memory("captureslotctl", source);
+    assert_no_asan("captureslotctl", &output);
+    assert_exit("captureslotctl", &output, 3);
+}

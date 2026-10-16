@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 10:30
-> **Progress**: 24/39 tasks (62%) — Phase 4 complete
+> **Last Updated**: 2026-10-17 11:10
+> **Progress**: 26/39 tasks (67%) — Executing Phase 5
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -246,9 +246,9 @@ the `ffi` result's declared type.
 **Objective**: Pin the null-shaped value at the view/handle destinations (host and
 hosted-amiga) and the capture source at the nullable out-slot store.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (nullshape, captureslot) with the pinned null controls and the non-capture out-slot store
-- [ ] 5.1.2 Run the suite and record the red phase (the comparison/copy/literal controls
-      verified green first; the ASan red re-measured)
+- [x] 5.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (nullshape, captureslot) with the pinned null controls and the non-capture out-slot store ✅ (completed: 2026-10-17 11:10; four tests appended to `compiler/tests/checker_conformance_spec_test.rs` (+228 lines, additions only; 124 → 128 tests) plus the hosted-amiga emit/build helpers — the null shape at a nullable view destination (the store and the argument), the hosted-amiga handle destination (the `File?` store and return), the writable capture into a nullable out-slot (one `E10401`), and the non-capture control; adjustments recorded: the ST-15 length read folds as a null-fallthrough exit 0 (the frozen TY-6 null rules reject a live read), the ST-16 control uses a `take` source (the by-value lend is the pinned `E10034`), and the read-only capture control is referenced from the existing pin)
+- [x] 5.1.2 Run the suite and record the red phase (the comparison/copy/literal controls
+      verified green first; the ASan red re-measured) ✅ (completed: 2026-10-17 11:10; plain 125 passed / 3 failed and ASan 125 passed / 3 failed — the three reds (the host `ClStr` store and argument from `void *`, the hosted-amiga `BPTR` from `void *`, the capture double free 134); the control green in both legs, 0 sanitizer reports beyond the intended double free; parent-verified)
 
 ### Step 5.2: Implementation
 
