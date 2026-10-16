@@ -3074,3 +3074,153 @@ func main(): i32 {
     assert_exit("corrcondplace", &output, 0);
 }
 
+// ===== Member typing: enum value form and view members =====
+
+/// A value-form enum member read reports the unknown member concretely.
+///
+/// The frozen member table spells an enum member `Type.MEMBER`, so a value
+/// receiver has no member surface: the declared member reports the registered
+/// unknown-member diagnostic instead of emitting the invalid C (red at the
+/// phase base: the program was accepted and the strict build failed with
+/// `request for member 'A' in something not a structure or union`).
+#[test]
+fn should_reject_a_concrete_value_form_enum_member_read() {
+    let source = r#"module spec.cc.enumvaluemember;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.A;
+    let n = i32(e.A);
+    return n - 1;
+}
+"#;
+    assert_rejected_once(
+        "enumvaluemember",
+        source,
+        "E10212",
+        &["'A' is not a member of 'E'"],
+        &[],
+    );
+}
+
+/// A value-form enum member read reports the unknown member at the instance.
+///
+/// The declaration accepts the opaque member read because the substituted
+/// instance decides; a value-form read has no member surface at any
+/// substitution, so the audit reports the registered unknown-member
+/// diagnostic once, at the read's span (red at the phase base: the instance
+/// was accepted and the strict build failed with `request for member 'A' in
+/// something not a structure or union`).
+#[test]
+fn should_reject_an_instance_value_form_enum_member_read() {
+    let source = r#"module spec.cc.enumvaluememberinst;
+
+enum E : u8 { A, B }
+
+func read<T>(x: T): i32 {
+    return i32(x.A);
+}
+
+func main(): i32 {
+    let e: E = E.B;
+    return read<E>(e);
+}
+"#;
+    assert_rejected_once(
+        "enumvaluememberinst",
+        source,
+        "E10212",
+        &["'A' is not a member of 'E'"],
+        &[],
+    );
+}
+
+/// The scoped enum member and the qualified name forms stay accepted.
+///
+/// `E.B` is the frozen `Type.MEMBER` spelling and a two-segment
+/// module-qualified call (`A.B.f`) is an ordinary dotted name, so neither
+/// passes through the value-form member rule; both runs read their values
+/// back (green control at the phase base).
+#[test]
+fn should_keep_the_scoped_enum_member_forms_accepted() {
+    let scoped = r#"module spec.cc.enumvaluememberctl;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.B;
+    return i32(e);
+}
+"#;
+    let output = run_memory("enumvaluememberctl", scoped);
+    assert_no_asan("enumvaluememberctl", &output);
+    assert_exit("enumvaluememberctl", &output, 1);
+
+    let qualified = r#"module spec.cc.enumvaluememberqual;
+
+func main(): i32 {
+    let owned: String = std.text.stringOf("abc");
+    let v: u8[] = std.text.bytes(owned);
+    return i32(len(v));
+}
+"#;
+    let output = run_memory("enumvaluememberqual", qualified);
+    assert_no_asan("enumvaluememberqual", &output);
+    assert_exit("enumvaluememberqual", &output, 3);
+}
+
+/// A view pointer member at an integer destination reports the conversion.
+///
+/// `.ptr` carries the view's raw pointer to its element (`raw u8` for `str`),
+/// and the frozen table converts a raw pointer to an integer only through an
+/// explicit cast, so the return reports the registered conversion (red at the
+/// phase base: the program was accepted and the strict build failed with
+/// `returning 'const u8 *' ... makes integer from pointer without a cast
+/// [-Werror=int-conversion]`).
+#[test]
+fn should_report_a_view_pointer_member_at_an_integer_destination() {
+    let source = r#"module spec.cc.viewmembers;
+
+func f(s: str): usize {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return i32(f(s));
+}
+"#;
+    assert_rejected_once(
+        "viewmembers",
+        source,
+        "E10200",
+        &["cannot convert 'raw u8' to 'usize' implicitly"],
+        &[],
+    );
+}
+
+/// The view length member stays accepted (the control).
+///
+/// `.len` is the view's element count typed `usize`, so the return needs no
+/// conversion and the run reads the length back; the pinned `toCString`
+/// cases keep the stdlib pointer-member conversion green alongside (green
+/// control at the phase base).
+#[test]
+fn should_keep_the_view_length_member_accepted() {
+    let source = r#"module spec.cc.viewmemberlen;
+
+func span(s: str): usize {
+    return s.len;
+}
+
+func main(): i32 {
+    let s: str = "abcd";
+    return i32(span(s));
+}
+"#;
+    let output = run_memory("viewmemberlen", source);
+    assert_no_asan("viewmemberlen", &output);
+    assert_exit("viewmemberlen", &output, 4);
+}
+

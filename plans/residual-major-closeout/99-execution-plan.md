@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 02:30
-> **Progress**: 12/39 tasks (31%) — Phase 2 complete
+> **Last Updated**: 2026-10-17 03:00
+> **Progress**: 14/39 tasks (36%) — Executing Phase 3
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -158,9 +158,9 @@ AR-6
 **Objective**: Pin the value-form enum member rejection on both paths, the `.ptr`/`.len` view
 member typing, and the `toCString` acceptance.
 
-- [ ] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (enumvaluemember, viewmembers) with the scoped/`.len`/`toCString` controls
-- [ ] 3.1.2 Run the suite and record the red phase (the scoped enum, `.len`, and `toCString`
-      controls verified green first)
+- [x] 3.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (enumvaluemember, viewmembers) with the scoped/`.len`/`toCString` controls ✅ (completed: 2026-10-17 03:00; five tests appended to `compiler/tests/checker_conformance_spec_test.rs` (+150 lines, additions only; 97 → 102 tests) — the concrete and instance value-form enum member reads (the strict build's `request for member 'A'`; E10212 post-fix), their scoped/qualified controls, the `.ptr` view member at an integer destination (`-Werror=int-conversion`; silently wrong in the memory leg) and the `.len` control; every accepted program folds a read-back; the `memenum` comment update delegated to the implementation)
+- [x] 3.1.2 Run the suite and record the red phase (the scoped enum, `.len`, and `toCString`
+      controls verified green first) ✅ (completed: 2026-10-17 03:00; plain 99 passed / 3 failed and ASan 99 passed / 3 failed — the three reds (the two enum paths and the `.ptr` conversion); the controls green in both legs, 0 sanitizer reports; parent-verified)
 
 ### Step 3.2: Implementation
 
