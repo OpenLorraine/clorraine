@@ -2449,3 +2449,89 @@ func main(): i32 {
     assert_no_asan("nullguardflatcall", &output);
     assert_exit("nullguardflatcall", &output, 0);
 }
+
+// ===== The extent-position `sizeof` fold =====
+
+/// A `sizeof` consumed as an array extent sizes the array by the C type.
+///
+/// The extent position defers to the same C spelling the value position
+/// emits, so the padded host struct (`ClS`, 8 bytes) and the host view
+/// (`ClStr`, 16 bytes) size their arrays exactly as the runtime `sizeof`
+/// reads them back: each `len` difference folds to zero (red at the phase
+/// base: the unpadded declared layout sized the arrays, `u8 pad[5]` and
+/// `u8 buf[8]`, and the runs exited 253 and 248).
+#[test]
+fn should_measure_the_extent_position_with_the_c_type_size() {
+    let struct_case = r#"module spec.mii.constfoldstruct;
+
+struct S {
+    a: i32;
+    b: u8;
+}
+
+const n: usize = sizeof(S);
+
+func main(): i32 {
+    let pad: u8[n] = [; 0];
+    let m: usize = sizeof(S);
+    return i32(len(pad)) - i32(m);
+}
+"#;
+    let output = run_memory("constfoldstruct", struct_case);
+    assert_no_asan("constfoldstruct", &output);
+    assert_exit("constfoldstruct", &output, 0);
+
+    let view_case = r#"module spec.mii.constfoldview;
+
+const n: usize = sizeof(str);
+
+func main(): i32 {
+    let buf: u8[n] = [; 0];
+    let m: usize = sizeof(str);
+    return i32(len(buf)) - i32(m);
+}
+"#;
+    let output = run_memory("constfoldview", view_case);
+    assert_no_asan("constfoldview", &output);
+    assert_exit("constfoldview", &output, 0);
+}
+
+/// The value-position `sizeof` folds keep the C type size.
+///
+/// A `sizeof`-valued constant and a `sizeof` read into a local both carry
+/// the C type size, so the padded struct and the view read back equal
+/// values in each pair (green controls at the phase base; the extent case
+/// above is the pinned red of the same folds).
+#[test]
+fn should_keep_the_value_position_sizeof_folds_green() {
+    let struct_value = r#"module spec.mii.constfoldstructvalue;
+
+struct S {
+    a: i32;
+    b: u8;
+}
+
+const n: usize = sizeof(S);
+
+func main(): i32 {
+    let m: usize = sizeof(S);
+    return i32(n) - i32(m);
+}
+"#;
+    let output = run_memory("constfoldstructvalue", struct_value);
+    assert_no_asan("constfoldstructvalue", &output);
+    assert_exit("constfoldstructvalue", &output, 0);
+
+    let view_value = r#"module spec.mii.constfoldviewvalue;
+
+const n: usize = sizeof(str);
+
+func main(): i32 {
+    let m: usize = sizeof(str);
+    return i32(n) - i32(m);
+}
+"#;
+    let output = run_memory("constfoldviewvalue", view_value);
+    assert_no_asan("constfoldviewvalue", &output);
+    assert_exit("constfoldviewvalue", &output, 0);
+}

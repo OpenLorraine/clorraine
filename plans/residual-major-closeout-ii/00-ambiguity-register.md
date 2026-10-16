@@ -240,3 +240,10 @@ raw-enum member read reports one `E10212` at the same rule and site as the value
 design's resolve-and-run alternative is not conformant. The ST-20 resolving half is re-pinned
 accordingly before the phase's red commit.
 
+**AR-23 (control substitution, auto-design):** The phase-8 authoring found AR-3's `DEF-356`
+"self-qualified" control unreproducible as green: the module-qualified reading (`b.holder.g(5)` with
+`b` a module name) is `E10219` red at the head and every preserved reference, the same red class as
+the cross-module value head. The nearest conforming control is the **value-headed** reading (`b` a
+module-level struct value, the current-module `let g`), which runs 0 and discriminates a wrong-callee
+redirect. The phase's control set is adjusted accordingly.
+

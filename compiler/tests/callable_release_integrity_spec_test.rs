@@ -2397,3 +2397,252 @@ func main(): i32 {
     let output = run_with_timeout("globalfnpriv", &program, &[]);
     assert_exit("globalfnpriv", &output, 0);
 }
+
+// ===== Module/global identity and the scope-aware checker typing =====
+
+/// An aliased import and a qualified value head reach the holder's binding.
+///
+/// The alias binds the source name's binding, so the call spells the holder's
+/// function symbol rather than the alias, which names no declaration; a
+/// struct global's field reached through its declaring module
+/// (`m.holder.g(5)`) resolves the leading segments as that module and spells
+/// the holder's symbol with the field. Every call reads its value back, so an
+/// unresolved or redirected callee cannot exit zero (red at the phase base:
+/// the alias emitted `cl_..._bg`, undeclared at the strict build, and the
+/// qualified value head was rejected `'...holder.g' is not declared`).
+#[test]
+fn should_call_an_aliased_import_and_a_qualified_value_head() {
+    let holder = r#"module spec.cri.funcglobalaliasmod;
+
+export func g(x: i32): i32 {
+    return x + 4;
+}
+"#;
+    let alias_main = r#"module spec.cri.funcglobalalias;
+
+import { g as bg } from spec.cri.funcglobalaliasmod;
+
+func main(): i32 {
+    return (bg(5) - 9) + (bg(7) - 11);
+}
+"#;
+    let (scratch, output, c_path) = compile_pair("funcglobalalias", holder, alias_main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "funcglobalalias: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "funcglobalalias: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("funcglobalalias", &scratch, &emitted);
+    let output = run_with_timeout("funcglobalalias", &program, &[]);
+    assert_exit("funcglobalalias", &output, 0);
+
+    let field_holder = r#"module spec.cri.funcglobalfieldmod;
+
+func qf(x: i32): i32 {
+    return x + 30;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+export let holder: Holder = Holder { g: qf };
+"#;
+    let qualified_main = r#"module spec.cri.funcglobalvaluehead;
+
+func main(): i32 {
+    return (spec.cri.funcglobalfieldmod.holder.g(5) - 35)
+        + (spec.cri.funcglobalfieldmod.holder.g(7) - 37);
+}
+"#;
+    let (scratch, output, c_path) =
+        compile_pair("funcglobalvaluehead", field_holder, qualified_main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "funcglobalvaluehead: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "funcglobalvaluehead: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("funcglobalvaluehead", &scratch, &emitted);
+    let output = run_with_timeout("funcglobalvaluehead", &program, &[]);
+    assert_exit("funcglobalvaluehead", &output, 0);
+}
+
+/// A value-headed field call and a plain field import stay on their field.
+///
+/// The value `b` heads the field call, so the module's own func-typed global
+/// `g` of the same simple name must not displace the field; the plain import
+/// names its struct global directly, and its field call stays on the
+/// module's binding. Both spellings read their values back, so a redirected
+/// callee cannot exit zero (green controls at the phase base; the module
+/// global would exit 98 in the value-headed case).
+#[test]
+fn should_keep_a_value_headed_field_call_and_a_plain_field_import_green() {
+    let value_headed = r#"module spec.cri.funcglobalselfq;
+
+func field(x: i32): i32 {
+    return x;
+}
+
+func wrong(x: i32): i32 {
+    return x + 98;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+struct Outer {
+    holder: Holder;
+}
+
+let b: Outer = Outer { holder: Holder { g: field } };
+
+let g: func(i32): i32 = wrong;
+
+func main(): i32 {
+    return b.holder.g(5) - 5;
+}
+"#;
+    let output = run_memory("funcglobalselfq", value_headed);
+    assert_no_asan("funcglobalselfq", &output);
+    assert_exit("funcglobalselfq", &output, 0);
+
+    let holder = r#"module spec.cri.funcglobalplainmod;
+
+func pf(x: i32): i32 {
+    return x + 20;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+export let holder: Holder = Holder { g: pf };
+"#;
+    let plain_main = r#"module spec.cri.funcglobalplain;
+
+import { holder } from spec.cri.funcglobalplainmod;
+
+func main(): i32 {
+    return (holder.g(5) - 25) + (holder.g(8) - 28);
+}
+"#;
+    let (scratch, output, c_path) = compile_pair("funcglobalplain", holder, plain_main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "funcglobalplain: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "funcglobalplain: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("funcglobalplain", &scratch, &emitted);
+    let output = run_with_timeout("funcglobalplain", &program, &[]);
+    assert_exit("funcglobalplain", &output, 0);
+}
+
+/// A bare func-global call is typed through the scope's binding.
+///
+/// The caller's import binds `f` to the holder's `func(i32): i32` global, so
+/// the argument `"x"` reports the frozen conversion once instead of emitting
+/// a translation unit the strict build rejects; a same-named `func(str)`
+/// function in another loaded module is not in scope and never provides the
+/// callee's signature (red at the phase base: accepted, then the strict
+/// build failed with `incompatible type for argument 1 of '..._f'`).
+#[test]
+fn should_type_a_bare_func_global_call_through_the_scope_binding() {
+    let holder = r#"module spec.cri.sigscopeholder;
+
+func hg(x: i32): i32 {
+    return x + 200;
+}
+
+export let f: func(i32): i32 = hg;
+"#;
+    let other = r#"module spec.cri.sigscopeother;
+
+export func f(s: str): i32 {
+    return 0;
+}
+"#;
+    let mismatched = r#"module spec.cri.sigscopemain;
+
+import { f } from spec.cri.sigscopeholder;
+
+func main(): i32 {
+    return f("x") - 0;
+}
+"#;
+    let (_scratch, output, c_path) = compile_three("sigscope", holder, other, mismatched);
+    assert_rejected_output(
+        "sigscope",
+        &output,
+        &c_path,
+        "E10200",
+        &["cannot convert 'static str' to 'i32' implicitly"],
+        &[],
+    );
+}
+
+/// The matching and qualified func-global calls keep their values.
+///
+/// The imported `f(5)` and the qualified `holder.f(5)` both name the
+/// holder's func-typed global, and the same-named `func(str)` in the other
+/// loaded module stays out of scope for both; each call reads its value
+/// back, so a redirected callee cannot exit zero (green controls at the
+/// phase base).
+#[test]
+fn should_keep_the_matching_and_qualified_func_global_calls_green() {
+    let holder = r#"module spec.cri.sigscopeholder;
+
+func hg(x: i32): i32 {
+    return x + 200;
+}
+
+export let f: func(i32): i32 = hg;
+"#;
+    let other = r#"module spec.cri.sigscopeother;
+
+export func f(s: str): i32 {
+    return 0;
+}
+"#;
+    let control = r#"module spec.cri.sigscopegreen;
+
+import { f } from spec.cri.sigscopeholder;
+
+func main(): i32 {
+    return (f(5) - 205) + (spec.cri.sigscopeholder.f(5) - 205);
+}
+"#;
+    let (scratch, output, c_path) = compile_three("sigscopegreen", holder, other, control);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "sigscopegreen: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "sigscopegreen: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("sigscopegreen", &scratch, &emitted);
+    let output = run_with_timeout("sigscopegreen", &program, &[]);
+    assert_exit("sigscopegreen", &output, 0);
+}

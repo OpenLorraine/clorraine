@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 17:00
-> **Progress**: 42/51 tasks (82%) — Phase 7 complete
+> **Last Updated**: 2026-10-19 18:00
+> **Progress**: 44/51 tasks (86%) — Executing Phase 8
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -370,12 +370,12 @@ ST-21..ST-23 · AR-13
 **Objective**: Pin the aliased/qualified identity, the deferred extent fold, and the scope-aware
 checker typing.
 
-- [ ] 8.1.1 [spec-author] Write the phase cases — `compiler/tests/callable_release_integrity_spec_test.rs`
+- [x] 8.1.1 [spec-author] Write the phase cases — `compiler/tests/callable_release_integrity_spec_test.rs`
       (funcglobalresiduals, sconetyping) and
       `compiler/tests/module_initializer_integrity_spec_test.rs` (constfoldabi) with their
-      controls
-- [ ] 8.1.2 Run the suites and record the red phase (the self-qualified/plain/`k18` controls and
-      the `DEF-357` value folds verified green first)
+      controls ✅ (completed: 2026-10-19 18:00; three tests appended across the callable and module-initializer suites (+249/+86 lines, additions only) — the func-global residuals (`DEF-356`: the aliased-import call's undeclared symbol red, the qualified value head's two `E10219` sites, with the value-headed and plain-field-import controls per AR-23), the const-folder ABI extent (`DEF-357`: the `sizeof(S)`-extent and `sizeof(str)` reds with the value-position fold controls), and the scope-aware typing (`DEF-359`: the bare call's accepted sig mismatch with the matching/qualified controls); the message pin grounded in a declared-parameter probe)
+- [x] 8.1.2 Run the suites and record the red phase (the self-qualified/plain/`k18` controls and
+      the `DEF-357` value folds verified green first) ✅ (completed: 2026-10-19 18:00; the callable suite 59 passed / 2 failed and the module-initializer 63 passed / 1 failed in both plain and `RDC_ASAN=1` — exactly the three new reds; the controls green; parent-verified)
 
 ### Step 8.2: Implementation
 
