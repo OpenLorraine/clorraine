@@ -136,25 +136,28 @@ pub fn runtime_span(loaded: &Loaded, module: &str) -> Option<Span> {
 
 /// Resolves a dotted segment list the way the name resolver does.
 fn resolve_segments(loaded: &Loaded, module: &Module, segments: &[String]) -> Option<GlobalRef> {
-    let (last, head) = segments.split_last()?;
-    let path = head.join(".");
-    if !path.is_empty() {
-        if path == module.name {
-            if let Some((module, name)) = binding_in_module(loaded, &module.name, last) {
-                return Some(GlobalRef {
-                    module,
-                    name,
-                    fields: Vec::new(),
-                });
-            }
-        } else if loaded.has_module(&path) && loaded.module_exports(&path, last) {
-            if let Some((module, name)) = binding_in_module(loaded, &path, last) {
-                return Some(GlobalRef {
-                    module,
-                    name,
-                    fields: Vec::new(),
-                });
-            }
+    // A module path can reach a binding with fields after it: the leading
+    // segments spell a loaded module (or the reading module itself) and the
+    // next segment names a binding the module declares and exports, so the
+    // segments after the binding are field projections. The longest module
+    // prefix wins, matching the renderer's binding-path policy.
+    for split in (1..segments.len()).rev() {
+        let path = segments[..split].join(".");
+        if path.is_empty() {
+            continue;
+        }
+        let binding = &segments[split];
+        if path != module.name
+            && !(loaded.has_module(&path) && loaded.module_exports(&path, binding))
+        {
+            continue;
+        }
+        if let Some((found, name)) = binding_in_module(loaded, &path, binding) {
+            return Some(GlobalRef {
+                module: found,
+                name,
+                fields: segments[split + 1..].to_vec(),
+            });
         }
     }
     // A member read of a same-module binding or an imported binding. The head

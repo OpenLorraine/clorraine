@@ -1258,3 +1258,111 @@ func main(): i32 {
         "pinmodapp: the read must not go through the imported binding; emitted C:\n{emitted}"
     );
 }
+
+/// A bare func-global call's mismatch reports once at the argument.
+///
+/// The imported `f` is the holder's `func(i32)` global (another loaded module
+/// declares a same-named `func(str)`), so a string literal reports the frozen
+/// conversion once, at the written argument — the record the scope-aware
+/// typing produces. The emission pin above is the matching-call control.
+#[test]
+fn should_report_a_bare_func_global_call_mismatch_once() {
+    let holder = r#"module spec.criimpl.scoperepholder;
+
+func hg(x: i32): i32 {
+    return x + 200;
+}
+
+export let f: func(i32): i32 = hg;
+"#;
+    let other = r#"module spec.criimpl.scoperepother;
+
+export func f(s: str): i32 {
+    return 0;
+}
+"#;
+    let main = r#"module spec.criimpl.scoperep;
+
+import { f } from spec.criimpl.scoperepholder;
+
+func main(): i32 {
+    return f("x") - 0;
+}
+"#;
+    let scratch = ScratchDir::new("scoperep");
+    let first_path = scratch.path().join("first.clo");
+    let second_path = scratch.path().join("second.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&first_path, holder)
+        .unwrap_or_else(|err| panic!("scoperep: cannot write the first holder: {err}"));
+    std::fs::write(&second_path, other)
+        .unwrap_or_else(|err| panic!("scoperep: cannot write the second holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("scoperep: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        first_path.display().to_string(),
+        second_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "scoperep: the front end accepted a mismatched call"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "scoperep: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'static str' to 'i32' implicitly"),
+        "scoperep: the conversion message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:6:14"),
+        "scoperep: the argument's span is missing; stderr:\n{stderr}"
+    );
+}
+
+/// An aliased `take` callee empties the caller's slot after the call.
+///
+/// The alias keeps the imported declaration's modes, so the call records the
+/// same move-out a plain import records: the slot is emptied right after the
+/// call and the callee owns the value.
+#[test]
+fn should_move_out_an_aliased_take_arguments_place() {
+    let holder = r#"module spec.criimpl.aliastakepinholder;
+
+export func sink(take s: String): i32 {
+    return i32(len(s));
+}
+"#;
+    let main = r#"module spec.criimpl.aliastakepin;
+
+import { stringOf } from std.text;
+import { sink as drop } from spec.criimpl.aliastakepinholder;
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    return drop(s) - 4;
+}
+"#;
+    let emitted = emit_pair("aliastakepin", holder, main);
+    // The name with the call's own argument: the prototype and the definition
+    // spell the parameter's type there instead.
+    let call_at = emitted
+        .find("cl_spec_criimpl_aliastakepinholder_sink(s)")
+        .unwrap_or_else(|| panic!("aliastakepin: the call is missing; emitted C:\n{emitted}"));
+    assert_move_out_follows("aliastakepin", &emitted, call_at);
+    assert_eq!(
+        count(&emitted, "_drop("),
+        0,
+        "aliastakepin: the alias must not spell the symbol; emitted C:\n{emitted}"
+    );
+}

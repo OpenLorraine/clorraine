@@ -685,7 +685,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     }
 
     /// The declared parameter modes of a known user or `ffi` function.
+    ///
+    /// The written name resolves the way the checker resolves it: the caller's
+    /// own declaration first, then an import binding under its original name,
+    /// and only then the program-wide simple-name map. An aliased import
+    /// therefore keeps the imported declaration's modes, so a `take`
+    /// parameter still moves its argument out of the caller's slot.
     pub(super) fn callee_modes(&self, name: &str) -> Option<Vec<Mode>> {
+        if let Some(signature) = self.sema.table.function(&self.module.name, name) {
+            return Some(signature.modes.clone());
+        }
+        if let Some(binding) = self.module.import(name) {
+            if !binding.poisoned {
+                if let Some(signature) =
+                    self.sema.table.function(&binding.module, &binding.original)
+                {
+                    return Some(signature.modes.clone());
+                }
+            }
+        }
         match self.program.callee(name) {
             Some(Callee::User(decl)) => Some(decl.params.iter().map(|param| param.mode).collect()),
             Some(Callee::Ffi(signature)) => {

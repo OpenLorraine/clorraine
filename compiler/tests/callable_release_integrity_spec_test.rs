@@ -235,6 +235,62 @@ fn build_host_c(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
     program
 }
 
+/// Builds a multi-file program's emission with the sanitizer.
+///
+/// The single-file `run_memory` path selects the sanitizer when `RDC_ASAN` is
+/// set; a module program needs the same build, so this helper mirrors the
+/// flags that leg uses.
+fn build_host_c_asan(tag: &str, scratch: &ScratchDir, emitted: &str) -> PathBuf {
+    let c_path = scratch.path().join("build_asan.c");
+    std::fs::write(&c_path, emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog_asan");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-fsanitize=address",
+            "-no-pie",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the sanitizer build failed; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    program
+}
+
+/// Compiles and runs a two-file module program under the active memory leg.
+///
+/// The program must be accepted and its emission must build; the run happens
+/// with the same build `run_memory` selects, so the sanitizer leg checks the
+/// same shapes the single-file cases check.
+fn run_pair_memory(tag: &str, holder: &str, main: &str) -> Output {
+    let (scratch, output, c_path) = compile_pair(tag, holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = if std::env::var_os("RDC_ASAN").is_some() {
+        build_host_c_asan(tag, &scratch, &emitted)
+    } else {
+        build_host_c(tag, &scratch, &emitted)
+    };
+    run_with_timeout(tag, &program, &[])
+}
+
 /// Runs a built program with a time limit and the given environment values.
 fn run_with_timeout(tag: &str, program: &Path, env: &[(&str, &str)]) -> Output {
     let mut command = Command::new(program);
@@ -2686,4 +2742,84 @@ func main(): i32 {
     let program = build_host_c("collisionapp", &scratch, &emitted);
     let output = run_with_timeout("collisionapp", &program, &[]);
     assert_exit("collisionapp", &output, 0);
+}
+
+/// An aliased import of a `take` function moves its argument out.
+///
+/// The alias binds the imported declaration, so the caller's move-out is
+/// emitted exactly as the plain import's is: the callee owns the value and the
+/// caller's slot empties, so no double release is possible (the run is
+/// sanitizer-clean in the memory leg).
+#[test]
+fn should_move_out_an_aliased_take_arguments_place() {
+    let holder = r#"module spec.cri.aliastakeholder;
+
+export func sink(take s: String): i32 {
+    return i32(len(s));
+}
+
+export func lend(borrow s: String): i32 {
+    return i32(len(s));
+}
+"#;
+    let main = r#"module spec.cri.aliastakemain;
+
+import { stringOf } from std.text;
+import { sink as drop, lend as use } from spec.cri.aliastakeholder;
+
+func main(): i32 {
+    let s: String = stringOf("abcd");
+    let n: i32 = use(s);
+    return drop(s) + n - 8;
+}
+"#;
+    let output = run_pair_memory("aliastake", holder, main);
+    assert_no_asan("aliastake", &output);
+    assert_exit("aliastake", &output, 0);
+}
+
+/// A two-field module-path callee carries its receiver.
+///
+/// The module path reaches the binding `outer`, the field `holder`, and the
+/// callable field `g`; the emitted call goes through the receiver the module
+/// declares, so the strict build accepts it and the run reads its value back.
+#[test]
+fn should_call_a_two_field_module_path_callee() {
+    let holder = r#"module spec.cri.deepheadmod;
+
+func qf(x: i32): i32 {
+    return x + 30;
+}
+
+struct Holder {
+    g: func(i32): i32;
+}
+
+struct Outer {
+    holder: Holder;
+}
+
+export let outer: Outer = Outer { holder: Holder { g: qf } };
+"#;
+    let main = r#"module spec.cri.deepheadmain;
+
+func main(): i32 {
+    return spec.cri.deepheadmod.outer.holder.g(5) - 35;
+}
+"#;
+    let (scratch, output, c_path) = compile_pair("deephead", holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "deephead: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "deephead: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("deephead", &scratch, &emitted);
+    let output = run_with_timeout("deephead", &program, &[]);
+    assert_exit("deephead", &output, 0);
 }
