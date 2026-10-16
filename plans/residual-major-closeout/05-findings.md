@@ -137,3 +137,37 @@ and under `RDC_ASAN=1`, the baseline suite counts)_
 **Code**: _(to be filled — the phase commits and the specification-first loop per phase)_
 
 **Plan**: _(marked Complete in `00-index.md` at close)_
+
+## Phase 1 — Initializer call resolution, guards, and view conditionals
+
+**Reviewed implementation**: `f39c268` plus one correction (`b8e6029`). **Lenses**: correctness (K1R),
+emission-integrity (the 27-delta audit), and memory-safety (P1-P4).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | K1R-1 (the receiver-blind inference mis-keys a receiver-bound generic dot call — the emitted C calls the wrong specialization — and adds two spurious instances in existing programs), K1R-2 (the argument destination — pre-existing, filed `DEF-336`), K1R-3 (the baseline placeholder), K1R-4 (the differential undercount: 22 measured vs 19 claimed); 2,026-inline-program differential with no status or diagnostic change |
+| emission-integrity | FINDINGS — 1 minor | F-1 (a dead mis-keyed specialization — the same K1R-1 root; the audit's own re-check confirms the correction removed it); otherwise 0 head-only strict failures (77 base → 71 head), 27 intended deltas over 3,663 programs, re-emission 3,663/3,663 identical, both alternate profiles clean, ASan clean |
+| memory-safety | CONFIRMED CLEAN — 0 new classes | 85 probes: 51 head-fixed, 30 controls clean, 0 base-clean-defective; four pre-existing NULL-deref siblings (P1-P4) filed |
+
+### Fix round
+
+| Item | Outcome |
+|------|---------|
+| C1 (K1R-1/F-1) | **Fixed**: the inference is receiver-inclusive at both sites (the dot receiver as argument position zero, skipping callable values) — the probe keys `cl_mergeBox__str_i32`, the two spurious-instance programs revert to the base symbol set, and `d02` builds and runs; a spec case and an impl pin added |
+| K1R-3/K1R-4 | **Recorded**: the phase-1 baseline (`d949f7f`); the index status; the wider 27-delta accounting (this section) |
+| K1R-2 | **Filed**: `DEF-336` |
+
+### Confirmations
+
+The correction's re-check: the audit (post-review context) confirms the dead instance is gone from
+both F-1 programs and `d02` builds and runs at `b8e6029`; the `st35` definition-order swap is
+accepted (the same symbol set, run-identical, deterministic); the suites are 45/45 plain and under
+`RDC_ASAN=1`, the impl pins 26/26, `make check` exit 0.
+
+### Filed rows
+
+`DEF-335` (the nullable-view conditional call and place arms), `DEF-336` (the argument),
+`DEF-337` (the initializer member projection), `DEF-338` (the local-headed qualified receiver's
+initializer dot call).

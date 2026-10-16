@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-16 18:30
-> **Progress**: 5/39 tasks (13%) — Phase 1 in review
+> **Last Updated**: 2026-10-16 21:00
+> **Progress**: 6/39 tasks (15%) — Phase 1 complete
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -85,9 +85,9 @@ control.
       per-arm view construction, the release-in-block shape, the byte-identical explicit-type
       control, the re-emission determinism pin) —
       `compiler/tests/module_initializer_integrity_impl_test.rs` ✅ (completed: 2026-10-16 18:30; six pins added (25 tests total, additions only) — the expression-callee receiver call, the keyed inferred instances (the call and the view builder with the typed temporary), the in-block guarded release, the per-arm nullable view construction (module and body), and a discriminating re-emission pin; all six fail at `d949f7f` for the intended reason; 25/25 green, `make check` exit 0 (one pre-existing dead-code warning cleared))
-- [ ] 1.3.2 Phase review evidence and progress update — commit per the active commit mode;
+- [x] 1.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses (correctness + emission-integrity + memory-safety; the reviewer
-      packet includes the blast-radius step and the test-integrity step)
+      packet includes the blast-radius step and the test-integrity step) ✅ (completed: 2026-10-16 21:00; all three lenses dispatched plus one correction round: K1R-1/F-1 (the receiver-inclusive inference at both sites) fixed — the wrong key and the two spurious instances gone, `d02` builds and runs; K1R-2 filed (`DEF-336`) and the memory lens's four pre-existing siblings filed (`DEF-335`–`337`, `DEF-338`); K1R-3/K1R-4 recorded (the baseline, the status, the wider 27-delta accounting); the closing verification: the module-initializer spec 45/45 plain and ASan, the impl pins 26/26, `make check` exit 0, 0 head-only strict failures, determinism 3,663/3,663)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`; the strict-build probes
 
