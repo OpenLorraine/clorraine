@@ -146,7 +146,7 @@ judgment with their controls.
 
 ## Phase 3: Member typing: enum value form and view members
 
-> **Phase baseline tree**: _(recorded at phase start)_
+> **Phase baseline tree**: `15051a3` (the phase-2 red-cases baseline)
 > **Lenses**: correctness + semantics + emission-integrity (AR-10)
 > **Reasoning**: medium — the member dispatch's enum arm and the typed view members; the
 > scoped forms and the `toCString` acceptance are the pinned controls
