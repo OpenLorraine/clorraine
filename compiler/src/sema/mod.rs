@@ -88,6 +88,13 @@ pub struct SemaOutput {
     /// through the matching [`OpaqueProjection`] and applies the concrete
     /// conversion rule.
     pub opaque_member_uses: Vec<OpaqueMemberUse>,
+    /// Values whose conversion is deferred to their instance.
+    ///
+    /// The written source mentions a type parameter or is the null shape, so
+    /// the declaration cannot judge the conversion; the per-instance audit
+    /// resolves both sides and applies the ordinary conversion (or null)
+    /// judgment.
+    pub opaque_conversions: Vec<OpaqueConversion>,
 }
 
 /// A lambda body that returns or consumes a by-value capture whose
@@ -145,6 +152,23 @@ pub struct OpaqueMemberUse {
     pub sanctioned: bool,
 }
 
+/// One value whose conversion is deferred to its instance.
+///
+/// The written source mentions a type parameter or is the null shape, so the
+/// declaration cannot judge the conversion: the instance audit substitutes the
+/// instance's arguments and applies the ordinary conversion (or null)
+/// judgment to the resolved source and destination.
+pub struct OpaqueConversion {
+    /// The enclosing function's name.
+    pub function: String,
+    /// The written source's type.
+    pub source: Ty,
+    /// The destination the value must convert to.
+    pub expected: Ty,
+    /// The value's span.
+    pub span: Span,
+}
+
 /// One index read on a bare type parameter.
 ///
 /// The declaration cannot judge the bounds: the substitution may be any type,
@@ -179,6 +203,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     let mut opaque_projections: Vec<OpaqueProjection> = Vec::new();
     let mut opaque_indexes: Vec<OpaqueIndex> = Vec::new();
     let mut opaque_member_uses: Vec<OpaqueMemberUse> = Vec::new();
+    let mut opaque_conversions: Vec<OpaqueConversion> = Vec::new();
     // Lambda site ids are program-global and deterministic: they count the
     // lambda expressions in source order across every module, so the same
     // program always names the same lifted function and environment.
@@ -192,6 +217,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_projections.extend(checker.opaque_projections.drain(..));
         opaque_indexes.extend(checker.opaque_indexes.drain(..));
         opaque_member_uses.extend(checker.opaque_member_uses.drain(..));
+        opaque_conversions.extend(checker.opaque_conversions.drain(..));
         expr_types.extend(checker.recorded.drain(..));
     }
     SemaOutput {
@@ -202,6 +228,7 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
         opaque_projections,
         opaque_indexes,
         opaque_member_uses,
+        opaque_conversions,
     }
 }
 
@@ -249,6 +276,8 @@ struct Checker<'a, 'd> {
     opaque_indexes: Vec<OpaqueIndex>,
     /// Member reads on a bare type parameter used at a destination.
     opaque_member_uses: Vec<OpaqueMemberUse>,
+    /// Values whose conversion is deferred to their instance, in check order.
+    opaque_conversions: Vec<OpaqueConversion>,
     /// The member-read expressions whose base is a view and whose spelling is
     /// `ptr`: they are the one form the frozen conversion table lets reach a
     /// `cstring` destination without a cast in the source.
@@ -256,6 +285,10 @@ struct Checker<'a, 'd> {
     /// The resolved parameter types of each `ffi` declaration this module
     /// calls, so its declared types are validated once per declaration.
     ffi_params: BTreeMap<String, Vec<Ty>>,
+    /// The resolved result type of each `ffi` declaration this module calls,
+    /// resolved once with the parameters so the ordinary conversion judgments
+    /// see the result's declared type.
+    ffi_results: BTreeMap<String, Ty>,
     /// The capture lists of the lambdas currently being checked, innermost
     /// last. A body write or move of a name found here is a capture error.
     lambda_captures: Vec<Vec<CaptureInfo>>,
@@ -313,8 +346,10 @@ impl<'a, 'd> Checker<'a, 'd> {
             opaque_projections: Vec::new(),
             opaque_indexes: Vec::new(),
             opaque_member_uses: Vec::new(),
+            opaque_conversions: Vec::new(),
             view_pointer_members: BTreeSet::new(),
             ffi_params: BTreeMap::new(),
+            ffi_results: BTreeMap::new(),
             lambda_captures: Vec::new(),
             lambda_floors: Vec::new(),
             lambda_listed: Vec::new(),

@@ -58,6 +58,7 @@ pub fn check(
     check_opaque_projections(program, sema, mono, diagnostics);
     check_opaque_indexes(program, sema, mono, diagnostics);
     check_opaque_member_uses(program, sema, mono, diagnostics);
+    check_deferred_conversions(program, sema, mono, diagnostics);
     check_out_slot_requirements(program, mono, diagnostics);
     check_storable_slot_requirements(program, sema, mono, diagnostics);
     check_self_assign_requirements(program, sema, mono, diagnostics);
@@ -1168,6 +1169,81 @@ fn resolved_member_ty(sema: &SemaOutput, base: &Ty, name: &str) -> Option<Ty> {
         TyKind::Raw(inner) => resolved_member_ty(sema, inner, name),
         _ => crate::types::view_member_ty(base, name),
     }
+}
+
+/// Reports the frozen judgment for a value whose conversion was deferred.
+///
+/// The declaration records a value whose type mentions a type parameter or is
+/// the null shape; at each instance the resolved source and destination face
+/// the ordinary judgment — the null shape at a concrete destination reports
+/// the null rule, and any other pair that the frozen table does not convert
+/// implicitly reports the conversion. One site reports once, at its first
+/// offending instance; a legal instance reports nothing.
+fn check_deferred_conversions(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for conversion in &sema.opaque_conversions {
+        let Some(Callee::User(decl)) = program.callee(&conversion.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != conversion.function {
+                continue;
+            }
+            let expected = substitute_instance(&conversion.expected, &params, &instance.args);
+            if crate::types::contains_param(&expected) || expected.is_void() {
+                continue;
+            }
+            let source = substitute_instance(&conversion.source, &params, &instance.args);
+            let Some(report) = deferred_conversion_report(&source, &expected, conversion.span)
+            else {
+                continue;
+            };
+            diagnostics.push(report);
+            break;
+        }
+    }
+}
+
+/// The frozen report for one deferred value at its resolved destination.
+///
+/// `None` means the pair is legal: the null shape fits a nullable destination,
+/// an unresolved source keeps the accepted path, and every other pair converts
+/// implicitly. The null shape reports the null rule because it has no concrete
+/// value surface to convert; every other rejected pair reports the frozen
+/// conversion.
+fn deferred_conversion_report(source: &Ty, expected: &Ty, span: Span) -> Option<Diagnostic> {
+    if crate::types::is_null_shaped(source) {
+        if expected.nullable || expected.is_unknown() {
+            return None;
+        }
+        return Some(
+            Diagnostic::error("E10012", "'null' is not allowed here", span)
+                .with_help("declare the type `T?` or avoid the empty state"),
+        );
+    }
+    if source.is_unknown() || crate::types::contains_param(source) {
+        return None;
+    }
+    if crate::types::implicit_conversion(source, expected) {
+        return None;
+    }
+    Some(
+        Diagnostic::error(
+            "E10200",
+            format!(
+                "cannot convert '{}' to '{}' implicitly",
+                source.display(),
+                expected.display()
+            ),
+            span,
+        )
+        .with_help("use an explicit cast `T(expr)`"),
+    )
 }
 
 /// True when a value-form member resolves on the substituted type.

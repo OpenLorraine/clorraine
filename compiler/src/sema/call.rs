@@ -73,12 +73,14 @@ impl Checker<'_, '_> {
                 // written count is judged against it, and the arguments are
                 // walked for their own errors. The ABI crossing of a view or
                 // handle argument is the emitter's rule, not a conversion.
+                // The call's result carries the declared return type, so the
+                // ordinary conversion judgments see it at the result's uses.
                 if matches!(self.visible_decl_kind(name), Some(crate::load::DeclKind::Ffi)) {
                     if let Some(signature) = self.ffi_signature(name) {
                         let params = self.ffi_parameter_types(name, signature);
                         self.check_ffi_arguments(name, &params, args, span);
                         let _ = self.check_value(callee, None);
-                        return Ty::unknown();
+                        return self.ffi_result_type(name, signature);
                     }
                 }
                 // The compiler-known `text(v)` formatter is not declared in
@@ -705,6 +707,22 @@ impl Checker<'_, '_> {
         params
     }
 
+    /// The resolved result type of an `ffi` declaration, validated once.
+    ///
+    /// The declared return type resolves at the declaration's first call site
+    /// and is cached for the rest of the module, exactly as the parameter
+    /// types are, so the ordinary conversion judgments see the result's real
+    /// type instead of an unresolved value. A declaration written `: void`
+    /// keeps the void type.
+    fn ffi_result_type(&mut self, name: &str, signature: &crate::ast::FuncSignature) -> Ty {
+        if let Some(result) = self.ffi_results.get(name) {
+            return result.clone();
+        }
+        let result = self.resolve_type(&signature.returns);
+        self.ffi_results.insert(name.to_owned(), result.clone());
+        result
+    }
+
     /// Checks an `ffi` call's written arguments.
     ///
     /// An `ffi` declaration carries no checked signature in the type table, so
@@ -754,6 +772,20 @@ impl Checker<'_, '_> {
                             });
                             continue;
                         }
+                    }
+                }
+                // A parameter-typed argument resolves at its instance: the
+                // conversion is recorded and judged there, exactly as the
+                // ordinary call path judges its instances.
+                if crate::types::contains_param(&ty) {
+                    if let Some(function) = self.function_name.clone() {
+                        self.opaque_conversions.push(super::OpaqueConversion {
+                            function,
+                            source: ty.clone(),
+                            expected: param.clone(),
+                            span: arg.value.span,
+                        });
+                        continue;
                     }
                 }
                 if !ty.is_unknown() && !crate::types::contains_param(&ty) {

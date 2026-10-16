@@ -19,7 +19,9 @@ use crate::profile::Profile;
 use crate::span::Span;
 use crate::types::{ implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite, ClosureTy, FuncParam, FuncTy, Ty, TyKind, PlacePathStep };
 
-use super::{CaptureMoveRequirement, Checker, OpaqueIndex, OpaqueMemberUse, OpaqueProjection};
+use super::{
+    CaptureMoveRequirement, Checker, OpaqueConversion, OpaqueIndex, OpaqueMemberUse, OpaqueProjection,
+};
 
 impl Checker<'_, '_> {
     /// Checks an expression, records its type, and returns it.
@@ -434,6 +436,20 @@ impl Checker<'_, '_> {
                     });
                     return ty;
                 }
+            }
+        }
+        // A source that mentions a type parameter or that is the null shape
+        // cannot be judged at the declaration: the conversion is recorded and
+        // the instance audit applies the ordinary conversion (or null)
+        // judgment to the resolved source and destination.
+        if crate::types::contains_param(&ty) || crate::types::is_null_shaped(&ty) {
+            if let Some(function) = self.function_name.clone() {
+                self.opaque_conversions.push(OpaqueConversion {
+                    function,
+                    source: ty.clone(),
+                    expected: expected.clone(),
+                    span: expr.span,
+                });
             }
         }
         self.check_conversion(&ty, expected, expr.span);
