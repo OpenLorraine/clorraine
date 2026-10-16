@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-16 22:45
-> **Progress**: 10/39 tasks (26%) — Phase 2 in review
+> **Last Updated**: 2026-10-16 23:10
+> **Progress**: 11/39 tasks (28%) — Phase 2 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -129,10 +129,10 @@ judgment with their controls.
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the element declarations and borrow address
+- [x] 2.3.1 Write the phase implementation pins (the element declarations and borrow address
       temporary, the keyed instance symbols, the environment field declarator, the guard
       condition, the re-emission determinism pin) —
-      `compiler/tests/checker_conformance_impl_test.rs`
+      `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-16 23:10; five pins added (30 tests total, additions only) — the projected-place argument keying (the keyed symbol present, the opaque key absent), the element-typed capture environment, the placeholder inference keying, the runtime row guard with the constant `E10216` rejection, and a discriminating re-emission pin; all five fail at `15051a3` for the intended reason; 30/30 green, `make check` exit 0)
 - [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; the memory lens probes the element reads/captures on both paths
 

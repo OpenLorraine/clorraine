@@ -904,3 +904,226 @@ func main(): i32 {
     assert_contains("captureduppin", &emitted, "cl_lambda_0__i32");
 }
 
+// ===== Element placeholder, inference, and bounds =====
+
+/// A loop-element member read passed to a generic callee.
+///
+/// `id(v.y)` over `S[2]` resolves the projected place at the instance, so the
+/// argument keys the substituted field type; the re-emission pin reuses it.
+const PROJECTED_ELEMENT_SOURCE: &str = r#"module spec.cc.impl.elemprojkey;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (v in xs) {
+        total = total + id(v.y);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+
+/// A projected place argument keys the substituted field type.
+///
+/// The member read on the element placeholder resolves through the instance's
+/// substituted struct, so the inferred `id` instance keys `i32` and the keyed
+/// declaration and call emit; the opaque key must not appear (red at the
+/// phase base: the call keyed `cl_id__unknown` and the strict build failed
+/// with an implicit declaration).
+#[test]
+fn should_key_a_projected_element_argument_in_the_instance() {
+    let emitted = emit_host("elemprojkey", PROJECTED_ELEMENT_SOURCE);
+    assert_contains("elemprojkey", &emitted, "static i32 cl_id__i32(i32 x);");
+    assert_contains(
+        "elemprojkey",
+        &emitted,
+        "total = (i32)((u32)total + (u32)cl_id__i32(v.y));",
+    );
+    assert_eq!(
+        count(&emitted, "cl_id__unknown"),
+        0,
+        "elemprojkey: the opaque key must not be emitted"
+    );
+}
+
+/// A capture of a loop element types its environment from the element.
+///
+/// The captured binding's checked type is the element placeholder, so the
+/// lifted lambda's environment carries the instance's struct and the member
+/// read resolves; the int-typed field must not appear (red at the phase base:
+/// `incompatible types when initializing type 'int' using type 'ClS'` and
+/// `request for member 'y'`).
+#[test]
+fn should_type_the_element_capture_environment_in_the_instance() {
+    let source = r#"module spec.cc.impl.elemcapture;
+
+struct S { y: i32; }
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (v in xs) {
+        total = total + ([v] () => v.y)();
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    let emitted = emit_host("elemcapture", source);
+    assert_contains(
+        "elemcapture",
+        &emitted,
+        "struct ClEnv_0__arr2_S {\n    ClS v;\n};",
+    );
+    assert_eq!(
+        count(&emitted, "    i32 v;\n"),
+        0,
+        "elemcapture: the environment field must not be int-typed"
+    );
+}
+
+/// An inferred element argument keys the substituted element.
+///
+/// The argument is the loop element itself, so the `inner` instance maps the
+/// placeholder to the argument's one-step element and the keyed declaration
+/// and call emit; the opaque key must not appear (red at the phase base: the
+/// call keyed `cl_inner__unknown` and the strict build failed with an
+/// implicit declaration).
+#[test]
+fn should_key_a_placeholder_element_argument_in_the_instance() {
+    let source = r#"module spec.cc.impl.eleminfer;
+
+func inner<T>(x: T): T { return x; }
+
+func outer<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + inner(v);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    return outer<i32[2]>(a);
+}
+"#;
+    let emitted = emit_host("eleminfer", source);
+    assert_contains("eleminfer", &emitted, "static i32 cl_inner__i32(i32 x);");
+    assert_contains(
+        "eleminfer",
+        &emitted,
+        "n = (i32)((u32)n + (u32)cl_inner__i32(v));",
+    );
+    assert_eq!(
+        count(&emitted, "cl_inner__unknown"),
+        0,
+        "eleminfer: the opaque key must not be emitted"
+    );
+}
+
+/// A runtime row sum whose guard decides on the substituted row.
+const ROW_GUARD_SOURCE: &str = r#"module spec.cc.impl.rowguard;
+
+func rowsum<T>(xs: T, i: usize): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[i];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let i: usize = 5;
+    return rowsum<i32[2][3]>(rows, i);
+}
+"#;
+
+/// A runtime index of a substituted row carries its bounds guard.
+///
+/// The guard condition decides on the substituted row extent, so an index of
+/// 5 traps at the frozen bounds check, the in-bounds control carries the same
+/// guard, and the constant index 5 reports the frozen range error before
+/// emission (red at the phase base: no guard emitted and the constant
+/// accepted).
+#[test]
+fn should_guard_a_runtime_row_index_in_the_instance() {
+    let emitted = emit_host("rowguard", ROW_GUARD_SOURCE);
+    assert_contains(
+        "rowguard",
+        &emitted,
+        "if ((usize)(i) >= (usize)(3)) cl_trap(\"E11211\", \"index out of range\");",
+    );
+
+    let in_bounds = ROW_GUARD_SOURCE
+        .replace("let i: usize = 5;", "let i: usize = 2;")
+        .replace("impl.rowguard;", "impl.rowguardok;");
+    let emitted = emit_host("rowguardok", &in_bounds);
+    assert_contains(
+        "rowguardok",
+        &emitted,
+        "if ((usize)(i) >= (usize)(3)) cl_trap(\"E11211\", \"index out of range\");",
+    );
+
+    let constant = r#"module spec.cc.impl.rowguardconst;
+
+func rowsum<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[5];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return rowsum<i32[2][3]>(rows);
+}
+"#;
+    let stderr = reject_host("rowguardconst", constant);
+    assert_eq!(
+        stderr.matches("error E10216:").count(),
+        1,
+        "rowguardconst: expected one E10216; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("index 5 is out of range for 'i32[3]'"),
+        "rowguardconst: the range message is missing; stderr:\n{stderr}"
+    );
+}
+
+/// The projected-element and row-guard programs re-emit byte-identically.
+///
+/// Both re-emit from one source path so their `#line` facts agree, and the
+/// re-emitted text keeps the keyed call and the bounds guard.
+#[test]
+fn should_re_emit_the_element_and_row_programs_byte_identically() {
+    for (tag, source, shape) in [
+        (
+            "elemprojkey",
+            PROJECTED_ELEMENT_SOURCE,
+            "total = (i32)((u32)total + (u32)cl_id__i32(v.y));",
+        ),
+        (
+            "rowguard",
+            ROW_GUARD_SOURCE,
+            "if ((usize)(i) >= (usize)(3)) cl_trap(\"E11211\", \"index out of range\");",
+        ),
+    ] {
+        let (first, second) = emit_twice(tag, source);
+        assert_eq!(first, second, "{tag}: the program re-emitted differently");
+        assert_contains(tag, &first, shape);
+    }
+}
+
