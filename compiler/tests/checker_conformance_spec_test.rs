@@ -5155,3 +5155,138 @@ func main(): i32 {
     assert_no_asan("walkprojected", &output);
     assert_exit("walkprojected", &output, 1);
 }
+
+// ===== The receiver head's scope =====
+
+/// An import alias that repeats an own binding leaves the own binding the
+/// receiver.
+///
+/// `import { b as g }` beside `let g: i32` binds the name twice, and a read
+/// of `g` resolves to the module's own binding, so the initializer's dot call
+/// `g.pick(7)` keys the own `i32` instance and the run reads the value back
+/// (exit 0). The member-dependent sibling resolves the same way through the
+/// instance check: `g.drain()` iterates the own array while the import names
+/// a struct, and the run counts the two elements (exit 0). Recording the
+/// import's type instead left the emitted call undeclared or rejected the
+/// generic body with an iteration error.
+#[test]
+fn should_key_a_collision_between_an_import_alias_and_an_own_binding() {
+    let holder = r#"module spec.cc.aliasreceiverholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+    let collision = r#"module spec.cc.aliascollision;
+
+import { b as g } from spec.cc.aliasreceiverholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let g: i32 = 3;
+
+let h: i32 = g.pick(7);
+
+func main(): i32 {
+    return (h - 7) + (g - 3);
+}
+"#;
+    let output = run_memory_pair("aliascollision", holder, collision);
+    assert_no_asan("aliascollision", &output);
+    assert_exit("aliascollision", &output, 0);
+
+    let member = r#"module spec.cc.aliascollisionmember;
+
+import { b as g } from spec.cc.aliasreceiverholder;
+
+func drain<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+let g: i32[2] = [1, 2];
+
+let h: i32 = g.drain();
+
+func main(): i32 {
+    return h - 2;
+}
+"#;
+    let output = run_memory_pair("aliascollisionmember", holder, member);
+    assert_no_asan("aliascollisionmember", &output);
+    assert_exit("aliascollisionmember", &output, 0);
+}
+
+/// A body binding that shadows an import alias keeps its own type at a dot
+/// call.
+///
+/// A local `bb: i32[2]` and the parameter twin shadow the imported `bb`, so
+/// `bb.drain()` resolves the body's own binding and the per-instance walk
+/// keys the array instance: both runs count their two elements (exit 0).
+/// Resolving the head through the module scope inside a body instead rejected
+/// the generic body with an iteration error over the import's struct type.
+#[test]
+fn should_key_a_shadowed_alias_receiver_in_a_body() {
+    let holder = r#"module spec.cc.aliasreceiverholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+    let local = r#"module spec.cc.shadowedalias;
+
+import { b as bb } from spec.cc.aliasreceiverholder;
+
+func drain<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func run(): i32 {
+    let bb: i32[2] = [3, 4];
+    return bb.drain();
+}
+
+func main(): i32 {
+    return run() - 2;
+}
+"#;
+    let output = run_memory_pair("shadowedalias", holder, local);
+    assert_no_asan("shadowedalias", &output);
+    assert_exit("shadowedalias", &output, 0);
+
+    let parameter = r#"module spec.cc.shadowedparam;
+
+import { b as bb } from spec.cc.aliasreceiverholder;
+
+func drain<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func run(bb: i32[2]): i32 {
+    return bb.drain();
+}
+
+func main(): i32 {
+    let a: i32[2] = [3, 4];
+    return run(a) - 2;
+}
+"#;
+    let output = run_memory_pair("shadowedparam", holder, parameter);
+    assert_no_asan("shadowedparam", &output);
+    assert_exit("shadowedparam", &output, 0);
+}

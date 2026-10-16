@@ -2703,3 +2703,93 @@ fn should_re_emit_the_projected_argument_programs_identically() {
         "cl_id__i32((c ? a.y : b.y))",
     );
 }
+
+// ===== The receiver head's scope =====
+
+/// The holder module of the aliased-receiver collision and shadow programs.
+const ALIAS_RECEIVER_HOLDER_SOURCE: &str = r#"module spec.cc.impl.aliasreceiverholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+/// An import alias that repeats an own binding keeps the own binding's key.
+///
+/// `import { b as g }` beside `let g: i32` binds the name twice, and the
+/// initializer's `g.pick(7)` keys the module's own `i32`, so the emitted call
+/// reaches a declared and defined instance. The import's `Box` must leave no
+/// trace: a recorded instance of it would declare a specialization the
+/// emitter never calls.
+#[test]
+fn should_declare_the_own_binding_at_an_aliased_receiver_collision() {
+    let collision = r#"module spec.cc.impl.aliascollision;
+
+import { b as g } from spec.cc.impl.aliasreceiverholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let g: i32 = 3;
+
+let h: i32 = g.pick(7);
+
+func main(): i32 {
+    return (h - 7) + (g - 3);
+}
+"#;
+    let emitted = emit_host_pair("aliascollision", ALIAS_RECEIVER_HOLDER_SOURCE, collision);
+    assert_keyed_instance(
+        "aliascollision",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__i32(i32 v, i32 w)",
+        "cl_pick__i32(cl_spec_cc_impl_aliascollision_g, 7)",
+    );
+    assert_eq!(
+        count(&emitted, "cl_pick__Box"),
+        0,
+        "aliascollision: the import's type must not be recorded"
+    );
+}
+
+/// A body binding that shadows an import alias leaves no instance behind.
+///
+/// The local `bb: i32` shadows the imported `bb`, so `bb.pick(7)` keys the
+/// own `i32` instance, which the emitter declares, defines, and calls. The
+/// import's struct type must not add a specialization: a recorded instance of
+/// it would sit in the translation unit uncalled.
+#[test]
+fn should_not_record_a_shadowed_alias_receiver_in_a_body() {
+    let shadowed = r#"module spec.cc.impl.shadowedalias;
+
+import { b as bb } from spec.cc.impl.aliasreceiverholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+func run(): i32 {
+    let bb: i32 = 5;
+    return bb.pick(7);
+}
+
+func main(): i32 {
+    return run() - 7;
+}
+"#;
+    let emitted = emit_host_pair("shadowedalias", ALIAS_RECEIVER_HOLDER_SOURCE, shadowed);
+    assert_keyed_instance(
+        "shadowedalias",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__i32(i32 v, i32 w)",
+        "cl_pick__i32(bb, 7)",
+    );
+    assert_eq!(
+        count(&emitted, "cl_pick__Box"),
+        0,
+        "shadowedalias: the import's type must not add a dead instance"
+    );
+}

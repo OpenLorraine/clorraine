@@ -34,14 +34,21 @@ pub fn collect(
     sema: &SemaOutput,
 ) -> Monomorphization {
     let mut mono = Monomorphization::default();
+    // A function body's dot receiver heads resolve through the body's own
+    // scopes — its locals and parameters — which this walk does not carry. The
+    // body's per-instance IR walk keys those shapes, so the empty map here
+    // keeps this walk from mistaking a shadowed name for a module binding.
+    let body_scope = BTreeMap::new();
     for module in loaded.modules.values() {
-        // A receiver head resolves like a read: the module's own bindings keep
-        // their declared names, and an import binding resolves to the target
-        // module's binding under its local name (an alias included).
+        // A module initializer's receiver heads resolve like reads in the
+        // module scope: the module's own bindings keep their declared names,
+        // and an import binding resolves to the target module's binding under
+        // its local name (an alias included) unless the module binds that name
+        // itself.
         let visible = visible_bindings(program, module);
         for item in &module.items {
             match item {
-                Item::Func(decl) => walk_block(&decl.body, &visible, program, sema, &mut mono),
+                Item::Func(decl) => walk_block(&decl.body, &body_scope, program, sema, &mut mono),
                 // A module initializer's calls instantiate like a body's: the
                 // initializer runs before `main`, so its instances must exist
                 // in the emitted program.
@@ -391,7 +398,13 @@ fn walk_expr(
         }
         ExprKind::Lambda { body, .. } => match body {
             crate::ast::LambdaBody::Expr(inner) => walk_expr(inner, visible, program, sema, mono),
-            crate::ast::LambdaBody::Block(block) => walk_block(block, visible, program, sema, mono),
+            // A lambda body is a function scope of its own: its parameters and
+            // locals shadow the enclosing names, so the module-scope map does
+            // not apply inside it. Its lifted form is keyed by the IR walk.
+            crate::ast::LambdaBody::Block(block) => {
+                let body_scope = BTreeMap::new();
+                walk_block(block, &body_scope, program, sema, mono);
+            }
         },
         ExprKind::Int(_)
         | ExprKind::Float(_)
@@ -532,12 +545,12 @@ fn record_call(
     }
 }
 
-/// The value bindings a module's declarations read by name.
+/// The value bindings a module initializer's receiver heads resolve in.
 ///
 /// A module's own bindings keep their declared names, and an import binding
 /// resolves to the target module's binding under its local name — the alias
-/// when one is written. A receiver head resolves through this map exactly as
-/// the name resolver resolves a read.
+/// when one is written. A name the module binds itself wins over an import
+/// that repeats it, so the map agrees with the name resolution a read uses.
 fn visible_bindings(program: &ProgramInfo, module: &crate::load::Module) -> BTreeMap<String, Ty> {
     let mut visible: BTreeMap<String, Ty> = BTreeMap::new();
     for (id, info) in &program.globals {
@@ -546,6 +559,10 @@ fn visible_bindings(program: &ProgramInfo, module: &crate::load::Module) -> BTre
         }
     }
     for binding in &module.imports {
+        // A read of a name the module binds itself never reaches the import.
+        if visible.contains_key(&binding.local) {
+            continue;
+        }
         let id = crate::ir::GlobalId::new(binding.module.clone(), binding.original.clone());
         if let Some(info) = program.globals.get(&id) {
             visible.insert(binding.local.clone(), info.ty.clone());
@@ -594,10 +611,13 @@ fn dot_receiver(
         }
         ExprKind::Qualified(name) if name.segments.len() >= 2 => {
             let (head, rest) = name.segments.split_first().expect("checked segment count");
-            // The receiver head resolves like a read: the module's own
-            // bindings first and an import binding (an alias included) after
-            // them. A head that names a local, or a module path, stays
-            // underived here; the body's per-instance IR walk keys that shape.
+            // The receiver head resolves like a read in the walk's scope map:
+            // an initializer walk carries the module scope (the module's own
+            // bindings first and an import binding — an alias included — after
+            // them), and a body walk carries none, because a body's locals and
+            // parameters are scopes this walk does not walk. A head the map
+            // does not carry — a local, a parameter, or a module path — stays
+            // underived; the body's per-instance IR walk keys such a shape.
             let Some(mut ty) = visible.get(head).cloned() else {
                 return DotReceiver::Unknown;
             };
