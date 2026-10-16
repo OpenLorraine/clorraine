@@ -8,8 +8,8 @@
 Four rows ride the instance surface batch K phase 2/4 opened: the element store's
 overwritten-owner drop (a placeholder-typed destination), the substituted element in a concrete
 conversion or member position (no per-instance judgment), the duplicable `borrow out` instance
-> **Superseded (AR-19):** the `DEF-353` write-through direction below was reclassified as a false positive — the duplicable copy-lend is the frozen rule; the phase carries the conforming control instead.
-(the by-value lowering drops the write-through), and the incidentally fixed capture pair as the
+> **Superseded (AR-19):** the `DEF-353` write-through (superseded — AR-19) direction below was reclassified as a false positive — the duplicable copy-lend is the frozen rule; the phase carries the conforming control instead.
+(the by-value lowering drops the write-through (superseded — AR-19)), and the incidentally fixed capture pair as the
 phase's control. The common mechanism is the per-instance view of a value that is
 placeholder-typed at the declaration site: substitution resolves the concrete type, and the
 existing duty/audit pattern (`own/instance_check.rs`) is the hook. The batch-K phase-5 memory
@@ -42,7 +42,7 @@ outside this row's scope (an unknown member on a scalar base).
 
 `wrap<T>(borrow out: T, x: T)` at `T = i32`: `([borrow x, borrow out] () => { out = x; })()`
 builds and runs 249 (`out` stays 0) — the by-value lowering for a duplicable instance drops the
-out-slot write. The fix restores the write-through store for a duplicable `borrow` instance
+out-slot write. Superseded by AR-19: no write-through (superseded — AR-19) is implemented — a lend of a duplicable value binds a copy (Ch 03 §2, Ch 06 §2, Ch 16 §2, D9/V5); the row is a false positive and the phase carries the conforming control instead.
 (the out-slot lowering decision), so the caller reads back the written value; the owning
 instance and the concrete twins keep their behavior. No memory effect at the head (probe
 `p5_capture_dup_instance` is ASan-clean), so the case is a run value, not a sanitizer case.
@@ -73,7 +73,7 @@ probe that shows a regression turns the row red here (AR-8).
 |------------|-------------------|--------|
 | A store whose destination stays placeholder-typed (an unkeyable instance) | Keep the declaration path; the existing rejection for an unbounded parameter | — |
 | A conversion the concrete sibling rejects | The frozen `E10200` once per site | — |
-| A duplicable instance whose out-slot write cannot be emitted | The recorded park: a `borrow` write-through the lowering cannot express becomes a recorded limit (AR-14) | AR-14 |
+| A duplicable instance whose out-slot write cannot be emitted | The recorded park: a `borrow` write-through (superseded — AR-19) the lowering cannot express becomes a recorded limit (AR-14) | AR-14 |
 | The capture control regresses | The row turns red with the fresh probe and is fixed in this phase | AR-8 |
 
 ## Testing Requirements
@@ -81,6 +81,6 @@ probe that shows a regression turns the row red here (AR-8).
 - Spec: the element store leak (plain, loop and early-exit spellings; ASan/LSan-clean; the
   concrete twin as control), the conversion/member instances (the frozen rejection where the
   concrete twin rejects; accepted and building where it accepts), the duplicable out-slot
-  (write-through read back), and the capture pair (one `E10401` each, no TU).
+  (write-through (superseded — AR-19) read back), and the capture pair (one `E10401` each, no TU).
 - Impl: the substituted drop emission for the element store, the duty records and report spans,
   the out-slot store shape, the rejection parity; a re-emission determinism pin.
