@@ -7472,3 +7472,322 @@ func main(): i32 {
         &[],
     );
 }
+
+// ===== Member typing on concrete paths =====
+
+/// An unknown member on a concrete base reports the unknown-member rule.
+///
+/// A fixed array has no pointer member, a view has no member outside its
+/// pointer and its length, and a `cstring` has no member surface at all, so
+/// each fallthrough spelling reports the registered `E10212` exactly once, at
+/// the base expression's site, and writes no translation unit (red at the
+/// phase base: all three were accepted and the strict build failed with
+/// `request for member 'ptr'` / `'ClStr' has no member named 'foo'`). The
+/// program below pins the typed members and the scoped and qualified forms as
+/// the controls; the instance audit mirrors the same rule for the substituted
+/// bases (`fixedptrmember`, `memenum`).
+#[test]
+fn should_reject_the_unknown_member_on_concrete_bases() {
+    let fixed_array = r#"module spec.cc.fixedmember;
+
+func main(): i32 {
+    let a: u8[4] = [1, 2, 3, 4];
+    let p = a.ptr;
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "fixedmember",
+        fixed_array,
+        "E10212",
+        &["'ptr' is not a member of 'u8[4]'", "main.clo:5:13"],
+        &[],
+    );
+
+    let view = r#"module spec.cc.viewmemberunknown;
+
+func main(): i32 {
+    let s: str = "abc";
+    let x = s.foo;
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "viewmemberunknown",
+        view,
+        "E10212",
+        &["'foo' is not a member of 'str'", "main.clo:5:13"],
+        &[],
+    );
+
+    let c_string = r#"module spec.cc.cstringmember;
+
+import { toCString } from std.text;
+
+func main(): i32 {
+    let c: cstring = toCString("abc");
+    let p = c.ptr;
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "cstringmember",
+        c_string,
+        "E10212",
+        &["'ptr' is not a member of 'cstring'", "main.clo:7:13"],
+        &[],
+    );
+
+    // The typed members and the scoped and qualified forms stay accepted: the
+    // view's `.len`, the fixed array's structural `.len`, the slice's
+    // `.ptr`/`.len`, the view pointer at a `cstring` slot, the scoped enum
+    // member, and the module-qualified calls all build and read their values
+    // back.
+    let controls = r#"module spec.cc.membercontrols;
+
+import { slice } from std.mem;
+
+enum E : u8 { A, B }
+
+func span(s: str): usize {
+    return s.len;
+}
+
+func cstr(s: str): cstring {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abcd";
+    let a: u8[4] = [65, 66, 67, 68];
+    let sl: u8[] = slice(a, 0, 4);
+    if (i32(span(s)) != 4) {
+        return 1;
+    }
+    if (i32(a.len) != 4) {
+        return 2;
+    }
+    let p: raw u8 = sl.ptr;
+    if (i32(sl.len) != 4) {
+        return 3;
+    }
+    unsafe {
+        if (p == null) {
+            return 4;
+        }
+        if (p[0] != 65) {
+            return 5;
+        }
+    }
+    let c: cstring = s.ptr;
+    if (c == null) {
+        return 6;
+    }
+    let d: cstring = cstr(s);
+    if (d == null) {
+        return 7;
+    }
+    let e: E = E.B;
+    let owned: String = std.text.stringOf("abc");
+    let v: u8[] = std.text.bytes(owned);
+    return i32(e) + i32(len(v)) - 4;
+}
+"#;
+    let output = run_memory("membercontrols", controls);
+    assert_no_asan("membercontrols", &output);
+    assert_exit("membercontrols", &output, 0);
+}
+
+/// A view pointer member read at a mutable raw destination is cast.
+///
+/// The view's `.ptr` is a `const u8 *` in the emitted C while a `raw u8`
+/// destination is a mutable byte pointer: the local store, the `raw u8`
+/// return, and the raw struct-literal field each spell the sanctioned member
+/// cast, so every destination builds strictly and the run reads the bytes
+/// back (red at the phase base: the three spellings were accepted and the
+/// strict build failed with `discarded-qualifiers`). The explicit cast and
+/// the pre-existing `cstring` slots and read-only uses stay accepted in the
+/// controls below.
+#[test]
+fn should_cast_the_view_pointer_member_at_a_mutable_raw_destination() {
+    let source = r#"module spec.cc.constptrmutdest;
+
+struct Holder {
+    c: raw u8;
+}
+
+func get(s: str): raw u8 {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    let p: raw u8 = s.ptr;
+    let h: Holder = Holder { c: s.ptr };
+    let q: raw u8 = get(s);
+    unsafe {
+        if (p == null) {
+            return 1;
+        }
+        if (h.c == null) {
+            return 2;
+        }
+        if (q == null) {
+            return 3;
+        }
+        return i32(*p) + i32(*h.c) + i32(*q) - 291;
+    }
+}
+"#;
+    let output = run_memory("constptrmutdest", source);
+    assert_no_asan("constptrmutdest", &output);
+    assert_exit("constptrmutdest", &output, 0);
+
+    // The sanctioned explicit cast (`raw u8(s.ptr)` inside `unsafe`), the
+    // `cstring` store slot, and the read-only comparison stay accepted and
+    // read their values back.
+    let controls = r#"module spec.cc.constptrcontrols;
+
+func main(): i32 {
+    let s: str = "abc";
+    let p: raw u8 = unsafe raw u8(s.ptr);
+    let c: cstring = s.ptr;
+    if (p == null) {
+        return 1;
+    }
+    if (c == null) {
+        return 2;
+    }
+    if (s.ptr == null) {
+        return 3;
+    }
+    unsafe {
+        return i32(*p) - 97;
+    }
+}
+"#;
+    let output = run_memory("constptrcontrols", controls);
+    assert_no_asan("constptrcontrols", &output);
+    assert_exit("constptrcontrols", &output, 0);
+}
+
+/// A raw-enum member read reports the value-form member rule at both paths.
+///
+/// A member reached through a raw pointer implies the dereference (Ch 04
+/// section 7), so the receiver is the pointee value; an enum constant is
+/// reached only through the scoped `Type.MEMBER` spelling (Ch 04 section 8),
+/// and a value receiver has no member surface, so every raw-enum member read
+/// — an existing constant and an unknown name alike — reports the
+/// registered `E10212` once at the base's site and writes no translation
+/// unit. The instance spelling reports the same rule for the substituted
+/// base; the scoped and qualified forms stay accepted below (red at the
+/// phase base: the concrete reads were accepted and the strict build failed
+/// with `request for member`, while the instance twin already reported
+/// `E10212`).
+#[test]
+fn should_reject_a_raw_enum_member_read_at_both_paths() {
+    let existing = r#"module spec.cc.rawenum;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.A;
+    let p: raw E = unsafe &e;
+    unsafe {
+        return i32(p.A);
+    }
+}
+"#;
+    assert_rejected_once(
+        "rawenum",
+        existing,
+        "E10212",
+        &["'A' is not a member of", "main.clo:9:20"],
+        &[],
+    );
+
+    let missing = r#"module spec.cc.rawenummissing;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.B;
+    let p: raw E = unsafe &e;
+    unsafe {
+        return i32(p.N);
+    }
+}
+"#;
+    assert_rejected_once(
+        "rawenummissing",
+        missing,
+        "E10212",
+        &["'N' is not a member of", "main.clo:9:20"],
+        &[],
+    );
+
+    let instance = r#"module spec.cc.rawenuminstance;
+
+enum E : u8 { A, B }
+
+func read<T>(x: T): i32 {
+    return i32(x.B);
+}
+
+func main(): i32 {
+    let e: E = E.A;
+    let p: raw E = unsafe &e;
+    return read<raw E>(p) - 1;
+}
+"#;
+    assert_rejected_once(
+        "rawenuminstance",
+        instance,
+        "E10212",
+        &["'B' is not a member of 'raw E'", "main.clo:6:16"],
+        &[],
+    );
+
+    let instance_missing = r#"module spec.cc.rawenuminstmissing;
+
+enum E : u8 { A, B }
+
+func read<T>(x: T): i32 {
+    return i32(x.N);
+}
+
+func main(): i32 {
+    let e: E = E.B;
+    let p: raw E = unsafe &e;
+    return read<raw E>(p);
+}
+"#;
+    assert_rejected_once(
+        "rawenuminstmissing",
+        instance_missing,
+        "E10212",
+        &["'N' is not a member of 'raw E'", "main.clo:6:16"],
+        &[],
+    );
+
+    // The scoped member and the module-qualified calls are the controls: the
+    // enum constant and the qualified spelling stay accepted and read their
+    // values back.
+    let controls = r#"module spec.cc.rawenumcontrols;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.A;
+    let owned: String = std.text.stringOf("abc");
+    let v: u8[] = std.text.bytes(owned);
+    return i32(e) + i32(len(v)) - 3;
+}
+"#;
+    let output = run_memory("rawenumcontrols", controls);
+    assert_no_asan("rawenumcontrols", &output);
+    assert_exit("rawenumcontrols", &output, 0);
+}

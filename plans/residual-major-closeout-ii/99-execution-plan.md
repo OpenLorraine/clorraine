@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 12:00
-> **Progress**: 36/51 tasks (71%) — Phase 6 complete
+> **Last Updated**: 2026-10-19 13:00
+> **Progress**: 38/51 tasks (75%) — Executing Phase 7
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -325,11 +325,11 @@ ST-18..ST-20 · AR-7
 **Objective**: Pin the unknown-member rejections, the mutable raw destinations, and the raw-enum
 member.
 
-- [ ] 7.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
+- [x] 7.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
       (unknownviewmembers, constptrmutdest, rawenummember) with the typed-member and cast
-      controls
-- [ ] 7.1.2 Run the suite and record the red phase (the typed `.ptr`/`.len`, the sanctioned cast,
-      and the scoped enum controls verified green first)
+      controls ✅ (completed: 2026-10-19 13:00; three tests appended to the checker-conformance suite (+319 lines, additions only) — the unknown members on the concrete bases (the fixed-array `.ptr`, the view unknown member, the cstring `.ptr`; with the member controls), the view `.ptr` at the mutable raw destinations (the strict-only const-discard row; with the explicit-cast/cstring/read-back controls), and the raw-enum member reads re-pinned per **AR-22** to the value-form rejection (one `E10212` at both paths for existing and unknown members, the scoped/qualified controls); the ST-20 resolve alternative was ruled non-conformant against the frozen table
+- [x] 7.1.2 Run the suite and record the red phase (the typed `.ptr`/`.len`, the sanctioned cast,
+      and the scoped enum controls verified green first) ✅ (completed: 2026-10-19 13:00; plain 159 passed / 3 failed (the three new tests); `RDC_ASAN=1` 160 passed / 2 failed (the ST-19 red is strict-only — its program builds and runs ASan-clean); the controls green in both legs; parent-verified)
 
 ### Step 7.2: Implementation
 
