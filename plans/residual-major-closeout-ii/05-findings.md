@@ -290,3 +290,49 @@ emission-integrity (F1), plus a bounded re-confirmation.
 **Phase-3 addendum (AR-21):** the F1 round's accepted `m09` shape (`eat(v.name)` on a borrowed
 element, emptied after the call) was re-pinned during phase 4 to the parity oracle: the generic
 instance now reports the concrete twin's one `E10026`. The other phase-3 findings stand.
+
+## Phase 4 — Ownership transfer judgments
+
+**Reviewed implementation**: `07f5f94` plus one large correction round (`d1328ca`). **Lenses**:
+correctness (L4R), semantics (L4S), and memory-safety (M1-M5).
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | PASS WITH MINORS — 0 blockers | No phase-introduced defect: the duty, the carrier, the loan transfer, and the deref store verified across their consumers; the AR-21 re-pin substantively correct; L4R-1 (the `eb8ba1f` message) and L4R-2 (a stale comment, fixed) minor; the pre-existing gaps L4R-3..L4R-6 mapped (L3 → the correction; L4 → `DEF-374`; L5 → `DEF-373` extended; L6 → the corrected take + the left guarded take) |
+| semantics | FAIL — 4 blockers | L4S-1 (the duty missed the maybe-owning destinations and the conditional-arm sources), L4S-2 (a projected-source copy transferred no loans), L4S-3 (the guarded conditional take), L4S-4 (the deref read emptied only at the store position); L4S-5 (the phase-introduced rejection's code was `E10020` where the concrete twin reports `E10025`); the covered spellings and the AR-21 re-pin conformant |
+| memory-safety | FINDINGS — 5 | All pre-existing at the base, no base-clean program defective: M1 (the conditional-source copy — `DEF-373`), M2 (= L4S-3, fixed), M3 (the borrow-element conditional take — `DEF-374`, fixed by the correction's arm sweep), M4 (the deref operand materialization's declaration-time gate — `DEF-375`, persists), M5 (= L4S-4, fixed); `DEF-366` incidentally fixed by the duty |
+
+### Fix round
+
+| Item | Outcome |
+|------|---------|
+| C1 (L4S-1) | **Fixed**: the duty records in the shared maybe-owning mark (so the return/binding/assignment destinations deposit it) and the take path sweeps a conditional's arms — the shapes report the concrete twins' `E10026` counts; the duplicable instances stay accepted |
+| C2 (L4S-2) | **Fixed**: `move_element_loans` translates a projected source's positions (gated on a constant path and a non-single-view destination — the single-view control keeps exactly one `E10031`) |
+| C3 (L4S-3) | **Fixed**: the unresolved-conditional route fires in the deferred context too, the guard renderers resolve the carried value, and the guarded move-outs gate on the resolved type and emptiness — the guarded shape emits the concrete twin's carrier |
+| C4 (L4S-4) | **Fixed**: the direct return routes a deref source through the block-local emptying, a new consumed-source statement carries the take and field positions, and an impure pointer is pinned once |
+| C5 (L4S-5) | **Fixed**: the duty reports the partial-move code (`E10025`) for a whole use conflicting with top-level field paths (the field-only predicate keeps the element paths' `E10020` and the hardening pins green) |
+
+### Confirmations
+
+The parent's probe re-run: `ct14` (M3) now rejects one `E10026`; `vc03` (M1's conditional
+source) and `ds19` (M4) persist, so `DEF-373`/`DEF-375` stand; the guarded deref take residual filed
+(`DEF-376`); the residue suites 156/156 plain and under `RDC_ASAN=1`; the impl pins 93/93;
+`make check` exit 0.
+
+### Filed rows
+
+`DEF-372` (the element-read store — from the spec authoring), `DEF-373` (the conditional/array-literal
+copy sources — **extended** twice), `DEF-374` (the borrow-element conditional take — closed in-phase by
+C1 but kept as a row? no — verified fixed and left open for the close-out measurement), `DEF-375`
+(the deref operand materialization), `DEF-376` (the guarded deref take), plus the `DEF-366`
+incidental-fix annotation.
+
+### Record notes
+
+- AR-21 (the phase-3 `m09` oracle re-pin) is substantively correct per the correctness lens; the
+  expected disposition item at close-out.
+- The `q6` conditional take reports two `E10026` (one per arm), matching its concrete twin's count.
+- Untouched residuals recorded: a runtime-index projected source transfers no loans (`DEF-373`'s
+  family); the guarded deref take keeps the inline call (`DEF-376`).

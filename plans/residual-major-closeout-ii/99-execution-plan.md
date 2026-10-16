@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 21:30
-> **Progress**: 23/51 tasks (45%) — Phase 4 in review
+> **Last Updated**: 2026-10-19 00:30
+> **Progress**: 24/51 tasks (47%) — Phase 4 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -214,8 +214,8 @@ ST-11..ST-12 · AR-3, AR-5
       deref read's move-out/emptying shape, the byte-identical discarded/duplicable twins, a
       re-emission determinism pin) —
       `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-18 21:30; eight pins added to the residue impl suite (85 → 93 tests, additions only) plus a normalized-body helper — the four copy spellings' one `E10030` each (the assignment/loop/take sites), the accepted copy emission, the element-move duty (one `E10026` per owning shape; the duplicable instance accepted; the top-level control's move-and-empty), the conditional take's per-arm carrier shape (equal to the concrete twin's normalized sequence), the deref store's source emptying (the impure pointer pinned once), and a re-emission pin; four discriminate at `f4559c3` (the copy pin at `37b213e`); 93/93 green, `make check` exit 0)
-- [ ] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses; run the ASan matrix
+- [x] 4.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses; run the ASan matrix ✅ (completed: 2026-10-19 00:30; all three lenses dispatched plus one large correction round: the duty at every maybe-owning destination and the arm sweep (L4S-1/M3), the projected-source loans (L4S-2), the guarded take carrier (L4S-3/M2), the deref positions (L4S-4/M5), and the partial-move code (L4S-5); rows filed `DEF-372`–`DEF-376` (+ the `DEF-366` annotation); AR-21 recorded; the closing verification: the residue spec 156/156 plain and ASan, the impl pins 93/93, `make check` exit 0, the parent's probe re-run (M3 closed; M1/M4 persist as filed), no unintended accept/reject)
 
 **Verify**: `make check`; the ownership cases under `RDC_ASAN=1`
 
