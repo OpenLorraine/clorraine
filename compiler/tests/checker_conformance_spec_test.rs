@@ -4752,3 +4752,406 @@ func main(): i32 {
     let (scratch, emitted) = emit_hosted_amiga("condpointerplace", place);
     build_hosted_amiga_c("condpointerplace", &scratch, &emitted);
 }
+
+// ===== The instance-key walk's projected-argument resolver =====
+
+/// Compiles a two-file module program for the host profile.
+///
+/// The holder file declares the module the program imports, so the imported
+/// binding resolves and the ordinary checks run on it. Returns the scratch
+/// directory, the compiler output, and the emitted-C path.
+fn compile_pair(tag: &str, holder: &str, main: &str) -> (ScratchDir, Output, PathBuf) {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        holder_path.display().to_string(),
+    ]);
+    (scratch, output, c_path)
+}
+
+/// Emits a two-file module program and asserts the front end accepted it.
+fn emit_pair(tag: &str, holder: &str, main: &str) -> (ScratchDir, String) {
+    let (scratch, output, c_path) = compile_pair(tag, holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    (scratch, emitted)
+}
+
+/// Emits, builds, and runs one two-file host program, returning its output.
+fn run_host_pair(tag: &str, holder: &str, main: &str) -> Output {
+    let (scratch, emitted) = emit_pair(tag, holder, main);
+    let program = build_host_c(tag, &scratch, &emitted);
+    run_with_timeout(tag, &program, &[])
+}
+
+/// Emits a two-file program, builds it with AddressSanitizer, and runs it
+/// with leak detection on, returning its output.
+fn run_asan_pair(tag: &str, holder: &str, main: &str) -> Output {
+    let (scratch, emitted) = emit_pair(tag, holder, main);
+    let c_path = scratch.path().join("build.c");
+    std::fs::write(&c_path, &emitted).expect("write the emitted C");
+    let program = scratch.path().join("prog");
+    let built = Command::new("cc")
+        .args([
+            "-std=c99",
+            "-O0",
+            "-g",
+            "-fsanitize=address",
+            "-no-pie",
+            "-o",
+            program.to_str().expect("program path"),
+            c_path.to_str().expect("emitted C path"),
+        ])
+        .output()
+        .expect("failed to spawn the host C compiler");
+    assert!(
+        built.status.success(),
+        "{tag}: the sanitizer build failed; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    run_with_timeout(
+        tag,
+        &program,
+        &[("ASAN_OPTIONS", "detect_leaks=1:symbolize=0")],
+    )
+}
+
+/// Runs a two-file memory-safety case: under AddressSanitizer when `RDC_ASAN`
+/// is set, otherwise as an ordinary strict host build.
+fn run_memory_pair(tag: &str, holder: &str, main: &str) -> Output {
+    if std::env::var_os("RDC_ASAN").is_some() {
+        run_asan_pair(tag, holder, main)
+    } else {
+        run_host_pair(tag, holder, main)
+    }
+}
+
+/// An aliased module receiver of an initializer dot call keys its instance.
+///
+/// `bb.pick(7)` passes the imported binding — the holder's `b: Box` — as the
+/// call's argument position zero, so the inferred instance key must take the
+/// receiver's type: the binding fixes `T` to `Box`, the emitted call reaches
+/// the keyed instance, and the run reads the argument back (exit 0). The same
+/// call in a body and the unaliased import are the unchanged controls (red at
+/// the phase base: the initializer's instance walk resolved the receiver's
+/// head against the program's module-level names, found no global named `bb`,
+/// and recorded no instance, so the strict build failed on an implicit
+/// declaration of `cl_pick__Box`).
+#[test]
+fn should_key_an_aliased_receiver_dot_call_in_an_initializer() {
+    let holder = r#"module spec.cc.walkholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+    let aliased = r#"module spec.cc.walkdotreceiver;
+
+import { b as bb } from spec.cc.walkholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let g: i32 = bb.pick(7);
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let output = run_memory_pair("walkdotreceiver", holder, aliased);
+    assert_no_asan("walkdotreceiver", &output);
+    assert_exit("walkdotreceiver", &output, 0);
+
+    let body = r#"module spec.cc.walkdotreceiverbody;
+
+import { b as bb } from spec.cc.walkholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+func body(): i32 {
+    return bb.pick(7);
+}
+
+let g: i32 = body();
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let output = run_memory_pair("walkdotreceiverbody", holder, body);
+    assert_no_asan("walkdotreceiverbody", &output);
+    assert_exit("walkdotreceiverbody", &output, 0);
+
+    let direct = r#"module spec.cc.walkdotreceiverdirect;
+
+import { b } from spec.cc.walkholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let g: i32 = b.pick(7);
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let output = run_memory_pair("walkdotreceiverdirect", holder, direct);
+    assert_no_asan("walkdotreceiverdirect", &output);
+    assert_exit("walkdotreceiverdirect", &output, 0);
+}
+
+/// A temp-rooted member argument in a borrow loop keys its instance.
+///
+/// `keep(v.name)` inside `each<T>`'s borrow loop passes the borrowed
+/// element's owning `String` member, whose type the generic body does not
+/// know until the instance is substituted: the keyed instance runs once per
+/// element and the run reads the loop's sum and the call count back (exit 0).
+/// `id(v[i].y)` in a by-value loop is the recorded control (exit 7) and the
+/// concrete-parameter twin of the same source shape stays keyed (exit 2) (red
+/// at the phase base: the instance walk could not resolve the borrowed
+/// element's member and recorded no instance, so the strict build failed on
+/// an implicit declaration of `cl_keep__String`).
+#[test]
+fn should_key_a_temp_rooted_member_argument_in_a_borrow_loop() {
+    let temp_rooted = r#"module spec.cc.walktemprooted;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+let hits: i32 = 0;
+
+func keep<T>(x: T): i32 {
+    hits = hits + 1;
+    return 1;
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        total = total + keep(v.name);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cd"), y: 2 }];
+    return (each<S[2]>(a) - 2) + (hits - 2);
+}
+"#;
+    let output = run_memory("walktemprooted", temp_rooted);
+    assert_no_asan("walktemprooted", &output);
+    assert_exit("walktemprooted", &output, 0);
+
+    let control = r#"module spec.cc.walktempref;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func rowsum<T>(xs: T, i: usize): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + id(v[i].y);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: S[2][3] = [
+        [S { y: 1 }, S { y: 2 }, S { y: 3 }],
+        [S { y: 4 }, S { y: 5 }, S { y: 6 }]
+    ];
+    let i: usize = 1;
+    return rowsum<S[2][3]>(rows, i);
+}
+"#;
+    let output = run_memory("walktempref", control);
+    assert_no_asan("walktempref", &output);
+    assert_exit("walktempref", &output, 7);
+
+    let concrete = r#"module spec.cc.walktempconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func keep<T>(x: T): i32 {
+    return 1;
+}
+
+func eachS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        total = total + keep(v.name);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cd"), y: 2 }];
+    return eachS(a);
+}
+"#;
+    let output = run_memory("walktempconcrete", concrete);
+    assert_no_asan("walktempconcrete", &output);
+    assert_exit("walktempconcrete", &output, 2);
+}
+
+/// A conditional argument in a generic instance keys its selected arm.
+///
+/// `id(c ? a.y : b.y)` reads both arms through the instance substitution, so
+/// the conditional resolves only when the arms agree on one concrete type;
+/// the keyed instance runs and the run folds both selections to the exit (0).
+/// The nested double-placeholder loop (exit 21), the nested call result
+/// (exit 5), the field chain through a `let` local (exit 3), and the concrete
+/// parameter-rooted field chain (exit 1) are the controls (red at the phase
+/// base: the instance walk declined the conditional's parameter-rooted arms
+/// and recorded no instance, so the strict build failed on an implicit
+/// declaration of `cl_id__i32`).
+#[test]
+fn should_key_a_conditional_argument_in_a_generic_instance() {
+    let conditional = r#"module spec.cc.walkconditional;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(a: T, b: T, c: bool): i32 {
+    return id(c ? a.y : b.y);
+}
+
+func main(): i32 {
+    let a: S = S { y: 1 };
+    let b: S = S { y: 2 };
+    return (pick<S>(a, b, true) - 1) + (pick<S>(a, b, false) - 2);
+}
+"#;
+    let output = run_memory("walkconditional", conditional);
+    assert_no_asan("walkconditional", &output);
+    assert_exit("walkconditional", &output, 0);
+
+    let nested_loop = r#"module spec.cc.walknestedloop;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func rowsum<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (row in xs) {
+        for (c in row) {
+            n = n + id(c.y);
+        }
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: S[2][3] = [
+        [S { y: 1 }, S { y: 2 }, S { y: 3 }],
+        [S { y: 4 }, S { y: 5 }, S { y: 6 }]
+    ];
+    return rowsum<S[2][3]>(rows);
+}
+"#;
+    let output = run_memory("walknestedloop", nested_loop);
+    assert_no_asan("walknestedloop", &output);
+    assert_exit("walknestedloop", &output, 21);
+
+    let call_result = r#"module spec.cc.walkcallresult;
+
+struct S { y: i32; }
+
+func mk(x: i32): i32 {
+    return x + 1;
+}
+
+func id<T>(x: T): T { return x; }
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + id(mk(v.y));
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    let output = run_memory("walkcallresult", call_result);
+    assert_no_asan("walkcallresult", &output);
+    assert_exit("walkcallresult", &output, 5);
+
+    let local_place = r#"module spec.cc.walklocalplace;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow e in xs) {
+        let s: S = e;
+        total = total + id(s.y);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    let output = run_memory("walklocalplace", local_place);
+    assert_no_asan("walklocalplace", &output);
+    assert_exit("walklocalplace", &output, 3);
+
+    let projected = r#"module spec.cc.walkprojected;
+
+struct S { y: i32; }
+struct O { s: S; }
+
+func id<T>(x: T): T { return x; }
+
+func pick(o: O): i32 {
+    return id(o.s.y);
+}
+
+func main(): i32 {
+    let o: O = O { s: S { y: 1 } };
+    return pick(o);
+}
+"#;
+    let output = run_memory("walkprojected", projected);
+    assert_no_asan("walkprojected", &output);
+    assert_exit("walkprojected", &output, 1);
+}
