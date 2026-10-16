@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 13:00
-> **Progress**: 38/51 tasks (75%) — Executing Phase 7
+> **Last Updated**: 2026-10-19 14:00
+> **Progress**: 40/51 tasks (78%) — Phase 7 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -333,12 +333,12 @@ member.
 
 ### Step 7.2: Implementation
 
-- [ ] 7.2.1 Report the unknown member on the concrete fallthrough; emit the sanctioned member
+- [x] 7.2.1 Report the unknown member on the concrete fallthrough; emit the sanctioned member
       cast at the mutable raw destinations (or the frozen duty, AR-7); route the raw-enum member
       through the enum rule — `compiler/src/sema/expr.rs`, `compiler/src/own/expr.rs`,
-      `compiler/src/codegen/function.rs`
-- [ ] 7.2.2 Run the suite to green; on any failure STOP and fix the implementation (or park per
-      AR-7 if the stop condition fires)
+      `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-19 14:00; `DEF-346`: the member dispatch reports `E10212` on every concrete base (`sema/expr.rs:760-830`, the reporter `:837`) — the view/array table, the raw struct fields, and the scalar/`cstring`/handle/function fallthrough, with the wider family covered (`String.len`, a scalar `.foo`, a raw struct's `.foo`) and the raw-u8/`raw str` residuals reported standing; `DEF-347`: a text view's `.ptr` at a raw destination spells the sanctioned `(u8 *)(s.ptr)` cast at the store/return/field/argument positions (`codegen/expr.rs:325`/`:740`/`:1358`, `codegen/function.rs:2502`, `codegen/calls.rs:290`), with the argument extension covered through the resolved instance parameter types (`codegen/function.rs:1119-1137`); `DEF-348`: the `raw E` member read routes through the value-form rule (one `E10212` at both paths, existing and unknown alike, per AR-22); left: the two standing member shapes (the `DEF-352` family), `DEF-349` untouched)
+- [x] 7.2.2 Run the suite to green; on any failure STOP and fix the implementation (or park per
+      AR-7 if the stop condition fires) ✅ (completed: 2026-10-19 14:00; the checker-conformance spec 162/162 plain and under `RDC_ASAN=1`; the impl pins 74/74 (the `ptrpin` updated to the corrected cast, two pins added); the residue 161/98; `make check` exit 0; the differential shows 3 head-only C fixes and 3 intended rejects, no emission diffs; parent-verified both legs)
 
 ### Step 7.3: Impl Tests & Review
 

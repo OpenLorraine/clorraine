@@ -315,6 +315,53 @@ impl<'a> Emitter<'a> {
     /// field cannot be resolved until the instance's type arguments are known.
     /// The substituted base makes it concrete, so the projection resolves
     /// through the same field lookup the place renderer walks and the `len`
+    /// True when a text view's pointer member read reaches a raw destination.
+    ///
+    /// The member's C field is a `const u8 *` while its checked type is the
+    /// plain `raw u8` such a destination holds, so C rejects the store as a
+    /// discarded qualifier; the store spells the sanctioned cast instead. A
+    /// slice's pointer member is already a mutable pointer, and a `cstring`
+    /// destination keeps its own member conversion.
+    pub(super) fn raw_text_view_pointer(&self, value: &Value, destination: &Ty) -> bool {
+        if !matches!(self.substitute(destination).kind, TyKind::Raw(_)) {
+            return false;
+        }
+        match &value.kind {
+            ValueKind::Member { base, name } => {
+                name == "ptr"
+                    && matches!(
+                        self.resolved_value_ty(base).kind,
+                        TyKind::Str | TyKind::StaticStr
+                    )
+            }
+            // The dotted spelling lowers to a place whose final projection is
+            // the member read, so the type the projection selects from
+            // decides the base, exactly as the place renderer walks it.
+            ValueKind::Place(place) => {
+                let Some((Projection::Field(name), rest)) = place.projections.split_last() else {
+                    return false;
+                };
+                if name != "ptr" {
+                    return false;
+                }
+                let mut current = self.substitute(&self.place_base_type(&place.base));
+                for projection in rest {
+                    if current.is_unknown() {
+                        return false;
+                    }
+                    current = match projection {
+                        Projection::Field(field) => self.field_type(&current, field),
+                        Projection::Element(_) | Projection::ElementTemp(_) => {
+                            element_type(&current)
+                        }
+                    };
+                }
+                matches!(current.kind, TyKind::Str | TyKind::StaticStr)
+            }
+            _ => false,
+        }
+    }
+
     /// fold sees the real type.
     pub(super) fn resolved_value_ty(&self, value: &Value) -> Ty {
         let ty = self.substitute(&value.ty);
@@ -687,7 +734,13 @@ impl<'a> Emitter<'a> {
             return guarded;
         }
         let text = self.guarded_value(value);
-        self.widen_text_view(text, &self.substitute(&value.ty), result)
+        let text = self.widen_text_view(text, &self.substitute(&value.ty), result);
+        // A text view's pointer member arm at a raw result spells the
+        // sanctioned cast, exactly as a store does.
+        if self.raw_text_view_pointer(value, result) {
+            return format!("(u8 *)({text})");
+        }
+        text
     }
 
     /// Renders a null test on a struct-typed view, when the pair is one.
@@ -938,7 +991,12 @@ impl<'a> Emitter<'a> {
     /// has no substitution to resolve it with. The substituted argument values
     /// resolve it through the same matcher the call's own inference uses, so
     /// the symbol names the concrete instance the monomorphization declares.
-    fn resolved_call_type_args(&self, info: &FuncInfo, type_args: &[Ty], args: &[Value]) -> Vec<Ty> {
+    pub(super) fn resolved_call_type_args(
+        &self,
+        info: &FuncInfo,
+        type_args: &[Ty],
+        args: &[Value],
+    ) -> Vec<Ty> {
         let resolved: Vec<Ty> = type_args.iter().map(|ty| self.substitute(ty)).collect();
         if !resolved.iter().any(|ty| ty.is_unknown() || ty.is_param()) {
             return resolved;
@@ -1292,7 +1350,17 @@ impl<'a> Emitter<'a> {
         let mut values: Vec<String> = Vec::new();
         for (field, _) in &declared {
             match fields.iter().find(|(written, _)| written == field) {
-                Some((_, value)) => values.push(self.value(value)),
+                Some((_, value)) => {
+                    let text = self.value(value);
+                    // A text view's pointer member at a raw field destination
+                    // spells the sanctioned cast, exactly as a store does.
+                    let field_ty = self.field_type(ty, field);
+                    values.push(if self.raw_text_view_pointer(value, &field_ty) {
+                        format!("(u8 *)({text})")
+                    } else {
+                        text
+                    });
+                }
                 None => {
                     let empty = self.empty_state(&self.field_type(ty, field));
                     values.push(empty);

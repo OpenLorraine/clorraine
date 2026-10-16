@@ -771,12 +771,37 @@ impl Checker<'_, '_> {
             // shared rule so the conversion rules judge a destination the
             // member cannot reach; the renderer already spells the struct
             // fields and the fixed-array `.len` keeps its compile-time fold.
+            // A name outside that table has no member surface at all, so the
+            // read reports the unknown-member rule like any other base.
             TyKind::Str | TyKind::StaticStr | TyKind::Array { .. } => {
-                crate::types::view_member_ty(base_ty, name).unwrap_or_else(Ty::unknown)
+                match crate::types::view_member_ty(base_ty, name) {
+                    Some(member_ty) => member_ty,
+                    None => {
+                        self.report_unknown_member(base_ty, name, span);
+                        Ty::unknown()
+                    }
+                }
             }
-            // A field reached through a raw pointer is typed from the pointee;
-            // the unsafe gate for the dereference stays in the ownership stage.
-            TyKind::Raw(_) => self.field_type(base_ty, name).unwrap_or_else(Ty::unknown),
+            // A field reached through a raw pointer is typed from the
+            // pointee, because the dereference is implied: a raw struct's
+            // field resolves, while a raw enum's member is the value form of
+            // its enum and every read reports the unknown-member rule — the
+            // same report the instance path gives the substituted read. The
+            // unsafe gate for the dereference stays in the ownership stage.
+            TyKind::Raw(inner) => match &inner.kind {
+                TyKind::Struct(..) => match self.field_type(base_ty, name) {
+                    Some(field_ty) => field_ty,
+                    None => {
+                        self.report_unknown_member(base_ty, name, span);
+                        Ty::unknown()
+                    }
+                },
+                TyKind::Enum(_) => {
+                    self.report_unknown_member(base_ty, name, span);
+                    Ty::unknown()
+                }
+                _ => Ty::unknown(),
+            },
             // A member of an opaque base is resolved after substitution: the
             // instance decides whether the substituted type has the field, so
             // the read stays accepted here and the per-instance audit reports
@@ -792,8 +817,33 @@ impl Checker<'_, '_> {
                 }
                 Ty::unknown()
             }
+            // Every other concrete value — a scalar, a `cstring`, an owned
+            // handle, a function value — has no member surface at all, so its
+            // read reports the unknown-member rule. An unresolved base keeps
+            // its unknown shape so a broken expression does not report twice.
+            _ if !base_ty.is_unknown() => {
+                self.report_unknown_member(base_ty, name, span);
+                Ty::unknown()
+            }
             _ => Ty::unknown(),
         }
+    }
+
+    /// Reports an unknown member on a concrete base.
+    ///
+    /// A field and a free function may share a spelling for a dot-call, so a
+    /// name that is a free function is not reported; every other unknown
+    /// member reports the registered rule with the base as written.
+    fn report_unknown_member(&mut self, base_ty: &Ty, name: &str, span: Span) {
+        if self.free_function(name).is_some() {
+            return;
+        }
+        self.error(
+            "E10212",
+            format!("'{name}' is not a member of '{}'", base_ty.display()),
+            "check the declaration or the spelling",
+            span,
+        );
     }
 
     /// Types an index expression, reporting a non-indexable base or a constant

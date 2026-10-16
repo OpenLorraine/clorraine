@@ -114,7 +114,7 @@ impl Emitter<'_> {
             // the call's explicit type arguments when there are any.
             None => (
                 self.callee_modes(callee),
-                self.instance_param_types(callee, type_args),
+                self.instance_param_types(callee, type_args, args),
             ),
         };
         let user_call = self.resolve_function(callee).is_some();
@@ -282,6 +282,13 @@ impl Emitter<'_> {
             // emission.
             if matches!(self.resolved_value_ty(arg).kind, TyKind::Raw(_)) {
                 return format!("(char *)({})", self.value(arg));
+            }
+        }
+        // A text view's pointer member passed at a raw parameter spells the
+        // sanctioned cast, exactly as the store does.
+        if let Some(expected) = expected {
+            if self.raw_text_view_pointer(arg, expected) {
+                return format!("(u8 *)({})", self.value(arg));
             }
         }
         let text = self.value(arg);

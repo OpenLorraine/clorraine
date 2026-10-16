@@ -1120,13 +1120,18 @@ impl<'a> Emitter<'a> {
         &self,
         callee: &str,
         type_args: &[Ty],
+        args: &[Value],
     ) -> Option<Vec<Ty>> {
         if type_args.is_empty() {
             return self.callee_param_types(callee);
         }
         let info = self.resolve_function(callee)?;
         let names = type_param_names(info.decl);
-        let concrete: Vec<Ty> = type_args.iter().map(|ty| self.substitute(ty)).collect();
+        // A generic body's recorded type arguments can still be opaque: the
+        // substituted argument values resolve them through the same matcher
+        // the call symbol uses, so the rendered argument conversions match the
+        // prototype the symbol names.
+        let concrete = self.resolved_call_type_args(info, type_args, args);
         Some(
             info.decl
                 .params
@@ -2490,6 +2495,12 @@ impl<'a> Emitter<'a> {
             && matches!(self.resolved_value_ty(value).kind, TyKind::Raw(_))
         {
             return format!("(char *)({text})");
+        }
+        // A text view's pointer member is a `const u8 *` in the C while a
+        // raw destination is a mutable byte pointer: the store spells the
+        // sanctioned cast exactly as the `cstring` conversion does.
+        if self.raw_text_view_pointer(value, ty) {
+            return format!("(u8 *)({text})");
         }
         text
     }

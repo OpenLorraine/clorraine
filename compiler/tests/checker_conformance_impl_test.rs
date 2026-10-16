@@ -1335,10 +1335,10 @@ func main(): i32 {
 fn should_type_a_view_pointer_member_for_its_conversions() {
     let emitted = emit_host("ptrpin", VIEW_POINTER_SOURCE);
     assert_contains("ptrpin", &emitted, "static u8 * cl_spec_cc_impl_ptrpin_ptr(ClStr s)");
-    // The `raw u8` return spells the pre-existing const-discard shape (a
-    // const pointer at a mutable destination): the pin records the emission
-    // deliberately, not a build regression; the shape is a filed row.
-    assert_contains("ptrpin", &emitted, "return s.ptr;");
+    // The `raw u8` return spells the sanctioned member cast: a text view's
+    // pointer member is a `const u8 *` in the C while a mutable raw
+    // destination holds a byte pointer.
+    assert_contains("ptrpin", &emitted, "return (u8 *)(s.ptr);");
     // The local `cstring` return and the stdlib `toCString` body both spell
     // the sanctioned pointer conversion.
     assert_eq!(
@@ -4050,4 +4050,115 @@ fn should_key_the_caller_parameter_resolved_nullable_instance() {
         0,
         "implparsiblingnoinst: an un-instantiated body emits no specialization"
     );
+}
+
+// ===== Member typing on concrete paths =====
+
+/// A view pointer member read casts at every raw destination.
+///
+/// The member's C field is a `const u8 *` while a `raw u8` destination holds
+/// a plain byte pointer, so the local store, the `raw u8` return, the raw
+/// struct-literal field, and the raw argument each spell the sanctioned cast;
+/// the program re-emits byte-identically.
+const RAW_CAST_SOURCE: &str = r#"module spec.cc.impl.castpin;
+
+struct Holder {
+    c: raw u8;
+}
+
+func sink(p: raw u8): i32 {
+    unsafe {
+        if (p == null) { return 1; }
+        return i32(*p) - 97;
+    }
+}
+
+func ptr(s: str): raw u8 {
+    return s.ptr;
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    let p: raw u8 = s.ptr;
+    let h: Holder = Holder { c: s.ptr };
+    if (ptr(s) == null) { return 2; }
+    if (p == null) { return 3; }
+    if (h.c == null) { return 4; }
+    return sink(s.ptr);
+}
+"#;
+
+#[test]
+fn should_cast_the_view_pointer_member_at_every_raw_destination() {
+    let emitted = emit_host("castpin", RAW_CAST_SOURCE);
+    assert_contains("castpin", &emitted, "p = (u8 *)(s.ptr);");
+    assert_contains("castpin", &emitted, "return (u8 *)(s.ptr);");
+    assert_contains(
+        "castpin",
+        &emitted,
+        "h = (ClHolder){ (u8 *)(s.ptr) };",
+    );
+    assert_contains(
+        "castpin",
+        &emitted,
+        "cl_spec_cc_impl_castpin_sink((u8 *)(s.ptr))",
+    );
+    assert_eq!(
+        count(&emitted, "(u8 *)("),
+        4,
+        "castpin: expected one cast per raw destination"
+    );
+
+    let (first, second) = emit_twice("castpin", RAW_CAST_SOURCE);
+    assert_eq!(first, second, "castpin: the program re-emitted differently");
+}
+
+/// An unknown member on a concrete base reports at the base's span.
+///
+/// The fixed array, the `cstring`, and the `raw E` each report the registered
+/// unknown-member rule with the base as written and no translation unit
+/// written.
+#[test]
+fn should_report_unknown_members_at_the_base_span() {
+    let fixed_array = r#"module spec.cc.impl.fixedmem;
+
+func main(): i32 {
+    let a: u8[4] = [1, 2, 3, 4];
+    let p = a.ptr;
+    return 0;
+}
+"#;
+    let stderr = reject_host("fixedmem", fixed_array);
+    assert!(stderr.contains("'ptr' is not a member of 'u8[4]'"), "fixedmem: {stderr}");
+    assert!(stderr.contains("main.clo:5:13"), "fixedmem: {stderr}");
+
+    let c_string = r#"module spec.cc.impl.cstringmem;
+
+import { toCString } from std.text;
+
+func main(): i32 {
+    let c: cstring = toCString("abc");
+    let p = c.ptr;
+    return 0;
+}
+"#;
+    let stderr = reject_host("cstringmem", c_string);
+    assert!(stderr.contains("'ptr' is not a member of 'cstring'"), "cstringmem: {stderr}");
+    assert!(stderr.contains("main.clo:7:13"), "cstringmem: {stderr}");
+
+    let raw_enum = r#"module spec.cc.impl.rawenumm;
+
+enum E : u8 { A, B }
+
+func main(): i32 {
+    let e: E = E.A;
+    let p: raw E = unsafe &e;
+    unsafe {
+        return i32(p.A);
+    }
+}
+"#;
+    let stderr = reject_host("rawenumm", raw_enum);
+    assert!(stderr.contains("'A' is not a member of 'raw E'"), "rawenumm: {stderr}");
+    assert!(stderr.contains("main.clo:9:20"), "rawenumm: {stderr}");
 }
