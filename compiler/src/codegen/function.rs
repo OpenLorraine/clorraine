@@ -2074,15 +2074,16 @@ impl<'a> Emitter<'a> {
         if matches!(value.kind, ValueKind::Null) {
             return self.null_value(ty);
         }
-        // A conditional at a struct-view destination renders per arm: each arm
-        // keeps its own nullness (an owned arm widens to the view, a null arm
-        // carries the destination's empty view). A conditional whose arms are
-        // all null carries the null literal's unknown type, so its empty
-        // spelling must come from the destination; and rendering an owned arm
-        // as one value and widening the whole conditional after would
-        // construct a view over whichever arm ran, including the null one.
+        // A conditional at a null-capable destination renders per arm: each
+        // arm keeps its own nullness (an owned arm widens to the view, a null
+        // arm carries the destination's empty value). A conditional whose
+        // arms are all null carries the null literal's unknown type, so its
+        // empty spelling must come from the destination; and rendering an
+        // owned arm as one value and widening the whole conditional after
+        // would construct a view over whichever arm ran, including the null
+        // one.
         if matches!(value.kind, ValueKind::Conditional { .. })
-            && is_struct_view(&self.substitute(ty))
+            && self.carries_null_value(ty)
         {
             return self.conditional_arm(value, ty);
         }

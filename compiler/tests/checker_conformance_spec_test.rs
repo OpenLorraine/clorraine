@@ -4704,3 +4704,51 @@ func main(): i32 {
         &["E10401"],
     );
 }
+
+// ===== The pointer-destination conditional =====
+
+/// A pointer-destination conditional takes the destination's own null.
+///
+/// A `cstring?` or `raw` result conditional stores the destination's own null
+/// per arm, from a place arm and from the literal arms; on the profiles whose
+/// null literal is the integer constant the pointer cast keeps both arms a
+/// pointer, so the cross build accepts what a bare `0` pair would fail with
+/// `-Werror=int-conversion`.
+#[test]
+fn should_lower_a_pointer_destination_conditional_per_arm() {
+    let place = r#"module spec.cc.condpointerplace;
+
+func main(): i32 {
+    let c: bool = true;
+    let x = null;
+    let cs: cstring? = c ? x : null;
+    let p: raw u8? = c ? x : null;
+    if (cs == null && p == null) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("condpointerplace", place);
+    assert_no_asan("condpointerplace", &output);
+    assert_exit("condpointerplace", &output, 0);
+
+    let literal = r#"module spec.cc.condpointerlit;
+
+func main(): i32 {
+    let c: bool = true;
+    let cs: cstring? = c ? null : null;
+    let p: raw u8? = c ? null : null;
+    if (cs == null && p == null) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("condpointerlit", literal);
+    assert_no_asan("condpointerlit", &output);
+    assert_exit("condpointerlit", &output, 0);
+
+    let (scratch, emitted) = emit_hosted_amiga("condpointerplace", place);
+    build_hosted_amiga_c("condpointerplace", &scratch, &emitted);
+}

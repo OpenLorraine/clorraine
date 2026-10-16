@@ -460,13 +460,21 @@ impl<'a> Emitter<'a> {
     ///
     /// A pointer-like type spells null as `NULL` (or the profile's zero), but a
     /// view is an emitted pointer-and-length struct, so its empty state is the
-    /// zero struct; `NULL` would not type-check against it.
+    /// zero struct; `NULL` would not type-check against it. On the profiles
+    /// whose null literal is the integer constant, a pointer destination takes
+    /// its own pointer cast: a conditional whose arms are both the bare
+    /// constant types as `int`, and the store to the pointer fails the
+    /// compiler's `-Werror=int-conversion`.
     pub(super) fn null_value(&self, ty: &Ty) -> String {
         let ty = self.substitute(ty);
         if let Some(helper) = zero_view_helper(&ty) {
             // A view's empty state is its zero value; the helper is emitted
             // with the view typedefs so no compound literal is needed.
             format!("{helper}()")
+        } else if self.null_literal() == "0"
+            && matches!(ty.kind, TyKind::CString | TyKind::Raw(_))
+        {
+            format!("({})0", c_type(&ty, &self.sema.table))
         } else {
             self.null_literal().to_owned()
         }

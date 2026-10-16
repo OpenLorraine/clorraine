@@ -131,7 +131,6 @@ impl Emitter<'_> {
                 // parameter's null value too.
                 let text = if (matches!(arg.kind, ValueKind::Null)
                     || (self.is_null_shaped(arg)
-                        && !matches!(arg.kind, ValueKind::Conditional { .. })
                         && expected.is_some_and(|expected| self.carries_null_value(expected))))
                     && (func_ty.is_some() || user_call)
                 {
@@ -140,11 +139,15 @@ impl Emitter<'_> {
                             let empty = self.null_value(expected);
                             // A computed value still runs before the
                             // parameter takes its own empty value; the null
-                            // literal itself has nothing to run.
+                            // literal itself has nothing to run; and a
+                            // conditional renders per arm with the
+                            // parameter's own null value.
                             if matches!(arg.kind, ValueKind::Null)
                                 || self.carries_null_shape(arg)
                             {
                                 empty
+                            } else if matches!(arg.kind, ValueKind::Conditional { .. }) {
+                                self.conditional_arm(arg, expected)
                             } else {
                                 format!("({}, {empty})", self.value(arg))
                             }
