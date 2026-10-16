@@ -635,6 +635,13 @@ impl<'a> Emitter<'a> {
                 self.conditional_arm(else_value, &nested)
             );
         }
+        // A nullable owned arm keeps its nullness through the widening: the
+        // guard reads the arm's place twice and selects the result's empty
+        // view for a null handle. A fresh arm binds to a temporary before the
+        // conditional's store instead, so only a place-rooted arm spells it.
+        if let Some(guarded) = self.guarded_view_widening(value, result) {
+            return guarded;
+        }
         let text = self.guarded_value(value);
         self.widen_text_view(text, &self.substitute(&value.ty), result)
     }

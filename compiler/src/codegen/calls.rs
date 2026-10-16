@@ -293,6 +293,14 @@ impl Emitter<'_> {
             )
         });
         if wants_str && matches!(&arg_ty.kind, TyKind::Handle(name) if name == "String") {
+            // A possibly-null handle keeps its nullness through the widening:
+            // the view constructor would dereference it, so the argument
+            // carries the parameter's own null guard instead.
+            if let Some(guarded) = expected.and_then(|expected| {
+                self.guarded_view_widening(arg, expected)
+            }) {
+                return guarded;
+            }
             return format!("cl_string_view({text})");
         }
         text

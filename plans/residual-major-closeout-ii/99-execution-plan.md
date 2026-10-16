@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 23:10
-> **Progress**: 2/51 tasks (4%) — Executing Phase 1
+> **Last Updated**: 2026-10-18 00:10
+> **Progress**: 4/51 tasks (8%) — Phase 1 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -74,10 +74,10 @@ non-null controls.
 
 ### Step 1.2: Implementation
 
-- [ ] 1.2.1 Guard the per-arm view widening at the conditional, the argument, and the initializer
+- [x] 1.2.1 Guard the per-arm view widening at the conditional, the argument, and the initializer
       store — `compiler/src/codegen/expr.rs`, `compiler/src/codegen/calls.rs`,
-      `compiler/src/codegen/function.rs`, `compiler/src/codegen/program.rs`
-- [ ] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/codegen/function.rs`, `compiler/src/codegen/program.rs` ✅ (completed: 2026-10-18 00:10; the four positions share one guard helper (`codegen/function.rs:2067` `needs_view_guard`, `:2083` `guarded_view_widening`, called by `store_text` at `:2150` byte-identically): `conditional_arm` (`codegen/expr.rs:642`) guards a place-rooted nullable owned arm; the initializer store (`codegen/program.rs:1058-1090`/`:1441-1494`) binds a non-place nullable owned source into an init local retained by the view destination; `argument_text` (`codegen/calls.rs:300`) guards a nullable handle argument, with the owner keeping the conditional's nullness (`own/lower.rs:4996`); the initializer member projection widens under the guard (`codegen/program.rs:1077-1085`); the five reds return 9/9/0/0/9 ASan-clean; two adjacent shapes (a direct nullable call argument and a nested initializer conditional) fixed beyond the suite)
+- [x] 1.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-18 00:10; the module-initializer spec 52/52 plain and under `RDC_ASAN=1`; the suite family green; `make check` exit 0 (2247 passed); the differential shows 12 guard-only emission diffs and no head-only strict failure; the hosted-amiga cross leg builds; parent-verified 52/52 plain + ASan)
 
 ### Step 1.3: Impl Tests & Review
 

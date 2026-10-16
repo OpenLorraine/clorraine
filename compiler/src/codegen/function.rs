@@ -2059,6 +2059,42 @@ impl<'a> Emitter<'a> {
         self.push("    }");
     }
 
+    /// True when a possibly-null owned handle reaches a view destination.
+    ///
+    /// The view constructor dereferences the handle, so a null one must select
+    /// the destination's empty view instead of widening: the guard applies
+    /// exactly where the value can be null and the destination is a view.
+    pub(super) fn needs_view_guard(&self, value_ty: &Ty, target: &Ty) -> bool {
+        let value_ty = self.substitute(value_ty);
+        value_ty.nullable
+            && is_struct_view(&self.substitute(target))
+            && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
+    }
+
+    /// Renders a nullable owned handle at a view destination under its guard.
+    ///
+    /// The view constructor would dereference a null handle, so a source that
+    /// can be null tests it first and selects the destination's empty view:
+    /// `(handle ? cl_string_view(handle) : cl_zero_ClStr())`. The guard reads
+    /// the source twice, so only a place-rooted source — a place, a field, or
+    /// an element — spells it; a source that reads a fresh value binds to a
+    /// temporary before the store instead. Every other source keeps the plain
+    /// widening.
+    pub(super) fn guarded_view_widening(&self, value: &Value, target: &Ty) -> Option<String> {
+        if !matches!(
+            value.kind,
+            ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
+        ) || !self.needs_view_guard(&value.ty, target)
+        {
+            return None;
+        }
+        let text = self.value(value);
+        Some(format!(
+            "({text} ? cl_string_view({text}) : {})",
+            self.null_value(target)
+        ))
+    }
+
     /// Renders a value for a store into a target of type `ty`.
     ///
     /// An owned `String` widens implicitly to the `str` view the target holds,
@@ -2111,19 +2147,8 @@ impl<'a> Emitter<'a> {
         // reads the source twice, so only a place-rooted source spells it; a
         // fresh call root binds into an owner before a view store, and every
         // other value keeps the plain constructor.
-        if value_ty.nullable
-            && is_struct_view(&self.substitute(ty))
-            && matches!(
-                value.kind,
-                ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
-            )
-            && matches!(&value_ty.kind, TyKind::Handle(name) if name == "String")
-        {
-            let text = self.value(value);
-            return format!(
-                "({text} ? cl_string_view({text}) : {})",
-                self.null_value(&self.substitute(ty))
-            );
+        if let Some(guarded) = self.guarded_view_widening(value, ty) {
+            return guarded;
         }
         let text = self.value(value);
         let text = self.widen_text_view(text, &value_ty, ty);

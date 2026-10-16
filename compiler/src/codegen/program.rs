@@ -1055,6 +1055,16 @@ impl<'a> Emitter<'a> {
         let declared_view = declared_ty
             .as_ref()
             .filter(|declared| matches!(declared.kind, TyKind::Str | TyKind::StaticStr));
+        // A nullable owned source at a view destination needs the null guard:
+        // the view constructor would dereference a null handle. The guard
+        // reads its source twice, so a source whose read is not a place — a
+        // call result or a conditional over one — binds into an init local
+        // first and the guard reads the local; the view destination retains
+        // the bound storage exactly as it retains one written directly.
+        let lowered = match declared_view {
+            Some(declared) => self.bind_guarded_view_source(&lowered, declared),
+            None => lowered,
+        };
         let rendered = match declared_view {
             // A conditional at a view destination keeps each arm's own
             // nullness: the owned arm widens to the view and the null arm
@@ -1064,13 +1074,17 @@ impl<'a> Emitter<'a> {
             Some(declared) if matches!(lowered.kind, ValueKind::Conditional { .. }) => {
                 self.conditional_arm(&lowered, declared)
             }
-            Some(_)
+            Some(declared)
                 if matches!(
                     &self.substitute(&lowered.ty).kind,
                     TyKind::Handle(handle) if handle == "String"
                 ) =>
             {
-                format!("cl_string_view({})", self.value(&lowered))
+                // A possibly-null handle keeps its nullness through the
+                // widening: the guard selects the destination's zero view for
+                // a null handle instead of dereferencing it.
+                self.guarded_view_widening(&lowered, declared)
+                    .unwrap_or_else(|| format!("cl_string_view({})", self.value(&lowered)))
             }
             _ => self.value(&lowered),
         };
@@ -1415,6 +1429,68 @@ impl<'a> Emitter<'a> {
             ),
             _ => value.clone(),
         }
+    }
+
+    /// Binds a fresh nullable owned source whose view store needs the guard.
+    ///
+    /// The guard reads its source twice, so a source that is not a place-rooted
+    /// read — a call result or a conditional over one — binds into an init
+    /// local first and the guard reads the local. The view destination retains
+    /// the bound storage exactly as it retains one written directly. A
+    /// place-rooted, non-nullable, or non-`String` source keeps its form.
+    fn bind_guarded_view_source(&mut self, value: &Value, view: &Ty) -> Value {
+        let fresh = match &value.kind {
+            ValueKind::Conditional { .. } => self.conditional_arms_need_guard_binding(value, view),
+            _ => {
+                self.needs_view_guard(&value.ty, view)
+                    && !matches!(
+                        value.kind,
+                        ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
+                    )
+            }
+        };
+        if !fresh {
+            return value.clone();
+        }
+        let zero = self.empty_state(&value.ty);
+        let (_, local) = self.materialize_init_local(value, None, &zero);
+        local
+    }
+
+    /// True when a conditional's view store needs the guard on an arm that
+    /// cannot spell it.
+    ///
+    /// The guard reads its source twice, so an arm that reads a fresh value —
+    /// a call result, or a nested conditional over one — binds with the whole
+    /// conditional into an init local first. A null, place-rooted, non-null,
+    /// or non-`String` arm renders its own guard or its plain widening.
+    fn conditional_arms_need_guard_binding(&self, value: &Value, view: &Ty) -> bool {
+        let ValueKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &value.kind
+        else {
+            return false;
+        };
+        self.conditional_arm_needs_guard_binding(then_value, view)
+            || self.conditional_arm_needs_guard_binding(else_value, view)
+    }
+
+    /// True when one conditional arm needs the view guard but reads a fresh
+    /// value.
+    fn conditional_arm_needs_guard_binding(&self, value: &Value, view: &Ty) -> bool {
+        if matches!(value.kind, ValueKind::Null) || self.carries_null_shape(value) {
+            return false;
+        }
+        if matches!(value.kind, ValueKind::Conditional { .. }) {
+            return self.conditional_arms_need_guard_binding(value, view);
+        }
+        self.needs_view_guard(&value.ty, view)
+            && !matches!(
+                value.kind,
+                ValueKind::Place(_) | ValueKind::Member { .. } | ValueKind::Index { .. }
+            )
     }
 
     /// Stores a walked value into a fresh init local and returns the local's

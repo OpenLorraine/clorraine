@@ -4988,6 +4988,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 },
             );
         }
+        // A conditional that can select the null literal keeps its nullness in
+        // the owner's type, exactly as the view store's owner does: the
+        // destination's widening then guards the view construction instead of
+        // building a view over the null handle.
+        let mut value = value;
+        if FunctionChecker::conditional_selects_null(&value) {
+            value.ty.nullable = true;
+        }
         let name = format!("__cl_owned{}", self.next_owned_temp);
         self.next_owned_temp += 1;
         let decl_ty = self.materialized_ty(&value);
