@@ -35,14 +35,18 @@ pub fn collect(
 ) -> Monomorphization {
     let mut mono = Monomorphization::default();
     for module in loaded.modules.values() {
+        // A receiver head resolves like a read: the module's own bindings keep
+        // their declared names, and an import binding resolves to the target
+        // module's binding under its local name (an alias included).
+        let visible = visible_bindings(program, module);
         for item in &module.items {
             match item {
-                Item::Func(decl) => walk_block(&decl.body, program, sema, &mut mono),
+                Item::Func(decl) => walk_block(&decl.body, &visible, program, sema, &mut mono),
                 // A module initializer's calls instantiate like a body's: the
                 // initializer runs before `main`, so its instances must exist
                 // in the emitted program.
-                Item::GlobalLet(decl) => walk_expr(&decl.value, program, sema, &mut mono),
-                Item::GlobalConst(decl) => walk_expr(&decl.value, program, sema, &mut mono),
+                Item::GlobalLet(decl) => walk_expr(&decl.value, &visible, program, sema, &mut mono),
+                Item::GlobalConst(decl) => walk_expr(&decl.value, &visible, program, sema, &mut mono),
                 _ => {}
             }
         }
@@ -210,18 +214,20 @@ fn instance_keyable(ty: &Ty) -> bool {
 /// Walks a block looking for generic call sites.
 fn walk_block(
     block: &Block,
+    visible: &BTreeMap<String, Ty>,
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
 ) {
     for statement in &block.statements {
-        walk_stmt(statement, program, sema, mono);
+        walk_stmt(statement, visible, program, sema, mono);
     }
 }
 
 /// Walks one statement.
 fn walk_stmt(
     stmt: &Stmt,
+    visible: &BTreeMap<String, Ty>,
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
@@ -229,64 +235,64 @@ fn walk_stmt(
     match stmt {
         Stmt::Let(decl) => {
             if let Some(value) = &decl.value {
-                walk_expr(value, program, sema, mono);
+                walk_expr(value, visible, program, sema, mono);
             }
         }
-        Stmt::Const(decl) => walk_expr(&decl.value, program, sema, mono),
-        Stmt::Expr(expr) => walk_expr(expr, program, sema, mono),
-        Stmt::If(decl) => walk_if(decl, program, sema, mono),
+        Stmt::Const(decl) => walk_expr(&decl.value, visible, program, sema, mono),
+        Stmt::Expr(expr) => walk_expr(expr, visible, program, sema, mono),
+        Stmt::If(decl) => walk_if(decl, visible, program, sema, mono),
         Stmt::While(decl) => {
-            walk_expr(&decl.condition, program, sema, mono);
-            walk_block(&decl.body, program, sema, mono);
+            walk_expr(&decl.condition, visible, program, sema, mono);
+            walk_block(&decl.body, visible, program, sema, mono);
         }
         Stmt::DoWhile(decl) => {
-            walk_block(&decl.body, program, sema, mono);
-            walk_expr(&decl.condition, program, sema, mono);
+            walk_block(&decl.body, visible, program, sema, mono);
+            walk_expr(&decl.condition, visible, program, sema, mono);
         }
         Stmt::ForC(decl) => {
             match &decl.init {
                 Some(crate::ast::ForInit::Expr(expressions)) => {
                     for expression in expressions {
-                        walk_expr(expression, program, sema, mono);
+                        walk_expr(expression, visible, program, sema, mono);
                     }
                 }
                 Some(crate::ast::ForInit::Let(binding)) => {
                     if let Some(value) = &binding.value {
-                        walk_expr(value, program, sema, mono);
+                        walk_expr(value, visible, program, sema, mono);
                     }
                 }
                 Some(crate::ast::ForInit::Const(binding)) => {
-                    walk_expr(&binding.value, program, sema, mono);
+                    walk_expr(&binding.value, visible, program, sema, mono);
                 }
                 None => {}
             }
             if let Some(condition) = &decl.condition {
-                walk_expr(condition, program, sema, mono);
+                walk_expr(condition, visible, program, sema, mono);
             }
             for step in &decl.step {
-                walk_expr(step, program, sema, mono);
+                walk_expr(step, visible, program, sema, mono);
             }
-            walk_block(&decl.body, program, sema, mono);
+            walk_block(&decl.body, visible, program, sema, mono);
         }
         Stmt::ForIn(decl) => {
-            walk_expr(&decl.iterable, program, sema, mono);
-            walk_block(&decl.body, program, sema, mono);
+            walk_expr(&decl.iterable, visible, program, sema, mono);
+            walk_block(&decl.body, visible, program, sema, mono);
         }
         Stmt::Return { value, .. } => {
             if let Some(value) = value {
-                walk_expr(value, program, sema, mono);
+                walk_expr(value, visible, program, sema, mono);
             }
         }
         Stmt::Switch(decl) => {
-            walk_expr(&decl.scrutinee, program, sema, mono);
+            walk_expr(&decl.scrutinee, visible, program, sema, mono);
             for clause in &decl.clauses {
                 for statement in &clause.statements {
-                    walk_stmt(statement, program, sema, mono);
+                    walk_stmt(statement, visible, program, sema, mono);
                 }
             }
         }
         Stmt::Defer(block) | Stmt::Unsafe(block) | Stmt::Block(block) => {
-            walk_block(block, program, sema, mono)
+            walk_block(block, visible, program, sema, mono)
         }
         Stmt::Break(_) | Stmt::Continue(_) => {}
     }
@@ -295,15 +301,16 @@ fn walk_stmt(
 /// Walks an `if`, including any chained `else if`.
 fn walk_if(
     decl: &crate::ast::IfStmt,
+    visible: &BTreeMap<String, Ty>,
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
 ) {
-    walk_expr(&decl.condition, program, sema, mono);
-    walk_block(&decl.then_block, program, sema, mono);
+    walk_expr(&decl.condition, visible, program, sema, mono);
+    walk_block(&decl.then_block, visible, program, sema, mono);
     match &decl.else_branch {
-        Some(crate::ast::ElseBranch::If(nested)) => walk_if(nested, program, sema, mono),
-        Some(crate::ast::ElseBranch::Block(block)) => walk_block(block, program, sema, mono),
+        Some(crate::ast::ElseBranch::If(nested)) => walk_if(nested, visible, program, sema, mono),
+        Some(crate::ast::ElseBranch::Block(block)) => walk_block(block, visible, program, sema, mono),
         None => {}
     }
 }
@@ -311,6 +318,7 @@ fn walk_if(
 /// Walks an expression, recording any generic instantiation it names.
 fn walk_expr(
     expr: &Expr,
+    visible: &BTreeMap<String, Ty>,
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
@@ -321,69 +329,69 @@ fn walk_expr(
             type_args,
             args,
         } => {
-            record_call(callee, type_args, args, program, sema, mono);
-            walk_expr(callee, program, sema, mono);
+            record_call(callee, type_args, args, visible, program, sema, mono);
+            walk_expr(callee, visible, program, sema, mono);
             for arg in args {
-                walk_expr(&arg.value, program, sema, mono);
+                walk_expr(&arg.value, visible, program, sema, mono);
             }
         }
         ExprKind::Index { base, index } => {
-            walk_expr(base, program, sema, mono);
-            walk_expr(index, program, sema, mono);
+            walk_expr(base, visible, program, sema, mono);
+            walk_expr(index, visible, program, sema, mono);
         }
-        ExprKind::Member { base, .. } => walk_expr(base, program, sema, mono),
-        ExprKind::Unary { operand, .. } => walk_expr(operand, program, sema, mono),
+        ExprKind::Member { base, .. } => walk_expr(base, visible, program, sema, mono),
+        ExprKind::Unary { operand, .. } => walk_expr(operand, visible, program, sema, mono),
         ExprKind::Binary { left, right, .. } => {
-            walk_expr(left, program, sema, mono);
-            walk_expr(right, program, sema, mono);
+            walk_expr(left, visible, program, sema, mono);
+            walk_expr(right, visible, program, sema, mono);
         }
         ExprKind::Assign { target, value, .. } => {
-            walk_expr(target, program, sema, mono);
-            walk_expr(value, program, sema, mono);
+            walk_expr(target, visible, program, sema, mono);
+            walk_expr(value, visible, program, sema, mono);
         }
         ExprKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            walk_expr(condition, program, sema, mono);
-            walk_expr(then_value, program, sema, mono);
-            walk_expr(else_value, program, sema, mono);
+            walk_expr(condition, visible, program, sema, mono);
+            walk_expr(then_value, visible, program, sema, mono);
+            walk_expr(else_value, visible, program, sema, mono);
         }
         ExprKind::Cast { value, .. } | ExprKind::RawCast { value, .. } => {
-            walk_expr(value, program, sema, mono)
+            walk_expr(value, visible, program, sema, mono)
         }
         ExprKind::StructLiteral { fields, .. } => {
             for field in fields {
-                walk_expr(&field.value, program, sema, mono);
+                walk_expr(&field.value, visible, program, sema, mono);
             }
         }
         ExprKind::ArrayLiteral { elements, fill } => {
             for element in elements {
-                walk_expr(element, program, sema, mono);
+                walk_expr(element, visible, program, sema, mono);
             }
             if let Some(fill) = fill {
-                walk_expr(fill, program, sema, mono);
+                walk_expr(fill, visible, program, sema, mono);
             }
         }
-        ExprKind::Unsafe(inner) => walk_expr(inner, program, sema, mono),
+        ExprKind::Unsafe(inner) => walk_expr(inner, visible, program, sema, mono),
         ExprKind::IntrinsicCall { args, .. } => {
             for arg in args {
                 if let crate::ast::IntrinsicArg::Expr(inner) = arg {
-                    walk_expr(inner, program, sema, mono);
+                    walk_expr(inner, visible, program, sema, mono);
                 }
             }
         }
         ExprKind::Template(pieces) => {
             for piece in pieces {
                 if let crate::ast::TemplatePiece::Placeholder(inner) = piece {
-                    walk_expr(inner, program, sema, mono);
+                    walk_expr(inner, visible, program, sema, mono);
                 }
             }
         }
         ExprKind::Lambda { body, .. } => match body {
-            crate::ast::LambdaBody::Expr(inner) => walk_expr(inner, program, sema, mono),
-            crate::ast::LambdaBody::Block(block) => walk_block(block, program, sema, mono),
+            crate::ast::LambdaBody::Expr(inner) => walk_expr(inner, visible, program, sema, mono),
+            crate::ast::LambdaBody::Block(block) => walk_block(block, visible, program, sema, mono),
         },
         ExprKind::Int(_)
         | ExprKind::Float(_)
@@ -394,6 +402,50 @@ fn walk_expr(
         | ExprKind::Name(_)
         | ExprKind::Qualified(_)
         | ExprKind::Error => {}
+    }
+}
+
+/// The declared type of a place's base.
+///
+/// A place reads through the storage its base names: a local or a parameter
+/// binding, a module-level binding, a statement temporary, a captured
+/// environment field, or the pointee an element materialization dereferences.
+/// The emitter's place renderer resolves each base the same way, so a
+/// projected read keys the same instance either side spells.
+fn place_base_ty(function: &Function, program: &ProgramInfo, base: &crate::ir::PlaceBase) -> Ty {
+    let ty = match base {
+        crate::ir::PlaceBase::Local(name) => function
+            .locals
+            .iter()
+            .find(|local| &local.name == name)
+            .map(|local| local.ty.clone()),
+        crate::ir::PlaceBase::Param(name) => function
+            .params
+            .iter()
+            .find(|param| &param.name == name)
+            .map(|param| param.ty.clone()),
+        crate::ir::PlaceBase::Global(id) => program.globals.get(id).map(|global| global.ty.clone()),
+        crate::ir::PlaceBase::Temp(id) => function.temps.get(*id as usize).cloned(),
+        crate::ir::PlaceBase::EnvField { ty, .. } => Some(ty.clone()),
+        crate::ir::PlaceBase::DerefTemp { ty, .. } => Some(ty.clone()),
+    };
+    ty.unwrap_or_else(Ty::unknown)
+}
+
+/// The type of a field selected from `base`, following a raw pointer.
+///
+/// Mirrors the emitter's field lookup: a struct field resolves through the
+/// instance substitution, a raw pointer follows its pointee, and a view's ABI
+/// members resolve through the shared rule.
+fn field_ty(sema: &SemaOutput, bindings: &BTreeMap<String, Ty>, base: &Ty, field: &str) -> Ty {
+    match &base.kind {
+        TyKind::Struct(..) => sema
+            .table
+            .instance_field(base, field)
+            .map(|declared| substitute(&declared, bindings))
+            .unwrap_or_else(Ty::unknown),
+        TyKind::Raw(inner) => field_ty(sema, bindings, inner, field),
+        _ => crate::types::view_member_ty(base, field).unwrap_or_else(Ty::unknown),
     }
 }
 
@@ -408,6 +460,7 @@ fn record_call(
     callee: &Expr,
     type_args: &[Type],
     args: &[Arg],
+    visible: &BTreeMap<String, Ty>,
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
@@ -419,7 +472,7 @@ fn record_call(
         return;
     };
     let instance_args: Vec<Ty> = if type_args.is_empty() {
-        match infer_call_type_args(decl, callee, args, program, sema) {
+        match infer_call_type_args(decl, callee, args, visible, sema) {
             Some(inferred) => inferred,
             None => return,
         }
@@ -479,6 +532,28 @@ fn record_call(
     }
 }
 
+/// The value bindings a module's declarations read by name.
+///
+/// A module's own bindings keep their declared names, and an import binding
+/// resolves to the target module's binding under its local name — the alias
+/// when one is written. A receiver head resolves through this map exactly as
+/// the name resolver resolves a read.
+fn visible_bindings(program: &ProgramInfo, module: &crate::load::Module) -> BTreeMap<String, Ty> {
+    let mut visible: BTreeMap<String, Ty> = BTreeMap::new();
+    for (id, info) in &program.globals {
+        if id.module == module.name {
+            visible.insert(id.name.clone(), info.ty.clone());
+        }
+    }
+    for binding in &module.imports {
+        let id = crate::ir::GlobalId::new(binding.module.clone(), binding.original.clone());
+        if let Some(info) = program.globals.get(&id) {
+            visible.insert(binding.local.clone(), info.ty.clone());
+        }
+    }
+    visible
+}
+
 /// The receiver a dot callee contributes to its call's argument list.
 ///
 /// The body's call lowering puts the dot receiver at argument position zero,
@@ -501,7 +576,11 @@ enum DotReceiver {
 }
 
 /// The receiver type a dot callee contributes to its call's argument list.
-fn dot_receiver(callee: &Expr, program: &ProgramInfo, sema: &SemaOutput) -> DotReceiver {
+fn dot_receiver(
+    callee: &Expr,
+    visible: &BTreeMap<String, Ty>,
+    sema: &SemaOutput,
+) -> DotReceiver {
     let (receiver, member) = match &callee.kind {
         ExprKind::Member { base, name } => {
             let Some(ty) = sema
@@ -515,22 +594,13 @@ fn dot_receiver(callee: &Expr, program: &ProgramInfo, sema: &SemaOutput) -> DotR
         }
         ExprKind::Qualified(name) if name.segments.len() >= 2 => {
             let (head, rest) = name.segments.split_first().expect("checked segment count");
-            // Two modules may export the same-named binding, and this walk
-            // carries no module context, so an ambiguous head cannot be typed
-            // here: the receiver stays underived rather than taking the first
-            // name match.
-            let mut candidates = program.globals.iter().filter(|(id, _)| id.name == *head);
-            let Some((_, info)) = candidates.next() else {
-                // A local-headed path in a body is typed by the caller's scope,
-                // which this walk does not carry, and a module-qualified path
-                // names no value receiver at all. Either way the key cannot be
-                // derived here.
+            // The receiver head resolves like a read: the module's own
+            // bindings first and an import binding (an alias included) after
+            // them. A head that names a local, or a module path, stays
+            // underived here; the body's per-instance IR walk keys that shape.
+            let Some(mut ty) = visible.get(head).cloned() else {
                 return DotReceiver::Unknown;
             };
-            if candidates.next().is_some() {
-                return DotReceiver::Unknown;
-            }
-            let mut ty = info.ty.clone();
             for segment in &rest[..rest.len() - 1] {
                 let Some(next) = sema.table.instance_field(&ty, segment) else {
                     return DotReceiver::Unknown;
@@ -560,7 +630,7 @@ fn infer_call_type_args(
     decl: &crate::ast::FuncDecl,
     callee: &Expr,
     args: &[Arg],
-    program: &ProgramInfo,
+    visible: &BTreeMap<String, Ty>,
     sema: &SemaOutput,
 ) -> Option<Vec<Ty>> {
     let declared: Vec<String> = decl.type_params.iter().map(|p| p.name.clone()).collect();
@@ -570,7 +640,7 @@ fn infer_call_type_args(
         .map(|param| resolve_ty(&param.ty, &declared, &sema.table))
         .collect();
     let mut arg_types: Vec<Ty> = Vec::new();
-    match dot_receiver(callee, program, sema) {
+    match dot_receiver(callee, visible, sema) {
         DotReceiver::Argument(ty) => arg_types.push(ty),
         DotReceiver::Unknown | DotReceiver::Field => return None,
         DotReceiver::None => {}
@@ -847,23 +917,15 @@ fn walk_function(
     for temp in &function.temps {
         record_struct_type(&substitute(temp, bindings), sema, mono);
     }
-    // The declared local types resolve a projected place read under the
-    // instance substitution, exactly as the emitter's place renderer walks
-    // them.
-    let locals: BTreeMap<String, Ty> = function
-        .locals
-        .iter()
-        .map(|local| (local.name.clone(), local.ty.clone()))
-        .collect();
     for block in &function.blocks {
         for instr in &block.statements {
             match &instr.statement {
                 Statement::Assign { value, .. } => {
-                    walk_value(value, bindings, &locals, program, sema, mono, enclosing)
+                    walk_value(value, bindings, function, program, sema, mono, enclosing)
                 }
                 Statement::StorePointer { pointer, value } => {
-                    walk_value(pointer, bindings, &locals, program, sema, mono, enclosing);
-                    walk_value(value, bindings, &locals, program, sema, mono, enclosing);
+                    walk_value(pointer, bindings, function, program, sema, mono, enclosing);
+                    walk_value(value, bindings, function, program, sema, mono, enclosing);
                 }
                 Statement::Call {
                     callee,
@@ -873,21 +935,22 @@ fn walk_function(
                     ..
                 } => {
                     record_call_instance(
-                        callee, type_args, args, bindings, &locals, program, sema, mono, enclosing,
+                        callee, type_args, args, bindings, function, program, sema, mono,
+                        enclosing,
                     );
                     if let Some(receiver) = receiver {
-                        walk_value(receiver, bindings, &locals, program, sema, mono, enclosing);
+                        walk_value(receiver, bindings, function, program, sema, mono, enclosing);
                     }
                     for arg in args {
-                        walk_value(arg, bindings, &locals, program, sema, mono, enclosing);
+                        walk_value(arg, bindings, function, program, sema, mono, enclosing);
                     }
                 }
                 Statement::Discard { value } => {
-                    walk_value(value, bindings, &locals, program, sema, mono, enclosing)
+                    walk_value(value, bindings, function, program, sema, mono, enclosing)
                 }
                 Statement::Guards { checks } => {
                     for check in checks {
-                        walk_value(check, bindings, &locals, program, sema, mono, enclosing);
+                        walk_value(check, bindings, function, program, sema, mono, enclosing);
                     }
                 }
                 Statement::Move { .. }
@@ -903,17 +966,17 @@ fn walk_function(
         }
         match &block.terminator {
             Terminator::Branch { condition, .. } => {
-                walk_value(condition, bindings, &locals, program, sema, mono, enclosing)
+                walk_value(condition, bindings, function, program, sema, mono, enclosing)
             }
             Terminator::Switch { value, arms, .. } => {
-                walk_value(value, bindings, &locals, program, sema, mono, enclosing);
+                walk_value(value, bindings, function, program, sema, mono, enclosing);
                 for (label, _) in arms {
-                    walk_value(label, bindings, &locals, program, sema, mono, enclosing);
+                    walk_value(label, bindings, function, program, sema, mono, enclosing);
                 }
             }
             Terminator::Return {
                 value: Some(value), ..
-            } => walk_value(value, bindings, &locals, program, sema, mono, enclosing),
+            } => walk_value(value, bindings, function, program, sema, mono, enclosing),
             _ => {}
         }
     }
@@ -1004,7 +1067,7 @@ fn record_call_instance(
     type_args: &[Ty],
     args: &[Value],
     bindings: &BTreeMap<String, Ty>,
-    locals: &BTreeMap<String, Ty>,
+    function: &Function,
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
@@ -1012,7 +1075,9 @@ fn record_call_instance(
 ) {
     let mut resolved = stamped_type_args(type_args, bindings, enclosing, mono);
     if resolved.iter().any(|ty| ty.is_param() || ty.is_unknown()) {
-        if let Some(inferred) = resolve_ir_call_args(callee, args, bindings, locals, program, sema) {
+        if let Some(inferred) =
+            resolve_ir_call_args(callee, args, bindings, function, program, sema)
+        {
             resolved = stamped_type_args(&inferred, bindings, enclosing, mono);
         }
     }
@@ -1032,7 +1097,7 @@ fn resolve_ir_call_args(
     callee: &str,
     args: &[Value],
     bindings: &BTreeMap<String, Ty>,
-    locals: &BTreeMap<String, Ty>,
+    function: &Function,
     program: &ProgramInfo,
     sema: &SemaOutput,
 ) -> Option<Vec<Ty>> {
@@ -1050,7 +1115,7 @@ fn resolve_ir_call_args(
         .collect();
     let arg_types: Vec<Ty> = args
         .iter()
-        .map(|arg| resolved_ir_value_ty(arg, bindings, locals, sema))
+        .map(|arg| resolved_ir_value_ty(arg, bindings, function, program, sema))
         .collect();
     crate::sema::call::infer_type_args(&declared, &param_types, &arg_types)
 }
@@ -1063,7 +1128,8 @@ fn resolve_ir_call_args(
 fn resolved_ir_value_ty(
     value: &Value,
     bindings: &BTreeMap<String, Ty>,
-    locals: &BTreeMap<String, Ty>,
+    function: &Function,
+    program: &ProgramInfo,
     sema: &SemaOutput,
 ) -> Ty {
     let ty = substitute(&value.ty, bindings);
@@ -1072,11 +1138,11 @@ fn resolved_ir_value_ty(
     }
     match &value.kind {
         ValueKind::Member { base, name } => {
-            let base_ty = resolved_ir_value_ty(base, bindings, locals, sema);
-            sema.table.instance_field(&base_ty, name).unwrap_or(ty)
+            let base_ty = resolved_ir_value_ty(base, bindings, function, program, sema);
+            field_ty(sema, bindings, &base_ty, name)
         }
         ValueKind::Index { base, .. } => {
-            let base_ty = resolved_ir_value_ty(base, bindings, locals, sema);
+            let base_ty = resolved_ir_value_ty(base, bindings, function, program, sema);
             let element = crate::types::index_element(&base_ty);
             if element.is_unknown() {
                 ty
@@ -1093,36 +1159,35 @@ fn resolved_ir_value_ty(
             else_value,
             ..
         } => {
-            let then_ty = resolved_ir_value_ty(then_value, bindings, locals, sema);
-            let else_ty = resolved_ir_value_ty(else_value, bindings, locals, sema);
+            let then_ty = resolved_ir_value_ty(then_value, bindings, function, program, sema);
+            let else_ty = resolved_ir_value_ty(else_value, bindings, function, program, sema);
             if then_ty.is_unknown() || then_ty != else_ty {
                 ty
             } else {
                 then_ty
             }
         }
-        // A projected place reads through its base's declared type: the local
-        // table carries the instance's substituted binding, and each named
-        // field resolves through the same lookup the emitter's place renderer
-        // walks.
+        // A projected place reads through its base's declared type: the base
+        // resolves exactly as the emitter's place renderer resolves it — a
+        // local, a parameter, a module-level binding, a statement temporary,
+        // a captured environment field, or the pointee an element
+        // materialization dereferences — and each projection walks the
+        // substituted type.
         ValueKind::Place(place) => {
-            let crate::ir::PlaceBase::Local(name) = &place.base else {
-                return ty;
-            };
-            let Some(local_ty) = locals.get(name) else {
-                return ty;
-            };
-            let mut current = substitute(local_ty, bindings);
+            let base_ty = substitute(&place_base_ty(function, program, &place.base), bindings);
+            let mut current = base_ty;
             for projection in &place.projections {
                 match projection {
                     Projection::Field(field) => {
-                        let Some(next) = sema.table.instance_field(&current, field) else {
+                        let next = field_ty(sema, bindings, &current, field);
+                        if next.is_unknown() {
                             return ty;
-                        };
+                        }
                         current = next;
                     }
-                    Projection::Element(_) => current = current.iterated_element(),
-                    Projection::ElementTemp(_) => return ty,
+                    Projection::Element(_) | Projection::ElementTemp(_) => {
+                        current = crate::types::index_element(&current);
+                    }
                 }
             }
             if current.is_unknown() {
@@ -1165,7 +1230,7 @@ fn record_instance(
 fn walk_value(
     value: &Value,
     bindings: &BTreeMap<String, Ty>,
-    locals: &BTreeMap<String, Ty>,
+    function: &Function,
     program: &ProgramInfo,
     sema: &SemaOutput,
     mono: &mut Monomorphization,
@@ -1189,70 +1254,70 @@ fn walk_value(
             receiver,
         } => {
             record_call_instance(
-                callee, type_args, args, bindings, locals, program, sema, mono, enclosing,
+                callee, type_args, args, bindings, function, program, sema, mono, enclosing,
             );
             if let Some(receiver) = receiver {
-                walk_value(receiver, bindings, locals, program, sema, mono, enclosing);
+                walk_value(receiver, bindings, function, program, sema, mono, enclosing);
             }
             for arg in args {
-                walk_value(arg, bindings, locals, program, sema, mono, enclosing);
+                walk_value(arg, bindings, function, program, sema, mono, enclosing);
             }
         }
-        ValueKind::Member { base, .. } => walk_value(base, bindings, locals, program, sema, mono, enclosing),
+        ValueKind::Member { base, .. } => walk_value(base, bindings, function, program, sema, mono, enclosing),
         ValueKind::Index { base, index } => {
-            walk_value(base, bindings, locals, program, sema, mono, enclosing);
-            walk_value(index, bindings, locals, program, sema, mono, enclosing);
+            walk_value(base, bindings, function, program, sema, mono, enclosing);
+            walk_value(index, bindings, function, program, sema, mono, enclosing);
         }
-        ValueKind::Unary { operand, .. } => walk_value(operand, bindings, locals, program, sema, mono, enclosing),
+        ValueKind::Unary { operand, .. } => walk_value(operand, bindings, function, program, sema, mono, enclosing),
         ValueKind::Binary { left, right, .. } => {
-            walk_value(left, bindings, locals, program, sema, mono, enclosing);
-            walk_value(right, bindings, locals, program, sema, mono, enclosing);
+            walk_value(left, bindings, function, program, sema, mono, enclosing);
+            walk_value(right, bindings, function, program, sema, mono, enclosing);
         }
-        ValueKind::Cast { value, .. } => walk_value(value, bindings, locals, program, sema, mono, enclosing),
+        ValueKind::Cast { value, .. } => walk_value(value, bindings, function, program, sema, mono, enclosing),
         ValueKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            walk_value(condition, bindings, locals, program, sema, mono, enclosing);
-            walk_value(then_value, bindings, locals, program, sema, mono, enclosing);
-            walk_value(else_value, bindings, locals, program, sema, mono, enclosing);
+            walk_value(condition, bindings, function, program, sema, mono, enclosing);
+            walk_value(then_value, bindings, function, program, sema, mono, enclosing);
+            walk_value(else_value, bindings, function, program, sema, mono, enclosing);
         }
         ValueKind::StructLit { fields, .. } => {
             for (_, field) in fields {
-                walk_value(field, bindings, locals, program, sema, mono, enclosing);
+                walk_value(field, bindings, function, program, sema, mono, enclosing);
             }
         }
         ValueKind::ArrayLit { elements, fill } => {
             for element in elements {
-                walk_value(element, bindings, locals, program, sema, mono, enclosing);
+                walk_value(element, bindings, function, program, sema, mono, enclosing);
             }
             if let Some(fill) = fill {
-                walk_value(fill, bindings, locals, program, sema, mono, enclosing);
+                walk_value(fill, bindings, function, program, sema, mono, enclosing);
             }
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
                 if let crate::ir::ValuePiece::Placeholder(inner) = piece {
-                    walk_value(inner, bindings, locals, program, sema, mono, enclosing);
+                    walk_value(inner, bindings, function, program, sema, mono, enclosing);
                 }
             }
         }
         ValueKind::Intrinsic { args, .. } => {
             for arg in args {
-                walk_value(arg, bindings, locals, program, sema, mono, enclosing);
+                walk_value(arg, bindings, function, program, sema, mono, enclosing);
             }
         }
-        ValueKind::Materialize { value, .. } => walk_value(value, bindings, locals, program, sema, mono, enclosing),
+        ValueKind::Materialize { value, .. } => walk_value(value, bindings, function, program, sema, mono, enclosing),
         ValueKind::Closure { captures, .. } => {
             for capture in captures {
-                walk_value(capture, bindings, locals, program, sema, mono, enclosing);
+                walk_value(capture, bindings, function, program, sema, mono, enclosing);
             }
         }
         ValueKind::ClosureCall { callable, args } => {
-            walk_value(callable, bindings, locals, program, sema, mono, enclosing);
+            walk_value(callable, bindings, function, program, sema, mono, enclosing);
             for arg in args {
-                walk_value(arg, bindings, locals, program, sema, mono, enclosing);
+                walk_value(arg, bindings, function, program, sema, mono, enclosing);
             }
         }
         ValueKind::Place(_)

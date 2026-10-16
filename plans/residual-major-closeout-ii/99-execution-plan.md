@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 03:30
-> **Progress**: 8/51 tasks (16%) — Executing Phase 2
+> **Last Updated**: 2026-10-18 04:20
+> **Progress**: 10/51 tasks (20%) — Phase 2 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -117,10 +117,10 @@ conditional/non-local place bases with their controls.
 
 ### Step 2.2: Implementation
 
-- [ ] 2.2.1 Unify the walk's value resolver with the emitter's temp-following resolution: the
+- [x] 2.2.1 Unify the walk's value resolver with the emitter's temp-following resolution: the
       local-headed qualified receiver, the temp root, the conditional arms, and the non-local
-      place bases — `compiler/src/own/generics.rs`, `compiler/src/codegen/expr.rs`
-- [ ] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      place bases — `compiler/src/own/generics.rs`, `compiler/src/codegen/expr.rs` ✅ (completed: 2026-10-18 04:20; the initializer walk's dot receiver resolves its head through the module scope (`own/generics.rs:541` `visible_bindings`, wired at `:41` and threaded through the walkers; the qualified head reads the map at `:594`); the instance walk's projected-place resolver mirrors the emitter (new `place_base_ty` `:415` covering all six bases incl. `Temp`/`DerefTemp`/`EnvField` and `field_ty` `:440`), with `Function`/`ProgramInfo` threaded through the call/arg/value walkers; the conditional arm keys through the same resolver with the existing both-arms rule (`expr.rs` unchanged — the emitter was the reference); the three reds run 0 with the keyed symbols; the eight controls byte-identical)
+- [x] 2.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-18 04:20; the checker-conformance spec 136/136 plain and under `RDC_ASAN=1`; the differential shows 7 head-only C fixes (addition-only keyed specializations) and no emit/reject/accept regressions; the cross profiles build the changed shapes; determinism holds; parent-verified 136/136 plain + ASan)
 
 ### Step 2.3: Impl Tests & Review
 
