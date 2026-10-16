@@ -1013,3 +1013,43 @@ func main(): i32 {
         "globalsplit: the import and the bare same-module call must both name the second module; emitted C:\n{emitted}"
     );
 }
+
+/// A same-module function's call emits the function's own symbol.
+///
+/// The callee resolves as a function declaration before any module-level
+/// value, so the emitted call names the caller's function and the foreign
+/// global's symbol never appears as a callee (red at the phase base: the call
+/// named the foreign module's global).
+#[test]
+fn should_prefer_the_module_function_symbol_over_a_same_named_func_global() {
+    let holder = r#"module spec.criimpl.globalmod;
+
+export func g(x: i32): i32 {
+    return x + 100;
+}
+
+export let f: func(i32): i32 = g;
+"#;
+    let main = r#"module spec.criimpl.globalmodmain;
+
+import { g } from spec.criimpl.globalmod;
+
+func f(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    return (f(5) - 6) + (g(5) - 105);
+}
+"#;
+    let emitted = emit_pair("globalmod", holder, main);
+    assert_contains(
+        "globalmod",
+        &emitted,
+        "cl_spec_criimpl_globalmodmain_f(5)",
+    );
+    assert!(
+        !emitted.contains("cl_spec_criimpl_globalmod_f(5)"),
+        "globalmod: the foreign global must not be called; emitted C:\n{emitted}"
+    );
+}

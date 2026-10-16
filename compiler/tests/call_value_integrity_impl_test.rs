@@ -1082,6 +1082,35 @@ func main(): i32 {
     );
 }
 
+/// A function-pointer array element is called through the element value.
+///
+/// An indexed callee renders the element access as the callable, so the
+/// emitted call wraps the access in parentheses; the base emitted only the
+/// argument, which is a valid expression and therefore built (red at the
+/// phase base: `a[0](3) - 6` rendered as `(3) - 6`).
+#[test]
+fn should_call_through_the_element_when_a_function_pointer_array_element_is_the_callee() {
+    let source = r#"module impl.cvi.elemcallee;
+
+func twice(x: i32): i32 {
+    return x * 2;
+}
+
+struct Holder {
+    arr: (func(i32): i32)[2];
+}
+
+func main(): i32 {
+    let a: (func(i32): i32)[2] = [twice, twice];
+    let h: Holder = Holder { arr: [twice, twice] };
+    return (a[0](3) - 6) + (h.arr[0](5) - 10);
+}
+"#;
+    let emitted = emit_host("cviimpl-elemcallee", source);
+    assert_contains("cviimpl-elemcallee", &emitted, "(a[0])(3)");
+    assert_contains("cviimpl-elemcallee", &emitted, "(h.arr[0])(5)");
+}
+
 /// A closure struct field and its lifted function share the hidden-destination
 /// signature, and the closure call passes the destination after the
 /// environment.

@@ -118,6 +118,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             return None;
         }
+        // An indexed callee such as `a[0](3)` is the element value the access
+        // yields: the access's recorded type is the callable, exactly as a
+        // called field's is, and the checker rejects the call of an element
+        // that is not callable.
+        if matches!(callee.kind, ExprKind::Index { .. }) {
+            if matches!(
+                self.ty(callee).kind,
+                TyKind::Func(_) | TyKind::Param(_)
+            ) {
+                return Some(self.lower_value(callee));
+            }
+            return None;
+        }
         let field_ty = self.callee_field_type(callee)?;
         // A field whose type is a bare type parameter is callable exactly when
         // its bound is `func(...)`: the checker rejects the unbound call, so an

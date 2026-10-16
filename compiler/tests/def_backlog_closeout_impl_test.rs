@@ -1618,3 +1618,34 @@ func main(): i32 {
     );
     assert_contains("reemitvoidlambda", &first, "if (!(0)) cl_trap(\"E11213\", \"assertion failed\");");
 }
+
+/// A void lambda's expression body releases the owned temporary it made.
+///
+/// The body's scope cleanup runs before the lifted function returns, so the
+/// binding that holds the owned string is freed after the sink call and
+/// before the bare return; the block-bodied spelling keeps the same release
+/// (red at the phase base: the body returned without a release).
+#[test]
+fn should_release_the_owned_temporary_of_a_void_lambda_body() {
+    let source = r#"module spec.closeoutimpl.voidrelease;
+
+import { String, stringOf } from std.text;
+
+func sink(s: String): void {
+}
+
+func main(): i32 {
+    let f: func(): void = () => sink(stringOf("x"));
+    f();
+    return 0;
+}
+"#;
+    let emitted = emit_host("voidrelease", source);
+    let sink_at = emitted
+        .find("cl_spec_closeoutimpl_voidrelease_sink(__cl_owned0);")
+        .expect("voidrelease: the lifted body's sink call is missing");
+    assert!(
+        emitted[sink_at..].contains("FreeString(__cl_owned0);"),
+        "voidrelease: the owned temporary must be released after the sink call"
+    );
+}

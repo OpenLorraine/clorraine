@@ -228,12 +228,21 @@ fn referenced_modules_with(
     programs: &[(FileId, Program)],
     include_staged: bool,
 ) -> BTreeMap<String, Span> {
+    // The loaded module paths come from the files themselves; the walk reads
+    // them to tell a module-qualified head from a value binding's.
+    let loaded_modules: BTreeSet<String> = programs
+        .iter()
+        .map(|(_, program)| program.module.name.to_dotted())
+        .filter(|name| !name.is_empty())
+        .collect();
     let mut modules = BTreeMap::new();
     for (_, program) in programs {
         if program.embedded {
             continue;
         }
-        for (module, span) in collect_name_mentions(&program.items, include_staged).modules {
+        for (module, span) in
+            collect_name_mentions(&program.items, include_staged, &loaded_modules).modules
+        {
             modules.entry(module).or_insert(span);
         }
     }
@@ -379,7 +388,8 @@ fn resolve_imports(
     exports: &BTreeMap<String, BTreeSet<String>>,
     diagnostics: &mut Diagnostics,
 ) -> Vec<ImportBinding> {
-    let used = collect_name_mentions(&group.items, true);
+    let modules: BTreeSet<String> = exports.keys().cloned().collect();
+    let used = collect_name_mentions(&group.items, true, &modules);
     let mut bindings: Vec<ImportBinding> = Vec::new();
     let used = &used.names;
     for import in &group.imports {
@@ -581,6 +591,33 @@ mod tests {
             "module app;\nimport { Buffer } from std.mem;\nfunc accept(b: std.mem.Buffer): void {}\nfunc main(): i32 { return 0; }\n",
         ]);
         assert_eq!(codes, [("W10006", Severity::Warning)]);
+    }
+
+    #[test]
+    fn a_dotted_head_marks_an_import_used_but_a_module_path_does_not() {
+        let holder = "module dep;\nstruct H { call: func(i32): i32; }\nexport func addOne(v: i32): i32 { return v + 1; }\nexport let h: H = H { call: addOne };\n";
+        // The head of `h.call` is the imported binding, so the import is used.
+        let (_, head_use) = compile(&[
+            holder,
+            "module app;\nimport { h } from dep;\nfunc main(): i32 { return h.call(5); }\n",
+        ]);
+        assert!(head_use.is_empty(), "unexpected diagnostics: {head_use:?}");
+        // The same reference spelled through the declaring module names no
+        // value binding, so the import stays unused and warns.
+        let (_, module_path) = compile(&[
+            holder,
+            "module app;\nimport { h } from dep;\nfunc main(): i32 { return dep.h.call(5); }\n",
+        ]);
+        assert_eq!(module_path, [("W10006", Severity::Warning)]);
+        // A head that begins a loaded module path names that module even when
+        // the same name is imported: the reference reaches the module, so the
+        // import stays unused and warns.
+        let (_, module_head) = compile(&[
+            "module dep;\nexport let thing: i32 = 3;\n",
+            "module other;\nexport let dep: i32 = 4;\n",
+            "module app;\nimport { dep } from other;\nfunc main(): i32 { return dep.thing; }\n",
+        ]);
+        assert_eq!(module_head, [("W10006", Severity::Warning)]);
     }
 
     #[test]

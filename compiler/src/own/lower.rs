@@ -1034,8 +1034,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // lowers for its effect exactly as the block-bodied spelling
                 // lowers it — an `assert` traps on a false condition and a
                 // `panic` aborts — and the body ends without a value return.
+                // The body's scope runs its own cleanup, so an owned
+                // temporary the statement produced is released before the
+                // body returns, exactly as the block-bodied spelling
+                // releases one.
                 self.check_expr_statement(value);
-                self.scopes.pop();
+                self.pop_scope();
                 if !self.is_terminated() {
                     let releases = self.pending_release_copies();
                     self.record_release_events(&releases);

@@ -2269,3 +2269,50 @@ func main(): i32 {
     let output = run_with_timeout("globalsplit", &program, &[]);
     assert_exit("globalsplit", &output, 0);
 }
+
+/// A same-module function is not shadowed by another module's same-named
+/// global.
+///
+/// The call in the caller's own module names the function that module
+/// declares, so its symbol is emitted even though a loaded module exports a
+/// func-typed global of the same name. The run reads both calls back, so a
+/// call through the foreign global cannot exit zero (red at the phase base:
+/// the emitted call named the foreign module's global and exited 99).
+#[test]
+fn should_prefer_the_module_function_over_a_same_named_func_global() {
+    let holder = r#"module spec.cri.globalmod;
+
+export func g(x: i32): i32 {
+    return x + 100;
+}
+
+export let f: func(i32): i32 = g;
+"#;
+    let main = r#"module spec.cri.globalmodmain;
+
+import { g } from spec.cri.globalmod;
+
+func f(x: i32): i32 {
+    return x + 1;
+}
+
+func main(): i32 {
+    return (f(5) - 6) + (g(5) - 105);
+}
+"#;
+    let (scratch, output, c_path) = compile_pair("globalmod", holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "globalmod: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "globalmod: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("globalmod", &scratch, &emitted);
+    let output = run_with_timeout("globalmod", &program, &[]);
+    assert_exit("globalmod", &output, 0);
+}

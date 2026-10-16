@@ -422,11 +422,20 @@ impl<'a> Emitter<'a> {
     /// binding exactly, so two same-named globals stay apart. A bare name is
     /// resolved the way a read is: the current module wins, and otherwise the
     /// name must be unique among the loaded modules, because taking one of
-    /// several same-named bindings would silently reach the wrong one.
+    /// several same-named bindings would silently reach the wrong one. A
+    /// declared function of the written name is the callee instead: the call
+    /// reaches the function's own symbol, and a module-level value that merely
+    /// shares the name never shadows it.
     pub(super) fn func_global_binding(
         &self,
         callee: &str,
     ) -> Option<(crate::ir::GlobalId, Ty)> {
+        // The caller's module first, then its import, then a unique function
+        // elsewhere: whenever a function resolves the name, the call goes
+        // through that declaration and the global fallback stays out.
+        if self.resolve_function(callee).is_some() {
+            return None;
+        }
         if let Some((module, name)) = callee.rsplit_once('.') {
             return self
                 .globals

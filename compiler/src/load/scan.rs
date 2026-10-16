@@ -3,16 +3,17 @@
 //! The unused-import warning needs one fact: whether a plain identifier is
 //! mentioned anywhere in the module. The scan walks every declaration, type,
 //! expression, and statement for that answer. It deliberately ignores dotted
-//! names (qualified access works without an import) and member names after `.`
-//! (those belong to the type layer), so neither marks an import as used.
+//! names that qualify a module (qualified access works without an import) and
+//! member names after `.` (those belong to the type layer), so neither marks
+//! an import as used.
 //!
 //! The same walk also records the standard-library modules a dotted name
 //! names, so the driver can inject the module a qualified reference such as
 //! `std.mem.bufferNew(4)` needs even when the file writes no `import`.
 //!
 //! The scan is conservative in one direction: it does not track scopes, so a
-//! mention anywhere marks the import used even when that mention resolves to a
-//! module declaration instead. That can miss an unused-import warning, but it
+//! mention anywhere marks the import used even when a same-named local
+//! shadows it at that spot. That can miss an unused-import warning, but it
 //! never reports one for an import the code really uses.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +30,10 @@ pub(super) struct Mentions {
     /// Every standard-library module named by a dotted reference, with the
     /// span of the first reference to it.
     pub modules: BTreeMap<String, Span>,
+    /// The loaded module paths, read while walking: a dotted name whose
+    /// leading segments spell one of them names that module and not a value
+    /// binding.
+    loaded_modules: BTreeSet<String>,
 }
 
 /// Collects every simple identifier and qualified standard-library module a
@@ -38,13 +43,21 @@ pub(super) struct Mentions {
 /// standard-library module such as `std.mem.Buffer` is qualified access, which
 /// is available without an import, so it does not mark an import used; its
 /// longest standard-library prefix is recorded as a module reference instead.
+/// A dotted name whose leading segments spell one of `loaded_modules` names
+/// that module rather than a value binding, so it marks no import used either.
 /// Any other dotted name counts its head as a name exactly as a plain
-/// identifier does; the mention is deliberately conservative, so a head that
-/// merely names a loaded module path also counts. `include_staged` controls whether a
-/// staged `comptime` body is walked: the profile-surface check leaves it out so
-/// the semantic stage's staged-feature diagnostic is the one reported.
-pub(super) fn collect_name_mentions(items: &[Item], include_staged: bool) -> Mentions {
-    let mut mentions = Mentions::default();
+/// identifier does. `include_staged` controls whether a staged `comptime` body
+/// is walked: the profile-surface check leaves it out so the semantic stage's
+/// staged-feature diagnostic is the one reported.
+pub(super) fn collect_name_mentions(
+    items: &[Item],
+    include_staged: bool,
+    loaded_modules: &BTreeSet<String>,
+) -> Mentions {
+    let mut mentions = Mentions {
+        loaded_modules: loaded_modules.clone(),
+        ..Mentions::default()
+    };
     for item in items {
         match item {
             Item::Func(decl) => {
@@ -129,6 +142,18 @@ fn mention_module(segments: &[String], span: Span, mentions: &mut Mentions) -> b
         }
     }
     false
+}
+
+/// True when the leading segments of a dotted path spell a loaded module.
+///
+/// A reference such as `probe.dep.member` names the module `probe.dep` before
+/// its member, so its head is a module segment rather than a value binding and
+/// marks no import as used. The whole path is checked too, so a reference that
+/// names only a module stays out.
+fn begins_loaded_module(segments: &[String], loaded_modules: &BTreeSet<String>) -> bool {
+    (1..=segments.len())
+        .rev()
+        .any(|end| loaded_modules.contains(&segments[..end].join(".")))
 }
 
 /// Records the simple identifier of a named type and recurses into its parts.
@@ -273,11 +298,15 @@ fn mention_expr(expr: &Expr, mentions: &mut Mentions) {
         }
         ExprKind::Qualified(name) => {
             // A dotted path that names a standard-library module is qualified
-            // access, which needs no import; every other dotted name reads a
-            // value binding at its head (`h.call` reads the imported global
-            // `h`), so the head counts as a name mention exactly as a plain
-            // identifier does.
-            if !mention_module(&name.segments, name.span, mentions) {
+            // access, which needs no import; a path whose leading segments
+            // spell a loaded module names that module, so its head is a
+            // module segment rather than a value binding. Every other dotted
+            // name reads a value binding at its head (`h.call` reads the
+            // imported global `h`), so the head counts as a name mention
+            // exactly as a plain identifier does.
+            if !mention_module(&name.segments, name.span, mentions)
+                && !begins_loaded_module(&name.segments, &mentions.loaded_modules)
+            {
                 if let Some(first) = name.segments.first() {
                     mentions.names.insert(first.clone());
                 }

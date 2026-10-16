@@ -1932,6 +1932,33 @@ func main(): i32 {
     assert_fault("voidblock", &output, "error E11213: assertion failed");
 }
 
+/// A void lambda's expression body releases the owned temporary it made.
+///
+/// The body's scope runs its cleanup as it returns, exactly as the
+/// block-bodied spelling does, so the string the sink borrows is freed inside
+/// the lifted body and the run leaves nothing allocated (red at the phase
+/// base: the body popped its scope without the cleanup and the allocation
+/// leaked).
+#[test]
+fn should_release_the_owned_temporary_of_a_void_lambda_body() {
+    let source = r#"module spec.closeout.voidrelease;
+
+import { String, stringOf } from std.text;
+
+func sink(s: String): void {
+}
+
+func main(): i32 {
+    let f: func(): void = () => sink(stringOf("x"));
+    f();
+    return 0;
+}
+"#;
+    let output = run_memory("voidrelease", source);
+    assert_no_asan("voidrelease", &output);
+    assert_exit("voidrelease", &output, 0);
+}
+
 /// A `return panic(...)` stays rejected with the frozen value-position code.
 ///
 /// A `panic` result is not a value a return can carry, so the program is

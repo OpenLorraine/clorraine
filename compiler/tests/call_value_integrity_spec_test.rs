@@ -1520,6 +1520,34 @@ func main(): i32 {
     assert_exit("cvi22", &output, 6);
 }
 
+/// A function-pointer array element is called through the element value.
+///
+/// An indexed callee is the element the access yields, so `a[0](3)` calls the
+/// selected entry and every read-back adds up; a call that dropped the callee
+/// would compute the bare argument (red at the phase base: the emission
+/// reduced both calls to their arguments and the run exited 248).
+#[test]
+fn should_call_an_element_when_a_function_pointer_array_element_is_the_callee() {
+    let source = r#"module codegen.cvi.st42;
+
+func twice(x: i32): i32 {
+    return x * 2;
+}
+
+struct Holder {
+    arr: (func(i32): i32)[2];
+}
+
+func main(): i32 {
+    let a: (func(i32): i32)[2] = [twice, twice];
+    let h: Holder = Holder { arr: [twice, twice] };
+    return (a[0](3) - 6) + (h.arr[0](5) - 10);
+}
+"#;
+    let output = run_host("cvi42", source);
+    assert_exit("cvi42", &output, 0);
+}
+
 /// A `String` argument widens to `str` when the callee is a func value.
 ///
 /// `show` has type `func(str): void`; passing `stringOf("hi")` must emit the
