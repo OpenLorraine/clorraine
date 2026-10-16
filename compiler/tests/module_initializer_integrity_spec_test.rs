@@ -1565,3 +1565,68 @@ func main(): i32 {
     assert_no_asan("receiverinfer", &output);
     assert_exit("receiverinfer", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// arraysizeof: the fixed-array `sizeof` value.
+//
+// `sizeof(type)` measures the whole type: a fixed-array operand is its
+// element's size times the extents, so `sizeof(i32[2])` is 8 and
+// `sizeof(i32[2][3])` is 24. The scalar, struct, and omitted-extent (view)
+// operands keep their C types, and a constant `sizeof` still folds in a
+// fixed-extent context.
+// ---------------------------------------------------------------------------
+
+/// A fixed-array `sizeof` measures the whole type.
+///
+/// The module-level binding and the body locals all read the whole-type
+/// values back — 8 and 24 — so a wrong measure cannot exit zero (red at the
+/// phase base: the emitted `wholeSize = sizeof(i32)` measured 4 where the
+/// operand type is 8, and the run exited 228).
+#[test]
+fn should_measure_the_whole_fixed_array_type() {
+    let source = r#"module spec.mii.arraysizeof;
+
+let wholeSize: usize = sizeof(i32[2]);
+
+func main(): i32 {
+    let n: usize = sizeof(i32[2]);
+    let m: usize = sizeof(i32[2][3]);
+    return i32(wholeSize - 8) + i32(n - 8) + i32(m - 24);
+}
+"#;
+    let output = run_memory("arraysizeof", source);
+    assert_no_asan("arraysizeof", &output);
+    assert_exit("arraysizeof", &output, 0);
+}
+
+/// The scalar, struct, and view `sizeof` spellings stay unchanged.
+///
+/// `sizeof(i32)` is 4, `sizeof(S)` is 8, and the omitted-extent operand
+/// `sizeof(i32[])` keeps its view size, which equals the `str` view's size;
+/// the constant `sizeof(i32)` also folds in a fixed-extent context. Every
+/// reading is exact, so the run exits zero (green control at the phase base).
+#[test]
+fn should_measure_the_scalar_struct_and_view_types_unchanged() {
+    let source = r#"module spec.mii.arraysizeofctl;
+
+struct S {
+    a: i32;
+    b: i32;
+}
+
+const scalarSize: usize = sizeof(i32);
+
+let zeros: u8[scalarSize] = [; 0];
+
+func main(): i32 {
+    let p: usize = sizeof(i32);
+    let q: usize = sizeof(S);
+    let r: usize = sizeof(i32[]);
+    let s: usize = sizeof(str);
+    return i32(p - 4) + i32(q - 8) + i32(r - s) + i32(len(zeros) - 4);
+}
+"#;
+    let output = run_memory("arraysizeofctl", source);
+    assert_no_asan("arraysizeofctl", &output);
+    assert_exit("arraysizeofctl", &output, 0);
+}

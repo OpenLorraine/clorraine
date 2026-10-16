@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 14:40
-> **Progress**: 30/39 tasks (77%) — Phase 5 complete
+> **Last Updated**: 2026-10-17 15:20
+> **Progress**: 32/39 tasks (82%) — Executing Phase 6
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -291,9 +291,9 @@ hosted-amiga) and the capture source at the nullable out-slot store.
 **Objective**: Pin the func-global callee symbol, the freestanding host run and m68k link, the
 fixed-array `sizeof` value, and the void lambda over an abort intrinsic.
 
-- [ ] 6.1.1 [spec-author] Write the phase cases — `compiler/tests/callable_release_integrity_spec_test.rs` (globalcallee), `compiler/tests/freestanding_spec_test.rs` (fsentry), `compiler/tests/module_initializer_integrity_spec_test.rs` (arraysizeof), `compiler/tests/def_backlog_closeout_spec_test.rs` (voidintrinsic) with their controls
-- [ ] 6.1.2 Run the suites and record the red phase (the scalar/struct `sizeof`, the
-      current-module func-global, and the freestanding controls verified green first)
+- [x] 6.1.1 [spec-author] Write the phase cases — `compiler/tests/callable_release_integrity_spec_test.rs` (globalcallee), `compiler/tests/freestanding_spec_test.rs` (fsentry), `compiler/tests/module_initializer_integrity_spec_test.rs` (arraysizeof), `compiler/tests/def_backlog_closeout_spec_test.rs` (voidintrinsic) with their controls ✅ (completed: 2026-10-17 15:20; nine tests appended across four suites (+310 lines, additions only) plus two helpers — the current-module func-global control and the imported/qualified red pair (the two-file `export` form, the preflight note), the freestanding local `str[2]` host-leg red, the whole-type `sizeof` red with the scalar/struct/view/const controls, and the void-lambda abort reds (assert + panic) with the block-bodied and `return panic` controls; the reds re-derived (the `DEF-211` read-back folds exit 228); a noted head observation: the `DEF-170` pair emits `W10006: unused import 'h'` despite the call)
+- [x] 6.1.2 Run the suites and record the red phase (the scalar/struct `sizeof`, the
+      current-module func-global, and the freestanding controls verified green first) ✅ (completed: 2026-10-17 15:20; the four suites run with exactly the five designed reds (the freestanding 16/1, the module-initializer 46/1, the callable-release 53/1, the backlog-closeout 47/2) and every control green; parent-verified the four focused suites)
 
 ### Step 6.2: Implementation
 

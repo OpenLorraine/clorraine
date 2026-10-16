@@ -575,3 +575,49 @@ fn the_driver_runs_the_host_no_libc_artifact() {
         "driver_run: the program output must reach stdout"
     );
 }
+
+/// A local fixed array of views initializes and reads back on the host leg.
+///
+/// The `str[2]` local is a 16-byte-aligned value aggregate, so `_start` must
+/// place `main` on the alignment the host ABI's call sequence expects; the
+/// bytes read back through both views and the exit code carries their sum
+/// (97 + 98). The m68k leg pins that the entry change stays clean for the
+/// other target's placement (red at the phase base: the host no-libc build
+/// passed and the run segfaulted before returning).
+#[test]
+fn should_run_a_local_fixed_array_of_views_on_the_host_leg() {
+    let source = r#"module spec.freestanding.fsentry;
+
+func main(): i32 {
+    let a: str[2] = [; "ab"];
+    return i32(a[0][0]) + i32(a[1][1]);
+}
+"#;
+    let scratch = ScratchDir::new("fsentry");
+    let c_path = emit_ok("fsentry", &scratch, source);
+    let program = scratch.path().join("prog");
+    let built = host_build("fsentry", &c_path, &program, false);
+    assert!(
+        built.status.success(),
+        "fsentry: the host no-libc build must accept the emitted C; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let ran = Command::new(&program)
+        .output()
+        .unwrap_or_else(|err| panic!("fsentry: cannot run the program: {err}"));
+    assert_eq!(
+        ran.status.code(),
+        Some(195),
+        "fsentry: the run must return the two bytes read back; stderr:\n{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let m68k_program = scratch.path().join("prog-m68k");
+    let Some(built) = m68k_build("fsentry", &c_path, &m68k_program, false) else {
+        return;
+    };
+    assert!(
+        built.status.success(),
+        "fsentry: the m68k link must stay clean; stderr:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+}

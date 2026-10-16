@@ -2095,3 +2095,83 @@ func main(): i32 {
     assert_no_asan("receivernarrow", &output);
     assert_exit("receivernarrow", &output, 0);
 }
+
+/// A current-module func-global call emits the module's own symbol.
+///
+/// The global's identity names the declaring module, so the callee resolves
+/// by (module, name) and the emitted pointer carries the mangled spelling;
+/// the run reads the call's value back (green control at the phase base).
+#[test]
+fn should_call_a_current_module_func_global() {
+    let source = r#"module spec.cri.globalcalleectl;
+
+func triple(v: i32): i32 {
+    return v * 3;
+}
+
+let local: func(i32): i32 = triple;
+
+func main(): i32 {
+    return local(2) - 6;
+}
+"#;
+    let output = run_host("globalcallee-ctl", source);
+    assert_exit("globalcallee-ctl", &output, 0);
+}
+
+/// An imported, qualified, or field func-global call emits the target's
+/// symbol.
+///
+/// The import binding and the qualified path carry the target module, so the
+/// call resolves the global by (module, name) and renders the mangled symbol;
+/// the struct global's field call resolves through the same identity. The run
+/// reads every call result back, so a silently wrong callee cannot exit zero
+/// (red at the phase base: the strict build failed with `implicit declaration
+/// of function 'g'` and `'h' undeclared`; both foreign spellings emitted the
+/// bare written name).
+#[test]
+fn should_call_an_imported_or_qualified_func_global() {
+    let holder = r#"module spec.cri.globalcallee;
+
+func addOne(v: i32): i32 {
+    return v + 1;
+}
+
+func addTwo(v: i32): i32 {
+    return v + 2;
+}
+
+struct Holder {
+    call: func(i32): i32;
+}
+
+export let g: func(i32): i32 = addOne;
+export let h: Holder = Holder { call: addTwo };
+"#;
+    let main = r#"module spec.cri.globalcalleemain;
+
+import { g, h } from spec.cri.globalcallee;
+
+func main(): i32 {
+    let a: i32 = g(5);
+    let b: i32 = h.call(6);
+    let c: i32 = spec.cri.globalcallee.g(5);
+    return (a - 6) + (b - 8) + (c - 6);
+}
+"#;
+    let (scratch, output, c_path) = compile_pair("globalcallee", holder, main);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "globalcallee: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "globalcallee: the emitted C is empty, so the emitter is not implemented yet"
+    );
+    let program = build_host_c("globalcallee", &scratch, &emitted);
+    let output = run_with_timeout("globalcallee", &program, &[]);
+    assert_exit("globalcallee", &output, 0);
+}

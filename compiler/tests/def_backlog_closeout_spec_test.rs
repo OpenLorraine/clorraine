@@ -1836,3 +1836,122 @@ func main(): i32 {
 "#;
     assert_rejected("closeout-st23-call", source, "E10405");
 }
+
+// ---------------------------------------------------------------------------
+// voidintrinsic: a void expression-bodied lambda over an abort intrinsic.
+//
+// `assert` and `panic` are the frozen void/never intrinsics, so a lambda
+// whose declared result is void and whose expression body is one of them
+// lowers as the statement form: the trap emits with no cleanup ladder and the
+// lifted body ends without a value return. The block-bodied twin and the
+// `return panic(...)` rejection stay pinned controls.
+// ---------------------------------------------------------------------------
+
+/// The first non-empty stderr line of a process result.
+fn first_stderr_line(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr)
+        .lines()
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Asserts the run aborted with `line` as its first stderr line.
+fn assert_fault(tag: &str, output: &Output, line: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag}: the run must abort; exit code: {:?}",
+        output.status.code()
+    );
+    assert_eq!(
+        first_stderr_line(output),
+        line,
+        "{tag}: the abort must print the frozen fault line"
+    );
+}
+
+/// A void lambda whose expression body is a false `assert` aborts at the
+/// trap.
+///
+/// The intrinsic is a statement of the void family, so the lifted body emits
+/// the trap and no value return; the run aborts with the frozen assertion
+/// fault (red at the phase base: the strict build failed with `'return' with
+/// a value, in function returning void`).
+#[test]
+fn should_abort_a_void_lambda_over_a_false_assert() {
+    let source = r#"module spec.closeout.voidassert;
+
+func main(): i32 {
+    let f: func(): void = () => assert(false, "nope");
+    f();
+    return 0;
+}
+"#;
+    let output = run_host("voidassert", source);
+    assert_fault("voidassert", &output, "error E11213: assertion failed");
+}
+
+/// A void lambda whose expression body is `panic` aborts with the message.
+///
+/// `panic` is a never-result intrinsic, so the same statement lowering applies
+/// and the run aborts printing the panic text (red at the phase base: the
+/// strict build failed with `'return' with a value, in function returning
+/// void`).
+#[test]
+fn should_abort_a_void_lambda_over_a_panic() {
+    let source = r#"module spec.closeout.voidpanic;
+
+func main(): i32 {
+    let f: func(): void = () => panic("boom");
+    f();
+    return 0;
+}
+"#;
+    let output = run_host("voidpanic", source);
+    assert_fault("voidpanic", &output, "panic: boom");
+}
+
+/// The block-bodied twin of the void lambda still aborts at the trap.
+///
+/// A statement body already emits the intrinsic as a statement, so the
+/// program builds and aborts exactly like the expression-bodied twin (green
+/// control at the phase base).
+#[test]
+fn should_abort_a_block_bodied_void_lambda_over_a_false_assert() {
+    let source = r#"module spec.closeout.voidblock;
+
+func main(): i32 {
+    let f: func(): void = () => {
+        assert(false, "nope");
+    };
+    f();
+    return 0;
+}
+"#;
+    let output = run_host("voidblock", source);
+    assert_fault("voidblock", &output, "error E11213: assertion failed");
+}
+
+/// A `return panic(...)` stays rejected with the frozen value-position code.
+///
+/// A `panic` result is not a value a return can carry, so the program is
+/// rejected before emission (green control at the phase base).
+#[test]
+fn should_reject_a_return_of_panic() {
+    let source = r#"module spec.closeout.voidretpanic;
+
+func f(): i32 {
+    return panic("boom");
+}
+
+func main(): i32 {
+    return f();
+}
+"#;
+    assert_rejected_with(
+        "voidretpanic",
+        source,
+        "E10217",
+        &["assignment result is 'void' and cannot be used as a value"],
+    );
+}
