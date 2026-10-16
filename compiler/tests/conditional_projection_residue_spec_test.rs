@@ -12997,3 +12997,52 @@ func main(): i32 {
     assert_no_asan("unsafecontrol", &output);
     assert_exit("unsafecontrol", &output, 0);
 }
+
+/// A nested literal inside a taken arm hands its fresh root to the arm.
+///
+/// `consume(take ok ? Outer { inner: Inner { names: [mk().s, mk().s], ... } } : ...)`
+/// materializes the inner literal, and the arm that copies it must empty that
+/// source in the same expression: the destination is the only owner, so the
+/// take's release frees the tag once (exit 0, the leak checker clean, and the
+/// element views read their bytes back). The skipped guard runs neither call.
+#[test]
+fn should_hand_a_nested_arm_literal_root_to_the_taken_arm() {
+    let nested = r#"module spec.cpr.guardnest;
+
+import { String, stringOf } from std.text;
+
+struct Held { s: String; }
+struct Inner { names: str[2]; tag: String; }
+struct Outer { inner: Inner; }
+
+let mkcalls: i32 = 0;
+let seen: i32 = 0;
+
+func mk(): Held {
+    mkcalls = mkcalls + 1;
+    return Held { s: stringOf("abcd") };
+}
+
+func consume(take m: Outer): i32 {
+    seen = i32(m.inner.names[0][0]);
+    return 1;
+}
+
+func useT(g: bool, ok: bool): i32 {
+    if (g && consume(ok ? Outer { inner: Inner { names: [mk().s, mk().s], tag: stringOf("i1") } }
+                        : Outer { inner: Inner { names: [mk().s, mk().s], tag: stringOf("i2") } }) == 1) {
+        return seen;
+    }
+    return -1;
+}
+
+func main(): i32 {
+    let a: i32 = useT(true, true);
+    let b: i32 = useT(false, true);
+    return (a - 97) + (b + 1) + mkcalls - 2;
+}
+"#;
+    let output = run_memory("guardnest", nested);
+    assert_no_asan("guardnest", &output);
+    assert_exit("guardnest", &output, 0);
+}

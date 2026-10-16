@@ -482,6 +482,22 @@ impl<'a> Emitter<'a> {
         {
             return self.conditional_move_expr(target_c, ty, condition, then_value, else_value);
         }
+        // A struct-literal arm whose owned field reads a fresh materialized
+        // root stores field by field: the field's move-out empties the source
+        // in the same comma sequence, so the destination is the only owner and
+        // the source's pending release is a no-op. A literal without such a
+        // field keeps the compact compound-literal spelling.
+        if let ValueKind::StructLit { name, fields } = &arm.kind {
+            let hands_over = fields.iter().any(|(field, value)| {
+                matches!(&value.kind, ValueKind::Materialize { .. })
+                    && self.needs_drop(&self.field_type(ty, field))
+            });
+            if hands_over {
+                if let Some(stored) = self.struct_assign_expr(target_c, ty, name, fields) {
+                    return stored;
+                }
+            }
+        }
         let value_text = self.guarded_value(arm);
         let storage = matches!(
             &arm.kind,

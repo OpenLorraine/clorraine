@@ -509,15 +509,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     fill: fill.as_ref().map(|fill| {
                         let lowered = self.lower_value(fill);
                         // The fill's value copies to every remaining element, so
-                        // an updating fill is pinned once at its own position:
-                        // the element stores then read the temporary instead of
-                        // re-running the update per element. Every other fill
-                        // keeps its spelling, which the element stores already
-                        // copy from once per element.
-                        if self.defer_move_outs > 0 || !contains_update(fill) {
-                            Box::new(lowered)
-                        } else {
+                        // a fill whose evaluation must happen once — an
+                        // updating fill, or a view element that reads fresh
+                        // storage whose root would otherwise be re-created for
+                        // every element — pins at its own position: the
+                        // element stores then read one temporary. Under a
+                        // deferred guard the pin settles into the
+                        // per-evaluation fill, so it never becomes a statement
+                        // on a path the guard skips.
+                        let needs_pin = contains_update(fill)
+                            || (is_view_like(&ty) && self.view_element_needs_binding(&lowered));
+                        if needs_pin {
                             Box::new(self.pin_update_value(lowered))
+                        } else {
+                            Box::new(lowered)
                         }
                     }),
                 }
