@@ -298,3 +298,49 @@ destination-typed shape), `DEF-352` (a raw pointer's `.ptr`/`.len` emit the arro
 - Left as recorded: the out-slot conversion help keeps the conversion text; a receiver whose
   nullability differs from the out-slot type passes the kind-level judgment; the substitution's
   Param arm still drops the declaration `?` marker (worked around at the duty record).
+
+## Phase 5 — Null destinations and capture stores
+
+**Reviewed implementation**: `e6b9a54` plus the correction rounds (`add447c`, `c42e3e9`, `9095674`).
+**Lenses**: correctness (K5R), semantics (K5S/K5C), memory-safety (F1), plus two bounded
+confirmations.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | K5R-1 (the unread-local walk under-marked null-shaped children of array literals, struct fields, and conditional arms — a spurious unused-local strict failure), K5R-2 (the capture record added a second report for owning non-out-slot destinations), K5R-3 (a stale plan file list), K5R-P1 (the struct compound-initializer field — filed `DEF-355`); the null lowering, the drops, and the capture judgment otherwise verified |
+| semantics | FAIL — 2 blockers | K5S-1 (the null-shaped conditional arm at an owning destination — the walk mismatch), K5S-2 (the capture duty fired on a view-widening store — a false rejection), K5S-3 (the predicate's defensive breadth); the destination set, the hosted-amiga zero, the drop order, and the capture rule otherwise conformant |
+| memory-safety | CONFIRMED CLEAN — 0 memory classes | Every changed shape probed (strict + ASan/LSan); F1 (non-memory: the null-shaped lowering elided a computed closure call — exit 255) routed to the fix round; `DEF-353`/`DEF-354` filed as pre-existing |
+| confirmation | FAIL then PASS | The bounded confirmation found K5C-1 (the `0`-profile pointer conditionals — an in-diff strict failure incl. the driver's `clorraine build -p hosted-amiga` internal compiler error); the scoped re-confirmation after the fix: **PASS — 0 blockers** |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| K5S-1 | **Fixed**: the destination threads the conditional walk (a null-shaped arm is unread; the redundant zero skipped) — the `File?`/`String?` arms build and run on the host and the amiga leg |
+| K5S-2/K5R-2 | **Fixed**: the capture record carries the store destination and the lend target; a duplicable or non-out-slot destination is skipped — the view-widening store accepts (run 5) and the non-out-slot stores keep one `E10034` while the out-slot move keeps one `E10401` |
+| K5S-3 | **Fixed**: the null-capable predicate narrowed to the frozen nullable set (handles, `raw`, `cstring`, views/slices) |
+| K5R-1 | **Fixed**: the walk's null-shaped skip extended to the conditional arms, array elements/fill, and struct fields — those shapes build and run (host + amiga) with only the harmless marker |
+| F1 | **Fixed**: the lowering keys on a place/temporary; a computed null shape (a closure call) runs before the empty store — the side-effect probes exit 0, and the view-destination conditionals were repaired incidentally |
+| K5C-1 | **Fixed**: on the `0` profiles a pointer destination spells its own cast (`(char *)0`/`(u8 *)0`) and the conditional's arms take the destination — the repros and the pre-existing literal twins cross-build, two view-argument conditionals were repaired, and the driver builds on all three profiles |
+
+### Confirmations
+
+The scoped re-confirmation: **PASS — 0 blockers** (12/12 host/HA/FS legs; the driver
+`clorraine build` on `host`, `hosted-amiga`, and `freestanding`; the arm spellings as designed; the
+host shapes byte-identical; determinism 17/17; the differential's only two diffs are the repaired
+view-argument conditionals).
+
+### Filed rows
+
+`DEF-353` (a `borrow out: i32` instance loses the store), `DEF-354` (a two-root conditional capture
+store reports `E10401` twice), `DEF-355` (the struct-literal compound-initializer field never
+reaches the typed-null lowering).
+
+### Record notes
+
+- Pre-existing residuals confirmed unchanged: the concrete scalar element/field nulls (both sides);
+  a computed value in a conditional arm at a `str?` view destination (the `?:` mismatch);
+  `q04`'s `E10010`.
+- The handle destinations keep the integer `0` on the `0` profiles (the `BPTR` ABI).

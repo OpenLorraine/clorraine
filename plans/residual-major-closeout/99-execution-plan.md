@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 12:20
-> **Progress**: 29/39 tasks (74%) — Phase 5 in review
+> **Last Updated**: 2026-10-17 14:40
+> **Progress**: 30/39 tasks (77%) — Phase 5 complete
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -266,8 +266,8 @@ hosted-amiga) and the capture source at the nullable out-slot store.
       `BPTR`/handle spelling, the capture report span/count, the non-capture control
       byte-identical, the re-emission determinism pin) —
       `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-17 12:20; four pins added (47 tests total, additions only) plus a hosted-amiga emit helper — the view store/argument typed null with the conditional precedence, the hosted-amiga `BPTR` zero (four spellings), the capture-store rejection with the non-capture control, and a discriminating re-emission pin; all four fail at `8be0c9c` for the intended reason; 47/47 green, `make check` exit 0)
-- [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses; run the hosted-amiga leg
+- [x] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses; run the hosted-amiga leg ✅ (completed: 2026-10-17 14:40; all three lenses dispatched plus four correction rounds and two bounded confirmations: the conditional walk alignment (K5S-1), the capture gate (K5S-2/K5R-2), the predicate narrowing (K5S-3), the nested walk skip (K5R-1), the computed null shape running (F1), and the zero-profile pointer casts (K5C-1); the final confirmation PASS — 0 blockers; rows filed `DEF-353`–`DEF-355`; the closing verification: the checker-conformance spec 133/133 plain and ASan, the impl pins 50/50, `make check` exit 0, the 12/12 profile legs, the driver builds on all three profiles)
 
 **Verify**: `make check`; `RDC_ASAN=1`; the hosted-amiga build
 
