@@ -214,3 +214,9 @@ phase-3 ST-9 slot carries the conforming control instead (the copy read-back + t
 exit + the `String?` in-out slot control). The phase's implementation rows are `DEF-339` and
 `DEF-345`; the `DEF-341` and `DEF-350` controls stand.
 
+**AR-20 (ownership scope, auto-design):** The phase-3 memory audit's F-2 (a newly runnable SEGV: an owned fixed-array
+member of a borrowed element moved out without the partial-move judgment; the concrete twin rejects `E10026`)
+is filed as `DEF-369` and **folded into phase 4**, together with `DEF-362` (AR-18): the instance-aware
+ownership decisions (the take move-out, the store copy-vs-move, and the partial-move judgment) share
+one machinery. Phase 4's scope is DEF-315, DEF-329, DEF-362, DEF-369.
+

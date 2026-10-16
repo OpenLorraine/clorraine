@@ -184,7 +184,7 @@ duplicable out-slot, and the capture pair control.
 
 ---
 
-## Phase 4: Ownership transfer judgments (rows DEF-315, DEF-329, DEF-362)
+## Phase 4: Ownership transfer judgments (rows DEF-315, DEF-329, DEF-362, DEF-369)
 
 > **Phase baseline tree**: _(recorded at phase start)_
 > **Lenses**: correctness + memory-safety + semantics (AR-10)
