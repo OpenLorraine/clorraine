@@ -119,6 +119,12 @@ pub struct CaptureMoveRequirement {
     /// case — so the audit leaves those stores accepted. A return or a `take`
     /// argument always consumes, so its record carries no destination.
     pub dest: Option<Ty>,
+    /// True when the moved capture is a borrowed one.
+    ///
+    /// Only a borrowed capture is moved out of the caller's storage, so only
+    /// that mode is unsound at a non-nullable destination; a copy capture
+    /// owns its value and follows the ordinary duplicability rule.
+    pub borrow: bool,
     /// The returning or consuming site.
     pub span: Span,
 }
@@ -239,10 +245,15 @@ pub fn check(loaded: &Loaded, profile: Profile, diagnostics: &mut Diagnostics) -
     }
 }
 
-/// A local or parameter binding: its checked type.
+/// A local or parameter binding: its checked type and lend-ness.
 struct Binding {
     /// The type the name has.
     ty: Ty,
+    /// True when the binding is a writable lend: a `borrow` parameter or a
+    /// borrowed lambda capture. A store into a lend destination writes
+    /// through the caller's storage, which is what makes an owning move out
+    /// of a capture unsound there.
+    lend: bool,
 }
 
 /// Checks one module against the program-wide type table.
@@ -418,7 +429,8 @@ impl<'a, 'd> Checker<'a, 'd> {
         for param in &decl.params {
             let ty = self.resolve_type(&param.ty);
             self.check_overlay_value(&ty, param.name_span);
-            self.declare(&param.name, ty);
+            let lend = param.mode == crate::ast::Mode::Borrow;
+            self.declare_with_lend(&param.name, ty, lend);
         }
         self.returns = self.resolve_type(&decl.returns);
         let returns = self.returns.clone();
@@ -534,9 +546,24 @@ impl<'a, 'd> Checker<'a, 'd> {
 
     /// Declares a name in the innermost scope.
     fn declare(&mut self, name: &str, ty: Ty) {
+        self.declare_with_lend(name, ty, false);
+    }
+
+    /// Declares a name in the innermost scope, marking a writable lend.
+    fn declare_with_lend(&mut self, name: &str, ty: Ty, lend: bool) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.insert(name.to_owned(), Binding { ty });
+            scope.insert(name.to_owned(), Binding { ty, lend });
         }
+    }
+
+    /// True when a name resolves to a writable lend binding.
+    fn binding_lends(&self, name: &str) -> bool {
+        for scope in self.scopes.iter().rev() {
+            if let Some(binding) = scope.get(name) {
+                return binding.lend;
+            }
+        }
+        false
     }
 
     /// Enters a new lexical scope.

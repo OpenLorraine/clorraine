@@ -4587,3 +4587,120 @@ func main(): i32 {
     assert_no_asan("captureviewstore", &output);
     assert_exit("captureviewstore", &output, 5);
 }
+
+// ===== The computed null shape and the non-out-slot store =====
+
+/// A computed null-shaped value runs its call before the destination's null.
+///
+/// A lambda whose inferred return is the null shape still computes: the call
+/// executes (its side effect reaches the module counter) and the destination
+/// takes its own empty value, so the run reads the counter back (before the
+/// typed null replaced the call, the body never ran and the exit was 255; the
+/// strict build failed on the shape's pointer at the view destination).
+#[test]
+fn should_run_a_computed_null_shape_before_the_destination_value() {
+    let stored = r#"module spec.cc.nullcomputedstore;
+
+let hits: i32 = 0;
+
+func main(): i32 {
+    let x = null;
+    let s: str? = ([x] () => {
+        hits = hits + 1;
+        return x;
+    })();
+    if (s == null) {
+        return hits - 1;
+    }
+    return 9;
+}
+"#;
+    let output = run_memory("nullcomputedstore", stored);
+    assert_no_asan("nullcomputedstore", &output);
+    assert_exit("nullcomputedstore", &output, 0);
+
+    let argument = r#"module spec.cc.nullcomputedarg;
+
+let hits: i32 = 0;
+
+func show(s: str?): i32 {
+    if (s == null) {
+        return 0;
+    }
+    return 1;
+}
+
+func main(): i32 {
+    let x = null;
+    let r: i32 = show(([x] () => {
+        hits = hits + 1;
+        return x;
+    })());
+    return hits - 1 + r;
+}
+"#;
+    let output = run_memory("nullcomputedarg", argument);
+    assert_no_asan("nullcomputedarg", &output);
+    assert_exit("nullcomputedarg", &output, 0);
+}
+
+/// A store at a non-out-slot destination keeps the single lend report.
+///
+/// Only a writable lend destination carries the capture-store judgment, so a
+/// local or member target keeps the frozen lend-store report and the capture
+/// rule stays absent (before the gate the generic spelling added the capture
+/// report on top).
+#[test]
+fn should_keep_a_single_lend_report_at_a_non_out_slot_store() {
+    let local = r#"module spec.cc.capturelocalstore;
+
+import { String, stringOf } from std.text;
+
+func wrap<T>(x: T): void {
+    ([borrow x] () => {
+        let y: String? = null;
+        y = x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    wrap<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "capturelocalstore",
+        local,
+        "E10034",
+        &["cannot release or store borrowed parameter 'x'"],
+        &["E10401"],
+    );
+
+    let member = r#"module spec.cc.capturememberstore;
+
+import { String, stringOf } from std.text;
+
+struct Holder { y: String?; }
+
+func wrap<T>(x: T): void {
+    ([borrow x] () => {
+        let h: Holder = Holder { y: null };
+        h.y = x;
+    })();
+}
+
+func main(): i32 {
+    let s: String = stringOf("ab");
+    wrap<String>(s);
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "capturememberstore",
+        member,
+        "E10034",
+        &["cannot release or store borrowed parameter 'x'"],
+        &["E10401"],
+    );
+}

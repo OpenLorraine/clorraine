@@ -1968,7 +1968,7 @@ impl<'a> Emitter<'a> {
     pub(super) fn emit_arm_source_moves(&mut self, arm: &Value, ty: &Ty) {
         // A null-shaped arm lowers to the destination's own empty value, so it
         // read no storage the store must empty.
-        if self.is_null_shaped(arm) && self.carries_null_value(ty) {
+        if self.carries_null_shape(arm) && self.carries_null_value(ty) {
             return;
         }
         match &arm.kind {
@@ -2095,7 +2095,16 @@ impl<'a> Emitter<'a> {
             && !crate::types::is_null_shaped(&self.substitute(ty))
             && self.carries_null_value(ty)
         {
-            return self.null_value(ty);
+            let empty = self.null_value(ty);
+            // A value that is not the literal's own carry — a lambda call
+            // whose inferred return is the shape, for example — still
+            // computes something: it runs first, and the result is the
+            // destination's empty value. A conditional renders per arm
+            // instead, so it keeps its own path.
+            if self.carries_null_shape(value) {
+                return empty;
+            }
+            return format!("({}, {empty})", self.value(value));
         }
         let value_ty = self.substitute(&value.ty);
         // A possibly-null handle keeps its nullness through the widening: a
@@ -2689,20 +2698,35 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>, null_shape: &impl Fn(&
             else_value,
         } => {
             note_value(condition, read, null_shape);
-            note_value(then_value, read, null_shape);
-            note_value(else_value, read, null_shape);
+            // A null-shaped arm lowers to the destination's own empty value,
+            // so the arm is not read.
+            for arm in [then_value, else_value] {
+                if !null_shape(&arm.ty) {
+                    note_value(arm, read, null_shape);
+                }
+            }
         }
         ValueKind::StructLit { fields, .. } => {
             for (_, field) in fields {
-                note_value(field, read, null_shape);
+                // A null-shaped field stores the destination's own empty
+                // value, so it is not read.
+                if !null_shape(&field.ty) {
+                    note_value(field, read, null_shape);
+                }
             }
         }
         ValueKind::ArrayLit { elements, fill } => {
             for element in elements {
-                note_value(element, read, null_shape);
+                // A null-shaped element stores the destination's own empty
+                // value, so it is not read.
+                if !null_shape(&element.ty) {
+                    note_value(element, read, null_shape);
+                }
             }
             if let Some(fill) = fill {
-                note_value(fill, read, null_shape);
+                if !null_shape(&fill.ty) {
+                    note_value(fill, read, null_shape);
+                }
             }
         }
         ValueKind::Template(pieces) => {

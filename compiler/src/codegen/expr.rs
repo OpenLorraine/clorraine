@@ -425,6 +425,18 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// True when a value carries the null literal's shape in its own storage.
+    ///
+    /// The typed-null lowering applies to a place or a compiler temporary —
+    /// the values a null-shaped local or literal produces. A value that merely
+    /// *types* as the shape (a lambda body returning a null-shaped capture,
+    /// for example) still computes something, so it renders and runs instead
+    /// of being replaced by the destination's empty value.
+    pub(super) fn carries_null_shape(&self, value: &Value) -> bool {
+        self.is_null_shaped(value)
+            && matches!(value.kind, ValueKind::Place(_) | ValueKind::Temp(_))
+    }
+
     /// True when a type carries the null shape's empty value.
     ///
     /// The frozen nullable set is a handle, a `raw` pointer, a `cstring`, and
@@ -472,7 +484,9 @@ impl<'a> Emitter<'a> {
     /// spells the widening, because one C `?:` must carry one type in both
     /// arms.
     pub(super) fn conditional_arm(&self, value: &Value, result: &Ty) -> String {
-        if matches!(value.kind, ValueKind::Null) {
+        // A null-shaped arm carries no computed value: the arm takes the
+        // result's own empty value exactly as the null literal does.
+        if matches!(value.kind, ValueKind::Null) || self.carries_null_shape(value) {
             return self.null_value(result);
         }
         if let ValueKind::Conditional {

@@ -2301,3 +2301,58 @@ func main(): i32 {
         "y = cl_string_view((*__env->x));",
     );
 }
+
+// ===== The null-shaped array element at the destination value =====
+
+/// A null-shaped array element stores the destination's empty value.
+///
+/// The element stores the destination's own null on the host and its integer
+/// zero on the alternate profile, and the source local is marked unused
+/// instead of being read (before the walk skipped the nested children, the
+/// host strict build failed with `variable 'n' set but not used`).
+#[test]
+fn should_store_a_null_shaped_array_element_at_the_destination_value() {
+    let host = r#"module spec.cc.impl.nullarrayhost;
+
+import { File } from std.io;
+
+func main(): i32 {
+    let n = null;
+    let xs: File[2] = [n, n];
+    if (xs[0] == null && xs[1] == null) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let emitted = emit_host("nullarrayhost", host);
+    assert_contains("nullarrayhost", &emitted, "xs[0] = NULL;");
+    assert_contains("nullarrayhost", &emitted, "xs[1] = NULL;");
+    assert_eq!(
+        count(&emitted, "xs[0] = n;") + count(&emitted, "xs[1] = n;"),
+        0,
+        "nullarrayhost: the elements must not copy the shape's pointer"
+    );
+
+    let amiga = r#"module spec.cc.impl.nullarrayamiga;
+
+import { File } from std.io;
+
+func main(): i32 {
+    let n = null;
+    let xs: File[2] = [n, n];
+    if (xs[0] == null && xs[1] == null) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let emitted = emit_hosted_amiga("nullarrayamiga", amiga);
+    assert_contains("nullarrayamiga", &emitted, "xs[0] = 0;");
+    assert_contains("nullarrayamiga", &emitted, "xs[1] = 0;");
+    assert_eq!(
+        count(&emitted, "xs[0] = n;") + count(&emitted, "xs[1] = n;"),
+        0,
+        "nullarrayamiga: the elements must not copy the shape's pointer"
+    );
+}

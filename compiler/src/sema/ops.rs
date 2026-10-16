@@ -367,11 +367,17 @@ impl Checker<'_, '_> {
         match op {
             AssignOp::Assign => {
                 self.check_into_slot(value, &target_ty);
-                // A store may consume its value; a capture moved through it —
-                // by value or out of a borrow — is recorded with the
-                // destination, so the per-instance capture rule judges only
-                // the stores whose destination owns the value.
-                self.record_store_capture_move(value, &target_ty);
+                // A capture moved through the store is recorded with the
+                // destination. A borrowed capture is recorded only at a
+                // writable lend destination — the out-slot class, where the
+                // store writes through the caller's storage; a local, a
+                // member, or a plain view destination keeps the frozen
+                // lend-store report.
+                let lends = match &target.kind {
+                    ExprKind::Name(name) => self.binding_lends(name),
+                    _ => false,
+                };
+                self.record_store_capture_move(value, &target_ty, lends);
             }
             _ => {
                 let value_ty = self.check_value(value, None);

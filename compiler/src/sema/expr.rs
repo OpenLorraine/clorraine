@@ -194,9 +194,17 @@ impl Checker<'_, '_> {
         let floor = self.scopes.len();
         self.push_scope();
         for info in &infos {
-            self.declare(&info.name, info.ty.clone());
+            // A borrowed capture is a writable lend exactly as the enclosing
+            // parameter is; a copy capture owns its value.
+            let lend = matches!(
+                info.mode,
+                CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow
+            );
+            self.declare_with_lend(&info.name, info.ty.clone(), lend);
         }
         for (param, ty) in params.iter().zip(&param_types) {
+            // A lambda parameter owns its value; only the enclosing
+            // parameters and the borrowed captures are lends.
             self.declare(&param.name, ty.clone());
         }
 
@@ -328,8 +336,8 @@ impl Checker<'_, '_> {
     /// an owning instance the store moves the value out of the borrow, which
     /// the concrete rule cannot judge while the capture's type is a parameter.
     /// A duplicable instance copies out of the borrow and stays accepted.
-    pub(super) fn record_store_capture_move(&mut self, value: &Expr, dest: &Ty) {
-        self.record_capture_move(value, true, Some(dest));
+    pub(super) fn record_store_capture_move(&mut self, value: &Expr, dest: &Ty, borrows: bool) {
+        self.record_capture_move(value, borrows, Some(dest));
     }
 
     /// The shared capture-move record for one value.
@@ -347,12 +355,12 @@ impl Checker<'_, '_> {
             if !seen.insert((root.to_owned(), path.clone())) {
                 continue;
             }
-            let recorded = match self.capture_mode(root) {
-                Some(CaptureMode::Copy) => true,
-                Some(CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow) => borrows,
-                None => false,
+            let borrowed = match self.capture_mode(root) {
+                Some(CaptureMode::Copy) => false,
+                Some(CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow) => true,
+                None => continue,
             };
-            if !recorded {
+            if borrowed && !borrows {
                 continue;
             }
             let ty = self.lambda_captures.iter().rev().find_map(|captures| {
@@ -379,6 +387,7 @@ impl Checker<'_, '_> {
                 ty,
                 path,
                 dest: dest.cloned(),
+                borrow: borrowed,
                 span: value.span,
             });
         }

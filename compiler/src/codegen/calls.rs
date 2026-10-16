@@ -136,7 +136,19 @@ impl Emitter<'_> {
                     && (func_ty.is_some() || user_call)
                 {
                     match expected {
-                        Some(expected) => self.null_value(expected),
+                        Some(expected) => {
+                            let empty = self.null_value(expected);
+                            // A computed value still runs before the
+                            // parameter takes its own empty value; the null
+                            // literal itself has nothing to run.
+                            if matches!(arg.kind, ValueKind::Null)
+                                || self.carries_null_shape(arg)
+                            {
+                                empty
+                            } else {
+                                format!("({}, {empty})", self.value(arg))
+                            }
+                        }
                         None => self.argument_text(arg, expected),
                     }
                 } else {
