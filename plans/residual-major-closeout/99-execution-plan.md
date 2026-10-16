@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-16 21:00
-> **Progress**: 6/39 tasks (15%) — Phase 1 complete
+> **Last Updated**: 2026-10-16 22:00
+> **Progress**: 8/39 tasks (21%) — Executing Phase 2
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -112,9 +112,9 @@ control.
 environment field, the placeholder/null-shape instance resolution, and the row-element index
 judgment with their controls.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (elementmembercall, elementcapture, elementinfer, rowindex) with their controls
-- [ ] 2.1.2 Run the suite and record the red phase (the direct-read, concrete-index, and
-      concrete-instance controls verified green first — AR-3/AR-5)
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs` (elementmembercall, elementcapture, elementinfer, rowindex) with their controls ✅ (completed: 2026-10-16 22:00; fourteen tests appended to `compiler/tests/checker_conformance_spec_test.rs` (+455 lines, additions only; 74 → 88 tests) plus one trap helper — the loop-element member read through a generic callee (`cl_id__unknown`) with the direct-read control, the element-typed capture environment with the concrete control, the element-placeholder inferred argument (`cl_inner__unknown`) with the concrete and explicit-null controls, and the row-index bounds (the constant `E10216` and the runtime `E11211` trap) with four controls incl. the in-bounds guard-non-fire and the concrete trap twin; every accepted program folds a read-back)
+- [x] 2.1.2 Run the suite and record the red phase (the direct-read, concrete-index, and
+      concrete-instance controls verified green first — AR-3/AR-5) ✅ (completed: 2026-10-16 22:00; plain 82 passed / 6 failed and ASan 82 passed / 6 failed — the six reds (the two implicit `__unknown` symbols, the capture type error, the accepted null-shaped inferred argument, the unguarded constant index, the missing runtime trap with the ASan overflow); the eight controls green; parent-verified both legs)
 
 ### Step 2.2: Implementation
 

@@ -282,6 +282,19 @@ fn assert_no_asan(tag: &str, output: &Output) {
     );
 }
 
+/// Asserts the run aborted at a runtime trap for `code`.
+fn assert_trap(tag: &str, output: &Output, code: &str) {
+    assert!(
+        !output.status.success(),
+        "{tag}: a trapped run must exit nonzero"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains(&format!("error {code}:")),
+        "{tag}: expected the {code} trap; stderr:\n{stderr}"
+    );
+}
+
 /// An impure dividend evaluates once in a module initializer.
 ///
 /// The guard and the division read the same stored value, so a function with
@@ -2259,5 +2272,447 @@ func main(): i32 {
         &["cannot move captured 'x' in a lambda"],
         &["E10034"],
     );
+}
+
+// ===== Loop element placeholder, inference, and bounds =====
+
+/// A member read of a loop element passed to a generic callee is keyed by the
+/// substituted field type.
+///
+/// The type stage binds the loop element as the iterable's one-step element
+/// placeholder, so `v.y` resolves to the substituted row's member (`i32`) and
+/// the inferred `id` instance declares and emits; the run reads the summed
+/// members back (red at the phase base: the argument stayed `unknown`, the
+/// instance keyed `cl_id__unknown`, and the strict build failed with an
+/// implicit declaration).
+#[test]
+fn should_key_a_loop_element_member_read_through_a_generic_callee() {
+    let source = r#"module spec.cc.elementmembercall;
+
+struct S {
+    y: i32;
+}
+
+func id<T>(x: T): T {
+    return x;
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (v in xs) {
+        total = total + id(v.y);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    let output = run_memory("elementmembercall", source);
+    assert_no_asan("elementmembercall", &output);
+    assert_exit("elementmembercall", &output, 3);
+}
+
+/// A direct member read of a loop element stays accepted (the control).
+///
+/// The element binding carries the substituted row's type into the read, so
+/// the loop sums the members without a generic callee in between; the run
+/// reads the summed members back (green control at the phase base).
+#[test]
+fn should_accept_a_direct_member_read_of_a_loop_element() {
+    let source = r#"module spec.cc.elementmembercallctl;
+
+struct S {
+    y: i32;
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (v in xs) {
+        total = total + i32(v.y);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    let output = run_memory("elementmembercallctl", source);
+    assert_no_asan("elementmembercallctl", &output);
+    assert_exit("elementmembercallctl", &output, 3);
+}
+
+/// A closure capture of a loop element carries the element in its
+/// environment field.
+///
+/// The captured binding's checked type is the element placeholder, so the
+/// lifted lambda's environment declares the element struct and the member
+/// read resolves at the instance; the run reads the summed members back (red
+/// at the phase base: the environment declared `i32 v` for a `ClS` element,
+/// `incompatible types when initializing type 'int' using type 'ClS'` and
+/// `request for member 'y'`).
+#[test]
+fn should_type_a_loop_element_capture_environment_from_the_element() {
+    let source = r#"module spec.cc.elementcapture;
+
+struct S {
+    y: i32;
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (v in xs) {
+        total = total + ([v] () => v.y)();
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return each<S[2]>(a);
+}
+"#;
+    let output = run_memory("elementcapture", source);
+    assert_no_asan("elementcapture", &output);
+    assert_exit("elementcapture", &output, 3);
+}
+
+/// A concrete loop element capture stays accepted (the control).
+///
+/// The same capture over a concrete struct array types its environment field
+/// from the element struct and reads the member; the run reads the summed
+/// members back (green control at the phase base).
+#[test]
+fn should_accept_a_concrete_loop_element_capture() {
+    let source = r#"module spec.cc.elementcapturectl;
+
+struct S {
+    y: i32;
+}
+
+func eachc(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (v in xs) {
+        total = total + ([v] () => v.y)();
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { y: 1 }, S { y: 2 }];
+    return eachc(a);
+}
+"#;
+    let output = run_memory("elementcapturectl", source);
+    assert_no_asan("elementcapturectl", &output);
+    assert_exit("elementcapturectl", &output, 3);
+}
+
+/// An inferred generic call on the element placeholder keys its instance.
+///
+/// The argument is the loop element itself, so the inferred `inner` instance
+/// maps the placeholder through the instance substitution, declares, and
+/// emits; the run reads the summed elements back (red at the phase base: the
+/// instance keyed `cl_inner__unknown` and the strict build failed with an
+/// implicit declaration).
+#[test]
+fn should_key_an_inferred_generic_call_on_the_element_placeholder() {
+    let source = r#"module spec.cc.elementinfer;
+
+func inner<T>(x: T): T {
+    return x;
+}
+
+func outer<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + inner(v);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    return outer<i32[2]>(a);
+}
+"#;
+    let output = run_memory("elementinfer", source);
+    assert_no_asan("elementinfer", &output);
+    assert_exit("elementinfer", &output, 3);
+}
+
+/// A concrete element argument keys its inferred instance (the control).
+///
+/// The same inner call over a concrete array binds the argument to the
+/// element type directly, so the instance declares and the run reads the
+/// summed elements back (green control at the phase base).
+#[test]
+fn should_accept_a_concrete_element_inferred_argument() {
+    let source = r#"module spec.cc.elementinferctl;
+
+func inner(x: i32): i32 {
+    return x;
+}
+
+func outer(xs: i32[2]): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + inner(v);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let a: i32[2] = [1, 2];
+    return outer(a);
+}
+"#;
+    let output = run_memory("elementinferctl", source);
+    assert_no_asan("elementinferctl", &output);
+    assert_exit("elementinferctl", &output, 3);
+}
+
+/// A null-shaped inferred argument reports the null rule before an instance
+/// key derives.
+///
+/// The argument's shape is not an instance-able type, so the call reports the
+/// frozen null judgment instead of inventing a null-shaped instance (red at
+/// the phase base: the call was accepted and the strict build failed with an
+/// implicit `cl_each__unknownQ` declaration).
+#[test]
+fn should_report_a_null_shaped_inferred_argument_with_the_null_rule() {
+    let source = r#"module spec.cc.elementinfernull;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let x = null;
+    return each(x);
+}
+"#;
+    assert_rejected_once(
+        "elementinfernull",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+}
+
+/// A null-shaped argument with a written type argument reports the null rule
+/// (the control).
+///
+/// The parameter is concrete after the written type argument, so the call
+/// already reaches the frozen null judgment; the inferred path must match it
+/// (green control at the phase base).
+#[test]
+fn should_report_a_null_shaped_explicit_argument_with_the_null_rule() {
+    let source = r#"module spec.cc.elementinfernullctl;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + 1;
+    }
+    return n;
+}
+
+func main(): i32 {
+    let x = null;
+    return each<i32>(x);
+}
+"#;
+    assert_rejected_once(
+        "elementinfernullctl",
+        source,
+        "E10012",
+        &["'null' is not allowed here"],
+        &[],
+    );
+}
+
+/// A constant index past the substituted row's extent reports out of range at
+/// the instance.
+///
+/// The row element substitutes to `i32[3]`, so the constant index 5 reports
+/// the frozen range error exactly as the concrete spelling does (red at the
+/// phase base: the program was accepted and emitted the unguarded read).
+#[test]
+fn should_report_an_out_of_range_constant_row_index_at_the_instance() {
+    let source = r#"module spec.cc.rowindexconst;
+
+func rowsum<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[5];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return rowsum<i32[2][3]>(rows);
+}
+"#;
+    assert_rejected_once(
+        "rowindexconst",
+        source,
+        "E10216",
+        &["index 5 is out of range for 'i32[3]'"],
+        &[],
+    );
+}
+
+/// A run-time index past the substituted row's extent traps at the bounds
+/// guard.
+///
+/// The guard condition decides on the substituted row type, so the index 5
+/// aborts at the frozen trap instead of reading past the row and the read
+/// never completes (red at the phase base: no guard emitted and the run
+/// returned a value).
+#[test]
+fn should_trap_when_a_runtime_row_index_is_out_of_range() {
+    let source = r#"module spec.cc.rowindexrt;
+
+func rowsum<T>(xs: T, i: usize): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[i];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let i: usize = 5;
+    return rowsum<i32[2][3]>(rows, i);
+}
+"#;
+    let output = run_memory("rowindexrt", source);
+    assert_trap("rowindexrt", &output, "E11211");
+}
+
+/// The concrete out-of-range constant index stays rejected (the control).
+///
+/// The non-generic row sum's constant index 5 reports the frozen range error
+/// before any emission (green control at the phase base).
+#[test]
+fn should_report_an_out_of_range_constant_row_index_concretely() {
+    let source = r#"module spec.cc.rowindexconc;
+
+func rowsumC(xs: i32[2][3]): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[5];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return rowsumC(rows);
+}
+"#;
+    assert_rejected_once(
+        "rowindexconc",
+        source,
+        "E10216",
+        &["index 5 is out of range for 'i32[3]'"],
+        &[],
+    );
+}
+
+/// A concrete in-bounds row index stays accepted (the control).
+///
+/// Both constant indexes are inside the row extent 3, so the loop reads the
+/// rows' members and the run reads their sum back (green control at the phase
+/// base).
+#[test]
+fn should_accept_a_concrete_in_bounds_row_index() {
+    let source = r#"module spec.cc.rowindexconcok;
+
+func rowsumC(xs: i32[2][3]): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[0] + v[2];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    return rowsumC(rows);
+}
+"#;
+    let output = run_memory("rowindexconcok", source);
+    assert_no_asan("rowindexconcok", &output);
+    assert_exit("rowindexconcok", &output, 14);
+}
+
+/// An in-bounds run-time row index through the instance stays accepted (the
+/// control).
+///
+/// The bounds guard on the substituted row passes for an in-bounds index, so
+/// the loop reads each row's member and the run reads their sum back; the
+/// guard must not fire where the concrete path does not (green control at the
+/// phase base).
+#[test]
+fn should_accept_an_in_bounds_runtime_row_index() {
+    let source = r#"module spec.cc.rowindexrtok;
+
+func rowsum<T>(xs: T, i: usize): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[i];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let i: usize = 2;
+    return rowsum<i32[2][3]>(rows, i);
+}
+"#;
+    let output = run_memory("rowindexrtok", source);
+    assert_no_asan("rowindexrtok", &output);
+    assert_exit("rowindexrtok", &output, 9);
+}
+
+/// The concrete run-time out-of-range index still traps (the control).
+///
+/// The concrete row sum already carries the bounds guard, so index 5 aborts
+/// at the frozen trap and the read never completes (green control at the
+/// phase base).
+#[test]
+fn should_trap_when_a_concrete_runtime_row_index_is_out_of_range() {
+    let source = r#"module spec.cc.rowindexconctrap;
+
+func rowsumC(xs: i32[2][3], i: usize): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + v[i];
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: i32[2][3] = [[1, 2, 3], [4, 5, 6]];
+    let i: usize = 5;
+    return rowsumC(rows, i);
+}
+"#;
+    let output = run_memory("rowindexconctrap", source);
+    assert_trap("rowindexconctrap", &output, "E11211");
 }
 
