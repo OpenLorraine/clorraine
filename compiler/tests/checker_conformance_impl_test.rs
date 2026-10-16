@@ -4113,6 +4113,58 @@ fn should_cast_the_view_pointer_member_at_every_raw_destination() {
     assert_eq!(first, second, "castpin: the program re-emitted differently");
 }
 
+/// A generic instance's pointer member argument casts like a direct call.
+///
+/// The `id(v.ptr)` argument's recorded type is opaque in the generic body, so
+/// the emitter resolves the callee's type argument from the substituted
+/// argument values — the same resolution the call symbol uses — and the keyed
+/// instance's call spells the member cast. The direct call stays the control.
+#[test]
+fn should_cast_a_generic_instances_pointer_member_argument() {
+    let generic = r#"module spec.cc.impl.genargcast;
+
+func id<T>(x: T): T {
+    return x;
+}
+
+func each<T>(v: T): raw u8 {
+    return id(v.ptr);
+}
+
+func main(): i32 {
+    let s: str = "ab";
+    let p: raw u8 = each<str>(s);
+    unsafe {
+        if (p == null) { return 1; }
+        return i32(*p) - 97;
+    }
+}
+"#;
+    let emitted = emit_host("genargcast", generic);
+    assert_contains("genargcast", &emitted, "cl_id__raw_u8((u8 *)(v.ptr))");
+
+    let direct = r#"module spec.cc.impl.directargcast;
+
+func sink(p: raw u8): i32 {
+    unsafe {
+        if (p == null) { return 1; }
+        return i32(*p) - 97;
+    }
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return sink(s.ptr);
+}
+"#;
+    let emitted = emit_host("directargcast", direct);
+    assert_contains(
+        "directargcast",
+        &emitted,
+        "cl_spec_cc_impl_directargcast_sink((u8 *)(s.ptr))",
+    );
+}
+
 /// An unknown member on a concrete base reports at the base's span.
 ///
 /// The fixed array, the `cstring`, and the `raw E` each report the registered

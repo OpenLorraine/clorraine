@@ -309,12 +309,6 @@ impl<'a> Emitter<'a> {
         }
     }
 
-    /// The type of a value after instance substitution, following projections.
-    ///
-    /// A projection recorded in a generic body carries the opaque type: the
-    /// field cannot be resolved until the instance's type arguments are known.
-    /// The substituted base makes it concrete, so the projection resolves
-    /// through the same field lookup the place renderer walks and the `len`
     /// True when a text view's pointer member read reaches a raw destination.
     ///
     /// The member's C field is a `const u8 *` while its checked type is the
@@ -362,6 +356,12 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// The type of a value after instance substitution, following projections.
+    ///
+    /// A projection recorded in a generic body carries the opaque type: the
+    /// field cannot be resolved until the instance's type arguments are known.
+    /// The substituted base makes it concrete, so the projection resolves
+    /// through the same field lookup the place renderer walks and the `len`
     /// fold sees the real type.
     pub(super) fn resolved_value_ty(&self, value: &Value) -> Ty {
         let ty = self.substitute(&value.ty);
