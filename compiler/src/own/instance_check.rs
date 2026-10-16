@@ -21,7 +21,7 @@ use crate::borrow::is_view;
 use crate::diag::{Diagnostic, Diagnostics};
 use crate::ir::{Function, Monomorphization, Statement, Terminator, Value, ValueKind};
 use crate::load::Loaded;
-use crate::sema::SemaOutput;
+use crate::sema::{ConversionLiteral, SemaOutput};
 use crate::span::Span;
 use crate::types::{resolve_ty, substitute_instance, Ty, TyKind};
 
@@ -1283,10 +1283,18 @@ fn check_deferred_conversions(
             if crate::types::contains_param(&expected) || expected.is_void() {
                 continue;
             }
+            // A nullable borrow slot's report belongs to the out-slot place
+            // duty; every other instance keeps the ordinary conversion report.
+            if conversion.borrow_slot && expected.nullable {
+                continue;
+            }
             let source = crate::types::substitute(&conversion.source, &bindings);
-            let Some(report) =
-                deferred_conversion_report(&source, &expected, conversion.span, conversion.literal)
-            else {
+            let Some(report) = deferred_conversion_report(
+                &source,
+                &expected,
+                conversion.span,
+                conversion.literal.as_ref(),
+            ) else {
                 continue;
             };
             diagnostics.push(report);
@@ -1307,7 +1315,7 @@ fn deferred_conversion_report(
     source: &Ty,
     expected: &Ty,
     span: Span,
-    literal: bool,
+    literal: Option<&ConversionLiteral>,
 ) -> Option<Diagnostic> {
     if crate::types::is_null_shaped(source) {
         if expected.nullable || expected.is_unknown() {
@@ -1321,27 +1329,71 @@ fn deferred_conversion_report(
     if source.is_unknown() || crate::types::contains_param(source) {
         return None;
     }
-    // A numeric literal takes the destination's type wherever the context
-    // supplies a scalar: the frozen widenings judge it there, exactly as the
-    // concrete spelling's literal is judged.
-    if literal && matches!(expected.kind, TyKind::Scalar(_)) {
-        return None;
+    // A literal takes the destination's type exactly where its concrete twin
+    // converts, so the written value judges the resolved scalar.
+    if let Some(literal) = literal {
+        return literal_destination_report(source, expected, span, literal);
     }
     if crate::types::implicit_conversion(source, expected) {
         return None;
     }
-    Some(
-        Diagnostic::error(
-            "E10200",
-            format!(
-                "cannot convert '{}' to '{}' implicitly",
-                source.display(),
-                expected.display()
-            ),
-            span,
-        )
-        .with_help("use an explicit cast `T(expr)`"),
+    Some(conversion_rejected(source, expected, span))
+}
+
+/// The frozen report for one literal at its resolved destination.
+///
+/// An integer literal at an integer scalar must fit — a value outside the
+/// destination's range reports the literal-fit rule, exactly as the concrete
+/// spelling does — a float literal widens to `f32`/`f64`, and a cross-kind
+/// pair reports the frozen conversion.
+fn literal_destination_report(
+    source: &Ty,
+    expected: &Ty,
+    span: Span,
+    literal: &ConversionLiteral,
+) -> Option<Diagnostic> {
+    let TyKind::Scalar(scalar) = &expected.kind else {
+        return Some(conversion_rejected(source, expected, span));
+    };
+    match literal {
+        ConversionLiteral::Int(value) => {
+            if !crate::types::is_integer_scalar(*scalar) {
+                return Some(conversion_rejected(source, expected, span));
+            }
+            if crate::types::int_fits(*value, *scalar) {
+                return None;
+            }
+            Some(
+                Diagnostic::error(
+                    "E10202",
+                    format!("literal does not fit '{}'", expected.display()),
+                    span,
+                )
+                .with_help("use a wider type or a hex/binary form"),
+            )
+        }
+        ConversionLiteral::Float(_) => {
+            if crate::types::is_float_scalar(*scalar) {
+                None
+            } else {
+                Some(conversion_rejected(source, expected, span))
+            }
+        }
+    }
+}
+
+/// The frozen conversion report for one rejected pair.
+fn conversion_rejected(source: &Ty, expected: &Ty, span: Span) -> Diagnostic {
+    Diagnostic::error(
+        "E10200",
+        format!(
+            "cannot convert '{}' to '{}' implicitly",
+            source.display(),
+            expected.display()
+        ),
+        span,
     )
+    .with_help("use an explicit cast `T(expr)`")
 }
 
 /// True when a value-form member resolves on the substituted type.

@@ -20,7 +20,8 @@ use crate::span::Span;
 use crate::types::{ implicit_conversion, int_fits, scalar_cast_allowed, CaptureInfo, CaptureMode, ClosureSite, ClosureTy, FuncParam, FuncTy, Ty, TyKind, PlacePathStep };
 
 use super::{
-    CaptureMoveRequirement, Checker, OpaqueConversion, OpaqueIndex, OpaqueMemberUse, OpaqueProjection,
+    CaptureMoveRequirement, Checker, ConversionLiteral, OpaqueConversion, OpaqueIndex,
+    OpaqueMemberUse, OpaqueProjection,
 };
 
 impl Checker<'_, '_> {
@@ -468,8 +469,8 @@ impl Checker<'_, '_> {
                 }
             }
         }
-        let literal = matches!(expr.kind, ExprKind::Int(_) | ExprKind::Float(_));
-        self.record_deferred_conversion_with(&ty, expected, expr.span, literal);
+        let literal = Self::conversion_literal(expr);
+        self.record_deferred_conversion_with(&ty, expected, expr.span, literal, false);
         self.check_conversion(&ty, expected, expr.span);
         ty
     }
@@ -488,16 +489,17 @@ impl Checker<'_, '_> {
     /// recording it again would report twice or reject where the concrete
     /// spelling accepts.
     pub(super) fn record_deferred_conversion(&mut self, source: &Ty, expected: &Ty, span: Span) {
-        self.record_deferred_conversion_with(source, expected, span, false);
+        self.record_deferred_conversion_with(source, expected, span, None, false);
     }
 
-    /// Records a deferred conversion, marking a numeric literal source.
+    /// Records a deferred conversion, carrying its literal and slot shape.
     pub(super) fn record_deferred_conversion_with(
         &mut self,
         source: &Ty,
         expected: &Ty,
         span: Span,
-        literal: bool,
+        literal: Option<ConversionLiteral>,
+        borrow_slot: bool,
     ) {
         // A destination that is a nullable type parameter is already rejected
         // where it is written (a type parameter cannot be empty), so its
@@ -527,7 +529,28 @@ impl Checker<'_, '_> {
             expected: expected.clone(),
             span,
             literal,
+            borrow_slot,
         });
+    }
+
+    /// The literal an expression writes, when it writes one.
+    ///
+    /// A negated literal folds into its value, so `-5` judges like `-5` and
+    /// not like an unknown.
+    pub(super) fn conversion_literal(expr: &Expr) -> Option<ConversionLiteral> {
+        match &expr.kind {
+            ExprKind::Int(value) => Some(ConversionLiteral::Int(i128::from(*value))),
+            ExprKind::Float(value) => Some(ConversionLiteral::Float(*value)),
+            ExprKind::Unary {
+                op: crate::ast::UnaryOp::Neg,
+                operand,
+            } => match &operand.kind {
+                ExprKind::Int(value) => Some(ConversionLiteral::Int(-i128::from(*value))),
+                ExprKind::Float(value) => Some(ConversionLiteral::Float(-*value)),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     /// Checks an already-computed type against an expected one.

@@ -7272,3 +7272,203 @@ func main(): i32 {
         "parsiblingi32: a rejected program must not produce a translation unit"
     );
 }
+
+/// A literal at an incompatible scalar destination reports like its twin.
+///
+/// A float at an integer, an integer at a float, and an integer at a bool each
+/// report the frozen conversion at the written value's site, exactly as their
+/// concrete twins do; an integer outside its destination's range reports the
+/// literal-fit rule instead.
+#[test]
+fn should_report_the_literal_boundary_instances_like_their_twins() {
+    let float_to_integer = r#"module spec.cc.litboundfloat;
+
+func pickf<T>(): T {
+    return 1.5;
+}
+
+func main(): i32 {
+    let v: i32 = pickf<i32>();
+    return v - 1;
+}
+"#;
+    assert_rejected_once(
+        "litboundfloat",
+        float_to_integer,
+        "E10200",
+        &["cannot convert 'f64' to 'i32' implicitly", "main.clo:4:12"],
+        &[],
+    );
+    let float_to_integer_twin = r#"module spec.cc.litboundfloattwin;
+
+func pickfc(): i32 {
+    return 1.5;
+}
+
+func main(): i32 {
+    let v: i32 = pickfc();
+    return v - 1;
+}
+"#;
+    assert_rejected_once(
+        "litboundfloattwin",
+        float_to_integer_twin,
+        "E10200",
+        &["cannot convert 'f64' to 'i32' implicitly", "main.clo:4:12"],
+        &[],
+    );
+
+    let integer_to_float = r#"module spec.cc.litboundintf32;
+
+func picki<T>(): T {
+    return 5;
+}
+
+func main(): i32 {
+    let v: f32 = picki<f32>();
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "litboundintf32",
+        integer_to_float,
+        "E10200",
+        &["cannot convert 'i32' to 'f32' implicitly", "main.clo:4:12"],
+        &[],
+    );
+    let integer_to_float_twin = r#"module spec.cc.litboundintf32twin;
+
+func pickic(): f32 {
+    return 5;
+}
+
+func main(): i32 {
+    let v: f32 = pickic();
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "litboundintf32twin",
+        integer_to_float_twin,
+        "E10200",
+        &["cannot convert 'i32' to 'f32' implicitly", "main.clo:4:12"],
+        &[],
+    );
+
+    let integer_to_bool = r#"module spec.cc.litboundintbool;
+
+func pickb<T>(): T {
+    return 5;
+}
+
+func main(): i32 {
+    let v: bool = pickb<bool>();
+    if (v) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "litboundintbool",
+        integer_to_bool,
+        "E10200",
+        &["cannot convert 'i32' to 'bool' implicitly", "main.clo:4:12"],
+        &[],
+    );
+
+    let out_of_range = r#"module spec.cc.litboundrange;
+
+func picko<T>(): T {
+    return 300;
+}
+
+func main(): i32 {
+    let v: u8 = picko<u8>();
+    return i32(v) - 44;
+}
+"#;
+    assert_rejected_once(
+        "litboundrange",
+        out_of_range,
+        "E10202",
+        &["literal does not fit 'u8'", "main.clo:4:12"],
+        &[],
+    );
+    let out_of_range_twin = r#"module spec.cc.litboundrangetwin;
+
+func pickoc(): u8 {
+    return 300;
+}
+
+func main(): i32 {
+    let v: u8 = pickoc();
+    return i32(v) - 44;
+}
+"#;
+    assert_rejected_once(
+        "litboundrangetwin",
+        out_of_range_twin,
+        "E10202",
+        &["literal does not fit 'u8'", "main.clo:4:12"],
+        &[],
+    );
+}
+
+/// A non-nullable borrow slot reports like its concrete twin.
+///
+/// `store<T>(borrow b, a)` at `T = i32` receives the caller's `str` through a
+/// borrow slot that resolves non-nullably, so the ordinary conversion reports
+/// once — the same code and count the concrete twin reports.
+#[test]
+fn should_report_a_non_nullable_borrow_slot_argument() {
+    let generic = r#"module spec.cc.borrowslotgeneric;
+
+func store<T>(borrow out: T, x: T): void {
+    out = x;
+}
+
+func outer<T, U>(a: T, b: U): i32 {
+    store<T>(borrow b, a);
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 1;
+    let s: str = "y";
+    return outer<i32, str>(n, s);
+}
+"#;
+    assert_rejected_once(
+        "borrowslotgeneric",
+        generic,
+        "E10200",
+        &["cannot convert 'str' to 'i32' implicitly", "main.clo:8:21"],
+        &[],
+    );
+
+    let concrete = r#"module spec.cc.borrowslotconcrete;
+
+func storec(borrow out: i32, x: i32): void {
+    out = x;
+}
+
+func outerc(a: i32, b: str): i32 {
+    storec(borrow b, a);
+    return 0;
+}
+
+func main(): i32 {
+    let n: i32 = 1;
+    let s: str = "y";
+    return outerc(n, s);
+}
+"#;
+    assert_rejected_once(
+        "borrowslotconcrete",
+        concrete,
+        "E10200",
+        &["cannot convert 'str' to 'i32' implicitly", "main.clo:8:19"],
+        &[],
+    );
+}

@@ -180,12 +180,30 @@ pub struct OpaqueConversion {
     pub expected: Ty,
     /// The value's span.
     pub span: Span,
-    /// True when the source is a numeric literal.
+    /// The literal the source wrote, when it wrote one.
     ///
-    /// A literal takes the destination's type wherever the context supplies a
-    /// scalar, so the instance audit applies the frozen numeric widenings to
-    /// it instead of the ordinary conversion report.
-    pub literal: bool,
+    /// A literal takes the destination's type exactly where its concrete twin
+    /// converts, so the audit applies that judgment to the resolved
+    /// destination.
+    pub literal: Option<ConversionLiteral>,
+    /// True when the destination is a `borrow` slot whose declared type still
+    /// mentions a parameter.
+    ///
+    /// Its instances split: a nullable substitution belongs to the out-slot
+    /// place duty, while a non-nullable one keeps the ordinary conversion
+    /// report.
+    pub borrow_slot: bool,
+}
+
+/// The literal a deferred conversion wrote.
+///
+/// The audit judges the resolved destination against the written value, so it
+/// carries the value itself, not just its kind.
+pub enum ConversionLiteral {
+    /// An integer literal's value.
+    Int(i128),
+    /// A float literal's value.
+    Float(f64),
 }
 
 /// One index read on a bare type parameter.

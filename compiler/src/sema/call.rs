@@ -327,18 +327,23 @@ impl Checker<'_, '_> {
                     // carries its marker, and a borrow argument whose declared
                     // slot still mentions a type parameter keeps the out-slot
                     // place duty's single instance report instead.
-                    let literal = matches!(
-                        arg.value.kind,
-                        crate::ast::ExprKind::Int(_) | crate::ast::ExprKind::Float(_)
-                    );
+                    let literal = Self::conversion_literal(&arg.value);
+                    // A borrow slot whose declared type still mentions a
+                    // parameter is judged per instance: the audit leaves a
+                    // nullable substitution to the out-slot place duty and
+                    // reports the non-nullable ones itself.
                     let borrow_slot = mode == crate::ast::Mode::Borrow
                         && signature
                             .params
                             .get(index)
                             .is_some_and(crate::types::contains_param);
-                    if !borrow_slot {
-                        self.record_deferred_conversion_with(ty, &expected, *arg_span, literal);
-                    }
+                    self.record_deferred_conversion_with(
+                        ty,
+                        &expected,
+                        *arg_span,
+                        literal,
+                        borrow_slot,
+                    );
                     self.check_conversion(ty, &expected, *arg_span);
                 }
             }
