@@ -65,9 +65,9 @@ pinned controls.
 guarded bind's release scope, the nullable view conditional's null arm, and the `DEF-209`
 control.
 
-- [ ] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/module_initializer_integrity_spec_test.rs` (initcallexpr, initgenericinfer, initguardrelease, initviewinfer, nullarmview, memberprojcontrol) with their controls
-- [ ] 1.1.2 Run the suite and record the red phase (the five reds re-measured; the `DEF-209`
-      control verified green first — AR-3/AR-5)
+- [x] 1.1.1 [spec-author] Write the phase cases — `compiler/tests/module_initializer_integrity_spec_test.rs` (initcallexpr, initgenericinfer, initguardrelease, initviewinfer, nullarmview, memberprojcontrol) with their controls ✅ (completed: 2026-10-16 17:10; six cases appended to `compiler/tests/module_initializer_integrity_spec_test.rs` (+254 lines, additions only; 44 tests total) — the expression callee (both spellings, the emitted init collapsing to the argument), the inferred generic call (`cl_…_pick` unkeyed → implicit declaration), the guarded owned bind inside its block (`'__cl_itmp1' undeclared`), the inferred generic view builder (the unkeyed `viewOf` + invalid initializer), the nullable view conditional (module and body; the null arm segfaults), and the `DEF-209` member-projection control (green); every accepted program folds a read-back)
+- [x] 1.1.2 Run the suite and record the red phase (the five reds re-measured; the `DEF-209`
+      control verified green first — AR-3/AR-5) ✅ (completed: 2026-10-16 17:10; plain 39 passed / 5 failed and ASan 39 passed / 5 failed — the five reds (ST-1..ST-5); the `DEF-209` control green; parent-verified both legs)
 
 ### Step 1.2: Implementation
 

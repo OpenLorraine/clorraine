@@ -1269,3 +1269,257 @@ func main(): i32 {
     assert_no_asan("storeslice", &output);
     assert_exit("storeslice", &output, 0);
 }
+
+/// An expression callee in an initializer resolves to the call's callable.
+///
+/// A call-result callee carries its callable value into the call exactly as
+/// the body spelling does, and a conditional callee selects its callable the
+/// same way, so both initializer bindings store the call's result (6) beside
+/// the func-typed control (red at the phase base: the emitted initializer
+/// collapsed both calls to their argument, `h = (5);`, and the run exited
+/// 254).
+#[test]
+fn should_call_an_expression_callee_from_a_module_initializer() {
+    let source = r#"module spec.mii.initcallexpr;
+
+func addOne(a: i32): i32 {
+    return a + 1;
+}
+
+func mk(): func(i32): i32 {
+    return addOne;
+}
+
+let c: bool = true;
+let f: func(i32): i32 = addOne;
+let h: i32 = mk()(5);
+let j: i32 = (c ? addOne : addOne)(5);
+let k: i32 = f(5);
+
+func main(): i32 {
+    return (h - 6) + (j - 6) + (k - 6);
+}
+"#;
+    let output = run_memory("initcallexpr", source);
+    assert_no_asan("initcallexpr", &output);
+    assert_exit("initcallexpr", &output, 0);
+}
+
+/// An inferred generic call in an initializer declares its instance.
+///
+/// A call with no written type arguments derives them from the checked
+/// argument types like the body path, so the instance declares, the keyed
+/// callee emits, and the run reads the call's result back; the explicit
+/// spelling beside it stays a working control (red at the phase base: the
+/// plain module symbol emitted with no instance and the strict build failed
+/// with `implicit declaration of function 'cl_..._pick'`).
+#[test]
+fn should_infer_a_generic_call_instance_in_a_module_initializer() {
+    let source = r#"module spec.mii.initgenericinfer;
+
+func pick<T>(a: T, b: T): T {
+    return a;
+}
+
+let g: i32 = pick(1, 2);
+let h: i32 = pick<i32>(3, 4);
+
+func main(): i32 {
+    return (g - 1) + (h - 3);
+}
+"#;
+    let output = run_memory("initgenericinfer", source);
+    assert_no_asan("initgenericinfer", &output);
+    assert_exit("initgenericinfer", &output, 0);
+}
+
+/// A guarded right-side bind releases inside its declaration block.
+///
+/// The `&&` right side declares its owned temporary inside the guard block,
+/// so the release must run there while the unguarded bind keeps the ordinary
+/// end-of-init release; both readings prove true (red at the phase base: the
+/// release was emitted after the block and the strict build failed with
+/// `'__cl_itmp1' undeclared`).
+#[test]
+fn should_release_a_guarded_owned_bind_inside_its_block() {
+    let source = r#"module spec.mii.initguardrelease;
+
+import { String, stringOf, bytes } from std.text;
+
+let yes: bool = true;
+
+func firstByte(s: String): u8 {
+    return bytes(s)[0];
+}
+
+let hit: bool = yes && (firstByte(stringOf("ab")) == 97);
+let plain: bool = firstByte(stringOf("ab")) == 97;
+
+func main(): i32 {
+    if (hit && plain) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("initguardrelease", source);
+    assert_no_asan("initguardrelease", &output);
+    assert_exit("initguardrelease", &output, 0);
+}
+
+/// An inferred generic view-builder call in an initializer declares its
+/// instance.
+///
+/// The view-builder spelling with no written type arguments records its
+/// instance exactly like the explicit spelling, so the keyed callee emits and
+/// the run reads the indexed elements back (red at the phase base: the plain
+/// view-builder symbol emitted with no instance, the strict build failed with
+/// `implicit declaration of function 'cl_..._viewOf'` and an invalid
+/// initializer).
+#[test]
+fn should_infer_a_generic_view_builder_instance_in_a_module_initializer() {
+    let source = r#"module spec.mii.initviewinfer;
+
+import { slice } from std.mem;
+
+let xs: i32[4] = [1, 2, 3, 4];
+
+func viewOf<T>(v: T[]): T[] {
+    return v;
+}
+
+let e: i32 = viewOf(slice(xs, 0, 4))[1];
+let f: i32 = viewOf<i32>(slice(xs, 0, 4))[2];
+
+func main(): i32 {
+    return (e - 2) + (f - 3);
+}
+"#;
+    let output = run_memory("initviewinfer", source);
+    assert_no_asan("initviewinfer", &output);
+    assert_exit("initviewinfer", &output, 0);
+}
+
+/// A nullable view conditional keeps each arm's own nullness.
+///
+/// Each arm constructs its own view: the owned arm wraps its handle and the
+/// null arm carries the zero view, so the destination's null test answers
+/// nine and the taken arm's length read answers three, at the module level
+/// and in a body. The both-arms-owned conditional is the non-null control
+/// (red at the phase base: the null selection wrapped `NULL` after the
+/// conditional and the run segfaulted with exit 139 at `cl_string_ptr(NULL)`).
+#[test]
+fn should_keep_the_nullness_of_a_nullable_view_conditional() {
+    let source = r#"module spec.mii.nullarmview;
+
+import { stringOf } from std.text;
+
+let c: bool = false;
+let s: str? = c ? stringOf("abc") : null;
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let output = run_memory("nullarmview-null", source);
+    assert_no_asan("nullarmview-null", &output);
+    assert_exit("nullarmview-null", &output, 9);
+
+    let taken = source.replace("let c: bool = false;", "let c: bool = true;");
+    let output = run_memory("nullarmview-taken", &taken);
+    assert_no_asan("nullarmview-taken", &output);
+    assert_exit("nullarmview-taken", &output, 3);
+
+    let body = r#"module spec.mii.nullarmbody;
+
+import { stringOf } from std.text;
+
+func code(c: bool): i32 {
+    let s: str? = c ? stringOf("abc") : null;
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return code(false);
+}
+"#;
+    let output = run_memory("nullarmbody-null", body);
+    assert_no_asan("nullarmbody-null", &output);
+    assert_exit("nullarmbody-null", &output, 9);
+
+    let body_taken = body.replace("return code(false);", "return code(true);");
+    let output = run_memory("nullarmbody-taken", &body_taken);
+    assert_no_asan("nullarmbody-taken", &output);
+    assert_exit("nullarmbody-taken", &output, 3);
+
+    let control = r#"module spec.mii.nullarmviewctl;
+
+import { stringOf } from std.text;
+
+let c: bool = false;
+let s: str? = c ? stringOf("ab") : stringOf("xyz");
+
+func main(): i32 {
+    if (s == null) {
+        return 9;
+    }
+    return i32(len(s));
+}
+"#;
+    let output = run_memory("nullarmview-ctl", control);
+    assert_no_asan("nullarmview-ctl", &output);
+    assert_exit("nullarmview-ctl", &output, 3);
+}
+
+/// A member projection of an owned call result keeps its binding and release.
+///
+/// The projection's root call binds into an init local or a statement local —
+/// in the let, return, argument, and module-initializer spellings — and the
+/// owned member releases with it, so every projection reads back and the
+/// program start releases everything (green control: verified strict-clean,
+/// exit 0, and ASan-clean at the phase base).
+#[test]
+fn should_keep_a_member_projection_of_an_owned_call_result() {
+    let source = r#"module spec.mii.memberprojcontrol;
+
+import { String, stringOf } from std.text;
+
+struct Box { count: i32; name: String; }
+
+func mkBox(): Box {
+    return Box { count: 3, name: stringOf("n") };
+}
+
+func byArg(x: i32): i32 {
+    return x;
+}
+
+let g: i32 = mkBox().count;
+
+func letSpelling(): i32 {
+    let v: i32 = mkBox().count;
+    return v;
+}
+
+func returnSpelling(): i32 {
+    return mkBox().count;
+}
+
+func argSpelling(): i32 {
+    return byArg(mkBox().count);
+}
+
+func main(): i32 {
+    return (g - 3) + (letSpelling() - 3) + (returnSpelling() - 3) + (argSpelling() - 3);
+}
+"#;
+    let output = run_memory("memberprojcontrol", source);
+    assert_no_asan("memberprojcontrol", &output);
+    assert_exit("memberprojcontrol", &output, 0);
+}
