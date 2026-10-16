@@ -50,6 +50,37 @@ fn run_clc(args: &[String]) -> Output {
         .expect("failed to spawn the compiler binary")
 }
 
+/// Emits one host-profile program from a holder module and its main.
+///
+/// The import binding and the qualified spelling need the declaring module on
+/// the command line, exactly as a build does, so this helper passes both
+/// files. Returns the emitted translation unit.
+fn emit_pair(tag: &str, holder: &str, main: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        holder_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::read_to_string(&c_path).unwrap_or_default()
+}
+
 /// Emits one host-profile program and asserts the front end accepted it.
 ///
 /// Returns the emitted translation unit. These cases are about what the
@@ -812,4 +843,84 @@ func main(): i32 {
 "#;
     let emitted = emit_host("narrowwiden", source);
     assert_contains("narrowwiden", &emitted, "cl_string_view(s)");
+}
+
+// ===== The func-global callee =====
+
+/// An imported or qualified func-global call renders the declaring symbol.
+///
+/// The import binding and the qualified spelling carry the global's identity,
+/// so the call resolves the module-level binding and renders its mangled
+/// symbol; the struct global's field call resolves through the same identity
+/// (red at the phase base: the strict build failed with `implicit declaration
+/// of function 'g'` and `'h' undeclared`).
+#[test]
+fn should_resolve_an_imported_or_qualified_func_global_call() {
+    let holder = r#"module spec.criimpl.funcglobal;
+
+func addOne(v: i32): i32 {
+    return v + 1;
+}
+
+func addTwo(v: i32): i32 {
+    return v + 2;
+}
+
+struct Holder {
+    call: func(i32): i32;
+}
+
+export let g: func(i32): i32 = addOne;
+export let h: Holder = Holder { call: addTwo };
+"#;
+    let main = r#"module spec.criimpl.funcglobalmain;
+
+import { g, h } from spec.criimpl.funcglobal;
+
+func main(): i32 {
+    let a: i32 = g(5);
+    let b: i32 = h.call(6);
+    let c: i32 = spec.criimpl.funcglobal.g(5);
+    return (a - 6) + (b - 8) + (c - 6);
+}
+"#;
+    let emitted = emit_pair("funccall", holder, main);
+    assert_contains("funccall", &emitted, "a = cl_spec_criimpl_funcglobal_g(5);");
+    assert_contains(
+        "funccall",
+        &emitted,
+        "b = (cl_spec_criimpl_funcglobal_h.call)(6);",
+    );
+    assert_contains("funccall", &emitted, "c = cl_spec_criimpl_funcglobal_g(5);");
+}
+
+/// A current-module func-global call keeps its resolved symbol.
+///
+/// The control reads the same shape without an import: the module-level
+/// binding is initialized with the function's symbol and called through it.
+#[test]
+fn should_keep_a_current_module_func_global_call() {
+    let source = r#"module spec.criimpl.funcglobalctl;
+
+func triple(v: i32): i32 {
+    return v * 3;
+}
+
+let local: func(i32): i32 = triple;
+
+func main(): i32 {
+    return local(2) - 6;
+}
+"#;
+    let emitted = emit_host("funccallctl", source);
+    assert_contains(
+        "funccallctl",
+        &emitted,
+        "cl_spec_criimpl_funcglobalctl_local = cl_spec_criimpl_funcglobalctl_triple;",
+    );
+    assert_contains(
+        "funccallctl",
+        &emitted,
+        "cl_spec_criimpl_funcglobalctl_local(2)",
+    );
 }

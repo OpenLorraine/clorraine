@@ -86,6 +86,33 @@ fn emit_host(tag: &str, source: &str) -> String {
     emitted
 }
 
+/// Emits one program twice from the same source path, returning both texts.
+fn emit_twice(tag: &str, source: &str) -> (String, String) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let mut emitted = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            source_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emitted.push(std::fs::read_to_string(&c_path).unwrap_or_default());
+    }
+    (emitted[0].clone(), emitted[1].clone())
+}
+
 /// Compiles a program and returns the compiler output and the C path.
 fn compile_only(tag: &str, source: &str) -> (ScratchDir, Output, PathBuf) {
     let scratch = ScratchDir::new(tag);
@@ -1520,4 +1547,74 @@ func main(): i32 {
         !c_path.exists(),
         "capture-take: a rejected program must not produce a translation unit"
     );
+}
+
+// ===== The void expression-bodied lambda =====
+
+/// A void expression body lowers as a statement and ends without a value.
+///
+/// The lifted body is a void function whose whole body is the intrinsic's
+/// trap followed by a bare `return;`; the block-bodied spelling emits the same
+/// shape (red at the phase base: the strict build failed with `'return' with a
+/// value, in function returning void` and the trap never appeared).
+#[test]
+fn should_lower_a_void_expression_lambda_as_a_statement() {
+    let source = r#"module spec.closeoutimpl.voidassert;
+
+func main(): i32 {
+    let f: func(): void = () => assert(false, "nope");
+    f();
+    return 0;
+}
+"#;
+    let emitted = emit_host("voidassert", source);
+    assert_contains("voidassert", &emitted, "if (!(0)) cl_trap(\"E11213\", \"assertion failed\");");
+    // The lifted body's own tail carries the bare return: the first trap is
+    // followed by the void function's `return;`, not `return 0;`.
+    let trap_at = emitted
+        .find("if (!(0)) cl_trap(\"E11213\", \"assertion failed\");")
+        .expect("voidassert: the trap is missing");
+    assert!(
+        emitted[trap_at..].contains("    return;"),
+        "voidassert: the lifted body must end with a bare return"
+    );
+
+    let block = r#"module spec.closeoutimpl.voidblock;
+
+func main(): i32 {
+    let f: func(): void = () => {
+        assert(false, "nope");
+    };
+    f();
+    return 0;
+}
+"#;
+    let emitted = emit_host("voidblock", block);
+    assert_contains("voidblock", &emitted, "if (!(0)) cl_trap(\"E11213\", \"assertion failed\");");
+    let trap_at = emitted
+        .find("if (!(0)) cl_trap(\"E11213\", \"assertion failed\");")
+        .expect("voidblock: the trap is missing");
+    assert!(
+        emitted[trap_at..].contains("    return;"),
+        "voidblock: the lifted body must end with a bare return"
+    );
+}
+
+/// The void lambda body re-emits identically.
+#[test]
+fn should_re_emit_the_void_lambda_statement_identically() {
+    let source = r#"module spec.closeoutimpl.voidassert;
+
+func main(): i32 {
+    let f: func(): void = () => assert(false, "nope");
+    f();
+    return 0;
+}
+"#;
+    let (first, second) = emit_twice("reemitvoidlambda", source);
+    assert_eq!(
+        first, second,
+        "reemitvoidlambda: the program re-emitted differently"
+    );
+    assert_contains("reemitvoidlambda", &first, "if (!(0)) cl_trap(\"E11213\", \"assertion failed\");");
 }

@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 16:00
-> **Progress**: 34/39 tasks (87%) — Phase 6 in review
+> **Last Updated**: 2026-10-17 16:40
+> **Progress**: 35/39 tasks (90%) — Phase 6 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -308,10 +308,10 @@ fixed-array `sizeof` value, and the void lambda over an abort intrinsic.
 
 ### Step 6.3: Impl Tests & Review
 
-- [ ] 6.3.1 Write the phase implementation pins (the mangled callee spellings, the `_start`
+- [x] 6.3.1 Write the phase implementation pins (the mangled callee spellings, the `_start`
       alignment shape, the emitted `sizeof` expression, the void return/trap shape, the
       byte-identical controls, the re-emission determinism pins) in the origin `_impl_test.rs`
-      files
+      files ✅ (completed: 2026-10-17 16:40; seven pins added across three impl suites (callable-release 21/21, module-initializer 29/29, backlog-closeout 34/34; additions only) plus two helpers — the imported/qualified func-global pair (the `emit_pair` helper for the two-file form) with the current-module control, the whole-type `sizeof` with the scalar/struct/view controls and a re-emission pin, and the void expression lambda’s statement lowering with a re-emission pin; four discriminate, three are disclosed base-stable guards; `DEF-189`’s alignment has no impl-suite home (no freestanding impl suite) — the spec case’s host no-libc run and the m68k link are the behavior pins, reported; 84/84 green across the three suites; `make check` exit 0)
 - [ ] 6.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; the emission lens runs the base/head differential
 

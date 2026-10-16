@@ -1084,3 +1084,90 @@ func main(): i32 {
         "recvguard: a shifted argument must not key a dead slice instance"
     );
 }
+
+// ===== The whole-type measurement =====
+
+/// A fixed-array `sizeof` spells the whole C array type.
+///
+/// The intrinsic renders the base type with every extent, so the C compiler
+/// measures the whole type; the declarator spelling folds a fixed array to its
+/// element, which would measure one element (red at the phase base: the
+/// emission read `sizeof(i32)` for both operands).
+#[test]
+fn should_measure_the_whole_fixed_array_type() {
+    let source = r#"module spec.miiimpl.arraysize;
+
+let wholeSize: usize = sizeof(i32[2]);
+
+func main(): i32 {
+    let n: usize = sizeof(i32[2]);
+    let m: usize = sizeof(i32[2][3]);
+    let p: usize = sizeof(i32);
+    return i32(wholeSize - 8) + i32(n - 8) + i32(m - 24) + i32(p - 4);
+}
+"#;
+    let emitted = emit_host("arraysize", source);
+    assert_contains(
+        "arraysize",
+        &emitted,
+        "cl_spec_miiimpl_arraysize_wholeSize = sizeof(i32[2]);",
+    );
+    assert_contains("arraysize", &emitted, "n = sizeof(i32[2]);");
+    assert_contains("arraysize", &emitted, "m = sizeof(i32[2][3]);");
+    // The scalar operand keeps the element spelling: the scalar control.
+    assert_contains("arraysize", &emitted, "p = sizeof(i32);");
+    assert_eq!(
+        count(&emitted, "sizeof(i32[2])"),
+        2,
+        "arraysize: the whole type must be spelled for both fixed-array operands"
+    );
+}
+
+/// The scalar, struct, and view measurements stay unchanged.
+///
+/// `sizeof(S)` is the struct's size and the omitted-extent operand keeps its
+/// slice typedef, exactly as the `str` view does; both readings are the type
+/// spellings the declarator path produces.
+#[test]
+fn should_keep_the_scalar_struct_and_view_measurements_unchanged() {
+    let source = r#"module spec.miiimpl.arraysizeview;
+
+struct S {
+    a: i32;
+    b: i32;
+}
+
+func main(): i32 {
+    let q: usize = sizeof(S);
+    let r: usize = sizeof(i32[]);
+    let s: usize = sizeof(str);
+    return i32(q - 8) + i32(r - s);
+}
+"#;
+    let emitted = emit_host("arraysizeview", source);
+    assert_contains("arraysizeview", &emitted, "q = sizeof(ClS);");
+    assert_contains("arraysizeview", &emitted, "r = sizeof(ClSlice_i32);");
+    assert_contains("arraysizeview", &emitted, "s = sizeof(ClStr);");
+}
+
+/// The whole-type measurement re-emits identically.
+#[test]
+fn should_re_emit_the_whole_type_measurement_identically() {
+    let source = r#"module spec.miiimpl.arraysize;
+
+let wholeSize: usize = sizeof(i32[2]);
+
+func main(): i32 {
+    let n: usize = sizeof(i32[2]);
+    let m: usize = sizeof(i32[2][3]);
+    let p: usize = sizeof(i32);
+    return i32(wholeSize - 8) + i32(n - 8) + i32(m - 24) + i32(p - 4);
+}
+"#;
+    let (first, second) = emit_twice("reemitarraysize", source);
+    assert_eq!(
+        first, second,
+        "reemitarraysize: the program re-emitted differently"
+    );
+    assert_contains("reemitarraysize", &first, "n = sizeof(i32[2]);");
+}
