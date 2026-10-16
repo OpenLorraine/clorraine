@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 08:40
-> **Progress**: 35/51 tasks (69%) — Phase 6 in review
+> **Last Updated**: 2026-10-19 12:00
+> **Progress**: 36/51 tasks (71%) — Phase 6 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -300,8 +300,8 @@ ST-15..ST-17 · AR-8
 - [x] 6.3.1 Write the phase implementation pins (the duty records and the per-instance reports,
       the legal-instance emissions, the `ffi` prototype typing, the control table, a re-emission
       determinism pin) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-19 08:40; five pins added (71 tests total, additions only) plus a site-aware rejection helper — the sibling-fixed null argument (one `E10012` at the use site; the per-use-site counts and spans; the explicit twin), the four inverted conversion routes (codes, texts, twins' spans), the inferred concrete-parameter conversion (the `bs02` shape), the accepted nullable/legal controls' emissions, and a re-emission pin; three fail at `9fa6997` for the intended reason, two are disclosed base-stable guards; 71/71 green, `make check` exit 0)
-- [ ] 6.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses; record the count ruling in the ledger
+- [x] 6.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses; record the count ruling in the ledger ✅ (completed: 2026-10-19 12:00; all four lenses dispatched plus three correction rounds and two bounded confirmations (FAIL on the corrections' breadth, then PASS WITH MINORS — 0 blockers): the literal marker/context typing, the borrow-slot duplicate, the concrete sibling gate, and the kind/value literal rules + the nullable-only deferral; rows filed `DEF-382`–`386` (+ the `DEF-360` extension); the closing verification: the checker-conformance spec 159/159 plain and ASan, the impl pins 72/72, `make check` exit 0, no unintended accept/reject or emission change)
 
 **Verify**: `make check`; the conversion/`ffi` origin cases; the compile-only strict builds
 

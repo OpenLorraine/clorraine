@@ -379,3 +379,45 @@ and the escape by `ed84325`); `DEF-326` extended with the view-fill evaluation s
   protects the guard-carrying arm spellings; narrowing it was considered and declined.
 - The C-b fill's per-element value re-evaluation is a recorded residual (`DEF-326`), sanitizer-clean.
 - `DEF-379`'s nested by-value spelling is base-identical and stays filed.
+
+## Phase 6 — Call conversions and ffi typing
+
+**Reviewed implementation**: `d9b6ae7` plus three correction rounds (`39bf027`, `5635204`,
+`d5102ee`). **Lenses**: correctness (L6R), semantics (L6S), memory-safety, and emission-integrity,
+plus two bounded confirmations.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | L6R-1 (the destination-side duty over-rejected context-typed literals in every position), L6R-2 (a duplicate report on a borrow argument whose slot is nullable), L6R-3 (the docs), L6R-4 (the record counts); the sibling-fixed counts, the four route rejections, and the `bs02` coverage otherwise verified |
+| semantics | FAIL — 2 blockers | L6S-1 (`sibling_fixed` treated a parameter-typed resolution as concrete — the legal nullable instance and the un-instantiated body were rejected, and the concrete instance's report doubled), L6S-2 (= L6R-1); L6S-3/L6S-4 filed (`DEF-382`/`DEF-383`); Q3 (the generic-call route) and Q4 (`bs02`) conformant |
+| memory-safety | CONFIRMED CLEAN — 0 | 5,811 programs swept; only the two rows' 13 rejects; 0 emission diffs; no leak/UAF/DF; the accepted-shape battery ASan/LSan green; the do-not-fix set identical |
+| emission-integrity | FINDINGS — 2 | Both = L6R-1/L6R-2 (the audit pinned the pre-correction tree and noted the in-flight fix); 0 emission diffs everywhere, 0 dead instances, determinism 3,952/3,952, the profiles unchanged; P1/P2 filed (`DEF-384`/`DEF-385`) |
+| confirmations | FAIL then PASS | The first confirmation found L6S-5 (the literal rule admitted every scalar destination — float↔int, int→bool, out-of-range) and L6S-6 (the borrow-slot skip lost the non-nullable instances); after the narrowing round the re-confirmation: **PASS WITH MINORS — 0 blockers** (L6S-7 filed) |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| C1 (`39bf027`) | **Fixed**: the record carries a numeric-literal marker and a scalar destination supplies the literal's type through the frozen widenings (a non-scalar destination keeps its `E10200`); the borrow-slot record is skipped for the nullable duplicate; the docs updated |
+| L6S-1 (`5635204`) | **Fixed**: the sibling-fixed null trigger requires a concrete resolution (`!unknown`, `!nullable`, no parameter) — the legal nullable instance and the un-instantiated body accept, the concrete instance reports once |
+| the narrowing (`d5102ee`) | **Fixed**: the record carries the literal's kind and value and the audit applies the twin's rule (int → an integer scalar must fit, else `E10202`; int → float/bool → `E10200`; float → f32/f64 only); the borrow-slot record is kept with the nullable-only deferral — the non-nullable instances keep their report |
+
+### Filed rows
+
+`DEF-382` (the argument-route literal loss — remains open), `DEF-383` (the inferred null literal at
+a nullable instance — remains open), `DEF-384` (the nullable scalar type argument), `DEF-385` (the
+qualified type path), `DEF-386` (the negated literal at concrete positions), plus the `DEF-360`
+extension (the dot-call borrow-slot spelling).
+
+### Record notes
+
+- L6R-4 corrected: six spec tests landed (the record said five); the phase's head-only rejection set
+  settled at 9 (the two literal probes of the L6R-1 class left it once fixed).
+- L6S-7's caveat: the generic deferred judgment follows the fit rule while the concrete negated-literal
+  twin is non-conformant (`DEF-386`).
+- The `assert_no_asan` helper asserts only "AddressSanitizer" (a leak-only report would slip) —
+  pre-existing, noted by the memory lens (its battery covered the phase's shapes).
+- The non-nullable borrow instance's report span differs from its twin by the `borrow ` prefix
+  (disclosed; the code and count match).
