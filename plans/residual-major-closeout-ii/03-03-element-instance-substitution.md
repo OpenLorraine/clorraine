@@ -8,6 +8,7 @@
 Four rows ride the instance surface batch K phase 2/4 opened: the element store's
 overwritten-owner drop (a placeholder-typed destination), the substituted element in a concrete
 conversion or member position (no per-instance judgment), the duplicable `borrow out` instance
+> **Superseded (AR-19):** the `DEF-353` write-through direction below was reclassified as a false positive — the duplicable copy-lend is the frozen rule; the phase carries the conforming control instead.
 (the by-value lowering drops the write-through), and the incidentally fixed capture pair as the
 phase's control. The common mechanism is the per-instance view of a value that is
 placeholder-typed at the declaration site: substitution resolves the concrete type, and the
