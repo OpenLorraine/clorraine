@@ -3992,3 +3992,62 @@ fn should_re_emit_the_conversion_control_programs_identically() {
     );
     assert_contains("reemitlegalroute", &first, "cl_consume2__cstring");
 }
+
+/// The caller-parameter-resolved nullable sibling program.
+const CALLER_PARAMETER_NULLABLE_SOURCE: &str = r#"module spec.cc.impl.parsibling;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func outer<U>(x: U): i32 {
+    let n = null;
+    return pair(x, n) - 7;
+}
+
+func main(): i32 {
+    let s: str? = null;
+    return outer<str?>(s);
+}
+"#;
+
+/// The never-instantiated generic body program.
+const CALLER_PARAMETER_NOINST_SOURCE: &str = r#"module spec.cc.impl.parsiblingnoinst;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func outer<U>(x: U): i32 {
+    let n = null;
+    return pair(x, n) - 7;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+
+/// A caller-parameter-resolved nullable instance keys its own copy.
+///
+/// The nullable instance of the sibling pair emits its keyed specialization,
+/// while a body that is never instantiated emits no specialization at all —
+/// the resolution is judged where the instance exists.
+#[test]
+fn should_key_the_caller_parameter_resolved_nullable_instance() {
+    let emitted = emit_host("implparsibling", CALLER_PARAMETER_NULLABLE_SOURCE);
+    assert_contains("implparsibling", &emitted, "cl_pair__strQ");
+
+    let emitted = emit_host("implparsiblingnoinst", CALLER_PARAMETER_NOINST_SOURCE);
+    assert_eq!(
+        count(&emitted, "cl_pair__"),
+        0,
+        "implparsiblingnoinst: an un-instantiated body emits no specialization"
+    );
+}

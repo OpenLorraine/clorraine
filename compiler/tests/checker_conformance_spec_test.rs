@@ -7177,3 +7177,98 @@ func main(): i32 {
         "borrowslotcount: a rejected program must not produce a translation unit"
     );
 }
+
+/// A caller-parameter-resolved null sibling is judged at its instance.
+///
+/// `pair(x, n)` inside `outer<U>` resolves the parameter from the caller's own
+/// parameter, so the null argument is judged where the instance is: at
+/// `U = str?` the nullable slot keeps the legal null use (exit 0), and an
+/// un-instantiated body is accepted too. The concrete `i32` instance reports
+/// the frozen null rule exactly once, at the argument's site.
+#[test]
+fn should_keep_a_caller_parameter_resolved_nullable_instance_accepted() {
+    let nullable = r#"module spec.cc.parsiblingnullable;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func outer<U>(x: U): i32 {
+    let n = null;
+    return pair(x, n) - 7;
+}
+
+func main(): i32 {
+    let s: str? = null;
+    return outer<str?>(s);
+}
+"#;
+    let output = run_memory("parsiblingnullable", nullable);
+    assert_no_asan("parsiblingnullable", &output);
+    assert_exit("parsiblingnullable", &output, 0);
+
+    let no_instantiation = r#"module spec.cc.parsiblingnoinst;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func outer<U>(x: U): i32 {
+    let n = null;
+    return pair(x, n) - 7;
+}
+
+func main(): i32 {
+    return 0;
+}
+"#;
+    let output = run_memory("parsiblingnoinst", no_instantiation);
+    assert_no_asan("parsiblingnoinst", &output);
+    assert_exit("parsiblingnoinst", &output, 0);
+
+    let concrete = r#"module spec.cc.parsiblingi32;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func outer<U>(x: U): i32 {
+    let n = null;
+    return pair(x, n) - 7;
+}
+
+func main(): i32 {
+    let s: i32 = 5;
+    return outer<i32>(s);
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("parsiblingi32", concrete);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "parsiblingi32: the front end accepted the concrete null use"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        1,
+        "parsiblingi32: the concrete instance reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:12:20"),
+        "parsiblingi32: the report lands on the argument's site; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "parsiblingi32: a rejected program must not produce a translation unit"
+    );
+}

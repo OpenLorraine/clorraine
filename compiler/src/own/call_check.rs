@@ -407,8 +407,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // resolved the parameter to a concrete non-nullable type,
                 // exactly as a concrete parameter would; a null-capable
                 // resolution keeps the legal null use.
-                let sibling_fixed = resolved
-                    .is_some_and(|ty| !ty.is_unknown() && !ty.nullable);
+                // Only a concrete resolution counts: a parameter-typed one is
+                // judged by the deferred record and its audit, so a nullable
+                // instance stays legal and a concrete one reports once.
+                let sibling_fixed = resolved.is_some_and(|ty| {
+                    !ty.is_unknown() && !ty.nullable && !crate::types::contains_param(ty)
+                });
                 if null_argument && (null_parameter || sibling_fixed) {
                     self.report_null_rule(arg.span);
                 } else {
