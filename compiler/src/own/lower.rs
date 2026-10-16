@@ -4550,12 +4550,22 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
 
     /// True when one literal field only a store can fill.
     ///
-    /// A view-array field keeps the guard machinery's element route: the view
-    /// binder owns its element roots, so it is not judged here.
+    /// A view-array field fills element-wise exactly when one of its elements
+    /// needs the binding store — an element that widens an owned handle, a
+    /// member read that is not already a view, or an owned source. A field
+    /// whose elements are complete views keeps the guard machinery's element
+    /// route, because the view binder owns its element roots.
     fn literal_field_needs_stores(&self, field: &Value) -> bool {
         if field.ty.is_fixed_array() {
             if is_view_like(&field.ty.iterated_element()) {
-                return false;
+                let ValueKind::ArrayLit { elements, fill } = &field.kind else {
+                    // A fixed-array value that is not a brace list — a call
+                    // that writes through the hidden destination, for example
+                    // — always needs the store.
+                    return true;
+                };
+                let needs = |inner: &Value| self.view_element_needs_binding(inner);
+                return elements.iter().any(needs) || fill.as_deref().is_some_and(needs);
             }
             let ValueKind::ArrayLit { elements, fill } = &field.kind else {
                 return true;

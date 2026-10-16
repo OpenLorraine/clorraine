@@ -401,7 +401,13 @@ impl Checker<'_, '_> {
     /// True when the expression may stand on the left of an assignment.
     pub(super) fn is_place(&self, expr: &Expr) -> bool {
         match &expr.kind {
-            ExprKind::Name(_) | ExprKind::Index { .. } => true,
+            ExprKind::Name(_) => true,
+            // An element store needs a place base exactly as a member store
+            // does: an indexing step on a conditional selection is not a
+            // place, so `(c ? a : b).f[i] = x` reports the place rule instead
+            // of being silently dropped. The test recurses, so a member chain
+            // over a conditional is judged at its root.
+            ExprKind::Index { base, .. } => self.is_place(base),
             // The parser spells `value.field` as a dotted name, so a dotted name
             // that starts with a value in scope is a place just like a field.
             ExprKind::Qualified(name) => {

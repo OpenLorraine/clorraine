@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 01:30
-> **Progress**: 26/51 tasks (51%) — Executing Phase 5
+> **Last Updated**: 2026-10-19 02:10
+> **Progress**: 28/51 tasks (55%) — Phase 5 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -244,11 +244,11 @@ ST-13..ST-14 · AR-6
 
 ### Step 5.2: Implementation
 
-- [ ] 5.2.1 Report the frozen `E10221` for the conditional/projected-base element store (the
+- [x] 5.2.1 Report the frozen `E10221` for the conditional/projected-base element store (the
       assignment-place judgment — the scalar twin's rule and site); extend the guard-literal
       materialization to the view-array elements — `compiler/src/sema/ops.rs`,
-      `compiler/src/own/lower.rs`, the store/guard emitters
-- [ ] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/lower.rs`, the store/guard emitters ✅ (completed: 2026-10-19 02:10; `DEF-322`: the assignment-place predicate recurses into an element store's base (`sema/ops.rs:410`), so an indexing step on a conditional selection is not a place — both selections report one `E10221` at their sites with the scalar twin's rule, and the read/place/projection controls stay accepted; `DEF-323`: a view-array literal field fills element-wise when an element needs the binding store or the field value is not a brace list (`own/lower.rs:4558-4570`), so the guarded literal binds the destination on the evaluated path — the take spelling builds strictly and runs 0, the plain spelling skips the untaken arm's call, and the direct/scalar/owned controls stay accepted)
+- [x] 5.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-19 02:10; the residue suite 158/158 plain and under `RDC_ASAN=1`; the differential shows 8 behavior-checked emission diffs, 2 head-only strict-build fixes (the dropped hidden destination), and 1 intended rejection (the row's probe); no head-only strict failure; parent-verified both legs)
 
 ### Step 5.3: Impl Tests & Review
 
