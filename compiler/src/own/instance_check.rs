@@ -68,9 +68,9 @@ pub fn check(
 /// Reports `E10401` when a recorded capture move instantiates with an owning
 /// capture type.
 ///
-/// A lambda body that returns or consumes a by-value capture is accepted
+/// A lambda body that returns, consumes, or stores a capture is accepted
 /// while the capture's type is still a parameter, because the declaration
-/// cannot tell whether the copy aliases an owner. The audit substitutes each
+/// cannot tell whether the move aliases an owner. The audit substitutes each
 /// recorded instance's type arguments into the capture type: a duplicable or
 /// unknown substitution stays a copy and is legal, while an owning one
 /// reports the same diagnostic the concrete spelling emits. One duty reports

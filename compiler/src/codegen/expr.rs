@@ -344,7 +344,7 @@ impl<'a> Emitter<'a> {
     }
 
     /// True when a value carries the null literal's nullable-unknown shape.
-    fn is_null_shaped(&self, value: &Value) -> bool {
+    pub(super) fn is_null_shaped(&self, value: &Value) -> bool {
         crate::types::is_null_shaped(&self.substitute(&value.ty))
     }
 
@@ -423,6 +423,26 @@ impl<'a> Emitter<'a> {
             UnaryOp::PostIncrement => format!("({operand_c})++"),
             UnaryOp::PostDecrement => format!("({operand_c})--"),
         }
+    }
+
+    /// True when a type carries the null shape's empty value.
+    ///
+    /// A view, a slice, a handle, a `cstring`, and a raw pointer lower the
+    /// null shape to their own empty value; a scalar-backed type (a scalar,
+    /// an enum, a `bool`) has no empty state a null literal can name, so the
+    /// position's own accepting rule keeps the value's rendering there.
+    pub(super) fn carries_null_value(&self, ty: &Ty) -> bool {
+        matches!(
+            self.substitute(ty).kind,
+            TyKind::Handle(_)
+                | TyKind::Raw(_)
+                | TyKind::CString
+                | TyKind::Func(_)
+                | TyKind::Str
+                | TyKind::StaticStr
+                | TyKind::Struct(..)
+                | TyKind::Array { .. }
+        )
     }
 
     /// Renders the null literal for a value of `ty`.

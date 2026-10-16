@@ -126,8 +126,13 @@ impl Emitter<'_> {
                 let mode = modes.as_ref().and_then(|modes| modes.get(index)).copied();
                 // A null argument is typed by its parameter: a struct-typed
                 // view wants the zero view, while an `ffi` parameter keeps the
-                // plain null its mode-ignoring ABI prototype spells.
-                let text = if matches!(arg.kind, ValueKind::Null)
+                // plain null its mode-ignoring ABI prototype spells. A value
+                // inferred from `null` carries the same shape, so it takes the
+                // parameter's null value too.
+                let text = if (matches!(arg.kind, ValueKind::Null)
+                    || (self.is_null_shaped(arg)
+                        && !matches!(arg.kind, ValueKind::Conditional { .. })
+                        && expected.is_some_and(|expected| self.carries_null_value(expected))))
                     && (func_ty.is_some() || user_call)
                 {
                     match expected {

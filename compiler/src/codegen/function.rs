@@ -280,7 +280,12 @@ impl<'a> Emitter<'a> {
 
     /// Writes the hoisted local declarations, the temporaries, and the result.
     fn emit_local_declarations(&mut self, function: &'a ir::Function) {
-        let unread = unread_locals(function, |ty| self.needs_drop(&self.substitute(ty)));
+        let unread = unread_locals(
+            function,
+            |ty| self.needs_drop(&self.substitute(ty)),
+            |ty| crate::types::is_null_shaped(&self.substitute(ty)),
+            |ty| self.carries_null_value(ty),
+        );
         let mut written: BTreeSet<String> = BTreeSet::new();
         for local in &function.locals {
             if !written.insert(local.name.clone()) {
@@ -457,6 +462,15 @@ impl<'a> Emitter<'a> {
                     self.push(&format!(
                         "    memcpy({target_value}, {source_value}, {bytes});"
                     ));
+                } else if crate::types::is_null_shaped(&self.substitute(&source.ty))
+                    && !crate::types::is_null_shaped(&self.substitute(&target.ty))
+                    && self.carries_null_value(&target.ty)
+                {
+                    // A null-shaped source lowers to the target's own empty
+                    // value: a view target needs its zero view and a handle
+                    // target its null, not the shape's `void *`.
+                    let empty = self.null_value(&self.substitute(&target.ty));
+                    self.push(&format!("    {target_c} = {empty};"));
                 } else {
                     self.push(&format!("    {target_c} = {source_c};"));
                 }
@@ -2067,6 +2081,17 @@ impl<'a> Emitter<'a> {
         {
             return self.conditional_arm(value, ty);
         }
+        // A local inferred from `null` carries the null literal's shape, so it
+        // lowers to the destination's empty value too. A conditional renders
+        // per arm (its own path above), and a copy whose destination still is
+        // the shape keeps the value's own rendering.
+        if self.is_null_shaped(value)
+            && !matches!(value.kind, ValueKind::Conditional { .. })
+            && !crate::types::is_null_shaped(&self.substitute(ty))
+            && self.carries_null_value(ty)
+        {
+            return self.null_value(ty);
+        }
         let value_ty = self.substitute(&value.ty);
         // A possibly-null handle keeps its nullness through the widening: a
         // view constructed over the null handle would dereference it, so the
@@ -2414,29 +2439,55 @@ impl ArrayTarget {
 fn unread_locals(
     function: &ir::Function,
     drop_reads: impl Fn(&Ty) -> bool,
+    null_shape: impl Fn(&Ty) -> bool,
+    null_capable: impl Fn(&Ty) -> bool,
 ) -> BTreeSet<String> {
     let mut read: BTreeSet<String> = BTreeSet::new();
     for block in &function.blocks {
         for instr in &block.statements {
             match &instr.statement {
-                Statement::Assign { value, .. } => note_value(value, &mut read),
-                Statement::Move { source, .. } => note_place(source, &mut read),
+                Statement::Assign { target, value } => {
+                    // A null-shaped value lowers to the target's own empty
+                    // value, so the assignment does not read it: a local
+                    // reached only from such a store counts as unused.
+                    if !(null_shape(&value.ty)
+                        && !null_shape(&target.ty)
+                        && null_capable(&target.ty)
+                        && !matches!(value.kind, ValueKind::Conditional { .. }))
+                    {
+                        note_value(value, &mut read, &null_shape);
+                    }
+                }
+                Statement::Move { target, source } => {
+                    // A null-shaped source lowers to the target's own empty
+                    // value, so the move does not read it.
+                    if !(null_shape(&source.ty)
+                        && !null_shape(&target.ty)
+                        && null_capable(&target.ty))
+                    {
+                        note_place(source, &mut read);
+                    }
+                }
                 Statement::StorePointer { pointer, value } => {
-                    note_value(pointer, &mut read);
-                    note_value(value, &mut read);
+                    note_value(pointer, &mut read, &null_shape);
+                    note_value(value, &mut read, &null_shape);
                 }
                 Statement::Call { args, receiver, .. } => {
                     if let Some(receiver) = receiver {
-                        note_value(receiver, &mut read);
+                        note_value(receiver, &mut read, &null_shape);
                     }
                     for arg in args {
-                        note_value(arg, &mut read);
+                        // A null-shaped argument lowers to its parameter's own
+                        // null value, so the call does not read it.
+                        if !null_shape(&arg.ty) {
+                            note_value(arg, &mut read, &null_shape);
+                        }
                     }
                 }
-                Statement::Discard { value } => note_value(value, &mut read),
+                Statement::Discard { value } => note_value(value, &mut read, &null_shape),
                 Statement::Guards { checks } => {
                     for check in checks {
-                        note_value(check, &mut read);
+                        note_value(check, &mut read, &null_shape);
                     }
                 }
                 Statement::Drop { place, .. } => {
@@ -2448,16 +2499,26 @@ fn unread_locals(
             }
         }
         match &block.terminator {
-            Terminator::Branch { condition, .. } => note_value(condition, &mut read),
+            Terminator::Branch { condition, .. } => note_value(condition, &mut read, &null_shape),
             Terminator::Switch { value, arms, .. } => {
-                note_value(value, &mut read);
+                note_value(value, &mut read, &null_shape);
                 for (label, _) in arms {
-                    note_value(label, &mut read);
+                    note_value(label, &mut read, &null_shape);
                 }
             }
             Terminator::Return {
                 value: Some(value), ..
-            } => note_value(value, &mut read),
+            } => {
+                // A null-shaped value lowers to the return type's own empty
+                // value, so the return does not read it either.
+                if !(null_shape(&value.ty)
+                    && !null_shape(&function.ret)
+                    && null_capable(&function.ret)
+                    && !matches!(value.kind, ValueKind::Conditional { .. }))
+                {
+                    note_value(value, &mut read, &null_shape);
+                }
+            }
             _ => {}
         }
     }
@@ -2584,46 +2645,50 @@ fn note_place(place: &Place, read: &mut BTreeSet<String>) {
 }
 
 /// Records every local named anywhere inside a value.
-fn note_value(value: &Value, read: &mut BTreeSet<String>) {
+///
+/// `null_shape` marks the null literal's shape: a value that lowers to its
+/// destination's own empty value is not read by the emitted code, so it is
+/// skipped everywhere the destination is not that shape itself.
+fn note_value(value: &Value, read: &mut BTreeSet<String>, null_shape: &impl Fn(&Ty) -> bool) {
     match &value.kind {
         ValueKind::Place(place) => note_place(place, read),
-        ValueKind::Member { base, .. } => note_value(base, read),
+        ValueKind::Member { base, .. } => note_value(base, read, null_shape),
         ValueKind::Index { base, index } => {
-            note_value(base, read);
-            note_value(index, read);
+            note_value(base, read, null_shape);
+            note_value(index, read, null_shape);
         }
-        ValueKind::Unary { operand, .. } => note_value(operand, read),
+        ValueKind::Unary { operand, .. } => note_value(operand, read, null_shape),
         ValueKind::Binary { left, right, .. } => {
-            note_value(left, read);
-            note_value(right, read);
+            note_value(left, read, null_shape);
+            note_value(right, read, null_shape);
         }
-        ValueKind::Cast { value: inner, .. } => note_value(inner, read),
+        ValueKind::Cast { value: inner, .. } => note_value(inner, read, null_shape),
         ValueKind::Conditional {
             condition,
             then_value,
             else_value,
         } => {
-            note_value(condition, read);
-            note_value(then_value, read);
-            note_value(else_value, read);
+            note_value(condition, read, null_shape);
+            note_value(then_value, read, null_shape);
+            note_value(else_value, read, null_shape);
         }
         ValueKind::StructLit { fields, .. } => {
             for (_, field) in fields {
-                note_value(field, read);
+                note_value(field, read, null_shape);
             }
         }
         ValueKind::ArrayLit { elements, fill } => {
             for element in elements {
-                note_value(element, read);
+                note_value(element, read, null_shape);
             }
             if let Some(fill) = fill {
-                note_value(fill, read);
+                note_value(fill, read, null_shape);
             }
         }
         ValueKind::Template(pieces) => {
             for piece in pieces {
                 if let ValuePiece::Placeholder(inner) = piece {
-                    note_value(inner, read);
+                    note_value(inner, read, null_shape);
                 }
             }
         }
@@ -2631,27 +2696,38 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>) {
             args, receiver, ..
         } => {
             if let Some(receiver) = receiver {
-                note_value(receiver, read);
+                note_value(receiver, read, null_shape);
             }
             for arg in args {
-                note_value(arg, read);
+                // A null-shaped argument lowers to its parameter's own null
+                // value, exactly as the call emission renders it; a
+                // conditional keeps its own path.
+                // The emission renders the argument through the parameter's
+                // type, which the walk does not carry here: a null-shaped
+                // argument is skipped, and an unnecessary marker only uses
+                // the local harmlessly.
+                if !(null_shape(&arg.ty)
+                    && !matches!(arg.kind, ValueKind::Conditional { .. }))
+                {
+                    note_value(arg, read, null_shape);
+                }
             }
         }
         ValueKind::Intrinsic { args, .. } => {
             for arg in args {
-                note_value(arg, read);
+                note_value(arg, read, null_shape);
             }
         }
-        ValueKind::Materialize { value: inner, .. } => note_value(inner, read),
+        ValueKind::Materialize { value: inner, .. } => note_value(inner, read, null_shape),
         ValueKind::Closure { captures, .. } => {
             for capture in captures {
-                note_value(capture, read);
+                note_value(capture, read, null_shape);
             }
         }
         ValueKind::ClosureCall { callable, args } => {
-            note_value(callable, read);
+            note_value(callable, read, null_shape);
             for arg in args {
-                note_value(arg, read);
+                note_value(arg, read, null_shape);
             }
         }
         ValueKind::Int(_)

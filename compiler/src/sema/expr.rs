@@ -319,6 +319,21 @@ impl Checker<'_, '_> {
     /// report single, and a composite records at its innermost move site
     /// before the enclosing site's walk reaches the same name.
     pub(super) fn record_generic_capture_move(&mut self, value: &Expr) {
+        self.record_capture_move(value, false);
+    }
+
+    /// Records a capture move at a store for the per-instance audit.
+    ///
+    /// A store consumes its value, so a *borrowed* capture is recorded too: at
+    /// an owning instance the store moves the value out of the borrow, which
+    /// the concrete rule cannot judge while the capture's type is a parameter.
+    /// A duplicable instance copies out of the borrow and stays accepted.
+    pub(super) fn record_store_capture_move(&mut self, value: &Expr) {
+        self.record_capture_move(value, true);
+    }
+
+    /// The shared capture-move record for one value.
+    fn record_capture_move(&mut self, value: &Expr, borrows: bool) {
         let mut roots = Vec::new();
         super::place_move_paths(value, &[], &mut roots);
         if roots.is_empty() {
@@ -332,7 +347,12 @@ impl Checker<'_, '_> {
             if !seen.insert((root.to_owned(), path.clone())) {
                 continue;
             }
-            if !matches!(self.capture_mode(root), Some(CaptureMode::Copy)) {
+            let recorded = match self.capture_mode(root) {
+                Some(CaptureMode::Copy) => true,
+                Some(CaptureMode::ReadOnlyBorrow | CaptureMode::WriteBorrow) => borrows,
+                None => false,
+            };
+            if !recorded {
                 continue;
             }
             let ty = self.lambda_captures.iter().rev().find_map(|captures| {
