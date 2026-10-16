@@ -2356,3 +2356,350 @@ func main(): i32 {
         "nullarrayamiga: the elements must not copy the shape's pointer"
     );
 }
+
+// ===== The projected-argument instance keys =====
+
+/// Emits a two-file host program and asserts the front end accepted it.
+///
+/// A module initializer can name an imported binding as a dot call's
+/// receiver, so the receiver's module is written beside the program and
+/// passed on the same command line. Returns the emitted translation unit.
+fn emit_host_pair(tag: &str, holder: &str, main: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        holder_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty"
+    );
+    emitted
+}
+
+/// Asserts one keyed instance is declared, defined, and called exactly once.
+///
+/// `prefix` is the declaration prefix shared by every instance of the same
+/// generic callee, `signature` is the wanted instance's C signature without
+/// its trailing `;` or body, and `call` is its call expression. An underived
+/// key misses the declaration and the definition; a wrongly derived key shows
+/// up as a second instance under `prefix`.
+fn assert_keyed_instance(tag: &str, emitted: &str, prefix: &str, signature: &str, call: &str) {
+    assert_contains(tag, emitted, &format!("{signature};"));
+    assert_contains(tag, emitted, &format!("{signature}\n{{"));
+    assert_eq!(
+        count(emitted, signature),
+        2,
+        "{tag}: expected exactly one declaration and one definition of {signature:?}"
+    );
+    assert_eq!(
+        count(emitted, prefix),
+        2,
+        "{tag}: expected exactly one instance under {prefix:?}"
+    );
+    assert_eq!(
+        count(emitted, call),
+        1,
+        "{tag}: expected exactly one call {call:?}"
+    );
+}
+
+/// The holder module of the aliased-receiver programs.
+const DOTRECEIVER_HOLDER_SOURCE: &str = r#"module spec.cc.impl.dotreceiverholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+/// The borrowed element's owning member argument program.
+const TEMPROOTED_SOURCE: &str = r#"module spec.cc.impl.temprooted;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+let hits: i32 = 0;
+
+func keep<T>(x: T): i32 {
+    hits = hits + 1;
+    return 1;
+}
+
+func each<T>(xs: T): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        total = total + keep(v.name);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cd"), y: 2 }];
+    return (each<S[2]>(a) - 2) + (hits - 2);
+}
+"#;
+
+/// The conditional argument program.
+const CONDITIONAL_SOURCE: &str = r#"module spec.cc.impl.conditional;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func pick<T>(a: T, b: T, c: bool): i32 {
+    return id(c ? a.y : b.y);
+}
+
+func main(): i32 {
+    let a: S = S { y: 1 };
+    let b: S = S { y: 2 };
+    return (pick<S>(a, b, true) - 1) + (pick<S>(a, b, false) - 2);
+}
+"#;
+
+/// An aliased imported receiver of an initializer dot call declares its
+/// instance.
+///
+/// `bb.pick(7)` fixes the call's type parameter from the receiver — the
+/// holder's exported binding, named through an alias — so the emitter spells
+/// the keyed instance `cl_pick__Box` and passes the resolved binding at
+/// argument position zero. Before the receiver head resolved through the
+/// module scope, the call had no declaration and no definition: the strict
+/// build failed on an implicit declaration of `cl_pick__Box`.
+#[test]
+fn should_declare_an_aliased_receiver_dot_call_instance() {
+    let aliased = r#"module spec.cc.impl.dotreceiver;
+
+import { b as bb } from spec.cc.impl.dotreceiverholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let g: i32 = bb.pick(7);
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let emitted = emit_host_pair("dotreceiver", DOTRECEIVER_HOLDER_SOURCE, aliased);
+    assert_keyed_instance(
+        "dotreceiver",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__Box(ClBox v, i32 w)",
+        "cl_pick__Box(cl_spec_cc_impl_dotreceiverholder_b, 7)",
+    );
+}
+
+/// A borrowed element's owning member passed to a generic call declares its
+/// instance.
+///
+/// `keep(v.name)` inside the borrow loop reads the element through the
+/// element materialization; the substituted member type fixes the key to the
+/// owning `String` instance, which the emitter declares, defines, and calls.
+/// Before the resolver followed the temporary root, the call had no
+/// declaration and no definition: the strict build failed on an implicit
+/// declaration of `cl_keep__String`.
+#[test]
+fn should_declare_a_temp_rooted_member_argument_instance() {
+    let emitted = emit_host("temprooted", TEMPROOTED_SOURCE);
+    assert_keyed_instance(
+        "temprooted",
+        &emitted,
+        "static i32 cl_keep__",
+        "static i32 cl_keep__String(ClString x)",
+        "cl_keep__String((*__cl_tmp1).name)",
+    );
+}
+
+/// A conditional argument whose arms agree declares one instance.
+///
+/// `id(c ? a.y : b.y)` reads both arms through the instance substitution;
+/// they resolve to the same `i32`, so the selection keys one instance and the
+/// call carries the condition. Before the resolver followed a
+/// parameter-rooted place base, the call had no declaration and no
+/// definition: the strict build failed on an implicit declaration of
+/// `cl_id__i32`.
+#[test]
+fn should_declare_a_conditional_argument_instance() {
+    let emitted = emit_host("conditional", CONDITIONAL_SOURCE);
+    assert_keyed_instance(
+        "conditional",
+        &emitted,
+        "static i32 cl_id__",
+        "static i32 cl_id__i32(i32 x)",
+        "cl_id__i32((c ? a.y : b.y))",
+    );
+}
+
+/// The projected-argument controls keep their keyed instances.
+///
+/// The body twin, the unaliased initializer twin, the concrete-parameter
+/// twin, and the by-value index twin already derived their keys before the
+/// resolver changes, so these shapes hold on both sides — they guard the
+/// controls against a regression rather than discriminate the fix.
+#[test]
+fn should_keep_the_projected_argument_control_instances() {
+    let body = r#"module spec.cc.impl.dotreceiverbody;
+
+import { b as bb } from spec.cc.impl.dotreceiverholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+func body(): i32 {
+    return bb.pick(7);
+}
+
+let g: i32 = body();
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let emitted = emit_host_pair("dotreceiverbody", DOTRECEIVER_HOLDER_SOURCE, body);
+    assert_keyed_instance(
+        "dotreceiverbody",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__Box(ClBox v, i32 w)",
+        "cl_pick__Box(cl_spec_cc_impl_dotreceiverholder_b, 7)",
+    );
+
+    let direct = r#"module spec.cc.impl.dotreceiverdirect;
+
+import { b } from spec.cc.impl.dotreceiverholder;
+
+func pick<T>(take v: T, w: i32): i32 {
+    return w;
+}
+
+let g: i32 = b.pick(7);
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let emitted = emit_host_pair("dotreceiverdirect", DOTRECEIVER_HOLDER_SOURCE, direct);
+    assert_keyed_instance(
+        "dotreceiverdirect",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__Box(ClBox v, i32 w)",
+        "cl_spec_cc_impl_dotreceiverdirect_g = cl_pick__Box(cl_spec_cc_impl_dotreceiverholder_b, 7);",
+    );
+
+    let concrete = r#"module spec.cc.impl.tempconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; y: i32; }
+
+func keep<T>(x: T): i32 {
+    return 1;
+}
+
+func eachS(xs: S[2]): i32 {
+    let total: i32 = 0;
+    for (borrow v in xs) {
+        total = total + keep(v.name);
+    }
+    return total;
+}
+
+func main(): i32 {
+    let a: S[2] = [S { name: stringOf("ab"), y: 1 }, S { name: stringOf("cd"), y: 2 }];
+    return eachS(a);
+}
+"#;
+    let emitted = emit_host("tempconcrete", concrete);
+    assert_keyed_instance(
+        "tempconcrete",
+        &emitted,
+        "static i32 cl_keep__",
+        "static i32 cl_keep__String(ClString x)",
+        "cl_keep__String((*__cl_tmp1).name)",
+    );
+
+    let reference = r#"module spec.cc.impl.tempref;
+
+struct S { y: i32; }
+
+func id<T>(x: T): T { return x; }
+
+func rowsum<T>(xs: T, i: usize): i32 {
+    let n: i32 = 0;
+    for (v in xs) {
+        n = n + id(v[i].y);
+    }
+    return n;
+}
+
+func main(): i32 {
+    let rows: S[2][3] = [
+        [S { y: 1 }, S { y: 2 }, S { y: 3 }],
+        [S { y: 4 }, S { y: 5 }, S { y: 6 }]
+    ];
+    let i: usize = 1;
+    return rowsum<S[2][3]>(rows, i);
+}
+"#;
+    let emitted = emit_host("tempref", reference);
+    assert_keyed_instance(
+        "tempref",
+        &emitted,
+        "static i32 cl_id__",
+        "static i32 cl_id__i32(i32 x)",
+        "cl_id__i32(v[i].y)",
+    );
+}
+
+/// The projected-argument instances re-emit byte-identically.
+///
+/// The resolver derives every key from the recorded values, so a second
+/// emission of the same source produces the same translation unit.
+#[test]
+fn should_re_emit_the_projected_argument_programs_identically() {
+    let (first, second) = emit_twice("reemittemprooted", TEMPROOTED_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemittemprooted: the program re-emitted differently"
+    );
+    assert_contains(
+        "reemittemprooted",
+        &first,
+        "cl_keep__String((*__cl_tmp1).name)",
+    );
+
+    let (first, second) = emit_twice("reemitconditional", CONDITIONAL_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitconditional: the program re-emitted differently"
+    );
+    assert_contains(
+        "reemitconditional",
+        &first,
+        "cl_id__i32((c ? a.y : b.y))",
+    );
+}

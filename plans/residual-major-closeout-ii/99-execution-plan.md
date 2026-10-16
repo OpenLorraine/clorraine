@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 04:20
-> **Progress**: 10/51 tasks (20%) — Phase 2 in review
+> **Last Updated**: 2026-10-18 05:00
+> **Progress**: 11/51 tasks (22%) — Phase 2 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -124,10 +124,10 @@ conditional/non-local place bases with their controls.
 
 ### Step 2.3: Impl Tests & Review
 
-- [ ] 2.3.1 Write the phase implementation pins (the keyed instance symbols present and the
+- [x] 2.3.1 Write the phase implementation pins (the keyed instance symbols present and the
       opaque/undeclared keys absent, the conditional both-arms agreement, the receiver
       evaluation count, a re-emission determinism pin) —
-      `compiler/tests/checker_conformance_impl_test.rs`
+      `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-18 05:00; five pins added (55 tests total, additions only) plus a two-file emitter helper and a keyed-instance helper — the aliased-receiver dot call, the temp-rooted member argument, and the conditional argument each assert the keyed instance declared, defined, and called exactly once; the four controls keep their keyed instances; a re-emission pin; three of the five fail at `6c5b98a` for the intended reason, two are disclosed base-stable guards; 55/55 green, `make check` exit 0)
 - [ ] 2.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses (correctness + semantics + memory-safety + emission-integrity)
 
