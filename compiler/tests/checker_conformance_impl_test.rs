@@ -3602,3 +3602,393 @@ fn should_save_a_local_container_element_before_an_aliasing_right_hand_side() {
         "(*__cl_tmp1).name = cl_spec_cc_impl_elemlocalctl_dup(a[0].name);",
     );
 }
+
+// ===== The sibling-fixed null argument and the inverted conversions =====
+
+/// Asserts one report of `code` names `fragment` at `site`.
+///
+/// The site is the `line:column` suffix the compiler prints after the file
+/// name, so a report that lands on a different use site fails.
+fn assert_rejected_once_at_site(tag: &str, source: &str, code: &str, fragment: &str, site: &str) {
+    let stderr = reject_host(tag, source);
+    assert_eq!(
+        stderr.matches(code).count(),
+        1,
+        "{tag}: expected one {code}; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(fragment),
+        "{tag}: expected {fragment:?}; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(site),
+        "{tag}: expected the report at {site:?}; stderr:\n{stderr}"
+    );
+}
+
+/// The inferred `str?` sibling instance.
+const NULLABLE_VIEW_SOURCE: &str = r#"module spec.cc.impl.inferrednullok;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let s: str? = null;
+    let x = null;
+    return pair(s, x) - 7;
+}
+"#;
+
+/// The explicit `String?` sibling instance.
+const NULLABLE_OWNED_SOURCE: &str = r#"module spec.cc.impl.inferrednulloke;
+
+import { String, stringOf } from std.text;
+
+func pair<T>(a: T, b: T): i32 {
+    if (b == null) {
+        return 7;
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let s: String? = stringOf("ab");
+    let x = null;
+    return pair<String?>(s, x) - 7;
+}
+"#;
+
+/// The legal instances of the inverted conversion routes.
+const LEGAL_INSTANCES_SOURCE: &str = r#"module spec.cc.impl.instconvok;
+
+import { String, stringOf, toCString } from std.text;
+
+func pick<T>(): T {
+    return 5;
+}
+
+func consume2<U>(c: U): i32 {
+    return 1;
+}
+
+func convert<T>(x: T): i32 {
+    return consume2<cstring>(x);
+}
+
+func sink<U>(x: U): i32 {
+    return 1;
+}
+
+func outer<T, U>(a: T): i32 {
+    return sink<U>(a);
+}
+
+func inner<T>(x: T): i32 {
+    return 1;
+}
+
+func outer2<U>(c: cstring): i32 {
+    return inner<U>(c);
+}
+
+func main(): i32 {
+    let r: i32 = pick<i32>();
+    if (r != 5) {
+        return 1;
+    }
+    let c: cstring = toCString("ab");
+    if (convert<cstring>(c) != 1) {
+        return 2;
+    }
+    if (outer<i32, i32>(7) != 1) {
+        return 3;
+    }
+    let s: str = "xy";
+    if (outer<str, str>(s) != 1) {
+        return 4;
+    }
+    let h: String = stringOf("abc");
+    if (outer<String, str>(h) != 1) {
+        return 5;
+    }
+    if (outer<cstring, cstring>(c) != 1) {
+        return 6;
+    }
+    if (outer2<cstring>(c) != 1) {
+        return 7;
+    }
+    return 0;
+}
+"#;
+
+/// A null-shaped argument at a sibling-fixed parameter reports at its site.
+///
+/// `pair(1, x)` fixes the parameter concretely from its sibling, so the
+/// null-shaped `x` reports the frozen null rule exactly as it would at a
+/// concrete parameter — once per use site (`pair(x, x)` reports two), with the
+/// explicit twin unchanged.
+#[test]
+fn should_report_the_sibling_fixed_null_argument_at_its_use_site() {
+    let sibling_fixed = r#"module spec.cc.impl.inferrednull;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair(1, x);
+}
+"#;
+    assert_rejected_once_at_site(
+        "inferrednull",
+        sibling_fixed,
+        "error E10012:",
+        "'null' is not allowed here",
+        "main.clo:9:20",
+    );
+
+    let reversed = r#"module spec.cc.impl.inferrednullrev;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair(x, 1);
+}
+"#;
+    assert_rejected_once_at_site(
+        "inferrednullrev",
+        reversed,
+        "error E10012:",
+        "'null' is not allowed here",
+        "main.clo:9:17",
+    );
+
+    let two_uses = r#"module spec.cc.impl.inferrednullxx;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair(x, x);
+}
+"#;
+    let stderr = reject_host("inferrednullxx", two_uses);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        2,
+        "inferrednullxx: each null use reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:9:17") && stderr.contains("main.clo:9:20"),
+        "inferrednullxx: the reports name both use sites; stderr:\n{stderr}"
+    );
+
+    let explicit = r#"module spec.cc.impl.inferrednulltwin;
+
+func pair<T>(a: T, b: T): i32 {
+    return 0;
+}
+
+func main(): i32 {
+    let x = null;
+    return pair<i32>(1, x);
+}
+"#;
+    assert_rejected_once_at_site(
+        "inferrednulltwin",
+        explicit,
+        "error E10012:",
+        "'null' is not allowed here",
+        "main.clo:9:25",
+    );
+}
+
+/// The inverted conversion routes report at the written value's site.
+///
+/// The return route, the callee route, the mixed pair, and the parameter
+/// route each report one frozen conversion at their instance — the same code
+/// and site their concrete twins report.
+#[test]
+fn should_report_the_inverted_conversion_routes_at_their_sites() {
+    let return_route = r#"module spec.cc.impl.instconvret;
+
+func pick<T>(): T {
+    return 5;
+}
+
+func main(): i32 {
+    let c: cstring = pick<cstring>();
+    if (c == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once_at_site(
+        "instconvret",
+        return_route,
+        "error E10200:",
+        "cannot convert 'i32' to 'cstring' implicitly",
+        "main.clo:4:12",
+    );
+
+    let argument_route = r#"module spec.cc.impl.instconvcallee;
+
+func consume2<U>(c: U): i32 {
+    return 0;
+}
+
+func convert<T>(x: T): i32 {
+    return consume2<cstring>(x);
+}
+
+func main(): i32 {
+    let s: str = "abc";
+    return convert<str>(s);
+}
+"#;
+    assert_rejected_once_at_site(
+        "instconvcallee",
+        argument_route,
+        "error E10200:",
+        "cannot convert 'str' to 'cstring' implicitly",
+        "main.clo:8:30",
+    );
+
+    let caller_parameter = r#"module spec.cc.impl.instconvmixed;
+
+func sink<U>(x: U): i32 {
+    return 0;
+}
+
+func outer<T, U>(a: T): i32 {
+    return sink<U>(a);
+}
+
+func main(): i32 {
+    return outer<i32, cstring>(1) + 1;
+}
+"#;
+    assert_rejected_once_at_site(
+        "instconvmixed",
+        caller_parameter,
+        "error E10200:",
+        "cannot convert 'i32' to 'cstring' implicitly",
+        "main.clo:8:20",
+    );
+
+    let concrete_caller = r#"module spec.cc.impl.instconvparam;
+
+import { toCString } from std.text;
+
+func inner<T>(x: T): i32 {
+    if (x == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func outer<U>(c: cstring): i32 {
+    return inner<U>(c);
+}
+
+func main(): i32 {
+    let c: cstring = toCString("x");
+    return outer<raw u8>(c);
+}
+"#;
+    assert_rejected_once_at_site(
+        "instconvparam",
+        concrete_caller,
+        "error E10200:",
+        "cannot convert 'cstring' to 'raw u8' implicitly",
+        "main.clo:13:21",
+    );
+}
+
+/// An inferred call whose concrete parameter receives a caller parameter.
+///
+/// `inner(x, x)` infers its type parameter from the caller's `raw u8` and
+/// passes it to the concrete `cstring` parameter, so the instance reports the
+/// frozen conversion at the written argument — the same code its direct twin
+/// reports.
+#[test]
+fn should_report_the_inferred_concrete_parameter_conversion() {
+    let source = r#"module spec.cc.impl.inferredconcrete;
+
+import { toCString } from std.text;
+
+func inner<T>(y: cstring, x: T): i32 {
+    if (y == null) {
+        return 1;
+    }
+    return 0;
+}
+
+func outer<U>(x: U): i32 {
+    return inner(x, x);
+}
+
+func main(): i32 {
+    let a: u8[4] = [65, 66, 67, 0];
+    let p: raw u8 = unsafe &a[0];
+    return outer<raw u8>(p);
+}
+"#;
+    assert_rejected_once_at_site(
+        "inferredconcrete",
+        source,
+        "error E10200:",
+        "cannot convert 'raw u8' to 'cstring' implicitly",
+        "main.clo:13:18",
+    );
+}
+
+/// The legal instances of both rows keep their accepted emissions.
+///
+/// The nullable sibling instances resolve their own keyed calls, and the
+/// legal inverted-route instances resolve theirs, so nothing about the new
+/// judgments rejects a conforming pair.
+#[test]
+fn should_keep_the_nullable_and_legal_route_instances() {
+    let emitted = emit_host("implinferrednullok", NULLABLE_VIEW_SOURCE);
+    assert_contains("implinferrednullok", &emitted, "cl_pair__strQ");
+
+    let emitted = emit_host("implinferrednulloke", NULLABLE_OWNED_SOURCE);
+    assert_contains("implinferrednulloke", &emitted, "cl_pair__StringQ");
+
+    let emitted = emit_host("implinstconvok", LEGAL_INSTANCES_SOURCE);
+    assert_contains("implinstconvok", &emitted, "cl_pick__i32");
+    assert_contains("implinstconvok", &emitted, "cl_consume2__cstring");
+}
+
+/// The accepted-instance programs re-emit byte-identically.
+///
+/// The new judgments read the instance's substituted types, so a second
+/// emission of the same source produces the same text.
+#[test]
+fn should_re_emit_the_conversion_control_programs_identically() {
+    let (first, second) = emit_twice("reemitnullroute", NULLABLE_VIEW_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitnullroute: the program re-emitted differently"
+    );
+    assert_contains("reemitnullroute", &first, "cl_pair__strQ");
+
+    let (first, second) = emit_twice("reemitlegalroute", LEGAL_INSTANCES_SOURCE);
+    assert_eq!(
+        first, second,
+        "reemitlegalroute: the program re-emitted differently"
+    );
+    assert_contains("reemitlegalroute", &first, "cl_consume2__cstring");
+}

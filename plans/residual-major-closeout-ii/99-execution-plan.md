@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 08:00
-> **Progress**: 34/51 tasks (67%) — Phase 6 in review
+> **Last Updated**: 2026-10-19 08:40
+> **Progress**: 35/51 tasks (69%) — Phase 6 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -297,9 +297,9 @@ ST-15..ST-17 · AR-8
 
 ### Step 6.3: Impl Tests & Review
 
-- [ ] 6.3.1 Write the phase implementation pins (the duty records and the per-instance reports,
+- [x] 6.3.1 Write the phase implementation pins (the duty records and the per-instance reports,
       the legal-instance emissions, the `ffi` prototype typing, the control table, a re-emission
-      determinism pin) — `compiler/tests/checker_conformance_impl_test.rs`
+      determinism pin) — `compiler/tests/checker_conformance_impl_test.rs` ✅ (completed: 2026-10-19 08:40; five pins added (71 tests total, additions only) plus a site-aware rejection helper — the sibling-fixed null argument (one `E10012` at the use site; the per-use-site counts and spans; the explicit twin), the four inverted conversion routes (codes, texts, twins' spans), the inferred concrete-parameter conversion (the `bs02` shape), the accepted nullable/legal controls' emissions, and a re-emission pin; three fail at `9fa6997` for the intended reason, two are disclosed base-stable guards; 71/71 green, `make check` exit 0)
 - [ ] 6.3.2 Phase review evidence and progress update — commit per the active commit mode;
       dispatch the lenses; record the count ruling in the ledger
 
