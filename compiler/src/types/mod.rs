@@ -665,6 +665,16 @@ pub fn implicit_conversion(from: &Ty, to: &Ty) -> bool {
     match (&from.kind, &to.kind) {
         (TyKind::StaticStr, TyKind::Str) => true,
         (TyKind::Handle(name), TyKind::Str) if name == "String" => true,
+        // A byte pointer reaches a `cstring` destination implicitly: the
+        // frozen ABI spells `cstring` as the C `char *`, and the sanctioned
+        // byte-view conversion is the pointer itself (`toCString`'s body).
+        // Integer destinations and every other raw keep the explicit-cast
+        // rule, so a bare `usize` destination reports the conversion.
+        (TyKind::Raw(inner), TyKind::CString)
+            if matches!(inner.kind, TyKind::Scalar(ScalarType::U8)) =>
+        {
+            true
+        }
         (TyKind::Scalar(a), TyKind::Scalar(b)) => scalar_widens(*a, *b),
         // Two views describe the same view when their elements are the same
         // type: the written `T[][M]` and the inferred `T[]` whose element is

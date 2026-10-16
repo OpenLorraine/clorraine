@@ -936,10 +936,11 @@ func main(): i32 {
     assert_exit("memraw", &output, 7);
 }
 
-/// An undeclared enum member on an instance reports the unknown member.
+/// A value-form enum member on an instance reports the unknown member.
 ///
-/// The audit mirrors the concrete enum rule, so a declared member stays
-/// accepted while an undeclared one reports the registry message.
+/// The audit mirrors the concrete rule: a value receiver has no member
+/// surface, so every value-form read reports the registry message while the
+/// scoped `Type.MEMBER` spelling stays accepted.
 #[test]
 fn should_reject_an_undeclared_enum_member_on_an_instance() {
     let source = r#"module spec.cc.memenum;

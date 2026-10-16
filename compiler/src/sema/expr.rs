@@ -566,17 +566,38 @@ impl Checker<'_, '_> {
                 }
                 Ty::unknown()
             }
+            // The frozen member table spells an enum member `Type.MEMBER`:
+            // a value receiver has no member surface at all, so every read
+            // reports the registered unknown-member rule and no member value
+            // is invented. The scoped `E.MEMBER` form is handled by the
+            // qualified-name path before this dispatch.
             TyKind::Enum(enum_name) => {
-                if !self.table.enum_has_member(enum_name, name) {
-                    self.error(
-                        "E10212",
-                        format!("'{name}' is not a member of '{enum_name}'"),
-                        "check the declaration or the spelling",
-                        span,
-                    );
-                }
-                base_ty.clone()
+                self.error(
+                    "E10212",
+                    format!("'{name}' is not a member of '{enum_name}'"),
+                    "check the declaration or the spelling",
+                    span,
+                );
+                Ty::unknown()
             }
+            // A view's members are its ABI fields: `.ptr` is the pointer to
+            // the view's element (the byte pointer for the text views, the
+            // element pointer for slices) and `.len` is the element count.
+            // Typing them lets the conversion rules judge a destination the
+            // member cannot reach; the renderer already spells the struct
+            // fields and the fixed-array `.len` keeps its compile-time fold.
+            TyKind::Str | TyKind::StaticStr => match name {
+                "ptr" => Ty::raw(Ty::scalar(ScalarType::U8)),
+                "len" => Ty::usize_ty(),
+                _ => Ty::unknown(),
+            },
+            TyKind::Array { extents, .. } => match name {
+                "ptr" if extents.iter().any(|extent| extent.is_none()) => {
+                    Ty::raw(base_ty.iterated_element())
+                }
+                "len" => Ty::usize_ty(),
+                _ => Ty::unknown(),
+            },
             // A field reached through a raw pointer is typed from the pointee;
             // the unsafe gate for the dereference stays in the ownership stage.
             TyKind::Raw(_) => self.field_type(base_ty, name).unwrap_or_else(Ty::unknown),

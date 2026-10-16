@@ -2092,10 +2092,12 @@ impl<'a> Emitter<'a> {
         let text = self.widen_text_view(text, &value_ty, ty);
         // A view's pointer member is a `const u8 *` in the C while a
         // `cstring` destination is a `char *`: the store spells the
-        // conversion the declaration expects. The member is untyped, so only
-        // the read that names `ptr` takes this path; a read over a place
-        // arrives as a projection, a read over a value as a member.
-        if matches!(ty.kind, TyKind::CString) && names_pointer_member(value) {
+        // conversion the declaration expects. The member's own checked type
+        // (a byte pointer) selects the conversion, so every byte pointer
+        // reaching a `cstring` destination converts.
+        if matches!(ty.kind, TyKind::CString)
+            && matches!(self.resolved_value_ty(value).kind, TyKind::Raw(_))
+        {
             return format!("(char *)({text})");
         }
         text
@@ -2665,18 +2667,3 @@ fn note_value(value: &Value, read: &mut BTreeSet<String>) {
 }
 
 
-/// True when a value reads a member named `ptr`.
-///
-/// A view's pointer member carries no checked type, so the store conversion
-/// recognizes it by shape: a member value over a computed base, or the last
-/// field projection of a place read.
-fn names_pointer_member(value: &Value) -> bool {
-    match &value.kind {
-        ValueKind::Member { name, .. } => name == "ptr",
-        ValueKind::Place(place) => matches!(
-            place.projections.last(),
-            Some(crate::ir::Projection::Field(field)) if field == "ptr"
-        ),
-        _ => false,
-    }
-}

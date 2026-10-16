@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-17 03:00
-> **Progress**: 14/39 tasks (36%) — Executing Phase 3
+> **Last Updated**: 2026-10-17 03:40
+> **Progress**: 16/39 tasks (41%) — Phase 3 in review
 > **Planning baseline**: `80433a6` (the batch-J close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -164,12 +164,12 @@ member typing, and the `toCString` acceptance.
 
 ### Step 3.2: Implementation
 
-- [ ] 3.2.1 Report the value-form enum member read with `E10212` on the concrete and instance
+- [x] 3.2.1 Report the value-form enum member read with `E10212` on the concrete and instance
       paths (the scoped form unchanged); type `.ptr` as the view pointer and `.len` as `usize`
       in the member dispatch and judge the conversions, keeping the `cstring` pointer-member
       conversion — `compiler/src/sema/expr.rs`, `compiler/src/own/expr.rs`,
-      `compiler/src/own/instance_check.rs`, `compiler/src/codegen/function.rs`
-- [ ] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/instance_check.rs`, `compiler/src/codegen/function.rs` ✅ (completed: 2026-10-17 03:40; the enum value-form read always reports the registered `E10212` and types unknown (`sema/expr.rs:570`), with `projection_resolves` returning false for an enum substitution on the instance path (`own/instance_check.rs:1099`); `.ptr` types as `raw u8`/`raw <elem>` and `.len` as `usize` (`sema/expr.rs:583`), a byte pointer reaches `cstring` implicitly (`types/mod.rs:668`), and the store's pointer-member conversion keys on the member's type (`codegen/function.rs:2095`, the name heuristic removed); the mirrors (`own/expr.rs:792`) accept `.ptr`/`.len` on substituted views; the `memenum` comment updated (the body unchanged); left: a fixed array's `.ptr` stays untyped (pre-existing fallback))
+- [x] 3.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-17 03:40; the checker-conformance spec 102/102 plain and under `RDC_ASAN=1`; the impl pins 30/30; the suite family green; `make check` exit 0; the differential shows 6 head-only rejects (the three new cases twice) and no emission or diagnostic diffs; parent-verified 102/102 plain + ASan)
 
 ### Step 3.3: Impl Tests & Review
 

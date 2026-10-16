@@ -1096,13 +1096,19 @@ fn check_opaque_indexes(
 fn projection_resolves(sema: &SemaOutput, ty: &Ty, name: &str) -> bool {
     match &ty.kind {
         TyKind::Struct(..) => sema.table.instance_field(ty, name).is_some(),
-        TyKind::Enum(enum_name) => sema.table.enum_has_member(enum_name, name),
+        // A value-form enum member has no member surface at any substitution:
+        // the frozen table spells the member `Type.MEMBER`, so the instance
+        // reports the unknown member exactly as the concrete read would.
+        TyKind::Enum(_) => false,
         TyKind::Raw(inner) => match &inner.kind {
             TyKind::Struct(..) => sema.table.instance_field(inner, name).is_some(),
             TyKind::Raw(_) => projection_resolves(sema, inner, name),
             _ => false,
         },
-        TyKind::Array { .. } | TyKind::Str | TyKind::StaticStr => name == "len",
+        // A view's ABI members are its pointer and its element count.
+        TyKind::Array { .. } | TyKind::Str | TyKind::StaticStr => {
+            name == "len" || name == "ptr"
+        }
         _ => false,
     }
 }
