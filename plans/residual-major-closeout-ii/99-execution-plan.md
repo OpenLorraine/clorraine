@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-19 02:50
-> **Progress**: 29/51 tasks (57%) — Phase 5 in review
+> **Last Updated**: 2026-10-19 06:00
+> **Progress**: 30/51 tasks (59%) — Phase 5 complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -256,8 +256,8 @@ ST-13..ST-14 · AR-6
       destination fill, the call-count shapes, the byte-identical controls, a re-emission
       determinism pin) —
       `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-19 02:50; four pins added (97 tests total, additions only) — the conditional-base rejection at its site for both selections (one `E10221`, the fragment, no TU), the accepted controls' emissions (the conditional reads, the place store's two calls, the projected store), the guard literal's evaluated-path fill (the materialized destination, the selection-gated fill, one call), and a re-emission pin; three fail at `4d79d60` for the intended reason, one is a disclosed base-stable guard; 97/97 green, `make check` exit 0)
-- [ ] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
-      dispatch the lenses
+- [x] 5.3.2 Phase review evidence and progress update — commit per the active commit mode;
+      dispatch the lenses ✅ (completed: 2026-10-19 06:00; all three lenses dispatched plus three correction rounds and two bounded confirmations (FAIL on the arm-comma escape, fixed; the re-confirmation PASS WITH MINORS — 0 blockers): the unsafe-base restoration, the field-wise arm store + the fill pin, and the arm parenthesization; rows filed `DEF-377`–`380` and `DEF-381` closed incidentally (`DEF-326` extended); the closing verification: the residue spec 161/161 plain and ASan, the impl pins 98/98, `make check` exit 0, the differential parenthesization-only)
 
 **Verify**: `make check`; the guard cases under `RDC_ASAN=1`; the strict builds
 

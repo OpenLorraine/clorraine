@@ -336,3 +336,46 @@ incidental-fix annotation.
 - The `q6` conditional take reports two `E10026` (one per arm), matching its concrete twin's count.
 - Untouched residuals recorded: a runtime-index projected source transfers no loans (`DEF-373`'s
   family); the guarded deref take keeps the inline call (`DEF-376`).
+
+## Phase 5 — Store emission: conditional bases and guarded view literals
+
+**Reviewed implementation**: `fa2e927` plus three correction rounds (`4089f1a`, `6c34d6d`,
+`ed84325`). **Lenses**: correctness (L5R), emission-integrity, and memory-safety, plus two bounded
+confirmations.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 1 blocker | L5R-1 (the `Index` recursion newly rejected the `unsafe` base spelling that the base accepted and ran — the sibling `Member` arm's transparency was not shared), L5R-2 (the member-store conditional base silently dropped — filed `DEF-377`; the emission lens's R2 is the same class), L5R-3 (the new comment overstated the recursion); the pinned spellings, the controls, and the AR-21-disposition otherwise verified |
+| emission-integrity | CONFIRMED — 0 findings | The 15 diffs and 6 rejects exactly the intended classes; 0 head-only strict failures; prototypes unchanged; run deltas only the two intended value fixes plus pre-existing nondeterministic probes; the R1-R5 register filed (`DEF-378`/`379`; R2 = `DEF-377`) |
+| memory-safety | FINDINGS — 2 in scope | The base-clean→defective nested-literal take double-free (the changed predicate's inner temp copied without a move-out) and the fill leak (the deferred path stored views of unbound fresh roots); P1 (`DEF-381`) and P3 (`DEF-380`) filed; then the confirmation found the **arm-comma escape** (a `?:` third operand cannot carry the field-wise arm's comma sequence) → fixed; the final re-confirmation **PASS WITH MINORS — 0 blockers** |
+
+### Fix rounds
+
+| Item | Outcome |
+|------|---------|
+| L5R-1 (`4089f1a`) | **Fixed**: the `Index` arm accepts an `Unsafe` base like the sibling `Member` arm; the recursion comment reworded to what it covers |
+| C-a/C-b (`6c34d6d`) | **Fixed**: a struct-literal arm field whose owned value reads a fresh materialized root stores field by field (the inner temp empties in the same sequence); a fill whose evaluation must happen once is pinned through the update-value channel — the leaks close and the per-element value residual is recorded (`DEF-326` extended) |
+| the escape (`ed84325`) | **Fixed**: each arm of the conditional move expression is parenthesized, so the field-wise comma sequence cannot escape — the two-field arm, the skipped-arm evaluation, and `DEF-381`'s remaining leak all close; `gvnestt7`'s invalid C was repaired incidentally; the two-field oracle case and a pin added (five needles re-pointed, recorded) |
+
+### Confirmations
+
+| Step | Result |
+|------|--------|
+| The memory confirmation (`6c34d6d`) | FAIL — the arm-comma escape (a leak and a skipped-arm evaluation on the corrected nested-literal take; the single-field oracle missed it) |
+| The scoped re-confirmation (`ed84325`) | **PASS WITH MINORS — 0 blockers**: every escape repro clean with the right values; the differential parenthesization-only (33 paren-only / 25 same / 0 accept-reject); the fill family sanitizer-clean; the phase's original shapes unchanged; the minors are the pre-existing `DEF-379` (the by-value nested spelling) and the recorded fill value residual |
+
+### Filed rows
+
+`DEF-377` (the member-store conditional base), `DEF-378` (the hidden destination in the read
+positions), `DEF-379` (the by-value nested literal's skipped-arm call), `DEF-380` (the multi-extent
+view-array field), and `DEF-381` (**closed as incidentally fixed** — the double free by `6c34d6d`
+and the escape by `ed84325`); `DEF-326` extended with the view-fill evaluation shape.
+
+### Record notes
+
+- The parenthesization breadth (every arm; 114 behavior-identical emission diffs) is kept: it also
+  protects the guard-carrying arm spellings; narrowing it was considered and declined.
+- The C-b fill's per-element value re-evaluation is a recorded residual (`DEF-326`), sanitizer-clean.
+- `DEF-379`'s nested by-value spelling is base-identical and stays filed.
