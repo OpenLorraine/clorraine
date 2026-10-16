@@ -721,14 +721,36 @@ impl Checker<'_, '_> {
     /// and is cached for the rest of the module, exactly as the parameter
     /// types are, so the ordinary conversion judgments see the result's real
     /// type instead of an unresolved value. A declaration written `: void`
-    /// keeps the void type.
+    /// keeps the void type. A view or slice return types as its ABI pointer
+    /// (see [`Self::ffi_abi_result`]).
     fn ffi_result_type(&mut self, name: &str, signature: &crate::ast::FuncSignature) -> Ty {
         if let Some(result) = self.ffi_results.get(name) {
             return result.clone();
         }
-        let result = self.resolve_type(&signature.returns);
+        let result = Self::ffi_abi_result(self.resolve_type(&signature.returns));
         self.ffi_results.insert(name.to_owned(), result.clone());
         result
+    }
+
+    /// The checked type of an `ffi` call's result, in ABI terms.
+    ///
+    /// A view or slice crosses the FFI boundary as its pointer only: the ABI
+    /// spells it `APTR`, and a view's length is a separate parameter, so the
+    /// result types as the pointer to its first element. Every use then judges
+    /// through the frozen conversion rules instead of reading a struct the ABI
+    /// never returns.
+    fn ffi_abi_result(ty: Ty) -> Ty {
+        match &ty.kind {
+            TyKind::Str | TyKind::StaticStr => Ty {
+                kind: TyKind::Raw(Box::new(Ty::scalar(crate::ast::ScalarType::U8))),
+                nullable: ty.nullable,
+            },
+            TyKind::Array { .. } => Ty {
+                kind: TyKind::Raw(Box::new(ty.iterated_element())),
+                nullable: ty.nullable,
+            },
+            _ => ty,
+        }
     }
 
     /// Checks an `ffi` call's written arguments.

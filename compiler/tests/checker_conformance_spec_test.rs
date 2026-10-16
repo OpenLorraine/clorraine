@@ -4183,3 +4183,102 @@ func main(): i32 {
         &["E10012"],
     );
 }
+
+// ===== The view-typed ffi result =====
+
+/// A view-typed `ffi` result converts to a `str` destination under the rule.
+///
+/// A view crosses the FFI boundary as its pointer only (the ABI spells it
+/// `APTR`, and the length is a separate parameter), so the result is the byte
+/// pointer: storing it in a `str` and passing it to a `str` parameter both
+/// report the frozen conversion once (before the pointer typing the accepted
+/// programs read a struct member off the pointer and the strict build failed).
+#[test]
+fn should_report_a_view_typed_ffi_result_at_a_view_destination() {
+    let store = r#"module spec.cc.ffiviewconvert;
+
+ffi probe {
+    func Make(): str;
+}
+
+func main(): i32 {
+    let s: str = Make();
+    if (s == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    assert_rejected_once(
+        "ffiviewconvert",
+        store,
+        "E10200",
+        &["cannot convert 'raw u8' to 'str' implicitly"],
+        &[],
+    );
+
+    let argument = r#"module spec.cc.ffiviewarg;
+
+ffi probe {
+    func Make(): str;
+}
+
+func consume(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    unsafe {
+        return consume(Make());
+    }
+}
+"#;
+    assert_rejected_once(
+        "ffiviewarg",
+        argument,
+        "E10200",
+        &["cannot convert 'raw u8' to 'str' implicitly"],
+        &[],
+    );
+}
+
+/// A view-typed `ffi` result in pointer positions builds and runs.
+///
+/// The `len` of the ABI pointer is not a view length: it takes the frozen
+/// non-view path and folds to the empty length, exactly as the same use of a
+/// `raw u8` local does. The slice twin types as its element pointer the same
+/// way. Both runs read the folded length back (the exit is the length).
+#[test]
+fn should_keep_a_view_typed_ffi_result_in_pointer_positions() {
+    let view = r#"module spec.cc.ffiviewlen;
+
+ffi probe {
+    func Make(): str;
+}
+
+func main(): i32 {
+    unsafe {
+        return i32(len(Make()));
+    }
+}
+"#;
+    let output = run_memory("ffiviewlen", view);
+    assert_no_asan("ffiviewlen", &output);
+    assert_exit("ffiviewlen", &output, 0);
+
+    let slice = r#"module spec.cc.ffislice_len;
+
+ffi probe {
+    func Make(): u8[];
+}
+
+func main(): i32 {
+    unsafe {
+        return i32(len(Make()));
+    }
+}
+"#;
+    let output = run_memory("ffislice_len", slice);
+    assert_no_asan("ffislice_len", &output);
+    assert_exit("ffislice_len", &output, 0);
+}
