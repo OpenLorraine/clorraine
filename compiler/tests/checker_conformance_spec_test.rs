@@ -6024,14 +6024,18 @@ func main(): i32 {
     assert_exit("elementmovestorectl", &output, 0);
 }
 
-/// A take argument empties the borrowed element before the next store.
+/// A take argument of a borrowed element reports the partial-move limit.
 ///
-/// `eat(v.name)` moves the element's member to the callee, so the element is
-/// emptied exactly as the top-level field spelling empties it; the store that
-/// follows writes a fresh value and the run folds its size back (exit 0) with
-/// the leak checker clean. The top-level field spelling is the control.
+/// `eat(v.name)` consumes a member of a borrowed element: the element view
+/// never owns its element and the member is not a top-level field of an owned
+/// local or `take` parameter, so the move is the v1 element-move limit and the
+/// generic instance reports the same `E10026` its concrete twin reports — no
+/// translation unit is written, so the value the callee would own is never
+/// aliased with the element. The top-level field spelling is the accepted
+/// control: it moves the member to the callee and empties the field, so the
+/// following store writes a fresh value and the run is leak-clean.
 #[test]
-fn should_empty_a_borrowed_element_after_a_take_argument() {
+fn should_report_a_borrowed_element_take_as_the_partial_move_limit() {
     let looping = r#"module spec.cc.elementtakestore;
 
 import { String, stringOf, bytes } from std.text;
@@ -6054,9 +6058,13 @@ func main(): i32 {
     return each<S[1]>(a) - 4;
 }
 "#;
-    let output = run_memory("elementtakestore", looping);
-    assert_no_asan("elementtakestore", &output);
-    assert_exit("elementtakestore", &output, 0);
+    assert_rejected_once(
+        "elementtakestore",
+        looping,
+        "E10026",
+        &["partial moves are limited to top-level fields in v1"],
+        &[],
+    );
 
     let top_level = r#"module spec.cc.elementtakestorectl;
 

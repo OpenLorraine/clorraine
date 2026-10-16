@@ -220,3 +220,15 @@ is filed as `DEF-369` and **folded into phase 4**, together with `DEF-362` (AR-1
 ownership decisions (the take move-out, the store copy-vs-move, and the partial-move judgment) share
 one machinery. Phase 4's scope is DEF-315, DEF-329, DEF-362, DEF-369.
 
+**AR-21 (oracle correction, auto-design):** The phase-4 authoring revealed a direct contradiction
+between two committed oracles: the phase-3 cases `should_empty_a_borrowed_element_after_a_take_argument`
+(spec + impl) pinned a generic `eat(v.name)` on a borrowed element as accepted-and-emptied (the shape
+the phase-3 F1 correction made memory-safe), while the phase-4 oracle `borrowelemtake` pins the same
+shape as one `E10026`. The parity with the concrete twin (which reports `E10026` at base and head),
+Ch 07 STR-11/12 and Ch 16 §2 (a `for (borrow e in xs)` view never owns its element), and this batch's
+own `DEF-369` direction ("the acceptance parity belongs to this row's per-instance partial-move
+judgment") settle it in favor of the rejection. The two phase-3 cases are re-pinned (renamed
+`should_report_a_borrowed_element_take_as_the_partial_move_limit`): the element half asserts the
+rejection, the top-level field control keeps its accepted move-and-empty shape. All other phase-3
+findings stand; this ruling supersedes the phase-3 ledger's `m09` accepted-shape note only.
+

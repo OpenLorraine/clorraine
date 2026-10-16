@@ -114,6 +114,15 @@ pub(super) struct Emitter<'a> {
     pub(super) used_names: BTreeSet<String>,
     /// The IR body currently being emitted, when a function is open.
     pub(super) function: Option<&'a ir::Function>,
+    /// The per-instance type of every compiler temporary whose recorded type
+    /// is still opaque, keyed by temporary id.
+    ///
+    /// A temporary created in a generic body for a value the declaration
+    /// cannot type — the selected member of a conditional take, for example —
+    /// carries the opaque type. The instance's substitution resolves it
+    /// through the value that fills the temporary, so its declaration, its
+    /// drop, and its move-outs use the instance's concrete shape.
+    pub(super) resolved_temp_types: BTreeMap<ir::TempId, Ty>,
     /// C name assigned to each source local or parameter of the open function.
     pub(super) local_names: BTreeMap<String, String>,
     /// Init locals handed out in the module initializer being emitted.
@@ -279,6 +288,7 @@ impl<'a> Emitter<'a> {
             instance_key: None,
             used_names: BTreeSet::new(),
             function: None,
+            resolved_temp_types: BTreeMap::new(),
             local_names: BTreeMap::new(),
             init_locals: 0,
             init_owners: Vec::new(),

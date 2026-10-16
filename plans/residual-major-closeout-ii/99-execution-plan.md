@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-18 18:00
-> **Progress**: 20/51 tasks (39%) — Executing Phase 4
+> **Last Updated**: 2026-10-18 20:30
+> **Progress**: 22/51 tasks (43%) — Phase 4 in review
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -203,10 +203,10 @@ ST-11..ST-12 · AR-3, AR-5
 
 ### Step 4.2: Implementation
 
-- [ ] 4.2.1 Cover the view-like container in the copy transfer/judgment; route the owned raw
+- [x] 4.2.1 Cover the view-like container in the copy transfer/judgment; route the owned raw
       deref read through the ordinary read's move/duplicate judgment —
-      `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/place.rs`
-- [ ] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation
+      `compiler/src/own/expr.rs`, `compiler/src/own/statements.rs`, `compiler/src/own/place.rs` ✅ (completed: 2026-10-18 20:30; `DEF-315`: the element loans of a whole-array copy transfer at the let and the assignment (the guard keeps a projected view-like store a copy no more), so the four copy spellings report one `E10030` each; `DEF-369`: the new `RequiresElementMove` per-instance duty (`ir/mono.rs:134`, the checker collection at `own.rs:102-598`, the record sites `own/expr.rs:55`/`own/call_check.rs:786`, the audit `own/instance_check.rs:434`) makes the owning substitutions report one `E10026` matching the concrete twins; `DEF-362`: the unknown-typed conditional take routes through the concrete carrier path with the per-arm sources marked, so the instance emits the concrete twin's shape and the double frees are gone; `DEF-329`: the deref store empties its source (`codegen/function.rs:1182`/`:1216`) with the impure pointer pinned once; the phase-3 `m09` cases re-pinned per AR-21; left: guarded conditional takes and non-owned arm roots keep the old shape (not in the oracle))
+- [x] 4.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-18 20:30; the residue suite 150/150 plain and under `RDC_ASAN=1`; the checker-conformance spec 147/147 both legs and the impl 66/66; `make check` exit 0; parent-verified the four suites)
 
 ### Step 4.3: Impl Tests & Review
 

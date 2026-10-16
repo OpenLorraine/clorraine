@@ -584,6 +584,52 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         });
     }
 
+    /// Records the element-move duty a consumed move through a borrow element
+    /// owes, at most once per site.
+    ///
+    /// A `for (borrow e in xs)` element aliases the iterable's element, so a
+    /// value-consuming move of the element or one of its members is the v1
+    /// element-move limit for every owning substitution. The concrete
+    /// spelling reports it directly; a moved type that is still a parameter
+    /// or unresolved records this duty, and the per-instance audit reports
+    /// the same limit once the substituted place owns. A duplicable place
+    /// copies and stays accepted, exactly as the concrete spelling does.
+    pub(super) fn note_borrowed_element_move(&mut self, target: &PlaceTarget, ty: &Ty, span: Span) {
+        let PlaceTarget::Local(id, projections) = target else {
+            return;
+        };
+        let binding = &self.bindings[*id];
+        if binding.kind != BindingKind::Local || binding.mode != Mode::Borrow {
+            return;
+        }
+        if !(self.maybe_owns(ty) || ty.is_unknown()) {
+            return;
+        }
+        if !self
+            .recorded_element_moves
+            .insert((*id, span.start, span.end))
+        {
+            return;
+        }
+        let path: Vec<crate::types::PlacePathStep> = projections
+            .iter()
+            .map(|projection| match projection {
+                ir::Projection::Field(field) => {
+                    crate::types::PlacePathStep::Field(field.clone())
+                }
+                ir::Projection::Element(_) | ir::Projection::ElementTemp(_) => {
+                    crate::types::PlacePathStep::Element
+                }
+            })
+            .collect();
+        self.element_move_requirements.push(ir::RequiresElementMove {
+            function: self.decl.name.clone(),
+            ty: binding.ty.clone(),
+            path,
+            span,
+        });
+    }
+
     /// Moves out of an assignment or binding target.
     pub(super) fn move_target(&mut self, target: PlaceTarget, span: Span) {
         match target {

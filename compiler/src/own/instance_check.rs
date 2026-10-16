@@ -34,7 +34,8 @@ use super::program::{Callee, ProgramInfo};
 ///
 /// It reports `E10205` for a substituted view-typed field and `E10215` for a
 /// substituted non-duplicable fill, `E10020` when a maybe-owning store's later
-/// use needs a duplicable instance, `E10034` when a lend moved into an owned
+/// use needs a duplicable instance, `E10026` when a borrowed element's moved
+/// place owns at the instance, `E10034` when a lend moved into an owned
 /// position instantiates with an owning type, and the whole-binding
 /// self-assign judgments (`E10020` for a nullable substitution, `E10034` for
 /// an owning one), and `E10043` when a recorded loop's substituted iterable
@@ -53,6 +54,7 @@ pub fn check(
     check_view_fields(loaded, sema, mono, diagnostics);
     check_fill_instances(program, functions, sema, mono, diagnostics);
     check_duplicable_requirements(program, sema, mono, diagnostics);
+    check_element_move_requirements(program, sema, mono, diagnostics);
     check_not_lend_requirements(program, sema, mono, diagnostics);
     check_iterable_requirements(program, sema, mono, diagnostics);
     check_opaque_projections(program, sema, mono, diagnostics);
@@ -414,6 +416,53 @@ fn check_duplicable_requirements(
             );
             // One duty per function and binding: the first owning instance
             // reports it.
+            break;
+        }
+    }
+}
+
+/// Reports `E10026` when a recorded borrowed-element move owns at its instance.
+///
+/// A `for (borrow e in xs)` element alias never owns its element, so a
+/// value-consuming move through it is the v1 element-move limit in the
+/// concrete spelling. The body records the duty while the moved place's type
+/// is still a parameter or unresolved; the audit substitutes each recorded
+/// instance's type arguments and projects the recorded path: a duplicable or
+/// view-typed substitution copies and stays accepted, while an owning one
+/// reports the same limit the concrete spelling reports. One duty reports
+/// once — the first owning instance.
+fn check_element_move_requirements(
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    mono: &Monomorphization,
+    diagnostics: &mut Diagnostics,
+) {
+    for requirement in mono.element_move_requirements() {
+        let Some(Callee::User(decl)) = program.callee(&requirement.function) else {
+            continue;
+        };
+        let params = type_param_names(&decl.type_params);
+        for instance in mono.instances() {
+            if instance.function != requirement.function {
+                continue;
+            }
+            let bound = crate::types::instance_bindings(&params, &instance.args);
+            let base = crate::types::substitute(&requirement.ty, &bound);
+            let moved = crate::types::project_place_path(&base, &requirement.path, &sema.table);
+            if moved.is_unknown()
+                || crate::types::contains_param(&moved)
+                || sema.table.duplicable(&moved)
+            {
+                continue;
+            }
+            diagnostics.push(
+                Diagnostic::error(
+                    "E10026",
+                    "partial moves are limited to top-level fields in v1",
+                    requirement.span,
+                )
+                .with_help("move the whole value instead"),
+            );
             break;
         }
     }

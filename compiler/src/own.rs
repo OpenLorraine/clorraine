@@ -99,6 +99,7 @@ pub fn check(
     }
     let mut functions = Vec::new();
     let mut duplicable_requirements = Vec::new();
+    let mut element_move_requirements = Vec::new();
     let mut not_lend_requirements = Vec::new();
     let mut iterable_duties = Vec::new();
     let mut out_slot_duties = Vec::new();
@@ -128,6 +129,7 @@ pub fn check(
                     mut function,
                     lifted,
                     requirements,
+                    element_moves,
                     lend_duties,
                     iterable_reqs,
                     slot_duties,
@@ -138,6 +140,7 @@ pub fn check(
                 functions.push(function);
                 functions.extend(lifted);
                 duplicable_requirements.extend(requirements);
+                element_move_requirements.extend(element_moves);
                 not_lend_requirements.extend(lend_duties);
                 iterable_duties.extend(iterable_reqs);
                 out_slot_duties.extend(slot_duties);
@@ -181,6 +184,9 @@ pub fn check(
     let mut monomorphization = generics::collect(loaded, &program, sema);
     for requirement in duplicable_requirements {
         monomorphization.require_duplicable(requirement);
+    }
+    for requirement in element_move_requirements {
+        monomorphization.require_element_move(requirement);
     }
     for requirement in not_lend_requirements {
         monomorphization.require_not_lend(requirement);
@@ -453,6 +459,14 @@ struct FunctionChecker<'a, 'd> {
     /// the per-instance audit discharges every duty against each recorded
     /// concrete instantiation.
     duplicable_requirements: Vec<ir::RequiresDuplicable>,
+    /// The borrowed-element move duties this body owes its instances.
+    ///
+    /// A value-consuming move through a `for (borrow e in xs)` element alias
+    /// is the v1 element-move limit once the moved place owns. While the
+    /// moved type is still a parameter or unresolved the checker records the
+    /// duty; the per-instance audit reports the same limit for the first
+    /// owning substitution.
+    element_move_requirements: Vec<ir::RequiresElementMove>,
     /// The lend-move duties this body owes its instances.
     ///
     /// A lend moved into an owned position under a still-parameter type is
@@ -493,6 +507,11 @@ struct FunctionChecker<'a, 'd> {
     recorded_self_assign: BTreeSet<(String, u32, u32)>,
     /// Binding indices already recorded, so one binding owes one duty.
     recorded_requirements: BTreeSet<usize>,
+    /// Move sites already recorded, so one site owes one element-move duty.
+    ///
+    /// The speculative loop pass lowers the same body twice, so the site —
+    /// the binding and the span — identifies one duty.
+    recorded_element_moves: BTreeSet<(usize, u32, u32)>,
     /// The lifted functions of every lambda this function lowers.
     ///
     /// A lambda's body becomes a file-scope `static` C function, so it is
@@ -576,6 +595,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             report_diagnostics: true,
             defer_body: false,
             duplicable_requirements: Vec::new(),
+            element_move_requirements: Vec::new(),
             not_lend_requirements: Vec::new(),
             iterable_requirements: Vec::new(),
             out_slot_duties: Vec::new(),
@@ -585,6 +605,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             recorded_storable_slot: BTreeSet::new(),
             recorded_self_assign: BTreeSet::new(),
             recorded_requirements: BTreeSet::new(),
+            recorded_element_moves: BTreeSet::new(),
             lifted: Vec::new(),
             next_lifted,
             diagnostics,
@@ -604,6 +625,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         ir::Function,
         Vec<ir::Function>,
         Vec<ir::RequiresDuplicable>,
+        Vec<ir::RequiresElementMove>,
         Vec<ir::RequiresNotLend>,
         Vec<ir::RequiresIterable>,
         Vec<ir::RequiresOutSlotPlace>,
@@ -654,6 +676,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             function,
             self.lifted,
             self.duplicable_requirements,
+            self.element_move_requirements,
             self.not_lend_requirements,
             self.iterable_requirements,
             self.out_slot_duties,

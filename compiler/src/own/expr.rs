@@ -47,10 +47,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// deeper-than-top-level path the v1 partial-move error.
     fn consume_owned_place(&mut self, expr: &Expr, span: Span) {
         let ty = self.ty(expr);
+        let target = self.place_target(expr);
+        // A move through a borrow element view is the v1 element-move limit
+        // once the moved place owns; while its type is still a parameter the
+        // site records the duty for the per-instance audit.
+        if let Some(target) = &target {
+            self.note_borrowed_element_move(target, &ty, span);
+        }
         if self.maybe_owns(&ty) {
             // The field store writes a move for an owning instance, so a later
             // use of the source deposits the duplicability duty.
-            if let Some(target) = self.place_target(expr) {
+            if let Some(target) = target {
                 self.mark_moved_if_owning(target, span);
             }
             return;
@@ -58,7 +65,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if self.sema.table.duplicable(&ty) {
             return;
         }
-        if let Some(target) = self.place_target(expr) {
+        if let Some(target) = target {
             self.move_target(target, span);
         } else if self.is_ownerless_element_move(expr) {
             self.report_element_move_limit(span);
@@ -95,6 +102,68 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
         }
         sources
+    }
+
+    /// The owned places a still-unresolved `take` conditional moves from.
+    ///
+    /// A `take` argument whose member type is unresolved selects one arm at
+    /// run time and the emitted move-out empties that arm's root once the
+    /// substituted member owns. The route is only sound when every arm
+    /// projects out of owned storage — a local or a `take`/out parameter —
+    /// because the move rules do not let any other root be emptied; an arm
+    /// that is a fresh value, a borrowed element, a lend, a global, or a
+    /// temporary makes the whole argument take its existing path. A nested
+    /// conditional recurses, so every level's arms are checked.
+    pub(super) fn unresolved_conditional_owned_sources(
+        &self,
+        expr: &Expr,
+    ) -> Option<Vec<PlaceTarget>> {
+        let ExprKind::Conditional {
+            then_value,
+            else_value,
+            ..
+        } = &expr.kind
+        else {
+            return None;
+        };
+        let mut sources = Vec::new();
+        for arm in [then_value.as_ref(), else_value.as_ref()] {
+            if matches!(arm.kind, ExprKind::Conditional { .. }) {
+                sources.extend(self.unresolved_conditional_owned_sources(arm)?);
+                continue;
+            }
+            let target = self.place_target(arm)?;
+            if !self.root_owns_moves(&target) {
+                return None;
+            }
+            sources.push(target);
+        }
+        Some(sources)
+    }
+
+    /// True when a move target's root is storage the move rules may empty.
+    ///
+    /// An owned local and a `take`/out parameter own their value; a borrow
+    /// element alias, a read-only lend parameter, a global, and a temporary
+    /// do not.
+    fn root_owns_moves(&self, target: &PlaceTarget) -> bool {
+        let PlaceTarget::Local(id, _) = target else {
+            return false;
+        };
+        self.binding_owns_moves(&self.bindings[*id])
+    }
+
+    /// True when a binding owns the value a move may leave.
+    ///
+    /// An owned local and a `take`/out parameter own their value; a borrow
+    /// element alias, a read-only lend parameter, a global, a capture, and a
+    /// temporary do not.
+    pub(super) fn binding_owns_moves(&self, binding: &Binding) -> bool {
+        match binding.kind {
+            BindingKind::Local => binding.mode != Mode::Borrow,
+            BindingKind::OutSlot => true,
+            BindingKind::Param => binding.mode == Mode::Take,
+        }
     }
 
     /// The owned place sources a conditional may move out of.

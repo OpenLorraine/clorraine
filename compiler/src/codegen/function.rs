@@ -73,6 +73,7 @@ impl<'a> Emitter<'a> {
         };
         self.seed_generated_names(function.temps.len());
         self.function = Some(function);
+        self.resolve_temp_types(function);
         self.current_module = info.module.clone();
         self.return_ty = self.substitute(&function.ret);
         // A by-value fixed-array return is written into the hidden trailing
@@ -178,6 +179,7 @@ impl<'a> Emitter<'a> {
         self.suppress_output = false;
 
         self.function = Some(function);
+        self.resolve_temp_types(function);
         self.current_module = function.module.clone();
         self.return_ty = self.substitute(&function.ret);
         // A by-value fixed-array return is written into the hidden trailing
@@ -278,6 +280,61 @@ impl<'a> Emitter<'a> {
         }
     }
 
+    /// Resolves the recorded type of every opaque compiler temporary.
+    ///
+    /// A temporary created in a generic body from a value the declaration
+    /// cannot type — the selected member of a conditional take, for example —
+    /// records the opaque type. The instance's substitution gives the filling
+    /// value its concrete type, so the fill statement identifies the
+    /// temporary's own type: the declaration, its drop, and its move-outs
+    /// then use the instance's shape instead of the generic fallback. Only a
+    /// temporary whose recorded type is still opaque is resolved, and the
+    /// first fill that resolves decides; a temporary with no resolvable fill
+    /// keeps its recorded type.
+    fn resolve_temp_types(&mut self, function: &ir::Function) {
+        self.resolved_temp_types.clear();
+        for block in &function.blocks {
+            for instr in &block.statements {
+                let (target, filled) = match &instr.statement {
+                    Statement::Assign { target, value } => {
+                        (target, self.resolved_value_ty(value))
+                    }
+                    Statement::Move { target, source } => {
+                        (target, self.resolved_place_ty(source))
+                    }
+                    _ => continue,
+                };
+                let ir::PlaceBase::Temp(id) = &target.base else {
+                    continue;
+                };
+                if !target.projections.is_empty()
+                    || !self.substitute(&target.ty).is_unknown()
+                    || filled.is_unknown()
+                {
+                    continue;
+                }
+                self.resolved_temp_types.entry(*id).or_insert(filled);
+            }
+        }
+    }
+
+    /// The declared type of one compiler temporary.
+    ///
+    /// A temporary's recorded type can still be opaque when a generic body
+    /// created it for a value the instance resolves. The fill's resolved type
+    /// then names the temporary's own type, so every use agrees with the
+    /// instance's shape.
+    pub(super) fn temp_type(&self, id: ir::TempId, recorded: &Ty) -> Ty {
+        let substituted = self.substitute(recorded);
+        if !substituted.is_unknown() {
+            return substituted;
+        }
+        self.resolved_temp_types
+            .get(&id)
+            .cloned()
+            .unwrap_or(substituted)
+    }
+
     /// Writes the hoisted local declarations, the temporaries, and the result.
     fn emit_local_declarations(&mut self, function: &'a ir::Function) {
         let unread = unread_locals(
@@ -311,7 +368,7 @@ impl<'a> Emitter<'a> {
             }
         }
         for (index, ty) in function.temps.iter().enumerate() {
-            let ty = self.substitute(ty);
+            let ty = self.temp_type(index as ir::TempId, ty);
             let empty = self.empty_state(&ty);
             self.push(&format!(
                 "    {} = {};",
@@ -1118,6 +1175,12 @@ impl<'a> Emitter<'a> {
             return;
         }
         let target_c = self.place(target);
+        // A raw-deref read used as an owned store value moves the pointee: the
+        // source is emptied through its own address, exactly as the raw store's
+        // value is emptied, so only the destination owns the moved value. A
+        // duplicable pointee copies and stays intact.
+        let moves_pointee = self.needs_drop(&ty)
+            && matches!(value.kind, ValueKind::Unary { op: UnaryOp::Deref, .. });
         // An element target is reached through a pointer into its container,
         // so a right-hand side that reads a named binding can read the same
         // storage through a different base; the release waits for it then.
@@ -1131,23 +1194,27 @@ impl<'a> Emitter<'a> {
             self.emit_guards(value);
             let lowered = self.store_text(value, &ty);
             self.push(&format!("    {target_c} = {lowered};"));
-            return;
+        } else {
+            // The right-hand side reads the target (`f = dup(borrow f)`), so the
+            // old value must survive until the right-hand side has been
+            // evaluated. Save it, store the new value, then release the saved
+            // old value.
+            let save = self.unique_local("__cl_save");
+            self.push("    {");
+            self.push(&format!(
+                "        {} = {};",
+                declarator(&ty, &save, &self.sema.table),
+                target_c
+            ));
+            self.emit_guards(value);
+            let lowered = self.store_text(value, &ty);
+            self.push(&format!("        {target_c} = {lowered};"));
+            self.emit_drop_expr(&save, &ty);
+            self.push("    }");
         }
-        // The right-hand side reads the target (`f = dup(borrow f)`), so the old
-        // value must survive until the right-hand side has been evaluated. Save
-        // it, store the new value, then release the saved old value.
-        let save = self.unique_local("__cl_save");
-        self.push("    {");
-        self.push(&format!(
-            "        {} = {};",
-            declarator(&ty, &save, &self.sema.table),
-            target_c
-        ));
-        self.emit_guards(value);
-        let lowered = self.store_text(value, &ty);
-        self.push(&format!("        {target_c} = {lowered};"));
-        self.emit_drop_expr(&save, &ty);
-        self.push("    }");
+        if moves_pointee {
+            self.emit_arm_source_moves(value, &ty);
+        }
     }
 
     /// Emits a whole-array copy for a fixed-array assignment.

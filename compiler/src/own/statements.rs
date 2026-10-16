@@ -472,6 +472,30 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         if view_elements {
             self.view_array_literal_depth -= 1;
         }
+        // An owned raw-deref read moves its pointee: the store copies the
+        // value and the pointee is emptied through its own address. An impure
+        // pointer expression is bound once, so the store and the emptying
+        // name the same address.
+        let lowered = if self.owns_drop(ty) {
+            if let ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand,
+            } = &lowered.kind
+            {
+                let operand = self.materialize_operand((**operand).clone());
+                Value::new(
+                    lowered.ty.clone(),
+                    ValueKind::Unary {
+                        op: UnaryOp::Deref,
+                        operand: Box::new(operand),
+                    },
+                )
+            } else {
+                lowered
+            }
+        } else {
+            lowered
+        };
         // A registered destination temporary is adopted by moving its value
         // out: the store copies it into the destination and the move-out
         // empties the temporary, so the statement-end release this temporary

@@ -3394,39 +3394,33 @@ fn should_empty_a_named_source_stored_into_a_borrowed_element() {
     assert_contains("elemmovectl", &emitted, sequence);
 }
 
-/// A take argument empties a borrowed element before the next store.
+/// A take argument of a borrowed element reports the partial-move limit.
 ///
-/// `eat(v.name)` moves the element's member to the callee, so the element is
-/// emptied right after the call — the top-level field spelling's shape — and
-/// the store that follows sees an empty place. Before the place type reached
-/// the move-out, the element kept the value the callee owned and the store's
-/// overwrite release freed it twice. The top-level spelling already held its
-/// shape before the element places followed it, so its half of this pin is
-/// the unchanged control.
+/// `eat(v.name)` consumes a member of a borrowed element: the element view
+/// never owns its element and its member is not a top-level field of an owned
+/// local or `take` parameter, so the move is the v1 element-move limit and the
+/// generic instance reports the same `E10026` its concrete twin reports — no
+/// translation unit is written. The top-level field spelling keeps its
+/// accepted move-and-empty shape, so the double free the formerly accepted
+/// generic spelling caused is gone by rejection.
 #[test]
-fn should_empty_a_borrowed_element_after_a_take_argument() {
-    let take = "cl_spec_cc_impl_elemtake_eat((*__cl_tmp1).name);";
-    let empty = "(*__cl_tmp1).name = NULL;";
-    let emitted = emit_host("elemtake", ELEMENT_TAKE_SOURCE);
-    assert_contains("elemtake", &emitted, take);
-    let take_at = emitted
-        .find(take)
-        .unwrap_or_else(|| panic!("elemtake: the take call is missing"));
-    let empty_at = emitted
-        .find(empty)
-        .unwrap_or_else(|| panic!("elemtake: the element is never emptied"));
+fn should_report_a_borrowed_element_take_as_the_partial_move_limit() {
+    let stderr = reject_host("elemtake", ELEMENT_TAKE_SOURCE);
     assert!(
-        take_at < empty_at,
-        "elemtake: the take must empty the element before the next store"
+        stderr.contains("E10026"),
+        "elemtake: expected the element-move limit; stderr:\n{stderr}"
     );
     assert_eq!(
-        count(&emitted, empty),
-        2,
-        "elemtake: expected the take's emptying and the store's release"
+        stderr
+            .lines()
+            .filter(|line| line.starts_with("error "))
+            .count(),
+        1,
+        "elemtake: expected one report; stderr:\n{stderr}"
     );
 
     // The top-level spelling already emptied its field before the element
-    // places followed it, so these shapes guard it unchanged.
+    // places followed it, so this shape guards it unchanged.
     let emitted = emit_host("elemtakectl", ELEMENT_TAKE_CONTROL_SOURCE);
     assert_contains("elemtakectl", &emitted, "eat(a.name);");
     assert_contains("elemtakectl", &emitted, "a.name = NULL;");

@@ -961,6 +961,9 @@ impl<'a> Emitter<'a> {
 
     /// Writes the `cl_init_<module>` functions in topological order.
     pub(super) fn emit_init_functions(&mut self) {
+        // A module initializer has no IR function body, so no temporary type
+        // resolution applies; the map must not leak from the last emitted body.
+        self.resolved_temp_types.clear();
         for module_name in self.init_order() {
             self.push(&format!(
                 "static void cl_init_{}(void)",

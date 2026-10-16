@@ -6,7 +6,7 @@
 //! the source tree again.
 
 use crate::span::Span;
-use crate::types::{Ty, TyKind};
+use crate::types::{PlacePathStep, Ty, TyKind};
 
 /// One concrete instantiation of a generic function.
 ///
@@ -117,6 +117,31 @@ pub struct RequiresDuplicable {
     /// local entry to look up, so the record carries the type itself.
     pub ty: Ty,
     /// The conflicting use, for the body-site diagnostic.
+    pub span: Span,
+}
+
+/// A value-consuming move through a borrowed element view at the body site.
+///
+/// A `for (borrow e in xs)` element aliases the iterable's element, so moving
+/// its value or a member out of it is the v1 element-move limit in the
+/// concrete spelling. While the element's type is still a parameter the
+/// checker cannot see whether the moved place owns, so it records this duty;
+/// the per-instance audit substitutes the binding's type, projects the
+/// recorded path, and reports the same limit once the moved place owns. A
+/// duplicable or view-typed substitution copies and stays accepted, exactly
+/// as the concrete spelling does.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequiresElementMove {
+    /// The generic function whose body carries the duty.
+    pub function: String,
+    /// The borrowed element binding's declared type, substituted per instance.
+    ///
+    /// The binding is a loop element alias, which has no local entry to look
+    /// up, so the record carries the type itself.
+    pub ty: Ty,
+    /// The projection path from the binding to the moved place.
+    pub path: Vec<PlacePathStep>,
+    /// The move site, for the diagnostic span.
     pub span: Span,
 }
 
@@ -272,6 +297,7 @@ pub struct Monomorphization {
     lifted: Vec<LiftedSpecialization>,
     obligations: Vec<CopyObligation>,
     duplicable_requirements: Vec<RequiresDuplicable>,
+    element_move_requirements: Vec<RequiresElementMove>,
     not_lend_requirements: Vec<RequiresNotLend>,
     out_slot_requirements: Vec<RequiresOutSlotPlace>,
     storable_slot_requirements: Vec<RequiresStorableSlot>,
@@ -352,6 +378,16 @@ impl Monomorphization {
     /// Every duplicability duty recorded so far.
     pub fn duplicable_requirements(&self) -> &[RequiresDuplicable] {
         &self.duplicable_requirements
+    }
+
+    /// Records a borrowed-element move the body owes an instance judgment for.
+    pub fn require_element_move(&mut self, requirement: RequiresElementMove) {
+        self.element_move_requirements.push(requirement);
+    }
+
+    /// Every borrowed-element move duty recorded so far.
+    pub fn element_move_requirements(&self) -> &[RequiresElementMove] {
+        &self.element_move_requirements
     }
 
     /// Records a lend move the body owes an instance judgment for.

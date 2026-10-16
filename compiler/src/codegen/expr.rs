@@ -218,6 +218,10 @@ impl<'a> Emitter<'a> {
     }
 
     /// The declared type of a place's root.
+    ///
+    /// A compiler temporary whose recorded type is still opaque resolves
+    /// through the value that fills it, so a projected place rooted at such a
+    /// temporary reads the instance's concrete type.
     pub(super) fn place_base_type(&self, base: &PlaceBase) -> Ty {
         match base {
             PlaceBase::Local(name) => self
@@ -239,10 +243,13 @@ impl<'a> Emitter<'a> {
                 .get(id)
                 .map(|global| global.ty.clone())
                 .unwrap_or_else(Ty::unknown),
-            PlaceBase::Temp(id) => self
-                .function
-                .and_then(|function| function.temps.get(*id as usize).cloned())
-                .unwrap_or_else(Ty::unknown),
+            PlaceBase::Temp(id) => {
+                let recorded = self
+                    .function
+                    .and_then(|function| function.temps.get(*id as usize).cloned())
+                    .unwrap_or_else(Ty::unknown);
+                self.temp_type(*id, &recorded)
+            }
             // The environment field carries its own captured type, so the
             // emitter spells a projected field without a site lookup.
             PlaceBase::EnvField { ty, .. } => ty.clone(),
@@ -368,6 +375,12 @@ impl<'a> Emitter<'a> {
                     resolved
                 }
             }
+            // A compiler temporary's recorded type can still be opaque when a
+            // generic body created it for an unresolved value; the fill
+            // resolves it, exactly as the place resolver resolves a projected
+            // place.
+            ValueKind::Temp(id) => self.temp_type(*id, &ty),
+            ValueKind::Materialize { temp, .. } => self.temp_type(*temp, &ty),
             _ => ty,
         }
     }

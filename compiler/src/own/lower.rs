@@ -2628,6 +2628,49 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when every reachable arm of a conditional projects out of owned
+    /// storage.
+    ///
+    /// The per-arm move-out empties the chosen arm's root, so a `take`
+    /// argument whose member type is still unresolved only takes that route
+    /// when every arm's root owns its value: a local or a `take`/out
+    /// parameter. A borrowed element, a read-only lend parameter, a capture,
+    /// a global, or a temporary keeps the existing copy, because the move
+    /// rules do not allow emptying it.
+    fn conditional_owns_place_arms(&self, value: &Value) -> bool {
+        match &value.kind {
+            ValueKind::Conditional {
+                then_value,
+                else_value,
+                ..
+            } => {
+                self.conditional_owns_place_arms(then_value)
+                    && self.conditional_owns_place_arms(else_value)
+            }
+            ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
+                self.conditional_owns_place_arms(base)
+            }
+            ValueKind::Place(place) => self.owned_place_root(place),
+            _ => false,
+        }
+    }
+
+    /// True when a place's root is storage a move may leave.
+    ///
+    /// An owned local and a `take`/out parameter own their value; a borrow
+    /// element alias, a read-only lend parameter, a capture, a global, and a
+    /// temporary do not.
+    fn owned_place_root(&self, place: &ir::Place) -> bool {
+        let name = match &place.base {
+            ir::PlaceBase::Local(name) | ir::PlaceBase::Param(name) => name,
+            _ => return false,
+        };
+        self.bindings
+            .iter()
+            .filter(|binding| binding.ir_name == *name)
+            .any(|binding| self.binding_owns_moves(binding))
+    }
+
     /// Consumes one arm's projection in its own branch.
     ///
     /// The projection below the conditional is rebuilt on the arm, then the
@@ -4887,6 +4930,19 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 && (!self.sema.table.duplicable(&value.ty) || self.maybe_owns(&value.ty))
                 && !is_view(&value.ty)
                 && !value.ty.is_unknown()
+            {
+                return self.materialize_take_place(value);
+            }
+            // An unresolved conditional whose arms project out of owned
+            // storage moves the selected member out per instance: the carrier
+            // branch copies the chosen member and empties its root once the
+            // substituted type owns, and a duplicable instance keeps its copy.
+            // The carrier's own type is resolved at the instance from the value
+            // that fills it.
+            if self.defer_move_outs == 0
+                && value.ty.is_unknown()
+                && matches!(value.kind, ValueKind::Conditional { .. })
+                && self.conditional_owns_place_arms(&value)
             {
                 return self.materialize_take_place(value);
             }

@@ -1199,30 +1199,109 @@ fn resolved_ir_value_ty(
         // materialization dereferences — and each projection walks the
         // substituted type.
         ValueKind::Place(place) => {
-            let base_ty = substitute(&place_base_ty(function, program, &place.base), bindings);
-            let mut current = base_ty;
-            for projection in &place.projections {
-                match projection {
-                    Projection::Field(field) => {
-                        let next = field_ty(sema, bindings, &current, field);
-                        if next.is_unknown() {
-                            return ty;
-                        }
-                        current = next;
-                    }
-                    Projection::Element(_) | Projection::ElementTemp(_) => {
-                        current = crate::types::index_element(&current);
-                    }
-                }
-            }
-            if current.is_unknown() {
-                ty
-            } else {
-                current
-            }
+            resolved_ir_place_ty(place, bindings, function, program, sema, ty)
+        }
+        // A compiler temporary records the opaque type when a generic body
+        // created it for a value the declaration cannot type; the statement
+        // that fills it resolves it, exactly as the emitter resolves the
+        // temporary it declares.
+        ValueKind::Temp(id) => resolved_ir_temp_ty(*id, bindings, function, program, sema),
+        ValueKind::Materialize { temp, .. } => {
+            resolved_ir_temp_ty(*temp, bindings, function, program, sema)
         }
         _ => ty,
     }
+}
+
+/// The type of an IR place under an instance substitution.
+///
+/// The base resolves through the declared types of the storage it names and
+/// each projection walks the substituted type; `fallback` is returned when a
+/// step does not resolve, so the caller keeps the opaque type.
+fn resolved_ir_place_ty(
+    place: &crate::ir::Place,
+    bindings: &BTreeMap<String, Ty>,
+    function: &Function,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+    fallback: Ty,
+) -> Ty {
+    let base_ty = substitute(&place_base_ty(function, program, &place.base), bindings);
+    let mut current = base_ty;
+    for projection in &place.projections {
+        match projection {
+            Projection::Field(field) => {
+                let next = field_ty(sema, bindings, &current, field);
+                if next.is_unknown() {
+                    return fallback;
+                }
+                current = next;
+            }
+            Projection::Element(_) | Projection::ElementTemp(_) => {
+                current = crate::types::index_element(&current);
+            }
+        }
+    }
+    if current.is_unknown() {
+        fallback
+    } else {
+        current
+    }
+}
+
+/// The type of one compiler temporary under an instance substitution.
+///
+/// A temporary whose recorded type is opaque was created for a value the
+/// declaration cannot type. The statement that fills it names the value, so
+/// its resolved type is the temporary's own — the same resolution the emitter
+/// applies when it declares the temporary and spells its symbol. A temporary
+/// with no resolvable fill keeps the opaque type.
+fn resolved_ir_temp_ty(
+    id: crate::ir::TempId,
+    bindings: &BTreeMap<String, Ty>,
+    function: &Function,
+    program: &ProgramInfo,
+    sema: &SemaOutput,
+) -> Ty {
+    for block in &function.blocks {
+        for instr in &block.statements {
+            match &instr.statement {
+                Statement::Assign { target, value } => {
+                    if !names_temp(target, id) {
+                        continue;
+                    }
+                    let resolved = resolved_ir_value_ty(value, bindings, function, program, sema);
+                    if !resolved.is_unknown() {
+                        return resolved;
+                    }
+                }
+                Statement::Move { target, source } => {
+                    if !names_temp(target, id) {
+                        continue;
+                    }
+                    let resolved = resolved_ir_place_ty(
+                        source,
+                        bindings,
+                        function,
+                        program,
+                        sema,
+                        Ty::unknown(),
+                    );
+                    if !resolved.is_unknown() {
+                        return resolved;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ty::unknown()
+}
+
+/// True when a place names one compiler temporary directly.
+fn names_temp(place: &crate::ir::Place, id: crate::ir::TempId) -> bool {
+    place.projections.is_empty()
+        && matches!(&place.base, crate::ir::PlaceBase::Temp(temp) if *temp == id)
 }
 
 /// Records an instance for one IR call with concrete type arguments.
