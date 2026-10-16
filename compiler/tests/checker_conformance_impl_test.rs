@@ -81,6 +81,38 @@ fn emit_host(tag: &str, source: &str) -> String {
     emitted
 }
 
+/// Emits one hosted-amiga program and asserts the front end accepted it.
+///
+/// The cross toolchain is not needed for an emission pin: the profile only
+/// selects the ABI typedefs and the null spelling, both visible in the
+/// emitted C. The spec suite's hosted-amiga helpers build the same emission.
+fn emit_hosted_amiga(tag: &str, source: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let source_path = scratch.path().join("main.clo");
+    std::fs::write(&source_path, source)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "hosted-amiga".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end rejected the program; stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let emitted = std::fs::read_to_string(&c_path).unwrap_or_default();
+    assert!(
+        !emitted.trim().is_empty(),
+        "{tag}: the emitted C is empty"
+    );
+    emitted
+}
+
 /// Runs one host-profile program and asserts the front end rejected it.
 ///
 /// Returns the diagnostics' text. The phase's changes are diagnostic-only, so
@@ -1947,4 +1979,249 @@ func main(): i32 {
         stderr.contains("main.clo:9:17"),
         "nullconcretearg: the report must keep the position's span; stderr:\n{stderr}"
     );
+}
+
+// ===== The typed nulls and the captured store =====
+
+/// A null-shaped value lowers to the destination view's own empty value.
+///
+/// The store, the argument, and the conditional carry the destination's zero
+/// view (`cl_zero_ClStr()`), never the shape's own pointer (the accepted
+/// programs previously failed the strict build with `incompatible types when
+/// assigning to 'ClStr' from 'void *'` and `incompatible type for argument 1`).
+#[test]
+fn should_lower_a_null_shape_to_the_destination_view_value() {
+    let store = r#"module spec.cc.impl.nullviewstore;
+
+func main(): i32 {
+    let x = null;
+    let s: str? = x;
+    if (s == null) {
+        return 0;
+    }
+    return i32(len(s)) + 1;
+}
+"#;
+    let emitted = emit_host("nullviewstore", store);
+    assert_contains("nullviewstore", &emitted, "ClStr s = {0};");
+    assert_contains("nullviewstore", &emitted, "s = cl_zero_ClStr();");
+    assert_eq!(
+        count(&emitted, "s = x;"),
+        0,
+        "nullviewstore: the store must not copy the shape's pointer"
+    );
+
+    let argument = r#"module spec.cc.impl.nullviewarg;
+
+func show(s: str?): i32 {
+    if (s == null) {
+        return 0;
+    }
+    return i32(len(s)) + 1;
+}
+
+func main(): i32 {
+    let x = null;
+    return show(x);
+}
+"#;
+    let emitted = emit_host("nullviewarg", argument);
+    assert_contains(
+        "nullviewarg",
+        &emitted,
+        "return cl_spec_cc_impl_nullviewarg_show(cl_zero_ClStr());",
+    );
+
+    // The conditional keeps its per-arm rendering: the null-shaped shortcut
+    // never takes precedence over it (the same shape the residue suite pins).
+    let conditional = r#"module spec.cc.impl.nullcondstore;
+
+func fill(c: bool, borrow slot: str?): void {
+    slot = c ? null : null;
+}
+
+func main(): i32 {
+    let out: str? = null;
+    fill(true, borrow out);
+    if (out == null) {
+        return 0;
+    }
+    return 1;
+}
+"#;
+    let emitted = emit_host("nullcondstore", conditional);
+    assert_contains(
+        "nullcondstore",
+        &emitted,
+        "(*slot) = (c ? cl_zero_ClStr() : cl_zero_ClStr());",
+    );
+}
+
+/// The hosted-amiga handle destination takes the profile's zero null.
+///
+/// A `File?` is the `BPTR` word on that ABI, so the store and the return
+/// spell the integer `0`, never the shape's `void *` (the accepted program
+/// previously failed the cross build with `assignment to 'BPTR' … from 'void
+/// *'` and `returning 'void *' … 'BPTR'`).
+#[test]
+fn should_lower_a_null_shape_to_the_hosted_amiga_zero() {
+    let source = r#"module spec.cc.impl.nullhandle;
+
+import { File } from std.io;
+
+func pass(): File? {
+    let x = null;
+    return x;
+}
+
+func main(): i32 {
+    let x = null;
+    let fl: File? = x;
+    if (fl != null) {
+        return 1;
+    }
+    let f2: File? = pass();
+    if (f2 != null) {
+        return 2;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_hosted_amiga("nullhandle", source);
+    assert_contains(
+        "nullhandle",
+        &emitted,
+        "static BPTR cl_spec_cc_impl_nullhandle_pass(void)",
+    );
+    assert_eq!(
+        count(&emitted, "fl = 0;"),
+        4,
+        "nullhandle: the hoisted init, the store, its drop, and the return \
+         cleanup must each spell the integer 0"
+    );
+    assert_eq!(
+        count(&emitted, "return x;"),
+        0,
+        "nullhandle: the return must not carry the shape's pointer"
+    );
+    assert_eq!(
+        count(&emitted, "fl = x;"),
+        0,
+        "nullhandle: the store must not carry the shape's pointer"
+    );
+}
+
+/// A writable capture stored into a nullable out-slot reports once.
+///
+/// The store would move the value out of the capture environment while the
+/// caller still owns it, so the instance judgment reports the frozen capture
+/// rule and the run no longer double-frees (the accepted program previously
+/// aborted with `free(): double free detected` at exit 134). The non-capture
+/// `take` store keeps its accepted shape.
+#[test]
+fn should_reject_a_writable_capture_stored_into_a_nullable_out_slot() {
+    let source = r#"module spec.cc.impl.captureslot;
+
+import { String, stringOf } from std.text;
+
+func wrap<T>(borrow out: T, x: T): void {
+    ([borrow x, borrow out] () => {
+        out = x;
+    })();
+}
+
+func main(): i32 {
+    let out: String? = null;
+    let s: String = stringOf("ab");
+    wrap<String?>(borrow out, s);
+    return 0;
+}
+"#;
+    let stderr = reject_host("captureslot", source);
+    assert_eq!(
+        stderr.matches("error E10401:").count(),
+        1,
+        "captureslot: expected one E10401; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot move captured 'x' in a lambda"),
+        "captureslot: the capture message is missing; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("E10034"),
+        "captureslot: the lend-store report must be absent; stderr:\n{stderr}"
+    );
+
+    let control = r#"module spec.cc.impl.captureslotctl;
+
+import { String, stringOf } from std.text;
+
+func put<T>(borrow d: T, take s: T): void {
+    d = s;
+}
+
+func main(): i32 {
+    let d: String? = null;
+    let s: String = stringOf("ab");
+    put<String?>(borrow d, s);
+    if (d == null) {
+        return 1;
+    }
+    return i32(len(d)) + 1;
+}
+"#;
+    let emitted = emit_host("captureslotctl", control);
+    assert_contains(
+        "captureslotctl",
+        &emitted,
+        "cl_put__StringQ(&(d), s);",
+    );
+    assert_contains("captureslotctl", &emitted, "(*d) = s;");
+}
+
+/// The typed-null lowering and the capture control re-emit identically.
+#[test]
+fn should_re_emit_the_null_lowering_and_the_capture_control_identically() {
+    let store = r#"module spec.cc.impl.nullviewstore;
+
+func main(): i32 {
+    let x = null;
+    let s: str? = x;
+    if (s == null) {
+        return 0;
+    }
+    return i32(len(s)) + 1;
+}
+"#;
+    let (first, second) = emit_twice("reemitnullview", store);
+    assert_eq!(
+        first, second,
+        "reemitnullview: the program re-emitted differently"
+    );
+    assert_contains("reemitnullview", &first, "s = cl_zero_ClStr();");
+
+    let control = r#"module spec.cc.impl.captureslotctl;
+
+import { String, stringOf } from std.text;
+
+func put<T>(borrow d: T, take s: T): void {
+    d = s;
+}
+
+func main(): i32 {
+    let d: String? = null;
+    let s: String = stringOf("ab");
+    put<String?>(borrow d, s);
+    if (d == null) {
+        return 1;
+    }
+    return i32(len(d)) + 1;
+}
+"#;
+    let (first, second) = emit_twice("reemitcapturectl", control);
+    assert_eq!(
+        first, second,
+        "reemitcapturectl: the program re-emitted differently"
+    );
+    assert_contains("reemitcapturectl", &first, "(*d) = s;");
 }
