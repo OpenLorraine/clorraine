@@ -6,7 +6,7 @@
 //! sometimes, so their guards embed inside the expression instead. This module
 //! owns both spellings and the conditions they share.
 
-use crate::ast::{BinaryOp, ScalarType};
+use crate::ast::{BinaryOp, ScalarType, UnaryOp};
 use crate::ir::{Value, ValueKind, ValuePiece};
 use crate::types::{is_signed_scalar, Ty, TyKind};
 
@@ -112,6 +112,7 @@ impl<'a> Emitter<'a> {
                 temp,
                 value: inner,
                 move_outs,
+                value_move_outs,
                 adopting,
             } => {
                 self.emit_guards(inner);
@@ -254,6 +255,18 @@ impl<'a> Emitter<'a> {
                     }
                     let source = self.place(place);
                     self.emit_move_zero_place(place, &source, &ty);
+                }
+                // A consumed value that names no place — a raw-deref take
+                // argument — is emptied through its own address only now, on
+                // the evaluated path, so a skipped guard leaves the pointee
+                // owned. A duplicable pointee copies and the emptying is a
+                // no-op.
+                for value in value_move_outs {
+                    let ty = self.resolved_value_ty(value);
+                    if !self.needs_drop(&ty) {
+                        continue;
+                    }
+                    self.emit_arm_source_moves(value, &ty);
                 }
             }
             ValueKind::Closure { captures, .. } => {
@@ -504,11 +517,10 @@ impl<'a> Emitter<'a> {
             }
         }
         let value_text = self.guarded_value(arm);
-        let storage = matches!(
-            &arm.kind,
-            ValueKind::Place(_) | ValueKind::Temp(_) | ValueKind::Materialize { .. }
-        ) || ((matches!(&arm.kind, ValueKind::Member { .. } | ValueKind::Index { .. }))
-            && arm_has_storage_root(arm));
+        // A place, temporary, materialized value, projection of storage, or
+        // raw-deref read names caller storage the chosen arm moves: the copy
+        // is emptied in the same expression, so only the destination owns it.
+        let storage = arm_has_storage_root(arm);
         if storage {
             let source = self.value(arm);
             format!(
@@ -799,6 +811,20 @@ impl<'a> Emitter<'a> {
                     return true;
                 }
             }
+            // An owning raw-deref field moves its pointee: the store must
+            // empty the storage after the copy, which the compound literal
+            // cannot express.
+            if self.needs_drop(&field_ty)
+                && matches!(
+                    value.kind,
+                    ValueKind::Unary {
+                        op: UnaryOp::Deref,
+                        ..
+                    }
+                )
+            {
+                return true;
+            }
             if let ValueKind::StructLit {
                 fields: inner_fields,
                 ..
@@ -906,6 +932,23 @@ impl<'a> Emitter<'a> {
             });
         }
         Some(parts.join(", "))
+    }
+
+    /// The move-out of a consumed non-place value as a comma operand.
+    ///
+    /// A raw-deref `take` argument transfers its pointee, so the caller's
+    /// storage is emptied through the same rendered address the read used.
+    /// The guard expression runs after the call, on the evaluated path only.
+    fn deref_move_zero_expr(&self, value: &Value, ty: &Ty) -> Option<String> {
+        let ValueKind::Unary {
+            op: UnaryOp::Deref,
+            operand,
+        } = &value.kind
+        else {
+            return None;
+        };
+        let source = format!("*({})", self.value(operand));
+        Some(self.move_zero_text_expr(&source, ty))
     }
 
     /// The plain rendering of a value and its always-evaluated operand guards.
@@ -1018,6 +1061,7 @@ impl<'a> Emitter<'a> {
                 temp,
                 value: inner,
                 move_outs,
+                value_move_outs,
                 adopting,
             } => {
                 // The carried value's type can still be opaque in a generic
@@ -1155,6 +1199,17 @@ impl<'a> Emitter<'a> {
                         continue;
                     }
                     out.push(self.move_zero_expr(place));
+                }
+                // A consumed value that names no place is emptied through its
+                // own address in the same comma sequence, after the call.
+                for value in value_move_outs {
+                    let ty = self.resolved_value_ty(value);
+                    if !self.needs_drop(&ty) {
+                        continue;
+                    }
+                    if let Some(move_out) = self.deref_move_zero_expr(value, &ty) {
+                        out.push(move_out);
+                    }
                 }
             }
             ValueKind::Closure { captures, .. } => {

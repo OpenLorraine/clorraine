@@ -296,6 +296,14 @@ pub enum ValueKind {
         /// The `take` argument places emptied after the call, on the
         /// evaluated path only.
         move_outs: Vec<Place>,
+        /// The consumed values that name no place, emptied after the call on
+        /// the evaluated path only.
+        ///
+        /// A `take` argument that reads through a raw pointer transfers its
+        /// pointee, so the caller's storage must be emptied once the callee
+        /// owns the value. The value travels here so the emptying runs where
+        /// the operand is evaluated, exactly as the pointer fill it reads does.
+        value_move_outs: Vec<Value>,
         /// True when the consumer adopts the temporary's value and the
         /// temporary is therefore non-releasing: the destination's own
         /// cleanup is the sole owner, so a re-fill does not release the

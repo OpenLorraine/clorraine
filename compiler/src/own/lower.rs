@@ -134,15 +134,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // a func-typed binding, field, or global, or a call result.
                     let move_outs =
                         self.take_move_out_places(call.modes.as_deref(), &call.args);
-                    // A pointee move-out needs a statement position after the
-                    // call, which a guarded operand does not have: the
-                    // deferred channel carries place move-outs only, so a
-                    // guarded deref take keeps its existing shape.
-                    let value_move_outs = if self.defer_move_outs == 0 {
-                        self.take_pointee_move_outs(call.modes.as_deref(), &call.args)
-                    } else {
-                        Vec::new()
-                    };
+                    // A pointee move-out is a statement after the call. An
+                    // eagerly evaluated operand empties it at once; a guarded
+                    // operand carries it on the deferred record so the
+                    // emitter empties it only on the evaluated path.
+                    let value_move_outs =
+                        self.take_pointee_move_outs(call.modes.as_deref(), &call.args);
                     let kind = ValueKind::Call {
                         callee: call.name,
                         type_args: call.type_args,
@@ -170,6 +167,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                                 temp,
                                 value: Box::new(value),
                                 move_outs,
+                                value_move_outs,
                                 adopting: false,
                             },
                         );
@@ -285,8 +283,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 self.defer_move_outs += 1;
                 let then_value = self.lower_value(then_value);
                 let then_value = self.defer_discarded_arm(then_value);
+                let then_value = self.materialize_owning_deref(then_value);
                 let else_value = self.lower_value(else_value);
                 let else_value = self.defer_discarded_arm(else_value);
+                let else_value = self.materialize_owning_deref(else_value);
                 self.defer_move_outs -= 1;
                 self.eager_conditional_arm = saved_eager_arm;
                 ValueKind::Conditional {
@@ -311,6 +311,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 let mut lowered = Vec::with_capacity(fields.len());
                 for field in fields {
                     let value = self.lower_value(&field.value);
+                    // An owning raw-deref field moves its pointee: the pointer
+                    // is pinned once here, so the field store and the source
+                    // emptying name the same address. A field inside a
+                    // conditionally evaluated operand defers the pin to the
+                    // arm's own path.
+                    let value = self.materialize_owning_deref(value);
                     // A field that projects a conditional moves the chosen
                     // member out of each arm's root, so the field owns the
                     // value and the chosen root releases only its un-moved
@@ -447,6 +453,12 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .iter()
                         .map(|element| {
                             let value = self.lower_value(element);
+                            // An owning raw-deref element moves its pointee:
+                            // the pointer is pinned once here, so the element
+                            // store and the source emptying read one address.
+                            // A conditionally evaluated element defers the pin
+                            // to the path that fills it.
+                            let value = self.materialize_owning_deref(value);
                             let value = if self.view_array_literal_depth > 0 {
                                 value
                             } else if is_view_like(&ty) {
@@ -1423,6 +1435,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: Box::new(value),
                 move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
                 adopting: false,
             },
         )
@@ -1681,6 +1694,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: Box::new(value),
                 move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
                 adopting: false,
             },
         )
@@ -1705,6 +1719,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: Box::new(value),
                 move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
                 adopting: false,
             },
         )
@@ -1842,6 +1857,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: Box::new(value),
                 move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
                 adopting: false,
             },
         )
@@ -2196,8 +2212,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: inner,
                 move_outs,
+                value_move_outs,
                 adopting: _,
-            } if self.defer_move_outs == 0 && move_outs.is_empty() => {
+            } if self.defer_move_outs == 0
+                && move_outs.is_empty()
+                && value_move_outs.is_empty() => {
                 let place = Place {
                     base: ir::PlaceBase::Temp(temp),
                     projections: Vec::new(),
@@ -2313,6 +2332,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     temp,
                     value: Box::new(index),
                     move_outs: Vec::new(),
+                    value_move_outs: Vec::new(),
                     adopting: false,
                 },
             )
@@ -2358,6 +2378,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     temp,
                     value: Box::new(value),
                     move_outs: Vec::new(),
+                    value_move_outs: Vec::new(),
                     adopting: false,
                 },
             );
@@ -2438,6 +2459,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: Box::new(value),
                 move_outs: vec![source],
+                value_move_outs: Vec::new(),
                 adopting: true,
             },
         )
@@ -2543,6 +2565,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp: carrier,
                 value: Box::new(conditional),
                 move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
                 adopting,
             },
         )
@@ -2964,6 +2987,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 temp,
                 value: inner,
                 move_outs: _,
+                value_move_outs: _,
                 adopting: _,
             } => {
                 // A view-typed temporary owns no storage and is never released,
@@ -3388,6 +3412,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     temp,
                     value: Box::new(value),
                     move_outs: Vec::new(),
+                    value_move_outs: Vec::new(),
                     adopting: false,
                 },
             );
@@ -3447,6 +3472,77 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return value;
         }
         self.materialize_value(value)
+    }
+
+    /// True when a raw-deref read of `ty` moves its pointee at some instance.
+    ///
+    /// A concrete owning type owns its storage, a type that mentions a generic
+    /// parameter may own once substituted, and an unresolved type is not known
+    /// yet, so all three positions move the pointee. A concrete duplicable
+    /// pointee copies instead and keeps its storage.
+    pub(super) fn owning_deref_read(&self, ty: &Ty) -> bool {
+        self.owns_drop(ty) || self.maybe_owns(ty) || ty.is_unknown()
+    }
+
+    /// Pins an owning raw-deref read's pointer and moves its pointee once.
+    ///
+    /// The same pointer address is read by the store and then used to empty
+    /// the pointee, so an impure pointer expression must be evaluated exactly
+    /// once: a second evaluation could select a different pointee and leave
+    /// the first one owned twice. An eagerly evaluated position pins the
+    /// pointer with a statement; a conditionally evaluated position defers the
+    /// fill to the guard, so a skipped path never runs the pointer. A value
+    /// that is not a raw-deref read, or whose pointee duplicates, is returned
+    /// unchanged: it copies and needs no move.
+    pub(super) fn materialize_owning_deref(&mut self, value: Value) -> Value {
+        if !self.owning_deref_read(&value.ty) {
+            return value;
+        }
+        let ValueKind::Unary {
+            op: UnaryOp::Deref,
+            operand,
+        } = &value.kind
+        else {
+            return value;
+        };
+        let operand = if self.defer_move_outs == 0 {
+            self.materialize_operand((**operand).clone())
+        } else {
+            self.defer_operand_fill((**operand).clone())
+        };
+        Value::new(
+            value.ty.clone(),
+            ValueKind::Unary {
+                op: UnaryOp::Deref,
+                operand: Box::new(operand),
+            },
+        )
+    }
+
+    /// Defers an operand's evaluation to the path that reaches it.
+    ///
+    /// A pure operand names a stable value, so reading it again cannot run a
+    /// side effect and no temporary is created. Every other operand fills a
+    /// temporary in the guard's expression; the construct that reads it names
+    /// the temporary. The pointer fill of a guarded raw-deref take travels
+    /// here, so the skipped path of `&&`/`||`/`?:` never evaluates the
+    /// pointer.
+    fn defer_operand_fill(&mut self, value: Value) -> Value {
+        if is_pure_value(&value) {
+            return value;
+        }
+        let ty = self.materialized_ty(&value);
+        let temp = self.new_temp(ty.clone());
+        Value::new(
+            ty,
+            ValueKind::Materialize {
+                temp,
+                value: Box::new(value),
+                move_outs: Vec::new(),
+                value_move_outs: Vec::new(),
+                adopting: false,
+            },
+        )
     }
 
     /// Binds a consumed projection's ownerless call root to an owned temporary.
@@ -4873,18 +4969,20 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     pub(super) fn materialize_owned_argument(&mut self, mut value: Value, take: bool) -> Value {
         // A raw-deref read's pointer expression is read again when the
         // pointee is emptied after the call, so an impure pointer is bound
-        // once for a `take` argument whose pointee may own.
-        if take
-            && (self.owns_drop(&value.ty)
-                || self.maybe_owns(&value.ty)
-                || value.ty.is_unknown())
-        {
+        // once for a `take` argument whose pointee may own. A guarded operand
+        // defers that bind to the evaluated path: an eager statement here
+        // would run the pointer even when `&&`/`||`/`?:` skips the call.
+        if take && self.owning_deref_read(&value.ty) {
             if let ValueKind::Unary {
                 op: UnaryOp::Deref,
                 operand,
             } = &value.kind
             {
-                let operand = self.materialize_operand((**operand).clone());
+                let operand = if self.defer_move_outs == 0 {
+                    self.materialize_operand((**operand).clone())
+                } else {
+                    self.defer_operand_fill((**operand).clone())
+                };
                 value = Value::new(
                     value.ty.clone(),
                     ValueKind::Unary {
@@ -5105,6 +5203,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     temp,
                     value: Box::new(value),
                     move_outs: Vec::new(),
+                    value_move_outs: Vec::new(),
                     adopting: false,
                 },
             );

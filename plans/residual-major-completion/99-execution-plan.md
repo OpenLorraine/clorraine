@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 42/60 tasks (70%) — Phase 6 red
+> **Progress**: 44/60 tasks (73%) — Phase 6 implemented
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -386,7 +386,7 @@ conditional positions and the guarded take's consumed source and deferred pointe
 
 ### Step 6.2: Implementation
 
-- [ ] 6.2.1 Add the shared owning-deref materializer (take-path predicate) used by the store, the
+- [x] 6.2.1 Add the shared owning-deref materializer (take-path predicate) used by the store, the ✅ (completed: 2026-10-17; the shared owning-deref materializer (`own/lower.rs:283-291/312-319/453-461/3477-3545`; `own/statements.rs:497-502/1445-1449`; `codegen/function.rs:2070-2085/3148-3162/3172-3184`; `codegen/guards.rs:523/814-825`) wired into the store, return, struct-literal field, array-literal element, and conditional arm; the eager gate and the `value_move_outs` channel (`own/lower.rs:137-142/165-175/4969-4995`; `ir.rs:299-306`; `codegen/guards.rs:111-118/256-270/934-950/1017-1024/1200-1213`); the exhaustive matches audited)
       return, the aggregate/struct-literal field, the array-literal element, and the conditional
       arm; the field source is moved (pointee zeroed); gate the take materialization on
       `defer_move_outs == 0`; add `value_move_outs: Vec<Value>` to `Materialize` (keep
@@ -397,7 +397,7 @@ conditional positions and the guarded take's consumed source and deferred pointe
       `compiler/src/codegen/cleanup.rs`; audit the exhaustive matches in
       `compiler/src/own/generics.rs`, `compiler/src/own/instance_check.rs`,
       `compiler/src/own/loops.rs`
-- [ ] 6.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 6.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-17; residue 182/182 and impl 144/144 plain and under `RDC_ASAN=1`; `make check` exit 0; the five shapes exit 12 ASan-clean; the false path has no call; the corpus byte-identical, no head-only strict failure)
 
 ### Step 6.3: Impl Tests & Review
 

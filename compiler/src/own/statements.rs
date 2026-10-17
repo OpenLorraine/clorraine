@@ -497,27 +497,9 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // An owned raw-deref read moves its pointee: the store copies the
         // value and the pointee is emptied through its own address. An impure
         // pointer expression is bound once, so the store and the emptying
-        // name the same address.
-        let lowered = if self.owns_drop(ty) {
-            if let ValueKind::Unary {
-                op: UnaryOp::Deref,
-                operand,
-            } = &lowered.kind
-            {
-                let operand = self.materialize_operand((**operand).clone());
-                Value::new(
-                    lowered.ty.clone(),
-                    ValueKind::Unary {
-                        op: UnaryOp::Deref,
-                        operand: Box::new(operand),
-                    },
-                )
-            } else {
-                lowered
-            }
-        } else {
-            lowered
-        };
+        // name the same address; a type that only owns after substitution
+        // takes the same route.
+        let lowered = self.materialize_owning_deref(lowered);
         // A registered destination temporary is adopted by moving its value
         // out: the store copies it into the destination and the move-out
         // empties the temporary, so the statement-end release this temporary
@@ -1460,6 +1442,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             // the escape rule below reports the loans.
             let lowered = self.lower_value(value);
             let lowered = self.bind_member_receiver(lowered);
+            // An owning raw-deref return moves its pointee: the pointer is
+            // pinned once, so the return read and the source emptying name
+            // the same address. A type that only owns after substitution
+            // takes the same route.
+            let lowered = self.materialize_owning_deref(lowered);
             // A returned projection of a mixed conditional moves the selected
             // member out of each arm's root, so the returned value has exactly
             // one owner and the chosen arm's remaining fields release once.

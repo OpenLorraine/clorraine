@@ -2072,7 +2072,14 @@ impl<'a> Emitter<'a> {
             let field_ty = self.substitute(&field.ty);
             if field_ty.is_fixed_array()
                 || (self.needs_drop(&field_ty)
-                    && matches!(field.kind, ValueKind::Conditional { .. }))
+                    && (matches!(field.kind, ValueKind::Conditional { .. })
+                        || matches!(
+                            field.kind,
+                            ValueKind::Unary {
+                                op: UnaryOp::Deref,
+                                ..
+                            }
+                        )))
             {
                 return true;
             }
@@ -3144,6 +3151,12 @@ pub(super) fn arm_has_storage_root(value: &Value) -> bool {
         ValueKind::Member { base, .. } | ValueKind::Index { base, .. } => {
             arm_has_storage_root(base)
         }
+        // A raw-deref read names the caller's pointee: a move copies it and
+        // empties the storage through the same pointer.
+        ValueKind::Unary {
+            op: UnaryOp::Deref,
+            ..
+        } => true,
         _ => false,
     }
 }
@@ -3163,6 +3176,10 @@ fn has_deferred_fill(value: &Value) -> bool {
         ValueKind::Index { base, index } => {
             has_deferred_fill(base) || has_deferred_fill(index)
         }
+        // A raw-deref read carries its pointer fill in the operand, so a
+        // field that stores the read must run the fill at its own turn and
+        // empty the pointee after the copy.
+        ValueKind::Unary { operand, .. } => has_deferred_fill(operand),
         ValueKind::StructLit { fields, .. } => {
             fields.iter().any(|(_, field)| has_deferred_fill(field))
         }
