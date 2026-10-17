@@ -120,8 +120,20 @@ impl<'a> Emitter<'a> {
             ValueKind::Aggregate => "0".to_owned(),
             ValueKind::Temp(id) => format!("__cl_tmp{id}"),
             // The temporary is written where the value's guards are emitted;
-            // reading it here reuses the single evaluation.
-            ValueKind::Materialize { temp, .. } => format!("__cl_tmp{temp}"),
+            // reading it here reuses the single evaluation. A named
+            // destination is read through its own place, whose scope owns the
+            // value.
+            ValueKind::Materialize {
+                temp,
+                destination,
+                ..
+            } => match (temp, destination) {
+                (_, Some(place)) => self.place(place),
+                (Some(temp), None) => format!("__cl_tmp{temp}"),
+                (None, None) => {
+                    unreachable!("a materialization names a temporary or a destination")
+                }
+            },
         }
     }
 
@@ -454,7 +466,14 @@ impl<'a> Emitter<'a> {
             // resolves it, exactly as the place resolver resolves a projected
             // place.
             ValueKind::Temp(id) => self.temp_type(*id, &ty),
-            ValueKind::Materialize { temp, .. } => self.temp_type(*temp, &ty),
+            ValueKind::Materialize {
+                destination: Some(place),
+                ..
+            } => self.substitute(&place.ty),
+            ValueKind::Materialize {
+                temp: Some(temp),
+                ..
+            } => self.temp_type(*temp, &ty),
             _ => ty,
         }
     }

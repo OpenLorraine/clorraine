@@ -110,6 +110,7 @@ impl<'a> Emitter<'a> {
             // target.
             ValueKind::Materialize {
                 temp,
+                destination,
                 value: inner,
                 move_outs,
                 value_move_outs,
@@ -124,8 +125,13 @@ impl<'a> Emitter<'a> {
                 // for example — so the fill resolves it through the value the
                 // instance substitutes, exactly as the declaration does.
                 let inner_ty = self.resolved_value_ty(inner);
+                let destination_c = self.materialize_destination(*temp, destination);
                 if !adopting {
-                    self.emit_reassigned_temp_drop(*temp, &inner_ty);
+                    self.emit_reassigned_materialize_drop(
+                        *temp,
+                        destination.as_ref(),
+                        &inner_ty,
+                    );
                 }
                 if let ValueKind::Conditional {
                     condition,
@@ -141,7 +147,7 @@ impl<'a> Emitter<'a> {
                     // each arm fills the temporary on its own path instead.
                     let ty = inner_ty.clone();
                     if ty.is_fixed_array() {
-                        let destination = ArrayTarget::object(&format!("__cl_tmp{temp}"));
+                        let destination = ArrayTarget::object(&destination_c);
                         self.emit_fixed_array_conditional_assign(
                             &destination,
                             &ty,
@@ -151,34 +157,32 @@ impl<'a> Emitter<'a> {
                             false,
                         );
                     } else if self.needs_drop(&ty) {
-                        let destination = format!("__cl_tmp{temp}");
                         self.emit_conditional_move_assign(
-                            &destination,
+                            &destination_c,
                             &ty,
                             condition,
                             then_value,
                             else_value,
                         );
                     } else {
-                        self.push(&format!("    __cl_tmp{temp} = {};", self.value(inner)));
+                        self.push(&format!("    {destination_c} = {};", self.value(inner)));
                     }
                 } else if let ValueKind::ArrayLit { elements, fill } = &inner.kind {
                     if inner_ty.is_fixed_array() {
                         // A brace list has no C place, so a deferred array
                         // literal is stored element by element into the
                         // temporary, on the path that evaluates the operand.
-                        let destination = format!("__cl_tmp{temp}");
                         self.emit_array_assign_to(
-                            &super::function::ArrayTarget::object(&destination),
+                            &super::function::ArrayTarget::object(&destination_c),
                             &inner_ty,
                             elements,
                             fill,
                         );
                     } else {
-                        self.push(&format!("    __cl_tmp{temp} = {};", self.value(inner)));
+                        self.push(&format!("    {destination_c} = {};", self.value(inner)));
                     }
                 } else {
-                    let destination = format!("__cl_tmp{temp}");
+                    let destination = destination_c.clone();
                     // A literal whose fixed-array or view-array field has no C
                     // initializer form stores its fields through the same core
                     // the direct spelling uses, on the path that evaluates the
@@ -300,15 +304,16 @@ impl<'a> Emitter<'a> {
         match &value.kind {
             ValueKind::Materialize {
                 temp,
+                destination,
                 value: inner,
                 adopting,
                 ..
             } => {
                 let inner_ty = self.substitute(&inner.ty);
-                let destination = format!("__cl_tmp{temp}");
+                let destination_c = self.materialize_destination(*temp, destination);
                 if !*adopting
                     && self.needs_drop(&inner_ty)
-                    && self.drop_expr_text(&destination, &inner_ty).is_none()
+                    && self.drop_expr_text(&destination_c, &inner_ty).is_none()
                 {
                     // A guard temporary is re-filled on each evaluation, so
                     // its previous value must be released before the fill
@@ -316,7 +321,11 @@ impl<'a> Emitter<'a> {
                     // value, so the consumer's own cleanup is the sole owner:
                     // releasing the carrier here would free the consumer's
                     // storage again when the guarded statement re-executes.
-                    self.emit_reassigned_temp_drop(*temp, &inner.ty);
+                    self.emit_reassigned_materialize_drop(
+                        *temp,
+                        destination.as_ref(),
+                        &inner.ty,
+                    );
                 }
                 self.emit_conditional_drop_hoists(inner);
             }
@@ -404,6 +413,51 @@ impl<'a> Emitter<'a> {
             ty,
         };
         self.emit_drop(&place);
+    }
+
+    /// Releases a materialization's previous value before it is re-filled.
+    ///
+    /// A named destination's binding outlives the statement, so a re-fill must
+    /// release the previous value exactly as the temporary form does. The drop
+    /// is null-safe, so the first fill releases nothing.
+    fn emit_reassigned_materialize_drop(
+        &mut self,
+        temp: Option<crate::ir::TempId>,
+        destination: Option<&crate::ir::Place>,
+        ty: &Ty,
+    ) {
+        let ty = self.substitute(ty);
+        if !self.needs_drop(&ty) {
+            return;
+        }
+        match destination {
+            Some(place) => {
+                let text = self.place(place);
+                self.emit_drop_expr(&text, &ty);
+            }
+            None => {
+                let temp = temp.expect("a materialization names a temporary or a destination");
+                self.emit_reassigned_temp_drop(temp, &ty);
+            }
+        }
+    }
+
+    /// The C lvalue a materialization fills.
+    ///
+    /// A named destination is filled through its own place, whose scope owns
+    /// the value; every other materialization fills its compiler temporary.
+    fn materialize_destination(
+        &self,
+        temp: Option<crate::ir::TempId>,
+        destination: &Option<crate::ir::Place>,
+    ) -> String {
+        match (temp, destination) {
+            (_, Some(place)) => self.place(place),
+            (Some(temp), None) => format!("__cl_tmp{temp}"),
+            (None, None) => {
+                unreachable!("a materialization names a temporary or a destination")
+            }
+        }
     }
 
     /// Renders a value whose evaluation is conditional, with its guards
@@ -796,18 +850,7 @@ impl<'a> Emitter<'a> {
                 field_ty
             };
             if field_ty.is_fixed_array() {
-                let element = field_ty.iterated_element();
-                if matches!(
-                    element.kind,
-                    TyKind::Struct(..) | TyKind::Str | TyKind::StaticStr
-                ) {
-                    return true;
-                }
-                // A fixed-array field whose value is not itself a brace list
-                // has no C initializer form: a conditional, a call that writes
-                // through the hidden destination, and a projection of storage
-                // with no C lvalue all need the store.
-                if !matches!(value.kind, ValueKind::ArrayLit { .. }) {
+                if self.fixed_array_value_needs_guard_stores(value, &field_ty) {
                     return true;
                 }
             }
@@ -836,6 +879,37 @@ impl<'a> Emitter<'a> {
             }
             false
         })
+    }
+
+    /// True when a fixed-array field's value has no C initializer form here.
+    ///
+    /// A field whose element is an aggregate takes the per-field form, because
+    /// the strict build rejects the brace elision a compound literal would
+    /// apply. A field that is not a brace list is forced too: a conditional or
+    /// a call writing through the hidden destination has no array value. A
+    /// nested row must itself be a brace list, so a call or a conditional at
+    /// any depth forces the store form.
+    fn fixed_array_value_needs_guard_stores(&self, value: &Value, ty: &Ty) -> bool {
+        let element = ty.iterated_element();
+        if matches!(
+            element.kind,
+            TyKind::Struct(..) | TyKind::Str | TyKind::StaticStr
+        ) {
+            return true;
+        }
+        let ValueKind::ArrayLit { elements, fill } = &value.kind else {
+            return true;
+        };
+        if !element.is_fixed_array() {
+            return false;
+        }
+        let needs = |inner: &Value| {
+            if !matches!(inner.kind, ValueKind::ArrayLit { .. }) {
+                return true;
+            }
+            self.fixed_array_value_needs_guard_stores(inner, &element)
+        };
+        elements.iter().any(needs) || fill.as_deref().is_some_and(needs)
     }
 
     /// Renders a struct literal as field-by-field stores inside a guard.
@@ -1059,6 +1133,7 @@ impl<'a> Emitter<'a> {
             // ahead of the guarded value, so no result expression is needed.
             ValueKind::Materialize {
                 temp,
+                destination: destination_place,
                 value: inner,
                 move_outs,
                 value_move_outs,
@@ -1069,7 +1144,7 @@ impl<'a> Emitter<'a> {
                 // so the expression fill resolves it through the value the
                 // instance substitutes, exactly as the declaration does.
                 let inner_ty = self.resolved_value_ty(inner);
-                let destination = format!("__cl_tmp{temp}");
+                let destination = self.materialize_destination(*temp, destination_place);
                 let owned_conditional = self.needs_drop(&inner_ty)
                     && !inner_ty.is_fixed_array()
                     && matches!(inner.kind, ValueKind::Conditional { .. });
@@ -1170,7 +1245,7 @@ impl<'a> Emitter<'a> {
                             {
                                 self.array_assign_expr(&destination, &inner_ty, elements, fill)
                                     .unwrap_or_else(|| {
-                                        format!("(__cl_tmp{temp} = {})", self.value(inner))
+                                        format!("({destination} = {})", self.value(inner))
                                     })
                             }
                             // A fixed-array value with no simpler expression
@@ -1182,9 +1257,9 @@ impl<'a> Emitter<'a> {
                             _ if inner_ty.is_fixed_array() => self
                                 .array_row_expr(&destination, &inner_ty, inner)
                                 .unwrap_or_else(|| {
-                                    format!("(__cl_tmp{temp} = {})", self.value(inner))
+                                    format!("({destination} = {})", self.value(inner))
                                 }),
-                            _ => format!("(__cl_tmp{temp} = {})", self.value(inner)),
+                            _ => format!("({destination} = {})", self.value(inner)),
                         },
                     };
                     out.push(stored);

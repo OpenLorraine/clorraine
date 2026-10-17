@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 50/60 tasks (83%) — Phase 7 red
+> **Progress**: 52/60 tasks (87%) — Phase 7 implemented
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -447,13 +447,13 @@ included) and the owning nested conditional's deferred carrier/fill.
 
 ### Step 7.2: Implementation
 
-- [ ] 7.2.1 Route a call-valued view-array element to the binding store at every literal position
+- [x] 7.2.1 Route a call-valued view-array element to the binding store at every literal position ✅ (completed: 2026-10-17; the hidden destination at every literal position (`own/lower.rs:3499/4746-4791/4817-4847`, `codegen/guards.rs:892`, `codegen/expr.rs:126/469`, `ir.rs:291-303`) and the deferred by-value carrier with a named destination (`own/lower.rs:5396`, `codegen/guards.rs:423/449/111/1133/304`, `ir.rs:291-303` `temp`/`destination`, `own/call.rs:857`, `own/expr.rs:2741`, `codegen/function.rs:366`); one impl pin re-pinned for the intended carrier-fill delta (AR-35))
       (consult `struct_literal_needs_stores` at the **unguarded codegen value/read** call site,
       including the projection-base position) and defer the by-value argument carrier
       under `defer_move_outs` into the `Materialize` channel; keep the fill in the guard's
       evaluated path — `compiler/src/own/lower.rs`, `compiler/src/codegen/function.rs`,
       `compiler/src/codegen/guards.rs`, `compiler/src/ir.rs` (the `Materialize` value)
-- [ ] 7.2.2 Run the suite to green; on any failure STOP and fix the implementation
+- [x] 7.2.2 Run the suite to green; on any failure STOP and fix the implementation ✅ (completed: 2026-10-17; residue 185/185 and impl 155/155 plain and under `RDC_ASAN=1`; `make check` exit 0; the counters 1/2/2/4 and 2/4; the strict, hosted-amiga, and freestanding legs; the skip composites clean; the differential intended deltas only, no head-only strict failure)
 
 ### Step 7.3: Impl Tests & Review
 

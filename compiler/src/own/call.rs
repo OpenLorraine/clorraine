@@ -857,7 +857,15 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             }
             match &arg.kind {
                 ValueKind::Place(place) => places.push(place.clone()),
-                ValueKind::Temp(temp) | ValueKind::Materialize { temp, .. } => {
+                ValueKind::Materialize {
+                    destination: Some(place),
+                    ..
+                } => places.push(place.clone()),
+                ValueKind::Temp(temp)
+                | ValueKind::Materialize {
+                    temp: Some(temp),
+                    ..
+                } => {
                     places.push(Place {
                         base: ir::PlaceBase::Temp(*temp),
                         projections: Vec::new(),

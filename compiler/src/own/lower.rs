@@ -57,8 +57,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         }
                     }
                 }
+                let base = self.lower_value(base);
+                let base = self.materialize_literal_read_base(base);
                 ValueKind::Member {
-                    base: Box::new(self.lower_value(base)),
+                    base: Box::new(base),
                     name: name.clone(),
                 }
             }
@@ -71,6 +73,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // read path, and that store moves the chosen owned arm.
                 self.mark_read_conditional_move(base);
                 let base = self.lower_value(base);
+                let base = self.materialize_literal_read_base(base);
                 let index = self.lower_value(index);
                 let base = self.materialize_guard_operand(base);
                 let base = self.materialize_read_place(base);
@@ -164,7 +167,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         return Value::new(
                             ty,
                             ValueKind::Materialize {
-                                temp,
+                                temp: Some(temp),
+                                destination: None,
                                 value: Box::new(value),
                                 move_outs,
                                 value_move_outs,
@@ -1431,7 +1435,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(
             ty,
             ValueKind::Materialize {
-                temp,
+                temp: Some(temp),
+                destination: None,
                 value: Box::new(value),
                 move_outs: Vec::new(),
                 value_move_outs: Vec::new(),
@@ -1455,11 +1460,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // that single owner. The temporary may have been prepared for the
         // literal store the discard never performs, so a missing release is
         // registered here: the statement then frees the storage exactly once.
-        if let ValueKind::Materialize { temp, .. } | ValueKind::Temp(temp) = &field.kind {
-            if !self.has_pending_release(*temp, &field.ty) {
-                self.register_pending_release(*temp, &field.ty);
+        match &field.kind {
+            ValueKind::Materialize {
+                destination: Some(_), ..
+            } => return field,
+            ValueKind::Materialize {
+                temp: Some(temp),
+                ..
             }
-            return field;
+            | ValueKind::Temp(temp) => {
+                if !self.has_pending_release(*temp, &field.ty) {
+                    self.register_pending_release(*temp, &field.ty);
+                }
+                return field;
+            }
+            _ => {}
         }
         // A view position that projects fresh storage binds its root through
         // the statement's deferred fill, so the root's remaining fields release
@@ -1690,7 +1705,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(
             ty,
             ValueKind::Materialize {
-                temp,
+                temp: Some(temp),
+                destination: None,
                 value: Box::new(value),
                 move_outs: Vec::new(),
                 value_move_outs: Vec::new(),
@@ -1715,7 +1731,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(
             ty,
             ValueKind::Materialize {
-                temp,
+                temp: Some(temp),
+                destination: None,
                 value: Box::new(value),
                 move_outs: Vec::new(),
                 value_move_outs: Vec::new(),
@@ -1853,7 +1870,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(
             ty,
             ValueKind::Materialize {
-                temp,
+                temp: Some(temp),
+                destination: None,
                 value: Box::new(value),
                 move_outs: Vec::new(),
                 value_move_outs: Vec::new(),
@@ -2208,7 +2226,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 )
             }
             ValueKind::Materialize {
-                temp,
+                temp: Some(temp),
+                destination: None,
                 value: inner,
                 move_outs,
                 value_move_outs,
@@ -2328,7 +2347,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             Value::new(
                 ty,
                 ValueKind::Materialize {
-                    temp,
+                    temp: Some(temp),
+                    destination: None,
                     value: Box::new(index),
                     move_outs: Vec::new(),
                     value_move_outs: Vec::new(),
@@ -2374,7 +2394,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return Value::new(
                 ty,
                 ValueKind::Materialize {
-                    temp,
+                    temp: Some(temp),
+                    destination: None,
                     value: Box::new(value),
                     move_outs: Vec::new(),
                     value_move_outs: Vec::new(),
@@ -2455,7 +2476,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(
             ty,
             ValueKind::Materialize {
-                temp,
+                temp: Some(temp),
+                destination: None,
                 value: Box::new(value),
                 move_outs: vec![source],
                 value_move_outs: Vec::new(),
@@ -2561,7 +2583,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(
             result_ty,
             ValueKind::Materialize {
-                temp: carrier,
+                temp: Some(carrier),
+                destination: None,
                 value: Box::new(conditional),
                 move_outs: Vec::new(),
                 value_move_outs: Vec::new(),
@@ -2751,6 +2774,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         let kind = value.kind;
         let ValueKind::Materialize {
             temp,
+            destination,
             value: inner,
             move_outs,
             ..
@@ -2774,10 +2798,21 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         };
         let inner = self.settle_projection_base(*inner);
         let ty = inner.ty.clone();
-        let place = Place {
-            base: ir::PlaceBase::Temp(temp),
-            projections: Vec::new(),
-            ty: ty.clone(),
+        let (place, result) = match destination {
+            Some(place) => {
+                let result = Value::new(place.ty.clone(), ValueKind::Place(place.clone()));
+                (place, result)
+            }
+            None => {
+                let temp =
+                    temp.expect("a materialization names a temporary or a destination");
+                let place = Place {
+                    base: ir::PlaceBase::Temp(temp),
+                    projections: Vec::new(),
+                    ty: ty.clone(),
+                };
+                (place.clone(), Value::new(ty, ValueKind::Temp(temp)))
+            }
         };
         self.emit(Statement::Assign {
             target: place,
@@ -2786,7 +2821,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         for source in move_outs {
             self.emit(Statement::MoveOut { place: source });
         }
-        Value::new(ty, ValueKind::Temp(temp))
+        result
     }
 
     /// The place a value reads, when it is a field reached through a place.
@@ -2805,7 +2840,14 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 projections: Vec::new(),
                 ty: value.ty.clone(),
             }),
-            ValueKind::Materialize { temp, .. } => Some(Place {
+            ValueKind::Materialize {
+                destination: Some(place),
+                ..
+            } => Some(place.clone()),
+            ValueKind::Materialize {
+                temp: Some(temp),
+                ..
+            } => Some(Place {
                 base: ir::PlaceBase::Temp(*temp),
                 projections: Vec::new(),
                 ty: value.ty.clone(),
@@ -2831,7 +2873,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                     // A materialized run-time index survives on the place, so a
                     // move-out through it empties the slot the read selected.
                     ValueKind::Temp(id) => ir::Projection::ElementTemp(*id),
-                    ValueKind::Materialize { temp, .. } => ir::Projection::ElementTemp(*temp),
+                    ValueKind::Materialize {
+                        temp: Some(temp),
+                        ..
+                    } => ir::Projection::ElementTemp(*temp),
                     _ => ir::Projection::Element(None),
                 };
                 place.projections.push(projection);
@@ -2955,9 +3000,18 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// already reports.
     pub(super) fn lowered_view_provenance(&self, value: &Value) -> Provenance {
         match &value.kind {
-            ValueKind::Materialize { temp, .. } | ValueKind::Temp(temp) => {
-                Provenance::Temp(*temp)
+            // A named destination is a generated binding whose own scope owns
+            // the value; a view never projects out of a carrier, so the view
+            // provenance of this form names no temporary.
+            ValueKind::Materialize {
+                destination: Some(_),
+                ..
+            } => Provenance::None,
+            ValueKind::Materialize {
+                temp: Some(temp),
+                ..
             }
+            | ValueKind::Temp(temp) => Provenance::Temp(*temp),
             ValueKind::Index { base, .. } | ValueKind::Member { base, .. } => {
                 self.lowered_view_provenance(base)
             }
@@ -2984,6 +3038,7 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         match &value.kind {
             ValueKind::Materialize {
                 temp,
+                destination,
                 value: inner,
                 move_outs: _,
                 value_move_outs: _,
@@ -2993,11 +3048,17 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 // so only an owning temporary is a loan owner; a type that may
                 // own once substituted is one too, because an owning instance
                 // releases the temporary and every view derived from it must
-                // not outlive that release. The wrapped value may itself read
+                // not outlive that release. A named destination is owned by
+                // its binding, whose own scope carries the loan, so it names
+                // no temporary owner. The wrapped value may itself read
                 // through a temporary (a slice of an element of a call result),
                 // so the walk continues into it.
-                if self.owns_drop(&value.ty) || self.maybe_owns(&value.ty) {
-                    owners.insert(*temp);
+                if destination.is_none()
+                    && (self.owns_drop(&value.ty) || self.maybe_owns(&value.ty))
+                {
+                    if let Some(temp) = temp {
+                        owners.insert(*temp);
+                    }
                 }
                 self.collect_lowered_temp_owners(inner, owners);
             }
@@ -3408,7 +3469,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return Value::new(
                 ty,
                 ValueKind::Materialize {
-                    temp,
+                    temp: Some(temp),
+                    destination: None,
                     value: Box::new(value),
                     move_outs: Vec::new(),
                     value_move_outs: Vec::new(),
@@ -3421,6 +3483,29 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         // its guarded store drops the previous value before a re-store and its
         // release runs after the enclosing loop.
         self.materialize_owned_calls(&mut value);
+        self.materialize_value_type(value, ty)
+    }
+
+    /// Binds a literal that only a store form can build before its projection.
+    ///
+    /// A projection reads a literal's field directly (`Inner { row: n1() }.row`)
+    /// without storing the literal anywhere, and a C compound literal cannot
+    /// name a fixed-array field that a call writes through the hidden
+    /// destination or that a conditional fills per arm. The literal is
+    /// therefore stored into a fresh temporary first and the projection reads
+    /// that temporary. Under a conditionally evaluated operand the fill is
+    /// deferred to the path that evaluates the operand, so a skipped guard
+    /// never runs the field's call.
+    fn materialize_literal_read_base(&mut self, value: Value) -> Value {
+        if !matches!(value.kind, ValueKind::StructLit { .. })
+            || !self.literal_read_needs_stores(&value)
+        {
+            return value;
+        }
+        if self.defer_move_outs > 0 {
+            return self.materialize_guard_literal(value);
+        }
+        let ty = value.ty.clone();
         self.materialize_value_type(value, ty)
     }
 
@@ -3560,7 +3645,8 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         Value::new(
             ty,
             ValueKind::Materialize {
-                temp,
+                temp: Some(temp),
+                destination: None,
                 value: Box::new(value),
                 move_outs: Vec::new(),
                 value_move_outs: Vec::new(),
@@ -4650,6 +4736,57 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         }
     }
 
+    /// True when a literal read through a projection has no C initializer form.
+    ///
+    /// A fixed-array field must be a brace list, and a nested row must be one
+    /// too: a call writes through its hidden fixed-array destination, and a
+    /// conditional or a projection has no array value. A view-array field
+    /// whose elements only need the binding store is left to the eager view
+    /// machinery, so its existing adoption is unchanged.
+    fn literal_read_needs_stores(&self, value: &Value) -> bool {
+        let ValueKind::StructLit { fields, .. } = &value.kind else {
+            return false;
+        };
+        fields
+            .iter()
+            .any(|(_, field)| self.literal_field_read_needs_stores(field))
+    }
+
+    /// True when one field of a read literal has no C initializer form.
+    fn literal_field_read_needs_stores(&self, field: &Value) -> bool {
+        if field.ty.is_fixed_array() {
+            let ValueKind::ArrayLit { elements, fill } = &field.kind else {
+                return true;
+            };
+            let element_ty = field.ty.iterated_element();
+            let needs = |inner: &Value| {
+                self.array_element_read_needs_stores(inner, &element_ty)
+            };
+            return elements.iter().any(needs) || fill.as_deref().is_some_and(needs);
+        }
+        self.literal_read_needs_stores(field)
+    }
+
+    /// True when one array element has no C initializer form.
+    fn array_element_read_needs_stores(&self, element: &Value, element_ty: &Ty) -> bool {
+        if element_ty.is_fixed_array() {
+            return !matches!(element.kind, ValueKind::ArrayLit { .. })
+                || self.array_literal_read_needs_stores(element);
+        }
+        self.literal_read_needs_stores(element)
+    }
+
+    /// True when a nested array literal has a row no brace list can spell.
+    fn array_literal_read_needs_stores(&self, value: &Value) -> bool {
+        let ValueKind::ArrayLit { elements, fill } = &value.kind else {
+            return false;
+        };
+        let element_ty = value.ty.iterated_element();
+        let needs =
+            |inner: &Value| self.array_element_read_needs_stores(inner, &element_ty);
+        elements.iter().any(needs) || fill.as_deref().is_some_and(needs)
+    }
+
     /// True when a literal holds a field only a store can fill.
     ///
     /// A fixed array has no C initializer form unless the field is itself a
@@ -4665,19 +4802,42 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             ValueKind::StructLit { fields, .. } => fields
                 .iter()
                 .any(|(_, field)| self.literal_field_needs_stores(field)),
-            ValueKind::ArrayLit { elements, fill } => {
-                let element = value.ty.iterated_element();
-                let needs = |inner: &Value| {
-                    if is_view_like(&element) {
-                        self.view_element_needs_binding(inner)
-                    } else {
-                        self.literal_fields_need_stores(inner)
-                    }
-                };
-                elements.iter().any(needs) || fill.as_deref().is_some_and(needs)
-            }
+            ValueKind::ArrayLit { .. } => self.array_literal_needs_stores(value),
             _ => false,
         }
+    }
+
+    /// True when an array literal has an element no C brace list can spell.
+    ///
+    /// The element position decides the form: a row of a nested array must
+    /// itself be a brace list, because C has no array value to place in an
+    /// initializer, while a view element widens through the element store and
+    /// a scalar or struct element keeps its brace-list form. A fill covers
+    /// every remaining element, so it is judged at its own position too.
+    fn array_literal_needs_stores(&self, value: &Value) -> bool {
+        let ValueKind::ArrayLit { elements, fill } = &value.kind else {
+            return false;
+        };
+        let element_ty = value.ty.iterated_element();
+        let needs = |inner: &Value| self.array_element_needs_stores(inner, &element_ty);
+        elements.iter().any(needs) || fill.as_deref().is_some_and(needs)
+    }
+
+    /// True when one array element has no C initializer form.
+    ///
+    /// A nested row is valid only as a brace list: a call writes through its
+    /// hidden fixed-array destination, and a conditional or a projection has
+    /// no array value. A view element takes the existing binding rule, and
+    /// every other element keeps the literal's own per-field judgment.
+    fn array_element_needs_stores(&self, element: &Value, element_ty: &Ty) -> bool {
+        if element_ty.is_fixed_array() {
+            return !matches!(element.kind, ValueKind::ArrayLit { .. })
+                || self.array_literal_needs_stores(element);
+        }
+        if is_view_like(element_ty) {
+            return self.view_element_needs_binding(element);
+        }
+        self.literal_fields_need_stores(element)
     }
 
     /// True when one literal field only a store can fill.
@@ -4689,21 +4849,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// route, because the view binder owns its element roots.
     fn literal_field_needs_stores(&self, field: &Value) -> bool {
         if field.ty.is_fixed_array() {
-            if is_view_like(&field.ty.iterated_element()) {
-                let ValueKind::ArrayLit { elements, fill } = &field.kind else {
-                    // A fixed-array value that is not a brace list — a call
-                    // that writes through the hidden destination, for example
-                    // — always needs the store.
-                    return true;
-                };
-                let needs = |inner: &Value| self.view_element_needs_binding(inner);
-                return elements.iter().any(needs) || fill.as_deref().is_some_and(needs);
-            }
-            let ValueKind::ArrayLit { elements, fill } = &field.kind else {
+            // A fixed-array value that is not a brace list — a call that
+            // writes through the hidden destination, for example — always
+            // needs the store.
+            if !matches!(field.kind, ValueKind::ArrayLit { .. }) {
                 return true;
-            };
-            let needs = |inner: &Value| self.literal_fields_need_stores(inner);
-            return elements.iter().any(needs) || fill.as_deref().is_some_and(needs);
+            }
+            return self.array_literal_needs_stores(field);
         }
         self.literal_fields_need_stores(field)
     }
@@ -5224,7 +5376,43 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
             return Value::new(
                 ty,
                 ValueKind::Materialize {
-                    temp,
+                    temp: Some(temp),
+                    destination: None,
+                    value: Box::new(value),
+                    move_outs: Vec::new(),
+                    value_move_outs: Vec::new(),
+                    adopting: false,
+                },
+            );
+        }
+        // An argument inside a conditionally evaluated operand fills its
+        // carrier only on the path that evaluates the call: an eager binding
+        // statement here would run the argument's calls even when `&&`/`||`
+        // short-circuits. The carrier stays the named binding a re-executed
+        // guard re-fills — its scope releases the last value and each
+        // evaluated fill releases the previous one — while the fill itself
+        // travels on the deferred materialization the guard emitter runs where
+        // the operand stands.
+        if self.defer_move_outs > 0 {
+            let ty = self.materialized_ty(&value);
+            let name = format!("__cl_owned{}", self.next_owned_temp);
+            self.next_owned_temp += 1;
+            let id = self.declare_generated_local(&name, ty.clone(), self.current_span);
+            self.move_binding_to_body_scope(id);
+            self.set_place(
+                id,
+                PlaceState {
+                    initialized: true,
+                    ..PlaceState::default()
+                },
+            );
+            self.bindings[id].used = true;
+            let place = self.binding_place(id);
+            return Value::new(
+                ty,
+                ValueKind::Materialize {
+                    temp: None,
+                    destination: Some(place),
                     value: Box::new(value),
                     move_outs: Vec::new(),
                     value_move_outs: Vec::new(),

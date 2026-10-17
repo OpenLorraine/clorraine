@@ -366,7 +366,8 @@ impl<'a> Emitter<'a> {
     /// conditional, for example.
     fn collect_materialized_temps(&mut self, value: &Value) {
         if let ValueKind::Materialize {
-            temp,
+            temp: Some(temp),
+            destination: None,
             value: inner,
             ..
         } = &value.kind

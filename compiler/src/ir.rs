@@ -289,8 +289,18 @@ pub enum ValueKind {
     /// the program never takes. The move-out places travel here instead, and
     /// the guard emitter empties them on the evaluated path, after the call.
     Materialize {
-        /// The compiler temporary that receives the value.
-        temp: TempId,
+        /// The compiler temporary that receives the value, or `None` when a
+        /// named destination receives it.
+        temp: Option<TempId>,
+        /// A named destination that keeps its own cleanup instead of the
+        /// temporary.
+        ///
+        /// A carrier that must survive its statement — a by-value argument
+        /// binding a loop re-fills — fills a named binding: the binding's own
+        /// scope releases the last value, and each guarded re-fill releases
+        /// the previous one on the evaluated path. When set, the temporary is
+        /// unused and the fill targets this place.
+        destination: Option<Place>,
         /// The value assigned to the temporary.
         value: Box<Value>,
         /// The `take` argument places emptied after the call, on the

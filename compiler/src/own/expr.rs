@@ -2741,7 +2741,11 @@ fn store_target_place_parts(value: &Value) -> Option<Place> {
             let projection = match &index.kind {
                 ValueKind::Int(value) => ir::Projection::Element(usize::try_from(*value).ok()),
                 ValueKind::Temp(temp) => ir::Projection::ElementTemp(*temp),
-                ValueKind::Materialize { temp, .. } => ir::Projection::ElementTemp(*temp),
+                ValueKind::Materialize {
+                    destination: None,
+                    temp: Some(temp),
+                    ..
+                } => ir::Projection::ElementTemp(*temp),
                 _ => return None,
             };
             place.projections.push(projection);

@@ -1305,14 +1305,20 @@ fn should_fill_the_deferred_conditional_carriers() {
         &emitted,
         "cl_spec_cpr_armelemcond_use(bool c, ClBox a, bool g)\n{",
     );
-    assert_contains(tag, body, "__cl_tmp1 = a.v;");
-    assert_follows(
+    // The array argument's carrier fills only in the arm that evaluates the
+    // call: the move of `a.v` and the element stores run inside the `?:`
+    // expression, after the condition, so a skipped arm moves nothing.
+    assert_on_line_of(tag, body, "__cl_ret = (g ?", "(__cl_tmp1 = a.v, (a.v = NULL))");
+    // The fresh arm builds its root in place: the call fills the temporary
+    // and the selected member moves out of it in the same arm expression.
+    assert_contains(tag, body, "__cl_tmp0 = cl_spec_cpr_armelemcond_mkBox()");
+    assert_contains(tag, body, "__cl_tmp1 = (((__cl_tmp0.v");
+    assert_on_line_of(
         tag,
         body,
-        "__cl_tmp0 = cl_spec_cpr_armelemcond_mkBox();",
-        "__cl_tmp1 = __cl_tmp0.v;",
+        "__cl_owned0[0] = __cl_tmp1",
+        "(__cl_tmp1 = NULL)",
     );
-    assert_follows(tag, body, "__cl_owned0[0] = __cl_tmp1;", "__cl_tmp1 = NULL;");
 }
 
 /// An indexed conditional field of a duplicable value.
