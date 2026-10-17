@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 8/60 tasks (13%) — Phase 1 complete
+> **Progress**: 10/60 tasks (17%) — Phase 2 red
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -136,11 +136,11 @@ ST-5..ST-8 · AR-10, AR-11, AR-12
 **Objective**: Pin the conditional's per-instance and four direct-context judgments, the nested
 element key, and the substituted element member widening.
 
-- [ ] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
+- [x] 2.1.1 [spec-author] Write the phase cases — `compiler/tests/checker_conformance_spec_test.rs`
       (opaqueconditional, nullconditionalarm, nestedelementkey, elementmemberview) with their
-      controls; the red cases committed first
-- [ ] 2.1.2 Run the suite and record the red phase (the identical-arm, non-null-sibling, direct
-      context controls, `v.len`, and concrete twin verified green first; AR-5)
+      controls; the red cases committed first ✅ (completed: 2026-10-17; four spec cases added: the opaque conditional at its instance with the four direct contexts and the controls, the nested element key with the `id(v.len)` control and the hosted-amiga emission, the substituted element member widening with the concrete twin, and the legal-nullable direct control; a marked freestanding placeholder defers to the impl pins)
+- [x] 2.1.2 Run the suite and record the red phase (the identical-arm, non-null-sibling, direct
+      context controls, `v.len`, and concrete twin verified green first; AR-5) ✅ (completed: 2026-10-17; the red phase recorded: checker 172 passed / 3 failed (the opaque conditional, the nested key, the member widening); the controls (the concrete twin, `id(v.len)`, the concrete widening, the legal nullable) green at head)
 
 ### Step 2.2: Implementation
 

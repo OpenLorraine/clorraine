@@ -8517,3 +8517,371 @@ func main(): i32 {
         &["main.clo:10:30"],
     );
 }
+
+// ===== Substitution edges: conditionals, nested element keys, and element members =====
+
+/// A conditional with opaque arms is judged with its instance's arm types.
+///
+/// The generic body's arms name type parameters, so the declaration alone
+/// cannot decide whether they agree. At each instantiation the substituted arm
+/// types decide: disagreement reports the conversion on the else arm, and a
+/// null arm at a non-nullable substituted context reports the null rule at the
+/// `null`. The direct conditional takes the destination's expected type in the
+/// let, return, struct-field, and call-argument positions, so the same null
+/// arm reports in each of them. The concrete disagreeing call is the already
+/// correct twin of the first shape; the agreeing and non-null controls are
+/// pinned separately.
+///
+/// At the base implementation the opaque and direct shapes are accepted and
+/// the emitted C fails the strict build (a conditional type mismatch, or a
+/// `void *` where an integer is declared).
+#[test]
+fn should_judge_an_opaque_conditional_at_its_instance() {
+    // The concrete twin reports the disagreement at its else arm.
+    let concrete = r#"module spec.cc.condconcrete;
+
+func f(v: i32): i32 { return v; }
+
+func main(): i32 {
+    let c: bool = true;
+    return f(c ? 5 : "x");
+}
+"#;
+    assert_rejected_once(
+        "condconcrete",
+        concrete,
+        "E10200",
+        &[
+            "cannot convert 'static str' to 'i32' implicitly",
+            "main.clo:7:22",
+        ],
+        &["E10012"],
+    );
+
+    // The opaque arms disagree once the instance substitutes `i32` and `str`.
+    let opaque = r#"module spec.cc.condopaque;
+
+func id<T>(x: T): T { return x; }
+
+func choose<T, U>(c: bool, a: T, b: U): i32 {
+    return i32(id(c ? a : b));
+}
+
+func main(): i32 {
+    return choose<i32, str>(true, 3, "x") - 3;
+}
+"#;
+    assert_rejected_once(
+        "condopaque",
+        opaque,
+        "E10200",
+        &[
+            "cannot convert 'str' to 'i32' implicitly",
+            "main.clo:4:27",
+        ],
+        &["E10012"],
+    );
+
+    // The null arm at the substituted, non-nullable `i32` context reports at
+    // the `null`.
+    let null_arm = r#"module spec.cc.condnullarm;
+
+func id<T>(x: T): T { return x; }
+
+func pick(c: bool, x: i32): i32 {
+    return i32(id(c ? x : null));
+}
+
+func main(): i32 { return pick(true, 5) - 5; }
+"#;
+    assert_rejected_once(
+        "condnullarm",
+        null_arm,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:4:27"],
+        &["E10200"],
+    );
+
+    // A direct let's destination reaches the conditional's null arm.
+    let direct = r#"module spec.cc.conddirect;
+
+func pick(c: bool, x: i32): i32 {
+    let y: i32 = c ? x : null;
+    return y;
+}
+
+func main(): i32 {
+    return pick(true, 5) - 5;
+}
+"#;
+    assert_rejected_once(
+        "conddirect",
+        direct,
+        "E10012",
+        &["'null' is not allowed here", "main.clo:4:26"],
+        &["E10200"],
+    );
+
+    // The four direct contexts each report once at their own `null`.
+    let contexts = r#"module spec.cc.condctx;
+
+struct S { v: i32; }
+
+func ret(c: bool, x: i32): i32 {
+    return c ? x : null;
+}
+
+func arg(v: i32): i32 { return v; }
+
+func main(): i32 {
+    let c: bool = true;
+    let x: i32 = 5;
+    let a: i32 = c ? x : null;
+    let s: S = S { v: c ? x : null };
+    let b: i32 = arg(c ? x : null);
+    return a + s.v + b + ret(c, x) - 20;
+}
+"#;
+    let (_scratch, output, c_path) = compile_only("condctx", contexts);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "condctx: the front end accepted direct conditionals with a null arm at \
+         four non-nullable destinations"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        stderr.matches("error E10012:").count(),
+        4,
+        "condctx: each direct context reports once; stderr:\n{stderr}"
+    );
+    assert_eq!(
+        stderr.matches("'null' is not allowed here").count(),
+        4,
+        "condctx: each report names the null rule; stderr:\n{stderr}"
+    );
+    for site in [
+        "main.clo:6:20",
+        "main.clo:14:26",
+        "main.clo:15:31",
+        "main.clo:16:30",
+    ] {
+        assert!(
+            stderr.contains(site),
+            "condctx: the report for the null at {site} must be present; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !stderr.contains("error E10200:"),
+        "condctx: the null rule owns these reports; stderr:\n{stderr}"
+    );
+    assert!(
+        !c_path.exists(),
+        "condctx: a rejected program must not produce a translation unit"
+    );
+}
+
+/// A nested element key comes from the substituted element type.
+///
+/// The row type `str[2]` substitutes `T`; indexing its `str` element yields a
+/// byte, so the callee instance is keyed `u8` rather than leaving the
+/// generated element placeholder in the symbol. The first row's first byte is
+/// 97, which the program subtracts, so the run exits 0. The `len` call is the
+/// control that does not index the element.
+#[test]
+fn should_key_a_nested_element_from_the_substituted_element() {
+    let len_control = r#"module spec.cc.elemkeylen;
+
+func id<T>(x: T): T { return x; }
+
+func f<T>(xs: T): i32 {
+    for (v in xs) {
+        return i32(id(v.len));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: str[2] = ["ab", "c"];
+    return f<str[2]>(a) - 2;
+}
+"#;
+    let output = run_host("elemkeylen", len_control);
+    assert_exit("elemkeylen", &output, 0);
+
+    let source = r#"module spec.cc.elemkey;
+
+func id<T>(x: T): T { return x; }
+
+func f<T>(xs: T): i32 {
+    for (v in xs) {
+        return i32(id(v[0]));
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: str[2] = ["ab", "c"];
+    return f<str[2]>(a) - 97;
+}
+"#;
+    let scratch = ScratchDir::new("elemkey");
+    let emitted = emit_host("elemkey", source);
+    assert!(
+        emitted.contains("cl_id__u8"),
+        "elemkey: the nested element instance is keyed from the substituted \
+         `str` element; emitted C:\n{emitted}"
+    );
+    assert!(
+        !emitted.contains("#element"),
+        "elemkey: the translation unit must not carry an unbound element \
+         placeholder; emitted C:\n{emitted}"
+    );
+    let program = build_host_c("elemkey", &scratch, &emitted);
+    let output = run_with_timeout("elemkey", &program, &[]);
+    assert_exit("elemkey", &output, 0);
+
+    let (amiga_scratch, amiga) = emit_hosted_amiga("elemkeyamiga", source);
+    assert!(
+        amiga.contains("cl_id__u8"),
+        "elemkeyamiga: the hosted-amiga instance carries the same key; \
+         emitted C:\n{amiga}"
+    );
+    assert!(
+        !amiga.contains("#element"),
+        "elemkeyamiga: the hosted-amiga translation unit must not carry an \
+         unbound element placeholder; emitted C:\n{amiga}"
+    );
+    build_hosted_amiga_c("elemkeyamiga", &amiga_scratch, &amiga);
+
+    // FREESTANDING EMISSION PLACEHOLDER: this suite has no freestanding
+    // profile helper, so the freestanding key and placeholder checks are
+    // pinned by the implementation suite.
+}
+
+/// A substituted element member widens at a view destination.
+///
+/// The generic body assigns a `String` member read from a substituted element
+/// to a `str` view. The instance must emit the same `cl_string_view` widening
+/// as the concrete twin, so both strict builds pass and both runs read the
+/// same length (2). The concrete spelling is the byte-identity control.
+#[test]
+fn should_widen_a_substituted_element_member_at_a_view_destination() {
+    let concrete = r#"module spec.cc.elemviewconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func first(xs: S[1]): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab") }];
+    return first(a) - 2;
+}
+"#;
+    let scratch = ScratchDir::new("elemviewconcrete");
+    let emitted = emit_host("elemviewconcrete", concrete);
+    assert!(
+        emitted.contains("s = cl_string_view(xs[0].name);"),
+        "elemviewconcrete: the concrete member read widens into the view; \
+         emitted C:\n{emitted}"
+    );
+    let program = build_host_c("elemviewconcrete", &scratch, &emitted);
+    let output = run_with_timeout("elemviewconcrete", &program, &[]);
+    assert_exit("elemviewconcrete", &output, 0);
+
+    let generic = r#"module spec.cc.elemview;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func first<T>(xs: T): i32 {
+    let s: str = xs[0].name;
+    return i32(len(s));
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("ab") }];
+    return first<S[1]>(a) - 2;
+}
+"#;
+    let scratch = ScratchDir::new("elemview");
+    let emitted = emit_host("elemview", generic);
+    assert!(
+        emitted.contains("s = cl_string_view(xs[0].name);"),
+        "elemview: the substituted member read emits the concrete twin's \
+         widening; emitted C:\n{emitted}"
+    );
+    let program = build_host_c("elemview", &scratch, &emitted);
+    let output = run_with_timeout("elemview", &program, &[]);
+    assert_exit("elemview", &output, 0);
+}
+
+/// A legal nullable destination keeps a direct conditional's null arm.
+///
+/// The expected type must reach a direct conditional's arms without rejecting
+/// a null arm at a destination that can hold null. The let, return, and call
+/// argument positions use `str?`, and the identical-arm and non-null-sibling
+/// conditionals from the frozen control stay accepted.
+#[test]
+fn should_keep_a_direct_conditional_control_with_a_legal_nullable() {
+    let nullable = r#"module spec.cc.condnullable;
+
+func pass(x: str?): i32 {
+    if (x == null) {
+        return 0;
+    }
+    return 9;
+}
+
+func forward(c: bool, s: str): str? {
+    return c ? s : null;
+}
+
+func pick(c: bool, s: str): i32 {
+    let a: str? = c ? s : null;
+    let r: i32 = pass(c ? s : null);
+    let f: str? = forward(c, s);
+    if (a == null) {
+        return 1;
+    }
+    if (r != 9) {
+        return 2;
+    }
+    if (f == null) {
+        return 3;
+    }
+    return pass(a) + pass(f) - 18;
+}
+
+func main(): i32 {
+    return pick(true, "ab");
+}
+"#;
+    let output = run_host("condnullable", nullable);
+    assert_exit("condnullable", &output, 0);
+
+    let control = r#"module spec.cc.condcontrol;
+
+func id<T>(x: T): T { return x; }
+
+func choose<T, U>(c: bool, a: T, b: U): i32 {
+    return i32(id<T>(c ? a : a));
+}
+
+func pick(c: bool, x: i32): i32 {
+    return i32(id<i32>(c ? x : 5));
+}
+
+func main(): i32 {
+    return choose<i32, str>(true, 3, "x") + pick(true, 5) - 8;
+}
+"#;
+    let output = run_host("condcontrol", control);
+    assert_exit("condcontrol", &output, 0);
+}
