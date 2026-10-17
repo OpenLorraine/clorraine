@@ -2,8 +2,8 @@
 
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
-> **Last Updated**: 2026-10-20 06:00
-> **Progress**: 48/51 tasks (94%) — Phase 8 complete
+> **Last Updated**: 2026-10-20 07:00
+> **Progress**: 51/51 tasks (100%) — Complete
 > **Planning baseline**: `8829be6` (the batch-K close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -411,13 +411,13 @@ checker typing.
 
 ### Step 9.1: Verification and Sync
 
-- [ ] 9.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and
-      the ASan suites; record the evidence
-- [ ] 9.1.2 Update the roadmap rows: the 21 rows move to Done with per-row evidence;
+- [x] 9.1.1 Run the full verification: `make check`, `make verify`, the strict-build sweep, and
+      the ASan suites; record the evidence ✅ (completed: 2026-10-20 07:00; `make check` exit 0 (66 suites, 2,378 tests); `make verify` **all legs passed** (the hosted-amiga cross legs, the corpus under vamos, the vbcc leg, the FS-UAE builds, the six runtime faults matching); the focused ASan legs 163/163, 161/161, 67/67, 65/65; the strict-build sweep evidence from the per-phase emission audits, zero head-only strict failures)
+- [x] 9.1.2 Update the roadmap rows: the 21 rows move to Done with per-row evidence;
       `DEF-341`/`DEF-350` recorded as incidentally fixed with their control pins; the six older
-      parked rows stay open (AR-2); the minors stay untouched
-- [ ] 9.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
-      `00-index.md`
+      parked rows stay open (AR-2); the minors stay untouched ✅ (completed: 2026-10-20 07:00; the 20 planned rows move to Done with per-row evidence; `DEF-341`/`DEF-350` recorded as incidental with their control pins; `DEF-353` false-positive closure recorded; the in-phase-fixed filed rows (`DEF-362`, `DEF-366`, `DEF-369`, `DEF-381`, `DEF-394`) Done; the six parked rows stay open; the remaining filed rows stay open as the next batch's backlog)
+- [x] 9.1.3 Record the close-out section in the findings ledger and mark the plan Complete in
+      `00-index.md` ✅ (completed: 2026-10-20 07:00; the close-out section appended to `05-findings.md` with the verification evidence, the roadmap accounting, and the residuals; the plan marked Complete in `00-index.md`)
 
 **Verify**: `make check`; `make verify`
 

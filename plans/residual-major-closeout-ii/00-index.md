@@ -8,7 +8,7 @@
 > directions; they span the nullable-view arm machinery, the generic walk and instance surfaces,
 > the ownership transfer judgments, the store/literal emission shapes, the call-conversion and
 > `ffi` typing surfaces, the concrete member path, and the module/global identity machinery.
-> **Status**: Planning
+> **Status**: Complete
 > **Created**: 2026-10-16
 > **Implements**: the 23 rows above — 21 red at the planning head, `DEF-341` and `DEF-350` probed
 > as incidentally fixed by the batch-K corrections and carried as pinned controls (AR-3, AR-8)

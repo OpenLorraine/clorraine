@@ -501,3 +501,27 @@ shared callee resolution); AR-24 (the ABI-layout extent ruling), AR-25 (the coll
   suite ASan leg (pre-existing; the host probes ran with leak detection).
 - AR-24 replaces AR-13's deferred-spelling illustration with the modeled ABI value; the extent equals
   the target C `sizeof` on every verified shape.
+
+## Close-out
+
+**Verification (9.1.1):** `make check` exit 0 (66 suites, 2,378 tests); `make verify` — **all legs passed**
+(the hosted-amiga cross-toolchain legs, the portable corpus under `vamos`, the vbcc build-only leg, the
+FS-UAE-only builds, and the six runtime-fault programs, each matching on hosted-amiga); the focused ASan
+legs: the checker-conformance 163/163, the residue 161/161, the callable-release 67/67, and the
+module-initializer 65/65. The strict-build sweep evidence is the batch's per-phase emission audits
+(`l1`..`l8`): every accepted program strict-builds, with zero head-only strict failures at each phase
+close.
+
+**Roadmap (9.1.2):** the 20 planned rows (`DEF-315`, `322`, `323`, `329`, `335`–`340`, `342`,
+`344`–`348`, `351`, `356`, `357`, `359`) move to Done with per-row evidence; `DEF-341` and `DEF-350`
+are recorded as incidental fixes with their control pins; `DEF-353` was closed as a false positive
+(AR-19); the batch-L-filed rows fixed in-phase (`DEF-362`, `DEF-366`, `DEF-369`, `DEF-381`,
+`DEF-394`) are Done. The six older parked rows (`DEF-167`, `DEF-169`, `DEF-171`, `DEF-190`,
+`DEF-191`, `DEF-263`) stay open (AR-2). The remaining rows filed during the batch (`DEF-360`,
+`DEF-361`, `DEF-363`–`365`, `DEF-367`, `DEF-368`, `DEF-370`–`380`, `DEF-382`–`393`) stay open as the
+next batch's backlog.
+
+**Plan (9.1.3):** the plan is marked Complete.
+
+**Residuals carried:** the open rows above; the two standing member shapes (`DEF-352`); the
+`assert_no_asan` LSan-only helper caveat; the container ASan suite flake (`DEF-358`).
