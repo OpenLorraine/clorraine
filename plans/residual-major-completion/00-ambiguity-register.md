@@ -601,3 +601,12 @@ conditionals — reports one `E10221`: a conditional selection is not in the fro
 added: the pre-phase compiler accepted these stores and silently dropped them, so the explicit deref
 spelling is the conformant form; the final confirmation closed the deferred-route question.
 
+**AR-45 (write-conflict reading, recorded decision):** When a write invalidates an owner whose
+element-loan positions were recorded, the owner's old element-loan *positions* are dead; the write's own
+conflict report (`E10031`) stands and the binding/provenance loans stay. The oracle governs: the two
+batch-L single-view controls pin exactly one `E10031`, and the drop keeps them. Consequence: the direct
+element twin with an intervening write reports one `E10031` (where the pre-fix base reported two); the
+member twin's second report is the binding loan (the text-correct two-report form); a global escape
+after the write reports `E10031` + `E10033`. All three are pinned. A Ch 16 clarification of the
+one-report rule would need a user ruling.
+

@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 38/60 tasks (63%) — Phase 5 corrections
+> **Progress**: 40/60 tasks (67%) — Phase 5 complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -343,14 +343,14 @@ form, conditional arm), and the borrow-element conditional take control.
       span per shape, the union record and mixed positions, the accepted copy emissions, the
       overwritten-loan drop, the `DEF-374` control parity, a re-emission determinism pin) in
       `compiler/tests/conditional_projection_residue_impl_test.rs` ✅ (completed: 2026-10-17; fifteen impl pins: the element-read store loan and the twins, the eight copy-source fills (including the different-arm-count and the mixed-position union with both sites, and the per-arm union pins), the accepted emissions, the overwritten-loan drop, the `DEF-374` parity, and the byte-identical re-emission; the base discrimination 12/3 at `a3de478`; residue impl 135/135, plain and ASan)
-- [ ] 5.3.2 Phase review — dispatch the lenses (correctness + memory-safety + semantics); the
+- [x] 5.3.2 Phase review — dispatch the lenses (correctness + memory-safety + semantics); the ✅ (completed: 2026-10-17; the three lenses dispatched (correctness FAIL with 2 fill blockers, semantics PASS WITH MINORS, memory CONFIRMED 0 in-diff); the two correction rounds (`3907b3b`, `9f74e60`) expanded the fill over the known extent and per nesting level; rows `DEF-428`–`DEF-435` filed, `DEF-309` extended, AR-45 recorded)
       memory lens runs the ASan/LSan matrix over the red shapes (before) and the accepted
       controls (after); apply the corrections ✅ (completed: 2026-10-17; the three lenses dispatched: correctness FAIL (2 blockers in the fill handling), semantics PASS WITH MINORS (the write-conflict reading), memory CONFIRMED (0 in-diff); the correction round expanded the fill over the known extent (the unused/overwritten fills restored to base acceptance, the fill-covered read now reports), pinned the write-conflict readings and the runtime-index copy; rows `DEF-428`–`DEF-434` filed)
-- [ ] 5.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, and the focused
+- [x] 5.3.3 Bounded confirmation: re-run the phase probes, the ASan matrix, and the focused ✅ (completed: 2026-10-17; the bounded confirmations: correctness PASS (the single-extent and nested fill flips, the base byte identity), semantics PASS (the write-conflict and runtime pins, B1 resolved), memory CONFIRMED; the ASan matrix and the focused suites green)
       suites
 ### Step 5.4: Phase Record
 
-- [ ] 5.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
+- [x] 5.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`; ✅ (completed: 2026-10-17; the ledger section recorded; progress 40/60)
       update the Progress block and commit per the active commit mode
 
 **Verify**: `make check`; the residue suite plain and `RDC_ASAN=1`; the host ASan probes

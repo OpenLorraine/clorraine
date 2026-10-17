@@ -372,3 +372,49 @@ generic owned element move through a borrow parameter), `DEF-426` (the generic `
   distinct fixed-array arm empties its source; the identical whole-element self-copy is skipped.
 - The `(*p).f` / `unsafe (*p).f` dropped-store residual remains `DEF-421`; the constant-index
   whole-element self-copy is added to `DEF-424`'s evidence.
+
+## Phase 5 — Element and store loans
+
+**Reviewed implementation**: `97db81d` (the implementation), `9f58b20` (the pins), `3907b3b` and
+`9f74e60` (the corrections). **Lenses**: correctness (L5C), semantics (L5S), memory-safety.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | L5C-1 (the fill recorded at the aggregate path: the unused and overwritten fills were newly rejected), L5C-2 (a fill-covered element copy lost the loan — an accepted UAF); L5C-3 (the write-conflict reading unpinned) |
+| semantics | PASS WITH MINORS — 0 blockers | L5S-1 (the post-conflict subsumption unpinned), L5S-2 (the runtime-index copy unpinned), L5S-3 filed; the write-conflict drop is oracle-conformant (the two batch-L controls pin one `E10031`) |
+| memory-safety | CONFIRMED — 0 in-diff | All ten red shapes reject with no TU; every accepted control ASan/LSan-clean; 18 newly covered escapes now reject; no base-reject→head-accept flip; three pre-existing UAFs filed (`DEF-428`, `DEF-429`, `DEF-432`) |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`3907b3b`) | **Fixed**: the fill expands over the destination's known fixed extent into per-element records (the unused/overwritten fills restored to base acceptance; the fill-covered read transfers its loan); the write-conflict readings pinned (one `E10031` direct; `E10031`+`E10033` global); the runtime-index copy pinned |
+| C2 (`9f74e60`) | **Fixed**: the nested fill expands at its own level (`position.iterated_element()`); the nested unused/overwritten fills restored (base-byte-identical); the nested fill-covered copies report one `E10030` |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| correctness | FAIL (the nested fills) → fixed → **PASS** (the six nested flips only; base byte identity) |
+| semantics | FAIL (B1, the nested fills) → the in-flight fix confirmed → **PASS** (the committed fix) |
+| memory-safety | **CONFIRMED CLEAN** (0 in-diff; 3 pre-existing UAFs filed) |
+
+### Filed rows
+
+`DEF-428` (the exact whole-binding self-assignment erases the element loans), `DEF-429` (a composite
+copy source into an element/projected destination), `DEF-430` (a runtime store followed by a
+constant-read copy), `DEF-431` (a deeper projection after a shorter-path recording), `DEF-432` (a
+temporary-derived element in a view-array literal), `DEF-433` (a call-mediated element-view result),
+`DEF-434` (the direct-owner literal overwrite through the provenance fallback), `DEF-435` (an
+element-store nested fill with a fresh member value); `DEF-309` extended (the call-fill evaluation).
+
+### Record notes
+
+- AR-45 records the write-conflict reading: the old element-loan positions are dead, the write's
+  `E10031` stands, the binding/provenance loans stay; the direct, global, and member forms are pinned.
+- `DEF-374` remains a green control: the generic and concrete conditional takes each report two
+  `E10026` at the same span.
+- The open-extent fill keeps one aggregate record (a conservative fallback; an unresolved extent
+  cannot name its elements).
