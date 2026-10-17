@@ -9560,6 +9560,111 @@ func main(): i32 {
     );
 }
 
+/// A float or static string literal at a concrete generic parameter takes
+/// that parameter's type.
+///
+/// The callee's `x: f32` and `p: cstring` parameters are concrete even though
+/// `T` is generic, so the float literal takes `f32` and the static string
+/// literal crosses as a C string exactly as the concrete twins' arguments do.
+/// Both generic spellings build and run. An integer literal at `f32` or `bool`
+/// supplies no literal context and keeps the ordinary conversion report.
+#[test]
+fn should_context_type_a_float_and_a_cstring_at_a_generic_concrete_parameter() {
+    let float_concrete = r#"module spec.cc.p3floatcon;
+
+func keepS(x: f32, y: bool): f32 { return x; }
+
+func main(): i32 {
+    let v: f32 = keepS(1.5, true);
+    if (v != 1.5) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("p3floatcon", float_concrete);
+    assert_exit("p3floatcon", &output, 0);
+
+    let float_generic = r#"module spec.cc.p3floatgen;
+
+func keep<T>(x: f32, y: T): f32 { return x; }
+
+func main(): i32 {
+    let v: f32 = keep(1.5, true);
+    if (v != 1.5) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("p3floatgen", float_generic);
+    assert_exit("p3floatgen", &output, 0);
+
+    let cstring_concrete = r#"module spec.cc.p3cstrcon;
+
+func keepS(p: cstring, y: bool): cstring { return p; }
+
+func main(): i32 {
+    let p: cstring = keepS("hi", true);
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("p3cstrcon", cstring_concrete);
+    assert_exit("p3cstrcon", &output, 0);
+
+    let cstring_generic = r#"module spec.cc.p3cstrgen;
+
+func keep<T>(p: cstring, y: T): cstring { return p; }
+
+func main(): i32 {
+    let p: cstring = keep("hi", true);
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let output = run_host("p3cstrgen", cstring_generic);
+    assert_exit("p3cstrgen", &output, 0);
+
+    let integer_float = r#"module spec.cc.p3intf32;
+
+func keep<T>(x: f32, y: T): f32 { return x; }
+
+func main(): i32 {
+    let v: f32 = keep(5, true);
+    return i32(v) - 5;
+}
+"#;
+    assert_rejected_once(
+        "p3intf32",
+        integer_float,
+        "E10200",
+        &["cannot convert 'i32' to 'f32' implicitly", "main.clo:6:23"],
+        &["E10202"],
+    );
+
+    let integer_bool = r#"module spec.cc.p3intbool;
+
+func keep<T>(x: bool, y: T): i32 { return 0; }
+
+func main(): i32 {
+    let v: i32 = keep(5, true);
+    return v;
+}
+"#;
+    assert_rejected_once(
+        "p3intbool",
+        integer_bool,
+        "E10200",
+        &["cannot convert 'i32' to 'bool' implicitly", "main.clo:6:23"],
+        &["E10202"],
+    );
+}
+
 /// A nullable scalar type argument is rejected at every nested position.
 ///
 /// `?` applies only to handles, `raw`, `cstring`, and views, so an `i32?`
@@ -9814,6 +9919,88 @@ func main(): i32 {
         "p3qualifiedqual: the qualified spelling must emit the unqualified \
          control byte for byte"
     );
+}
+
+/// A qualified type path names a module declaration, not a value member.
+///
+/// `mem.Array` in a type position has a value-headed prefix, so it reports the
+/// undeclared-name error once at the type and writes no translation unit. A
+/// real module path (`std.mem.Array`) and this module's own full path stay
+/// accepted; the current module's qualified spelling emits the same instance as
+/// its unqualified control.
+#[test]
+fn should_reject_a_value_headed_qualified_type_path() {
+    let value_headed = r#"module spec.cc.p3qualvalue;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let mem: i32 = 1;
+    let g: mem.Array<i32> = arrayNew<i32>();
+    g.push(7);
+    return i32(len(g)) + mem - 8;
+}
+"#;
+    assert_rejected_once(
+        "p3qualvalue",
+        value_headed,
+        "E10219",
+        &["'mem.Array' is not declared", "main.clo:7:12"],
+        &["E10011"],
+    );
+
+    let module_path = r#"module spec.cc.p3qualmodule;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let g: std.mem.Array<i32> = std.mem.arrayNew<i32>();
+    g.push(1);
+    return i32(len(g)) - 1;
+}
+"#;
+    let output = run_host("p3qualmodule", module_path);
+    assert_exit("p3qualmodule", &output, 0);
+
+    let unqualified = r#"module spec.cc.p3qualcurrent;
+
+struct Local<T> { v: T; }
+
+func main(): i32 {
+    let g: Local<i32> = Local<i32> { v: 1 };
+    return g.v - 1;
+}
+"#;
+    let qualified = r#"module spec.cc.p3qualcurrent;
+
+struct Local<T> { v: T; }
+
+func main(): i32 {
+    let g: spec.cc.p3qualcurrent.Local<i32> = Local<i32> { v: 1 };
+    return g.v - 1;
+}
+"#;
+    let scratch = ScratchDir::new("p3qualcurrent");
+    let unqualified_emitted = emit_host_at(
+        "p3qualcurrentunq",
+        &scratch,
+        unqualified,
+        "unqualified",
+    );
+    let qualified_emitted = emit_host_at("p3qualcurrentqual", &scratch, qualified, "qualified");
+    assert!(
+        qualified_emitted.contains("ClLocal__i32 g"),
+        "p3qualcurrentqual: the current module's qualified type must carry \
+         the instance; emitted C:\n{qualified_emitted}"
+    );
+    assert_eq!(
+        qualified_emitted, unqualified_emitted,
+        "p3qualcurrentqual: the qualified spelling must emit the unqualified \
+         control byte for byte"
+    );
+    let program = build_host_c("p3qualcurrent", &scratch, &qualified_emitted);
+    let output = run_with_timeout("p3qualcurrent", &program, &[]);
+    assert_exit("p3qualcurrent", &output, 0);
 }
 
 /// A negated integer literal is folded and fit-checked once.

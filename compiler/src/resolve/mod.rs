@@ -366,7 +366,7 @@ impl Resolver<'_, '_> {
     fn resolve_type(&mut self, ty: &Type) {
         match &ty.kind {
             TypeKind::Named { name, args } => {
-                self.resolve_dotted_name(name);
+                self.resolve_type_name(name);
                 for arg in args {
                     self.resolve_type(arg);
                 }
@@ -409,6 +409,36 @@ impl Resolver<'_, '_> {
             return;
         }
         if !self.resolve_qualified(name) {
+            self.report_undeclared(&name.to_dotted(), name.span);
+        }
+    }
+
+    /// Resolves a name written in a type position.
+    ///
+    /// A single segment is a lexical or module-scope name. A qualified type
+    /// names a declaration in a module, so the prefix must be the declaring
+    /// module and the last segment one of its declarations; a private
+    /// declaration is visible only in this module. A type is never a member of
+    /// a value, so a value-headed path does not resolve even when the head is
+    /// in scope.
+    fn resolve_type_name(&mut self, name: &QualifiedName) {
+        if name.segments.len() == 1 {
+            let only = &name.segments[0];
+            if !self.resolve_name(only) {
+                self.report_undeclared(only, name.span);
+            }
+            return;
+        }
+        let Some((last, head)) = name.segments.split_last() else {
+            return;
+        };
+        let module = head.join(".");
+        let declared = if module == self.module.name {
+            self.module.decls.contains_key(last)
+        } else {
+            self.loaded.has_module(&module) && self.loaded.module_exports(&module, last)
+        };
+        if !declared {
             self.report_undeclared(&name.to_dotted(), name.span);
         }
     }

@@ -6597,3 +6597,158 @@ func main(): i32 {
         "negboolpin: a non-integer context supplies no fit check; stderr:\n{stderr}"
     );
 }
+
+/// A float literal at a concrete generic parameter emits the `f32` call.
+///
+/// The callee's `x: f32` parameter is concrete, so the literal takes `f32`
+/// exactly as the concrete twin's argument does. At the base compiler the
+/// literal keeps its default `f64` and the call is rejected.
+#[test]
+fn should_context_type_a_float_literal_at_a_generic_concrete_parameter() {
+    let generic = r#"module spec.cc.impl.floatcontextpin;
+
+func keep<T>(x: f32, y: T): f32 { return x; }
+
+func main(): i32 {
+    let v: f32 = keep(1.5, true);
+    if (v != 1.5) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("floatcontextpin", generic);
+    assert_contains(
+        "floatcontextpin",
+        &emitted,
+        "static float cl_keep__bool(float x, bool y);",
+    );
+    assert_contains("floatcontextpin", &emitted, "cl_keep__bool(1.5, 1)");
+
+    let concrete = r#"module spec.cc.impl.floatcontextconpin;
+
+func keepS(x: f32, y: bool): f32 { return x; }
+
+func main(): i32 {
+    let v: f32 = keepS(1.5, true);
+    if (v != 1.5) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("floatcontextconpin", concrete);
+    assert_contains("floatcontextconpin", &emitted, "_keepS(1.5, 1)");
+}
+
+/// A static string literal at a concrete generic parameter crosses as a C
+/// string.
+///
+/// The callee's `p: cstring` parameter is concrete, so the direct call's
+/// string-literal allowance applies to the generic spelling too and the emitter
+/// passes the literal itself. At the base compiler the literal keeps its
+/// `static str` type and the call is rejected.
+#[test]
+fn should_context_type_a_cstring_literal_at_a_generic_concrete_parameter() {
+    let generic = r#"module spec.cc.impl.cstringcontextpin;
+
+func keep<T>(p: cstring, y: T): cstring { return p; }
+
+func main(): i32 {
+    let p: cstring = keep("hi", true);
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("cstringcontextpin", generic);
+    assert_contains(
+        "cstringcontextpin",
+        &emitted,
+        "static char * cl_keep__bool(char *p, bool y);",
+    );
+    assert_contains("cstringcontextpin", &emitted, "cl_keep__bool(\"hi\", 1)");
+
+    let concrete = r#"module spec.cc.impl.cstringcontextconpin;
+
+func keepS(p: cstring, y: bool): cstring { return p; }
+
+func main(): i32 {
+    let p: cstring = keepS("hi", true);
+    if (p == null) {
+        return 1;
+    }
+    return 0;
+}
+"#;
+    let emitted = emit_host("cstringcontextconpin", concrete);
+    assert_contains("cstringcontextconpin", &emitted, "_keepS(\"hi\", 1)");
+}
+
+/// A value-headed qualified type is not a module declaration.
+///
+/// `mem.Array` names a value's member, not a type, so the resolver reports the
+/// undeclared name once and writes no translation unit. A real module path and
+/// this module's own full path stay accepted; the current module's qualified
+/// spelling is byte-identical to its unqualified control. At the base compiler
+/// the value-headed path is accepted as the unqualified instance.
+#[test]
+fn should_reject_a_value_headed_qualified_type_path() {
+    let value_headed = r#"module spec.cc.impl.qualvaluepin;
+
+import { Array, arrayNew } from std.mem;
+
+func main(): i32 {
+    let mem: i32 = 1;
+    let g: mem.Array<i32> = arrayNew<i32>();
+    g.push(7);
+    return i32(len(g)) + mem - 8;
+}
+"#;
+    let stderr = reject_host("qualvaluepin", value_headed);
+    assert_eq!(
+        stderr.matches("error E10219:").count(),
+        1,
+        "qualvaluepin: the value-headed path reports once; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("'mem.Array' is not declared"),
+        "qualvaluepin: the report names the qualified spelling; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:7:12"),
+        "qualvaluepin: the report lands on the type; stderr:\n{stderr}"
+    );
+
+    let unqualified = r#"module spec.cc.impl.qualcurrentpin;
+
+struct Local<T> { v: T; }
+
+func main(): i32 {
+    let g: Local<i32> = Local<i32> { v: 1 };
+    return g.v - 1;
+}
+"#;
+    let qualified = r#"module spec.cc.impl.qualcurrentpin;
+
+struct Local<T> { v: T; }
+
+func main(): i32 {
+    let g: spec.cc.impl.qualcurrentpin.Local<i32> = Local<i32> { v: 1 };
+    return g.v - 1;
+}
+"#;
+    let scratch = ScratchDir::new("qualcurrentpin");
+    let unqualified_emitted = emit_host_at("qualcurrentpinunq", &scratch, unqualified, "unq");
+    let qualified_emitted = emit_host_at("qualcurrentpinqual", &scratch, qualified, "qual");
+    assert_contains(
+        "qualcurrentpinqual",
+        &qualified_emitted,
+        "ClLocal__i32 g",
+    );
+    assert_eq!(
+        qualified_emitted, unqualified_emitted,
+        "qualcurrentpin: the current module's qualified spelling must emit the unqualified control byte for byte"
+    );
+}

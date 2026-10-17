@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::ast::{Arg, Expr, ExprKind, Type};
+use crate::ast::{Arg, Expr, ExprKind, ScalarType, Type};
 use crate::span::Span;
 use crate::types::{implicit_conversion, substitute, view_type, FuncParam, FuncSig, Ty, TyKind};
 
@@ -229,27 +229,38 @@ impl Checker<'_, '_> {
             .iter()
             .map(|param| param.name.clone())
             .collect();
-        // An integer literal at a parameter that does not name a type
-        // parameter is typed by that parameter, exactly as a non-generic call
-        // types it: the destination supplies the context, and a value that
-        // does not fit reports the fit rule at the literal. The parameter is
-        // concrete before inference, so the context is available here. Every
-        // other argument stays context-free: a parameter that still names a
-        // type parameter needs its argument's own type to bind the instance.
-        let arg_types: Vec<(Ty, Span)> = args
+        // A literal at a parameter that does not name a type parameter is
+        // typed by that parameter, exactly as a non-generic call types it: the
+        // destination supplies the context, and a value that does not fit
+        // reports the fit rule at the literal. The parameter is concrete
+        // before inference, so the context is available here. Every other
+        // argument stays context-free: a parameter that still names a type
+        // parameter needs its argument's own type to bind the instance.
+        let arg_types: Vec<(Ty, Span, bool)> = args
             .iter()
             .enumerate()
             .map(|(index, arg)| {
-                let ty = match signature.params.get(index) {
+                let mode = signature
+                    .modes
+                    .get(index)
+                    .copied()
+                    .unwrap_or(crate::ast::Mode::None);
+                let (ty, judged) = match signature.params.get(index) {
                     Some(param)
-                        if Self::concrete_integer_param(param)
-                            && crate::types::int_literal_value(&arg.value).is_some() =>
+                        if !self.is_out_slot_param(param, mode)
+                            && Self::literal_takes_param_context(param, &arg.value) =>
                     {
-                        self.check_into(&arg.value, param)
+                        if is_cstring_literal_argument(&arg.value, param) {
+                            // A static string literal crosses as a C string,
+                            // exactly as a direct call accepts it.
+                            (self.check_value(&arg.value, None), true)
+                        } else {
+                            (self.check_into(&arg.value, param), true)
+                        }
                     }
-                    _ => self.check_value(&arg.value, None),
+                    _ => (self.check_value(&arg.value, None), false),
                 };
-                (ty, arg.value.span)
+                (ty, arg.value.span, judged)
             })
             .collect();
 
@@ -271,7 +282,7 @@ impl Checker<'_, '_> {
 
         let mut bindings: BTreeMap<String, Ty> = BTreeMap::new();
         if type_args.is_empty() {
-            for ((ty, _), param) in arg_types.iter().zip(&signature.params) {
+            for ((ty, _, _), param) in arg_types.iter().zip(&signature.params) {
                 match_param(param, ty, &declared, &mut bindings);
             }
             // A written count that disagrees with the declared parameters is
@@ -329,9 +340,14 @@ impl Checker<'_, '_> {
                 self.reject_capture_move(&arg.value);
                 self.record_generic_capture_move(&arg.value);
             }
-            if let (Some((ty, arg_span)), Some(param)) =
+            if let (Some((ty, arg_span, judged)), Some(param)) =
                 (arg_types.get(index), signature.params.get(index))
             {
+                // A literal at a concrete parameter was judged by the
+                // non-generic check above, so its conversion is complete.
+                if *judged {
+                    continue;
+                }
                 let expected = crate::types::substitute(param, &bindings);
                 if self.is_out_slot_param(&expected, mode) {
                     // The instance makes the parameter a nullable out-slot, so
@@ -621,14 +637,24 @@ impl Checker<'_, '_> {
         self.check_conversion(receiver, param, span);
     }
 
-    /// True for a concrete integer scalar parameter.
+    /// True when a written literal can take its type from a concrete
+    /// parameter.
     ///
-    /// Such a parameter supplies a context type to an integer literal even
-    /// when its callee has type parameters elsewhere in the signature. A
-    /// parameter that still names one of them is not concrete, and a
-    /// non-integer parameter supplies no integer context.
-    fn concrete_integer_param(param: &Ty) -> bool {
-        matches!(param.kind, TyKind::Scalar(scalar) if crate::types::is_integer_scalar(scalar))
+    /// An integer literal takes an integer scalar's type, a float literal a
+    /// float scalar's, and a static string literal is the direct call's
+    /// `cstring` allowance. Every other pairing keeps the literal's default
+    /// type so the ordinary conversion reports once.
+    fn literal_takes_param_context(param: &Ty, arg: &Expr) -> bool {
+        match param.kind {
+            TyKind::Scalar(scalar) if crate::types::is_integer_scalar(scalar) => {
+                crate::types::int_literal_value(arg).is_some()
+            }
+            TyKind::Scalar(ScalarType::F32 | ScalarType::F64) => {
+                matches!(arg.kind, ExprKind::Float(_))
+            }
+            TyKind::CString => is_cstring_literal_argument(arg, param),
+            _ => false,
+        }
     }
 
     /// The declared type parameters of a candidate that still have no binding.

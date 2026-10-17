@@ -592,4 +592,3 @@ case expected `main.clo:5:20`, which points at the `<` of `Array<i32?>`; the off
 argument's own start is column 21, and the case's other four sites pin the argument's own start.
 Only the column is corrected (`5:20` -> `5:21`); the code, count, message, line, and the TY-4 rule
 stay pinned. This follows the AR-40 mechanical-span precedent.
-
