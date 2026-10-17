@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 32/60 tasks (53%) — Phase 4 complete
+> **Progress**: 34/60 tasks (57%) — Phase 5 red
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -320,13 +320,13 @@ ST-15..ST-17 · AR-17, AR-18, AR-19, AR-32
 **Objective**: Pin the element-read store loan, the copy-source loan union (mixed positions, fill
 form, conditional arm), and the borrow-element conditional take control.
 
-- [ ] 5.1.1 [spec-author] Write the phase cases —
+- [x] 5.1.1 [spec-author] Write the phase cases —
       `compiler/tests/conditional_projection_residue_spec_test.rs` (elementreadloan,
       copysourceloans with the mixed-position, different-arm-count, and fill-form cases,
-      borrowelemtakecontrol) with their controls; the red cases committed first
-- [ ] 5.1.2 Run the suite and record the red phase (the direct/member twins, the in-scope copies,
+      borrowelemtakecontrol) with their controls; the red cases committed first ✅ (completed: 2026-10-17; three spec cases added to the residue suite: the element-read store loan (the store, the direct/member twins, the in-scope read-back), the copy-source loans (the conditional, array-literal, fill, single-view, arm-literal, element-in-literal, different-arm-count, fill-form, and mixed-position union with the exact site pins), and the `DEF-374` two-report parity control; a multi-site assertion helper added)
+- [x] 5.1.2 Run the suite and record the red phase (the direct/member twins, the in-scope copies,
       the mixed-position union, and the `DEF-374` two-report parity verified green first; AR-5,
-      AR-32)
+      AR-32) ✅ (completed: 2026-10-17; the red phase recorded: residue 171 passed / 2 failed; every red shape accepted with ASan heap-use-after-free (the sanitizer is the oracle, the run values vary); the direct/member/conditional twins, the in-scope copies, and the `DEF-374` control green)
 
 ### Step 5.2: Implementation
 

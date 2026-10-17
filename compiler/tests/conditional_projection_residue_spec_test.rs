@@ -14506,3 +14506,697 @@ func main(): i32 {
     let output = run_host("condderefstore", source);
     assert_exit("condderefstore", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// storeloans: a view copied out of a loaned element keeps the element's loan.
+//
+// `xs[0] = a.v` stores a view of the local `a` into a view array element. A
+// later copy of that element into a `str` local or a `str[N]` value must carry
+// the loan with the value, so passing the copy into a caller's out-slot is the
+// same escape the direct element and member arguments report: one `E10030` at
+// the call site. A copy read inside the owner's scope names no escape and
+// stays accepted.
+// ---------------------------------------------------------------------------
+
+/// Asserts the front end rejected `source` with exactly one report carrying
+/// `code` at each of the given `line:column` sites, that every report contains
+/// every phrase in `fragments`, and that it emitted no translation unit.
+///
+/// Two equal entries pin two reports at one span, which is the borrow-element
+/// conditional take's shape; distinct entries pin one report at each site. The
+/// site set is compared as a whole, so a report moved to another expression
+/// fails the case even when the count and the code still match.
+fn compile_rejects_at_sites(
+    tag: &str,
+    source: &str,
+    code: &str,
+    sites: &[(usize, usize)],
+    fragments: &[&str],
+) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let errors: Vec<&str> = stderr
+        .lines()
+        .filter(|report| report.starts_with("error "))
+        .collect();
+    assert_eq!(
+        errors.len(),
+        sites.len(),
+        "{tag}: expected {} error(s), saw {}; stderr:\n{stderr}",
+        sites.len(),
+        errors.len()
+    );
+    for line in &errors {
+        assert!(
+            line.contains(code),
+            "{tag}: expected the {code} report; saw `{line}`; stderr:\n{stderr}"
+        );
+    }
+    let mut actual_sites: Vec<String> = stderr
+        .lines()
+        .filter(|report| report.trim_start().starts_with("--> "))
+        .map(|report| report.trim().to_owned())
+        .collect();
+    actual_sites.sort();
+    let mut expected_sites: Vec<String> = sites
+        .iter()
+        .map(|(line, column)| format!(":{line}:{column}"))
+        .collect();
+    expected_sites.sort();
+    assert_eq!(
+        actual_sites.len(),
+        expected_sites.len(),
+        "{tag}: expected {} report site(s), saw {}; stderr:\n{stderr}",
+        expected_sites.len(),
+        actual_sites.len()
+    );
+    for (actual, expected) in actual_sites.iter().zip(&expected_sites) {
+        assert!(
+            actual.ends_with(expected.as_str()),
+            "{tag}: expected a report at {expected}; saw `{actual}`; stderr:\n{stderr}"
+        );
+    }
+    for fragment in fragments {
+        assert!(
+            stderr.contains(fragment),
+            "{tag}: expected the message to contain {fragment:?}; stderr:\n{stderr}"
+        );
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// A view copied from a loaned element into a local carries the element's
+/// loan, so the copy's out-slot store reports one `E10030` at the call.
+///
+/// `let s: str = xs[0];` copies the view stored in `xs[0]`, whose backing is
+/// the local `a`. The copy reads freed storage once `a` is released, so
+/// `fill(s, borrow slot)` reports one `E10030` at the call exactly as the
+/// direct element argument and the member argument do. A read of the copy
+/// while `a` is alive runs and stays memory-clean.
+#[test]
+fn should_report_an_escaping_element_read_store() {
+    let store = r#"module spec.cpr.elemreadstore;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "elemreadstore",
+        store,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let direct = r#"module spec.cpr.elemreaddirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    fill(xs[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "elemreaddirect",
+        direct,
+        "E10030",
+        13,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let member = r#"module spec.cpr.elemreadmember;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    fill(a.w, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "elemreadmember",
+        member,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let in_scope = r#"module spec.cpr.elemreadinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func outer(): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[0];
+    return i32(s[0]) - 97;
+}
+
+func main(): i32 { return outer(); }
+"#;
+    let output = run_memory("elemreadinscope", in_scope);
+    assert_no_asan("elemreadinscope", &output);
+    assert_exit("elemreadinscope", &output, 0);
+}
+
+/// A view array, or a single view, copied from conditional or literal sources
+/// carries every source element's loan, so each out-slot store of a loaned
+/// element reports one `E10030` at its call.
+///
+/// The conditional array copy, the array-literal copy (plain and fill form),
+/// the single-view conditional, the conditional with an array-literal arm, the
+/// conditional element inside an array literal, the different-arm-count
+/// conditional, and the fill-form literal each report once at the affected
+/// fill. The mixed-position conditional loans `ys[0]` from one arm and
+/// `ys[1]` from the other, so both fills report: the destination record is the
+/// union of both arms. The direct conditional argument keeps its one report,
+/// and the copies read inside the owners' scope run and stay memory-clean.
+#[test]
+fn should_report_an_escaping_copy_from_a_conditional_or_literal_source() {
+    let conditional = r#"module spec.cpr.copycond;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?, c: bool): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[0] = a.w;
+    let ys: str[2] = (c ? xs : zs);
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out, true);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "copycond",
+        conditional,
+        "E10030",
+        16,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let literal = r#"module spec.cpr.copyliteral;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[2] = [xs[0], xs[1]];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "copyliteral",
+        literal,
+        "E10030",
+        15,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let literal_fill = r#"module spec.cpr.copyliteralfill;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = [xs[0]; "EE"];
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "copyliteralfill",
+        literal_fill,
+        "E10030",
+        14,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let single = r#"module spec.cpr.copysingle;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let b: Box = Box { v: stringOf("cc") };
+    let xs: str[1] = ["AA"];
+    let zs: str[1] = ["CC"];
+    xs[0] = a.v;
+    zs[0] = b.v;
+    let s: str = c ? xs[0] : zs[0];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "copysingle",
+        single,
+        "E10030",
+        17,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let conditional_arm = r#"module spec.cpr.copycondarm;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let zs: str[2] = ["CC", "DD"];
+    let ys: str[2] = c ? [xs[0], xs[1]] : zs;
+    fill(ys[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "copycondarm",
+        conditional_arm,
+        "E10030",
+        16,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let conditional_element = r#"module spec.cpr.copymix;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow s0: str?, borrow s1: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[0] = b.v;
+    zs[1] = b.w;
+    let ys: str[2] = [c ? xs[0] : zs[0], xs[1]];
+    fill(ys[0], borrow s0);
+    fill(ys[1], borrow s1);
+}
+
+func main(): i32 {
+    let out0: str? = null;
+    let out1: str? = null;
+    outer(true, borrow out0, borrow out1);
+    if (out0 == null) { return 9; }
+    if (out1 == null) { return 10; }
+    return i32(out0[0]) + i32(out1[0]) - (97 + 66);
+}
+"#;
+    compile_rejects_once_at(
+        "copymix",
+        conditional_element,
+        "E10030",
+        18,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let different_arms = r#"module spec.cpr.copydiff;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow s0: str?, borrow s1: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    zs[0] = a.v;
+    let ys: str[2] = c ? xs : zs;
+    fill(ys[0], borrow s0);
+    fill(ys[1], borrow s1);
+}
+
+func main(): i32 {
+    let out0: str? = null;
+    let out1: str? = null;
+    outer(true, borrow out0, borrow out1);
+    if (out0 == null) { return 9; }
+    if (out1 == null) { return 10; }
+    return i32(out0[0]) + i32(out1[0]) - (97 + 98);
+}
+"#;
+    compile_rejects_at_sites(
+        "copydiff",
+        different_arms,
+        "E10030",
+        &[(17, 5), (18, 5)],
+        &["does not live long enough"],
+    );
+
+    let fill_form = r#"module spec.cpr.copyfill;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow s0: str?, borrow s1: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let b: Box = Box { v: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[0] = b.v;
+    let ys: str[2] = [c ? xs[0] : zs[0]; "EE"];
+    fill(ys[0], borrow s0);
+    fill(ys[1], borrow s1);
+}
+
+func main(): i32 {
+    let out0: str? = null;
+    let out1: str? = null;
+    outer(true, borrow out0, borrow out1);
+    if (out0 == null) { return 9; }
+    if (out1 == null) { return 10; }
+    return i32(out0[0]) + i32(out1[0]) - (97 + 69);
+}
+"#;
+    compile_rejects_once_at(
+        "copyfill",
+        fill_form,
+        "E10030",
+        17,
+        5,
+        &["does not live long enough"],
+        &[],
+    );
+
+    let mixed_positions = r#"module spec.cpr.copyunion;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow s0: str?, borrow s1: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    zs[1] = b.w;
+    let ys: str[2] = (c ? xs : zs);
+    fill(ys[0], borrow s0);
+    fill(ys[1], borrow s1);
+}
+
+func main(): i32 {
+    let out0: str? = null;
+    let out1: str? = null;
+    outer(true, borrow out0, borrow out1);
+    if (out0 == null) { return 9; }
+    if (out1 == null) { return 10; }
+    return i32(out0[0]) + i32(out1[0]) - (97 + 100);
+}
+"#;
+    compile_rejects_at_sites(
+        "copyunion",
+        mixed_positions,
+        "E10030",
+        &[(17, 5), (18, 5)],
+        &["does not live long enough"],
+    );
+
+    let direct = r#"module spec.cpr.copydirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(c: bool, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let b: Box = Box { v: stringOf("cc") };
+    fill(c ? a.v : b.v, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(true, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+    compile_rejects_once_at(
+        "copydirect",
+        direct,
+        "E10030",
+        12,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+
+    let in_scope = r#"module spec.cpr.copyinscope;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func outer(c: bool): i32 {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let b: Box = Box { v: stringOf("cc"), w: stringOf("dd") };
+    let xs: str[2] = ["AA", "BB"];
+    let zs: str[2] = ["CC", "DD"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    zs[0] = b.v;
+    zs[1] = b.w;
+    let ys: str[2] = (c ? xs : zs);
+    let lit: str[2] = [xs[0]; "EE"];
+    let arr: str[2] = [c ? xs[0] : zs[0], xs[1]];
+    let one: str = c ? xs[0] : zs[0];
+    let arm: str[2] = c ? [xs[0], xs[1]] : zs;
+    return i32(ys[0][0]) + i32(lit[0][0]) + i32(arr[0][0]) + i32(one[0])
+         + i32(arm[1][0]) - (97 + 97 + 97 + 97 + 98);
+}
+
+func main(): i32 { return outer(true); }
+"#;
+    let output = run_memory("copyinscope", in_scope);
+    assert_no_asan("copyinscope", &output);
+    assert_exit("copyinscope", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// borrowelemcond: the borrow-element conditional take stays the two-report
+// control.
+//
+// A `take` of a member selected from two borrowed elements moves the member
+// out of each arm, so the v1 partial-move limit reports once per arm at the
+// `take` argument. The generic and the concrete spelling must agree in the
+// count and the site.
+// ---------------------------------------------------------------------------
+
+/// The borrow-element conditional take reports the partial-move limit twice at
+/// one span in both the generic and the concrete spelling.
+#[test]
+fn should_report_the_borrow_element_conditional_take_twice() {
+    let generic = r#"module spec.cpr.borrowelemcond;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat<T>(take x: T): i32 { return 1; }
+
+func each<T>(xs: T, ys: T, c: bool): i32 {
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            return eat(take (c ? v.name : w.name));
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    let b: S[1] = [S { name: stringOf("b") }];
+    return each<S[1]>(a, b, true) - 1;
+}
+"#;
+    compile_rejects_at_sites(
+        "borrowelemcond",
+        generic,
+        "E10026",
+        &[(12, 24), (12, 24)],
+        &["partial moves are limited to top-level fields in v1"],
+    );
+
+    let concrete = r#"module spec.cpr.borrowelemcondconcrete;
+
+import { String, stringOf } from std.text;
+
+struct S { name: String; }
+
+func eat(take x: String): i32 { return 1; }
+
+func each(xs: S[1], ys: S[1], c: bool): i32 {
+    for (borrow v in xs) {
+        for (borrow w in ys) {
+            return eat(take (c ? v.name : w.name));
+        }
+    }
+    return 0;
+}
+
+func main(): i32 {
+    let a: S[1] = [S { name: stringOf("a") }];
+    let b: S[1] = [S { name: stringOf("b") }];
+    return each(a, b, true) - 1;
+}
+"#;
+    compile_rejects_at_sites(
+        "borrowelemcondconcrete",
+        concrete,
+        "E10026",
+        &[(12, 24), (12, 24)],
+        &["partial moves are limited to top-level fields in v1"],
+    );
+}
