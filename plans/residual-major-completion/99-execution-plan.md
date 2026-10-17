@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 4/60 tasks (7%) — Phase 1 implemented
+> **Progress**: 5/60 tasks (8%) — Phase 1 pinned
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -97,9 +97,9 @@ controls.
 
 ### Step 1.3: Impl Tests & Review
 
-- [ ] 1.3.1 Write the phase implementation pins (the dot-call report code/span, the `E11103`
+- [x] 1.3.1 Write the phase implementation pins (the dot-call report code/span, the `E11103`
       site and kind matrix, the qualified symbol and lookups, the absent dead instance for the
-      six shadow controls, a re-emission determinism pin) in the two `_impl_test.rs` files
+      six shadow controls, a re-emission determinism pin) in the two `_impl_test.rs` files ✅ (completed: 2026-10-17; seven impl pins: the dot-call report record, the generic-caller acceptance, the collision record, the shadow controls, the qualified symbol, the qualified signature/mismatch, and the func-global control; the base discrimination: 3 + 2 pins fail at `749c453`, the shadow and func-global pins are declared controls; checker impl 80/80, callable impl 36/36, plain and ASan)
 - [ ] 1.3.2 Phase review — dispatch the lenses (correctness + semantics + memory-safety +
       emission-integrity); apply the corrections; run the base/head emission differential over
       `m360_*`, `m361_*`, `m363_*`, `m390_*` and the corpus (AR-37). The reviewer packet includes

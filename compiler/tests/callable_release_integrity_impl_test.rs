@@ -81,6 +81,75 @@ fn emit_pair(tag: &str, holder: &str, main: &str) -> String {
     std::fs::read_to_string(&c_path).unwrap_or_default()
 }
 
+/// Runs a two-file host program and asserts the front end rejected it.
+///
+/// The declaring module and the program are written beside each other, as a
+/// build passes them. Returns the diagnostics' text; a rejected program must
+/// not write a translation unit.
+fn reject_pair(tag: &str, holder: &str, main: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        holder_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program wrote a translation unit"
+    );
+    String::from_utf8_lossy(&output.stderr).to_string()
+}
+
+/// Emits a two-file program twice from the same source paths.
+///
+/// The module and the program keep one path across both runs, so a translation
+/// unit that differs only in its source locations still compares equal. Returns
+/// both emitted texts.
+fn emit_twice_pair(tag: &str, holder: &str, main: &str) -> (String, String) {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let mut emitted = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            main_path.display().to_string(),
+            holder_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emitted.push(std::fs::read_to_string(&c_path).unwrap_or_default());
+    }
+    (emitted[0].clone(), emitted[1].clone())
+}
+
 /// Emits a three-file module program and asserts the front end accepted it.
 ///
 /// Two holder files declare the modules the program names, so two same-named
@@ -1537,5 +1606,165 @@ func main(): i32 {
         count(&emitted, "*(q) = NULL;"),
         1,
         "ptrtakepin: the take argument's move-out is missing; emitted C:\n{emitted}"
+    );
+}
+
+// ===== Qualified call identity =====
+
+/// A qualified call reaches the module's declaration in the emitted symbol.
+///
+/// The emitter spells the module's function symbol for a qualified call, not a
+/// same-named function of the caller's module: the call declares, defines, and
+/// calls the module's `f`, and the caller's same-named `f` has no call. A
+/// second emission is byte-identical.
+#[test]
+fn should_emit_the_qualified_function_identity_at_the_symbol() {
+    let lib = r#"module probe.m390.lib;
+
+export func f(): i32 {
+    return 1;
+}
+"#;
+    let main = r#"module probe.m390.main;
+
+func f(): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    return probe.m390.lib.f() - 1;
+}
+"#;
+    let emitted = emit_pair("qualidentity", lib, main);
+    assert_eq!(
+        count(&emitted, "i32 cl_probe_m390_lib_f(void);"),
+        1,
+        "qualidentity: the module's prototype is missing; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "i32 cl_probe_m390_lib_f(void)\n{"),
+        1,
+        "qualidentity: the module's definition is missing; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_probe_m390_lib_f()"),
+        1,
+        "qualidentity: the call must reach the module's function; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_probe_m390_main_f()"),
+        0,
+        "qualidentity: the caller's same-named function must not be \
+         called; emitted C:\n{emitted}"
+    );
+    let (first, second) = emit_twice_pair("qualidentityreemit", lib, main);
+    assert_eq!(
+        first, second,
+        "qualidentityreemit: the program re-emitted differently"
+    );
+}
+
+/// A qualified call uses the module's signature, and a mismatch is rejected.
+///
+/// The signature-divergent caller passes an `i32` to the module's
+/// `f(n: i32)` while its own same-named `f` takes a `str`; the call must use
+/// the module's by-value parameter, not the caller's signature. The mismatched
+/// argument reports one frozen conversion at the written value and writes no
+/// translation unit.
+#[test]
+fn should_emit_the_qualified_signature_and_reject_the_mismatch() {
+    let siglib = r#"module probe.m390.sig;
+
+export func f(n: i32): i32 {
+    return n + 1;
+}
+"#;
+    let sigmain = r#"module probe.m390.sigmain;
+
+func f(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return probe.m390.sig.f(5) - 6;
+}
+"#;
+    let emitted = emit_pair("qualidentitysig", siglib, sigmain);
+    assert_eq!(
+        count(&emitted, "i32 cl_probe_m390_sig_f(i32 n);"),
+        1,
+        "qualidentitysig: the module's prototype is missing; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "i32 cl_probe_m390_sig_f(i32 n)\n{"),
+        1,
+        "qualidentitysig: the module's definition is missing; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_probe_m390_sig_f(5)"),
+        1,
+        "qualidentitysig: the call must pass the module's by-value parameter; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_probe_m390_sigmain_f(5)"),
+        0,
+        "qualidentitysig: the call must not reach the caller's str function; emitted C:\n{emitted}"
+    );
+
+    let mismatch = r#"module probe.m390.mismatch;
+
+func f(s: str): i32 {
+    return i32(len(s));
+}
+
+func main(): i32 {
+    return probe.m390.sig.f("x") - 6;
+}
+"#;
+    let stderr = reject_pair("qualidentitymismatch", siglib, mismatch);
+    assert_eq!(
+        stderr.matches("error E10200:").count(),
+        1,
+        "qualidentitymismatch: expected one E10200; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cannot convert 'static str' to 'i32' implicitly"),
+        "qualidentitymismatch: expected the conversion message; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("main.clo:8:29"),
+        "qualidentitymismatch: expected the report at the written argument; stderr:\n{stderr}"
+    );
+}
+
+/// The qualified func-typed global keeps its own binding.
+///
+/// `m.hook(5)` names the module's exported global, so the call goes through the
+/// module's function pointer rather than the caller's same-named function. The
+/// shape already held before the identity change, so this is a control.
+#[test]
+fn should_keep_the_qualified_func_global_call() {
+    let hooklib = r#"module probe.m390.hooklib;
+
+export let hook: func(i32): i32 = (n: i32) => n + 1;
+"#;
+    let hookmain = r#"module probe.m390.hookmain;
+
+func hook(n: i32): i32 { return n + 9; }
+
+func main(): i32 {
+    return probe.m390.hooklib.hook(5) - 6;
+}
+"#;
+    let emitted = emit_pair("qualidentityhook", hooklib, hookmain);
+    assert_eq!(
+        count(&emitted, "cl_probe_m390_hooklib_hook(5)"),
+        1,
+        "qualidentityhook: the call must reach the module's global; emitted C:\n{emitted}"
+    );
+    assert_eq!(
+        count(&emitted, "cl_probe_m390_hookmain_hook(5)"),
+        0,
+        "qualidentityhook: the call must not reach the caller's function; emitted C:\n{emitted}"
     );
 }

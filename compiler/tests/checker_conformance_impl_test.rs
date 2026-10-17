@@ -2395,6 +2395,75 @@ fn emit_host_pair(tag: &str, holder: &str, main: &str) -> String {
     emitted
 }
 
+/// Runs a two-file host program and asserts the front end rejected it.
+///
+/// The holder module and the program are written beside each other, as a build
+/// passes them. Returns the diagnostics' text; a rejected program must not
+/// write a translation unit.
+fn reject_host_pair(tag: &str, holder: &str, main: &str) -> String {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        main_path.display().to_string(),
+        holder_path.display().to_string(),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: the front end accepted a program that must be rejected"
+    );
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program wrote a translation unit"
+    );
+    String::from_utf8_lossy(&output.stderr).to_string()
+}
+
+/// Emits a two-file program twice from the same source paths.
+///
+/// The holder and the program keep one path across both runs, so a translation
+/// unit that differs only in its source locations still compares equal. Returns
+/// both emitted texts.
+fn emit_twice_pair(tag: &str, holder: &str, main: &str) -> (String, String) {
+    let scratch = ScratchDir::new(tag);
+    let holder_path = scratch.path().join("holder.clo");
+    let main_path = scratch.path().join("main.clo");
+    std::fs::write(&holder_path, holder)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the holder: {err}"));
+    std::fs::write(&main_path, main)
+        .unwrap_or_else(|err| panic!("{tag}: cannot write the program: {err}"));
+    let mut emitted = Vec::new();
+    for name in ["first.c", "second.c"] {
+        let c_path = scratch.path().join(name);
+        let output = run_clc(&[
+            "--profile".to_owned(),
+            "host".to_owned(),
+            "-o".to_owned(),
+            c_path.display().to_string(),
+            main_path.display().to_string(),
+            holder_path.display().to_string(),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{tag}: the front end rejected the program; stderr:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        emitted.push(std::fs::read_to_string(&c_path).unwrap_or_default());
+    }
+    (emitted[0].clone(), emitted[1].clone())
+}
+
 /// Asserts one keyed instance is declared, defined, and called exactly once.
 ///
 /// `prefix` is the declaration prefix shared by every instance of the same
@@ -4250,4 +4319,550 @@ func main(): i32 {
     let stderr = reject_host("rawenumm", raw_enum);
     assert!(stderr.contains("'A' is not a member of 'raw E'"), "rawenumm: {stderr}");
     assert!(stderr.contains("main.clo:9:20"), "rawenumm: {stderr}");
+}
+
+// ===== Call identity and written arguments =====
+
+/// A dot call's written argument is judged at the parameter the receiver fixes.
+///
+/// The receiver supplies the callee's first argument, so the written arguments
+/// must convert to the type it fixes; the report names the written value, not
+/// the receiver. The take and borrow spellings each report once at their own
+/// argument, the generic caller reports at the value it passes, and the direct
+/// inferred and explicit twins keep their existing codes and sites. The
+/// matching take dot call is accepted and emits its keyed instance.
+#[test]
+fn should_report_a_dot_call_written_argument_at_its_resolved_parameter() {
+    let take_dot = r#"module spec.cc.impl.dotwrittenarg;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let g: i32 = b.pick(7);
+    return g - 1;
+}
+"#;
+    assert_rejected_once_at_site(
+        "dotwrittenarg",
+        take_dot,
+        "error E10200:",
+        "cannot convert 'i32' to 'Box' implicitly",
+        "main.clo:11:25",
+    );
+
+    let borrow_dot = r#"module spec.cc.impl.dotwrittenborrow;
+
+struct Box { x: i32; }
+
+func put<T>(borrow out: T, v: T): void {
+    out = v;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    b.put(7);
+    return b.x - 1;
+}
+"#;
+    assert_rejected_once_at_site(
+        "dotwrittenborrow",
+        borrow_dot,
+        "error E10200:",
+        "cannot convert 'i32' to 'Box' implicitly",
+        "main.clo:11:11",
+    );
+
+    let generic_i32 = r#"module spec.cc.impl.dotgenerici32;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func outer<T>(b: Box, c: T): i32 {
+    return b.pick(c);
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    return outer<i32>(b, 7) - 1;
+}
+"#;
+    assert_rejected_once_at_site(
+        "dotgenerici32",
+        generic_i32,
+        "error E10200:",
+        "cannot convert 'i32' to 'Box' implicitly",
+        "main.clo:10:19",
+    );
+
+    // The direct twins already judged their written argument against the
+    // inferred or explicit type argument; they keep the same code and site.
+    let direct_inferred = r#"module spec.cc.impl.dotwritteninferred;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let g: i32 = pick(b, 7);
+    return g - 1;
+}
+"#;
+    assert_rejected_once_at_site(
+        "dotwritteninferred",
+        direct_inferred,
+        "error E10200:",
+        "cannot convert 'i32' to 'Box' implicitly",
+        "main.clo:11:26",
+    );
+
+    let direct_explicit = r#"module spec.cc.impl.dotwrittenexplicit;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let g: i32 = pick<Box>(b, 7);
+    return g - 1;
+}
+"#;
+    assert_rejected_once_at_site(
+        "dotwrittenexplicit",
+        direct_explicit,
+        "error E10200:",
+        "cannot convert 'i32' to 'Box' implicitly",
+        "main.clo:11:31",
+    );
+
+    // A matching receiver and argument emit the instance the receiver fixes.
+    let matching = r#"module spec.cc.impl.dotcontrol;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 2;
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let c: Box = Box { x: 2 };
+    let g: i32 = b.pick(c);
+    return g - 2;
+}
+"#;
+    let emitted = emit_host("dotcontrol", matching);
+    assert_keyed_instance(
+        "dotcontrol",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__Box(ClBox v, ClBox w)",
+        "cl_pick__Box(b, c)",
+    );
+}
+
+/// A generic caller whose written argument matches the receiver is accepted.
+///
+/// The dot call fixes the callee's parameter from the receiver, so `c: Box`
+/// matches `w: Box` even though the enclosing function's own type parameter is
+/// the caller's `i32` instance. Judging the callee's parameter against the
+/// caller's instance rejected both the receiver and the argument; the call
+/// site's own inference leaves this caller clean and keys the `Box` instance.
+#[test]
+fn should_accept_a_generic_caller_whose_argument_matches_the_receiver() {
+    let generic_box = r#"module spec.cc.impl.dotgenericbox;
+
+struct Box { x: i32; }
+
+func pick<T>(take v: T, take w: T): i32 {
+    return 1;
+}
+
+func outer<T>(b: Box, c: Box): i32 {
+    return b.pick(c);
+}
+
+func main(): i32 {
+    let b: Box = Box { x: 1 };
+    let c: Box = Box { x: 2 };
+    return outer<i32>(b, c) - 1;
+}
+"#;
+    let emitted = emit_host("dotgenericbox", generic_box);
+    assert_keyed_instance(
+        "dotgenericbox",
+        &emitted,
+        "static i32 cl_pick__",
+        "static i32 cl_pick__Box(ClBox v, ClBox w)",
+        "cl_pick__Box(b, c)",
+    );
+}
+
+/// The holder module the declaration/import collision programs import from.
+///
+/// It exports `v` for the renamed shapes and `g` for the direct spelling, so
+/// the colliding local name is always `g`.
+const DECL_COLLISION_HOLDER: &str = r#"module spec.cc.impl.declcollisionholder;
+
+export let v: i32 = 5;
+export let g: i32 = 5;
+"#;
+
+/// Builds a module that binds `g` through an import and its own declaration.
+///
+/// The import renames `v` to `g`, so the report's site is the imported source
+/// name while its message names the local binding. Returns the program text
+/// and the one-based line of the import statement.
+fn declaration_collision_program(
+    module: &str,
+    declaration: &str,
+    import_first: bool,
+) -> (String, usize) {
+    let import = "import { v as g } from spec.cc.impl.declcollisionholder;";
+    let main = "func main(): i32 {\n    return 0;\n}";
+    if import_first {
+        (
+            format!("module {module};\n\n{import}\n\n{declaration}\n\n{main}\n"),
+            3,
+        )
+    } else {
+        let import_line = declaration.lines().count() + 4;
+        (
+            format!("module {module};\n\n{declaration}\n\n{import}\n\n{main}\n"),
+            import_line,
+        )
+    }
+}
+
+/// Asserts one `E11103` names `fragment` at `site` and no duplicate declaration
+/// is reported.
+fn assert_collision_report(tag: &str, stderr: &str, fragment: &str, site: &str) {
+    assert_eq!(
+        stderr.matches("error E11103:").count(),
+        1,
+        "{tag}: expected one E11103; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(fragment),
+        "{tag}: expected {fragment:?}; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(site),
+        "{tag}: expected the report at {site:?}; stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("E11101"),
+        "{tag}: the declaration stays a single declaration; stderr:\n{stderr}"
+    );
+}
+
+/// One name bound by both an import and a declaration is the collision report.
+///
+/// The import pass reports the local binding once, at the import item's name,
+/// for every declaration kind and in either order; the module declaration is
+/// not a duplicate declaration. The renamed-import control is accepted and its
+/// read still reaches the holder's binding.
+#[test]
+fn should_report_a_declaration_import_collision_at_the_import_item() {
+    let direct = r#"module spec.cc.impl.declcollisiondirect;
+
+import { g } from spec.cc.impl.declcollisionholder;
+
+let g: i32 = 7;
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let stderr = reject_host_pair("declcollision-direct", DECL_COLLISION_HOLDER, direct);
+    assert_collision_report(
+        "declcollision-direct",
+        &stderr,
+        "duplicate import of 'g'",
+        "main.clo:3:10",
+    );
+
+    // Every declaration kind the module loader registers, in both orders. A
+    // `comptime` declaration also reports its staged-feature code; the
+    // collision is the finding under test, so only that code is pinned.
+    let kinds: &[(&str, &str)] = &[
+        ("let", "let g: i32 = 7;"),
+        ("func", "func g(): i32 { return 7; }"),
+        ("struct", "struct g { x: i32; }"),
+        ("const", "const g: i32 = 7;"),
+        ("enum", "enum g : u8 { A, B }"),
+        (
+            "handle",
+            r#"ffi hlib {
+    func Close(take p: g): void;
+}
+handle g freedBy Close;"#,
+        ),
+        ("ffi-block", "ffi g { func h(x: i32): i32; }"),
+        ("ffi-func", "ffi hlib { func g(x: i32): i32; }"),
+        ("intrinsic", "intrinsic func g(): i32;"),
+        ("comptime", "comptime func g(): i32 { return 7; }"),
+    ];
+    for (index, (kind, declaration)) in kinds.iter().enumerate() {
+        for import_first in [true, false] {
+            let order = if import_first { "importfirst" } else { "declfirst" };
+            let tag = format!("declcollision-{kind}-{order}");
+            let module = format!(
+                "spec.cc.impl.declcollision{index}{}",
+                if import_first { "i" } else { "d" }
+            );
+            let (main, import_line) =
+                declaration_collision_program(&module, declaration, import_first);
+            let stderr = reject_host_pair(&tag, DECL_COLLISION_HOLDER, &main);
+            let site = format!("main.clo:{import_line}:10");
+            assert_collision_report(&tag, &stderr, "duplicate import of 'g'", &site);
+        }
+    }
+
+    let control = r#"module spec.cc.impl.declcollisioncontrol;
+
+import { v as g } from spec.cc.impl.declcollisionholder;
+
+let h: i32 = 2;
+
+func main(): i32 {
+    return g + h - 7;
+}
+"#;
+    let emitted = emit_host_pair("declcollision-control", DECL_COLLISION_HOLDER, control);
+    assert_contains(
+        "declcollision-control",
+        &emitted,
+        "cl_spec_cc_impl_declcollisionholder_v",
+    );
+}
+
+// ===== The direct-name shadow controls =====
+
+/// The holder module the direct-name shadow programs import from.
+///
+/// The exported `b` is a `Box`, so a shadow that resolved to the import would
+/// instantiate the iteration over a non-iterable struct instead of the
+/// body's fixed array.
+const SHADOW_CONTROL_HOLDER: &str = r#"module spec.cc.impl.shadowholder;
+
+export struct Box { n: i32; }
+
+export let b: Box = Box { n: 5 };
+"#;
+
+/// The direct-name shadow controls keep their own instance and no dead one.
+///
+/// A local, a parameter, a generic-body local, and an expression- or
+/// block-bodied lambda parameter may shadow an import, and the innermost scope
+/// decides the dot receiver. Each fixture emits the array instance it actually
+/// calls, emits no instance for the shadowed import's struct, and re-emits
+/// byte-identically. The no-import baseline pins the same loop shape without a
+/// shadow. These shapes already held before the phase's change, so they are
+/// controls rather than discriminators.
+#[test]
+fn should_keep_the_direct_name_shadow_controls_without_dead_instances() {
+    let local = r#"module spec.cc.impl.shadowlocal;
+
+import { b } from spec.cc.impl.shadowholder;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) { n = n + i32(v); }
+    return n;
+}
+
+func body(): i32 {
+    let b: i32[2] = [3, 4];
+    return b.each();
+}
+
+let g: i32 = body();
+
+func main(): i32 {
+    return g - 7;
+}
+"#;
+    let (first, second) = emit_twice_pair("shadowlocal", SHADOW_CONTROL_HOLDER, local);
+    assert_eq!(
+        first, second,
+        "shadowlocal: the program re-emitted differently"
+    );
+    assert_keyed_instance(
+        "shadowlocal",
+        &first,
+        "static i32 cl_each__",
+        "static i32 cl_each__arr2_i32(i32 xs[2])",
+        "cl_each__arr2_i32(b)",
+    );
+    assert_eq!(
+        count(&first, "cl_each__Box"),
+        0,
+        "shadowlocal: the shadowed import must add no instance"
+    );
+
+    let parameter = r#"module spec.cc.impl.shadowparam;
+
+import { b } from spec.cc.impl.shadowholder;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) { n = n + i32(v); }
+    return n;
+}
+
+func body(b: i32[2]): i32 {
+    return b.each();
+}
+
+func main(): i32 {
+    let a: i32[2] = [3, 4];
+    return body(a) - 7;
+}
+"#;
+    let (first, second) = emit_twice_pair("shadowparam", SHADOW_CONTROL_HOLDER, parameter);
+    assert_eq!(
+        first, second,
+        "shadowparam: the program re-emitted differently"
+    );
+    assert_keyed_instance(
+        "shadowparam",
+        &first,
+        "static i32 cl_each__",
+        "static i32 cl_each__arr2_i32(i32 xs[2])",
+        "cl_each__arr2_i32(b)",
+    );
+    assert_eq!(
+        count(&first, "cl_each__Box"),
+        0,
+        "shadowparam: the shadowed import must add no instance"
+    );
+
+    let generic = r#"module spec.cc.impl.shadowgeneric;
+
+import { b } from spec.cc.impl.shadowholder;
+
+func drain<T>(xs: T): i32 { let n: i32 = 0; for (v in xs) { n = n + 1; } return n; }
+
+func run<T>(x: T): i32 { let b: i32[2] = [3, 4]; return b.drain() + 0; }
+
+func main(): i32 { let a: i32[2] = [3, 4]; return run<i32[2]>(a) - 2; }
+"#;
+    let (first, second) = emit_twice_pair("shadowgeneric", SHADOW_CONTROL_HOLDER, generic);
+    assert_eq!(
+        first, second,
+        "shadowgeneric: the program re-emitted differently"
+    );
+    assert_keyed_instance(
+        "shadowgeneric",
+        &first,
+        "static i32 cl_drain__",
+        "static i32 cl_drain__arr2_i32(i32 xs[2])",
+        "cl_drain__arr2_i32(b)",
+    );
+    assert_eq!(
+        count(&first, "cl_drain__Box"),
+        0,
+        "shadowgeneric: the shadowed import must add no instance"
+    );
+
+    let lambda_expression = r#"module spec.cc.impl.shadowlambdaexpr;
+
+import { b } from spec.cc.impl.shadowholder;
+
+func drain<T>(xs: T): i32 { let n: i32 = 0; for (v in xs) { n = n + 1; } return n; }
+
+let f: func(i32[2]): i32 = (b: i32[2]) => b.drain();
+
+func main(): i32 { let a: i32[2] = [3, 4]; return f(a) - 2; }
+"#;
+    let (first, second) =
+        emit_twice_pair("shadowlambdaexpr", SHADOW_CONTROL_HOLDER, lambda_expression);
+    assert_eq!(
+        first, second,
+        "shadowlambdaexpr: the program re-emitted differently"
+    );
+    assert_keyed_instance(
+        "shadowlambdaexpr",
+        &first,
+        "static i32 cl_drain__",
+        "static i32 cl_drain__arr2_i32(i32 xs[2])",
+        "cl_drain__arr2_i32(b)",
+    );
+    assert_eq!(
+        count(&first, "cl_drain__Box"),
+        0,
+        "shadowlambdaexpr: the shadowed import must add no instance"
+    );
+
+    let lambda_block = r#"module spec.cc.impl.shadowlambdablock;
+
+import { b } from spec.cc.impl.shadowholder;
+
+func drain<T>(xs: T): i32 { let n: i32 = 0; for (v in xs) { n = n + 1; } return n; }
+
+let f: func(i32[2]): i32 = (b: i32[2]) => { return b.drain(); };
+
+func main(): i32 { let a: i32[2] = [3, 4]; return f(a) - 2; }
+"#;
+    let (first, second) = emit_twice_pair("shadowlambdablock", SHADOW_CONTROL_HOLDER, lambda_block);
+    assert_eq!(
+        first, second,
+        "shadowlambdablock: the program re-emitted differently"
+    );
+    assert_keyed_instance(
+        "shadowlambdablock",
+        &first,
+        "static i32 cl_drain__",
+        "static i32 cl_drain__arr2_i32(i32 xs[2])",
+        "cl_drain__arr2_i32(b)",
+    );
+    assert_eq!(
+        count(&first, "cl_drain__Box"),
+        0,
+        "shadowlambdablock: the shadowed import must add no instance"
+    );
+
+    let baseline = r#"module spec.cc.impl.shadowcontrol;
+
+func each<T>(xs: T): i32 {
+    let n: i32 = 0;
+    for (v in xs) { n = n + i32(v); }
+    return n;
+}
+
+func body(): i32 {
+    let b: i32[2] = [3, 4];
+    return b.each();
+}
+
+func main(): i32 {
+    return body() - 7;
+}
+"#;
+    let (first, second) = emit_twice("shadowcontrol", baseline);
+    assert_eq!(
+        first, second,
+        "shadowcontrol: the program re-emitted differently"
+    );
+    assert_keyed_instance(
+        "shadowcontrol",
+        &first,
+        "static i32 cl_each__",
+        "static i32 cl_each__arr2_i32(i32 xs[2])",
+        "cl_each__arr2_i32(b)",
+    );
 }
