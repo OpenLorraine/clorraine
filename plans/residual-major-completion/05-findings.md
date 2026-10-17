@@ -181,3 +181,55 @@ in-execution filed row checked, including `DEF-380`'s gridel boundary and `DEF-3
 status — recorded incidental vs open, AR-38)_. **Code record**: _(to be filled: the phase commits and the
 final tree)_. **Residuals**: _(to be filled: any filed row or recorded limitation, including the
 `(*p).f`/`unsafe (*p).f` stores if they remain)_.
+
+## Phase 1 — Call identity and written-argument checks
+
+**Reviewed implementation**: `a0c4f26` (the implementation), `6e281cd` (the pins), `dec7695` (the
+corrections). **Lenses**: correctness (L1C), semantics (L1S), memory-safety (M), emission-integrity.
+
+### Verdicts
+
+| Lens | Result | Evidence |
+|------|--------|----------|
+| correctness | FAIL — 2 blockers | L1C-1 (a self-qualified inferred generic call emits an instance the monomorphizer never declares), L1C-2 (a module-path receiver dot call emits the dotted path as the C callee); L1C-3/L1C-4 minors (the root scratch files, the register escapes) |
+| semantics | PASS WITH MINORS — 0 blockers | L1S-1 (the pending-conversion report at the whole argument, not the written value), L1S-2 (the collision test comment claimed `E90001`); L1S-3..L1S-7 filed (`DEF-396`, `DEF-397`, `DEF-398`, `DEF-404`, `DEF-405`) |
+| memory-safety | FINDINGS — 2 | M-1 (a qualified `take` ffi argument released twice in a module initializer), M-2 (the qualified ffi call emitted the dotted path); both phase-introduced |
+| emission-integrity | CONFIRMED — 0 | 22 deltas in the four intended classes; no head-only strict failure; the qualified symbol/prototype agreement and re-emission determinism clean; the pre-existing generic-return `ClT` filed (`DEF-395`) |
+
+### Fix rounds
+
+| Round | Outcome |
+|-------|---------|
+| C1 (`dec7695`) | **Fixed**: the ffi declarations keyed by `(module, name)` and the declared symbol spelled; a self-qualified ffi call keeps its modes and take contract (the initializer passes the temp, no release) |
+| C2 (`dec7695`) | **Fixed**: the dotted IR callee resolved module-aware in the instance collectors; the inferred generic instance is declared, defined, and called once (body forms; the initializer form stays `DEF-402`) |
+| C3 (`dec7695`) | **Fixed**: member-ness decided from the whole receiver path and the initializer receiver resolved module-aware; `DEF-403` incidentally closed |
+| C4 (`dec7695`) | **Fixed**: a marked dot-call argument reports at its written value |
+| C5/C6 (`dec7695`) | The collision comment corrected; the register em dashes fixed; the root scratch files removed |
+
+### Confirmations
+
+| Lens | Result |
+|------|--------|
+| memory-safety | **PASS — 0 blockers**: both ffi findings fixed on the unmodified head; the 51-TU coverage set ASan/LSan-clean (the conditional variants included); no new leak/UAF/invalid free |
+| correctness | **PASS WITH MINORS — 0 blockers**: L1C-1/L1C-2 closed (body and initializer), the semantics minors closed, the regression matrix clean; the `W10001` on a duplicable borrow receiver is the frozen warning; the pins discriminate (4 spec + 4 impl; the modes control declared) |
+
+### Filed rows
+
+`DEF-395` (the generic-return `ClT`), `DEF-396` (the qualified call's checker bypass), `DEF-397` (the
+generic dot-call inference/bounds), `DEF-398` (the qualified function value), `DEF-399` (the
+qualified intrinsic/ffi `E10219`), `DEF-400` (the imported-value head), `DEF-401` (the dot-call
+explicit type arguments), `DEF-402` (the initializer inferred generic — open), `DEF-403` (the
+initializer module-global receiver dot call — **closed incidentally**), `DEF-404` (the `cstring`
+literal), `DEF-405` (the explicit-type-argument literal), `DEF-406` (the compound callee parameter
+with a same-named own type parameter), `DEF-407` (the qualified generic fixed-array loop iterable).
+
+### Record notes
+
+- AR-39 records the batch-L origin-case input correction (the import renamed to `other`; the
+  initializer-keying subject preserved; the collision pinned by the new `E11103` case).
+- A `W10001` on a generic dot call whose receiver is a duplicable `borrow` value is the frozen
+  needless-lend warning, emitted at both refs.
+- The initializer form of the inferred generic call remains `DEF-402` (the initializer AST collector
+  returns `Unknown` for a module-path receiver).
+- Two same-named ffi declarations with different C signatures cannot share one TU (a C constraint,
+  out of scope; the keyed lookup is structurally verified).

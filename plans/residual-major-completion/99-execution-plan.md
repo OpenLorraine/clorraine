@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 5/60 tasks (8%) — Phase 1 pinned
+> **Progress**: 8/60 tasks (13%) — Phase 1 complete
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -100,17 +100,17 @@ controls.
 - [x] 1.3.1 Write the phase implementation pins (the dot-call report code/span, the `E11103`
       site and kind matrix, the qualified symbol and lookups, the absent dead instance for the
       six shadow controls, a re-emission determinism pin) in the two `_impl_test.rs` files ✅ (completed: 2026-10-17; seven impl pins: the dot-call report record, the generic-caller acceptance, the collision record, the shadow controls, the qualified symbol, the qualified signature/mismatch, and the func-global control; the base discrimination: 3 + 2 pins fail at `749c453`, the shadow and func-global pins are declared controls; checker impl 80/80, callable impl 36/36, plain and ASan)
-- [ ] 1.3.2 Phase review — dispatch the lenses (correctness + semantics + memory-safety +
+- [x] 1.3.2 Phase review — dispatch the lenses (correctness + semantics + memory-safety +
       emission-integrity); apply the corrections; run the base/head emission differential over
       `m360_*`, `m361_*`, `m363_*`, `m390_*` and the corpus (AR-37). The reviewer packet includes
       the blast-radius step (every dot-call route, every declaration kind, every qualified callee
-      lookup) and the test-integrity step
-- [ ] 1.3.3 Bounded confirmation: re-run the phase probes and the focused suites after the
+      lookup) and the test-integrity step ✅ (completed: 2026-10-17; the four lenses dispatched: correctness FAIL (2 blockers), semantics PASS WITH MINORS, memory FINDINGS (2), emission CONFIRMED (0); the correction round `dec7695` applied all six items)
+- [x] 1.3.3 Bounded confirmation: re-run the phase probes and the focused suites after the
       corrections; record FAIL/PASS per round
-### Step 1.4: Phase Record
+### Step 1.4: Phase Record ✅ (completed: 2026-10-17; the bounded confirmations: memory PASS (0 blockers; the ffi findings fixed, the coverage clean), correctness PASS WITH MINORS (0 blockers; L1C-1/L1C-2 closed, the semantics minors closed, the regression matrix clean))
 
-- [ ] 1.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
-      update the Progress block and commit per the active commit mode
+- [x] 1.4.1 Phase record: append the verdicts, fix rounds, and filed rows to `05-findings.md`;
+      update the Progress block and commit per the active commit mode ✅ (completed: 2026-10-17; the ledger section recorded; rows `DEF-395`–`DEF-407` filed, `DEF-403` closed incidentally; progress 8/60)
 
 **Verify**: `make check`; the checker-conformance and callable suites; the strict builds; the
 emission differential
