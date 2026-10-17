@@ -3,7 +3,7 @@
 > **Document**: 99-execution-plan.md
 > **Parent**: [Index](00-index.md)
 > **Last Updated**: 2026-10-17
-> **Progress**: 40/60 tasks (67%) — Phase 5 complete
+> **Progress**: 42/60 tasks (70%) — Phase 6 red
 > **Planning baseline**: `86d6f51` (the batch-L follow-up close-out commit)
 > **CodeOps Artifact Schema**: 1
 
@@ -376,12 +376,12 @@ ST-18..ST-19 · AR-20, AR-21
 **Objective**: Pin the single-evaluated owning deref source in the store/return/field/array/
 conditional positions and the guarded take's consumed source and deferred pointer fill.
 
-- [ ] 6.1.1 [spec-author] Write the phase cases —
+- [x] 6.1.1 [spec-author] Write the phase cases — ✅ (completed: 2026-10-17; two spec cases added: the single-evaluated impure deref operand across the store, return, struct-literal field, array-literal element, and conditional arm, with the discarded/non-taking/duplicable controls, and the guarded deref take with the true/false and impure-pointer variants; the named generic-duplicable emission delta recorded, not pinned)
       `compiler/tests/conditional_projection_residue_spec_test.rs` (derefoperandonce,
       guardeddereftake) with the five `DEF-375` shapes, the discarded/non-taking/concrete-
       duplicable controls, and the false/true impure `DEF-376` selections; the red cases
       committed first
-- [ ] 6.1.2 Run the suite and record the red phase (the discarded read, the duplicable pointee,
+- [x] 6.1.2 Run the suite and record the red phase (the discarded read, the duplicable pointee, ✅ (completed: 2026-10-17; the red phase recorded: residue 180 passed / 2 failed; the five shapes and the guarded true path abort 134 with an ASan double free; the impure false path exits 10 (calls = 1); the discarded/non-taking/duplicable/place-skip controls green)
       and the eager take controls verified green first; AR-5)
 
 ### Step 6.2: Implementation

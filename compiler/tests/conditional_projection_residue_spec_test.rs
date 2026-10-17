@@ -15994,3 +15994,414 @@ fn should_report_a_nested_fill_covered_element_copy() {
         &[],
     );
 }
+
+// ---------------------------------------------------------------------------
+// oncederef: an owning raw-deref read evaluates its pointer once.
+//
+// `unsafe *alt(p, q)` reads the pointee of a pointer expression that advances a
+// counter on every call. Wherever the read's value is consumed — a raw store,
+// a return, a struct-literal field, an array-literal element, and a
+// conditional arm — the pointer must be evaluated once and the value must move
+// out of that one pointee, so exactly one owner releases it. A second
+// evaluation selects the other pointee: the read binds one buffer while the
+// emptying releases the other, and the first buffer is released twice. The
+// discarded read and the by-value argument keep the read-only shape, and a
+// duplicable pointee is the concrete control that copies instead of moving.
+// ---------------------------------------------------------------------------
+
+/// An owning raw-deref read evaluates its impure pointer once in every
+/// consuming position.
+///
+/// `alt` returns its first argument on the first call and advances a counter,
+/// so a second call would select the other pointee. The store `v = *alt(p, q)`
+/// inside a generic `overwrite<T>`, the return `return *alt(p, q)`, the
+/// struct-literal field `Box { s: *alt(p, q) }`, the array-literal element
+/// `[*alt(p, q)]`, and the conditional arm `flag ? *alt(p, q) : x` each read
+/// the first call's pointee (two bytes) and must record exactly one call, so
+/// every read-back exits 12. The discarded read and the non-taking argument
+/// move nothing: each leaves the owner readable and exits 0 with one call. The
+/// duplicable `T = i32` control copies its pointee, records one call, and exits
+/// 0; the generic instance may emit one extra temporary versus its concrete
+/// twin, and that emission delta is not part of this expectation. Every program
+/// is accepted, builds under the strict flags, and must be free of memory
+/// errors.
+#[test]
+fn should_evaluate_an_impure_deref_operand_once() {
+    let store = r#"module spec.cpr.oncederefstore;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func overwrite<T>(p: raw T, q: raw T, take v: T): T {
+    unsafe {
+        v = *alt(p, q);
+    }
+    return v;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let v: String = stringOf("vv");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let r: String = overwrite<String>(p, q, v);
+        return i32(len(r)) + calls * 10;
+    }
+}
+"#;
+    let output = run_memory("oncederefstore", store);
+    assert_no_asan("oncederefstore", &output);
+    assert_exit("oncederefstore", &output, 12);
+
+    let returned = r#"module spec.cpr.oncederefreturn;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func read_it<T>(p: raw T, q: raw T): T {
+    return unsafe *alt(p, q);
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let r: String = read_it<String>(p, q);
+        return i32(len(r)) + calls * 10;
+    }
+}
+"#;
+    let output = run_memory("oncederefreturn", returned);
+    assert_no_asan("oncederefreturn", &output);
+    assert_exit("oncederefreturn", &output, 12);
+
+    let field = r#"module spec.cpr.oncedereffield;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+struct Box { s: String; }
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func make<T>(p: raw T, q: raw T): Box {
+    return Box { s: unsafe *alt(p, q) };
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let bx: Box = make<String>(p, q);
+        return i32(len(bx.s)) + calls * 10;
+    }
+}
+"#;
+    let output = run_memory("oncedereffield", field);
+    assert_no_asan("oncedereffield", &output);
+    assert_exit("oncedereffield", &output, 12);
+
+    let element = r#"module spec.cpr.oncederefarray;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let xs: String[1] = [*alt(p, q)];
+        return i32(len(xs[0])) + calls * 10;
+    }
+}
+"#;
+    let output = run_memory("oncederefarray", element);
+    assert_no_asan("oncederefarray", &output);
+    assert_exit("oncederefarray", &output, 12);
+
+    let arm = r#"module spec.cpr.oncederefcond;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let fallback: String = stringOf("cc");
+    let flag: bool = true;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let r: String = flag ? *alt(p, q) : fallback;
+        return i32(len(r)) + calls * 10;
+    }
+}
+"#;
+    let output = run_memory("oncederefcond", arm);
+    assert_no_asan("oncederefcond", &output);
+    assert_exit("oncederefcond", &output, 12);
+
+    let discarded = r#"module spec.cpr.oncederefdiscard;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        *alt(p, q);
+    }
+    return i32(len(a)) - 2 + (calls - 1) * 10;
+}
+"#;
+    let output = run_memory("oncederefdiscard", discarded);
+    assert_no_asan("oncederefdiscard", &output);
+    assert_exit("oncederefdiscard", &output, 0);
+
+    let argument = r#"module spec.cpr.oncederefarg;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func observe(v: String): i32 { return i32(len(v)); }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let n: i32 = observe(*alt(p, q));
+        return n + i32(len(a)) - 4 + (calls - 1) * 10;
+    }
+}
+"#;
+    let output = run_memory("oncederefarg", argument);
+    assert_no_asan("oncederefarg", &output);
+    assert_exit("oncederefarg", &output, 0);
+
+    let duplicable = r#"module spec.cpr.oncederefdup;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func read_it<T>(p: raw T, q: raw T): T {
+    return unsafe *alt(p, q);
+}
+
+func main(): i32 {
+    let a: i32 = 5;
+    let b: i32 = 6;
+    unsafe {
+        let p: raw i32 = &a;
+        let q: raw i32 = &b;
+        let r: i32 = read_it<i32>(p, q);
+        return r + calls * 10 - 15;
+    }
+}
+"#;
+    let output = run_memory("oncederefdup", duplicable);
+    assert_no_asan("oncederefdup", &output);
+    assert_exit("oncederefdup", &output, 0);
+}
+
+// ---------------------------------------------------------------------------
+// guardeddereftake: a guarded take carries its consumed deref source.
+//
+// `g && (eat(take (unsafe *q)) == 1)` reaches the callee only when `g` is
+// true. On that path the callee owns the pointee and the caller's binding is
+// emptied, so the caller must not release the moved value again. On the
+// skipped path nothing is consumed and the owner keeps its value. When the
+// pointer is an impure expression, the skipped path must not evaluate it at
+// all: the call counter is the evidence.
+// ---------------------------------------------------------------------------
+
+/// A guarded take of a raw-deref source empties the pointee on the evaluated
+/// path and leaves the pointer uncalled on the skipped path.
+///
+/// With `g` true, `eat(take (unsafe *q))` transfers the pointee to the callee
+/// and the caller's `a` is emptied, so the run exits 0. With `g` false, the
+/// guarded take never runs and `a` keeps its two bytes, so the read-back exits
+/// 0. The impure spellings replace `q` with `alt(p, q)`: the taken path exits
+/// 0, and the skipped path must not call `alt` at all — its counter folds into
+/// the exit code, so a statement-entry call exits non-zero. Every program is
+/// accepted, builds under the strict flags, and must be free of memory errors.
+#[test]
+fn should_carry_a_guarded_deref_take_source() {
+    let taken = r#"module spec.cpr.guardeddereftake;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let g: bool = true;
+    unsafe {
+        let q: raw String = &a;
+        let ok: bool = g && (eat(take (unsafe *q)) == 1);
+        if (ok) { return 0; }
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("guardeddereftake", taken);
+    assert_no_asan("guardeddereftake", &output);
+    assert_exit("guardeddereftake", &output, 0);
+
+    let skipped = r#"module spec.cpr.guardedderefskip;
+
+import { String, stringOf } from std.text;
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let g: bool = false;
+    unsafe {
+        let q: raw String = &a;
+        let ok: bool = g && (eat(take (unsafe *q)) == 1);
+        if (ok) { return 1; }
+    }
+    return i32(len(a)) - 2;
+}
+"#;
+    let output = run_memory("guardedderefskip", skipped);
+    assert_no_asan("guardedderefskip", &output);
+    assert_exit("guardedderefskip", &output, 0);
+
+    let impure_taken = r#"module spec.cpr.guardedderefimpure;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let g: bool = true;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let ok: bool = g && (eat(take (unsafe *alt(p, q))) == 1);
+        if (ok) { return 0; }
+    }
+    return 1;
+}
+"#;
+    let output = run_memory("guardedderefimpure", impure_taken);
+    assert_no_asan("guardedderefimpure", &output);
+    assert_exit("guardedderefimpure", &output, 0);
+
+    let impure_skipped = r#"module spec.cpr.guardedderefimpureskip;
+
+import { String, stringOf } from std.text;
+
+let calls: i32 = 0;
+
+func alt<T>(s: raw T, t: raw T): raw T {
+    let i: i32 = calls;
+    calls = calls + 1;
+    if (i == 0) { return s; }
+    return t;
+}
+
+func eat(take x: String): i32 { return 1; }
+
+func main(): i32 {
+    let a: String = stringOf("aa");
+    let b: String = stringOf("bb");
+    let g: bool = false;
+    unsafe {
+        let p: raw String = &a;
+        let q: raw String = &b;
+        let ok: bool = g && (eat(take (unsafe *alt(p, q))) == 1);
+        if (ok) { return 2; }
+    }
+    return calls * 10 + i32(len(a)) - 2;
+}
+"#;
+    let output = run_memory("guardedderefimpureskip", impure_skipped);
+    assert_no_asan("guardedderefimpureskip", &output);
+    assert_exit("guardedderefimpureskip", &output, 0);
+}
