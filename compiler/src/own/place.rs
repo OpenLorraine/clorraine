@@ -200,12 +200,13 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 },
                 span,
             );
-            // A write to an owner replaces the storage its view loans point
-            // into; when such a loan is live the write reports the frozen
-            // conflict (`E10031`). The recorded positions that name the owner
-            // are stale afterwards, so a later escape would only repeat the
-            // same violation at a second site. The binding loans stay, because
-            // their uses keep the conflict report reachable.
+            // A write to the owner replaces the storage its view loans point
+            // into, so the write reports the frozen conflict when one of those
+            // loans is live (`E10031`). The owner's old element-loan positions
+            // are dead afterwards: a later escape would only repeat the same
+            // violation at a second site. The write's own conflict report
+            // stands, and the binding loans stay because their uses keep that
+            // report reachable.
             self.drop_written_owner_positions(id);
         }
         if !projections.is_empty() && self.state.place(id).moved {
@@ -1223,20 +1224,25 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// destination's positions loan the same storage: a place contributes the
     /// positions recorded under its projection, a conditional both arms, and
     /// an array literal each element under its own index and the fill value
-    /// across the remaining positions. The whole record is collected before
-    /// the destination is written, so the destination carries the union and a
-    /// later arm never replaces an earlier arm's positions. A position whose
-    /// value derives directly (`[a.v]`) creates its shared loan at the copy
-    /// site, exactly as an element store does.
+    /// across the remaining positions. A fill over a known fixed extent is
+    /// expanded onto each element it stores, so overwriting or reading one
+    /// filled element keeps or drops exactly that element's loan; an extent the
+    /// declaration leaves open keeps one record across the aggregate. The whole
+    /// record is collected before the destination is written, so the
+    /// destination carries the union and a later arm never replaces an earlier
+    /// arm's positions. A position whose value derives directly (`[a.v]`)
+    /// creates its shared loan at the copy site, exactly as an element store
+    /// does.
     pub(super) fn record_copy_element_loans(
         &mut self,
         to: usize,
         base: &[ir::Projection],
         value: &Expr,
+        position: &Ty,
         span: Span,
     ) {
         let mut copied = CopyLoans::default();
-        self.collect_copy_element_loans(value, base, &mut copied);
+        self.collect_copy_element_loans(value, Some(position), base, &mut copied);
         let mut paths = copied.recorded;
         for (path, owners) in copied.owners {
             let loans = paths.entry(path).or_default();
@@ -1259,15 +1265,16 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// Collects one copy source's position loans into `copied`.
     ///
     /// A conditional contributes both arms, an array literal each element and
-    /// the fill value (which stands for every remaining element, so it covers
-    /// the aggregate's own position), and a projection or cast its inner
-    /// value. Every other expression is read as a place: the positions it
-    /// selects are translated onto the destination's path, and a place with
-    /// no recorded position contributes the real owners its storage derives
-    /// from.
+    /// the fill value, and a projection or cast its inner value. `position` is
+    /// the declared type of the copied value, which names the fixed extent a
+    /// fill covers; without one the fill stays one aggregate record. Every
+    /// other expression is read as a place: the positions it selects are
+    /// translated onto the destination's path, and a place with no recorded
+    /// position contributes the real owners its storage derives from.
     fn collect_copy_element_loans(
         &self,
         value: &Expr,
+        position: Option<&Ty>,
         base: &[ir::Projection],
         copied: &mut CopyLoans,
     ) {
@@ -1277,22 +1284,44 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 else_value,
                 ..
             } => {
-                self.collect_copy_element_loans(then_value, base, copied);
-                self.collect_copy_element_loans(else_value, base, copied);
+                self.collect_copy_element_loans(then_value, position, base, copied);
+                self.collect_copy_element_loans(else_value, position, base, copied);
             }
             ExprKind::ArrayLiteral { elements, fill } => {
-                for (index, element) in elements.iter().enumerate() {
+                let (element, extent) = match position.map(|position| &position.kind) {
+                    Some(TyKind::Array { element, extents }) => {
+                        (Some(element.as_ref()), extents.first().copied().flatten())
+                    }
+                    _ => (None, None),
+                };
+                for (index, element_value) in elements.iter().enumerate() {
                     let mut path = base.to_vec();
                     path.push(ir::Projection::Element(Some(index)));
-                    self.collect_copy_element_loans(element, &path, copied);
+                    self.collect_copy_element_loans(element_value, element, &path, copied);
                 }
                 if let Some(fill) = fill {
-                    self.collect_copy_element_loans(fill, base, copied);
+                    match extent {
+                        // A known extent names every element the fill stores,
+                        // so an overwrite or a read keeps or drops exactly
+                        // that element's loan.
+                        Some(extent) => {
+                            for index in elements.len()..extent {
+                                let mut path = base.to_vec();
+                                path.push(ir::Projection::Element(Some(index)));
+                                self.collect_copy_element_loans(fill, element, &path, copied);
+                            }
+                        }
+                        // An open extent keeps one record across the
+                        // aggregate, which covers every remaining element.
+                        None => self.collect_copy_element_loans(fill, element, base, copied),
+                    }
                 }
             }
-            ExprKind::Unsafe(inner) => self.collect_copy_element_loans(inner, base, copied),
+            ExprKind::Unsafe(inner) => {
+                self.collect_copy_element_loans(inner, position, base, copied)
+            }
             ExprKind::RawCast { value, .. } | ExprKind::Cast { value, .. } => {
-                self.collect_copy_element_loans(value, base, copied);
+                self.collect_copy_element_loans(value, position, base, copied);
             }
             _ => self.collect_place_copy_loans(value, base, copied),
         }

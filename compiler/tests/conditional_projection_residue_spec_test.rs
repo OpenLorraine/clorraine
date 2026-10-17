@@ -15200,3 +15200,453 @@ func main(): i32 {
         &["partial moves are limited to top-level fields in v1"],
     );
 }
+
+// ---------------------------------------------------------------------------
+// Fill-position loans. A fill over a known fixed extent loans each element it
+// actually stores: an unused fill records nothing, an overwritten element
+// drops only its own loan, and a copy of a filled element keeps the loan. The
+// write-conflict reading and its global form are pinned beside the direct
+// twins, and a run-time element read carries the loan its constant twin does.
+// ---------------------------------------------------------------------------
+
+/// Asserts the front end rejected `source` with one report per `(code, line,
+/// column)` entry, in any order, and emitted no translation unit.
+///
+/// One program may carry two different judgments — a write conflict and a
+/// global escape — so the pair is compared as a whole: a fix that drops or
+/// duplicates one of them fails the case even when the other still matches.
+fn compile_rejects_codes(tag: &str, source: &str, reports: &[(&str, usize, usize)]) {
+    let (_scratch, output, c_path) = compile_only(tag, source);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let mut actual: Vec<(String, String)> = Vec::new();
+    let mut lines = stderr.lines();
+    while let Some(current) = lines.next() {
+        if !current.starts_with("error ") {
+            continue;
+        }
+        let code = current
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("")
+            .trim_end_matches(':')
+            .to_owned();
+        let Some(location) = lines.next() else { continue };
+        actual.push((code, location.trim().to_owned()));
+    }
+    assert_eq!(
+        actual.len(),
+        reports.len(),
+        "{tag}: expected {} error(s), saw {}; stderr:\n{stderr}",
+        reports.len(),
+        actual.len()
+    );
+    let mut remaining = actual;
+    for (code, line, column) in reports {
+        let suffix = format!(":{line}:{column}");
+        let position = remaining
+            .iter()
+            .position(|(actual_code, site)| actual_code == code && site.ends_with(&suffix))
+            .unwrap_or_else(|| {
+                panic!("{tag}: expected {code} at {suffix}; stderr:\n{stderr}")
+            });
+        remaining.remove(position);
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// An array literal whose fill stores no remaining element, so its loan is
+/// never part of the destination.
+const FILL_UNUSED_SOURCE: &str = r#"module spec.cpr.fillunused;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = ["AA", "BB"; xs[0]];
+    fill(ys[0], borrow slot);
+    return i32(ys[0][0]) + i32(xs[0][0]) - (65 + 97);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let rc: i32 = outer(borrow out);
+    if (out == null) { return 9; }
+    return rc + i32(out[0]) - 65;
+}
+"#;
+
+/// The single-element spelling of the unused fill.
+const FILL_SINGLE_SOURCE: &str = r#"module spec.cpr.fillsingle;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[1] = ["AA"; xs[0]];
+    fill(ys[0], borrow slot);
+    return i32(ys[0][0]) + i32(xs[0][0]) - (65 + 97);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let rc: i32 = outer(borrow out);
+    if (out == null) { return 9; }
+    return rc + i32(out[0]) - 65;
+}
+"#;
+
+/// A fill that covers a known extent, one of whose elements is overwritten
+/// before it is read.
+const FILL_OVERWRITE_SOURCE: &str = r#"module spec.cpr.filloverwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let ys: str[4] = [; a.v];
+    ys[2] = "ZZ";
+    fill(ys[2], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 90;
+}
+"#;
+
+/// A copy of a fill-covered element keeps the element's loan.
+const FILL_COVERED_COPY_SOURCE: &str = r#"module spec.cpr.fillcovered;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[4] = [xs[0]; xs[1]];
+    let s: str = ys[2];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The direct read of the same fill-covered element reports the same escape.
+const FILL_COVERED_DIRECT_SOURCE: &str = r#"module spec.cpr.fillcovereddirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[4] = [xs[0]; xs[1]];
+    fill(ys[2], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The fill-only spelling of the covered element.
+const FILL_ONLY_COPY_SOURCE: &str = r#"module spec.cpr.fillonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[4] = [; xs[0]];
+    let s: str = ys[2];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The fill-only direct twin.
+const FILL_ONLY_DIRECT_SOURCE: &str = r#"module spec.cpr.fillonlydirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[4] = [; xs[0]];
+    fill(ys[2], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A run-time element store followed by a run-time element copy.
+const RUNTIME_COPY_SOURCE: &str = r#"module spec.cpr.runtimecopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(k: u32, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    let s: str = xs[k];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(0, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A constant element store followed by a run-time element copy, which must
+/// union every recorded position because the selected one is unknown.
+const RUNTIME_COPY_CONST_SOURCE: &str = r#"module spec.cpr.runtimecopyconst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(k: u32, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[k];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(0, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A direct element read after a conflicting write reports only the write's
+/// conflict: the old element position is dead and the write report stands.
+const DIRECT_WRITE_SOURCE: &str = r#"module spec.cpr.directwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    a.v = stringOf("qq");
+    fill(xs[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The global-destination form of the same write: the global escape reports
+/// beside the write's conflict.
+const GLOBAL_WRITE_SOURCE: &str = r#"module spec.cpr.globalwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let g: str = "AA";
+
+func outer(): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    a.v = stringOf("qq");
+    g = xs[0];
+}
+
+func main(): i32 {
+    outer();
+    return i32(g[0]) - 97;
+}
+"#;
+
+/// The unused and overwritten fill copies stay accepted and memory-clean: a
+/// fill that stores no element contributes no loan, and an overwritten
+/// element drops only its own.
+#[test]
+fn should_keep_the_unused_and_overwritten_fill_copies_accepted() {
+    for (tag, source) in [
+        ("fillunused", FILL_UNUSED_SOURCE),
+        ("fillsingle", FILL_SINGLE_SOURCE),
+        ("filloverwrite", FILL_OVERWRITE_SOURCE),
+    ] {
+        let output = run_memory(tag, source);
+        assert_no_asan(tag, &output);
+        assert_exit(tag, &output, 0);
+    }
+}
+
+/// A copy of a fill-covered element reports one `E10030` at its fill, exactly
+/// as the direct read of the same element does.
+#[test]
+fn should_report_a_fill_covered_element_copy() {
+    compile_rejects_once_at(
+        "fillcovered",
+        FILL_COVERED_COPY_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "fillcovereddirect",
+        FILL_COVERED_DIRECT_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "fillonly",
+        FILL_ONLY_COPY_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "fillonlydirect",
+        FILL_ONLY_DIRECT_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// A run-time element copy carries the loan of the element it may select.
+#[test]
+fn should_report_a_runtime_index_element_copy() {
+    compile_rejects_once_at(
+        "runtimecopy",
+        RUNTIME_COPY_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    compile_rejects_once_at(
+        "runtimecopyconst",
+        RUNTIME_COPY_CONST_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// A direct element read after a conflicting write keeps one `E10031`.
+#[test]
+fn should_report_one_conflict_when_a_direct_read_follows_a_write() {
+    compile_rejects_once_at(
+        "directwrite",
+        DIRECT_WRITE_SOURCE,
+        "E10031",
+        13,
+        5,
+        &["cannot modify 'a' while it is shared-borrowed"],
+        &["E10030"],
+    );
+}
+
+/// The global form of the write conflict reports the write and the escape,
+/// one report each.
+#[test]
+fn should_report_the_global_escape_after_a_write() {
+    compile_rejects_codes(
+        "globalwrite",
+        GLOBAL_WRITE_SOURCE,
+        &[("E10031", 13, 5), ("E10033", 14, 5)],
+    );
+}

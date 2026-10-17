@@ -8296,3 +8296,450 @@ fn should_re_emit_the_copy_loan_programs_byte_identically() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Fill-position loans. A fill over a known fixed extent records each element
+// it stores, so the unused-fill and overwritten-element copies stay accepted
+// with their plain emissions, a covered element copy reports like its direct
+// twin, and a run-time element copy carries the carried loan. The write
+// conflict keeps its one-report direct form and its two-report global form.
+// ---------------------------------------------------------------------------
+
+/// Asserts the front end rejected `source` with one report per `(code, line,
+/// column)` entry, in any order, and emitted no translation unit.
+fn assert_rejected_codes(tag: &str, source: &str, reports: &[(&str, usize, usize)]) {
+    let scratch = ScratchDir::new(tag);
+    let source_path = write_source(tag, &scratch, source);
+    let c_path = scratch.path().join("out.c");
+    let output = run_clc(&[
+        "--profile".to_owned(),
+        "host".to_owned(),
+        "-o".to_owned(),
+        c_path.display().to_string(),
+        source_path.display().to_string(),
+    ]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{tag}: expected a rejection; stderr:\n{stderr}"
+    );
+    let mut actual: Vec<(String, String)> = Vec::new();
+    let mut lines = stderr.lines();
+    while let Some(current) = lines.next() {
+        if !current.starts_with("error ") {
+            continue;
+        }
+        let code = current
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("")
+            .trim_end_matches(':')
+            .to_owned();
+        let Some(location) = lines.next() else { continue };
+        actual.push((code, location.trim().to_owned()));
+    }
+    assert_eq!(
+        actual.len(),
+        reports.len(),
+        "{tag}: expected {} error(s), saw {}; stderr:\n{stderr}",
+        reports.len(),
+        actual.len()
+    );
+    for (code, line, column) in reports {
+        let suffix = format!(":{line}:{column}");
+        let position = actual
+            .iter()
+            .position(|(actual_code, site)| actual_code == code && site.ends_with(&suffix))
+            .unwrap_or_else(|| panic!("{tag}: expected {code} at {suffix}; stderr:\n{stderr}"));
+        actual.remove(position);
+    }
+    assert!(
+        !c_path.exists(),
+        "{tag}: a rejected program must not produce a translation unit"
+    );
+}
+
+/// An array literal whose fill stores no remaining element.
+const FILL_UNUSED_SOURCE: &str = r#"module spec.cprimpl.fillunused;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): i32 {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[2] = ["AA", "BB"; xs[0]];
+    fill(ys[0], borrow slot);
+    return i32(ys[0][0]) + i32(xs[0][0]) - (65 + 97);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    let rc: i32 = outer(borrow out);
+    if (out == null) { return 9; }
+    return rc + i32(out[0]) - 65;
+}
+"#;
+
+/// A fill that covers a known extent and is overwritten at one element.
+const FILL_OVERWRITE_SOURCE: &str = r#"module spec.cprimpl.filloverwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let ys: str[4] = [; a.v];
+    ys[2] = "ZZ";
+    fill(ys[2], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 90;
+}
+"#;
+
+/// A copy of a fill-covered element carries the element's loan.
+const FILL_COVERED_COPY_SOURCE: &str = r#"module spec.cprimpl.fillcovered;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[4] = [xs[0]; xs[1]];
+    let s: str = ys[2];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The direct read of the same fill-covered element.
+const FILL_COVERED_DIRECT_SOURCE: &str = r#"module spec.cprimpl.fillcovereddirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    xs[1] = a.w;
+    let ys: str[4] = [xs[0]; xs[1]];
+    fill(ys[2], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The fill-only spelling of the covered element copy.
+const FILL_ONLY_COPY_SOURCE: &str = r#"module spec.cprimpl.fillonly;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[4] = [; xs[0]];
+    let s: str = ys[2];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The fill-only direct twin.
+const FILL_ONLY_DIRECT_SOURCE: &str = r#"module spec.cprimpl.fillonlydirect;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let ys: str[4] = [; xs[0]];
+    fill(ys[2], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A run-time element store followed by a run-time element copy.
+const RUNTIME_COPY_SOURCE: &str = r#"module spec.cprimpl.runtimecopy;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(k: u32, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[k] = a.v;
+    let s: str = xs[k];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(0, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A constant element store followed by a run-time element copy.
+const RUNTIME_COPY_CONST_SOURCE: &str = r#"module spec.cprimpl.runtimecopyconst;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(k: u32, borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    let s: str = xs[k];
+    fill(s, borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(0, borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// A direct element read after a conflicting write.
+const DIRECT_WRITE_SOURCE: &str = r#"module spec.cprimpl.directwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+func fill(p: str, borrow slot: str?): void { slot = p; }
+
+func outer(borrow slot: str?): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    a.v = stringOf("qq");
+    fill(xs[0], borrow slot);
+}
+
+func main(): i32 {
+    let out: str? = null;
+    outer(borrow out);
+    if (out == null) { return 9; }
+    return i32(out[0]) - 97;
+}
+"#;
+
+/// The global-destination form of the write conflict.
+const GLOBAL_WRITE_SOURCE: &str = r#"module spec.cprimpl.globalwrite;
+
+import { String, stringOf } from std.text;
+
+struct Box { v: String; w: String; }
+
+let g: str = "AA";
+
+func outer(): void {
+    let a: Box = Box { v: stringOf("aa"), w: stringOf("bb") };
+    let xs: str[2] = ["AA", "BB"];
+    xs[0] = a.v;
+    a.v = stringOf("qq");
+    g = xs[0];
+}
+
+func main(): i32 {
+    outer();
+    return i32(g[0]) - 97;
+}
+"#;
+
+/// The unused fill emits only the listed element stores, so its loan never
+/// reaches the destination.
+#[test]
+fn should_pin_the_unused_fill_emission() {
+    let tag = "implfillunused";
+    let (_scratch, emitted) = emit_host(tag, FILL_UNUSED_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_fillunused_outer(ClStr *slot)\n{",
+    );
+    assert_contains(tag, body, "ys[0] = cl_str(\"AA\");");
+    assert_contains(tag, body, "ys[1] = cl_str(\"BB\");");
+    assert_absent(tag, body, "ys[0] = xs[0];");
+    assert_absent(tag, body, "ys[1] = xs[0];");
+    assert_contains(tag, body, "cl_spec_cprimpl_fillunused_fill(ys[0], &((*slot)));");
+    assert_contains(tag, body, "((xs[0]).ptr[0])");
+}
+
+/// The known extent expands the fill onto every element it stores, and the
+/// overwrite replaces exactly the element it names before the fill reads it.
+#[test]
+fn should_pin_the_expanded_fill_and_its_overwrite() {
+    let tag = "implfilloverwrite";
+    let (_scratch, emitted) = emit_host(tag, FILL_OVERWRITE_SOURCE);
+    let body = function_body(
+        tag,
+        &emitted,
+        "cl_spec_cprimpl_filloverwrite_outer(ClStr *slot)\n{",
+    );
+    assert_contains(tag, body, "ys[0] = cl_string_view(a.v);");
+    assert_contains(tag, body, "ys[1] = cl_string_view(a.v);");
+    assert_contains(tag, body, "ys[2] = cl_string_view(a.v);");
+    assert_contains(tag, body, "ys[3] = cl_string_view(a.v);");
+    assert_follows(
+        tag,
+        body,
+        "ys[2] = cl_str(\"ZZ\");",
+        "cl_spec_cprimpl_filloverwrite_fill(ys[2], &((*slot)));",
+    );
+}
+
+/// A copy of a fill-covered element reports at its fill exactly as the
+/// direct read does, in both the listed-fill and fill-only spellings.
+#[test]
+fn should_pin_the_fill_covered_element_copy_reports() {
+    assert_rejected_once_at(
+        "implfillcovered",
+        FILL_COVERED_COPY_SOURCE,
+        "E10030",
+        16,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implfillcovereddirect",
+        FILL_COVERED_DIRECT_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implfillonly",
+        FILL_ONLY_COPY_SOURCE,
+        "E10030",
+        15,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implfillonlydirect",
+        FILL_ONLY_DIRECT_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The run-time copy carries the loan of the element it may select, whether
+/// the recorded store was constant or run-time.
+#[test]
+fn should_pin_the_runtime_index_element_copy() {
+    assert_rejected_once_at(
+        "implruntimecopy",
+        RUNTIME_COPY_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+    assert_rejected_once_at(
+        "implruntimecopyconst",
+        RUNTIME_COPY_CONST_SOURCE,
+        "E10030",
+        14,
+        5,
+        &["borrow of 'a' does not live long enough"],
+        &[],
+    );
+}
+
+/// The direct read after a conflicting write keeps one conflict report.
+#[test]
+fn should_pin_the_direct_write_conflict_reading() {
+    assert_rejected_once_at(
+        "impldirectwrite",
+        DIRECT_WRITE_SOURCE,
+        "E10031",
+        13,
+        5,
+        &["cannot modify 'a' while it is shared-borrowed"],
+        &["E10030"],
+    );
+}
+
+/// The global form reports the write conflict and the global escape together.
+#[test]
+fn should_pin_the_global_write_conflict_reading() {
+    assert_rejected_codes(
+        "implglobalwrite",
+        GLOBAL_WRITE_SOURCE,
+        &[("E10031", 13, 5), ("E10033", 14, 5)],
+    );
+}
