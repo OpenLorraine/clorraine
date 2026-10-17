@@ -3176,9 +3176,8 @@ fn has_deferred_fill(value: &Value) -> bool {
         ValueKind::Index { base, index } => {
             has_deferred_fill(base) || has_deferred_fill(index)
         }
-        // A raw-deref read carries its pointer fill in the operand, so a
-        // field that stores the read must run the fill at its own turn and
-        // empty the pointee after the copy.
+        // A unary operator over a deferred fill — a raw-deref read's pointer
+        // fill lives in its operand — stores its value at its own turn.
         ValueKind::Unary { operand, .. } => has_deferred_fill(operand),
         ValueKind::StructLit { fields, .. } => {
             fields.iter().any(|(_, field)| has_deferred_fill(field))

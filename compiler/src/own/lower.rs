@@ -312,11 +312,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                 for field in fields {
                     let value = self.lower_value(&field.value);
                     // An owning raw-deref field moves its pointee: the pointer
-                    // is pinned once here, so the field store and the source
-                    // emptying name the same address. A field inside a
-                    // conditionally evaluated operand defers the pin to the
-                    // arm's own path.
-                    let value = self.materialize_owning_deref(value);
+                    // fill defers to this field's own store, so an earlier
+                    // sibling's read still runs first. A field inside a
+                    // conditionally evaluated operand fills on the arm's path.
+                    let value = self.defer_owning_deref(value);
                     // A field that projects a conditional moves the chosen
                     // member out of each arm's root, so the field owns the
                     // value and the chosen root releases only its un-moved
@@ -454,11 +453,11 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
                         .map(|element| {
                             let value = self.lower_value(element);
                             // An owning raw-deref element moves its pointee:
-                            // the pointer is pinned once here, so the element
-                            // store and the source emptying read one address.
-                            // A conditionally evaluated element defers the pin
-                            // to the path that fills it.
-                            let value = self.materialize_owning_deref(value);
+                            // the pointer fill defers to this element's own
+                            // store, so an earlier sibling's read still runs
+                            // first. A conditionally evaluated element fills
+                            // on the path that reaches it.
+                            let value = self.defer_owning_deref(value);
                             let value = if self.view_array_literal_depth > 0 {
                                 value
                             } else if is_view_like(&ty) {
@@ -3495,6 +3494,31 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
     /// that is not a raw-deref read, or whose pointee duplicates, is returned
     /// unchanged: it copies and needs no move.
     pub(super) fn materialize_owning_deref(&mut self, value: Value) -> Value {
+        let defer = self.defer_move_outs > 0;
+        self.materialize_owning_deref_at(value, defer)
+    }
+
+    /// Defers an owning raw-deref read's pointer fill to its consuming store.
+    ///
+    /// A struct-literal field and an array-literal element evaluate in source
+    /// order, so a statement emitted while the literal is lowered would run a
+    /// later sibling's pointer before an earlier sibling's read. The fill
+    /// travels on the value and the field or element store emits it at its own
+    /// turn. A value that is not an owning raw-deref read is returned
+    /// unchanged.
+    pub(super) fn defer_owning_deref(&mut self, value: Value) -> Value {
+        self.materialize_owning_deref_at(value, true)
+    }
+
+    /// Pins an owning raw-deref read's pointer, optionally at the consuming
+    /// store's turn.
+    ///
+    /// An eagerly evaluated statement position may emit the pin as a
+    /// statement. A conditionally evaluated or literal position defers the
+    /// fill to the guard or store that consumes it, so a skipped path never
+    /// runs the pointer and a later sibling's fill cannot move ahead of an
+    /// earlier sibling's read.
+    fn materialize_owning_deref_at(&mut self, value: Value, defer: bool) -> Value {
         if !self.owning_deref_read(&value.ty) {
             return value;
         }
@@ -3505,10 +3529,10 @@ impl<'a, 'd> FunctionChecker<'a, 'd> {
         else {
             return value;
         };
-        let operand = if self.defer_move_outs == 0 {
-            self.materialize_operand((**operand).clone())
-        } else {
+        let operand = if defer {
             self.defer_operand_fill((**operand).clone())
+        } else {
+            self.materialize_operand((**operand).clone())
         };
         Value::new(
             value.ty.clone(),

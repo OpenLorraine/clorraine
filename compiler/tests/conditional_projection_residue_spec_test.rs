@@ -16405,3 +16405,83 @@ func main(): i32 {
     assert_no_asan("guardedderefimpureskip", &output);
     assert_exit("guardedderefimpureskip", &output, 0);
 }
+
+// ---------------------------------------------------------------------------
+// literalsiblingorder: a literal's earlier sibling reads before a later
+// sibling's owning-deref pointer fill.
+//
+// Fields and elements evaluate in source order. A later field or element that
+// moves a pointee through an impure pointer must therefore fill its pointer
+// only when its own store runs, after the earlier sibling's read. `counter`
+// starts at 2 and `bump` adds 10, so an order-preserving run exits 2 while a
+// fill hoisted above the literal exits 12.
+// ---------------------------------------------------------------------------
+
+/// A later field's and a later element's owning-deref fill runs after the
+/// earlier sibling's read.
+///
+/// Both the two-field struct literal and the two-element array literal start
+/// with `a: counter` (2). The second sibling's `b` reads the pointee of
+/// `bump`, which adds 10 to `counter`. The run exits 2 when the earlier read
+/// happens first; a fill hoisted above the literal would make the first read
+/// observe 12. Each program is accepted, builds under the strict flags, and is
+/// free of memory errors.
+#[test]
+fn should_evaluate_a_literal_sibling_before_a_later_deref_fill() {
+    let field = r#"module spec.cpr.literalfieldorder;
+
+import { String, stringOf } from std.text;
+
+let counter: i32 = 2;
+
+func bump<T>(s: raw T, t: raw T): raw T {
+    counter = counter + 10;
+    return s;
+}
+
+struct P { a: i32; b: String; }
+
+func main(): i32 {
+    let p: String = stringOf("pp");
+    let q: String = stringOf("qq");
+    unsafe {
+        let rp: raw String = &p;
+        let rq: raw String = &q;
+        let v: P = P { a: counter, b: *bump(rp, rq) };
+        return v.a;
+    }
+}
+"#;
+    let output = run_memory("literalfieldorder", field);
+    assert_no_asan("literalfieldorder", &output);
+    assert_exit("literalfieldorder", &output, 2);
+
+    let element = r#"module spec.cpr.literalarrayorder;
+
+import { String, stringOf } from std.text;
+
+let counter: i32 = 2;
+
+func bump<T>(s: raw T, t: raw T): raw T {
+    counter = counter + 10;
+    return s;
+}
+
+struct P { a: i32; b: String; }
+
+func main(): i32 {
+    let p: String = stringOf("pp");
+    let q: String = stringOf("qq");
+    let fill: String = stringOf("ff");
+    unsafe {
+        let rp: raw String = &p;
+        let rq: raw String = &q;
+        let xs: P[2] = [P { a: counter, b: fill }, P { a: 0, b: *bump(rp, rq) }];
+        return xs[0].a;
+    }
+}
+"#;
+    let output = run_memory("literalarrayorder", element);
+    assert_no_asan("literalarrayorder", &output);
+    assert_exit("literalarrayorder", &output, 2);
+}

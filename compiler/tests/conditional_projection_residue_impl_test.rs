@@ -9464,3 +9464,117 @@ fn should_re_emit_the_guarded_deref_take_programs_byte_identically() {
         );
     }
 }
+
+/// A two-field literal whose later field moves the pointee of an impure
+/// pointer expression.
+const DEREF_ORDER_FIELD_SOURCE: &str = r#"module spec.cprimpl.dereforderfield;
+
+import { String, stringOf } from std.text;
+
+let counter: i32 = 2;
+
+func bump<T>(s: raw T, t: raw T): raw T {
+    counter = counter + 10;
+    return s;
+}
+
+struct P { a: i32; b: String; }
+
+func main(): i32 {
+    let p: String = stringOf("pp");
+    let q: String = stringOf("qq");
+    unsafe {
+        let rp: raw String = &p;
+        let rq: raw String = &q;
+        let v: P = P { a: counter, b: *bump(rp, rq) };
+        return v.a;
+    }
+}
+"#;
+
+/// A two-element literal whose later element moves the pointee of an impure
+/// pointer expression.
+const DEREF_ORDER_ELEMENT_SOURCE: &str = r#"module spec.cprimpl.dereforderarray;
+
+import { String, stringOf } from std.text;
+
+let counter: i32 = 2;
+
+func bump<T>(s: raw T, t: raw T): raw T {
+    counter = counter + 10;
+    return s;
+}
+
+struct P { a: i32; b: String; }
+
+func main(): i32 {
+    let p: String = stringOf("pp");
+    let q: String = stringOf("qq");
+    let fill: String = stringOf("ff");
+    unsafe {
+        let rp: raw String = &p;
+        let rq: raw String = &q;
+        let xs: P[2] = [P { a: counter, b: fill }, P { a: 0, b: *bump(rp, rq) }];
+        return xs[0].a;
+    }
+}
+"#;
+
+/// Asserts `first` occurs before `second` in the emitted text.
+fn assert_occurs_before(tag: &str, emitted: &str, first: &str, second: &str) {
+    let first_at = emitted
+        .find(first)
+        .unwrap_or_else(|| panic!("{tag}: the emitted C lacks {first:?}"));
+    let second_at = emitted
+        .find(second)
+        .unwrap_or_else(|| panic!("{tag}: the emitted C lacks {second:?}"));
+    assert!(
+        first_at < second_at,
+        "{tag}: expected {first:?} before {second:?}; emitted C:\n{emitted}"
+    );
+}
+
+/// A literal stores its earlier sibling before a later sibling's owning-deref
+/// pointer fill: the field or element store emits the fill at its own turn.
+#[test]
+fn should_pin_the_literal_sibling_order_before_a_deref_fill() {
+    let field = "dereforderfield";
+    let (_scratch, emitted) = emit_host(field, DEREF_ORDER_FIELD_SOURCE);
+    let body = function_body(
+        field,
+        &emitted,
+        "cl_spec_cprimpl_dereforderfield_main(void)\n{",
+    );
+    assert_occurs_before(
+        field,
+        body,
+        "v.a = cl_spec_cprimpl_dereforderfield_counter;",
+        "__cl_tmp0 = cl_bump__String(rp, rq);",
+    );
+    assert_occurs_before(
+        field,
+        body,
+        "__cl_tmp0 = cl_bump__String(rp, rq);",
+        "v.b = *(__cl_tmp0);",
+    );
+
+    let element = "dereforderarray";
+    let (_scratch, emitted) = emit_host(element, DEREF_ORDER_ELEMENT_SOURCE);
+    let body = function_body(
+        element,
+        &emitted,
+        "cl_spec_cprimpl_dereforderarray_main(void)\n{",
+    );
+    assert_occurs_before(
+        element,
+        body,
+        "xs[0].a = cl_spec_cprimpl_dereforderarray_counter;",
+        "__cl_tmp1 = cl_bump__String(rp, rq);",
+    );
+    assert_occurs_before(
+        element,
+        body,
+        "__cl_tmp1 = cl_bump__String(rp, rq);",
+        "xs[1].b = *(__cl_tmp1);",
+    );
+}
